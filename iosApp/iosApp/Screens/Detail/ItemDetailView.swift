@@ -324,11 +324,16 @@ private struct ItemDetailPhoneContent: View {
         .onReceive(NotificationCenter.default.publisher(for: .playbackProgressDidCommit)) { note in
             guard let event = note.object as? PlaybackProgressCommittedEvent,
                   event.contentIds.contains(contentId) else { return }
+            viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
             Task {
                 await viewModel.loadDetail(
                     contentId: contentId,
                     coalescesMetadataRequests: false
                 )
+                // Some providers can briefly return their pre-commit episode
+                // list even after accepting the final progress write. Keep
+                // the completed state visible until their catalogue catches up.
+                viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
                 preferredSubtitleTrackIndex = nil
                 preferredSubtitleTrackWasManuallySelected = false
                 seedSubtitleOverrideIfNeeded()

@@ -5,6 +5,7 @@ import SwiftUI
 /// refresh at that point without waiting for the remaining session teardown.
 struct PlaybackProgressCommittedEvent {
     let contentIds: Set<String>
+    let completedContentIds: Set<String>
 }
 
 extension Notification.Name {

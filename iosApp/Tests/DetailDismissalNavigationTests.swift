@@ -22,6 +22,27 @@ private actor ContinueWatchingResponseGate {
 
 @MainActor
 final class DetailDismissalNavigationTests: XCTestCase {
+    func testPlaybackCompletionUpdatesEveryResidentSeriesEpisodeCopy() throws {
+        let decoded = try JSONDecoder().decode(EpisodesResponse.self, from: Data(#"""
+        {"episodes":[
+          {"contentId":"episode-1","seasonNumber":1,"episodeNumber":1,"userData":{"played":false,"isInProgress":true,"positionSeconds":120}},
+          {"contentId":"episode-2","seasonNumber":1,"episodeNumber":2,"userData":{"played":false}}
+        ]}
+        """#.utf8)).episodes
+        let model = ItemDetailViewModel()
+        model.episodes = decoded
+        model.episodesBySeason[1] = decoded
+
+        model.applyCompletedPlayback(contentIds: ["episode-1"])
+
+        for copy in [model.episodes, try XCTUnwrap(model.episodesBySeason[1])] {
+            XCTAssertTrue(copy[0].userData?.played == true)
+            XCTAssertFalse(copy[0].userData?.isInProgress == true)
+            XCTAssertEqual(copy[0].userData?.positionSeconds, 0)
+            XCTAssertFalse(copy[1].userData?.played == true)
+        }
+    }
+
     func testPersistentSearchPageStartsPlayerFromCardImmediately() throws {
         let router = AppRouter()
 

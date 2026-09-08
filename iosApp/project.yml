@@ -42,7 +42,7 @@ targetTemplates:
   ShippableProduct:
     settings:
       base:
-        MARKETING_VERSION: "0.6.0"
+        MARKETING_VERSION: "0.14.2"
         CURRENT_PROJECT_VERSION: 1
         # Surfaced to the app as the `VividBuildChannel` Info.plist key and
         # reported to the server as X-Silo-Client-Channel. The unsigned
@@ -136,6 +136,11 @@ targets:
         SDKROOT: appletvos
         SUPPORTED_PLATFORMS: "appletvos appletvsimulator"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+      configs:
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
     dependencies:
       - package: VividKit
         product: VividKit

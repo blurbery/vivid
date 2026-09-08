@@ -26,7 +26,7 @@
 I’m building Vivid as an open-source media app for iPhone, iPad and Apple TV. Connect your own media server and browse and watch your library across your Apple devices.
 
 > [!NOTE]
-> Vivid is still in development. The repo is private while I get it ready for an open-source release. There's no Vivid App Store or TestFlight build yet.
+> Vivid is still in development. The source is public, and TestFlight access is limited to invited beta testers. There is no public App Store release yet.
 
 ## Server support
 
