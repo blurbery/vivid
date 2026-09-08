@@ -128,7 +128,7 @@ final class TVTMDbStore {
                 if let latest = series.seasons.filter({ $0.season_number > 0 }).max(by: { $0.season_number < $1.season_number }) {
                     let season: Videos = try await request("tv/\(source.id)/season/\(latest.season_number)/videos", credential: credential)
                     try checkContext(context)
-                    candidates = Array(main.prefix(1)) + Self.rankedTrailers(season.results) + main.dropFirst()
+                    candidates = Array(main.prefix(1)) + Self.rankedTrailers(season.results) + Array(main.dropFirst())
                 }
             } catch {
                 try checkContext(context)
