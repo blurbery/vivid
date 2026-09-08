@@ -40,29 +40,23 @@ enum VideoGravity: String, CaseIterable {
 /// VividKit read-ahead targets, expressed in two-second adapter units.
 enum BufferAheadMode: String, CaseIterable {
     case automatic = "automatic"
-    case seconds10 = "seconds10"
     case seconds20 = "seconds20"
     case seconds30 = "seconds30"
 
     var forwardBufferSegments: Int? {
         switch self {
         case .automatic: return nil
-        case .seconds10: return 5
-        case .seconds20: return 10
-        case .seconds30: return 15
+        case .seconds20: return 15
+        case .seconds30: return 20
         }
     }
 
     var label: String {
-        switch self {
-        case .automatic: return "Automatic"
-        case .seconds10: return "10 seconds"
-        case .seconds20: return "20 seconds"
-        case .seconds30: return "30 seconds"
-        }
+        guard let segments = forwardBufferSegments else { return "Automatic" }
+        return "\(segments * 2) seconds"
     }
 
-    static let explanation = "Automatic buffers about 10 seconds ahead. Playback starts before the target fills, and memory limits can shorten the buffer. Changes apply to the next video; streaming playlists manage their own buffer."
+    static let explanation = "Automatic buffers about 20 seconds ahead. Playback starts before the target fills, and memory limits can shorten the buffer. Changes apply to the next video; streaming playlists manage their own buffer."
 }
 
 @Observable
@@ -72,6 +66,20 @@ final class PlayerSettings {
     }
 
     static let shared = PlayerSettings()
+
+    private var fallbackModeID: String? {
+        didSet {
+            let key = Self.cacheKey("vivid.quality.fallbackMode")
+            if let fallbackModeID { defaults.set(fallbackModeID, forKey: key) }
+            else { defaults.removeObject(forKey: key) }
+        }
+    }
+    var fallbackMode: PlaybackFallbackMode? {
+        guard let id = fallbackModeID, let mode = PlaybackFallbackMode(rawValue: id),
+              preferredQualityResolution == mode.resolution,
+              maxBitrateKbps == mode.maximumKbps else { return nil }
+        return mode
+    }
 
     var preferredSubtitleLanguage: String = PlaybackPrefSentinel.none {
         didSet { defaults.set(preferredSubtitleLanguage, forKey: Self.cacheKey("vivid.subtitle.language")) }
@@ -123,7 +131,8 @@ final class PlayerSettings {
     /// Android — whose ladders differ from this one — still resolves to a rung
     /// this client can actually request. See AppleQualityAxes.swift.
     var preferredQuality: String {
-        AppleQualityAxes.join(
+        if let fallbackMode { return fallbackMode.rawValue }
+        return AppleQualityAxes.join(
             resolution: preferredQualityResolution,
             bitrateKbps: maxBitrateKbps
         )
@@ -135,7 +144,8 @@ final class PlayerSettings {
     /// shows the pair's own description in that case rather than snapping to a
     /// nearby preset, which would misreport what is stored.
     var currentQualityPreset: VividQualityPreset? {
-        VividQualityPresets.preset(
+        if let fallbackMode { return fallbackMode.preset }
+        return VividQualityPresets.preset(
             resolution: preferredQualityResolution,
             bitrateKbps: maxBitrateKbps
         )
@@ -143,7 +153,8 @@ final class PlayerSettings {
 
     /// A user-facing label for the stored pair, preset or not.
     var preferredQualityLabel: String {
-        VividQualityPresets.describe(
+        if let fallbackMode { return fallbackMode.option.labelWithBitrate }
+        return VividQualityPresets.describe(
             resolution: preferredQualityResolution,
             bitrateKbps: maxBitrateKbps
         )
@@ -363,12 +374,14 @@ final class PlayerSettings {
     func setPreferredQuality(_ value: String) {
         let axes = AppleQualityAxes.split(ApplePlaybackQuality.normalizeStoredId(value))
         setQualityAxes(resolution: axes.resolution, bitrateKbps: axes.bitrateKbps)
+        fallbackModeID = PlaybackFallbackMode(rawValue: value)?.rawValue
     }
 
     /// Set the quality from a shared preset — the settings screens' entry
     /// point, on every platform and in the web and Android clients.
     func setQualityPreset(_ preset: VividQualityPreset) {
         setQualityAxes(resolution: preset.resolution, bitrateKbps: preset.bitrateKbps)
+        fallbackModeID = PlaybackFallbackMode(rawValue: preset.id)?.rawValue
     }
 
     /// Store one (resolution, bitrate) pair as the contract's two keys.
@@ -378,6 +391,7 @@ final class PlayerSettings {
     /// throttling a tier the user just widened. Uncapped is an explicit JSON
     /// null rather than an omitted write for the same reason.
     private func setQualityAxes(resolution: String, bitrateKbps: Int?) {
+        fallbackModeID = nil
         preferredQualityResolution = VividQualityPresets.normalizeResolution(resolution)
         maxBitrateKbps = bitrateKbps.flatMap { $0 > 0 ? $0 : nil }
     }
@@ -461,6 +475,7 @@ final class PlayerSettings {
 
     @MainActor
     func resetAllDeviceSettings() async {
+        fallbackModeID = nil
         introDBEnabled = true
         resetDeviceLocalPreferences()
         cachePlaybackDefaults(for: Self.currentScopeIdentifier)
@@ -478,6 +493,7 @@ final class PlayerSettings {
     }
 
     private func applyCachedSettingsForCurrentScope() {
+        fallbackModeID = defaults.string(forKey: Self.cacheKey("vivid.quality.fallbackMode"))
         preferredSubtitleLanguage = defaults.string(forKey: Self.cacheKey("vivid.subtitle.language")) ?? PlaybackPrefSentinel.none
         preferredSubtitleMode = defaults.string(forKey: Self.cacheKey("vivid.subtitle.mode")) ?? "auto"
         showForcedSubtitles = Self.cachedBool(defaults, key: "vivid.subtitle.forced", defaultValue: true)

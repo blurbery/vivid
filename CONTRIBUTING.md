@@ -40,7 +40,15 @@ Contributors are welcome to open pull requests from branches in their own forks.
 
 Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). Each update pushed to `main` can publish a source release, so review and validate it first. Keep release bullets factual and user-facing.
 
-For pull requests, describe the problem, the change and the validation performed. Credit AI assistance accurately, including the model and harness, and distinguish the contributor's direction and physical testing from generated implementation work.
+Give reviewers enough detail to reproduce the problem and assess the change without a private conversation:
+
+- Explain the symptoms, reproduction steps, expected behaviour and root cause when known.
+- Describe what changed, why you chose that approach, affected providers/platforms and compatibility or recovery risks.
+- Include regression coverage where appropriate, exact test commands or CI links, the tested revision, results and any failed, skipped or untested cases.
+- Support performance claims with measured results and the workload/environment. If no benchmark was run, say so.
+- Keep the explanation focused, but do not leave out information needed to review the work. Update it when follow-up changes alter the scope.
+
+Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md). Credit AI assistance accurately and distinguish your direction, review and physical testing from generated work or someone else’s checks.
 
 ## Physical-device testing
 
@@ -80,7 +88,7 @@ This covers the README, guides, branding text and assets, notices, contribution 
 
 ## AI-assisted contributions
 
-Contributors may use AI tools to help develop Vivid. The project owner’s preferred tools are Codex and Apple’s AI tools; contributors are welcome to use others. No particular AI tool is required.
+AI tools are welcome. You remain responsible for understanding, reviewing and validating everything you submit, including generated code, tests and documentation. No particular tool is required; agents must follow [AGENTS.md](AGENTS.md).
 
 > [!IMPORTANT]
 > **AI disclosure is required in every pull request.** Complete the PR template’s **AI disclosure** section. A PR without a completed disclosure is not ready for review and must not be merged.
@@ -89,6 +97,7 @@ Contributors may use AI tools to help develop Vivid. The project owner’s prefe
 - Describe the contributor’s direction, review and validation. Do not present AI-generated work or unperformed testing as manual work.
 - If no AI was used, explicitly state **“No AI assistance was used for this pull request.”** Leaving the section blank is not a disclosure.
 - If a model label is unavailable, say so; do not guess. Update the disclosure when further AI-assisted changes are added to the PR.
+- Disclose substantial AI assistance in issues and review reports as well. Authorized direct commits without a PR must include the disclosure in the commit body. Generated documentation can be disclosed in its accompanying contribution rather than repeating a notice on every page.
 
 Review the changes you submit and explain what you tested. Keep credentials and private data out of prompts, commits and reports. AI output needs the same code review and validation as any other contribution.
 

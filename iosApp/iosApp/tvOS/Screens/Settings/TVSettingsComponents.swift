@@ -113,8 +113,8 @@ enum TVSettingsOptions {
     /// ladder: what is stored is a (resolution, bitrate) pair, so the two
     /// tables can label it differently without either reinterpreting it.
     static func quality(including customLabel: String? = nil) -> [TVSettingsOption] {
-        let presets = VividQualityPresets.all.map {
-            TVSettingsOption(id: $0.id, label: $0.label)
+        let presets = VividQualityPresets.selectable.map {
+            TVSettingsOption(id: $0.id, label: $0.menuLabel, detail: $0.description)
         }
         guard let customLabel else { return presets }
         return [.init(id: customQualityId, label: customLabel)] + presets
@@ -859,7 +859,8 @@ private struct TVSettingsPickerOptionRow: View {
                         Text(detail)
                             .font(.system(size: 20))
                             .opacity(0.72)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                     }
 
                 }

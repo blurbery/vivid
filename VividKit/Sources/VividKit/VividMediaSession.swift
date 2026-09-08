@@ -23,6 +23,32 @@ public struct VividTrack: Identifiable, Sendable {
 }
 
 final class VividMediaSession: @unchecked Sendable {
+    #if os(tvOS)
+    var nativeDTSBridgeEnabled = false
+    private var audioEnqueueAhead: Double = 1
+    private var audioReplay = VividAudioReplayBuffer()
+
+    func recoverAudioOutput() -> Bool {
+        condition.lock(); defer { condition.unlock() }
+        guard !cancelled, audioIndex != nil else { return false }
+        let now = max(start, synchronizer.currentTime().seconds)
+        guard now.isFinite else { return false }
+        let samples = audioReplay.samples(at: now)
+        guard !samples.isEmpty else { return false }
+        // This lock also guards every enqueue, so no old buffer can slip
+        // between the flush and the retained audio being re-enqueued.
+        audio.flush()
+        for sample in samples { audio.enqueue(sample) }
+        condition.broadcast()
+        return audio.status != .failed
+    }
+    func setAudioOutputLatency(_ latency: Double) {
+        condition.lock()
+        audioEnqueueAhead = latency.isFinite ? min(8, max(1, latency + 1)) : 1
+        condition.broadcast()
+        condition.unlock()
+    }
+    #endif
     struct Inventory { let tracks: [VividTrack]; let duration: Double; let audio: Int?; let chapters: [VividChapter] }
     struct Snapshot {
         let frontier: Double
@@ -121,6 +147,13 @@ final class VividMediaSession: @unchecked Sendable {
             }.first
             audioIndex = (preferred ?? audioTracks.first(where: \.isDefault) ?? audioTracks.first).map { Int32($0.id) }
         }
+        #if os(tvOS)
+        if nativeDTSBridgeEnabled, let audioIndex,
+           let parameters = vv_stream(format, UInt32(audioIndex))?.pointee.codecpar,
+           parameters.pointee.codec_id == AV_CODEC_ID_DTS {
+            throw VividPlaybackError.nativeDTSRequired(Int(audioIndex))
+        }
+        #endif
         if let videoIndex {
             videoDecoder = vv_create_decoder(vv_stream(format, UInt32(videoIndex)), 1, &result)
             guard videoDecoder != nil else { throw source.lastFailure ?? VividPlaybackError.media(result) }
@@ -236,6 +269,9 @@ final class VividMediaSession: @unchecked Sendable {
                         condition.unlock(); continuation.resume(throwing: error); return
                     }
                     start = seconds; videoEnd = nil; audioEnd = nil; subtitleCues = []
+                    #if os(tvOS)
+                    audioReplay.removeAll()
+                    #endif
                     videoDone = false; audioDone = false
                     condition.unlock()
                     videoPackets.reset(); audioPackets.reset()
@@ -254,7 +290,11 @@ final class VividMediaSession: @unchecked Sendable {
         condition.lock(); selectedSubtitleIDs = ids; subtitleCues = []; condition.unlock()
     }
     func cancel() {
-        condition.lock(); cancelled = true; condition.broadcast(); condition.unlock()
+        condition.lock(); cancelled = true
+        #if os(tvOS)
+        audioReplay.removeAll()
+        #endif
+        condition.broadcast(); condition.unlock()
         source.cancel(); videoPackets.cancel(); audioPackets.cancel()
         demuxQueue.async { [self] in cleanup() }
     }
@@ -266,7 +306,12 @@ final class VividMediaSession: @unchecked Sendable {
         condition.lock(); defer { condition.unlock() }
         return cancelled
     }
-    private func fail(_ error: VividPlaybackError) {
+    private func fail(_ error: VividPlaybackError, line: UInt = #line) {
+        #if os(tvOS) && DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+            print("[VividTVProbe] mediaSessionFailure line=\(line) error=\(String(describing: error)) clock=\(synchronizer.currentTime().seconds) sourceFailure=\(String(describing: source.lastFailure))")
+        }
+        #endif
         condition.lock(); if failure == nil { failure = error }; condition.unlock()
         cancel()
     }
@@ -316,7 +361,15 @@ final class VividMediaSession: @unchecked Sendable {
             guard result >= 0 else { fail(.media(result)); return }
             let base = vv_time(decoder.pointee.pkt_timebase)
             let stamp = frame.pointee.best_effort_timestamp
-            guard let pts = stamp == vv_no_pts() ? nextTime : Double(stamp) * base - origin, pts.isFinite else {
+            let decodedPTS = stamp == vv_no_pts() ? nil : Double(stamp) * base - origin
+            let pts = isVideo
+                ? (decodedPTS ?? nextTime)
+                : Self.softwareAudioPresentationTime(
+                    decoded: decodedPTS,
+                    expected: nextTime,
+                    sampleRate: Int(frame.pointee.sample_rate)
+                )
+            guard let pts, pts.isFinite else {
                 fail(.media(-22)); return
             }
             let duration = isVideo ? max(Double(frame.pointee.duration) * base, 1.0 / 120.0) :
@@ -343,7 +396,12 @@ final class VividMediaSession: @unchecked Sendable {
             while !cancelled && generation == epoch {
                 let ready = isVideo ? video.isReadyForMoreMediaData : audio.isReadyForMoreMediaData
                 let now = synchronizer.currentTime().seconds
-                if ready && pts < max(start, now) + 1 { break }
+                #if os(tvOS)
+                let enqueueAhead = isVideo ? 1 : audioEnqueueAhead
+                #else
+                let enqueueAhead: Double = 1
+                #endif
+                if ready && pts < max(start, now) + enqueueAhead { break }
                 _ = condition.wait(until: Date(timeIntervalSinceNow: 0.02))
             }
             guard !cancelled, generation == epoch else { condition.unlock(); return }
@@ -357,6 +415,9 @@ final class VividMediaSession: @unchecked Sendable {
                 videoEnd = max(videoEnd ?? start, pts + duration)
                 hardware = frame.pointee.format == AV_PIX_FMT_VIDEOTOOLBOX.rawValue
             } else {
+                #if os(tvOS)
+                audioReplay.append(sample, at: synchronizer.currentTime().seconds)
+                #endif
                 audio.enqueue(sample)
                 rendererError = audio.status == .failed ? audio.error : nil
                 audioEnd = max(audioEnd ?? start, pts + duration)
@@ -365,12 +426,39 @@ final class VividMediaSession: @unchecked Sendable {
             if let rendererError { fail(.renderer((rendererError as NSError).code)); return }
         }
     }
+
+    /// Millisecond container time bases cannot represent common DTS frame
+    /// durations exactly. Feeding every rounded packet timestamp to CoreMedia
+    /// creates tiny gaps/overlaps between otherwise continuous PCM buffers,
+    /// heard as crackles. Preserve real forward gaps, but never feed the audio
+    /// renderer a repeated/backward time and snap sub-2 ms forward rounding
+    /// drift to the sample-accurate end of the previous decoded frame.
+    static func softwareAudioPresentationTime(
+        decoded: Double?,
+        expected: Double?,
+        sampleRate: Int
+    ) -> Double? {
+        guard let decoded else { return expected }
+        guard let expected, sampleRate > 0 else { return decoded }
+        let roundingTolerance = max(0.002, 2 / Double(sampleRate))
+        return decoded <= expected + roundingTolerance ? expected : decoded
+    }
+
     private func renderCompressedAudio(_ format: CMAudioFormatDescription, epoch: UInt64) {
         defer { condition.lock(); audioDone = true; condition.unlock() }
+        #if os(tvOS) && DEBUG
+        var probePackets = 0
+        #endif
         while !shouldStop(epoch), let packet = audioPackets.take() {
             guard let pts = packet.presentationTime else { continue }
             let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(format)!.pointee
             let duration = packet.duration > 0 ? packet.duration : Double(asbd.mFramesPerPacket) / asbd.mSampleRate
+            #if os(tvOS) && DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-VividTVProbe"), probePackets < 3, pts + duration > start {
+                print("[VividTVProbe] packet pts=\(pts) duration=\(duration) framesPerPacket=\(asbd.mFramesPerPacket) sampleRate=\(asbd.mSampleRate) channels=\(asbd.mChannelsPerFrame) bytes=\(packet.byteCount)")
+                probePackets += 1
+            }
+            #endif
             guard duration > 0, pts + duration > start else { continue }
             var unmanaged: Unmanaged<CMSampleBuffer>?
             let status = vv_make_audio_packet(format, packet.pointer,
@@ -379,10 +467,18 @@ final class VividMediaSession: @unchecked Sendable {
             guard status == 0, let sample = unmanaged?.takeRetainedValue() else { fail(.renderer(Int(status))); return }
             condition.lock()
             while !cancelled && generation == epoch {
-                if audio.isReadyForMoreMediaData && pts < max(start, synchronizer.currentTime().seconds) + 1 { break }
+                #if os(tvOS)
+                let enqueueAhead = audioEnqueueAhead
+                #else
+                let enqueueAhead: Double = 1
+                #endif
+                if audio.isReadyForMoreMediaData && pts < max(start, synchronizer.currentTime().seconds) + enqueueAhead { break }
                 _ = condition.wait(until: Date(timeIntervalSinceNow: 0.02))
             }
             guard !cancelled, generation == epoch else { condition.unlock(); return }
+            #if os(tvOS)
+            audioReplay.append(sample, at: synchronizer.currentTime().seconds)
+            #endif
             audio.enqueue(sample)
             audioEnd = max(audioEnd ?? start, pts + duration)
             let error = audio.status == .failed ? audio.error : nil
@@ -396,4 +492,35 @@ final class VividMediaSession: @unchecked Sendable {
         source.cancel()
     }
     deinit { cleanup() }
+}
+
+struct VividAudioReplayBuffer {
+    private var retained: [CMSampleBuffer] = []
+    private var byteCount = 0
+    private let byteLimit: Int
+
+    init(byteLimit: Int = 16 * 1024 * 1024) { self.byteLimit = max(1, byteLimit) }
+
+    mutating func append(_ sample: CMSampleBuffer, at time: Double) {
+        _ = samples(at: time)
+        let size = CMSampleBufferGetTotalSampleSize(sample)
+        guard size > 0, size <= byteLimit else { return }
+        while !retained.isEmpty && (byteCount + size > byteLimit || retained.count >= 512) {
+            byteCount -= CMSampleBufferGetTotalSampleSize(retained.removeFirst())
+        }
+        retained.append(sample); byteCount += size
+    }
+
+    mutating func samples(at time: Double) -> [CMSampleBuffer] {
+        guard time.isFinite else { return [] }
+        retained.removeAll { sample in
+            let end = CMSampleBufferGetPresentationTimeStamp(sample).seconds + CMSampleBufferGetDuration(sample).seconds
+            guard !end.isFinite || end <= time else { return false }
+            byteCount -= CMSampleBufferGetTotalSampleSize(sample)
+            return true
+        }
+        return retained
+    }
+
+    mutating func removeAll() { retained.removeAll(); byteCount = 0 }
 }

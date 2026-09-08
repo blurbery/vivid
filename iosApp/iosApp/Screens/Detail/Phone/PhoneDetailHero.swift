@@ -169,6 +169,7 @@ struct PhoneDetailParallaxArtwork: View {
     var fadeStart: CGFloat = 0.72
     var fadeMiddle: CGFloat = 0.84
     var smoothFade = false
+    var keepsTopAttached = false
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -183,9 +184,7 @@ struct PhoneDetailParallaxArtwork: View {
                 .visualEffect { content, proxy in
                     let minY = proxy.frame(in: .named(coordinateSpaceName)).minY
                     let offset = min(max(0, -minY), 540)
-                    return content.offset(
-                        y: parallaxEnabled ? offset * 0.52 : 0
-                    )
+                    return content.offset(y: parallaxEnabled && !keepsTopAttached ? offset * 0.52 : 0)
                 }
 
             Color.black
@@ -203,6 +202,12 @@ struct PhoneDetailParallaxArtwork: View {
         .frame(height: height)
         .clipped()
         .mask(artworkMask)
+        .visualEffect { content, proxy in
+            let pull = keepsTopAttached ? max(0, proxy.frame(in: .scrollView(axis: .vertical)).minY) : 0
+            return content
+                .scaleEffect(x: 1, y: 1 + pull / max(height, 1), anchor: .top)
+                .offset(y: -pull)
+        }
     }
 
     @ViewBuilder
@@ -340,7 +345,8 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 url: resolvedArtworkURL,
                 thumbhash: resolvedArtworkThumbhash,
                 height: compactArtworkHeight,
-                isEnabled: enablesArtworkParallax
+                isEnabled: enablesArtworkParallax,
+                keepsTopAttached: true
             )
 
             LinearGradient(

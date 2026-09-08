@@ -31,6 +31,27 @@ final class ProfileLaunchPolicyTests: XCTestCase {
         ))
     }
 
+    func testProfileDeletionPreservesServersUsedByOtherSavedAccounts() {
+        let otherAccount = TVSavedAccount(
+            id: "other", serverID: "shared-server", userID: "other-user",
+            username: "Other", profile: nil, requiresLogin: false
+        )
+        XCTAssertFalse(VividCloudDeletionPolicy.canRemoveServer(
+            "shared-server", remainingAccounts: [otherAccount]
+        ))
+        var signedOutAccount = otherAccount
+        signedOutAccount.requiresLogin = true
+        XCTAssertFalse(VividCloudDeletionPolicy.canRemoveServer(
+            "shared-server", remainingAccounts: [signedOutAccount]
+        ))
+        XCTAssertTrue(VividCloudDeletionPolicy.canRemoveServer(
+            "deleted-server", remainingAccounts: [otherAccount]
+        ))
+        XCTAssertTrue(VividCloudDeletionPolicy.canRemoveServer(
+            "shared-server", remainingAccounts: []
+        ))
+    }
+
     func testProfileSelectionPoliciesKeepStableOrderAndLegacyEveryTimeRawValue() {
         XCTAssertEqual(
             ProfileLaunchBehavior.allCases,

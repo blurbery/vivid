@@ -30,31 +30,12 @@ struct PlaybackSettingsView: View {
 
     private var streamingSection: some View {
         Section {
-            Picker("Quality", selection: Binding(
-                get: { viewModel.preferredQualityPresetId ?? Self.customPresetTag },
-                set: { newValue in
-                    guard newValue != Self.customPresetTag else { return }
-                    Task { await viewModel.setQualityPreset(newValue) }
-                }
-            )) {
-                // A pair no preset covers — set through the API, or written by
-                // a client whose ladder has a rung this table does not — gets
-                // its own disabled entry describing what is actually stored,
-                // rather than the picker showing a preset the user never chose.
-                if viewModel.preferredQualityPresetId == nil {
-                    Text(viewModel.preferredQualityLabel)
-                        .tag(Self.customPresetTag)
-                }
-                ForEach(VividQualityPresets.all) { preset in
-                    Text(preset.label).tag(preset.id)
-                }
+            NavigationLink {
+                qualityChoices
+            } label: {
+                LabeledContent("Quality", value: viewModel.preferredQualityLabel)
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
-            .pickerStyle(.navigationLink)
-            #endif
 
             Picker("Audio Language", selection: Binding(
                 get: { viewModel.preferredAudioLanguage },
@@ -116,6 +97,42 @@ struct PlaybackSettingsView: View {
 
         }
         .listRowBackground(Color.vividSurfaceElevated)
+    }
+
+    private var qualityChoices: some View {
+        List {
+            Picker("Quality", selection: Binding(
+                get: {
+                    VividQualityPresets.selectable.first(where: { $0.id == viewModel.preferredQualityPresetId })?.id
+                        ?? Self.customPresetTag
+                },
+                set: { newValue in
+                    guard newValue != Self.customPresetTag else { return }
+                    Task { await viewModel.setQualityPreset(newValue) }
+                }
+            )) {
+                if !VividQualityPresets.selectable.contains(where: { $0.id == viewModel.preferredQualityPresetId }) {
+                    Text(viewModel.preferredQualityLabel).tag(Self.customPresetTag).disabled(true)
+                }
+                ForEach(VividQualityPresets.selectable) { preset in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(preset.menuLabel)
+                        Text(preset.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    .tag(preset.id)
+                }
+            }
+            .pickerStyle(.inline)
+            .foregroundStyle(Color.vividOnSurface)
+            .listRowBackground(Color.vividSurfaceElevated)
+        }
+        .settingsListChrome()
+        .navigationTitle("Quality")
+        .vividNavigationTitleDisplayMode(.inline)
     }
 
     // MARK: - Behavior
@@ -209,8 +226,11 @@ struct PlaybackSettingsView: View {
 
     private var resetSection: some View {
         Section {
-            Button("Reset Playback Settings", role: .destructive) {
+            Button(role: .destructive) {
                 Task { await viewModel.resetPlaybackDeviceSettings() }
+            } label: {
+                Text("Reset Playback Settings")
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
         } footer: {
             Text("Restores Vivid’s playback defaults for this device and profile.")

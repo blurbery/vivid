@@ -45,6 +45,7 @@ struct TVMediaCard: View {
     /// Catalog identity for the long-press favorite/watchlist menu.
     /// `nil` (or a nil `userState`) leaves the card without a menu.
     var contentId: String? = nil
+    var compactSearchCaption = false
 
     enum FocusTreatment {
         case nativeCard
@@ -69,7 +70,7 @@ struct TVMediaCard: View {
         VStack(alignment: .leading, spacing: 16) {
             posterButton
                 .personalListContextMenu(hasPersonalActions ? personalMenuItems : nil)
-            if uiCustomization.cardPresentation.caption.showsTitle {
+            if compactSearchCaption || uiCustomization.cardPresentation.caption.showsTitle {
                 caption
             }
         }
@@ -194,7 +195,7 @@ struct TVMediaCard: View {
     private var caption: some View {
         VStack(alignment: leadingCaption ? .leading : .center, spacing: 4) {
             Text(title)
-                .font(.vividPosterTitle)
+                .font(compactSearchCaption ? .system(size: 20, weight: .medium) : .vividPosterTitle)
                 .foregroundColor(isFocused ? .vividOnSurface : .vividOnSurface.opacity(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -202,10 +203,10 @@ struct TVMediaCard: View {
                 .clipped()
                 .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
 
-            if uiCustomization.cardPresentation.caption.showsMetadata,
+            if compactSearchCaption || uiCustomization.cardPresentation.caption.showsMetadata,
                let secondLine = subtitle ?? year.map(String.init) {
                 Text(secondLine)
-                    .font(.vividPosterMetadata)
+                    .font(compactSearchCaption ? .system(size: 18) : .vividPosterMetadata)
                     .foregroundColor(.vividSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)

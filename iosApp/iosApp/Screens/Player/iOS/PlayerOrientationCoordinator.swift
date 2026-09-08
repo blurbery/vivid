@@ -80,11 +80,15 @@ final class PlayerOrientationCoordinator {
         browsingOrientations(isPad: UIDevice.current.userInterfaceIdiom == .pad)
     }
 
-    static func browsingOrientations(isPad: Bool) -> UIInterfaceOrientationMask {
-        isPad ? .allButUpsideDown : .portrait
+    static func browsingOrientations(
+        isPad: Bool,
+        portraitPagePresented: Bool = false
+    ) -> UIInterfaceOrientationMask {
+        portraitPagePresented ? .portrait : (isPad ? .allButUpsideDown : .portrait)
     }
 
     private var rotationState = PlayerRotationState()
+    private(set) var isPortraitPagePresented = false
     private let motionManager = CMMotionManager()
     private var motionCandidate: UIInterfaceOrientationMask?
     private var motionCandidateSince: TimeInterval = 0
@@ -94,9 +98,17 @@ final class PlayerOrientationCoordinator {
     var isPlayerActive: Bool { rotationState.isPlayerActive }
     var isRotationLocked: Bool { rotationState.isLocked }
 
+    private var currentBrowsingOrientations: UIInterfaceOrientationMask {
+        Self.browsingOrientations(
+            isPad: UIDevice.current.userInterfaceIdiom == .pad,
+            portraitPagePresented: isPortraitPagePresented
+        )
+    }
+
     var supportedOrientations: UIInterfaceOrientationMask {
         Self.orientationMask(isPlayerActive: isPlayerActive,
-                             lockedOrientation: rotationState.lockedOrientation)
+                             lockedOrientation: rotationState.lockedOrientation,
+                             browsingOrientations: currentBrowsingOrientations)
     }
 
     static func orientationMask(
@@ -189,12 +201,22 @@ final class PlayerOrientationCoordinator {
         applyCurrentPolicy(preferredOrientation: persistedLock ?? deviceOrientationMask())
     }
 
+    /// Search and settings use full-window pages on iPhone and iPad, but both
+    /// remain portrait-only. Player activation temporarily takes precedence;
+    /// deactivation restores this policy before revealing the page.
+    func setPortraitPagePresented(_ isPresented: Bool) {
+        guard isPortraitPagePresented != isPresented else { return }
+        isPortraitPagePresented = isPresented
+        guard !isPlayerActive else { return }
+        applyCurrentPolicy(preferredOrientation: isPresented ? .portrait : currentBrowsingOrientations)
+    }
+
     func deactivatePlayer() {
         guard isPlayerActive else { return }
         rotationState.deactivate()
         stopMotionUpdates()
-        let preferredOrientation: UIInterfaceOrientationMask = Self.appDefaultOrientations.contains(.portrait)
-            ? .portrait : Self.appDefaultOrientations
+        let preferredOrientation: UIInterfaceOrientationMask = currentBrowsingOrientations.contains(.portrait)
+            ? .portrait : currentBrowsingOrientations
         if UIDevice.current.userInterfaceIdiom == .phone {
             UIView.performWithoutAnimation {
                 applyCurrentPolicy(preferredOrientation: preferredOrientation)
@@ -265,7 +287,8 @@ final class PlayerOrientationCoordinator {
 
         let geometryMask = Self.geometryMask(isPlayerActive: isPlayerActive,
                                              preferredOrientation: preferredOrientation,
-                                             lockedOrientation: rotationState.lockedOrientation)
+                                             lockedOrientation: rotationState.lockedOrientation,
+                                             browsingOrientations: currentBrowsingOrientations)
         guard let scene = scenes.first else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: geometryMask)) { [weak self] _ in
             guard let self else { return }

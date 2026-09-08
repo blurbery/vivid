@@ -12,6 +12,7 @@ struct VVConverter {
     SwrContext *resample;
     AVChannelLayout channels;
     int sample_rate, sample_format;
+    CMAudioFormatDescriptionRef audio_format;
 };
 VVConverter *vv_converter_create(void) { return av_mallocz(sizeof(VVConverter)); }
 void vv_converter_free(VVConverter **converter) {
@@ -19,6 +20,7 @@ void vv_converter_free(VVConverter **converter) {
     sws_freeContext((*converter)->scale);
     swr_free(&(*converter)->resample);
     av_channel_layout_uninit(&(*converter)->channels);
+    if ((*converter)->audio_format) CFRelease((*converter)->audio_format);
     av_freep(converter);
 }
 
@@ -160,6 +162,10 @@ int vv_make_audio_sample(VVConverter *converter, AVFrame *frame, CMTime pts, CMS
         converter->sample_format != frame->format || av_channel_layout_compare(&converter->channels, &frame->ch_layout)) {
         swr_free(&converter->resample);
         av_channel_layout_uninit(&converter->channels);
+        if (converter->audio_format) {
+            CFRelease(converter->audio_format);
+            converter->audio_format = NULL;
+        }
         int status = swr_alloc_set_opts2(&converter->resample, &frame->ch_layout, AV_SAMPLE_FMT_FLT, frame->sample_rate,
             &frame->ch_layout, frame->format, frame->sample_rate, 0, NULL);
         if (status < 0) return status;
@@ -177,31 +183,34 @@ int vv_make_audio_sample(VVConverter *converter, AVFrame *frame, CMTime pts, CMS
     if (!pcm) return AVERROR(ENOMEM);
     int count = swr_convert(resample, &pcm, capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
     if (count <= 0) { av_free(pcm); return count < 0 ? count : AVERROR(EAGAIN); }
-    AudioStreamBasicDescription asbd = {
-        .mSampleRate = frame->sample_rate, .mFormatID = kAudioFormatLinearPCM,
-        .mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
-        .mBytesPerPacket = channels * 4, .mFramesPerPacket = 1,
-        .mBytesPerFrame = channels * 4, .mChannelsPerFrame = channels, .mBitsPerChannel = 32
-    };
-    size_t layout_size = offsetof(AudioChannelLayout, mChannelDescriptions) + channels * sizeof(AudioChannelDescription);
-    AudioChannelLayout *layout = av_mallocz(layout_size);
-    if (!layout) { av_free(pcm); return AVERROR(ENOMEM); }
-    layout->mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions;
-    layout->mNumberChannelDescriptions = channels;
-    for (int i = 0; i < channels; i++) layout->mChannelDescriptions[i].mChannelLabel =
-        audio_label(av_channel_layout_channel_from_index(&frame->ch_layout, i));
-    CMAudioFormatDescriptionRef format = NULL;
-    OSStatus result = CMAudioFormatDescriptionCreate(NULL, &asbd, layout_size, layout, 0, NULL, NULL, &format);
-    av_free(layout);
+    OSStatus result = noErr;
+    if (!converter->audio_format) {
+        AudioStreamBasicDescription asbd = {
+            .mSampleRate = frame->sample_rate, .mFormatID = kAudioFormatLinearPCM,
+            .mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            .mBytesPerPacket = channels * 4, .mFramesPerPacket = 1,
+            .mBytesPerFrame = channels * 4, .mChannelsPerFrame = channels, .mBitsPerChannel = 32
+        };
+        size_t layout_size = offsetof(AudioChannelLayout, mChannelDescriptions) + channels * sizeof(AudioChannelDescription);
+        AudioChannelLayout *layout = av_mallocz(layout_size);
+        if (!layout) { av_free(pcm); return AVERROR(ENOMEM); }
+        layout->mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions;
+        layout->mNumberChannelDescriptions = channels;
+        for (int i = 0; i < channels; i++) layout->mChannelDescriptions[i].mChannelLabel =
+            audio_label(av_channel_layout_channel_from_index(&frame->ch_layout, i));
+        result = CMAudioFormatDescriptionCreate(NULL, &asbd, layout_size, layout, 0, NULL, NULL,
+            &converter->audio_format);
+        av_free(layout);
+    }
     CMBlockBufferRef block = NULL;
     size_t size = (size_t)count * channels * 4;
     if (!result) result = CMBlockBufferCreateWithMemoryBlock(NULL, NULL, size, NULL, NULL, 0, size, 0, &block);
     if (!result) result = CMBlockBufferReplaceDataBytes(pcm, block, 0, size);
     CMSampleTimingInfo timing = { CMTimeMake(1, frame->sample_rate), pts, kCMTimeInvalid };
     size_t sample_size = channels * 4;
-    if (!result) result = CMSampleBufferCreateReady(NULL, block, format, count, 1, &timing, 1, &sample_size, sample);
+    if (!result) result = CMSampleBufferCreateReady(NULL, block, converter->audio_format, count, 1,
+        &timing, 1, &sample_size, sample);
     if (block) CFRelease(block);
-    if (format) CFRelease(format);
     av_free(pcm);
     return result ? AVERROR_INVALIDDATA : 0;
 }

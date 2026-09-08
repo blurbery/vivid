@@ -232,7 +232,15 @@ struct EmbyAdapter {
         value["studios"] = (raw["Studios"] as? [[String: Any]])?.compactMap { $0["Name"] as? String }
         let providers = Dictionary((raw["ProviderIds"] as? [String:String] ?? [:]).map { ($0.key.lowercased(),$0.value) },uniquingKeysWith:{ _,last in last })
         value["imdbId"] = providers["imdb"]; value["tmdbId"] = providers["tmdb"]; value["tvdbId"] = providers["tvdb"]
-        if kind == "season" { value["seasonNumber"] = raw["IndexNumber"] as? Int ?? 0; value["episodeCount"] = raw["RecursiveItemCount"] as? Int ?? raw["ChildCount"] as? Int ?? 0; value["isSpecials"] = (raw["IndexNumber"] as? Int) == 0 }
+        if kind == "season" {
+            let seasonNumber = raw["IndexNumber"] as? Int
+            value["seasonNumber"] = seasonNumber ?? 0
+            value["episodeCount"] = raw["RecursiveItemCount"] as? Int ?? raw["ChildCount"] as? Int ?? 0
+            value["isSpecials"] = seasonNumber == 0
+            if let seasonNumber, seasonNumber >= 0 {
+                value["title"] = seasonNumber == 0 ? "Specials" : "Season \(seasonNumber)"
+            }
+        }
         if kind == "episode" { value["seasonNumber"] = raw["ParentIndexNumber"] as? Int ?? 0; value["episodeNumber"] = raw["IndexNumber"] as? Int ?? 0; value["files"] = value["versions"] }
         return value
     }

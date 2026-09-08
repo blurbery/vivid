@@ -19,10 +19,11 @@ struct HomeView: View {
     var onTopMenuFocusRequest: (() -> Void)? = nil
 
     @State private var viewModel = HomeViewModel()
+    @State private var isHomeVisible = false
+    @Environment(\.scenePhase) private var scenePhase
     #if os(tvOS)
     @State private var homeSectionPreferences = HomeSectionPreferences.shared
     @State private var spotlightPreferences = TVHomeSpotlightPreferences.shared
-    @Environment(\.scenePhase) private var scenePhase
     #endif
     #if !os(tvOS)
     @State private var homeSectionPreferences = HomeSectionPreferences.shared
@@ -98,14 +99,6 @@ struct HomeView: View {
             spotlightPreferences.refresh()
             await viewModel.loadSections()
             spotlightPreferences.initializeIfNeeded(from: viewModel.regularSections)
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(60)) } catch { return }
-                guard scenePhase == .active, router.path.isEmpty else { continue }
-                await viewModel.loadSections()
-            }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await viewModel.loadSections() } }
         }
         .onChange(of: viewModel.regularSections.map(\.id), initial: true) { _, _ in
             spotlightPreferences.initializeIfNeeded(from: viewModel.regularSections)
@@ -224,12 +217,19 @@ struct HomeView: View {
         #endif
         }
         #if os(iOS) || os(tvOS)
+        .onAppear { isHomeVisible = true }
+        .onDisappear { isHomeVisible = false }
+        .task(id: shouldSyncHome) {
+            guard shouldSyncHome else { return }
+            await viewModel.loadSections()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                guard !Task.isCancelled, shouldSyncHome else { return }
+                await viewModel.loadSections()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .homeSectionsShouldRefresh)) { _ in
-            #if os(tvOS)
             Task { await viewModel.refreshPlaybackSections() }
-            #else
-            Task { await viewModel.loadSections() }
-            #endif
         }
         #endif
         .alert(
@@ -314,12 +314,21 @@ struct HomeView: View {
         #endif
     }
 
+    private var shouldSyncHome: Bool {
+        let isAvailable = isHomeVisible && scenePhase == .active
+            && router.authState == .authenticated && router.path.isEmpty && router.presentedPlayer == nil
+        #if os(iOS)
+        return isAvailable && router.presentedItemDetail == nil
+        #else
+        return isAvailable
+        #endif
+    }
+
     #if !os(tvOS)
     /// Home uses the same fixed canvas as the rest of the signed-in app.
     private var homeFeedBackground: some View {
         VividPageBackdrop()
     }
-
 
     private func refreshHome() async {
         await MainActor.run {

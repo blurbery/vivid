@@ -34,6 +34,11 @@ int vv_make_video_sample(VVConverter *converter, AVFrame *frame, CMTime pts, CMT
 int vv_make_audio_sample(VVConverter *converter, AVFrame *frame, CMTime pts, CMSampleBufferRef *sample);
 CMAudioFormatDescriptionRef vv_native_audio_format(AVCodecParameters *parameters);
 int vv_make_audio_packet(CMAudioFormatDescriptionRef format, AVPacket *packet, CMTime pts, CMTime duration, CMSampleBufferRef *sample);
+typedef struct VVDTSBridge VVDTSBridge;
+VVDTSBridge *vv_dts_bridge_create(AVFormatContext *input, int video_index, int audio_index, double origin, int lossless, const char *playlist, const char *segments, int *error);
+int vv_dts_bridge_write(VVDTSBridge *bridge, AVPacket *packet);
+int vv_dts_bridge_finish(VVDTSBridge *bridge);
+void vv_dts_bridge_free(VVDTSBridge **bridge);
 #include <CoreGraphics/CoreGraphics.h>
 static inline AVSubtitleRect *vv_subtitle_rect(AVSubtitle *subtitle, unsigned index) {
     return index < subtitle->num_rects ? subtitle->rects[index] : NULL;

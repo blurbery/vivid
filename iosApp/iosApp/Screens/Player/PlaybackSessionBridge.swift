@@ -747,7 +747,8 @@ actor PlaybackSessionBridge {
             : nil
         let preferredQuality = preferredQualityOverride.map {
             ApplePlaybackQuality.protocolV3QualityId($0)
-        } ?? lastUsedQuality
+        } ?? playerSettings.fallbackMode?.rawValue
+            ?? lastUsedQuality
             ?? normalizedQualityPreference(playerSettings.preferredQuality)
         let bandwidthCapKbps = AppleQualityAxes.resolvedBitrateCap(
             qualityOverride: preferredQualityOverride,
@@ -843,7 +844,7 @@ actor PlaybackSessionBridge {
         // Quality preference is a server-owned planning input. An explicit
         // override is the user's in-player choice, so preserve it verbatim
         // instead of deriving a different rung from the selected file.
-        let resolvedQualityPreference = preferredQualityOverride != nil
+        let resolvedQualityPreference = preferredQualityOverride != nil || PlaybackFallbackMode.matching(preferredQuality) != nil
             ? preferredQuality
             : requestedQualityPreference(
                 preferredQuality: preferredQuality,
@@ -2092,7 +2093,7 @@ actor PlaybackSessionBridge {
 
     private func protocolV3QualityPreference(_ quality: String?) -> String {
         let serverId = ApplePlaybackQuality.protocolV3QualityId(quality)
-        if ApplePlaybackQuality.settingsOptions.contains(where: { $0.id == serverId }) {
+        if ApplePlaybackQuality.requestOptions.contains(where: { $0.id == serverId }) {
             return AppleQualityAxes.split(serverId).resolution
         }
         return serverId

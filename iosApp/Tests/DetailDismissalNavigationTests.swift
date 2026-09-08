@@ -22,6 +22,28 @@ private actor ContinueWatchingResponseGate {
 
 @MainActor
 final class DetailDismissalNavigationTests: XCTestCase {
+    func testPersistentSearchPageStartsPlayerFromCardImmediately() throws {
+        let router = AppRouter()
+
+        router.presentItemDetail(contentId: "search-result")
+
+        XCTAssertTrue(router.path.isEmpty)
+        XCTAssertNotNil(router.presentedItemDetail)
+
+        let detailID = try XCTUnwrap(router.presentedItemDetail?.id)
+        router.presentPlayer(contentId: "search-result")
+        let player = try XCTUnwrap(router.playerPresentation(forDetailID: detailID))
+        XCTAssertNil(router.playerPresentation(forDetailID: nil))
+        XCTAssertEqual(router.presentedItemDetail?.id, detailID)
+        router.dismissPlayerPresentation(id: player.id)
+        XCTAssertNil(router.presentedPlayer)
+        XCTAssertEqual(router.presentedItemDetail?.id, detailID)
+        router.dismissItemDetail()
+        router.itemDetailPresentationDidDismiss()
+        XCTAssertNil(router.presentedPlayer, "Closing the card must never launch queued playback")
+        XCTAssertTrue(router.path.isEmpty)
+    }
+
     func testCloseAndRotationControlsWaitForTapInEveryPhase() async throws {
         let model = PlayerViewModel()
         defer { model.cleanup() }
@@ -445,6 +467,10 @@ final class DetailDismissalNavigationTests: XCTestCase {
     func testBrowsingStaysPortraitOnPhoneAndRotatesOnPad() {
         XCTAssertEqual(PlayerOrientationCoordinator.browsingOrientations(isPad: false), .portrait)
         XCTAssertEqual(PlayerOrientationCoordinator.browsingOrientations(isPad: true), .allButUpsideDown)
+        XCTAssertEqual(PlayerOrientationCoordinator.browsingOrientations(
+            isPad: true,
+            portraitPagePresented: true
+        ), .portrait)
         XCTAssertEqual(PlayerOrientationCoordinator.geometryMask(
             isPlayerActive: false, preferredOrientation: .landscape, browsingOrientations: .allButUpsideDown
         ), .landscape)

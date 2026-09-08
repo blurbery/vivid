@@ -1,5 +1,75 @@
 import Foundation
 
+enum PlaybackFallbackMode: String, CaseIterable {
+    case ultraHD = "vivid-2160p"
+    case fullHD = "vivid-1080p"
+    case hd = "vivid-720p"
+
+    var resolution: String {
+        switch self {
+        case .ultraHD: "2160p"
+        case .fullHD: "1080p"
+        case .hd: "720p"
+        }
+    }
+    var label: String { self == .ultraHD ? "4K" : resolution }
+    var maximumKbps: Int {
+        switch self {
+        case .ultraHD: 80_000
+        case .fullHD: 10_000
+        case .hd: 4_000
+        }
+    }
+    var fallbackKbps: Int {
+        switch self {
+        case .ultraHD: 20_000
+        case .fullHD: 4_000
+        case .hd: 1_500
+        }
+    }
+    var fallbackID: String { rawValue + "-fallback" }
+    var detail: String {
+        "If buffering: up to \(ApplePlaybackQuality.formatBitrate(kbps: fallbackKbps))."
+    }
+    var option: ApplePlaybackQualityOption {
+        .init(id: rawValue, label: label, resolution: resolution, bitrateKbps: maximumKbps,
+              isOriginal: false, isAuto: false)
+    }
+    var fallbackOption: ApplePlaybackQualityOption {
+        .init(id: fallbackID, label: label, resolution: resolution, bitrateKbps: fallbackKbps,
+              isOriginal: false, isAuto: false)
+    }
+    var preset: VividQualityPreset {
+        .init(id: rawValue, label: label, description: detail, resolution: resolution,
+              bitrateKbps: maximumKbps)
+    }
+    static func matching(_ id: String?) -> Self? {
+        allCases.first { $0.rawValue == id || $0.fallbackID == id }
+    }
+    func isActive(qualityID: String) -> Bool { Self.matching(qualityID) == self }
+}
+
+struct PlaybackFallbackGate {
+    static let delay: TimeInterval = 8
+    private(set) var consumed = false
+    private var bufferingSince: TimeInterval?
+
+    mutating func update(buffering: Bool, eligible: Bool, now: TimeInterval) {
+        guard buffering, eligible, !consumed else {
+            bufferingSince = nil
+            return
+        }
+        if bufferingSince == nil { bufferingSince = now }
+    }
+    mutating func consumeIfReady(now: TimeInterval, eligible: Bool) -> Bool {
+        guard eligible, !consumed, let start = bufferingSince,
+              now - start >= Self.delay else { return false }
+        consumed = true
+        bufferingSince = nil
+        return true
+    }
+}
+
 struct ApplePlaybackQualityOption: Identifiable, Hashable {
     let id: String
     let label: String
@@ -9,14 +79,15 @@ struct ApplePlaybackQualityOption: Identifiable, Hashable {
     let isAuto: Bool
 
     var subtitle: String? {
+        if let mode = PlaybackFallbackMode(rawValue: id) { return mode.detail }
         if isOriginal {
-            return nil
+            return "No transcoding; compatibility required."
         }
         if isAuto {
-            return "Best available, direct-play first"
+            return "Direct when possible; transcodes if needed."
         }
         guard bitrateKbps > 0 else { return nil }
-        return "Maximum bitrate: \(bitrateLabel)"
+        return "Up to \(bitrateLabel); may transcode."
     }
 
     var bitrateLabel: String {
@@ -24,6 +95,8 @@ struct ApplePlaybackQualityOption: Identifiable, Hashable {
     }
 
     var labelWithBitrate: String {
+        if isAuto { return "Auto (Recommended)" }
+        if isOriginal { return "Original Quality" }
         guard !isOriginal, !isAuto, bitrateKbps > 0 else { return label }
         return "\(label) (\(bitrateLabel))"
     }
@@ -84,6 +157,8 @@ enum ApplePlaybackQuality {
     ]
 
     static let settingsOptions: [ApplePlaybackQualityOption] = [auto, original, ultraHD] + tiers
+    static let requestOptions: [ApplePlaybackQualityOption] = settingsOptions
+        + PlaybackFallbackMode.allCases.flatMap { [$0.option, $0.fallbackOption] }
 
     static func normalizeStoredId(_ raw: String?) -> String {
         let value = raw?
@@ -99,7 +174,7 @@ enum ApplePlaybackQuality {
         case "420p":
             return "328p"
         default:
-            if settingsOptions.contains(where: { $0.id == value }) {
+            if requestOptions.contains(where: { $0.id == value }) {
                 return value
             }
             return autoId
@@ -109,13 +184,13 @@ enum ApplePlaybackQuality {
     static func displayName(for raw: String) -> String {
         let id = normalizeStoredId(raw)
         if id == ultraHDId { return "4K" }
-        return settingsOptions.first(where: { $0.id == id })?.label ?? id
+        return requestOptions.first(where: { $0.id == id })?.label ?? id
     }
 
     static func displayNameWithBitrate(for raw: String) -> String {
         let id = normalizeStoredId(raw)
         if id == ultraHDId { return "4K" }
-        return settingsOptions.first(where: { $0.id == id })?.labelWithBitrate ?? id
+        return requestOptions.first(where: { $0.id == id })?.labelWithBitrate ?? id
     }
 
     /// Build the in-player menu from the server's V3 plan. The server owns
@@ -200,7 +275,7 @@ enum ApplePlaybackQuality {
         }
 
         let axes = AppleQualityAxes.split(clientQualityId)
-        let serverPreference = settingsOptions.contains(where: { $0.id == clientQualityId })
+        let serverPreference = requestOptions.contains(where: { $0.id == clientQualityId })
             ? axes.resolution
             : clientQualityId
         return ApplePlaybackV3QualitySelection(
@@ -232,7 +307,7 @@ enum ApplePlaybackQuality {
         case 720: return "Up to 720p HD"
         case 480: return "Up to 480p"
         default:
-            return settingsOptions.first(where: { $0.id == id })?.label
+            return requestOptions.first(where: { $0.id == id })?.label
                 ?? (height > 0 ? "Up to \(height)p" : id)
         }
     }
@@ -246,7 +321,7 @@ enum ApplePlaybackQuality {
         if id == autoId {
             return delivery == .transcode ? auto : original
         }
-        return settingsOptions.first(where: { $0.id == id })
+        return requestOptions.first(where: { $0.id == id })
             ?? (delivery == .transcode ? auto : original)
     }
 
@@ -262,7 +337,7 @@ enum ApplePlaybackQuality {
         if id == ultraHDId {
             return ultraHDId
         }
-        if settingsOptions.contains(where: { $0.id == id }) {
+        if requestOptions.contains(where: { $0.id == id }) {
             return id
         }
         return autoId
@@ -274,7 +349,8 @@ enum ApplePlaybackQuality {
     ) -> String {
         let requested = protocolV3QualityId(requestedQualityId)
         guard requested != autoId else { return autoId }
-        let requestedResolution = settingsOptions.contains(where: { $0.id == requested })
+        if PlaybackFallbackMode.matching(requested) != nil { return requested }
+        let requestedResolution = requestOptions.contains(where: { $0.id == requested })
             ? AppleQualityAxes.split(requested).resolution
             : nil
         return availableQualities.contains(where: { quality in
@@ -310,7 +386,7 @@ enum ApplePlaybackQuality {
         } else if id == ultraHDId {
             maximumHeight = height(for: ultraHDId)
         } else {
-            maximumHeight = settingsOptions
+            maximumHeight = requestOptions
                 .first(where: { $0.id == id })
                 .flatMap { height(for: $0.resolution) }
         }
@@ -352,7 +428,7 @@ enum ApplePlaybackQuality {
                 targetResolution: ultraHDId
             )
         }
-        guard let option = settingsOptions.first(where: { $0.id == id && !$0.isOriginal && !$0.isAuto }) else {
+        guard let option = requestOptions.first(where: { $0.id == id && !$0.isOriginal && !$0.isAuto }) else {
             return false
         }
         return exceedsBitrateCap(selectedVersion, ceilingKbps: ceiling(option.bitrateKbps, capKbps))

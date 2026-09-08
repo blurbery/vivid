@@ -410,8 +410,8 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
 
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
-            TVSectionHeader(title: "Details")
-            TVDetailFactsSection(detail: detail)
+            TVSectionHeader(title: "Media Information")
+            DetailMediaSection(version: currentVersion)
         }
     }
 

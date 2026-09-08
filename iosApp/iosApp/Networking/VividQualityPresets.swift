@@ -36,6 +36,13 @@ struct VividQualityPreset: Identifiable, Hashable {
     let resolution: String
     /// The `playback.max_bitrate_kbps` cap; nil is uncapped.
     let bitrateKbps: Int?
+
+    var menuLabel: String {
+        if id == "auto" { return "Auto (Recommended)" }
+        if id == "original" { return "Original Quality" }
+        guard let bitrateKbps, bitrateKbps > 0 else { return label }
+        return "\(label) (\(ApplePlaybackQuality.formatBitrate(kbps: bitrateKbps)))"
+    }
 }
 
 enum VividQualityPresets {
@@ -51,14 +58,14 @@ enum VividQualityPresets {
         .init(
             id: "auto",
             label: "Auto",
-            description: "Vivid picks based on your connection.",
+            description: "Direct when possible; transcodes if needed.",
             resolution: resolutionAuto,
             bitrateKbps: nil
         ),
         .init(
             id: "original",
             label: "Original",
-            description: "Never transcode. Needs bandwidth to match the file.",
+            description: "No transcoding; compatibility required.",
             resolution: resolutionOriginal,
             bitrateKbps: nil
         ),
@@ -113,6 +120,10 @@ enum VividQualityPresets {
         ),
     ]
 
+    static var selectable: [VividQualityPreset] {
+        Array(all.prefix(2)) + PlaybackFallbackMode.allCases.map(\.preset)
+    }
+
     /// The preset for a stored (resolution, bitrate) pair, or nil for a
     /// combination no preset covers.
     static func preset(resolution: String?, bitrateKbps: Int?) -> VividQualityPreset? {
@@ -125,6 +136,7 @@ enum VividQualityPresets {
 
     static func preset(id: String?) -> VividQualityPreset? {
         guard let id else { return nil }
+        if let mode = PlaybackFallbackMode(rawValue: id) { return mode.preset }
         return all.first { $0.id == id }
     }
 

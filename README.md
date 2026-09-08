@@ -51,7 +51,7 @@ I’ve built the TV experience around a configurable Home spotlight, local Home 
 
 ## iPhone and iPad
 
-The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections; Search and Settings open as slide-up cards. It shares the iCloud account vault, personal-TMDb trailers and IntroDB skipping with the TV implementation. Downloads show live progress on detail pages and keep series artwork with episode transfers. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) documents the mobile layout and its device-testing limits.
+The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections. Search and Settings are full-screen portrait pages with slide-up/down transitions; detail cards stay above Search during playback. Movie and series pages show aligned video/file and audio information. The player offers five quality choices with a one-time lower-bitrate reload for the capped modes. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the layout and device-testing limits.
 
 ## Playback
 

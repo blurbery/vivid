@@ -10,6 +10,7 @@ struct CatalogGrid: View {
     /// Search and library grids stay three-up on iPhone and compact iPad
     /// windows, independently of the shared card preference.
     var forcesThreeColumnsOnPhone = false
+    var cardTitleFont: Font = .vividSubheadline
     let onItemTap: (BrowseItem) -> Void
     let onLoadMore: () -> Void
     @Environment(AppRouter.self) private var router
@@ -59,6 +60,7 @@ struct CatalogGrid: View {
                     year: item.year,
                     userState: item.userState,
                     overlayData: OverlayData.from(item),
+                    titleFont: cardTitleFont,
                     action: { onItemTap(item) },
                     playAction: playAction(for: item),
                     contentId: item.contentId,

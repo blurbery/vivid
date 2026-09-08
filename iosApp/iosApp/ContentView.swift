@@ -1734,8 +1734,8 @@ struct MainTabLibrarySnapshot: Equatable {
 struct MainTabView: View {
     @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.showDownloadsTab")) private var showDownloadsTab = true
     @State private var tabBarScroll = MobileTabBarScrollState()
-    @State private var showsSearchCard = false
-    @State private var showsSettingsCard = false
+    @State private var showsSearchPage = false
+    @State private var showsSettingsPage = false
     @Bindable var router: AppRouter
     @State private var selectedDestinationID: MainTabDestinationID = .app(.home)
     @State private var uiCustomization = UICustomizationPreferences.shared
@@ -1764,7 +1764,25 @@ struct MainTabView: View {
     var body: some View {
         Group {
             #if os(iOS)
-            tabLayout
+            GeometryReader { geometry in
+                ZStack {
+                    tabLayout
+                        .allowsHitTesting(!showsMobileUtilityPage)
+                        .accessibilityHidden(showsMobileUtilityPage)
+
+                    if showsSearchPage {
+                        MobileSearchPage(safeAreaInsets: geometry.safeAreaInsets, onDismiss: dismissSearchPage)
+                            .transition(.move(edge: .bottom))
+                            .zIndex(10)
+                    }
+
+                    if showsSettingsPage {
+                        MobileSettingsPage(router: router, safeAreaInsets: geometry.safeAreaInsets, onDismiss: dismissSettingsPage)
+                            .transition(.move(edge: .bottom))
+                            .zIndex(10)
+                    }
+                }
+            }
             #else
             if prefersSidebarLayout { sidebarLayout } else { tabLayout }
             #endif
@@ -1868,22 +1886,6 @@ struct MainTabView: View {
         }
         #endif
         #if os(iOS)
-        .sheet(isPresented: $showsSearchCard) {
-            MobileSearchCard()
-        }
-        .sheet(isPresented: $showsSettingsCard) {
-            NavigationStack {
-                SettingsView()
-                    .toggleStyle(SwitchToggleStyle(tint: .green))
-            }
-            .environment(router)
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(32)
-            .presentationBackground(.black)
-            .preferredColorScheme(.dark)
-        .progressViewStyle(VividLoadingProgressStyle())
-        }
         .sheet(
             item: $router.presentedItemDetail,
             onDismiss: { router.itemDetailPresentationDidDismiss() }
@@ -2024,9 +2026,51 @@ struct MainTabView: View {
                 guard let destination = visibleDestinations.first(where: { String(describing: $0.id) == id }) else { return }
                 selectedDestinationID = destination.id
             },
-            onSearch: { showsSearchCard = true },
-            onProfile: { showsSettingsCard = true }
+            onSearch: presentSearchPage,
+            onProfile: presentSettingsPage
         )
+    }
+
+    private func presentSearchPage() {
+        PlayerOrientationCoordinator.shared.setPortraitPagePresented(true)
+        showsSettingsPage = false
+        withAnimation(.easeInOut(duration: 0.34)) {
+            showsSearchPage = true
+        }
+    }
+
+    private func presentSettingsPage() {
+        PlayerOrientationCoordinator.shared.setPortraitPagePresented(true)
+        showsSearchPage = false
+        withAnimation(.easeInOut(duration: 0.34)) {
+            showsSettingsPage = true
+        }
+    }
+
+    private func dismissSearchPage() {
+        withAnimation(.easeInOut(duration: 0.34), completionCriteria: .logicallyComplete) {
+            showsSearchPage = false
+        } completion: {
+            updateMobileUtilityOrientationPolicy()
+        }
+    }
+
+    private func dismissSettingsPage() {
+        withAnimation(.easeInOut(duration: 0.34), completionCriteria: .logicallyComplete) {
+            showsSettingsPage = false
+        } completion: {
+            updateMobileUtilityOrientationPolicy()
+        }
+    }
+
+    private func updateMobileUtilityOrientationPolicy() {
+        PlayerOrientationCoordinator.shared.setPortraitPagePresented(
+            showsMobileUtilityPage
+        )
+    }
+
+    private var showsMobileUtilityPage: Bool {
+        showsSearchPage || showsSettingsPage
     }
     #endif
 
@@ -2529,6 +2573,7 @@ private struct ItemDetailSheet: View {
         // remains available only at the root, preserving the source page.
         .interactiveDismissDisabled(!router.itemDetailPath.isEmpty)
         .modifier(PlayerPresentationModifier(router: router, detailPresentationID: presentation.id))
+        .environment(router)
     }
 
     private var currentContentID: String {
@@ -2609,28 +2654,157 @@ private struct ItemDetailSheet: View {
 #endif
 
 #if os(iOS)
-private struct MobileSearchCard: View {
+private struct MobileSearchPage: View {
     @State private var searchRouter = AppRouter()
+    @State private var blurRequest = 0
+    @State private var isDismissing = false
+
+    let safeAreaInsets: EdgeInsets
+    let onDismiss: () -> Void
+
     var body: some View {
-        NavigationStack(path: $searchRouter.path) {
-            SearchView()
-                .navigationDestination(for: Route.self) { route in
-                    switch route {
-                    case .requestDetail(let type, let id): RequestDetailView(mediaType: type, tmdbId: id)
-                    default: EmptyView()
+        MobileUtilityPage(safeAreaInsets: safeAreaInsets, onDismiss: dismissPage) {
+            NavigationStack(path: $searchRouter.path) {
+                SearchView(blurRequest: blurRequest)
+                    .toolbar {
+                        MobileUtilityCloseToolbar(accessibilityLabel: "Close search", action: dismissPage)
+                    }
+                    .navigationDestination(for: Route.self) { route in
+                        switch route {
+                        case .requestDetail(let type, let id): RequestDetailView(mediaType: type, tmdbId: id)
+                        default: EmptyView()
+                        }
+                    }
+            }
+            .sheet(
+                item: $searchRouter.presentedItemDetail,
+                onDismiss: { searchRouter.itemDetailPresentationDidDismiss() }
+            ) { presentation in
+                ItemDetailSheet(presentation: presentation, router: searchRouter)
+            }
+            .modifier(PlayerPresentationModifier(router: searchRouter))
+            .environment(searchRouter)
+        }
+    }
+
+    private func dismissPage() {
+        guard !isDismissing else { return }
+        isDismissing = true
+        blurRequest &+= 1
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+        onDismiss()
+    }
+}
+
+private struct MobileSettingsPage: View {
+    let router: AppRouter
+    let safeAreaInsets: EdgeInsets
+    let onDismiss: () -> Void
+
+    var body: some View {
+        MobileUtilityPage(safeAreaInsets: safeAreaInsets, onDismiss: onDismiss) {
+            NavigationStack {
+                SettingsView()
+                    .toggleStyle(SwitchToggleStyle(tint: .green))
+                    .toolbar {
+                        MobileUtilityCloseToolbar(accessibilityLabel: "Close settings", action: onDismiss)
+                    }
+            }
+            .environment(router)
+        }
+    }
+}
+
+private struct MobileUtilityPage<Content: View>: View {
+    @State private var dragOffset: CGFloat = 0
+
+    private let safeAreaInsets: EdgeInsets
+    private let onDismiss: () -> Void
+    private let content: Content
+
+    init(safeAreaInsets: EdgeInsets, onDismiss: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.safeAreaInsets = safeAreaInsets
+        self.onDismiss = onDismiss
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .safeAreaPadding(safeAreaInsets)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .ignoresSafeArea(.container)
+            .compositingGroup()
+            .offset(y: dragOffset)
+            .simultaneousGesture(dismissGesture)
+            .preferredColorScheme(.dark)
+            .progressViewStyle(VividLoadingProgressStyle())
+    }
+
+    private var dismissGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .onChanged { value in
+                guard value.startLocation.y <= 120,
+                      value.translation.height > 0,
+                      abs(value.translation.height) > abs(value.translation.width) else { return }
+                dragOffset = value.translation.height
+            }
+            .onEnded { value in
+                let isDownwardPull = value.startLocation.y <= 120
+                    && value.translation.height > abs(value.translation.width)
+                let shouldDismiss = isDownwardPull
+                    && (value.translation.height >= 110 || value.predictedEndTranslation.height >= 220)
+
+                if shouldDismiss {
+                    onDismiss()
+                } else {
+                    withAnimation(.snappy(duration: 0.24)) {
+                        dragOffset = 0
                     }
                 }
+            }
+    }
+}
+
+private struct MobileUtilityCloseToolbar: ToolbarContent {
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            closeItem.sharedBackgroundVisibility(.hidden)
+        } else {
+            closeItem
         }
-        .environment(searchRouter)
-        .sheet(item: $searchRouter.presentedItemDetail, onDismiss: { searchRouter.itemDetailPresentationDidDismiss() }) { presentation in
-            ItemDetailSheet(presentation: presentation, router: searchRouter)
+    }
+
+    private var closeItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            MobileUtilityCloseButton(accessibilityLabel: accessibilityLabel, action: action)
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(32)
-        .presentationBackground(.black)
-        .preferredColorScheme(.dark)
-        .progressViewStyle(VividLoadingProgressStyle())
+    }
+}
+
+private struct MobileUtilityCloseButton: View {
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .vividGlass(in: Circle(), interactive: true)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 #endif

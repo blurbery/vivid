@@ -48,6 +48,7 @@ struct TVSavedAccountCards: View {
     @FocusState private var focusedAccount: String?
     @State private var store = TVSavedAccountStore.shared
     @State private var pinAccount: TVSavedAccount?
+    @State private var pendingDeletion: TVSavedAccount?
     @State private var profileStore = CurrentProfileStore.shared
     @Environment(AppRouter.self) private var router
 
@@ -60,6 +61,7 @@ struct TVSavedAccountCards: View {
                         NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
                             .buttonStyle(TVAccountCircleStyle())
                             .focused($focusedAccount, equals: account.id)
+                            .contextMenu { deletionMenu(for: account) }
                     } else {
                         Button {
                             if store.hasPIN(account.id) { pinAccount = account }
@@ -67,6 +69,7 @@ struct TVSavedAccountCards: View {
                         } label: { tile(account) }
                         .buttonStyle(TVAccountCircleStyle())
                             .focused($focusedAccount, equals: account.id)
+                            .contextMenu { deletionMenu(for: account) }
                     }
                 }
                 NavigationLink(value: TVAccountRoute.editor(nil)) {
@@ -93,12 +96,37 @@ struct TVSavedAccountCards: View {
         .focusSection()
         .focusScope(profileFocusScope)
         .defaultFocus($focusedAccount, store.accounts.first?.id, priority: .userInitiated)
+        .confirmationDialog("Delete Profile?", isPresented: Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } }
+        ), titleVisibility: .visible, presenting: pendingDeletion) { account in
+            Button("Delete Profile", role: .destructive) {
+                Task { await store.deleteAccount(account.id, router: router) }
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: { account in
+            Text("Remove \(account.username) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+        }
+        .alert("Profile", isPresented: Binding(
+            get: { store.error != nil }, set: { if !$0 { store.error = nil } }
+        )) {
+            Button("OK", role: .cancel) { store.error = nil }
+        } message: { Text(store.error ?? "") }
         .fullScreenCover(item: $pinAccount) { account in
             TVSavedAccountPINPrompt(account: account) { pin in
                 if store.unlock(account.id, pin: pin) {
                     pinAccount = nil
                     Task { await store.select(account, router: router) }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func deletionMenu(for account: TVSavedAccount) -> some View {
+        if isSettings || account.requiresLogin {
+            Button("Delete Profile", systemImage: "trash", role: .destructive) {
+                pendingDeletion = account
             }
         }
     }

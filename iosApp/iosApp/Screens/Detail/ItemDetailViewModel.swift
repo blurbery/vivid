@@ -296,6 +296,14 @@ class ItemDetailViewModel {
                 // it still applies to a superseded load.
             }
         } catch let err {
+            guard !Task.isCancelled, generation == detailGeneration,
+                  !(err is CancellationError),
+                  (err as? URLError)?.code != .cancelled else { return }
+            if let httpError = err as? HTTPError,
+               case .network(let underlying) = httpError,
+               (underlying is CancellationError || (underlying as? URLError)?.code == .cancelled) {
+                return
+            }
             if detail == nil {
                 self.error = ErrorState(err)
             }
@@ -1357,6 +1365,7 @@ class ItemDetailViewModel {
 
     private func updateWatched(contentId: String, played: Bool) async -> Bool {
         guard !watchedMutationInFlight else { return false }
+        let refreshHomeAfterWrite = StartupContentPrefetcher.homeRefreshAfterPlaybackWrite()
         userStateMutationGeneration += 1
         episodeLoadGeneration += 1
         isLoadingEpisodes = false
@@ -1409,6 +1418,7 @@ class ItemDetailViewModel {
         do {
             try await VividAPI.shared.setWatched(contentId: contentId, played: played)
             invalidateRelatedCaches(contentId: contentId, seriesId: seriesContentId, seasonNumber: seasonNumber)
+            refreshHomeAfterWrite()
             return true
         } catch {
             if detail?.contentId == originalDetailID {

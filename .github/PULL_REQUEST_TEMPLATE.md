@@ -1,12 +1,20 @@
 <!-- Contributors may open PRs from their forks. Only blurbery controls merges, updates to main and branches in blurbery/vivid. Follow CONTRIBUTING.md and AGENTS.md. Complete every section, including AI disclosure. -->
 
-## What changed
+## Problem and reproduction
 
-<!-- Explain the problem, your change and the effect in Vivid. -->
+<!-- Describe the symptoms, expected behaviour, reproduction steps and root cause when known. Include enough detail for a reviewer to reproduce the issue. -->
+
+## Implementation and impact
+
+<!-- Explain what changed and why, relevant alternatives, affected providers/platforms, compatibility risks and failure/recovery behaviour. State what is deliberately unchanged. Update this section after follow-up changes. -->
 
 ## Validation
 
-<!-- List the checks you actually ran, their results and anything not tested. -->
+<!-- Give exact commands or CI links, tested revision, results and regression coverage. Separate passed, failed, skipped and not-run checks. Identify who performed any checks you did not run yourself. -->
+
+## Performance
+
+<!-- For performance claims, include measured before/after results, workload, environment and commands. Otherwise state why benchmarks are not applicable or that they were not run. Do not present estimates as measurements. -->
 
 ## Physical-device testing
 

@@ -3,6 +3,86 @@ import XCTest
 
 @MainActor
 final class PlayerSettingsTests: XCTestCase {
+    func testFallbackNeedsEightContinuousSecondsAndRunsOnlyOnce() {
+        var gate = PlaybackFallbackGate()
+        gate.update(buffering: true, eligible: true, now: 100)
+        XCTAssertFalse(gate.consumeIfReady(now: 107.99, eligible: true))
+        XCTAssertTrue(gate.consumeIfReady(now: 108, eligible: true))
+        gate.update(buffering: true, eligible: true, now: 120)
+        XCTAssertFalse(gate.consumeIfReady(now: 140, eligible: true))
+    }
+
+    func testFallbackTimerResetsOnPlaybackRecoveryOrIneligibleState() {
+        for stillBuffering in [false, true] {
+            var gate = PlaybackFallbackGate()
+            gate.update(buffering: true, eligible: true, now: 0)
+            gate.update(buffering: stillBuffering, eligible: false, now: 7)
+            XCTAssertFalse(gate.consumeIfReady(now: 20, eligible: true))
+            gate.update(buffering: true, eligible: true, now: 30)
+            XCTAssertFalse(gate.consumeIfReady(now: 37, eligible: true))
+            XCTAssertTrue(gate.consumeIfReady(now: 38, eligible: true))
+        }
+    }
+
+    func testFallbackRechecksEligibilityBeforeConsuming() {
+        var gate = PlaybackFallbackGate()
+        gate.update(buffering: true, eligible: true, now: 0)
+        XCTAssertFalse(gate.consumeIfReady(now: 8, eligible: false))
+        XCTAssertFalse(gate.consumed)
+    }
+
+    func testFallbackCannotActOnARejectedOrUnrelatedQualityChoice() {
+        let mode = PlaybackFallbackMode.fullHD
+        XCTAssertTrue(mode.isActive(qualityID: mode.rawValue))
+        XCTAssertTrue(mode.isActive(qualityID: mode.fallbackID))
+        for active in ["auto", "original", "1080p", PlaybackFallbackMode.ultraHD.rawValue] {
+            XCTAssertFalse(mode.isActive(qualityID: active))
+        }
+    }
+
+    func testFallbackModesSendSeparateResolutionAndBitrateCaps() {
+        let expected = [(PlaybackFallbackMode.ultraHD, 80_000, 20_000),
+                        (.fullHD, 10_000, 4_000), (.hd, 4_000, 1_500)]
+        for (mode, maximum, fallback) in expected {
+            for (id, cap) in [(mode.rawValue, maximum), (mode.fallbackID, fallback)] {
+                let axes = AppleQualityAxes.split(id)
+                XCTAssertEqual(axes.resolution, mode.resolution)
+                XCTAssertEqual(axes.bitrateKbps, cap)
+                let selection = ApplePlaybackQuality.protocolV3Selection(
+                    requestedQualityId: id, availableQualities: [])
+                XCTAssertEqual(selection.serverPreference, mode.resolution)
+                XCTAssertEqual(selection.bandwidthCapKbps, cap)
+                XCTAssertFalse(selection.isServerOwned)
+                XCTAssertEqual(AppleQualityAxes.resolvedBitrateCap(
+                    qualityOverride: id, fallbackBitrateKbps: 200_000), cap)
+            }
+        }
+        XCTAssertNil(PlaybackFallbackMode.matching("auto"))
+        XCTAssertNil(PlaybackFallbackMode.matching("original"))
+        XCTAssertEqual(VividQualityPresets.selectable.count, 5)
+    }
+
+    func testFallbackIsOptInAndSurvivesSettingsReload() async throws {
+        let harness = try PlayerSettingsHarness()
+        let settings = harness.settings
+        settings.setQualityPreset(try XCTUnwrap(VividQualityPresets.preset(id: "1080p-high")))
+        XCTAssertNil(settings.fallbackMode)
+        for mode in PlaybackFallbackMode.allCases {
+            settings.setQualityPreset(mode.preset)
+            let restored = PlayerSettings(defaults: harness.defaults)
+            XCTAssertEqual(restored.fallbackMode, mode)
+            XCTAssertEqual(restored.currentQualityPreset?.id, mode.rawValue)
+            XCTAssertEqual(restored.preferredQuality, mode.rawValue)
+            XCTAssertEqual(restored.maxBitrateKbps, mode.maximumKbps)
+        }
+        settings.setPreferredQuality("original")
+        XCTAssertNil(PlayerSettings(defaults: harness.defaults).fallbackMode)
+        XCTAssertNil(settings.maxBitrateKbps)
+        settings.setQualityPreset(PlaybackFallbackMode.ultraHD.preset)
+        await settings.resetAllDeviceSettings()
+        XCTAssertNil(PlayerSettings(defaults: harness.defaults).fallbackMode)
+    }
+
     func testIntroDBTogglePersistsAndResetRestoresIt() async throws {
         let harness = try PlayerSettingsHarness()
         harness.defaults.set("off", forKey: VividSkipSource.defaultsKey)
@@ -68,9 +148,15 @@ final class PlayerSettingsTests: XCTestCase {
 
     func testBufferTargetsMatchTheSettingsLabels() {
         XCTAssertNil(BufferAheadMode.automatic.forwardBufferSegments)
-        XCTAssertEqual(BufferAheadMode.seconds10.forwardBufferSegments, 5)
-        XCTAssertEqual(BufferAheadMode.seconds20.forwardBufferSegments, 10)
-        XCTAssertEqual(BufferAheadMode.seconds30.forwardBufferSegments, 15)
+        XCTAssertEqual(BufferAheadMode.automatic.label, "Automatic")
+        XCTAssertEqual(BufferAheadMode.seconds20.forwardBufferSegments, 15)
+        XCTAssertEqual(BufferAheadMode.seconds30.forwardBufferSegments, 20)
+        XCTAssertEqual(BufferAheadMode.seconds20.label, "30 seconds")
+        XCTAssertEqual(BufferAheadMode.seconds30.label, "40 seconds")
+        XCTAssertEqual(BufferAheadMode.allCases.map(\.label), ["Automatic", "30 seconds", "40 seconds"])
+        XCTAssertEqual(BufferAheadMode(rawValue: "seconds10") ?? .automatic, .automatic)
+        XCTAssertEqual(BufferAheadMode(rawValue: "seconds20"), .seconds20)
+        XCTAssertEqual(BufferAheadMode(rawValue: "seconds30"), .seconds30)
     }
 
     func testPlaybackSpeedRemainsWithinSupportedRange() throws {

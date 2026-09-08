@@ -13,7 +13,7 @@ Silo is one of the implemented server connections, alongside Emby. “Core” de
 
 The Silo server core handles Silo discovery/setup, manual/QR login, account and viewing-profile identity, authenticated requests, library metadata, playable versions and track metadata, playback-session negotiation, renewal and Silo-specific realtime events. It translates playback progress and watched state into Silo requests; the server persists those records.
 
-Silo Protocol V3 is a Silo contract. Other server cores should map their own APIs into Vivid’s player inputs, without having to implement Silo’s protocol. Credentials, caches and session identities must stay scoped to the selected server and account.
+Silo Protocol V3 is a Silo contract. Vivid’s capped quality modes translate into its existing resolution and bandwidth-cap fields; local mode identifiers are not sent as server quality names. A buffering fallback uses the existing replan operation at the current position with the selected tracks. No production server deployment or configuration change is required for these client controls. Other server cores map their own APIs into Vivid’s inputs. Credentials, caches and session identities stay scoped to the selected server and account.
 
 ## Shared player boundary
 

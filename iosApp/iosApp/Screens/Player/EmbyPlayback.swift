@@ -33,7 +33,7 @@ final class EmbyPlayback {
         let range = ((video["VideoRangeType"] as? String ?? "") + " " + (video["VideoRange"] as? String ?? "")).lowercased()
         let isDV = (video["DvProfile"] as? Int ?? 0) > 0 || range.contains("dovi") || range.contains("dolby")
         let isHDR = isDV || range.contains("hdr") || range.contains("hlg")
-        let height = ApplePlaybackQuality.settingsOptions.first { $0.id == quality }?.resolution
+        let height = ApplePlaybackQuality.requestOptions.first { $0.id == quality }?.resolution
             .split(separator:"p").first.flatMap { Int($0) }
         var profile = body["DeviceProfile"] as? [String:Any] ?? [:]
         if let height {

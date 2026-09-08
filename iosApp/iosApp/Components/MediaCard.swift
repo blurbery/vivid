@@ -74,6 +74,7 @@ struct MediaCard: View {
     /// don't have an `OverlaySummary` available (e.g. people /
     /// collection thumbnails) leave this off.
     var overlayData: OverlayData? = nil
+    var titleFont: Font = .vividSubheadline
     let action: () -> Void
     /// tvOS-only shortcut invoked by the remote's Play/Pause button while
     /// this card owns focus. Select continues to invoke `action`.
@@ -422,7 +423,7 @@ struct MediaCard: View {
 
     private var titleText: some View {
         Text(title)
-            .font(.vividSubheadline)
+            .font(titleFont)
             .foregroundColor(.vividOnSurface)
             // Reserve 2 lines of space so single- and multi-line titles
             // produce the same overall card height — keeps posters in a

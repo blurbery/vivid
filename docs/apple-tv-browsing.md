@@ -49,13 +49,15 @@ Settings categories open separate native navigation pages with white headings an
 
 ## Detail pages
 
+Search result captions use 20-point titles and an 18-point year beneath them, independently of Home poster preferences. Long titles remain truncated. Emby season selectors use numbered labels such as Season 4, with Specials for season zero; Silo’s season titles are unchanged.
+
 Movie, series and episode pages share fixed positions for the credit line, playback readouts and action row. The loading screen reserves the same positions. Twelve-point gaps separate credits, readouts and actions. Plots wrap within the action row width; Read more opens a separate scrollable Description panel. Start Over lives in the More menu so resume state does not shift the buttons.
 
 The equal-width playback pills use white icons, a translucent background and a thin glass-style edge. Resolution is displayed as 4K, FHD for 1080, or HD below 1080; HDR/DV appears when present, otherwise the video codec is shown. Audio shows codec and channel layout. Subtitles show the selected language or Off. The full selectors retain the detailed track choices.
 
 Continue Watching carries the exact season and episode into the detail route. That season takes priority over cached progress, and the episode carousel refreshes its selection when the requested episode changes. Playback metadata for the selected episode loads its catalog and watch requests together; cached movie pages begin refreshing watch metadata on open. Uncached data still requires a server response.
 
-Poster, collection, episode and trailer artwork share a thin edge highlight that becomes brighter on focus. Watched artwork uses a small green badge with a white tick. Episode thumbnails on series details use the same inset resume bar as Continue Watching. Trailer focus enlarges the card. The lower Details section is one liquid glass row with vertical dividers.
+Poster, collection, episode and trailer artwork share a thin edge highlight that becomes brighter on focus. Watched artwork uses a small green badge with a white tick. Episode thumbnails on series details use the same inset resume bar as Continue Watching. Trailer focus enlarges the card. Movie and series pages now end with Media Information for the selected file or episode: separate Video & File and Audio glass panels. Video & File has up to five equal-width columns; audio has up to four. Sparse panels use fewer columns, while incomplete final rows keep their column alignment. Missing metadata is omitted. Video/file bitrates use Mbps with provider-specific unit conversion; audio below 1 Mbps uses kbps.
 
 ## Trailers and More Like This
 
@@ -78,7 +80,7 @@ More Like This is independent of TMDb. It uses the active server/profile catalog
 
 ## Validation
 
-The app changes published through `v0.13.0` (`2ee9005c`) were built and installed on an Apple TV 4K (3rd generation), tvOS 26.6, during development. I confirmed playback, display matching, Continue Watching episode selection, the updated episode cards, provider setup and settings. These were local device builds, not TestFlight archives. Isolated checks cover TMDb authentication, trailer selection and caching, server-only similarity sampling/ranking, account isolation, Continue Watching season priority and iCloud deletion precedence. Live private-iCloud restore and deletion across two physical devices still need a separate check. No measured performance benchmark is recorded, and tvOS validation does not establish iOS runtime behaviour.
+The earlier app checks are recorded through `v0.13.0` (`2ee9005c`). On 8 September 2026, the owner confirmed the completed update on Living Room Apple TV 4K (3rd generation), tvOS 26.6, including smaller Search captions/year, Media Information, quality controls, normal and DTS audio through HomePod (2nd generation), the 20-second Auto buffer, Home watch-state refresh, profile deletion and Emby season labels. The installed local development build was 0.6.0 (1), not a TestFlight archive. The paired iPhone confirmation is recorded in [App Design](app-design.md#detail-pages-and-validation). No measured performance benchmark, universal output-format certification or physical iPad check is recorded.
 
 Before treating a revision as device-verified, record its exact commit, Apple TV model and OS, server version, and results. Check cold/warm startup, multiple accounts, manual sign-out, optional PINs, spotlight cycling, Continue Watching returns, independent library sub-tabs, sort/filter changes, paging beyond seventy items, reverse scrolling, cache clearing and Settings navigation. The changed shared code also needs iOS validation; the current tvOS build does not cover those platforms.
 

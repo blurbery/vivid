@@ -5,6 +5,9 @@ import Foundation
 
 @MainActor
 public final class VividPlayer: ObservableObject {
+    #if os(tvOS)
+    public var nativeDTSBridgeEnabled = false
+    #endif
     public enum State: Equatable { case idle, opening, paused, playing, buffering, ended, failed }
     @Published public private(set) var state: State = .idle
     @Published public private(set) var currentTime: Double = 0
@@ -37,6 +40,9 @@ public final class VividPlayer: ObservableObject {
     private var wantsPlayback = false
     #if os(tvOS)
     private var hasStartedPlayback = false
+    private var audioOutputObservers: [NSObjectProtocol] = []
+    private var audioRecoveryTask: Task<Void, Never>?
+    private var audioRecoveryBudget = VividAudioRecoveryBudget()
     #endif
     private var audioOnly = false
     private var softwareAudio = false
@@ -47,11 +53,31 @@ public final class VividPlayer: ObservableObject {
     private var startPosition: Double = 0
     private var flushTask: Task<Void, Never>?
     private var seekGeneration: UInt64 = 0
+    #if os(tvOS) && DEBUG
+    private var lastTVProbe = Date.distantPast
+    #endif
 
     public init() {
         synchronizer.addRenderer(displayLayer)
         synchronizer.addRenderer(audioRenderer)
+        #if os(tvOS)
+        synchronizer.delaysRateChangeUntilHasSufficientMediaData = true
+        #else
         synchronizer.delaysRateChangeUntilHasSufficientMediaData = false
+        #endif
+        #if os(tvOS)
+        for name in [NSNotification.Name.AVSampleBufferAudioRendererWasFlushedAutomatically,
+                     NSNotification.Name.AVSampleBufferAudioRendererOutputConfigurationDidChange] {
+            audioOutputObservers.append(NotificationCenter.default.addObserver(forName: name, object: audioRenderer, queue: nil) { [weak self] note in
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                    print("[VividTVProbe] rendererNotification=\(note.name.rawValue)")
+                }
+                #endif
+                Task { @MainActor [weak self] in self?.recoverAudioOutput() }
+            })
+        }
+        #endif
     }
 
     public func load(_ source: VividSource, at seconds: Double = 0, autoplay: Bool = true,
@@ -75,6 +101,11 @@ public final class VividPlayer: ObservableObject {
         let next = VividMediaSession(source: input, video: displayLayer.sampleBufferRenderer, audio: audioRenderer,
                                     synchronizer: synchronizer, start: seconds, audioTrack: audioTrack, audioTrackOrdinal: audioTrackOrdinal, audioOnly: audioOnly, preferredAudioLanguages: preferredAudioLanguages, forceSoftwareAudio: forceSoftwareAudio)
         session = next
+        #if os(tvOS)
+        next.nativeDTSBridgeEnabled = nativeDTSBridgeEnabled && !audioOnly
+        next.setAudioOutputLatency(AVAudioSession.sharedInstance().outputLatency)
+        synchronizer.delaysRateChangeUntilHasSufficientMediaData = true
+        #endif
         next.setBufferTarget(seconds: bufferAheadTarget)
         do {
             let inventory = try await withTaskCancellationHandler {
@@ -155,6 +186,8 @@ public final class VividPlayer: ObservableObject {
     }
     public func stop() {
         #if os(tvOS)
+        audioRecoveryTask?.cancel(); audioRecoveryTask = nil
+        audioRecoveryBudget = VividAudioRecoveryBudget()
         displayFormatDescription = nil
         hasStartedPlayback = false
         #endif
@@ -186,9 +219,63 @@ public final class VividPlayer: ObservableObject {
         hasPresentedVideo = false
     }
 
+    #if os(tvOS)
+    private func recoverAudioOutput() {
+        guard let session, audioRecoveryTask == nil,
+              state != .idle, state != .failed, state != .ended,
+              session.snapshot().started else { return }
+        guard audioRecoveryBudget.consume(at: ProcessInfo.processInfo.systemUptime) else {
+            error = .renderer(-11819); state = .failed
+            synchronizer.rate = 0; session.cancel(); timer?.invalidate()
+            return
+        }
+        if session.recoverAudioOutput() {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                print("[VividTVProbe] audioOutputRecovery replayed audio without seeking")
+            }
+            #endif
+            return
+        }
+        let epoch = generation
+        let position = currentTime
+        audioRecoveryTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled, self.generation == epoch else { return }
+            defer { if self.generation == epoch { self.audioRecoveryTask = nil } }
+            do {
+                // Seeking cancels both enqueue workers before flushing and
+                // refills the lost audio from the same source/track/position.
+                try await self.seek(to: position)
+                #if DEBUG
+                if self.generation == epoch, ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                    print("[VividTVProbe] audioOutputRecovery completed position=\(position)")
+                }
+                #endif
+            } catch {
+                guard self.generation == epoch, !Task.isCancelled else { return }
+                self.error = (error as? VividPlaybackError) ?? .renderer(-11819)
+                self.state = .failed
+            }
+        }
+    }
+    #endif
+
     private func poll() {
         guard let session, state != .failed, state != .ended else { return }
+        #if os(tvOS)
+        session.setAudioOutputLatency(AVAudioSession.sharedInstance().outputLatency)
+        #endif
         let snapshot = session.snapshot()
+        #if os(tvOS)
+        if snapshot.finished { synchronizer.delaysRateChangeUntilHasSufficientMediaData = false }
+        #endif
+        #if os(tvOS) && DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-VividTVProbe"), Date().timeIntervalSince(lastTVProbe) >= 1 {
+            lastTVProbe = Date()
+            let route = AVAudioSession.sharedInstance()
+            print("[VividTVProbe] state=\(state) wants=\(wantsPlayback) clock=\(synchronizer.currentTime().seconds) rate=\(synchronizer.rate) frontier=\(snapshot.frontier) readAhead=\(snapshot.readAheadSeconds) started=\(snapshot.started) full=\(snapshot.renderersFull) native=\(snapshot.nativeAudio) audioReady=\(audioRenderer.isReadyForMoreMediaData) audioStatus=\(audioRenderer.status.rawValue) videoReady=\(displayLayer.sampleBufferRenderer.isReadyForMoreMediaData) videoStatus=\(displayLayer.sampleBufferRenderer.status.rawValue) route=\(route.currentRoute.outputs.map { $0.portType.rawValue }) latency=\(route.outputLatency) channels=\(route.outputNumberOfChannels) codec=\(tracks.first { $0.id == selectedAudioTrack }?.codec ?? "none")")
+        }
+        #endif
         #if os(tvOS)
         if let format = session.displayFormatDescription,
            displayFormatDescription.map({ !CFEqual($0, format) }) ?? true {
@@ -249,7 +336,11 @@ public final class VividPlayer: ObservableObject {
             synchronizer.rate = 0
             state = snapshot.started ? .buffering : .opening
         } else if decodedAhead >= readyAhead || snapshot.renderersFull || snapshot.finished {
+            #if os(tvOS)
+            if synchronizer.rate != rate { synchronizer.rate = rate }
+            #else
             synchronizer.rate = rate
+            #endif
             #if os(tvOS)
             hasStartedPlayback = true
             #endif
@@ -257,5 +348,23 @@ public final class VividPlayer: ObservableObject {
         }
     }
 
-    deinit { timer?.invalidate(); session?.cancel() }
+    deinit {
+        timer?.invalidate(); session?.cancel()
+        #if os(tvOS)
+        audioRecoveryTask?.cancel()
+        audioOutputObservers.forEach(NotificationCenter.default.removeObserver)
+        #endif
+    }
+}
+
+struct VividAudioRecoveryBudget {
+    private var attempts: [TimeInterval] = []
+
+    mutating func consume(at time: TimeInterval) -> Bool {
+        guard time.isFinite else { return false }
+        attempts.removeAll { time - $0 >= 30 }
+        guard attempts.count < 3 else { return false }
+        attempts.append(time)
+        return true
+    }
 }

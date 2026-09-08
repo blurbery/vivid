@@ -153,11 +153,12 @@ final class EmbyAdapterTests: XCTestCase {
 
     func testSeasonTabsExcludeEpisodeRecordsAndPreserveCounts() throws {
         let rows: [[String:Any]] = [
-            ["Id":"season-1","Name":"Season 1","Type":"Season","IndexNumber":1,"ChildCount":8],
+            ["Id":"season-4","Name":"Gone Tomorrow","Type":"Season","IndexNumber":4,"ChildCount":8],
             ["Id":"episode-1","Name":"Pilot","Type":"Episode","IndexNumber":1,"ParentIndexNumber":1],
-            ["Id":"season-0","Name":"Specials","Type":"Season","IndexNumber":0,"ChildCount":2]]
+            ["Id":"season-0","Name":"Behind the Scenes","Type":"Season","IndexNumber":0,"ChildCount":2]]
         let response: SeasonsResponse = try EmbyAdapter.decode(["seasons":adapter.seasonRows(rows)])
-        XCTAssertEqual(response.seasons.map(\.contentId),["season-1","season-0"])
+        XCTAssertEqual(response.seasons.map(\.contentId),["season-4","season-0"])
+        XCTAssertEqual(response.seasons.map(\.title),["Season 4","Specials"])
         XCTAssertEqual(response.seasons.map(\.episodeCount),[8,2])
         XCTAssertEqual(response.seasons.last?.isSpecials,true)
     }

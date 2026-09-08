@@ -1,39 +1,6 @@
 import SwiftUI
-#if os(iOS)
-import UIKit
 
-private struct SearchPresentationReadyObserver: UIViewControllerRepresentable {
-    let onReady: () -> Void
-
-    func makeUIViewController(context: Context) -> Controller {
-        let controller = Controller()
-        controller.onReady = onReady
-        return controller
-    }
-
-    func updateUIViewController(_ controller: Controller, context: Context) {
-        controller.onReady = onReady
-    }
-
-    final class Controller: UIViewController {
-        var onReady: (() -> Void)?
-        override func loadView() {
-            view = UIView()
-            view.isUserInteractionEnabled = false
-        }
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            if let transitionCoordinator,
-               transitionCoordinator.animate(alongsideTransition: nil, completion: { [weak self] transition in
-                   if !transition.isCancelled { self?.onReady?() }
-               }) { return }
-            onReady?()
-        }
-    }
-}
-#endif
-
-/// Full-screen search with debounced query and grid results — Plezy style.
+/// Full-window search with debounced query and grid results — Plezy style.
 struct SearchView: View {
     @State private var viewModel = SearchViewModel()
     @State private var requestsViewModel = RequestSearchSectionViewModel()
@@ -43,12 +10,13 @@ struct SearchView: View {
     @Environment(AppRouter.self) private var router
     #if os(iOS)
     @FocusState private var isSearchFieldFocused: Bool
-    @State private var hasRequestedSearchFocus = false
     #endif
     private let usesTVTopMenuInset: Bool
+    private let blurRequest: Int
 
-    init(usesTVTopMenuInset: Bool = true) {
+    init(usesTVTopMenuInset: Bool = true, blurRequest: Int = 0) {
         self.usesTVTopMenuInset = usesTVTopMenuInset
+        self.blurRequest = blurRequest
     }
 
     var body: some View {
@@ -108,12 +76,13 @@ struct SearchView: View {
         .vividSearchable(text: $viewModel.query, prompt: searchPrompt)
         #if os(iOS)
         .searchFocused($isSearchFieldFocused)
-        .background {
-            SearchPresentationReadyObserver {
-                guard !hasRequestedSearchFocus else { return }
-                hasRequestedSearchFocus = true
-                isSearchFieldFocused = true
-            }.frame(width: 0, height: 0)
+        .onChange(of: blurRequest) { _, _ in
+            isSearchFieldFocused = false
+        }
+        .onChange(of: router.presentedItemDetail?.id) { _, detailID in
+            if detailID != nil {
+                isSearchFieldFocused = false
+            }
         }
         .onDisappear { isSearchFieldFocused = false }
         #endif
@@ -185,7 +154,8 @@ struct SearchView: View {
                     columnCount: 7,
                     fixedColumnCount: 7,
                     cardWidth: 190,
-                    prefersDefaultFocusOnFirstItem: true
+                    prefersDefaultFocusOnFirstItem: true,
+                    compactSearchCaption: true
                 )
 #else
                 CatalogGrid(
@@ -193,6 +163,7 @@ struct SearchView: View {
                     isLoading: viewModel.isSearching,
                     hasMore: viewModel.hasMore,
                     forcesThreeColumnsOnPhone: true,
+                    cardTitleFont: .system(size: 11, weight: .semibold),
                     onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
                     onLoadMore: {
                         Task { await viewModel.loadMore() }

@@ -250,7 +250,7 @@ struct PlayerView: View {
                         }
                         #else
                         // The full controls overlay (and its close button) only
-                        // mounts once the decoder opens the file, so a standalone
+                        // appears once the decoder opens the file, so a standalone
                         // close control must remain available through a tap
                         // during the load/buffer phase. tvOS gets this via Menu in
                         // `onExitCommand`; macOS keeps its controls (and Escape)
@@ -264,11 +264,11 @@ struct PlayerView: View {
                             // hold-2×, pinch) live in a dedicated
                             // layer under the button overlay.
                             MobilePlayerGestureLayer(viewModel: viewModel)
-                            MobilePlayerControls(
-                                viewModel: viewModel,
-                                onDismiss: { dismissPlayer() }
-                            )
                         }
+                        MobilePlayerControls(
+                            viewModel: viewModel,
+                            onDismiss: { dismissPlayer() }
+                        )
                         #endif
 
                         #if os(tvOS)

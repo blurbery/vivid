@@ -303,12 +303,17 @@ class PlayerViewModel {
     var selectedSecondarySubtitleId: Int64?
     var qualityOptions: [ApplePlaybackQualityOption] = [ApplePlaybackQuality.auto]
     var selectableQualityOptions: [ApplePlaybackQualityOption] {
-        #if os(iOS)
-        qualityOptions.filter { !$0.isOriginal }
-        #else
-        qualityOptions
-        #endif
+        guard lastLoadRequest?.offlineDownloadId == nil, !isAudioOnlyVividLoad else { return [] }
+        let base = [ApplePlaybackQuality.auto, ApplePlaybackQuality.original]
+        guard qualityOptions.contains(where: { !$0.isAuto && !$0.isOriginal }) else { return base }
+        return base + PlaybackFallbackMode.allCases.map(\.option)
     }
+    var selectedQualityChoiceID: String {
+        PlaybackFallbackMode.matching(activeQualityId)?.rawValue ?? activeQualityId
+    }
+    private var playbackFallbackMode: PlaybackFallbackMode?
+    private var playbackFallbackGate = PlaybackFallbackGate()
+    private var qualityFallbackTask: Task<Void, Never>?
     var activeQualityId: String = ApplePlaybackQuality.autoId
     var isQualitySwitching = false
     var qualitySwitchError: String?
@@ -995,14 +1000,22 @@ class PlayerViewModel {
                     handleVividStartupMilestone(epoch: scopedEvent.epoch)
                 }
             case .paused:
+                updateQualityFallback(buffering: false)
                 isPlaying = false
                 pushNowPlayingSnapshot()
             case .idle, .ended, .error:
+                updateQualityFallback(buffering: false)
                 isPlaying = false
             case .loading, .seeking:
                 break
             }
         case .phase(let phase):
+            switch phase {
+            case .rebuffering, .stalled:
+                updateQualityFallback(buffering: true)
+            default:
+                updateQualityFallback(buffering: false)
+            }
             switch phase {
             case .loading, .rebuffering, .stalled:
                 isLoading = true
@@ -3574,6 +3587,16 @@ class PlayerViewModel {
         recordCurrentPlaybackMutation(markedCompleted: currentItemCompleted)
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
+        qualityFallbackTask?.cancel()
+        qualityFallbackTask = nil
+        playbackFallbackGate.update(buffering: false, eligible: false,
+                                    now: ProcessInfo.processInfo.systemUptime)
+        if lastLoadRequest?.contentId != request.contentId {
+            playbackFallbackMode = request.preferredQualityOverride.map {
+                PlaybackFallbackMode(rawValue: $0)
+            } ?? settings.fallbackMode
+            playbackFallbackGate = PlaybackFallbackGate()
+        }
         lastLoadRequest = request
         offlinePlaybackContext = nil
         contentIdsNeedingDetailRefresh.insert(request.contentId)
@@ -4185,11 +4208,61 @@ class PlayerViewModel {
     }
     #endif
 
+    private var canUseQualityFallback: Bool {
+        playbackFallbackMode != nil && !isDisposed && isPlaying
+            && playbackFallbackMode?.isActive(qualityID: activeQualityId) == true
+            && activeVividLoadEpoch != nil && startedVividLoadEpoch == activeVividLoadEpoch
+            && !isAudioOnlyVividLoad && lastLoadRequest?.offlineDownloadId == nil
+            && qualityOptions.contains(where: { !$0.isAuto && !$0.isOriginal })
+            && !isScrubbing && seekTargetTime == nil && !isQualitySwitching
+            && protocolV3ReplanTask == nil && error == nil
+            && !hasReachedEndOfFile && !showNextUpScreen
+            && (duration <= 0 || duration - currentTime > 10)
+            && bufferedAheadSeconds < 1
+    }
+
+    private func updateQualityFallback(buffering: Bool) {
+        let eligible = canUseQualityFallback
+        playbackFallbackGate.update(buffering: buffering, eligible: eligible,
+                                    now: ProcessInfo.processInfo.systemUptime)
+        guard buffering, eligible, !playbackFallbackGate.consumed else {
+            qualityFallbackTask?.cancel()
+            qualityFallbackTask = nil
+            return
+        }
+        guard qualityFallbackTask == nil else { return }
+        let epoch = activeVividLoadEpoch
+        qualityFallbackTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(PlaybackFallbackGate.delay)) }
+            catch { return }
+            guard let self, !Task.isCancelled, self.activeVividLoadEpoch == epoch else { return }
+            self.qualityFallbackTask = nil
+            guard let mode = self.playbackFallbackMode,
+                  self.playbackFallbackGate.consumeIfReady(
+                    now: ProcessInfo.processInfo.systemUptime, eligible: self.canUseQualityFallback
+                  ) else { return }
+            self.performQualitySwitch(mode.fallbackID, isFallback: true)
+        }
+    }
+
     func switchQuality(_ qualityId: String) {
+        performQualitySwitch(qualityId, isFallback: false)
+    }
+
+    private func performQualitySwitch(_ qualityId: String, isFallback: Bool) {
         let resolvedQualityId = activePreparedProtocolV3 == nil
             ? ApplePlaybackQuality.normalizeStoredId(qualityId)
             : ApplePlaybackQuality.protocolV3QualityId(qualityId)
-        guard resolvedQualityId != activeQualityId || qualitySwitchError != nil else { return }
+        guard resolvedQualityId != activeQualityId || qualitySwitchError != nil
+                || (!isFallback && playbackFallbackMode != nil
+                    && resolvedQualityId != playbackFallbackMode?.rawValue) else { return }
+
+        qualityFallbackTask?.cancel()
+        qualityFallbackTask = nil
+        if !isFallback {
+            playbackFallbackMode = PlaybackFallbackMode(rawValue: qualityId)
+            playbackFallbackGate = PlaybackFallbackGate()
+        }
 
         let target = currentTime.isFinite ? max(0, currentTime) : 0
         isQualitySwitching = true
@@ -4222,7 +4295,7 @@ class PlayerViewModel {
             return
         }
         request = request.copyForRecovery(
-            preferredFileId: request.preferredFileId,
+            preferredFileId: isFallback ? (currentSelectedVersion?.fileId ?? request.preferredFileId) : request.preferredFileId,
             preferredAudioTrackIndex: resolvedAudioTrackIndexForResume(),
             preferredSubtitleTrackIndex: resolvedSubtitleTrackIndexForResume(),
             preferredSidecarSubtitleTrackId: resolvedSidecarSubtitleTrackIdForResume(),
@@ -5270,6 +5343,8 @@ class PlayerViewModel {
     @MainActor
     func cleanup() {
         guard !isDisposed else { return }
+        qualityFallbackTask?.cancel()
+        qualityFallbackTask = nil
         Self.logger.info("PlayerViewModel.cleanup()")
         let currentItemCompleted = PlayerNextUpCompletionPolicy.shouldFinalizeAsCompleted(
             isNextUpPresented: showNextUpScreen,

@@ -59,6 +59,10 @@ enum VividCloudAccountIdentity {
 }
 
 enum VividCloudDeletionPolicy {
+    static func canRemoveServer(_ serverID: String, remainingAccounts: [TVSavedAccount]) -> Bool {
+        !remainingAccounts.contains { $0.serverID == serverID }
+    }
+
     /// A tombstone always wins over routine local state. It can be retired
     /// only by a credential entry that happened after the deletion.
     static func tombstoneWins(deletedAt: Date, explicitAuthenticationAt: Date?) -> Bool {
@@ -280,7 +284,7 @@ final class TVSavedAccountStore {
 
     func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter, provider requestedProvider: MediaServerProvider? = nil) async -> Bool {
         guard !busy else { return false }
-        guard id != nil || canAddAccount else { error = "You can save up to three profiles. Delete a signed-out profile to add another."; return false }
+        guard id != nil || canAddAccount else { error = "You can save up to three profiles. Delete a saved profile to add another."; return false }
         await captureCurrent()
         guard !busy else { return false }
         busy = true; error = nil
@@ -411,10 +415,8 @@ final class TVSavedAccountStore {
         router.resetToLogin()
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
-    #if os(iOS)
-    func deleteSignedOutAccount(_ id: String, router: AppRouter) async {
-        guard !busy, let account = accounts.first(where: { $0.id == id }),
-              account.requiresLogin, activeID != id else { return }
+    func deleteAccount(_ id: String, router: AppRouter) async {
+        guard !busy, let account = accounts.first(where: { $0.id == id }) else { return }
         busy = true
         error = nil
         defer { busy = false }
@@ -422,8 +424,23 @@ final class TVSavedAccountStore {
             error = "Couldn’t delete the saved profile. Try again."
             return
         }
-        let serverIsShared = accounts.contains { $0.id != id && $0.serverID == account.serverID }
-        if !serverIsShared, ServerRegistry.shared.entry(with: account.serverID) != nil {
+        if let index = accounts.firstIndex(where: { $0.id == id }) {
+            accounts[index].requiresLogin = true
+            accounts[index].pinEnabled = false
+            markAccountChanged(id)
+            persist()
+        }
+        if activeID == id {
+            guard await AuthService.shared.signOut() else {
+                error = "Couldn’t finish signing out. Try deleting the profile again."
+                return
+            }
+            activeID = nil
+            persist()
+        }
+        let remainingAccounts = accounts.filter { $0.id != id }
+        if VividCloudDeletionPolicy.canRemoveServer(account.serverID, remainingAccounts: remainingAccounts),
+           ServerRegistry.shared.entry(with: account.serverID) != nil {
             guard await ServerRegistry.shared.remove(serverId: account.serverID) else {
                 error = "Couldn’t remove the saved server. Try again."
                 return
@@ -442,7 +459,6 @@ final class TVSavedAccountStore {
         }
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
-    #endif
 
     fileprivate func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {
         var snapshot: [String: VividCloudAccountEnvelope] = [:]
@@ -535,7 +551,7 @@ final class TVSavedAccountStore {
             _ = await AuthService.shared.signOut()
         }
         for serverID in result.orphanedServerIDs
-        where !accounts.contains(where: { $0.serverID == serverID }) {
+        where VividCloudDeletionPolicy.canRemoveServer(serverID, remainingAccounts: accounts) {
             _ = await ServerRegistry.shared.remove(serverId: serverID)
         }
         return result

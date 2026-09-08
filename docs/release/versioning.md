@@ -41,7 +41,7 @@ The app does not query private GitHub APIs at runtime. Local simulator builds us
 
 An owner-requested housekeeping commit may include `[skip release]`. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release. Ordinary commits retain the normal versioning rules.
 
-Keep this format for every release, including documentation-only updates. Write the bullets in plain language, in the same direct voice as the README.
+Keep this format for every release, including documentation-only updates. Release bullets describe user-visible changes in plain language; implementation details and testing evidence belong in the contribution report.
 
 > [!IMPORTANT]
 > Release titles contain only the version number. Bodies contain only flat update bullets, with no headings, dates, author names, commit hashes, comparison links or automated footer.
@@ -71,6 +71,6 @@ The tests cover major/minor/patch rules, ordinary commit messages, empty ranges,
 
 Dependencies are pinned in `package-lock.json`; the Node tools do not become app dependencies. The `VIVID_GIT_NOREPLY_EMAIL` repository variable must hold `blurbery`'s GitHub noreply address. The workflow uses its scoped `GITHUB_TOKEN` and does not publish an npm package or comment on issues/PRs.
 
-Only Vivid's release workflow is enabled. The Apple build/sideload workflows remain disabled until they are configured and explicitly requested. Vivid’s Apple setup is tracked in [App Distribution](distribution.md); it is separate from source releases.
+GitHub currently lists the source-release, player-regression and sideload workflows as active. The source-release workflow runs on main updates; player regression supports pull requests and manual validation. Sideload publishing remains a separate, explicitly requested action and its legacy publishing format needs review before use. Do not enable paid capacity or change distribution settings as part of an ordinary source release. See [App Distribution](distribution.md).
 
 Repository visibility stays private. Its releases are visible only to people with repository access until the owner changes that visibility.

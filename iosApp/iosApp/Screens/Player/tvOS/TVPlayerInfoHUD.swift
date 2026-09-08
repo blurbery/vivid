@@ -734,7 +734,7 @@ private struct VideoPane: View {
                                 HUDPickerPresentation(
                                     title: "Quality",
                                     options: qualityOptions,
-                                    selection: viewModel.activeQualityId,
+                                    selection: viewModel.selectedQualityChoiceID,
                                     onSelect: { viewModel.switchQuality($0) }
                                 )
                             )
@@ -839,12 +839,12 @@ private struct VideoPane: View {
         if let error = viewModel.qualitySwitchError, !error.isEmpty {
             return error
         }
-        return viewModel.qualityOptions.first(where: { $0.id == viewModel.activeQualityId })?.labelWithBitrate
-            ?? ApplePlaybackQuality.displayNameWithBitrate(for: viewModel.activeQualityId)
+        return viewModel.selectableQualityOptions.first(where: { $0.id == viewModel.selectedQualityChoiceID })?.labelWithBitrate
+            ?? ApplePlaybackQuality.displayNameWithBitrate(for: viewModel.selectedQualityChoiceID)
     }
 
     private var qualityOptions: [HUDDropdownOption] {
-        viewModel.qualityOptions.map { .init(id: $0.id, label: $0.labelWithBitrate) }
+        viewModel.selectableQualityOptions.map { .init(id: $0.id, label: $0.labelWithBitrate, detail: $0.subtitle) }
     }
 
     private func presentPicker(for field: Field, _ presentation: HUDPickerPresentation) {
@@ -884,6 +884,7 @@ private struct HUDDropdownOption: Identifiable, Hashable {
     let id: String
     let label: String
     var colorHex: String? = nil
+    var detail: String? = nil
 }
 
 private enum HUDPickerOptions {
@@ -1013,9 +1014,18 @@ private struct HUDPickerOptionLabel: View {
             if let colorHex = option.colorHex {
                 ColorSwatch(hex: colorHex)
             }
-            Text(option.label)
-                .font(.system(size: 24, weight: .medium))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(option.label)
+                    .font(.system(size: 24, weight: .medium))
+                    .lineLimit(1)
+                if let detail = option.detail {
+                    Text(detail)
+                        .font(.system(size: 18))
+                        .opacity(0.72)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+            }
             Spacer(minLength: 12)
             if isSelected {
                 Image(systemName: "checkmark")

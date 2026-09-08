@@ -119,6 +119,7 @@ struct PhoneSavedAccountCards: View {
     @State private var store = TVSavedAccountStore.shared
     @Environment(AppRouter.self) private var router
     @State private var selectedForPIN: TVSavedAccount?
+    @State private var pendingDeletion: TVSavedAccount?
     @State private var pin = ""
     @State private var pinError: String?
     var body: some View {
@@ -129,17 +130,14 @@ struct PhoneSavedAccountCards: View {
                     if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
                         NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
                             .contextMenu {
-                                if account.requiresLogin {
-                                    Button("Delete Profile", role: .destructive) {
-                                        Task { await store.deleteSignedOutAccount(account.id, router: router) }
-                                    }
-                                }
+                                deletionMenu(for: account)
                             }
                     } else {
                         Button {
                             if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
                             else { Task { await store.select(account, router: router) } }
                         } label: { tile(account) }
+                        .contextMenu { deletionMenu(for: account) }
                     }
                 }
                 if store.canAddAccount {
@@ -156,6 +154,17 @@ struct PhoneSavedAccountCards: View {
         }
         }.frame(height: 150).buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
         .task { await store.captureCurrent() }
+        .confirmationDialog("Delete Profile?", isPresented: Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } }
+        ), titleVisibility: .visible, presenting: pendingDeletion) { account in
+            Button("Delete Profile", role: .destructive) {
+                Task { await store.deleteAccount(account.id, router: router) }
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: { account in
+            Text("Remove \(account.username) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+        }
         .alert("Profile", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
             Button("OK", role: .cancel) { store.error = nil }
         } message: { Text(store.error ?? "") }
@@ -173,6 +182,14 @@ struct PhoneSavedAccountCards: View {
                 }.navigationTitle(account.username)
                 .toolbar { Button("Cancel") { selectedForPIN = nil; pin = "" } }
             }.presentationDetents([.medium])
+        }
+    }
+    @ViewBuilder
+    private func deletionMenu(for account: TVSavedAccount) -> some View {
+        if isSettings || account.requiresLogin {
+            Button("Delete Profile", systemImage: "trash", role: .destructive) {
+                pendingDeletion = account
+            }
         }
     }
     private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {
@@ -260,7 +277,12 @@ struct PhoneSavedAccountEditor: View {
                     }
                 } header: { PhoneSettingsSectionHeader("PIN Protection") }
                 Section {
-                    Button("Sign Out", role: .destructive) { Task { await store.signOut(router: router) } }
+                    Button(role: .destructive) {
+                        Task { await store.signOut(router: router) }
+                    } label: {
+                        Text("Sign Out")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                 }
             }
             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }

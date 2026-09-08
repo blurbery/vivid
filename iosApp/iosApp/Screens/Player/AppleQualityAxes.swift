@@ -55,7 +55,7 @@ struct AppleQualityAxes: Equatable {
         if normalized == ApplePlaybackQuality.ultraHDId {
             return AppleQualityAxes(resolution: "2160p", bitrateKbps: nil)
         }
-        guard let option = ApplePlaybackQuality.settingsOptions.first(where: { $0.id == normalized }),
+        guard let option = ApplePlaybackQuality.requestOptions.first(where: { $0.id == normalized }),
               !option.isAuto else {
             return .auto
         }

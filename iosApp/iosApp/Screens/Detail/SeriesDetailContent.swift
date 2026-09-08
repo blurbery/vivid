@@ -470,8 +470,18 @@ struct SeriesDetailContent<BelowOverview: View>: View {
 
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PhoneSectionHeader(title: "Details")
-            PhoneDetailFactsSection(detail: detail)
+            PhoneSectionHeader(title: "Media Information")
+            if let episode = nextUpEpisode {
+                Text("S\(episode.seasonNumber) · E\(episode.episodeNumber)" + (episode.title.map { " — \($0)" } ?? ""))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            if isLoadingSelectedEpisodePlayback {
+                ProgressView()
+                    .frame(maxWidth: .infinity, minHeight: 80)
+            } else {
+                DetailMediaSection(version: effectiveNextUpVersion)
+            }
         }
     }
 }

@@ -12,6 +12,9 @@ public struct VividSource: Sendable {
 }
 
 public enum VividPlaybackError: Error, Equatable {
+    #if os(tvOS)
+    case nativeDTSRequired(Int)
+    #endif
     case invalidSource
     case cancelled
     case network(Int)

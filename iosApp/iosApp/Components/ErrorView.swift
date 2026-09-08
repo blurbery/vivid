@@ -13,40 +13,62 @@ struct ErrorView: View {
 
     @Environment(AppRouter.self) private var router
 
+    private var isTV: Bool {
+        #if os(tvOS)
+        true
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
-        VStack(spacing: VividTheme.padding) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 48))
-                .foregroundColor(.vividError)
+        VStack(spacing: isTV ? 24 : 18) {
+            Image(systemName: state.isAuthFailure ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.circle")
+                .font(.system(size: isTV ? 40 : 30, weight: .light))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: isTV ? 88 : 68, height: isTV ? 88 : 68)
+                .background(.white.opacity(0.06), in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.16), lineWidth: 1))
+                .accessibilityHidden(true)
 
             Text(headline)
-                .font(.vividHeadline)
+                .font(.system(size: isTV ? 30 : 22, weight: .semibold))
                 .foregroundColor(.vividOnSurface)
                 .multilineTextAlignment(.center)
 
             Text(state.message)
-                .font(.vividBody)
-                .foregroundColor(.vividSecondaryText)
+                .font(.system(size: isTV ? 22 : 15))
+                .foregroundStyle(.white.opacity(0.65))
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, VividTheme.largePadding)
+                .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: VividTheme.smallPadding) {
                 if let primary = primaryAction {
-                    Button(primary.title, action: primary.run)
-                        .vividPrimaryButton()
-                        .frame(width: 200)
+                    recoveryButton(primary)
                 }
                 if let secondary = secondaryAction {
-                    Button(secondary.title, action: secondary.run)
-                        .buttonStyle(.plain)
-                        .foregroundColor(.vividSecondaryText)
-                        .font(.vividBody)
-                        .padding(.top, 4)
+                    recoveryButton(secondary)
                 }
             }
             .padding(.top, VividTheme.smallPadding)
         }
+        .padding(isTV ? 36 : 24)
+        .frame(maxWidth: isTV ? 640 : 440)
+        .vividGlass(in: RoundedRectangle(cornerRadius: 28), tint: .black.opacity(0.16))
+        .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.18), lineWidth: 1))
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func recoveryButton(_ action: Action) -> some View {
+        Button(action: action.run) {
+            Label(action.title, systemImage: action.title == "Try Again" ? "arrow.clockwise" : (action.title == "Go Back" ? "chevron.left" : "person.crop.circle"))
+                .font(.system(size: isTV ? 22 : 16, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: isTV ? 48 : 36)
+        }
+        .buttonBorderShape(.capsule)
+        .vividGlassButtonStyle()
+        .tint(.white)
     }
 
     private var headline: String {

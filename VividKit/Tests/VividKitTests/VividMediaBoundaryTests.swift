@@ -6,6 +6,83 @@ import XCTest
 @testable import VividKit
 
 final class VividMediaBoundaryTests: XCTestCase {
+    func testAudioReplayRetainsOnlyUnplayedSamplesAndClearsOnSeek() throws {
+        var replay = VividAudioReplayBuffer()
+        for index in 0..<4 {
+            replay.append(try Self.replaySample(at: Double(index)), at: 0)
+        }
+        XCTAssertEqual(replay.samples(at: 1.5).map { CMSampleBufferGetPresentationTimeStamp($0).seconds }, [1, 2, 3])
+        XCTAssertEqual(replay.samples(at: 2).count, 2)
+        XCTAssertTrue(replay.samples(at: .nan).isEmpty)
+        XCTAssertEqual(replay.samples(at: 2).count, 2)
+        replay.removeAll()
+        XCTAssertTrue(replay.samples(at: 0).isEmpty)
+    }
+
+    func testAudioReplayBoundsMemoryAndRejectsOversizedSamples() throws {
+        var replay = VividAudioReplayBuffer(byteLimit: 8)
+        for index in 0..<4 {
+            replay.append(try Self.replaySample(at: Double(index)), at: 0)
+        }
+        XCTAssertEqual(replay.samples(at: 0).map { CMSampleBufferGetPresentationTimeStamp($0).seconds }, [2, 3])
+        replay.append(try Self.replaySample(at: 4, bytes: 16), at: 0)
+        XCTAssertEqual(replay.samples(at: 0).count, 2)
+        XCTAssertTrue(replay.samples(at: 4).isEmpty)
+        replay.append(try Self.replaySample(at: 4), at: 4)
+        XCTAssertEqual(replay.samples(at: 4).count, 1)
+    }
+
+    private static func replaySample(at seconds: Double, bytes: Int = 4) throws -> CMSampleBuffer {
+        var block: CMBlockBuffer?
+        XCTAssertEqual(CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil,
+            blockLength: bytes, blockAllocator: kCFAllocatorDefault, customBlockSource: nil,
+            offsetToData: 0, dataLength: bytes, flags: 0, blockBufferOut: &block), noErr)
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 1),
+            presentationTimeStamp: CMTime(seconds: seconds, preferredTimescale: 1_000), decodeTimeStamp: .invalid)
+        var size = bytes
+        var sample: CMSampleBuffer?
+        XCTAssertEqual(CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: try XCTUnwrap(block),
+            formatDescription: nil, sampleCount: 1, sampleTimingEntryCount: 1, sampleTimingArray: &timing,
+            sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample), noErr)
+        return try XCTUnwrap(sample)
+    }
+
+    func testAudioRecoveryIsBoundedAndRearmsAfterQuietPeriod() {
+        var budget = VividAudioRecoveryBudget()
+        XCTAssertTrue(budget.consume(at: 0))
+        XCTAssertTrue(budget.consume(at: 1))
+        XCTAssertTrue(budget.consume(at: 2))
+        XCTAssertFalse(budget.consume(at: 3))
+        XCTAssertFalse(budget.consume(at: .nan))
+        XCTAssertFalse(budget.consume(at: 29.99))
+        XCTAssertTrue(budget.consume(at: 30))
+        XCTAssertFalse(budget.consume(at: 30.1))
+        XCTAssertTrue(budget.consume(at: 32))
+    }
+    func testNativeDTSBridgeRejectsUnrelatedCodecsAndUnsupportedFormats() throws {
+        let input = try XCTUnwrap(avformat_alloc_context())
+        defer { avformat_free_context(input) }
+        let video = try XCTUnwrap(avformat_new_stream(input, nil))
+        let audio = try XCTUnwrap(avformat_new_stream(input, nil))
+        video.pointee.codecpar.pointee.codec_type = AVMEDIA_TYPE_VIDEO
+        video.pointee.codecpar.pointee.codec_id = AV_CODEC_ID_H264
+        audio.pointee.codecpar.pointee.codec_type = AVMEDIA_TYPE_AUDIO
+        audio.pointee.codecpar.pointee.sample_rate = 48_000
+        av_channel_layout_default(&audio.pointee.codecpar.pointee.ch_layout, 8)
+        for codec in [AV_CODEC_ID_AAC, AV_CODEC_ID_EAC3, AV_CODEC_ID_TRUEHD, AV_CODEC_ID_FLAC] {
+            audio.pointee.codecpar.pointee.codec_id = codec
+            var status: Int32 = 0
+            XCTAssertNil(vv_dts_bridge_create(input, 0, 1, 0, 0, "/unused/index.m3u8", "/unused/segment%06d.m4s", &status))
+            XCTAssertLessThan(status, 0)
+        }
+        audio.pointee.codecpar.pointee.codec_id = AV_CODEC_ID_DTS
+        audio.pointee.codecpar.pointee.sample_rate = 0
+        var status: Int32 = 0
+        XCTAssertNil(vv_dts_bridge_create(input, 0, 1, 0, 0, "/unused/index.m3u8", "/unused/segment%06d.m4s", &status))
+        XCTAssertLessThan(status, 0)
+        XCTAssertNil(vv_dts_bridge_create(input, -1, 1, 0, 0, "/unused/index.m3u8", "/unused/segment%06d.m4s", &status))
+    }
+
     @MainActor
     func testAACUsesNativeAudioAndAdvancesClock() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("m4a")
@@ -379,6 +456,62 @@ final class VividMediaBoundaryTests: XCTestCase {
         XCTAssertEqual(CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: 8, destination: &values), noErr)
         XCTAssertEqual(values[0], 0.5, accuracy: 0.000001)
         XCTAssertEqual(values[1], -0.5, accuracy: 0.000001)
+    }
+
+    func testPCMConversionReusesItsFormatDescription() throws {
+        var converter: OpaquePointer? = try XCTUnwrap(vv_converter_create())
+        defer { vv_converter_free(&converter) }
+        var frame: UnsafeMutablePointer<AVFrame>? = try XCTUnwrap(av_frame_alloc())
+        defer { av_frame_free(&frame) }
+        frame!.pointee.format = AV_SAMPLE_FMT_FLTP.rawValue
+        frame!.pointee.sample_rate = 48_000
+        frame!.pointee.nb_samples = 512
+        av_channel_layout_default(&frame!.pointee.ch_layout, 6)
+        XCTAssertEqual(av_frame_get_buffer(frame, 0), 0)
+
+        var firstResult: Unmanaged<CMSampleBuffer>?
+        XCTAssertEqual(vv_make_audio_sample(converter, frame, .zero, &firstResult), 0)
+        let firstSample = try XCTUnwrap(firstResult).takeRetainedValue()
+        let firstFormat = try XCTUnwrap(CMSampleBufferGetFormatDescription(firstSample))
+
+        var secondResult: Unmanaged<CMSampleBuffer>?
+        XCTAssertEqual(vv_make_audio_sample(
+            converter,
+            frame,
+            CMTime(value: 512, timescale: 48_000),
+            &secondResult
+        ), 0)
+        let secondSample = try XCTUnwrap(secondResult).takeRetainedValue()
+        let secondFormat = try XCTUnwrap(CMSampleBufferGetFormatDescription(secondSample))
+
+        XCTAssertEqual(
+            Unmanaged.passUnretained(firstFormat).toOpaque(),
+            Unmanaged.passUnretained(secondFormat).toOpaque()
+        )
+    }
+
+    func testSoftwareAudioSnapsTimestampRoundingButPreservesDiscontinuities() {
+        let exactFrameEnd = 512.0 / 48_000.0
+        XCTAssertEqual(VividMediaSession.softwareAudioPresentationTime(
+            decoded: 0.011,
+            expected: exactFrameEnd,
+            sampleRate: 48_000
+        ), exactFrameEnd)
+        XCTAssertEqual(VividMediaSession.softwareAudioPresentationTime(
+            decoded: 0.025,
+            expected: exactFrameEnd,
+            sampleRate: 48_000
+        ), 0.025)
+        XCTAssertEqual(VividMediaSession.softwareAudioPresentationTime(
+            decoded: nil,
+            expected: exactFrameEnd,
+            sampleRate: 48_000
+        ), exactFrameEnd)
+        XCTAssertEqual(VividMediaSession.softwareAudioPresentationTime(
+            decoded: 0,
+            expected: exactFrameEnd,
+            sampleRate: 48_000
+        ), exactFrameEnd, "Repeated DTS timestamps must remain monotonic")
     }
 }
 

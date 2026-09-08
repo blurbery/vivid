@@ -185,7 +185,6 @@ class HomeViewModel {
     private let dismissNextUp: DismissNextUp
     private let updateWatchedState: SetWatched
     private let fetchHomeSections: FetchHomeSections
-    #if os(tvOS)
     private var needsSectionsRefresh = false
     private var sectionsRevision = 0
 
@@ -194,7 +193,6 @@ class HomeViewModel {
         needsSectionsRefresh = true
         await loadSections()
     }
-    #endif
 
     var isShowingActionError: Bool {
         get { actionError != nil }
@@ -249,15 +247,11 @@ class HomeViewModel {
     }
 
     func loadSections() async {
-        #if os(tvOS)
         guard !isLoading, !isRefreshing else { return }
         repeat {
             needsSectionsRefresh = false
             await loadSectionsOnce()
         } while needsSectionsRefresh
-        #else
-        await loadSectionsOnce()
-        #endif
     }
 
     private func loadSectionsOnce() async {
@@ -345,9 +339,7 @@ class HomeViewModel {
             // authoritative local/cache update so a late response cannot put it
             // back on screen.
             StartupContentPrefetcher.invalidateHomeSectionsInFlight()
-            #if os(tvOS)
             sectionsRevision &+= 1
-            #endif
             sections = removal.mutate(sections)
             ResponseCache.shared.update(CacheKey.homeSections, as: SectionsResponse.self) { response in
                 response = SectionsResponse(sections: removal.mutate(response.sections))
@@ -378,9 +370,7 @@ class HomeViewModel {
             // Never join or apply a Home request that began before this
             // mutation. It can carry the old Next Up membership.
             StartupContentPrefetcher.invalidateHomeSectionsInFlight()
-            #if os(tvOS)
             sectionsRevision &+= 1
-            #endif
 
             if played {
                 sections = HomeSectionsMutation.removingCompletedItem(
@@ -402,11 +392,7 @@ class HomeViewModel {
 
             // The server may advance a series to its following episode. Keep
             // the local removal if this reconciliation cannot be fetched.
-            #if os(tvOS)
             await refreshPlaybackSections()
-            #else
-            await loadSections()
-            #endif
             return true
         } catch {
             actionError = ErrorState(error)
@@ -415,13 +401,9 @@ class HomeViewModel {
     }
 
     private func fetchAndApplySections() async throws {
-        #if os(tvOS)
         let revision = sectionsRevision
-        #endif
         let response = try await fetchHomeSections()
-        #if os(tvOS)
         guard revision == sectionsRevision else { return }
-        #endif
         sections = response.sections.filter { !$0.items.isEmpty }
         error = nil
     }

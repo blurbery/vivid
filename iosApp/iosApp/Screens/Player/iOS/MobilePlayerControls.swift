@@ -39,7 +39,7 @@ struct MobilePlayerControls: View {
         // the sheet mid-interaction — then re-presents it when controls come
         // back, because @State activeSheet survives the rebuild.
         ZStack {
-            if viewModel.showControls || activePopover != nil {
+            if (!viewModel.isLoading && viewModel.showControls) || activePopover != nil {
                 // GeometryReader pins the control stack to the player's own
                 // bounds. The bars are siblings of the shared player notice in
                 // `PlayerView`'s ZStack; inside the player's `.fullScreenCover`
@@ -498,21 +498,18 @@ struct MobilePlayerControls: View {
     private var actionRow: some View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
-            Menu {
-                ForEach(viewModel.selectableQualityOptions) { option in
-                    Button { viewModel.switchQuality(option.id) } label: {
-                        if option.id == viewModel.activeQualityId {
-                            Label(option.labelWithBitrate, systemImage: "checkmark")
-                        } else { Text(option.labelWithBitrate) }
-                    }
-                }
-            } label: {
+            Button { activePopover = .quality } label: {
                 selectorIcon("slider.horizontal.3")
             }
-            .menuOrder(.fixed)
             .buttonStyle(MobilePlayerGlassButtonStyle())
             .disabled(viewModel.isQualitySwitching)
             .accessibilityLabel("Streaming quality")
+            .accessibilityIdentifier("player.quality")
+            .popover(isPresented: popoverBinding(.quality), attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                qualityPopover
+                    .frame(width: 320, height: popoverHeight)
+                    .presentationCompactAdaptation(.popover)
+            }
             Button { activePopover = .audio } label: {
                 selectorIcon("speaker.wave.2")
             }
@@ -557,6 +554,52 @@ struct MobilePlayerControls: View {
 
     private func popoverBinding(_ popover: PlayerPopover) -> Binding<Bool> {
         Binding(get: { activePopover == popover }, set: { if !$0 { activePopover = nil } })
+    }
+
+    private var qualityPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Quality")
+                .font(.headline)
+                .padding()
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(viewModel.selectableQualityOptions) { option in
+                        Button {
+                            activePopover = nil
+                            viewModel.switchQuality(option.id)
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(option.labelWithBitrate)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    if let subtitle = option.subtitle {
+                                        Text(subtitle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.85)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                if option.id == viewModel.selectedQualityChoiceID {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                            .frame(minHeight: 44)
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("player.quality." + option.id)
+                    }
+                }
+            }
+            .scrollIndicators(.visible)
+        }
     }
 
     private var chaptersPopover: some View {
@@ -695,7 +738,7 @@ struct MobilePlayerControls: View {
 
     // MARK: - Sheet identifier
 
-    private enum PlayerPopover { case audio, subtitles, chapters }
+    private enum PlayerPopover { case quality, audio, subtitles, chapters }
 
     private enum PlayerSheet: Identifiable {
         case settings

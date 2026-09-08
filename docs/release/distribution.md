@@ -61,8 +61,8 @@ Known limits for this beta include physical iPad verification, live two-device i
 
 ## GitHub and unsigned sideload builds
 
-The active release workflow creates GitHub source releases only. The Apple regression and sideload workflows remain disabled. Do not enable paid runner capacity as part of this setup.
+The source-release workflow creates GitHub source releases only. GitHub also lists player regression and sideload as active workflows; an active state is not proof that Apple distribution has been configured or validated. Use the existing standard runners for approved regression validation, without enabling paid capacity.
 
 The retained Fastlane lanes are `ios ipa_ios_unsigned` and `ios ipa_tvos_unsigned`. They build unsigned IPAs for later re-signing; they do not manage Keychains, read Apple API credentials or upload to TestFlight. The root Ruby/Fastlane pins remain because those lanes use them. An unsigned IPA is not directly installable and cannot be uploaded to TestFlight. Re-signing must handle embedded extensions and matching entitlements; missing App Groups prevent shared extension features such as Top Shelf from working.
 
-The disabled sideload workflow still uses a separate build-tag and release-title format that does not match Vivid’s [source release rules](versioning.md). Adapt that publishing step before enabling it; it must not replace the version-only title and bullet-only source release notes.
+The sideload workflow still uses a separate build-tag and release-title format that does not match Vivid’s [source release rules](versioning.md). Adapt and validate that publishing step before dispatching it; it must not replace the version-only title and bullet-only source release notes.

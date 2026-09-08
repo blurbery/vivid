@@ -1468,8 +1468,12 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
 
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
-            TVSectionHeader(title: "Details")
-            TVDetailFactsSection(detail: detail)
+            TVSectionHeader(title: "Media Information")
+            if isLoadingNextUpPlaybackDetail {
+                ProgressView()
+            } else {
+                DetailMediaSection(version: effectiveNextUpVersion)
+            }
         }
     }
 }

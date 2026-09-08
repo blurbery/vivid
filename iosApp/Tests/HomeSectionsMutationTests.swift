@@ -289,7 +289,7 @@ final class HomeSectionsMutationTests: XCTestCase {
                     let cached: SectionsResponse? = ResponseCache.shared.get(CacheKey.homeSections)
                     XCTAssertNil(cached, "Invalidate stale cache before notifying the visible Home view")
                     Task { @MainActor in
-                        await model.loadSections()
+                        await model.refreshPlaybackSections()
                         received.fulfill()
                     }
                 }
@@ -329,6 +329,45 @@ final class HomeSectionsMutationTests: XCTestCase {
         XCTAssertEqual(notifications, 0)
         let cached: SectionsResponse? = ResponseCache.shared.get(CacheKey.homeSections)
         XCTAssertEqual(cached?.sections.first?.items.first?.contentId, "new-profile-item")
+    }
+
+    @MainActor
+    func testWatchRefreshDuringOlderFetchReconcilesWithoutManualRefresh() async throws {
+        for played in [true, false] {
+            let oldItem = try JSONDecoder().decode(SectionItem.self, from: Data(
+                "{\"contentId\":\"target\",\"type\":\"movie\",\"title\":\"Test\",\"userState\":{\"played\":\(!played),\"isFavorite\":false,\"inWatchlist\":false}}".utf8
+            ))
+            let newItem = try JSONDecoder().decode(SectionItem.self, from: Data(
+                "{\"contentId\":\"target\",\"type\":\"movie\",\"title\":\"Test\",\"userState\":{\"played\":\(played),\"isFavorite\":false,\"inWatchlist\":false}}".utf8
+            ))
+            let stale = SectionsResponse(sections: [makeSection(id: "movies", type: "recently_added", totalCount: 1, items: [oldItem])])
+            let fresh = SectionsResponse(sections: [makeSection(id: "movies", type: "recently_added", totalCount: 1, items: [newItem])])
+            ResponseCache.shared.set(stale, for: CacheKey.homeSections)
+            defer { ResponseCache.shared.remove(CacheKey.homeSections) }
+            var firstResponse: CheckedContinuation<SectionsResponse, Never>?
+            var fetchCount = 0
+            let started = expectation(description: "Older Home fetch started")
+            let model = HomeViewModel(fetchHomeSections: {
+                fetchCount += 1
+                if fetchCount == 1 {
+                    return await withCheckedContinuation { continuation in
+                        firstResponse = continuation
+                        started.fulfill()
+                    }
+                }
+                return fresh
+            })
+            let loading = Task { await model.loadSections() }
+            await fulfillment(of: [started], timeout: 2)
+            await model.refreshPlaybackSections()
+            await model.refreshPlaybackSections()
+            firstResponse?.resume(returning: stale)
+            await loading.value
+            XCTAssertEqual(fetchCount, 2, "Coalesce invalidations into one fresh follow-up request")
+            XCTAssertEqual(model.sections.first?.items.first?.userState?.played, played)
+            XCTAssertFalse(model.isLoading)
+            XCTAssertFalse(model.isRefreshing)
+        }
     }
 
     private func makeItem(

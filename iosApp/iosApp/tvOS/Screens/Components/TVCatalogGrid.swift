@@ -35,6 +35,7 @@ struct TVCatalogGrid: View {
     var focusRequest: Int = 0
     var onFirstRowMoveUp: (() -> Void)? = nil
     var onRowVisibilityChange: ((Range<Int>, Bool) -> Void)? = nil
+    var compactSearchCaption = false
 
     @Namespace private var gridFocusNamespace
     @FocusState private var focusedItemId: String?
@@ -111,7 +112,8 @@ struct TVCatalogGrid: View {
                             defaultFocusNamespace: gridFocusNamespace,
                             focusBinding: $focusedItemId,
                             focusContentId: item.contentId,
-                            contentId: item.contentId
+                            contentId: item.contentId,
+                            compactSearchCaption: compactSearchCaption
                         )
                         .frame(maxWidth: .infinity)
                         .onAppear { onCellAppear(index: rowStart + indexed.index) }

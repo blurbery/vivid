@@ -11,7 +11,7 @@ These cores describe responsibility boundaries. They are not a claim that the cu
 
 ## Player ownership
 
-Vivid owns playback controls and focus, play/pause and seeking, version/audio/subtitle selection, the Apple TV Info panel, mobile Quality/Audio menus and embedded Subtitles/Chapters popovers, loading presentation, resume and next-episode behaviour, and the shared presentation of playback progress. The local Apache-2.0 VividKit package performs the underlying source reads, FFmpeg demuxing, hardware-first video decoding, Apple rendering, embedded subtitle/chapter extraction, buffering and seek execution; Vivid remains the player that coordinates it and presents the experience.
+Vivid owns playback controls and focus, play/pause and seeking, version/audio/subtitle selection, the Apple TV Info panel, mobile scrollable Quality/Audio/Subtitles/Chapters popovers, loading presentation, resume and next-episode behaviour, and playback-progress presentation. Its three capped quality modes can perform one lower-bitrate reload after sustained buffering; Auto and Original are not enrolled. The local Apache-2.0 VividKit package owns source reads, FFmpeg demuxing, hardware-first video decoding, Apple rendering, embedded subtitle/chapter extraction, buffering and seek execution.
 
 Shared player fixes belong here so each server core uses the same behaviour. Server-specific authentication, requests, session negotiation and progress persistence belong behind the relevant server connection. A new server core should translate its data into the shared player rather than copy Vivid’s controls or implement a separate player.
 
@@ -42,6 +42,6 @@ I confirmed IntroDB works on the current Apple TV setup. That confirmation appli
 
 ## Mobile implementation
 
-The iPhone/iPad shell now shares the private iCloud account vault, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with the TV implementation. The vault syncs saved accounts, sessions and optional Vivid PIN records; downloads, caches and preferences stay local. Mobile presentation uses native menus and slide-up cards around the shared player, with compact playback readouts, green watched markers, live download rings and a glass Downloads manager. The automatic-skip switches explicitly describe their behaviour. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim that every device or playback path has been verified.
+The iPhone/iPad shell shares the private iCloud account vault, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with TV. The vault syncs saved accounts, sessions and optional Vivid PIN records; downloads, caches and preferences stay local. Search and Settings use full-screen portrait slide-up pages with round close buttons. Detail cards remain above Search during playback, and movie/series Media Information uses separate aligned video/file and audio panels on mobile and TV. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim of device or format parity.
 
 [Documentation](../README.md)

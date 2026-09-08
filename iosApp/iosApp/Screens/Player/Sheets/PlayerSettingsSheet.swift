@@ -133,8 +133,8 @@ struct PlayerSettingsSheet: View {
     }
 
     private var activeQualityLabel: String {
-        viewModel.qualityOptions.first(where: { $0.id == viewModel.activeQualityId })?.label
-            ?? ApplePlaybackQuality.displayName(for: viewModel.activeQualityId)
+        viewModel.selectableQualityOptions.first(where: { $0.id == viewModel.selectedQualityChoiceID })?.label
+            ?? ApplePlaybackQuality.displayName(for: viewModel.selectedQualityChoiceID)
     }
 
     private var qualityPage: some View {
@@ -146,16 +146,18 @@ struct PlayerSettingsSheet: View {
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(option.label)
+                                Text(option.labelWithBitrate)
                                     .foregroundStyle(.primary)
                                 if let subtitle = option.subtitle {
                                     Text(subtitle)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.85)
                                 }
                             }
                             Spacer()
-                            if option.id == viewModel.activeQualityId {
+                            if option.id == viewModel.selectedQualityChoiceID {
                                 Image(systemName: "checkmark")
                                     .fontWeight(.semibold)
                                     .foregroundStyle(.tint)
@@ -499,7 +501,7 @@ struct PlayerSettingsSheet: View {
     private var qualitySection: some View {
         Section("Quality") {
             Picker("Quality", selection: Binding(
-                get: { viewModel.activeQualityId },
+                get: { viewModel.selectedQualityChoiceID },
                 set: { newValue in
                     viewModel.switchQuality(newValue)
                 }
@@ -507,10 +509,12 @@ struct PlayerSettingsSheet: View {
                 ForEach(viewModel.selectableQualityOptions) { option in
                     if let subtitle = option.subtitle {
                         VStack(alignment: .leading) {
-                            Text(option.label)
+                            Text(option.labelWithBitrate)
                             Text(subtitle)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
                         }
                         .tag(option.id)
                     } else {

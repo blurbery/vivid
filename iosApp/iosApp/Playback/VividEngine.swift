@@ -71,6 +71,7 @@ final class VividEngine: ObservableObject {
     #if os(tvOS)
     private let tvDisplayCriteria = TVPlaybackDisplayCriteria()
     private var tvDisplayTask: Task<Void, Never>?
+    private var dtsNativeBridge: VividDTSNativeBridge?
     #endif
     private var nativeLayer: AVPlayerLayer?
     private var subscriptions = Set<AnyCancellable>()
@@ -103,6 +104,7 @@ final class VividEngine: ObservableObject {
 
     init() throws {
         #if os(tvOS)
+        player.nativeDTSBridgeEnabled = false
         player.$displayFormatDescription.sink { [weak self] format in
             guard let self, self.currentAVPlayer == nil, !self.options.audioOnly,
                   let format, let video = self.player.tracks.first(where: { $0.kind == .video }) else { return }
@@ -116,6 +118,9 @@ final class VividEngine: ObservableObject {
         }.store(in: &subscriptions)
         player.$state.sink { [weak self] state in
             guard let self, self.currentAVPlayer == nil, self.videoRoute != .none, !self.isSeeking else { return }
+            #if os(tvOS)
+            if case .some(.nativeDTSRequired) = self.player.error { return }
+            #endif
             self.receive(state)
         }.store(in: &subscriptions)
         player.$hasPresentedVideo.sink { [weak self] ready in
@@ -143,6 +148,9 @@ final class VividEngine: ObservableObject {
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             let flags = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            #if os(tvOS) && DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") { print("[VividTVProbe] interruption=\(type ?? 999) flags=\(flags)") }
+            #endif
             Task { @MainActor in
                 guard let self else { return }
                 if type == AVAudioSession.InterruptionType.began.rawValue {
@@ -164,6 +172,9 @@ final class VividEngine: ObservableObject {
         }
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
             let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            #if os(tvOS) && DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") { print("[VividTVProbe] routeChange=\(reason ?? 999)") }
+            #endif
             if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
                 Task { @MainActor in self?.pause() }
             }
@@ -190,11 +201,22 @@ final class VividEngine: ObservableObject {
             } else {
                 videoRoute = options.audioOnly ? .audio : .sampleBuffer
                 softwarePiPSource = options.audioOnly ? nil : SampleBufferPiPSource(layer: player.displayLayer, engine: self)
-                player.bufferAheadTarget = min(30, max(2, Double(options.forwardBufferSegments ?? 5) * 2))
-                try await player.load(VividSource(url: url, headers: options.httpHeaders), at: startPosition,
+                player.bufferAheadTarget = min(40, max(2, Double(options.forwardBufferSegments ?? 10) * 2))
+                do {
+                    try await player.load(VividSource(url: url, headers: options.httpHeaders), at: startPosition,
                     autoplay: wantsPlayback, audioTrack: audioSourceStreamIndex.map(Int.init),
                     audioTrackOrdinal: options.audioTrackOrdinal, audioOnly: options.audioOnly,
                     preferredAudioLanguages: options.preferredAudioLanguages)
+                } catch {
+                    #if os(tvOS)
+                    if case VividPlaybackError.nativeDTSRequired(let audio) = error {
+                        guard epoch == generation else { throw CancellationError() }
+                        try await loadNativeDTS(url, audio: audio, at: startPosition, epoch: epoch)
+                        return
+                    }
+                    #endif
+                    throw error
+                }
                 guard epoch == generation else { throw CancellationError() }
                 audioTracks = player.tracks.filter { $0.kind == .audio }.map(TrackInfo.init)
                 subtitleTracks = player.tracks.filter { $0.kind == .subtitle }.map(TrackInfo.init) + subtitleTracks.filter(\.isExternal)
@@ -223,12 +245,61 @@ final class VividEngine: ObservableObject {
             report(error); throw error
         }
     }
+    #if os(tvOS)
+    private func loadNativeDTS(_ url: URL, audio: Int, at time: Double, epoch: UInt64) async throws {
+        videoRoute = .none; player.stop(); softwarePiPSource = nil
+        errorInfo = nil; state = .loading; playbackPhase = .loading
+        startupProgress = StartupProgress(checkpoint: "Preparing DTS audio")
+        let bridge = try VividDTSNativeBridge(source: VividSource(url: url, headers: options.httpHeaders), audioTrack: audio, at: time)
+        dtsNativeBridge = bridge
+        let started = Date()
+        let localURL = try await bridge.start()
+        guard epoch == generation, dtsNativeBridge === bridge else { bridge.stop(); throw CancellationError() }
+        try await loadHLS(localURL, at: max(0, time - bridge.timelineOffset), epoch: epoch)
+        guard epoch == generation, let inventory = bridge.inventory else { throw CancellationError() }
+        audioTracks = inventory.tracks.filter { $0.kind == .audio }.map(TrackInfo.init)
+        subtitleTracks = inventory.tracks.filter { $0.kind == .subtitle }.map(TrackInfo.init) + subtitleTracks.filter(\.isExternal)
+        mediaChapters = inventory.chapters.map { MediaChapter(id: $0.id, name: $0.name, startSeconds: $0.startSeconds) }
+        duration = inventory.duration; activeAudioTrackIndex = audio
+        if let video = inventory.tracks.first(where: { $0.kind == .video }) {
+            sourceVideoWidth = Int32(video.width); sourceVideoHeight = Int32(video.height)
+            sourceVideoFrameRate = video.frameRate; sourceVideoPixelAspectRatio = video.pixelAspectRatio
+            sourceVideoBitrate = video.bitrate; sourceDVProfile = video.dolbyVisionProfile
+            videoFormat = video.dynamicRange == "hdr10" ? .hdr10 : video.dynamicRange == "hlg" ? .hlg : .sdr
+            sourceVideoFormat = videoFormat
+        }
+        startupProgress = StartupProgress(checkpoint: "Decoder ready")
+        if let selected = options.preferredSubtitleLanguages.lazy.compactMap({ language in
+            self.subtitleTracks.first { $0.language?.caseInsensitiveCompare(language) == .orderedSame }
+        }).first { selectSubtitleTrack(index: selected.id) }
+        #if DEBUG
+        print("[VividNativeDTS] ready seconds=\(Date().timeIntervalSince(started)) audio=compatible-surround video=copy")
+        #endif
+    }
+
+    private func updateNativeDTSSubtitles(_ cues: [VividSubtitleCue]) {
+        func convert(_ cue: VividSubtitleCue) -> SubtitleCue {
+            let body: SubtitleCue.Body = cue.image.map {
+                .image(SubtitleImage(cgImage: $0, position: cue.rectangle, canvasSize: cue.canvas))
+            } ?? .text(cue.text ?? "")
+            return SubtitleCue(id: cue.id, startTime: cue.start, endTime: cue.end, body: body)
+        }
+        if let id = activeSubtitleTrackIndex, externalSubtitles[id] == nil { subtitleCues = cues.filter { $0.track == id }.map(convert) }
+        if let id = secondarySubtitleTrackIndex, externalSubtitles[id] == nil { secondarySubtitleCues = cues.filter { $0.track == id }.map(convert) }
+    }
+    #endif
+
     private func loadHLS(_ url: URL, at time: Double, epoch: UInt64) async throws {
-        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": options.httpHeaders])
+        #if os(tvOS)
+        let localBridge = dtsNativeBridge != nil
+        #else
+        let localBridge = false
+        #endif
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": localBridge ? [:] : options.httpHeaders])
         let item = AVPlayerItem(asset: asset)
         let native = AVPlayer(playerItem: item)
         native.volume = volume
-        native.allowsExternalPlayback = options.httpHeaders.isEmpty
+        native.allowsExternalPlayback = !localBridge && options.httpHeaders.isEmpty
         currentAVPlayer = native; currentAVPlayerItem = item
         nativeLayer = AVPlayerLayer(player: native); nativeLayer?.videoGravity = videoGravity
         #if os(tvOS)
@@ -271,7 +342,16 @@ final class VividEngine: ObservableObject {
         nativeTimer = native.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.05, preferredTimescale: 600), queue: .main) { [weak self] time in
             MainActor.assumeIsolated {
                 guard let self, self.generation == epoch else { return }
-                self.clock.currentTime = max(0, time.seconds.isFinite ? time.seconds : 0)
+                var sourceTime = time.seconds.isFinite ? time.seconds : 0
+                #if os(tvOS)
+                if let bridge = self.dtsNativeBridge {
+                    sourceTime += bridge.timelineOffset
+                    bridge.updatePlayhead(sourceTime)
+                    if let error = bridge.error { native.pause(); self.report(error); return }
+                    self.updateNativeDTSSubtitles(bridge.subtitles(at: sourceTime))
+                }
+                #endif
+                self.clock.currentTime = max(0, sourceTime)
                 self.renderExternalSubtitles(at: self.clock.currentTime)
                 if item.status == .failed { self.report(item.error ?? VividPlaybackError.invalidSource); return }
                 self.hasFirstFrameReadyForDisplay = self.nativeLayer?.isReadyForDisplay == true
@@ -324,6 +404,14 @@ final class VividEngine: ObservableObject {
     func pause() { wantsPlayback = false; currentAVPlayer?.pause(); player.pause(); if videoRoute != .none { state = .paused; playbackPhase = .paused } }
     func setRate(_ rate: Float) { transportRate = min(3, max(0.25, rate)); player.setRate(transportRate); if wantsPlayback { currentAVPlayer?.rate = transportRate } }
     func seek(to time: Double) async {
+        #if os(tvOS)
+        if dtsNativeBridge != nil, let source, let audio = activeAudioTrackIndex {
+            var reloadOptions = options; reloadOptions.autoplay = wantsPlayback
+            do { try await load(url: source, startPosition: time, options: reloadOptions, audioSourceStreamIndex: Int32(audio)) }
+            catch { if !(error is CancellationError) { report(error) } }
+            return
+        }
+        #endif
         let epoch = generation
         isSeeking = true; state = .seeking; playbackPhase = .seeking
         defer { if epoch == generation { isSeeking = false } }
@@ -335,6 +423,22 @@ final class VividEngine: ObservableObject {
         } catch { if epoch == generation { report(error) } }
     }
     func selectAudioTrack(index: Int) {
+        #if os(tvOS)
+        if player.nativeDTSBridgeEnabled,
+           dtsNativeBridge != nil || audioTracks.contains(where: { $0.id == index && $0.codec == "dts" }),
+           let source {
+            let position = currentTime
+            var reloadOptions = options; reloadOptions.autoplay = wantsPlayback
+            audioTrackSelectionTask?.cancel()
+            audioTrackSelectionTask = Task { @MainActor [weak self] in
+                guard let self, !Task.isCancelled else { return }
+                self.audioTrackSelectionTask = nil
+                do { try await self.load(url: source, startPosition: position, options: reloadOptions, audioSourceStreamIndex: Int32(index)) }
+                catch { if !(error is CancellationError) { self.report(error) } }
+            }
+            return
+        }
+        #endif
         if let group = audioGroup, let option = nativeAudioOptions[index] { currentAVPlayerItem?.select(option, in: group); activeAudioTrackIndex = index; return }
         pendingAudioTrackIndex = index
         guard audioTrackSelectionTask == nil else { return }
@@ -372,6 +476,7 @@ final class VividEngine: ObservableObject {
     func prepareForItemReplacement() { pause() }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         #if os(tvOS)
+        dtsNativeBridge?.stop(); dtsNativeBridge = nil
         tvDisplayTask?.cancel(); tvDisplayTask = nil
         if resetDisplayCriteria { tvDisplayCriteria.reset() }
         #endif
@@ -418,6 +523,9 @@ final class VividEngine: ObservableObject {
         if secondary { secondarySubtitleTrackIndex = id; secondarySubtitleCues = [] }
         else { activeSubtitleTrackIndex = id; subtitleCues = [] }
         if !secondary, let group = subtitleGroup { currentAVPlayerItem?.select(id.flatMap { nativeSubtitleOptions[$0] }, in: group) }
+        #if os(tvOS)
+        dtsNativeBridge?.selectSubtitles(Set([activeSubtitleTrackIndex, secondarySubtitleTrackIndex].compactMap { $0 }.filter { externalSubtitles[$0] == nil }))
+        #endif
         if currentAVPlayer == nil {
             let selected = Set([activeSubtitleTrackIndex, secondarySubtitleTrackIndex].compactMap { $0 }.filter { externalSubtitles[$0] == nil })
             let epoch = generation

@@ -114,12 +114,15 @@ struct TVPlaybackSettingsPane: View {
                     // A stored pair no preset covers gets its own entry
                     // describing what is actually stored, so the sheet never
                     // highlights a preset the user did not choose.
-                    including: viewModel.preferredQualityPresetId == nil
+                    including: !VividQualityPresets.selectable.contains(where: { $0.id == viewModel.preferredQualityPresetId })
                         ? viewModel.preferredQualityLabel
                         : nil
                 ),
                 selection: Binding(
-                    get: { viewModel.preferredQualityPresetId ?? TVSettingsOptions.customQualityId },
+                    get: {
+                        VividQualityPresets.selectable.first(where: { $0.id == viewModel.preferredQualityPresetId })?.id
+                            ?? TVSettingsOptions.customQualityId
+                    },
                     set: { value in
                         guard value != TVSettingsOptions.customQualityId else { return }
                         Task { await viewModel.setQualityPreset(value) }

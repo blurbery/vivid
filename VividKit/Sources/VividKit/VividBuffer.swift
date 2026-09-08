@@ -12,6 +12,7 @@ final class VividPacket: @unchecked Sendable {
 }
 
 final class VividBuffer: @unchecked Sendable {
+    private static let maximumTargetSeconds: Double = 40
     private let condition = NSCondition()
     private var packets: [VividPacket] = []
     private var bytes = 0
@@ -21,11 +22,11 @@ final class VividBuffer: @unchecked Sendable {
     private var targetSeconds: Double
     init(byteLimit: Int, targetSeconds: Double = 10) {
         self.byteLimit = max(1, byteLimit)
-        self.targetSeconds = targetSeconds.isFinite ? max(1, min(30, targetSeconds)) : 10
+        self.targetSeconds = targetSeconds.isFinite ? max(1, min(Self.maximumTargetSeconds, targetSeconds)) : 10
     }
     func setTarget(seconds: Double) {
         guard seconds.isFinite else { return }
-        condition.lock(); targetSeconds = max(1, min(30, seconds)); condition.broadcast(); condition.unlock()
+        condition.lock(); targetSeconds = max(1, min(Self.maximumTargetSeconds, seconds)); condition.broadcast(); condition.unlock()
     }
     private var span: Double {
         guard let first = packets.first?.presentationTime, let last = packets.last,
