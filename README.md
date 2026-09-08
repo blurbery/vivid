@@ -43,13 +43,15 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
+Saved server accounts, login sessions and optional Vivid PINs can sync through the user’s private iCloud database across iPhone, iPad and Apple TV. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches and player preferences stay on the device; watched and resume state remains owned by the connected media server.
+
 ## Apple TV
 
 I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Detail pages include optional personal-TMDb trailers, server-only More Like This, and compact playback selections. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
 
 ## iPhone and iPad
 
-The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections; Search and Settings open as slide-up cards. It shares saved accounts, personal-TMDb trailers and IntroDB skipping with the TV implementation. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) documents the mobile layout and its device-testing limits.
+The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections; Search and Settings open as slide-up cards. It shares the iCloud account vault, personal-TMDb trailers and IntroDB skipping with the TV implementation. Downloads show live progress on detail pages and keep series artwork with episode transfers. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) documents the mobile layout and its device-testing limits.
 
 ## Playback
 

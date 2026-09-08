@@ -28,7 +28,9 @@ Vivid owns its interface, browsing behaviour and playback experience. Each media
 
 ## Saved accounts on Apple TV, iPhone and iPad
 
-A fresh installation opens a provider selector with Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin remains Coming Soon. The first-run marker belongs to the installation. Keychain sessions can survive deletion; testing a completely fresh setup must clear the test account session as well as its local setup marker. Never reset another installed app’s credentials.
+A fresh installation first checks the user’s private iCloud account vault. When it contains a usable saved session, Vivid restores the matching server account; otherwise the app opens the provider selector with Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin remains Coming Soon.
+
+The first-run marker belongs to the installation. Removing the app removes its sandbox, preferences, caches and downloads. Keychain can outlive an uninstall, so the next clean Vivid installation clears Vivid’s local Keychain audience before it restores anything from iCloud. An ordinary app update keeps the existing Keychain data. This cleanup is limited to Vivid’s storage identity.
 
 Settings lists circular saved-account cards and Add Profile. Here, a **profile card is a saved server account**, identified by server and user; it is distinct from a Silo viewing profile within that account. Add Profile signs in another Silo or Emby account. A ring highlights the signed-in account on both mobile and Apple TV. Selecting an inactive saved account switches sessions, while selecting the active card opens its account settings.
 
@@ -38,7 +40,7 @@ Settings lists circular saved-account cards and Add Profile. Here, a **profile c
     <tr><td>Cold launch with one account</td><td>Resume Home after startup unless the account is signed out or protected by an optional Vivid PIN.</td></tr>
     <tr><td>Cold launch with multiple accounts</td><td>Show the saved-account selector. Selecting a signed-in card reuses its stored session.</td></tr>
     <tr><td>Return after fifteen minutes in the background</td><td>Show the selector through the Vivid animation when multiple accounts exist, or require entry for a PIN-protected account. Shorter returns keep the current account.</td></tr>
-    <tr><td>Manual Sign Out</td><td>Keep the card, clear its saved session, and return through the animation to selection. The account requires credentials on its next sign-in; other saved accounts remain available.</td></tr>
+    <tr><td>Manual Sign Out</td><td>Keep the card, clear its saved session, and return through the animation to selection. That signed-out state syncs through iCloud, so the account requires credentials on its next sign-in on other devices too.</td></tr>
     <tr><td>Update Login</td><td>Validate the current server username/password and update the saved session for the same server user identity. It does not change the username or password on the server.</td></tr>
     <tr><td>First sign-in</td><td>Resolve the primary Silo viewing profile and enter it directly. There is no separate profile-choice step. An existing server PIN is still enforced.</td></tr>
   </tbody>
@@ -51,6 +53,14 @@ Manage Servers and Add Profile share the registered server list. Selecting or ad
 An account can have an optional four-digit Vivid PIN. Its salted digest is kept in Keychain, with a thirty-second delay after five incorrect attempts. PIN-protected cards remain locked if their PIN record cannot be read. This local account lock is separate from the server's viewing-profile PIN and must not bypass its verification proof.
 
 Account metadata is stored locally and session tokens are kept in Keychain; the entered password is not retained. Restoring an account uses the HTTP identity-transition gate, cancels outgoing requests and clears active response/profile caches. Access and refresh tokens are captured together with the matching viewing-profile proof. A server can still revoke or expire a session, in which case fresh authentication may be necessary.
+
+## Private iCloud account sync
+
+When iCloud is available, Vivid stores saved server accounts, login sessions and optional Vivid PIN records in one encrypted-values record in the user’s private CloudKit database. The same vault is used on iPhone, iPad and Apple TV. Sync runs during startup, when the app becomes active, and after account authentication, sign-out, PIN or deletion changes. If iCloud is unavailable, the local account continues to work and Vivid tries again later.
+
+Deleting a signed-out saved account on mobile writes a dated tombstone. Every device applies that tombstone before uploading its local accounts, which prevents a stale iPhone, iPad or Apple TV from adding the deleted account back. Only entering credentials again after the deletion can deliberately restore that same server/user identity. Removing the app does not delete the private CloudKit vault or accounts from the user’s other devices; it removes data held by that installation.
+
+This sync is limited to connection and login memory. Downloads, metadata and artwork caches, Home and player preferences, TMDb/Seerr settings and local playback data do not move through this account vault. Watched and resume state continues to sync through the selected media server’s own API.
 
 The implementation lives in <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift">TVSavedAccountStore</a> and <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountViews.swift">TVSavedAccountViews</a>. On mobile, the account cards and editor are in `IOSSettingsOverview.swift`, using the same store. Servers remains a separate Settings category for registered connections. Mobile Sign Out is in the account editor, not Servers. Saved Emby sessions additionally preserve the native user ID; the Emby adapter implements its API translation. Saved-account storage alone does not establish provider compatibility.
 

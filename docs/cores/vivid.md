@@ -42,6 +42,6 @@ I confirmed IntroDB works on the current Apple TV setup. That confirmation appli
 
 ## Mobile implementation
 
-The iPhone/iPad shell now shares saved accounts, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with the TV implementation. Mobile presentation uses native menus and slide-up cards around the shared player, with compact playback readouts and green watched markers. The automatic-skip switches explicitly describe their behaviour. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim that every device or playback path has been verified.
+The iPhone/iPad shell now shares the private iCloud account vault, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with the TV implementation. The vault syncs saved accounts, sessions and optional Vivid PIN records; downloads, caches and preferences stay local. Mobile presentation uses native menus and slide-up cards around the shared player, with compact playback readouts, green watched markers, live download rings and a glass Downloads manager. The automatic-skip switches explicitly describe their behaviour. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim that every device or playback path has been verified.
 
 [Documentation](../README.md)

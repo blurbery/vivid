@@ -14,7 +14,7 @@ Emby is available on iPhone, iPad and Apple TV. It connects to Emby and translat
 
 Emby uses its own server identity, native user ID, authentication headers, endpoints and playback reporting. Silo keeps its existing connection and Protocol V3 path. Shared networking and player code dispatch to Emby only for an Emby account; defaults for Silo remain unchanged. Address fallback, TMDb lookup, direct-play HDR options and download checks remain scoped to Emby.
 
-Server addresses and account credentials are supplied at setup, not embedded in the build. Tokens remain in Keychain under Vivid's current storage identity. Account changes invalidate obsolete requests, and Emby credentials are not sent to TMDb or IntroDB.
+Server addresses and account credentials are supplied at setup, not embedded in the build. Tokens remain in Keychain under Vivid's current storage identity and can be copied between the user’s devices through Vivid’s private iCloud account vault. The entered password is not retained. Account changes invalidate obsolete requests, and Emby credentials are not sent to TMDb or IntroDB.
 
 ## Setup and browsing
 
@@ -40,11 +40,11 @@ The Home endpoint listed in the 4.9 API schema is not sufficient evidence that t
 
 `EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to VividKit. It sends start, progress and stop reports through `/Sessions/Playing`, `/Sessions/Playing/Progress` and `/Sessions/Playing/Stopped`. Positions convert between seconds and Emby ticks. Transcoded-session cleanup uses Emby's active-encoding endpoint.
 
-Vivid’s Emby preferences are stored locally per server and native user. They do not synchronise through Emby settings or automatically follow the account to another device. The shared player lists subtitles embedded in the opened media; server sidecars, external files, subtitle search and translation are not offered. Language, behavior and appearance use local preferences or the device’s Accessibility caption settings. Quality limits feed Emby negotiation; the obsolete Dolby Vision and lossless-bridge settings are removed. Device and source capabilities still determine the decode/output route.
+Vivid’s Emby preferences are stored locally per server and native user. They do not synchronise through Emby settings or follow the account through Vivid’s iCloud login vault. The shared player lists subtitles embedded in the opened media; server sidecars, external files, subtitle search and translation are not offered. Language, behavior and appearance use local preferences or the device’s Accessibility caption settings. Quality limits feed Emby negotiation; the obsolete Dolby Vision and lossless-bridge settings are removed. Device and source capabilities still determine the decode/output route.
 
 TMDb remains an optional personal credential stored in Keychain. Emby provider IDs supply metadata identity; when a TMDb ID is absent, the Emby path can resolve an IMDb ID through TMDb. IntroDB uses the common series IMDb ID and season/episode numbers, with the shared IntroDB toggle and separate automatic-skip switches. Live Emby playback with these integrations still needs verification.
 
-Original-file downloads use the existing download manager with native Emby authentication and the server's download policy. Transcoded downloads, season batches and monitoring are not implemented by the Emby adapter. Watchlist and Vivid preferences are local; native favourites and watched state use Emby. Collection editing, realtime events and other unmapped features must not be advertised as complete.
+Original-file downloads use the existing download manager with native Emby authentication and the server's download policy. Their detail-page progress ring, poster artwork and Downloads cards use the shared mobile presentation. Transcoded downloads, season batches and monitoring are not implemented by the Emby adapter. Watchlist and Vivid preferences are local; native favourites and watched state use Emby. Collection editing, realtime events and other unmapped features must not be advertised as complete.
 
 ## Compatible audio
 
@@ -54,9 +54,9 @@ I confirmed that Dune’s alternate AC-3 track plays with sound and that automat
 
 ## Validation
 
-The app changes published in `v0.12.5` (`cb8c9490`) include the device-tested Emby setup and account selection, episode labels and resume bars. I confirmed the iPhone compatible-audio path and later confirmed Next Up labels and the shared episode-card changes. On Apple TV, I confirmed that switching to Emby worked after the initial add-account crash was addressed. That confirmation does not prove the cause of the original crash or cover every account-transition failure.
+The app changes published through `v0.13.0` (`2ee9005c`) include the device-tested Emby setup and account selection, episode labels, resume bars, compatible-audio selection and serialized manual audio changes. I confirmed the iPhone compatible-audio path and later confirmed Next Up labels and the shared episode-card changes. On Apple TV, I confirmed that switching to Emby worked after the initial add-account crash was addressed. That confirmation does not prove the cause of the original crash or cover every account-transition failure.
 
-Earlier automated checks covered Emby mapping, identity boundaries, local preferences, quality limits, Home-row filtering, collections, seasons and resolution labels. Separate TMDb and IntroDB checks covered request isolation and metadata mapping. Those checks passed on their recorded development revisions; they are not a new full-suite run against `v0.12.5`.
+Earlier automated checks covered Emby mapping, identity boundaries, local preferences, quality limits, Home-row filtering, collections, seasons and resolution labels. Separate TMDb and IntroDB checks covered request isolation and metadata mapping. Those checks passed on their recorded development revisions; they are not a new full-suite run against `v0.13.0`.
 
 Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. The complete XCTest suite has not been rerun against the release. Use these limits when choosing the first TestFlight group.
 

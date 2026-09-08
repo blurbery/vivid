@@ -33,6 +33,6 @@ Vivid reads chapters and embedded subtitle tracks from the opened media. Silo su
 
 The source names above are retained implementation identifiers. Defining the core in documentation does not rename or refactor these files.
 
-The iPhone/iPad saved-account flow now uses the same Silo session-restoration path as TV. Home metadata is cached locally per server/profile. Server artwork is displayed without Silo-configured poster-overlay pills. Emby has its own adapter; Jellyfin remains planned. These client features do not alter Silo’s production configuration.
+The iPhone/iPad saved-account flow now uses the same Silo session-restoration path as TV. Saved Silo accounts and sessions can move through Vivid’s private iCloud vault, while the server password, downloads, preferences and metadata caches stay out of it. Home metadata is cached locally per server/profile. Server artwork is displayed without Silo-configured poster-overlay pills. Emby has its own adapter; Jellyfin remains planned. These client features do not alter Silo’s production configuration.
 
 [Documentation](../README.md)

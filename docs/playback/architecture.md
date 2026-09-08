@@ -58,7 +58,13 @@ Vivid’s custom timeline is shared by native and software engine routes. On App
 
 The mobile shell shares account restoration, IntroDB, personal-TMDb and Seerr stores with tvOS. Home’s metadata fetch writes the same per-server/profile disk cache used by the Metadata page. Mobile artwork and logos reuse detail parallax, while Home explicitly fades to black rather than retaining the detail page’s full artwork-colour surface.
 
-Mobile controls remain Vivid-owned. Quality and Audio use native menus; Subtitles and Chapters use scrollable anchored popovers. Each player action has its own round glass button, including Rotate, Lock, PiP and AirPlay. The mobile Next Up layout reserves space for bottom-left actions while keeping the existing player surface mounted. Provider login and playback reporting have separate owners. Playback failures use a centred dark glass panel with separate Retry and Back buttons on mobile and Apple TV. See [App Design](../app-design.md#iphone-and-ipad-layout) for navigation and device verification.
+Mobile controls remain Vivid-owned. Quality and Audio use native menus; Subtitles and Chapters use scrollable anchored popovers. Each player action has its own round glass button, including Rotate, Lock, PiP and AirPlay. All control groups use one visibility state and no independent show animation; PiP remains mounted but disabled until its source is ready. The mobile Next Up layout reserves space for bottom-left actions while keeping the existing player surface mounted. Provider login and playback reporting have separate owners. Playback failures use a centred dark glass panel with separate Retry and Back buttons on mobile and Apple TV. See [App Design](../app-design.md#iphone-and-ipad-layout) for navigation and device verification.
+
+## Account storage and sync
+
+Local account metadata lives in Vivid defaults and session/PIN material lives in Vivid’s Keychain audience. `VividCloudAccountSync` merges those records through encrypted CloudKit fields in the user’s private `iCloud.com.blurbery.vivid` container. It fetches before writing, retries record-change conflicts and applies deletion tombstones before local snapshots. A tombstoned server/user identity can return only after an explicit later authentication. The cloud vault does not contain downloads, metadata caches or player preferences.
+
+Fresh-install detection uses an app-container marker. A missing marker with no existing Vivid defaults clears the local Vivid Keychain audience before cloud restoration; an upgrade seeds the marker without clearing the current session. Account sync is best effort when iCloud is unavailable and must not block a working local account.
 
 ## Tracks, subtitles and previews
 
@@ -70,7 +76,9 @@ Scrub previews use the existing bounded request owner and VividKit frame extract
 
 ## Downloads and external playback
 
-Keep downloaded sources and their metadata independent of an online server's current response. Validate offline resume, seeking, tracks and teardown explicitly.
+Keep downloaded sources and their metadata independent of an online server's current response and out of the iCloud account vault. The detail action observes registration and transfer state directly from `DownloadManager`, while Downloads reads the same records for progress, transfer rate, storage totals and locally stored poster artwork. Series-scoped requests use the parent series artwork. Accept authenticated artwork only as a relative path or a same-origin absolute URL; normalise it before constructing the server request. Validate offline resume, seeking, tracks and teardown explicitly.
+
+Final playback progress is reported before session stop/cleanup. A successful write posts the refresh signal immediately so Home and detail views can request current resume state while teardown finishes. Preserve the fallback refresh when the final write fails, and do not send the same final progress twice.
 
 PiP, AirPlay, HDR and audio-format behaviour depend on the exact engine route, device and source. In particular, a receiver cannot be assumed to reproduce the sender's private authentication headers. Do not widen an advertised capability based only on a package upgrade or a successful build.
 
