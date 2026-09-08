@@ -1357,6 +1357,27 @@ class ItemDetailViewModel {
         await updateWatched(contentId: contentId, played: played)
     }
 
+    /// Reflect natural playback completion in every resident episode page.
+    /// The final progress write is already committed when this is called, but
+    /// a provider's catalogue endpoint can briefly serve its previous snapshot.
+    func applyCompletedPlayback(contentIds: Set<String>) {
+        guard !contentIds.isEmpty else { return }
+
+        func completing(_ episode: EpisodeListItem) -> EpisodeListItem {
+            guard contentIds.contains(episode.contentId) else { return episode }
+            var result = episode
+            var userData = result.userData ?? LeafItemUserData(played: true)
+            userData.played = true
+            userData.isInProgress = false
+            userData.positionSeconds = 0
+            result.userData = userData
+            return result
+        }
+
+        episodes = episodes.map(completing)
+        episodesBySeason = episodesBySeason.mapValues { $0.map(completing) }
+    }
+
     func toggleSeriesWatched() async {
         guard let id = detail?.seriesId ?? seriesContentId else { return }
         let played = !(!seasons.isEmpty && seasons.allSatisfy { $0.userData?.played == true })

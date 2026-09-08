@@ -5465,6 +5465,7 @@ class PlayerViewModel {
         // playback does.
         let finalPosition = completionProgressPositionForCurrentItem()
         let playbackMutationContentIds = contentIdsNeedingDetailRefresh
+        let completedPlaybackContentIds = completedContentIdsNeedingDetailAdvance
         #if os(iOS) || os(tvOS)
         let refreshHome = refreshHomeAfterPlaybackWrite
         #endif
@@ -5489,7 +5490,8 @@ class PlayerViewModel {
                     NotificationCenter.default.post(
                         name: .playbackProgressDidCommit,
                         object: PlaybackProgressCommittedEvent(
-                            contentIds: playbackMutationContentIds
+                            contentIds: playbackMutationContentIds,
+                            completedContentIds: completedPlaybackContentIds
                         )
                     )
                 }
@@ -5505,7 +5507,8 @@ class PlayerViewModel {
                     NotificationCenter.default.post(
                         name: .playbackProgressDidCommit,
                         object: PlaybackProgressCommittedEvent(
-                            contentIds: playbackMutationContentIds
+                            contentIds: playbackMutationContentIds,
+                            completedContentIds: completedPlaybackContentIds
                         )
                     )
                 }

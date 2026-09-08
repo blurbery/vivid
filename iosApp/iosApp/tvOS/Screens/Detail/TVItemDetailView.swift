@@ -209,6 +209,7 @@ struct TVItemDetailView: View {
         guard event.refreshedContentIds.contains(contentId),
               viewModel.detail?.type == "series",
               !event.completedContentIds.isEmpty else { return }
+        viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
 
         let activeWasCompleted = activeSeriesEpisodeContentId.map {
             event.completedContentIds.contains($0)

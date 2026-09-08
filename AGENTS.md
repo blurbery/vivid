@@ -23,7 +23,7 @@ These instructions apply to AI coding, documentation and review work in this rep
 
 ## Project Structure & Module Organization
 
-This repository contains Vivid, an independent Apple media client. SwiftUI app code lives under `iosApp/iosApp/`, the local native playback package lives in `VividKit/`, app tests live in `iosApp/Tests/`, engine tests live in `VividKit/Tests/`, Top Shelf code lives in `iosApp/TopShelf/`, resources live in `iosApp/Resources/`, and generated Xcode structure is controlled by `iosApp/project.yml`. Start with [the documentation index](docs/README.md). GitHub release automation lives in `.github/workflows/release.yml` and `scripts/release/`; unsigned sideload tooling lives in `fastlane/`; Apple signing and upload automation is not configured. Vivid Apple distribution is not configured yet.
+This repository contains Vivid, an independent Apple media client. SwiftUI app code lives under `iosApp/iosApp/`, the local native playback package lives in `VividKit/`, app tests live in `iosApp/Tests/`, engine tests live in `VividKit/Tests/`, Top Shelf code lives in `iosApp/TopShelf/`, resources live in `iosApp/Resources/`, and generated Xcode structure is controlled by `iosApp/project.yml`. Start with [the documentation index](docs/README.md). GitHub release automation lives in `.github/workflows/release.yml` and `scripts/release/`; unsigned sideload tooling lives in `fastlane/`. App Store Connect is configured for iOS and tvOS TestFlight, but Apple signing and upload credentials remain local and no upload automation is committed.
 
 ## Vivid repository and release rules
 
@@ -41,7 +41,7 @@ This repository contains Vivid, an independent Apple media client. SwiftUI app c
 - Keep the project disclosure in the README: "Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me." Describe human direction and actual device testing accurately.
 - Treat Silo, Emby and Jellyfin as server providers, not Vivid branding. Present Vivid as its own app; do not add a “based on Silo” origin story or promotional credit. Preserve existing code copyright, licence and dependency notices. Read [server connections](docs/server-connections.md) before changing provider behaviour.
 - Silo and Emby connections are available on iPhone, iPad and Apple TV; consult `docs/cores/emby.md` for implemented paths and verification gaps. Jellyfin remains planned. Keep Emby changes conditional on the Emby provider and preserve Silo defaults; shared code does not establish feature or device parity. GitHub Sponsors is pending; do not present donations as active.
-- The repository stays private until the owner explicitly requests a visibility change. GitHub source releases do not authorize Apple distribution or changes to another repository.
+- The repository is public. Any future visibility change remains owner-controlled. GitHub source releases do not authorize Apple distribution or changes to another repository.
 
 ## Build, Test, and Development Commands
 

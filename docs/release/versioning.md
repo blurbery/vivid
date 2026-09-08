@@ -33,9 +33,13 @@ Vivid’s source releases in this repository begin at `v0.6.0`.
 
 ## Version shown in the app
 
-Settings → About displays the installed `CFBundleShortVersionString` and `CFBundleVersion` as version (build). Local development builds still use the `project.yml` marketing baseline of 0.6.0 and build 1; this is not a claim that they match the latest GitHub source release. Tagged distribution builds resolve `MARKETING_VERSION` from the release tag using `scripts/ci/resolve-marketing-version.sh`. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. A future TestFlight archive must use an explicit release version and an unused Apple build number; there is no TestFlight lane in this repository.
+Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The marketing version must match the GitHub release used for the build: a build from `v0.14.2` is shown as `0.14.2`. The build number in parentheses is Apple’s TestFlight build counter and is not part of the semantic version.
 
-The app does not query private GitHub APIs at runtime. Local simulator builds use their own build number (currently 1); they must not claim to be an uploaded TestFlight build.
+Every iOS and tvOS upload for the same Vivid release uses the same positive build number. That value also applies to every embedded extension, so the current paired baseline is shown consistently as `0.14.2 (1)` on iPhone, iPad and Apple TV. Increment the build number before replacing or retrying either platform’s uploaded binary, then archive both platforms with that new shared number. A new semantic version may start again at build 1.
+
+`iosApp/project.yml` is the committed source for the local marketing-version and build-number baseline shared by all shippable targets. Tagged distribution builds may resolve `MARKETING_VERSION` from the release tag using `scripts/ci/resolve-marketing-version.sh`; unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives before upload rather than relying on the tag or Xcode scheme alone.
+
+The app does not query GitHub APIs at runtime. A local or simulator build must not claim to be an uploaded TestFlight build unless it was created with the exact released version and TestFlight counter.
 
 ## Release notes
 
@@ -73,4 +77,4 @@ Dependencies are pinned in `package-lock.json`; the Node tools do not become app
 
 GitHub currently lists the source-release, player-regression and sideload workflows as active. The source-release workflow runs on main updates; player regression supports pull requests and manual validation. Sideload publishing remains a separate, explicitly requested action and its legacy publishing format needs review before use. Do not enable paid capacity or change distribution settings as part of an ordinary source release. See [App Distribution](distribution.md).
 
-Repository visibility stays private. Its releases are visible only to people with repository access until the owner changes that visibility.
+The repository and its source releases are public. Apple beta distribution remains separate and limited to the testers invited through TestFlight.
