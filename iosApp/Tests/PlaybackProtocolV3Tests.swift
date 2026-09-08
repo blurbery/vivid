@@ -1759,7 +1759,7 @@ final class PlaybackProtocolV3Tests: XCTestCase {
 
         XCTAssertEqual(options.last?.id, "1080p-medium")
         XCTAssertEqual(options.last?.label, "1080p Medium")
-        XCTAssertEqual(options.last?.subtitle, "Maximum bitrate: 6 Mbps")
+        XCTAssertEqual(options.last?.subtitle, "Up to 6 Mbps; may transcode.")
 
         let selection = ApplePlaybackQuality.protocolV3Selection(
             requestedQualityId: "1080p-medium",

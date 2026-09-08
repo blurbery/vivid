@@ -250,7 +250,7 @@ final class UICustomizationPreferencesTests: XCTestCase {
             ]
         )
         XCTAssertEqual(
-            destinations[4].title,
+            destinations.first(where: { $0.id == .library(7) })?.title,
             "Renamed Movies",
             "pinned destinations should use current library metadata instead of their stored label"
         )
