@@ -243,7 +243,7 @@ struct TVPlayerScrubber: View {
                 Ellipse().stroke(Color.white.opacity(isTimelineScrubbing ? 0.55 : 0), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.48), radius: 8, y: 3)
-            .offset(x: barWidth * progressFraction - (size + 10) / 2)
+            .offset(x: barWidth * CGFloat(progressFraction) - (size + 10) / 2)
     }
 
     private var trackHeight: CGFloat {
