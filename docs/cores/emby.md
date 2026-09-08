@@ -60,7 +60,7 @@ Earlier automated checks covered Emby mapping, identity boundaries, local prefer
 
 On 8 September 2026, read-only inspection confirmed that Reacher’s fourth season was stored as Gone Tomorrow with season number 4 in the connected Emby library. The adapter now labels it Season 4 on both platforms without altering the server. Four source-derived mapping checks passed for numbered seasons, Specials, missing numbers and unchanged episode titles. The existing season regression test also includes the Reacher case. Both device builds passed, were installed, and the owner confirmed the completed update on iPhone and Living Room Apple TV. This does not expand the untested integration and format coverage below.
 
-Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. The complete XCTest suite has not been rerun against the release. Use these limits when choosing the first TestFlight group.
+Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. The current full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks. Use these limits when choosing the first TestFlight group.
 
 ## Source ownership
 
