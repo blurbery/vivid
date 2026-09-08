@@ -5496,7 +5496,7 @@ class PlayerViewModel {
                     )
                 }
                 #endif
-                await sessionBridge.stopSession(
+                let stopProgressResult = await sessionBridge.stopSession(
                     position: finalPosition,
                     isPaused: true,
                     finalProgressAlreadyReported: progressResult == .success
@@ -5508,7 +5508,12 @@ class PlayerViewModel {
                         name: .playbackProgressDidCommit,
                         object: PlaybackProgressCommittedEvent(
                             contentIds: playbackMutationContentIds,
-                            completedContentIds: completedPlaybackContentIds
+                            completedContentIds: PlaybackProgressCommitPolicy
+                                .confirmedCompletedContentIds(
+                                    completedPlaybackContentIds,
+                                    initialResult: progressResult,
+                                    stopResult: stopProgressResult
+                                )
                         )
                     )
                 }

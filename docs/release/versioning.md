@@ -33,9 +33,9 @@ Vivid’s source releases in this repository begin at `v0.6.0`.
 
 ## Version shown in the app
 
-Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The marketing version must match the GitHub release used for the build: a build from `v0.14.2` is shown as `0.14.2`. The build number in parentheses is Apple’s TestFlight build counter and is not part of the semantic version.
+Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The marketing version must match the GitHub release used for the build: a build from `v0.14.3` is shown as `0.14.3`. The build number in parentheses is Apple’s TestFlight build counter and is not part of the semantic version.
 
-Every iOS and tvOS upload for the same Vivid release uses the same positive build number. That value also applies to every embedded extension, so the current paired baseline is shown consistently as `0.14.2 (1)` on iPhone, iPad and Apple TV. Increment the build number before replacing or retrying either platform’s uploaded binary, then archive both platforms with that new shared number. A new semantic version may start again at build 1.
+Every iOS and tvOS upload for the same Vivid release uses the same positive build number. That value also applies to every embedded extension, so the current paired baseline is shown consistently as `0.14.3 (1)` on iPhone, iPad and Apple TV. Increment the build number before replacing or retrying either platform’s uploaded binary, then archive both platforms with that new shared number. A new semantic version may start again at build 1.
 
 `iosApp/project.yml` is the committed source for the local marketing-version and build-number baseline shared by all shippable targets. Tagged distribution builds may resolve `MARKETING_VERSION` from the release tag using `scripts/ci/resolve-marketing-version.sh`; unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives before upload rather than relying on the tag or Xcode scheme alone.
 

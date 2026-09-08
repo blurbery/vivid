@@ -43,6 +43,41 @@ final class DetailDismissalNavigationTests: XCTestCase {
         }
     }
 
+    func testPlaybackCompletionRequiresAConfirmedProgressWrite() {
+        let candidates: Set<String> = ["episode-1"]
+
+        XCTAssertEqual(
+            PlaybackProgressCommitPolicy.confirmedCompletedContentIds(
+                candidates,
+                initialResult: .success,
+                stopResult: .transientFailure
+            ),
+            candidates
+        )
+        XCTAssertEqual(
+            PlaybackProgressCommitPolicy.confirmedCompletedContentIds(
+                candidates,
+                initialResult: .transientFailure,
+                stopResult: .success
+            ),
+            candidates
+        )
+        XCTAssertTrue(
+            PlaybackProgressCommitPolicy.confirmedCompletedContentIds(
+                candidates,
+                initialResult: .transientFailure,
+                stopResult: .transientFailure
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            PlaybackProgressCommitPolicy.confirmedCompletedContentIds(
+                candidates,
+                initialResult: .missingSession,
+                stopResult: .missingSession
+            ).isEmpty
+        )
+    }
+
     func testPersistentSearchPageStartsPlayerFromCardImmediately() throws {
         let router = AppRouter()
 

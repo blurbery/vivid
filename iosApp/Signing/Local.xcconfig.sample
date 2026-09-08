@@ -1,8 +1,9 @@
 // Copy this file to `Local.xcconfig` (gitignored) to override the signing
 // defaults in all five target xcconfigs, including the notification service,
 // downloads Live Activity and Top Shelf extensions. Use
-// this for device builds under your own Apple Developer team. Vivid’s
-// committed release identifiers and App Group still need Apple registration.
+// this for device builds under your own Apple Developer team. Vivid’s release
+// identifiers are registered to its maintainer, so use identifiers registered
+// to your own team for local signing.
 //
 // Every target xcconfig ends with `#include? "Local.xcconfig"`, so any
 // variable you redefine here wins. Each target reads its own indirection
