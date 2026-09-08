@@ -95,6 +95,16 @@ enum PlaybackProgressReportResult: Equatable {
     case transientFailure
 }
 
+enum PlaybackProgressCommitPolicy {
+    static func confirmedCompletedContentIds(
+        _ candidates: Set<String>,
+        initialResult: PlaybackProgressReportResult,
+        stopResult: PlaybackProgressReportResult
+    ) -> Set<String> {
+        initialResult == .success || stopResult == .success ? candidates : []
+    }
+}
+
 struct PlaybackV3TerminalFailure: LocalizedError, Equatable {
     let reason: String
     let message: String
@@ -1986,18 +1996,23 @@ actor PlaybackSessionBridge {
     /// session-scoped state up front makes the loser a no-op. It also stops the
     /// late clears from wiping a *new* session adopted while these awaits were
     /// still in flight.
+    @discardableResult
     func stopSession(
         position: Double,
         isPaused: Bool,
         finalProgressAlreadyReported: Bool = false
-    ) async {
-        guard let sid = sessionId else { return }
+    ) async -> PlaybackProgressReportResult {
+        guard let sid = sessionId else { return .transientFailure }
         if let playback = embyPlayback {
             embyPlayback = nil
             sessionId = nil
             currentSession = nil
-            try? await playback.report(position: position, isPaused: isPaused, stopping: true)
-            return
+            do {
+                try await playback.report(position: position, isPaused: isPaused, stopping: true)
+                return .success
+            } catch {
+                return .transientFailure
+            }
         }
         let stoppingProtocolV3 = activeProtocolV3
         let supersededSessionId = pendingProtocolV3Transition?.priorSessionId
@@ -2041,6 +2056,8 @@ actor PlaybackSessionBridge {
             )
         }
 
+        var finalProgressResult: PlaybackProgressReportResult =
+            finalProgressAlreadyReported ? .success : .transientFailure
         if !finalProgressAlreadyReported, position.isFinite, position >= 0 {
             let report = ProgressReport(position: position, isPaused: isPaused)
             do {
@@ -2048,7 +2065,11 @@ actor PlaybackSessionBridge {
                     "/api/v1/playback/\(sid)/progress",
                     body: report
                 )
+                finalProgressResult = .success
             } catch {
+                finalProgressResult = Self.isPlaybackSessionMissing(error)
+                    ? .missingSession
+                    : .transientFailure
                 logger.warning(
                     "final stop-session progress report failed for \(sid, privacy: .public): \(MediaLogRedactor.sanitize(error), privacy: .public)"
                 )
@@ -2070,6 +2091,7 @@ actor PlaybackSessionBridge {
         // Nudge the Top Shelf to re-fetch now that progress has advanced.
         TVTopShelfContentProvider.topShelfContentDidChange()
         #endif
+        return finalProgressResult
     }
 
     // MARK: - Helpers
