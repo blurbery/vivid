@@ -1,0 +1,13 @@
+libass subtitle rendering and font dependencies
+  Binary source: https://github.com/kingslay/FFmpegKit/tree/c32be9bfb628042737ad3ef622e930c5c7b15954/Sources
+  Only libass, libfreetype, libfribidi and libharfbuzz frameworks are included.
+  The FFmpegKit playback target, mpv, and GPL media libraries are not linked.
+  libass 0.17.1: ISC; https://github.com/libass/libass/tree/0.17.1
+  FreeType 2.13.2: FreeType License; https://github.com/freetype/freetype/tree/VER-2-13-2
+  FriBidi 1.0.12: LGPL-2.1-or-later; https://github.com/fribidi/fribidi/tree/v1.0.12
+  HarfBuzz 5.3.1: MIT; https://github.com/harfbuzz/harfbuzz/tree/5.3.1
+  The font and subtitle frameworks are static, separately replaceable SwiftPM
+  binary targets. Their upstream licenses remain unchanged. FreeType notice:
+  Portions of this software are copyright © 2023 The FreeType Project
+  (www.freetype.org). All rights reserved.
+

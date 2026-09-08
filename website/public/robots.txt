@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://vividapp.co/sitemap.xml

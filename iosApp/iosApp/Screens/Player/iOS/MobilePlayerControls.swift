@@ -1,0 +1,781 @@
+#if os(iOS)
+import SwiftUI
+
+/// Touch-driven overlay used on iOS/iPadOS. Layout (see
+/// docs/ios-player-redesign/mockups.html):
+/// - Top strip: close, title block (series eyebrow + episode title)
+/// - Center: skip back 10s, play/pause, skip forward 10s
+/// - Bottom stack: time row (elapsed / status chips / remaining), capsule
+///   scrubber with buffered range + intro tint + scrub
+///   preview bubble, with separate round Quality, Audio, Subtitles and
+///   Chapters controls. Subtitle and chapter lists scroll in native popovers.
+///
+/// The whole thing is wrapped in a tap-to-toggle gesture; auto-hide after 3 s
+/// of inactivity. The view is stateful only for sheet presentation and the
+/// trailing-time display mode; the rest of the state lives on
+/// `PlayerViewModel`. Invisible gestures (double-tap skip, hold-2×, edge
+/// swipes) live in `MobilePlayerGestureLayer` underneath this overlay.
+struct MobilePlayerControls: View {
+    let viewModel: PlayerViewModel
+    let onDismiss: () -> Void
+
+    @State private var activeSheet: PlayerSheet?
+    @State private var activePopover: PlayerPopover?
+    @State private var viewportSize: CGSize = .zero
+    /// Trailing time label mode: remaining ("−12:34") when true, total
+    /// duration otherwise. Tap the label to flip — the native player idiom.
+    @State private var showsRemainingTime = true
+    @State private var pictureInPicture = PictureInPictureCoordinator.shared
+    /// Floating stats card. Kept here rather than on the view model because
+    /// it is purely presentation, and kept outside the `showControls` gate
+    /// below so the auto-hide takes the transport away without it.
+    @State private var showsStats = false
+
+
+    var body: some View {
+        // NOTE: the .sheet modifier MUST live outside the `showControls` gate.
+        // If it's attached to a view that only exists while controls are
+        // visible, the 3s auto-hide tears down the sheet's host and dismisses
+        // the sheet mid-interaction — then re-presents it when controls come
+        // back, because @State activeSheet survives the rebuild.
+        ZStack {
+            if viewModel.showControls || activePopover != nil {
+                // GeometryReader pins the control stack to the player's own
+                // bounds. The bars are siblings of the shared player notice in
+                // `PlayerView`'s ZStack; inside the player's `.fullScreenCover`
+                // a too-wide bar would otherwise stretch that shared layer past
+                // the screen and drag the notice off both edges in portrait.
+                // Clamping the stack to `proxy.size` keeps every overlay inside
+                // the visible frame regardless of how wide a bar wants to be.
+                GeometryReader { proxy in
+                    ZStack {
+                        Color.black.opacity(viewModel.isScrubbing ? 0.55 : 0.4)
+                            .ignoresSafeArea()
+                            .onTapGesture { viewModel.toggleControls() }
+
+                        VStack(spacing: 0) {
+                            topStrip(compact: proxy.size.width < proxy.size.height)
+                                .opacity(recedingOpacity)
+                            Spacer()
+                            centerCluster
+                                .opacity(recedingOpacity)
+                            Spacer()
+                            bottomStack
+                        }
+                        .padding(.horizontal)
+                        .padding(.top)
+                        // Hug the bottom: the safe-area inset already keeps
+                        // the action row clear of the home indicator, so only
+                        // a hairline of extra breathing room is needed.
+                        .padding(.bottom, 2)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .animation(.easeOut(duration: 0.18), value: viewModel.isScrubbing)
+                    }
+                }
+                .transition(.opacity)
+            }
+            if viewModel.showIntroSkip {
+                introSkipPill
+            }
+            if viewModel.showCreditsSkip {
+                creditsSkipPill
+            }
+            if showsStats {
+                MobilePlaybackStatsOverlay(stats: viewModel.playbackStats)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: showsStats)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .settings:
+                PlayerSettingsSheet(
+                    viewModel: viewModel,
+                    sleepTimer: viewModel.sleepTimer,
+                    statsOverlayVisible: Binding(
+                        get: { showsStats },
+                        set: { newValue in
+                            showsStats = newValue
+                            // Switching it on closes the sheet: the stats are
+                            // only useful over the picture they describe.
+                            if newValue { activeSheet = nil }
+                        }
+                    )
+                )
+                .presentationDetents([.large])
+            }
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }
+        .onChange(of: activePopover) { _, value in
+            if value != nil { viewModel.pinControlsVisible() }
+            else { viewModel.resumeAutoHide() }
+        }
+        .onChange(of: activeSheet) { _, newValue in
+            // Keep controls pinned while a sheet is up, and restart the
+            // auto-hide timer once it closes.
+            if newValue != nil {
+                viewModel.pinControlsVisible()
+            } else {
+                viewModel.resumeAutoHide()
+            }
+        }
+    }
+
+    /// Top strip, center cluster and action row fade out of the way while
+    /// the user is scrubbing so the preview bubble owns the screen.
+    private var recedingOpacity: Double {
+        viewModel.isScrubbing ? 0.12 : 1
+    }
+
+    // MARK: - Top strip
+
+    private func topStrip(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                closeButton
+                if !compact { titleBlock }
+                Spacer(minLength: 0)
+                externalPlaybackControls
+                // The rotation buttons are a sibling overlay that fades with
+                // these controls. Reserve its exact width to avoid overlap.
+                Color.clear
+                    .frame(width: MobilePlayerRotationControls.width,
+                           height: MobilePlayerRotationControls.height)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            if compact {
+                HStack(spacing: 12) {
+                    titleBlock
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private var closeButton: some View {
+        Button(action: onDismiss) {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+        }
+        .buttonStyle(MobilePlayerGlassButtonStyle())
+        .accessibilityLabel("Close Player")
+        .accessibilityIdentifier("player.close")
+    }
+
+    @ViewBuilder
+    private var externalPlaybackControls: some View {
+        let showsPiP = pictureInPicture.isSupported && pictureInPicture.hasSource
+        if showsPiP || viewModel.supportsExternalPlayback {
+            HStack(spacing: 8) {
+                if showsPiP {
+                    Button { pictureInPicture.toggle() } label: {
+                        Image(systemName: pictureInPicture.isActive ? "pip.exit" : "pip.enter")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+                    }
+                    .buttonStyle(MobilePlayerGlassButtonStyle())
+                    .disabled(!pictureInPicture.isPossible && !pictureInPicture.isActive)
+                    .accessibilityLabel(pictureInPicture.isActive ? "Stop Picture in Picture" : "Start Picture in Picture")
+                }
+                if viewModel.supportsExternalPlayback {
+                    AirPlayRoutePicker { isPresentingRoutes in
+                        if isPresentingRoutes { viewModel.pinControlsVisible() }
+                        else { viewModel.resumeAutoHide() }
+                    }
+                    .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+                    .vividPlayerGlass(in: Circle(), interactive: true)
+                }
+            }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            if let eyebrow = titleEyebrow {
+                Text(eyebrow)
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(1)
+            }
+            Text(heroTitle)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .shadow(color: .black.opacity(0.5), radius: 6, y: 1)
+        .layoutPriority(-1)
+    }
+
+    /// "SEVERANCE · S2:E4"-style context line. Series title + episode tag
+    /// for episodes, release year for movies, nothing when metadata hasn't
+    /// resolved yet.
+    private var titleEyebrow: String? {
+        let metadata = viewModel.metadata
+        var parts: [String] = []
+        if let series = metadata.seriesTitle, !series.isEmpty {
+            parts.append(series)
+        }
+        if let tag = metadata.episodeTag, !tag.isEmpty {
+            parts.append(tag)
+        }
+        if parts.isEmpty, let year = metadata.year {
+            parts.append(String(year))
+        }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " · ").uppercased()
+    }
+
+    private var heroTitle: String {
+        let primary = viewModel.metadata.primaryTitle
+        return primary.isEmpty ? viewModel.title : primary
+    }
+
+    // MARK: - Center
+
+    /// Every circle matches the detail page's 44pt close/remote controls.
+    /// Play/pause keeps its white tint without becoming a larger disc.
+    private var centerCluster: some View {
+        HStack(spacing: 36) {
+            Button {
+                viewModel.skipBackward(10)
+            } label: {
+                Image(systemName: "gobackward.10")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+            }
+            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .accessibilityLabel("Skip Back 10 Seconds")
+
+            Button {
+                viewModel.togglePlayPause()
+            } label: {
+                Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.black.opacity(0.85))
+                    // play.fill reads left-heavy inside a circle;
+                    // nudge it toward the optical center.
+                    .offset(x: viewModel.isPlaying ? 0 : 1.5)
+                    .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+            }
+            .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9)))
+            .accessibilityLabel(viewModel.isPlaying ? "Pause" : "Play")
+
+            Button {
+                viewModel.skipForward(10)
+            } label: {
+                Image(systemName: "goforward.10")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+            }
+            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .accessibilityLabel("Skip Forward 10 Seconds")
+        }
+    }
+
+    // MARK: - Bottom stack
+
+    private var bottomStack: some View {
+        VStack(spacing: 10) {
+            actionRow
+                .opacity(recedingOpacity)
+            progressSlider
+            timeRow
+        }
+    }
+
+    private var timeRow: some View {
+        HStack {
+            Image(systemName: "pause.fill")
+                .font(.caption).foregroundStyle(.white)
+                .opacity(viewModel.isPlaying ? 0 : 1)
+            Text(PlayerTimeFormatter.formatHMS(displayTime))
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.85))
+                .monospacedDigit()
+
+            Spacer()
+
+            if viewModel.sleepTimer.isActive {
+                statusChip(
+                    systemImage: "moon.zzz.fill",
+                    text: PlayerTimeFormatter.formatCountdown(viewModel.sleepTimer.remainingSeconds)
+                )
+            }
+
+            Spacer()
+
+            Button {
+                showsRemainingTime.toggle()
+            } label: {
+                Text(trailingTimeText)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .monospacedDigit()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showsRemainingTime ? "Time Remaining" : "Duration")
+            .accessibilityHint("Switches between time remaining and total duration")
+        }
+    }
+
+    private var trailingTimeText: String {
+        if showsRemainingTime {
+            return PlayerTimeFormatter.formatHMS(max(viewModel.duration - displayTime, 0)) + " left"
+        }
+        return PlayerTimeFormatter.formatHMS(viewModel.duration)
+    }
+
+    private func statusChip(systemImage: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+            Text(text)
+                .font(.system(size: 11, weight: .bold))
+                .monospacedDigit()
+        }
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(.black.opacity(0.45)))
+        .overlay(Capsule().stroke(.white.opacity(0.16), lineWidth: 0.5))
+    }
+
+    private var displayTime: Double {
+        viewModel.isScrubbing ? viewModel.scrubPreviewTime : viewModel.currentTime
+    }
+
+    // MARK: - Scrubber
+
+    private var progressSlider: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let progress = viewModel.duration > 0
+                ? min(max(displayTime / viewModel.duration, 0), 1)
+                : 0
+            let barHeight: CGFloat = viewModel.isScrubbing ? 12 : 6
+
+            ZStack(alignment: .leading) {
+                // Base track
+                Capsule()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(height: barHeight)
+
+                // Buffered range from Vivid telemetry. Routes that cannot
+                // report a comparable value leave the layer empty.
+                if let buffered = bufferedFraction, buffered > progress {
+                    Capsule()
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: max(width * buffered, barHeight), height: barHeight)
+                }
+
+                introMarker(width: width, height: barHeight)
+
+                // Played portion. Thumbless — the whole bar is the handle.
+                Capsule()
+                    .fill(Color.white)
+                    .frame(width: max(width * progress, barHeight), height: barHeight)
+                    .shadow(color: .white.opacity(viewModel.isScrubbing ? 0.35 : 0), radius: 8)
+            }
+            .frame(height: 20, alignment: .center)
+            .animation(.snappy(duration: 0.22), value: viewModel.isScrubbing)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let fraction = min(max(value.location.x / width, 0), 1)
+                        if viewModel.isScrubbing {
+                            viewModel.updateScrub(fraction: fraction)
+                        } else {
+                            viewModel.beginScrub(fraction: fraction)
+                        }
+                    }
+                    .onEnded { _ in
+                        viewModel.endScrub()
+                    }
+            )
+            .overlay(alignment: .topLeading) {
+                if viewModel.isScrubbing {
+                    let previewInset: CGFloat = viewModel.scrubPreviewImage == nil ? 80 : 102
+                    scrubPreviewBubble
+                        .position(
+                            x: min(
+                                max(width * progress, previewInset),
+                                max(width - previewInset, previewInset)
+                            ),
+                            y: viewModel.scrubPreviewImage == nil ? -36 : -92
+                        )
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+            // The custom scrubber is drag-only; expose it to VoiceOver as an
+            // adjustable element that seeks through the same skip path.
+            .accessibilityElement()
+            .accessibilityLabel("Playback Position")
+            .accessibilityValue(
+                "\(PlayerTimeFormatter.formatHMS(displayTime)) of \(PlayerTimeFormatter.formatHMS(viewModel.duration))"
+            )
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: viewModel.skipForward(10)
+                case .decrement: viewModel.skipBackward(10)
+                @unknown default: break
+                }
+            }
+        }
+        .frame(height: 20)
+    }
+
+    private var bufferedFraction: Double? {
+        guard viewModel.duration > 0, viewModel.bufferedAheadSeconds > 0 else { return nil }
+        let end = (viewModel.currentTime + viewModel.bufferedAheadSeconds) / viewModel.duration
+        return min(max(end, 0), 1)
+    }
+
+    /// Floating time + chapter readout pinned above the touch point while
+    /// scrubbing. Presentation-only: reads the same `scrubPreviewTime` the
+    /// seek machinery already maintains.
+    private var scrubPreviewBubble: some View {
+        VStack(spacing: 6) {
+            if let image = viewModel.scrubPreviewImage {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 176, height: 99)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+            Text(PlayerTimeFormatter.formatHMS(viewModel.scrubPreviewTime))
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+            if let chapter = chapterTitle(at: viewModel.scrubPreviewTime) {
+                Text(chapter)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(1)
+            }
+        }
+        .padding(7)
+        .vividPlayerGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .fixedSize()
+    }
+
+    private func chapterTitle(at time: Double) -> String? {
+        guard let chapter = viewModel.chapters.last(where: { $0.time <= time }) else { return nil }
+        return chapter.title ?? "Chapter \(chapter.index + 1)"
+    }
+
+    @ViewBuilder
+    private func introMarker(width: CGFloat, height: CGFloat) -> some View {
+        if let introRange = viewModel.introRange, viewModel.duration > 0 {
+            let start = min(max(introRange.start / viewModel.duration, 0), 1)
+            let end = min(max(introRange.end / viewModel.duration, 0), 1)
+            if end > start {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.cyan.opacity(0.4))
+                    .frame(width: width * (end - start), height: height)
+                    .offset(x: width * start)
+            }
+        }
+    }
+
+    // MARK: - Action row
+
+    private var actionRow: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+            Menu {
+                ForEach(viewModel.selectableQualityOptions) { option in
+                    Button { viewModel.switchQuality(option.id) } label: {
+                        if option.id == viewModel.activeQualityId {
+                            Label(option.labelWithBitrate, systemImage: "checkmark")
+                        } else { Text(option.labelWithBitrate) }
+                    }
+                }
+            } label: {
+                selectorIcon("slider.horizontal.3")
+            }
+            .menuOrder(.fixed)
+            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .disabled(viewModel.isQualitySwitching)
+            .accessibilityLabel("Streaming quality")
+            Menu {
+                ForEach(viewModel.audioTracks) { track in
+                    Button { viewModel.selectAudio(track) } label: {
+                        let title = [track.primaryLabel, track.attributesLabel]
+                            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                        if viewModel.selectedAudioId == track.trackId {
+                            Label(title, systemImage: "checkmark")
+                        } else { Text(title) }
+                    }
+                }
+            } label: { selectorIcon("speaker.wave.2") }
+            .menuOrder(.fixed)
+            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .disabled(viewModel.audioTracks.isEmpty)
+            .accessibilityLabel("Audio")
+            Button { activePopover = .subtitles } label: {
+                selectorIcon("captions.bubble")
+            }
+            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .accessibilityLabel("Subtitles")
+            .accessibilityIdentifier("player.subtitles")
+            .popover(isPresented: popoverBinding(.subtitles), attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                TrackSelectionSheet(viewModel: viewModel, scope: .subtitles) { activePopover = nil }
+                    .frame(width: 300, height: popoverHeight)
+                    .presentationCompactAdaptation(.popover)
+            }
+
+            Button { activePopover = .chapters } label: {
+                selectorIcon("list.bullet.rectangle")
+            }
+            .buttonStyle(MobilePlayerGlassButtonStyle())
+            .accessibilityLabel("Chapters")
+            .accessibilityIdentifier("player.chapters")
+            .popover(isPresented: popoverBinding(.chapters), attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                chaptersPopover
+                    .frame(width: 300, height: popoverHeight)
+                    .presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+
+    private var popoverHeight: CGFloat {
+        min(420, max(140, viewportSize.height - 160))
+    }
+
+    private func popoverBinding(_ popover: PlayerPopover) -> Binding<Bool> {
+        Binding(get: { activePopover == popover }, set: { if !$0 { activePopover = nil } })
+    }
+
+    private var chaptersPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Chapters")
+                .font(.headline)
+                .padding()
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if viewModel.chapters.isEmpty {
+                        Text("This media file has no chapters.")
+                            .foregroundStyle(.secondary)
+                            .padding()
+                    } else {
+                        ForEach(viewModel.chapters) { chapter in
+                            Button {
+                                viewModel.seekTo(seconds: chapter.time)
+                                activePopover = nil
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text(chapter.title ?? "Chapter \(chapter.index + 1)")
+                                        .foregroundStyle(.primary)
+                                        .multilineTextAlignment(.leading)
+                                    Spacer(minLength: 8)
+                                    Text(PlayerTimeFormatter.formatHMS(chapter.time))
+                                        .font(.caption)
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(minHeight: 44)
+                                .padding(.horizontal)
+                                .padding(.vertical, 4)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .scrollIndicators(.visible)
+        }
+    }
+
+    private func selectorIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+    }
+
+
+
+    // MARK: - Intro skip
+
+    /// One prominent pill that covers both intro states: "Skip Intro" while
+    /// the range is active, "Skip Intro · N" with a cancel circle beside it
+    /// once the auto-skip countdown is armed.
+    private var introSkipPill: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                HStack(spacing: 10) {
+                    if viewModel.introAutoSkipCountdownSeconds != nil {
+                        Button {
+                            viewModel.cancelIntroAutoSkip()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+                        }
+                        .buttonStyle(MobilePlayerGlassButtonStyle())
+                        .accessibilityLabel("Cancel Auto-Skip Intro")
+                    }
+
+                    Button {
+                        viewModel.skipIntro()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "forward.end.fill")
+                            Text("Skip Intro")
+                            if let countdown = viewModel.introAutoSkipCountdownSeconds {
+                                Text("· \(countdown)")
+                                    .opacity(0.55)
+                                    .monospacedDigit()
+                            }
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.black.opacity(0.85))
+                        .padding(.horizontal, 16)
+                        .frame(height: VividTheme.topBarIconHitSize)
+                    }
+                    // White prominent glass with a dark glyph, matching the
+                    // play/pause disc — accent-tinted prominent reads as an
+                    // app-colored web button over video.
+                    .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9)))
+                    .accessibilityLabel(
+                        viewModel.introAutoSkipCountdownSeconds == nil ? "Skip Intro" : "Skip Intro Now"
+                    )
+                }
+            }
+            .padding(.horizontal, 24)
+            // Clear the bottom stack while the controls are up; hug the
+            // bottom edge when the pill is floating alone.
+            .padding(.bottom, viewModel.showControls ? 88 : 24)
+        }
+        .animation(.easeOut(duration: 0.2), value: viewModel.showControls)
+        .transition(.opacity)
+    }
+
+    private var creditsSkipPill: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    viewModel.skipCredits()
+                } label: {
+                    Label("Skip Credits", systemImage: "forward.end.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.black.opacity(0.85))
+                        .padding(.horizontal, 16)
+                        .frame(height: VividTheme.topBarIconHitSize)
+                }
+                .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9)))
+                .accessibilityLabel("Skip Credits")
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, viewModel.showControls ? 88 : 24)
+        }
+        .animation(.easeOut(duration: 0.2), value: viewModel.showControls)
+        .transition(.opacity)
+    }
+
+    // MARK: - Sheet identifier
+
+    private enum PlayerPopover { case subtitles, chapters }
+
+    private enum PlayerSheet: Identifiable {
+        case settings
+        var id: Self { self }
+    }
+}
+
+/// Match detail chrome without the extra padding added by native glass
+/// button styles. A 44pt square is circular; longer labels form a 44pt pill.
+struct MobilePlayerGlassButtonStyle: ButtonStyle {
+    var tint: Color? = nil
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(minWidth: VividTheme.topBarIconHitSize)
+            .frame(height: VividTheme.topBarIconHitSize)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .contentShape(Capsule())
+            .vividPlayerGlass(in: Capsule(), tint: tint, interactive: true)
+    }
+}
+
+/// Close and rotation controls share the same visibility, hit testing and
+/// accessibility state, including while loading and on Next Up.
+struct MobilePlayerChromeVisibility: ViewModifier {
+    let isVisible: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+            .accessibilityHidden(!isVisible)
+            .animation(.easeOut(duration: 0.18), value: isVisible)
+    }
+}
+
+/// Top-right chrome follows transport visibility in every playback phase.
+/// Equal tap areas keep the lock centred through rotation.
+struct MobilePlayerRotationControls: View {
+    static let height = VividTheme.topBarIconHitSize
+    static let width = height * 2 + 8
+    static let topClearance: CGFloat = height + 32
+
+    let orientationCoordinator: PlayerOrientationCoordinator
+    let isVisible: Bool
+    var onInteraction: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                orientationCoordinator.togglePlayerOrientation()
+                onInteraction()
+            } label: {
+                icon("rectangle.landscape.rotate")
+            }
+            .accessibilityLabel("Rotate to \(orientationCoordinator.nextPlayerOrientation.title)")
+            .accessibilityHint("Rotates the screen without interrupting playback")
+            .accessibilityIdentifier("player.rotate")
+
+            Button {
+                orientationCoordinator.toggleRotationLock()
+                onInteraction()
+            } label: {
+                icon(orientationCoordinator.isRotationLocked ? "lock" : "lock.open")
+            }
+            .accessibilityLabel(orientationCoordinator.isRotationLocked ? "Unlock screen rotation" : "Lock screen rotation")
+            .accessibilityValue(orientationCoordinator.isRotationLocked ? "Locked" : "Unlocked")
+            .accessibilityHint(orientationCoordinator.isRotationLocked
+                ? "Allows video to follow phone orientation"
+                : "Stops phone movement rotating video. The rotate button still works")
+            .accessibilityIdentifier("player.rotation-lock")
+        }
+        .buttonStyle(MobilePlayerGlassButtonStyle())
+        .modifier(MobilePlayerChromeVisibility(isVisible: isVisible))
+    }
+
+    private func icon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 24, weight: .medium))
+            .foregroundStyle(.white)
+            .frame(width: 32, height: 32)
+            .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
+            .contentShape(Rectangle())
+    }
+}
+#endif

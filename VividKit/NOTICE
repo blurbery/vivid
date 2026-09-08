@@ -1,0 +1,9 @@
+VividKit
+Copyright 2026 blurbery
+
+The original source files in this directory are licensed under Apache-2.0.
+This package uses Apple system frameworks under their platform terms.
+FFmpegBuild, libass and their component libraries retain their own licences.
+The FFmpegBuild revision is pinned in Package.swift; subtitle/font binary
+provenance and licences are recorded in Vendor. See ../THIRD_PARTY_NOTICES.md
+and the dependencies' licence directories for component licences and source.

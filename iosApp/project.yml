@@ -1,0 +1,380 @@
+name: Vivid
+options:
+  bundleIdPrefix: com.blurbery.vivid
+  deploymentTarget:
+    iOS: "18.0"
+    tvOS: "26.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  configs:
+    Debug:
+      # Required for `@testable import Vivid` in VividTests; Xcode's Debug
+      # template sets this but XcodeGen does not.
+      ENABLE_TESTABILITY: "YES"
+  base:
+    SWIFT_VERSION: "5"
+    ENABLE_USER_SCRIPT_SANDBOXING: false
+    # DEVELOPMENT_TEAM is intentionally omitted — set via the DEVELOPMENT_TEAM env var locally
+    # or injected by the CI pipeline.
+    CODE_SIGN_STYLE: Automatic
+    # Media/image packages ship arm64 simulator slices. Exclude x86_64 for all
+    # simulator SDKs so Apple Silicon Macs don't try to link missing slices.
+    EXCLUDED_ARCHS[sdk=appletvsimulator*]: x86_64
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+
+# One committed version/channel baseline for every shippable target: the app
+# and its embedded extensions must ship the same CFBundleVersion, and five
+# copies of the same three lines drift.
+#
+# This is a target template, NOT the project-level `settings.base`, and that
+# distinction is load-bearing. Xcode resolves build settings target settings >
+# target xcconfig > project settings > project xcconfig. Every target below
+# carries a Signing/<Target>.xcconfig that ends with
+# `#include? "Local.xcconfig"` — a gitignored file contributors are told to
+# create. At project level a stray MARKETING_VERSION in someone's
+# Local.xcconfig would silently outrank the committed value; template settings
+# are merged into the target, where they win, which is the same guarantee the
+# per-target blocks used to provide. CI still outranks everything via
+# xcodebuild xcargs (command-line settings beat xcconfigs too).
+targetTemplates:
+  ShippableProduct:
+    settings:
+      base:
+        MARKETING_VERSION: "0.6.0"
+        CURRENT_PROJECT_VERSION: 1
+        # Surfaced to the app as the `VividBuildChannel` Info.plist key and
+        # reported to the server as X-Silo-Client-Channel. The unsigned
+        # sideload lanes override this to `sideload`; DEBUG builds report
+        # `dev` regardless. Every target using this template must declare the
+        # key in its Info.plist or it reports `release` no matter what.
+        VIVID_BUILD_CHANNEL: release
+
+packages:
+  VividKit:
+    path: ../VividKit
+
+targets:
+  Vivid:
+    templates: [ShippableProduct]
+    type: application
+    platform: iOS
+    sources:
+      - path: iosApp
+        excludes:
+          - "**/*.xcodeproj"
+          - "**/*.xcworkspace"
+      - path: Resources
+        buildPhase: resources
+    # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
+    # Signing/Vivid.xcconfig so local contributors can override
+    # them via Signing/Local.xcconfig without dirtying this file.
+    # Target-level `settings` entries win over xcconfig, so they MUST
+    # NOT be set below.
+    configFiles:
+      Debug: Signing/Vivid.xcconfig
+      Release: Signing/Vivid.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: Vivid
+        INFOPLIST_FILE: iosApp/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+      configs:
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
+    dependencies:
+      - package: VividKit
+        product: VividKit
+      - target: VividNotificationService
+        embed: true
+      - target: VividDownloadsActivity
+        embed: true
+
+  # NOTE: tvOS-specific source files live under iosApp/tvOS/. They are guarded
+  # by #if os(tvOS) so they compile out on the iOS target even though the
+  # directory is included in both targets' source tree.
+  VividTV:
+    templates: [ShippableProduct]
+    type: application
+    platform: tvOS
+    sources:
+      - path: iosApp
+        excludes:
+          - "**/*.xcodeproj"
+          - "**/*.xcworkspace"
+          - "Info.plist"
+      - path: Resources
+        buildPhase: resources
+    # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
+    # Signing/VividTV.xcconfig so local contributors can override
+    # them via Signing/Local.xcconfig without dirtying this file.
+    # Target-level `settings` entries win over xcconfig, so they MUST
+    # NOT be set below.
+    configFiles:
+      Debug: Signing/VividTV.xcconfig
+      Release: Signing/VividTV.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: VividTV
+        # AVKit supplies UIWindow.avDisplayManager as an Objective-C category.
+        # Keep the framework loaded even when no AVKit class is instantiated.
+        OTHER_LDFLAGS: "$(inherited) -Wl,-needed_framework,AVKit"
+        INFOPLIST_FILE: iosApp/tvOS-Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: TVAppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: "NO"
+        SDKROOT: appletvos
+        SUPPORTED_PLATFORMS: "appletvos appletvsimulator"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    dependencies:
+      - package: VividKit
+        product: VividKit
+      - target: VividTVTopShelf
+        embed: true
+
+  # Top Shelf extension: populates the Apple TV Home Screen with
+  # Continue Watching / Next Up rows when the Vivid app icon is
+  # focused. Shares auth state with the host app via an App Group +
+  # shared Keychain access group. Compiles `iosApp/Shared/` for the
+  # SharedStorage helpers used on both sides.
+  VividTVTopShelf:
+    templates: [ShippableProduct]
+    type: app-extension
+    platform: tvOS
+    sources:
+      - path: TopShelf
+      - path: iosApp/Shared
+        excludes:
+          - "Diagnostics/**"
+    # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
+    # Signing/VividTVTopShelf.xcconfig so local contributors can
+    # override them via Signing/Local.xcconfig without dirtying this
+    # file. Target-level `settings` entries win over xcconfig, so they
+    # MUST NOT be set below.
+    configFiles:
+      Debug: Signing/VividTVTopShelf.xcconfig
+      Release: Signing/VividTVTopShelf.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: VividTVTopShelf
+        INFOPLIST_FILE: TopShelf/Info.plist
+        SDKROOT: appletvos
+        SUPPORTED_PLATFORMS: "appletvos appletvsimulator"
+    dependencies:
+      - sdk: TVServices.framework
+
+  # iOS Notification Service extension: enriches generic APNs alerts by
+  # fetching compact display metadata directly from the user's Silo server.
+  # Shares active server/profile/token state via the App Group + shared
+  # Keychain access group, but does not link the main app's AuthService.
+  VividNotificationService:
+    templates: [ShippableProduct]
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NotificationService
+      - path: iosApp/Notifications/ApplePushDisplayMetadata.swift
+      - path: iosApp/Shared/KeychainAudience.swift
+      - path: iosApp/Shared/SharedStorage.swift
+    configFiles:
+      Debug: Signing/VividNotificationService.xcconfig
+      Release: Signing/VividNotificationService.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: VividNotificationService
+        INFOPLIST_FILE: NotificationService/Info.plist
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    dependencies:
+      - sdk: UserNotifications.framework
+
+  # iOS WidgetKit extension hosting the downloads Live Activity: the
+  # lock-screen / Dynamic Island progress card for active downloads. The
+  # host app owns the activity lifecycle (DownloadLiveActivityController)
+  # and pushes content states through ActivityKit; this target only renders
+  # them, so it compiles just the shared attributes schema and needs no
+  # entitlements or shared storage.
+  VividDownloadsActivity:
+    templates: [ShippableProduct]
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: DownloadsActivity
+      - path: iosApp/Downloads/DownloadActivityAttributes.swift
+    configFiles:
+      Debug: Signing/VividDownloadsActivity.xcconfig
+      Release: Signing/VividDownloadsActivity.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: VividDownloadsActivity
+        INFOPLIST_FILE: DownloadsActivity/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+
+  # Unit-test bundle for the iOS Vivid app. Hosts the XCTest cases under
+  # Tests/ and loads the Vivid.app binary so `@testable import Vivid` can
+  # reach the app's internal types (policies, codecs, formatting helpers).
+  VividTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+        excludes:
+          # Re-declared below with an explicit build phase. Both spellings:
+          # the directory itself, and everything under it.
+          - "Fixtures/SettingsContract"
+          - "Fixtures/SettingsContract/**"
+          - "Fixtures/PlaybackV3"
+          - "Fixtures/PlaybackV3/**"
+      # The vendored settings contract. SettingsConformanceTests reads both
+      # files out of the test bundle at runtime and fails hard when either is
+      # missing, so the build phase is stated rather than left to XcodeGen's
+      # extension-based inference: a cross-platform drift gate that quietly
+      # stopped being bundled is worse than no gate at all.
+      - path: Tests/Fixtures/SettingsContract/conformance.json
+        buildPhase: resources
+      - path: Tests/Fixtures/SettingsContract/manifest.json
+        buildPhase: resources
+      # Provenance for the two files above — which server commits they came
+      # from, and how to re-vendor. In the project so it is discoverable next
+      # to them, out of the bundle because nothing reads it at runtime.
+      - path: Tests/Fixtures/SettingsContract/SOURCE
+        buildPhase: none
+      # Playback V3's server-generated contract corpus. List every executable
+      # fixture explicitly so an XcodeGen inference change cannot silently
+      # remove this cross-repository gate from the test bundle.
+      - path: Tests/Fixtures/PlaybackV3/attempt_keys.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/capability_response.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/conformance_matrix.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/decision_response.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/error_response.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/replan_request.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/route_event.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/start_request.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/subtitle_inventory.json
+        buildPhase: resources
+      - path: Tests/Fixtures/PlaybackV3/SOURCE
+        buildPhase: none
+    dependencies:
+      - target: Vivid
+      - package: VividKit
+        product: VividKit
+    configFiles:
+      Debug: Signing/Vivid.xcconfig
+      Release: Signing/Vivid.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: VividTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.iostest.SettingsTests
+        CODE_SIGN_ENTITLEMENTS: ""
+        GENERATE_INFOPLIST_FILE: "YES"
+        # Without an explicit SDKROOT the generated test config resolves
+        # BUILT_PRODUCTS_DIR without a platform suffix, so TEST_HOST points
+        # at .../Debug/Vivid.app and xcodebuild can't find the test host.
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Vivid.app/Vivid"
+
+  VividKitDeviceTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ../VividKit/Tests/VividKitTests
+    dependencies:
+      - target: Vivid
+      - package: VividKit
+        product: VividKit
+    configFiles:
+      Debug: Signing/Vivid.xcconfig
+      Release: Signing/Vivid.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.iostest.PlaybackTests
+        CODE_SIGN_ENTITLEMENTS: ""
+        GENERATE_INFOPLIST_FILE: "YES"
+        SDKROOT: iphoneos
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Vivid.app/Vivid"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  VividKitDeviceTests:
+    build:
+      targets:
+        Vivid: all
+        VividKitDeviceTests: [test]
+        VividTests: [test]
+    test:
+      config: Debug
+      targets:
+        - VividKitDeviceTests
+        - VividTests
+  Vivid:
+    build:
+      targets:
+        Vivid: all
+        VividTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - VividTests
+    archive:
+      config: Release
+    analyze:
+      config: Debug
+    profile:
+      config: Release
+  VividNoDebugger:
+    build:
+      targets:
+        Vivid: all
+    run:
+      config: Debug
+      debugEnabled: false
+      disableMainThreadChecker: true
+      disableThreadPerformanceChecker: true
+      enableGPUFrameCaptureMode: disabled
+      enableGPUValidationMode: false
+    analyze:
+      config: Debug
+    profile:
+      config: Release
+  VividTV:
+    build:
+      targets:
+        VividTV: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    archive:
+      config: Release
+    analyze:
+      config: Debug
+    profile:
+      config: Release

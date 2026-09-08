@@ -1,0 +1,566 @@
+import SwiftUI
+
+/// Personalized recommendations tab — mirrors the Android Recommendations
+/// screen. Reuses the existing SectionRow UI so each row renders with the
+/// same layout as Home.
+struct RecommendationsView: View {
+    /// Active focus hand-down token from `TVMainTabView`. When this changes
+    /// (the For You root was selected), focus is pushed onto the saved-
+    /// shortcuts row so the screen never opens with a dead remote.
+    var focusRequest: Int = 0
+    /// tvOS-only: the custom top menu owns focus, so deferred content focus
+    /// claims must not yank focus back into the shortcut row.
+    var isTopMenuFocused: Bool = false
+    var onTopMenuFocusRequest: (() -> Void)? = nil
+
+    @State private var viewModel: RecommendationsViewModel
+    @State private var mobileSelection = "Watchlist"
+    @State private var savedListSelection: SavedShortcut = .watchlist
+    #if !os(tvOS)
+    /// Feeds the shared glass strip behind the pinned header as rows scroll
+    /// under it, matching Home and the Library tab.
+    @State private var chromeScrollState = PageChromeScrollState()
+    #endif
+    @Environment(AppRouter.self) private var router
+
+    init(
+        focusRequest: Int = 0,
+        isTopMenuFocused: Bool = false,
+        onTopMenuFocusRequest: (() -> Void)? = nil,
+        viewModel: RecommendationsViewModel? = nil
+    ) {
+        self.focusRequest = focusRequest
+        self.isTopMenuFocused = isTopMenuFocused
+        self.onTopMenuFocusRequest = onTopMenuFocusRequest
+        _viewModel = State(initialValue: viewModel ?? RecommendationsViewModel())
+    }
+
+    var body: some View {
+        #if os(iOS)
+        mobileSavedLists
+        #else
+        rootLayout
+            .task {
+                await viewModel.loadRecommendations()
+            }
+        #if !os(tvOS)
+            .refreshable {
+                async let overlayRefresh: Void = OverlayPrefsStore.shared.refresh()
+                await viewModel.refresh()
+                await overlayRefresh
+            }
+        #endif
+        #endif
+    }
+
+    #if os(iOS)
+    private var mobileSavedLists: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 4) {
+                ForEach(["Watchlist", "Favourites", "Collections"], id: \.self) { title in
+                    Button { mobileSelection = title; chromeScrollState.reset() } label: {
+                        Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+                            .foregroundStyle(mobileSelection == title ? Color.black : .white)
+                            .background(mobileSelection == title ? Color.white : .clear, in: Capsule())
+                    }.buttonStyle(.plain)
+                }
+            }.padding(5).vividGlass(in: Capsule()).padding(.horizontal, 16)
+            Group {
+                switch mobileSelection {
+                case "Favourites": FavoritesView(showsNavigationTitle: false)
+                case "Collections": MobileForYouCollections()
+                default: WatchlistView(showsNavigationTitle: false)
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }.padding(.top, 12)
+        .environment(chromeScrollState)
+        .background(Color.black.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+    #endif
+
+    @ViewBuilder
+    private var rootLayout: some View {
+        #if os(tvOS)
+        tvOSPageContent
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
+        // Content scrolls under the pinned header, which sits in a top
+        // safe-area inset with the shared glass strip behind it (same
+        // structure as `LibrariesTabView`).
+        pageContent
+            .environment(chromeScrollState)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                topChrome
+                    .background {
+                        PageChromeGlass(scrollState: chromeScrollState)
+                    }
+            }
+        .vividPageBackground()
+        #if os(iOS)
+        .toolbar(.hidden, for: .navigationBar)
+        #endif
+        #endif
+    }
+
+    #if !os(tvOS)
+    private var topChrome: some View {
+        HStack(spacing: 12) {
+            SidebarToggleButton()
+
+            Text("Recommendations")
+                .font(.vividTitle)
+                .foregroundColor(.vividOnSurface)
+
+            Spacer(minLength: 8)
+
+            TabTopBarActions(
+                onSearch: { router.navigate(to: .search) },
+                onOpenSettings: { router.navigate(to: .settings) },
+                onOpenRequests: { router.navigate(to: .requestsHub) },
+                onSwitchProfile: {
+                    router.switchProfile()
+                },
+                onSwitchServer: { router.navigate(to: .serverList) },
+                onSignOut: { router.signOutAndReset() }
+            )
+        }
+        .padding(.horizontal, VividTheme.padding)
+        .padding(.top, VividTheme.smallPadding)
+        .padding(.bottom, VividTheme.smallPadding)
+    }
+    #endif
+
+    #if os(tvOS)
+    /// For You uses the exact Skyline page shell as Home. Recommendation
+    /// sections supply only the content; the shared feed owns the backdrop,
+    /// marquee, rail geometry, focus hand-off, and vertical scrolling.
+    @ViewBuilder
+    private var tvOSPageContent: some View {
+        if !viewModel.sections.isEmpty {
+            TVSkylineSectionFeed(
+                sections: viewModel.sections,
+                focusRequest: focusRequest,
+                isTopMenuFocused: isTopMenuFocused,
+                onTopMenuFocusRequest: onTopMenuFocusRequest,
+                onItemTap: { destinationContentId, item in
+                    router.navigate(
+                        to: .itemDetail(
+                            destinationContentId: destinationContentId,
+                            sectionItem: item
+                        )
+                    )
+                }
+            )
+            .task(id: initialMarqueePrewarmKey) {
+                await prewarmInitialMarqueeDetails()
+            }
+        } else if let error = viewModel.error {
+            ErrorView(
+                state: error,
+                onRetry: { Task { await viewModel.loadRecommendations() } }
+            )
+        } else if viewModel.isLoading {
+            Color.clear
+        } else {
+            EmptyStateView(
+                icon: "sparkles.tv",
+                title: "No recommendations yet",
+                subtitle: "Watch or rate a few titles to build your personalised recommendations."
+            )
+        }
+    }
+
+    /// Two rows × eight visible cards, matching the For You viewport. Only
+    /// items missing their lightweight content-rating field need detail
+    /// prewarming, and requests run three at a time to avoid a server burst.
+    private var initialMarqueePrewarmKey: String {
+        initialMarqueeItems.map(\.contentId).joined(separator: "|")
+    }
+
+    private var initialMarqueeItems: [SectionItem] {
+        viewModel.sections.prefix(2).flatMap { section in
+            Array(section.items.prefix(8))
+        }
+    }
+
+    private func prewarmInitialMarqueeDetails() async {
+        let contentIds = initialMarqueeItems.compactMap { item -> String? in
+            let rating = item.contentRating?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard rating?.isEmpty != false else { return nil }
+            let key = CacheKey.itemDetail(item.contentId)
+            let cached: ItemDetail? = ResponseCache.shared.get(key)
+            return cached == nil ? item.contentId : nil
+        }
+
+        let maxConcurrent = 3
+        for batchStart in stride(from: 0, to: contentIds.count, by: maxConcurrent) {
+            guard !Task.isCancelled else { return }
+            let batchEnd = min(batchStart + maxConcurrent, contentIds.count)
+            let batch = Array(contentIds[batchStart..<batchEnd])
+            let details = await withTaskGroup(of: (String, ItemDetail?).self) { group in
+                for contentId in batch {
+                    group.addTask {
+                        let detail = try? await VividAPI.shared.itemDetail(
+                            contentId: contentId
+                        )
+                        return (contentId, detail)
+                    }
+                }
+
+                var results: [(String, ItemDetail)] = []
+                for await (contentId, detail) in group {
+                    if let detail { results.append((contentId, detail)) }
+                }
+                return results
+            }
+
+            guard !Task.isCancelled else { return }
+            for (contentId, detail) in details {
+                ResponseCache.shared.set(detail, for: CacheKey.itemDetail(contentId))
+            }
+        }
+    }
+    #endif
+
+    /// The Watchlist/Favorites shortcut row renders in every state — the
+    /// user's saved lists are reachable from here even when there are no
+    /// recommendations (or they failed to load).
+    @ViewBuilder
+    private var pageContent: some View {
+        if !viewModel.sections.isEmpty {
+            content
+        } else {
+            VStack(spacing: 0) {
+                shortcutsRow
+                    .padding(.horizontal, contentHorizontalPadding)
+                    #if os(tvOS)
+                    .padding(.top, TVTopMenuLayout.contentTopInset)
+                    #endif
+
+                Group {
+                    if let error = viewModel.error {
+                        ErrorView(state: error, onRetry: { Task { await viewModel.loadRecommendations() } })
+                    } else if viewModel.isLoading {
+                        Color.clear
+                    } else {
+                        savedListsFallback
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    /// True when recommendations loaded fine but the server had nothing to
+    /// suggest (e.g. embeddings disabled). The shortcut row then acts as a
+    /// selector for the inline Watchlist/Favorites fallback instead of
+    /// navigating away.
+    private var showsSavedListsFallback: Bool {
+        viewModel.sections.isEmpty && viewModel.error == nil && !viewModel.isLoading
+    }
+
+    private var shortcutsRow: some View {
+        SavedShortcutsRow(
+            focusRequest: focusRequest,
+            isTopMenuFocused: isTopMenuFocused,
+            selection: showsSavedListsFallback ? savedListSelection : nil,
+            onSelect: { shortcut in
+                if showsSavedListsFallback {
+                    savedListSelection = shortcut
+                } else {
+                    router.navigate(to: shortcut.route)
+                }
+            },
+            onMoveUp: onTopMenuFocusRequest
+        )
+    }
+
+    private var content: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: sectionSpacing) {
+                shortcutsRow
+                    .padding(.horizontal, contentHorizontalPadding)
+
+                ForEach(Array(viewModel.sections.enumerated()), id: \.element.id) { index, section in
+                    SectionRow(
+                        section: section,
+                        onItemTap: { destinationContentId, item in
+                            router.navigate(
+                                to: .itemDetail(
+                                    destinationContentId: destinationContentId,
+                                    sectionItem: item
+                                )
+                            )
+                        },
+                        prefersDefaultFocusOnFirstItem: prefersDefaultFocus(forSectionAt: index),
+                        onMoveUp: nil
+                    )
+                }
+            }
+            #if os(tvOS)
+            .padding(.top, TVTopMenuLayout.contentTopInset)
+            #endif
+            .padding(.bottom, VividTheme.largePadding)
+        }
+        .reportsPageChromeScroll()
+    }
+
+    /// Shown when the server has no recommendation sections: rather than an
+    /// empty promise, surface the user's saved lists inline. The shortcut row
+    /// above acts as the selector between the two.
+    @ViewBuilder
+    private var savedListsFallback: some View {
+        VStack(spacing: VividTheme.smallPadding) {
+            Text("No recommendations yet — showing your saved titles.")
+                .font(.vividCaption)
+                .foregroundColor(.vividSecondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, contentHorizontalPadding)
+                .padding(.top, VividTheme.smallPadding)
+
+            switch savedListSelection {
+            case .watchlist:
+                WatchlistView(showsNavigationTitle: false)
+            case .favorites:
+                FavoritesView(showsNavigationTitle: false)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+
+    private var sectionSpacing: CGFloat {
+        #if os(tvOS)
+        return 30
+        #else
+        return VividTheme.largePadding
+        #endif
+    }
+
+    private var contentHorizontalPadding: CGFloat {
+        #if os(tvOS)
+        return 96
+        #else
+        return VividTheme.padding
+        #endif
+    }
+
+    private func prefersDefaultFocus(forSectionAt index: Int) -> Bool {
+        return false
+    }
+}
+
+private struct SavedShortcutsRow: View {
+    var focusRequest: Int = 0
+    var isTopMenuFocused: Bool = false
+    /// Non-nil puts the row in selector mode (inline saved-lists fallback):
+    /// the matching capsule renders selected instead of the row navigating.
+    var selection: SavedShortcut? = nil
+    let onSelect: (SavedShortcut) -> Void
+    let onMoveUp: (() -> Void)?
+
+    @FocusState private var focusedShortcut: SavedShortcut?
+
+    #if os(tvOS)
+    @Namespace private var focusScope
+    /// Last hand-down token applied, so each token claims focus exactly once.
+    /// This row lives in a `LazyVStack`; without the guard, `onAppear` re-fires
+    /// when the row is recycled back into view on scroll-up and would yank
+    /// focus away from whatever the user was on.
+    @State private var lastAppliedFocusRequest = 0
+    @State private var pendingFocusRequest: Int?
+    #endif
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(SavedShortcut.allCases) { shortcut in
+                Button {
+                    onSelect(shortcut)
+                } label: {
+                    Label {
+                        Text(shortcut.rawValue)
+                            .font(labelFont)
+                            .lineLimit(1)
+                    } icon: {
+                        Image(systemName: shortcut.systemImage)
+                            .font(iconFont)
+                    }
+                    .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(SavedShortcutButtonStyle(isSelected: selection == shortcut))
+                .accessibilityLabel(shortcut.rawValue)
+                .focused($focusedShortcut, equals: shortcut)
+                #if os(tvOS)
+                .prefersDefaultFocus(shortcut == .watchlist, in: focusScope)
+                #endif
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #if os(tvOS)
+        .focusScope(focusScope)
+        .focusSection()
+        .onMoveCommand { direction in
+            if direction == .up {
+                onMoveUp?()
+            }
+        }
+        // Imperative hand-down from the top menu: prefersDefaultFocus only
+        // fires when the engine ENTERS this scope, which doesn't happen when
+        // the For You root is swapped in beneath a remote sitting in the menu.
+        .onAppear { applyFocusRequest(focusRequest) }
+        .onChange(of: focusRequest) { _, request in applyFocusRequest(request) }
+        .onChange(of: isTopMenuFocused) { _, focused in
+            guard !focused, let pendingFocusRequest else { return }
+            applyFocusRequest(pendingFocusRequest)
+        }
+        #endif
+    }
+
+    #if os(tvOS)
+    private func applyFocusRequest(_ request: Int) {
+        guard request > 0 else { return }
+        guard request != lastAppliedFocusRequest else {
+            pendingFocusRequest = nil
+            return
+        }
+        guard !isTopMenuFocused else {
+            pendingFocusRequest = request
+            return
+        }
+        pendingFocusRequest = nil
+        lastAppliedFocusRequest = request
+        focusedShortcut = .watchlist
+    }
+    #endif
+
+    private var labelFont: Font {
+        #if os(tvOS)
+        return .system(size: 24, weight: .semibold)
+        #else
+        return .system(size: 14, weight: .semibold)
+        #endif
+    }
+
+    private var iconFont: Font {
+        #if os(tvOS)
+        return .system(size: 20, weight: .semibold)
+        #else
+        return .system(size: 13, weight: .semibold)
+        #endif
+    }
+}
+
+private enum SavedShortcut: String, CaseIterable, Identifiable {
+    case watchlist = "Watchlist"
+    case favorites = "Favorites"
+
+    var id: Self { self }
+
+    var systemImage: String {
+        switch self {
+        case .watchlist:
+            return "bookmark.fill"
+        case .favorites:
+            return "heart.fill"
+        }
+    }
+
+    var route: Route {
+        switch self {
+        case .watchlist:
+            return .watchlist
+        case .favorites:
+            return .favorites
+        }
+    }
+}
+
+private struct SavedShortcutButtonStyle: ButtonStyle {
+    var isSelected: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        SavedShortcutButtonBody(configuration: configuration, isSelected: isSelected)
+    }
+}
+
+private struct SavedShortcutButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let isSelected: Bool
+
+    @Environment(\.isFocused) private var isFocused
+
+    /// tvOS keeps the filled capsule as the focus indicator, so a selected-
+    /// but-unfocused capsule only gets a stronger stroke and a faint fill.
+    /// On touch/pointer platforms there is no focus, so selection owns the
+    /// filled treatment outright.
+    private var isProminent: Bool {
+        #if os(tvOS)
+        return isFocused
+        #else
+        return isFocused || isSelected
+        #endif
+    }
+
+    var body: some View {
+        configuration.label
+            .foregroundColor(isProminent ? .vividBackground : .vividOnSurface)
+            .padding(.horizontal, horizontalPadding)
+            .frame(height: height)
+            .background(
+                Capsule()
+                    .fill(
+                        isProminent
+                            ? Color.vividOnSurface.opacity(0.96)
+                            : (isSelected ? Color.white.opacity(0.14) : Color.clear)
+                    )
+            )
+            .overlay(
+                Capsule().stroke(
+                    isFocused ? Color.white : Color.white.opacity(isSelected ? 0.7 : 0.3),
+                    lineWidth: isFocused ? 3 : 1.5
+                )
+            )
+            .overlay {
+                #if os(tvOS)
+                if isFocused {
+                    Capsule()
+                        .stroke(Color.white.opacity(0.36), lineWidth: 7)
+                        .padding(-6)
+                        .blur(radius: 6)
+                }
+                #endif
+            }
+            .scaleEffect(isFocused ? 1.045 : 1.0)
+            .shadow(
+                color: isFocused ? Color.vividOnSurface.opacity(0.36) : .clear,
+                radius: isFocused ? 18 : 0,
+                y: isFocused ? 6 : 0
+            )
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            #if os(tvOS)
+            .focusEffectDisabled()
+            #endif
+            .animation(.easeOut(duration: VividTheme.fastDuration), value: configuration.isPressed)
+            .animation(VividTheme.springAnimation, value: isFocused)
+            .animation(VividTheme.springAnimation, value: isSelected)
+    }
+
+    private var height: CGFloat {
+        #if os(tvOS)
+        return 64
+        #else
+        return 40
+        #endif
+    }
+
+    private var horizontalPadding: CGFloat {
+        #if os(tvOS)
+        return 26
+        #else
+        return 15
+        #endif
+    }
+}

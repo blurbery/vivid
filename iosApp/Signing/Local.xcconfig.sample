@@ -1,0 +1,64 @@
+// Copy this file to `Local.xcconfig` (gitignored) to override the signing
+// defaults in all five target xcconfigs, including the notification service,
+// downloads Live Activity and Top Shelf extensions. Use
+// this for device builds under your own Apple Developer team. Vivid’s
+// committed release identifiers and App Group still need Apple registration.
+//
+// Every target xcconfig ends with `#include? "Local.xcconfig"`, so any
+// variable you redefine here wins. Each target reads its own indirection
+// variable (VIVID_IOS_BUNDLE_ID / VIVID_TV_BUNDLE_ID /
+// VIVID_TOPSHELF_BUNDLE_ID /
+// VIVID_NOTIFICATION_SERVICE_BUNDLE_ID /
+// VIVID_DOWNLOADS_ACTIVITY_BUNDLE_ID, plus the
+// `_ENTITLEMENTS` variables), so
+// you can change one target without affecting the others.
+//
+// After editing, run `xcodegen generate` from `iosApp/` and pick your
+// team in Xcode's Signing & Capabilities tab.
+//
+// ----- Bundle IDs ---------------------------------------------------------
+//
+// Personal Teams can't register identifiers that another team already
+// owns, so choose identities available to your team. The two app targets
+// may share an ID across iOS and tvOS, but each extension needs a distinct
+// ID prefixed by its host app ID. This is local setup, not TestFlight signing.
+//
+// VIVID_IOS_BUNDLE_ID      = com.example.vivid
+// VIVID_TV_BUNDLE_ID       = com.example.vivid
+// VIVID_TOPSHELF_BUNDLE_ID = com.example.vivid.topshelf
+//
+// The Notification Service and Downloads Live Activity extensions are
+// embedded in the iOS app, so their bundle IDs must be prefixed by
+// VIVID_IOS_BUNDLE_ID or embedded-binary validation fails at install:
+//
+// VIVID_NOTIFICATION_SERVICE_BUNDLE_ID = com.example.vivid.NotificationService
+// VIVID_DOWNLOADS_ACTIVITY_BUNDLE_ID   = com.example.vivid.DownloadsActivity
+//
+// (The Downloads Live Activity extension has no entitlements, so it needs
+// no `.personal.entitlements` variant and works on Personal Teams.)
+//
+// ----- Entitlements -------------------------------------------------------
+//
+// Personal Teams can't join App Groups or sign the `aps-environment` push
+// entitlement. The iOS app, the Notification Service extension, the tvOS
+// app, and Top Shelf all need stripped `.personal.entitlements` variants:
+//
+// VIVID_IOS_ENTITLEMENTS                  = Vivid.personal.entitlements
+// VIVID_NOTIFICATION_SERVICE_ENTITLEMENTS = NotificationService/NotificationService.personal.entitlements
+// VIVID_TV_ENTITLEMENTS                   = VividTV.personal.entitlements
+// VIVID_TOPSHELF_ENTITLEMENTS             = TopShelf/TopShelf.personal.entitlements
+// VIVID_USER_INDEPENDENT_KEYCHAIN          = NO
+//
+// Note: Top Shelf → host-app state handoff uses that App Group, so the
+// Apple TV Home Screen rows stay empty when you build under a Personal
+// Team. Likewise, push notifications and notification enrichment are
+// unavailable on Personal Team iOS builds (registration fails gracefully).
+// Playback, authentication and browsing do not require these capabilities;
+// verify them on the actual device and server configuration.
+//
+// ----- Development team --------------------------------------------------
+//
+// Optional — normally picked in Xcode's UI. Set here if you want every
+// clean regenerate to come up pre-selected to your team:
+//
+// DEVELOPMENT_TEAM = ABCDE12345

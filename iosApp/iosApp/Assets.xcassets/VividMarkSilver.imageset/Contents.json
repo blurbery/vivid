@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "vivid-mark-silver.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

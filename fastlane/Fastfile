@@ -1,0 +1,136 @@
+require "shellwords"
+
+# Vivid unsigned sideload archives only. These lanes do not sign, manage
+# Keychains, read Apple credentials or upload builds to App Store Connect.
+# See docs/release/distribution.md before running a distribution build.
+default_platform(:ios)
+
+def marketing_version_xcarg
+  value = ENV["MARKETING_VERSION"].to_s.strip
+  return "" if value.empty?
+
+  unless value.match?(/\A\d+(?:\.\d+){1,2}\z/)
+    UI.user_error!("Invalid MARKETING_VERSION #{value.inspect}; expected a dotted version like 1.4.0")
+  end
+  "MARKETING_VERSION=#{value} "
+end
+
+# Optional CURRENT_PROJECT_VERSION override for the unsigned sideload lanes.
+# CI passes its run number via BUILD_NUMBER so sideload
+# builds carry a distinct CFBundleVersion. Same
+# validation/threat model as marketing_version_xcarg: this flows into
+# xcodebuild's xcargs as a shell string.
+def build_number_xcarg
+  value = ENV["BUILD_NUMBER"].to_s.strip
+  return "" if value.empty?
+
+  unless value.match?(/\A\d+\z/)
+    UI.user_error!("Invalid BUILD_NUMBER #{value.inspect}; expected a positive integer")
+  end
+  "CURRENT_PROJECT_VERSION=#{value} "
+end
+
+# Overrides the VIVID_BUILD_CHANNEL build setting (project.yml default: release)
+# for the unsigned sideload lanes. It reaches the app as the VividBuildChannel
+# Info.plist key and is reported to the server as X-Silo-Client-Channel, so an
+# operator can identify a re-signed sideload build. This is a fixed value;
+# it does not configure Apple distribution.
+SIDELOAD_CHANNEL_XCARG = "VIVID_BUILD_CHANNEL=sideload ".freeze
+
+def prepare_xcode_project(scheme:)
+  ios_app_dir = File.expand_path("../iosApp", __dir__)
+  sh("xcodegen generate --spec '#{ios_app_dir}/project.yml'")
+  sh("xcodebuild -project '#{ios_app_dir}/Vivid.xcodeproj' " \
+     "-scheme #{scheme} -resolvePackageDependencies")
+  ios_app_dir
+end
+
+# Repackages a compiled .app from an unsigned .xcarchive into an unsigned .ipa.
+#
+# An .ipa is just a zip with the app under Payload/. We build the archive with
+# code signing disabled (no certs, no match, no ASC secrets needed) and wrap the
+# product here. The resulting IPA is NOT installable as-is — it is meant to be
+# re-signed by the end user with their own certificate via AltStore, Sideloadly,
+# SideStore, etc. before sideloading. See docs/release/distribution.md.
+def package_unsigned_ipa(archive_path:, app_name:, output_dir:, output_ipa:)
+  app_path = "#{archive_path}/Products/Applications/#{app_name}.app"
+  UI.user_error!("Expected app not found at #{app_path}") unless File.exist?(app_path)
+
+  # zip must run from output_dir so the archive root is Payload/, not an
+  # absolute path. Rebuild Payload/ from scratch each run for idempotency.
+  sh(<<~SH)
+    set -euo pipefail
+    cd #{output_dir.shellescape}
+    rm -rf Payload #{output_ipa.shellescape}
+    mkdir Payload
+    cp -R #{app_path.shellescape} Payload/
+    zip -qry #{output_ipa.shellescape} Payload
+    rm -rf Payload
+  SH
+
+  UI.success("Unsigned IPA written to #{output_dir}/#{output_ipa}")
+end
+
+platform :ios do
+  desc "Build an unsigned iOS IPA for third-party signing / sideloading (no upload)"
+  lane :ipa_ios_unsigned do
+    ios_app_dir  = prepare_xcode_project(scheme: "Vivid")
+    output_dir   = File.expand_path("../build/ios-unsigned", __dir__)
+    archive_path = "#{output_dir}/Vivid.xcarchive"
+
+    # Archive with signing disabled — no certs required. CURRENT_PROJECT_VERSION
+    # comes from CI when set; local runs fall back to the project.yml value.
+    xcodebuild(
+      archive:      true,
+      project:      "#{ios_app_dir}/Vivid.xcodeproj",
+      scheme:       "Vivid",
+      destination:  "generic/platform=iOS",
+      archive_path: archive_path,
+      xcargs:       "#{marketing_version_xcarg}#{build_number_xcarg}" \
+                    "#{SIDELOAD_CHANNEL_XCARG}" \
+                    "CODE_SIGNING_ALLOWED=NO " \
+                    "CODE_SIGNING_REQUIRED=NO " \
+                    "CODE_SIGN_IDENTITY='' " \
+                    "CODE_SIGN_ENTITLEMENTS=''"
+    )
+
+    package_unsigned_ipa(
+      archive_path: archive_path,
+      app_name:     "Vivid",
+      output_dir:   output_dir,
+      output_ipa:   "Vivid-unsigned.ipa"
+    )
+  end
+
+  desc "Build an unsigned tvOS IPA for third-party signing / sideloading (no upload)"
+  lane :ipa_tvos_unsigned do
+    ios_app_dir  = prepare_xcode_project(scheme: "VividTV")
+    output_dir   = File.expand_path("../build/tvos-unsigned", __dir__)
+    archive_path = "#{output_dir}/VividTV.xcarchive"
+
+    # The embedded Top Shelf extension is archived as part of VividTV.app, so no
+    # per-target signing handling is needed here. Re-signers that cannot sign the
+    # extension (e.g. free accounts) can strip it before sideloading.
+    xcodebuild(
+      archive:      true,
+      project:      "#{ios_app_dir}/Vivid.xcodeproj",
+      scheme:       "VividTV",
+      destination:  "generic/platform=tvOS",
+      archive_path: archive_path,
+      xcargs:       "#{marketing_version_xcarg}#{build_number_xcarg}" \
+                    "#{SIDELOAD_CHANNEL_XCARG}" \
+                    "CODE_SIGNING_ALLOWED=NO " \
+                    "CODE_SIGNING_REQUIRED=NO " \
+                    "CODE_SIGN_IDENTITY='' " \
+                    "CODE_SIGN_ENTITLEMENTS=''"
+    )
+
+    package_unsigned_ipa(
+      archive_path: archive_path,
+      app_name:     "VividTV",
+      output_dir:   output_dir,
+      output_ipa:   "VividTV-unsigned.ipa"
+    )
+  end
+
+end

@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: Apache-2.0
+import AVFoundation
+import Combine
+import Foundation
+import VividKit
+
+enum PlaybackState: Equatable { case idle, loading, playing, paused, seeking, ended, error(String) }
+enum PlaybackPhase: Equatable { case idle, loading, playing, paused, seeking, rebuffering, stalled(reconnecting: Bool), ended, error(String) }
+enum VideoRoute: String { case none, remoteBypass, sampleBuffer, audio }
+enum VideoFormat { case sdr, hdr10, hdr10Plus, dolbyVision, hlg }
+struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
+    enum Kind: String {
+        case sourceRefused, vodSourceFailed, nativeItemFailed, noPlayableTrackWithinBudget
+        case masterPlaylistRejected, softwarePipelineFailed, audioBridgeProducedNoOutput
+        case dolbyVisionRequiresHardware, demuxedAudioLiveUnsupported, audioTrackSwitchFailed, sourceRateLimited
+    }
+    let kind: Kind
+    let message: String
+    var underlyingDomain: String? = nil
+    var underlyingCode: Int? = nil
+    var errorDescription: String? { message }
+}
+typealias PlaybackErrorKind = PlaybackErrorInfo.Kind
+struct TrackInfo: Identifiable, Equatable {
+    let id: Int
+    var name: String = ""
+    var codec: String = ""
+    var language: String? = nil
+    var channels: Int = 0
+    var bitrate: Int64 = 0
+    var isDefault = false
+    var isForced = false
+    var isHearingImpaired = false
+    var isCommentary = false
+    var isAtmos = false
+    var assHeader: String? = nil
+    var isExternal = false
+    var isNativelyRenderedSubtitle = false
+    init(id: Int, name: String = "", codec: String = "", language: String? = nil, channels: Int = 0,
+         bitrate: Int64 = 0, isDefault: Bool = false, isForced: Bool = false,
+         isHearingImpaired: Bool = false, isCommentary: Bool = false, isAtmos: Bool = false,
+         assHeader: String? = nil, isExternal: Bool = false, isNativelyRenderedSubtitle: Bool = false) {
+        self.id=id; self.name=name; self.codec=codec; self.language=language; self.channels=channels
+        self.bitrate=bitrate; self.isDefault=isDefault; self.isForced=isForced
+        self.isHearingImpaired=isHearingImpaired; self.isCommentary=isCommentary; self.isAtmos=isAtmos
+        self.assHeader=assHeader; self.isExternal=isExternal; self.isNativelyRenderedSubtitle=isNativelyRenderedSubtitle
+    }
+    init(_ track: VividTrack) {
+        self.init(id: track.id, name: track.name, codec: track.codec,
+                  language: track.language.isEmpty ? nil : track.language, channels: track.channels, bitrate: track.bitrate,
+                  isDefault: track.isDefault, isForced: track.isForced)
+    }
+}
+struct ExternalSubtitleTrack: Equatable, Sendable {
+    let url: URL
+    var name: String? = nil
+    var language: String? = nil
+    var isForced = false
+    var isHearingImpaired = false
+    var isDefault = false
+    var httpHeaders: [String: String]? = nil
+    var formatHint: String? = nil
+    var sourceStreamIndex: Int32? = nil
+    var nativeTimelineOffsetSeconds: Double = 0
+}
+struct LoadOptions: Equatable, Sendable {
+    var httpHeaders: [String: String] = [:]
+    var matchContentEnabled = true
+    var panelIsInHDRMode = false
+    var audioOnly = false
+    var nativeRemoteHLS = false
+    var preserveASSMarkup = false
+    var prepareNativeSubtitles = true
+    var eagerNativeSubtitleReaders = false
+    var nativeSubtitlePreferredLanguages: [String] = []
+    var preferredAudioLanguages: [String] = []
+    var preferredSubtitleLanguages: [String] = []
+    var externalSubtitles: [ExternalSubtitleTrack] = []
+    var forwardBufferSegments: Int? = nil
+    var autoplay = true
+    var audioTrackOrdinal: Int? = nil
+}
+struct MediaChapter: Identifiable { let id: Int; let name: String; let startSeconds: Double }
+struct SystemCaptionRequest { let language: String? }
+struct StartupProgress { let checkpoint: String }
+@MainActor final class PlaybackClock: ObservableObject {
+    @Published var currentTime: Double = 0
+}
+struct SubtitleColor: Equatable { let r: UInt8; let g: UInt8; let b: UInt8 }
+struct SubtitleTextRun {
+    let text: String
+    var color: SubtitleColor? = nil
+    var isBold = false
+    var isItalic = false
+    var isUnderlined = false
+    var isStruckThrough = false
+    var fontName: String? = nil
+    var fontSize: Double? = nil
+}
+struct SubtitleTextPlacement { var alignment: Int? = nil; var position: CGPoint? = nil }
+struct SubtitleImage {
+    let cgImage: CGImage
+    let position: CGRect
+    let canvasSize: CGSize
+}
+struct SubtitleCue: Identifiable {
+    enum Body { case text(String), richText([SubtitleTextRun]), image(SubtitleImage) }
+    let id: Int
+    let startTime: Double
+    let endTime: Double
+    let body: Body
+    var placement: SubtitleTextPlacement? = nil
+}
+struct LiveTelemetry: Equatable {
+    var forwardBufferSeconds: Double? = nil
+    var displayCushionSeconds: Double? = nil
+    var readerWindowAheadBytes: Int? = nil
+    var observedFps: Double? = nil
+    var droppedFrameCount: Int? = nil
+    var accumulatedFrameDelaySeconds: Double? = nil
+    var avSyncGapMs: Double? = nil
+    var instantBitrateMbps: Double? = nil
+    var averageBitrateMbps: Double? = nil
+    var audioBridgeBitrateMbps: Double? = nil
+    var networkThroughputMbps: Double? = nil
+    var networkTransferredBytes: Int64? = nil
+    var cachedBytes: Int64? = nil
+    var demuxerBytesFetched: Int64 = 0
+    var producerRestartCount: Int = 0
+    var rssMb: Int = 0
+}
+@MainActor final class VividDiagnostics: ObservableObject {
+    @Published var liveTelemetry: LiveTelemetry?
+}
+@MainActor final class SampleBufferPiPSource {
+    let layer: AVSampleBufferDisplayLayer
+    private weak var engine: VividEngine?
+    init(layer: AVSampleBufferDisplayLayer, engine: VividEngine) { self.layer = layer; self.engine = engine }
+    var isPaused: Bool { engine?.state != .playing }
+    func setPlaying(_ value: Bool) { if value { engine?.play() } else { engine?.pause() } }
+    func timeRange() -> CMTimeRange {
+        guard let engine, engine.duration > 0 else { return CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity) }
+        return CMTimeRange(start: .zero, duration: CMTime(seconds: engine.duration, preferredTimescale: 600))
+    }
+    func skip(by seconds: Double) {
+        guard let engine else { return }
+        Task { await engine.seek(to: min(max(0, engine.currentTime + seconds), engine.duration > 0 ? engine.duration : .greatestFiniteMagnitude)) }
+    }
+}

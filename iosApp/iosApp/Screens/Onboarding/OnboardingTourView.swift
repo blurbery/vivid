@@ -1,0 +1,256 @@
+import SwiftUI
+
+#if !os(tvOS)
+/// Server-driven first-run feature tour. The manifest comes from
+/// /onboarding/flow (already filtered per server and profile); this view
+/// renders the step kinds it knows and skips the rest — that skip is the
+/// forward-compatibility contract. Progress and completion post per profile,
+/// so finishing here silences the web and Android too.
+struct OnboardingTourView: View {
+    var router: AppRouter
+    var resumeStepId: String? = nil
+    /// Set when presented as a cover (the tour gate); falls back to a router
+    /// reset when pushed as a route.
+    var onDismiss: (() -> Void)? = nil
+    @State private var viewModel = OnboardingTourViewModel()
+
+    var body: some View {
+        AuroraScreen(variant: .signIn, scrim: .soft) {
+            if viewModel.isLoading || viewModel.steps.isEmpty {
+                ProgressView()
+                    .tint(Color.auroraInk)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                tourBody
+            }
+        }
+        .navigationBarBackButtonHidden()
+        .task { await viewModel.load(resumeStepId: resumeStepId) }
+        .onChange(of: viewModel.finished) { _, finished in
+            guard finished else { return }
+            if let onDismiss {
+                onDismiss()
+            } else {
+                router.resetToHome()
+            }
+            apply(route: viewModel.completionRoute)
+        }
+    }
+
+    @ViewBuilder
+    private var tourBody: some View {
+        let step = viewModel.steps[viewModel.currentIndex]
+        let isLast = viewModel.currentIndex == viewModel.steps.count - 1
+
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                HStack(spacing: 6) {
+                    ForEach(viewModel.steps.indices, id: \.self) { index in
+                        Capsule()
+                            .fill(index == viewModel.currentIndex
+                                ? Color.auroraInk
+                                : Color.auroraInk.opacity(0.25))
+                            .frame(width: index == viewModel.currentIndex ? 18 : 6, height: 6)
+                    }
+                }
+                Spacer()
+                Button("Skip") { Task { await viewModel.skip() } }
+                    .buttonStyle(AuroraGhostButtonStyle())
+                    .disabled(viewModel.isSaving)
+            }
+
+            TabView(selection: Binding(
+                get: { viewModel.currentIndex },
+                set: { _ in }
+            )) {
+                ForEach(viewModel.steps.indices, id: \.self) { index in
+                    stepContent(viewModel.steps[index])
+                        .tag(index)
+                }
+            }
+            .onboardingPageStyle()
+
+            if let error = viewModel.error {
+                VStack(alignment: .leading, spacing: 8) {
+                    AuroraErrorLabel(error)
+                    Button("Continue without saving") {
+                        Task { await viewModel.continueWithoutSaving() }
+                    }
+                    .buttonStyle(AuroraGhostButtonStyle())
+                    .disabled(viewModel.isSaving)
+                }
+                .padding(.bottom, 12)
+            }
+
+            HStack(spacing: 10) {
+                if viewModel.currentIndex > 0 {
+                    Button("Back") { viewModel.back() }
+                        .buttonStyle(AuroraGhostButtonStyle())
+                        .disabled(viewModel.isSaving)
+                }
+                Button {
+                    Task {
+                        if step.kind == "handoff" || isLast {
+                            await viewModel.finish()
+                        } else {
+                            await viewModel.advance()
+                        }
+                    }
+                } label: {
+                    Text(viewModel.isSaving
+                        ? "Saving…"
+                        : step.kind == "handoff" || isLast ? "Done"
+                        : viewModel.currentIndex == 0 ? "Show me" : "Next")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(AuroraPrimaryButtonStyle(isLoading: viewModel.isSaving))
+                .disabled(viewModel.isSaving)
+            }
+        }
+    }
+
+    private func stepContent(_ step: OnboardingStep) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer()
+
+            Image(systemName: illustrationSymbol(step.illustration))
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Color.auroraInk)
+                .frame(width: 56, height: 56)
+                .background(Color.auroraInk.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+                .padding(.bottom, 20)
+                .accessibilityHidden(true)
+
+            if let title = step.title {
+                Text(title)
+                    .font(.vividTitle)
+                    .foregroundStyle(Color.auroraInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let body = step.body {
+                Text(body)
+                    .font(.vividBody)
+                    .foregroundStyle(Color.auroraInkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
+
+            if step.kind == "setting_choice", let spec = step.setting {
+                settingChoice(step: step, spec: spec)
+                    .padding(.top, 22)
+            }
+
+            if step.kind == "feature_card",
+               let label = step.actionLabel,
+               let route = step.route,
+               Self.supportedRoutes.contains(route) {
+                Button(label) {
+                    Task { await viewModel.finish(route: route) }
+                }
+                .buttonStyle(AuroraGhostButtonStyle())
+                .disabled(viewModel.isSaving)
+                .padding(.top, 18)
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func settingChoice(step: OnboardingStep, spec: OnboardingSettingSpec) -> some View {
+        if spec.control == "toggle" {
+            Toggle(
+                spec.label ?? step.title ?? "Enabled",
+                isOn: Binding(
+                    get: { viewModel.isToggleEnabled(for: step) },
+                    set: { enabled in
+                        Task {
+                            await viewModel.choose(
+                                step: step,
+                                value: enabled ? "true" : "false"
+                            )
+                        }
+                    }
+                )
+            )
+            .font(.vividBody)
+            .foregroundStyle(Color.auroraInk)
+            .disabled(viewModel.isSaving)
+            .padding(14)
+            .auroraGlass(cornerRadius: 20)
+        } else {
+            optionSettingChoice(step: step, spec: spec)
+        }
+    }
+
+    private func optionSettingChoice(step: OnboardingStep, spec: OnboardingSettingSpec) -> some View {
+        VStack(spacing: 4) {
+            ForEach(spec.options ?? [], id: \.value) { option in
+                let isSelected = viewModel.selectedValues[step.id] == option.value
+                    || (viewModel.selectedValues[step.id] == nil && option.value == spec.default)
+                Button {
+                    Task { await viewModel.choose(step: step, value: option.value) }
+                } label: {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .strokeBorder(
+                                isSelected ? Color.auroraInk : Color.auroraInk.opacity(0.4),
+                                lineWidth: 1.5
+                            )
+                            .background(Circle().fill(isSelected ? Color.auroraInk : .clear).padding(3))
+                            .frame(width: 16, height: 16)
+                        Text(option.label)
+                            .font(.vividBody.weight(isSelected ? .semibold : .regular))
+                            .foregroundStyle(Color.auroraInk)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        isSelected ? Color.auroraInk.opacity(0.12) : .clear,
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isSaving)
+            }
+        }
+        .padding(10)
+        .auroraGlass(cornerRadius: 20)
+    }
+
+    /// Client-side illustration keys — the server only ever names them.
+    private func illustrationSymbol(_ key: String?) -> String {
+        switch key {
+        case "watchlist": return "heart.fill"
+        case "watch-together": return "person.2.fill"
+        case "playback": return "play.circle.fill"
+        case "subtitles": return "captions.bubble.fill"
+        case "requests": return "wand.and.stars"
+        default: return "sparkles"
+        }
+    }
+
+    private static let supportedRoutes: Set<String> = [
+        "/requests",
+        "/taste-seed",
+    ]
+
+    /// Server routes are data, never arbitrary navigation instructions. Keep
+    /// this allowlist small and fall back to Home for unknown/future routes.
+    private func apply(route: String?) {
+        router.popToRoot()
+        switch route {
+        case "/requests":
+            router.navigate(to: .requestsHub)
+        case "/taste-seed":
+            // Apple has no standalone seed picker; For You is the native
+            // recommendations destination backed by the same preferences.
+            router.switchTab(to: .recommendations)
+        default:
+            router.switchTab(to: .home)
+        }
+    }
+}
+#endif

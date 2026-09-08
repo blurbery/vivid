@@ -1,0 +1,197 @@
+name: Sideload IPA Build
+
+# Builds UNSIGNED iOS and tvOS IPAs for third-party signing / sideloading.
+# These artifacts are not installable as-is: the end user re-signs them with
+# their own account (AltStore / Sideloadly / SideStore / etc.). No signing
+# certs, Match repo, or App Store Connect key is used — this workflow reads no
+# release secrets. See docs/release/distribution.md.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Marketing version (e.g. 1.4.0)'
+        required: true
+        type: string
+      platform:
+        description: 'Which platform(s) to build'
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - ios
+          - tvos
+
+env:
+  XCODEGEN_VERSION: "2.43.0"
+
+# Serialize runs: build numbers are unique per run (see the release job), but
+# two runs targeting the same tag would still race each other's `gh release`
+# asset uploads, and one sideload build already occupies two macOS runners.
+concurrency:
+  group: sideload-ipa
+  cancel-in-progress: false
+
+jobs:
+  # Compute the build matrix from the dispatch input. Tag pushes (and any run
+  # without an explicit choice) build both platforms.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        env:
+          PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'both' }}
+        run: |
+          ios='{"platform":"iOS","lane":"ipa_ios_unsigned","artifact":"Vivid-iOS-unsigned-ipa","ipa_path":"build/ios-unsigned/Vivid-unsigned.ipa"}'
+          tvos='{"platform":"tvOS","lane":"ipa_tvos_unsigned","artifact":"VividTV-tvOS-unsigned-ipa","ipa_path":"build/tvos-unsigned/VividTV-unsigned.ipa"}'
+          case "$PLATFORM" in
+            ios)  include="[$ios]" ;;
+            tvos) include="[$tvos]" ;;
+            *)    include="[$ios,$tvos]" ;;
+          esac
+          echo "Building matrix for platform=$PLATFORM"
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+
+  # Create the GitHub Release ONCE before the platform builds fan out, so the
+  # matrix jobs only upload assets (no create race). Tag pushes release under
+  # the pushed tag; dispatch runs mint a v<version>-build.N tag.
+  #
+  # BOTH paths get a build number stamped into the IPAs via BUILD_NUMBER.
+  # Tag pushes used to leave it empty, so every tag-built sideload IPA shipped
+  # CFBundleVersion=1 (the project.yml literal) and two builds of the same
+  # marketing version were indistinguishable in the server's Activity page.
+  #
+  # The number is github.run_number, NOT a max or count over existing
+  # releases. A release-derived counter cannot survive the cases that matter:
+  #   - Prerelease tags carry no build number to read back, so v1.4.0-beta.1,
+  #     -beta.2, -rc.1 and the final v1.4.0 all collapse onto the same value.
+  #   - Deleting a release walks the sequence backwards.
+  # Either one lets two different IPAs ship as the same version+build, which
+  # is exactly what the server's Activity page relies on being unambiguous.
+  # run_number is monotonic, never reused, and unaffected by release deletion.
+  # It is also stable across a re-run (a re-run bumps run_attempt, not
+  # run_number), so re-running a failed matrix leg reproduces the same build
+  # instead of quietly republishing a different binary under the same tag.
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.rel.outputs.tag }}
+      build_number: ${{ steps.rel.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_REF_NAME: ${{ github.ref_name }}
+          GH_RUN_NUMBER: ${{ github.run_number }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          # Validates the resolved version is a plain dotted version before it
+          # is embedded in a tag name / shell strings. Runs for both events:
+          # a tag push resolves v1.4.0-beta.2 -> 1.4.0.
+          V="$(scripts/ci/resolve-marketing-version.sh \
+                "$GH_EVENT_NAME" "$GH_REF_NAME" "$INPUT_VERSION")"
+          BUILD="$GH_RUN_NUMBER"
+          echo "build_number=$BUILD" >> "$GITHUB_OUTPUT"
+          if [[ "$GH_EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="v${V}-build.${BUILD}"
+            TITLE="v${V} (Build ${BUILD})"
+          else
+            TAG="$GH_REF_NAME"
+            TITLE="$GH_REF_NAME (Build ${BUILD})"
+          fi
+          # Tag pushes can already have a release (created manually or by a
+          # previous run); only create when missing. Re-title an existing one
+          # either way: the build step uploads with --clobber, so a stale
+          # title would advertise a different build than the attached IPAs.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE"
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes "Unsigned iOS/tvOS IPAs for third-party signing / sideloading. See docs/release/distribution.md."
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing as $TAG (build $BUILD)"
+
+  build:
+    needs: [setup, release]
+    runs-on: macos-15
+    # Only the release-upload step (tag builds) needs write; scope it to the job
+    # rather than the whole workflow to keep the rest at least privilege.
+    permissions:
+      contents: write
+    strategy:
+      # Let one platform finish/publish even if the other fails.
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # tags + history for version resolution
+          persist-credentials: false  # don't leave GITHUB_TOKEN in git config for xcodegen/SPM
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+
+      - name: Install XcodeGen (pinned)
+        run: |
+          curl -fsSL -o /tmp/xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          sudo /tmp/xcodegen-dist/xcodegen/install.sh /usr/local
+          xcodegen --version
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Resolve marketing version
+        id: ver
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          GH_REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          V="$(scripts/ci/resolve-marketing-version.sh \
+                "$GH_EVENT_NAME" "$GH_REF_NAME" "$INPUT_VERSION")"
+          {
+            echo "value<<EOF"
+            echo "$V"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved marketing version: $V"
+
+      - name: Build unsigned ${{ matrix.platform }} IPA
+        run: bundle exec fastlane ios ${{ matrix.lane }}
+        env:
+          MARKETING_VERSION: ${{ steps.ver.outputs.value }}
+          # Always set (dispatch and tag push alike) so no sideload IPA ever
+          # ships the project.yml CURRENT_PROJECT_VERSION placeholder.
+          BUILD_NUMBER: ${{ needs.release.outputs.build_number }}
+
+      - name: Upload ${{ matrix.platform }} IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.ipa_path }}
+          if-no-files-found: error
+
+      - name: Attach ${{ matrix.platform }} IPA to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IPA_PATH: ${{ matrix.ipa_path }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" "$IPA_PATH" --clobber

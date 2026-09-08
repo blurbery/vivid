@@ -1,0 +1,85 @@
+# Xcode / XcodeGen
+iosApp/Vivid.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+iosApp/.deriveddata/
+
+# XcodeGen regenerates the project, but the exact Swift package graph is a
+# release input and must remain reviewable.
+!iosApp/Vivid.xcodeproj/
+iosApp/Vivid.xcodeproj/*
+!iosApp/Vivid.xcodeproj/project.xcworkspace/
+iosApp/Vivid.xcodeproj/project.xcworkspace/*
+!iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/
+iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/*
+!iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+# SwiftPM / CocoaPods
+.build/
+iosApp/.spm-packages/
+iosApp/Pods/
+
+# Fastlane build outputs (IPAs, archives from the ipa_*_unsigned lanes)
+build/
+fastlane/README.md
+
+# Local signing and secrets
+iosApp/Signing/Local.xcconfig
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+
+# Ruby / Fastlane
+vendor/bundle/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# Local agent/tooling state
+/.agents/
+/.claude/
+.codex/
+.cursor/
+.sweetpad/
+.worktrees/
+.playwright-mcp/
+.playwright-cli/
+.superpowers/
+buildServer.json
+
+# Logs and OS files
+*.log
+logs/
+output/
+.DS_Store
+Thumbs.db
+.swiftpm/
+docs/*
+!docs/apple-tv-focus.md
+!docs/README.md
+!docs/server-connections.md
+!docs/app-design.md
+!docs/apple-tv-browsing.md
+!docs/playback/
+docs/playback/*
+!docs/playback/README.md
+!docs/playback/architecture.md
+!docs/release/
+!docs/release/*
+
+# Vivid release tooling and branding documentation
+/node_modules/
+!docs/branding/
+!docs/branding/**
+
+# Local device test results
+/work/

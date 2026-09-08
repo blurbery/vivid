@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "vivid-website",
+  "main": ".build/worker.mjs",
+  "compatibility_date": "2026-09-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "build": {"command": "node build.mjs"},
+  "routes": [
+    {"pattern": "vividapp.co", "custom_domain": true},
+    {"pattern": "www.vividapp.co", "custom_domain": true}
+  ],
+  "observability": {"enabled": false}
+}

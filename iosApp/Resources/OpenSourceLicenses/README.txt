@@ -1,0 +1,65 @@
+Vivid — Third-Party Libraries
+============================
+
+This Vivid build includes the components listed below. Their complete license
+texts are bundled beside this file and are available from Settings > About >
+Open Source Licenses.
+
+Vivid and VividKit application code: Apache-2.0, copyright 2026 blurbery.
+
+FFmpegBuild and embedded media frameworks
+  Revision: 421e13be7061de67d91b85ac34a6b22a002b164f (release 3.0.0)
+  Source and rebuild script: https://github.com/superuser404notfound/FFmpegBuild/tree/421e13be7061de67d91b85ac34a6b22a002b164f
+
+  Components built by that revision:
+  - FFmpeg n8.1.2, currently 38b88335f99e76ed89ff3c93f877fdefce736c13:
+    LGPL-2.1-or-later
+  - dav1d 1.5.4, currently 54706fc6bc0cdecab7e9593974a4039cc038fca7:
+    BSD-2-Clause
+  - zimg release-3.0.6, currently
+    f819b14e8f39d1282400b0d9543e8ef73c1b2bbd: WTFPL-2.0
+  - libzvbi v0.2.45, currently
+    d3a5ee9f2b047bf16cd1ee5ccf6ec05ee75409d0: LGPL-2.0-or-later,
+    conveyed under LGPL-2.1;
+    src/ure.c retains its MIT notice
+
+  The exact build is configured without --enable-gpl, --enable-version3, or
+  nonfree components. FFmpegBuild removes the three GPL libzvbi source files
+  before compilation and publishes the replacement stubs and patches in its
+  build.sh. The app embeds these nine libraries as separate dynamic
+  frameworks: AetherLibavcodec, AetherLibavformat, AetherLibavutil,
+  AetherLibswresample, AetherLibswscale, AetherLibavfilter, AetherLibdav1d,
+  AetherLibzimg, and AetherLibzvbi.
+
+  "Currently" records the tags' dereferenced values observed on 2026-09-04.
+  FFmpegBuild's script records tag names rather than immutable upstream
+  commit IDs; the dereferenced commits recorded here pin the exact sources if
+  those tags ever move.
+
+libass subtitle rendering and font dependencies
+  Binary source: https://github.com/kingslay/FFmpegKit/tree/c32be9bfb628042737ad3ef622e930c5c7b15954/Sources
+  Only libass, libfreetype, libfribidi and libharfbuzz frameworks are included.
+  The FFmpegKit playback target, mpv, and GPL media libraries are not linked.
+  libass 0.17.1: ISC; https://github.com/libass/libass/tree/0.17.1
+  FreeType 2.13.2: FreeType License; https://github.com/freetype/freetype/tree/VER-2-13-2
+  FriBidi 1.0.12: LGPL-2.1-or-later; https://github.com/fribidi/fribidi/tree/v1.0.12
+  HarfBuzz 5.3.1: MIT; https://github.com/harfbuzz/harfbuzz/tree/5.3.1
+  The font and subtitle frameworks are static, separately replaceable SwiftPM
+  binary targets. Their upstream licenses remain unchanged. FreeType notice:
+  Portions of this software are copyright © 2023 The FreeType Project
+  (www.freetype.org). All rights reserved.
+
+ThumbHash decoder
+  Revision: a652ce6ed691242f459f468f0a8756cda3b90a82
+  License: MIT
+  Source: https://github.com/evanw/thumbhash/tree/a652ce6ed691242f459f468f0a8756cda3b90a82
+  Vivid includes an adapted copy of the reference Swift decode path with input
+  validation, cross-platform image creation, and a bounded asynchronous cache.
+
+Source availability
+-------------------
+
+The links above identify the exact source and rebuild inputs for this build,
+including each component's rebuild script and patches at the pinned revision.
+They are this build's corresponding-source pointer; keep them matched to the
+revisions each release actually resolves.

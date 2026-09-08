@@ -1,0 +1,14 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "layers": [
+    {
+      "filename": "Layer1.imagestacklayer"
+    },
+    {
+      "filename": "Layer0.imagestacklayer"
+    }
+  ]
+}

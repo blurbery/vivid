@@ -1,0 +1,289 @@
+#if os(tvOS)
+import Foundation
+import Observation
+
+/// View model backing the tvOS library grid. Purpose-built for 100k-item
+/// libraries; does not share state with the iOS `BrowseViewModel`, but both
+/// now drive the shared `CatalogFilterState` + `CatalogQueryBuilder`.
+///
+/// Key differences from iOS:
+///
+/// - **Pagination** uses the server's snapshot timestamp (`snapshot_at`) as a
+///   fence so pages stay coherent even if items are being ingested mid-scroll.
+/// - **Page size** is 100 (the server's hard cap) instead of 60.
+/// - **Prefetch trigger** fires earlier (more lead rows) and warms posters via
+///   Nuke.
+/// - **Filter state** resets pagination when changed; any in-flight fetch is
+///   superseded by a generation counter.
+@Observable
+@MainActor
+final class TVLibraryGridViewModel {
+    // MARK: - Observable state
+
+    var items: [BrowseItem] = []
+    var isLoading: Bool = false
+    var isRefreshing: Bool = false
+    var error: ErrorState? = nil
+    var hasMore: Bool = true
+    private(set) var filter: CatalogFilterState
+    /// Live facet vocabulary for the filter panel (loaded lazily).
+    private(set) var facetsLoadFailed = false
+    private(set) var isLoadingFacets = false
+    private(set) var facets: CatalogFacets?
+
+    // MARK: - Private state
+
+    private let libraryId: Int
+    /// Media family — picks the sort/facet vocabulary in the panels.
+    let mediaType: BrowseMediaType
+    /// Whether to send the `type` media-scope param. Music libraries are
+    /// scoped by `library_id`.
+    private let sendsType: Bool
+    private let pageSize: Int = 70
+
+    private var snapshot: String? = nil
+    private var nextOffset: Int = 0
+    @ObservationIgnored private var prefetchedPosterURLs: Set<URL> = []
+    @ObservationIgnored private var visiblePosterRows: [Int: Range<Int>] = [:]
+    /// Decoded into the memory cache so a cell scrolling into view paints the
+    /// warmed image on its first frame via `CachedAsyncImage.prefetchedImage()`
+    /// instead of paying the decode + resize on arrival. The window is small
+    /// (two rows either side, 48 URLs) and low priority, so visible cells and
+    /// their own requests still win the pipeline.
+    private let posterPrefetcher = VividImagePrefetcher(
+        pipeline: VividImagePipeline.shared,
+        destination: .memoryCache,
+        maxConcurrentRequestCount: 2
+    )
+    private var generation: Int = 0
+
+    init(libraryId: Int, libraryType: String, initialFilter: CatalogFilterState = .none) {
+        self.libraryId = libraryId
+        self.mediaType = BrowseMediaType.from(libraryType: libraryType)
+        self.sendsType = VividMediaType.isSeries(libraryType) || VividMediaType.isMovieLibrary(libraryType)
+        // A non-default initial filter (a deep-linked landing tap) wins;
+        // otherwise restore the persisted per-library state.
+        if !initialFilter.isDefault {
+            self.filter = initialFilter
+        } else if let saved = BrowsePrefsStore.shared.savedState(libraryId: libraryId, mediaScope: mediaType.catalogTypeParam) {
+            self.filter = saved
+        } else {
+            self.filter = initialFilter
+        }
+        if sendsType { filter.mediaScope = nil }
+        facets = FacetLoader.shared.cachedFacets(libraryId: libraryId)
+        hydratePage1FromCache()
+    }
+
+    private var currentCacheKey: String {
+        CacheKey.tvLibrary(libraryId: libraryId, filterKey: "type=\(mediaType.rawValue)|\(filter.cacheKeyFragment)")
+    }
+
+    private func hydratePage1FromCache() {
+        guard items.isEmpty,
+              let cached: CatalogResponse = ResponseCache.shared.get(currentCacheKey) else {
+            return
+        }
+        items = cached.items
+        hasMore = cached.hasMore ?? false
+        nextOffset = cached.items.count
+        snapshot = cached.snapshot
+    }
+
+    // MARK: - Public API
+
+    func loadInitial() async {
+        await reload()
+    }
+
+    func loadMoreIfNeeded() async {
+        guard hasMore, !isLoading, !isRefreshing else { return }
+        await fetchPage(reset: false)
+    }
+
+    /// Jump to a name prefix (A–Z + "#"). Resets pagination.
+    func jumpToPrefix(_ letter: String?) async {
+        filter.namePrefix = letter
+        await reload()
+    }
+
+    /// Replace the full filter/sort set. Persists it and resets pagination.
+    func applyFilter(_ newFilter: CatalogFilterState) async {
+        var newFilter = newFilter
+        if sendsType { newFilter.mediaScope = nil }
+        guard newFilter != filter else { return }
+        filter = newFilter
+        BrowsePrefsStore.shared.saveState(newFilter, libraryId: libraryId, mediaScope: mediaType.catalogTypeParam)
+        await reload(useCache: false)
+    }
+
+    /// Sort menu behavior: tapping the active key flips direction; tapping a
+    /// different key selects it at its default order.
+    func setSort(_ key: CatalogSortKey) async {
+        var next = filter
+        if next.sort == key {
+            next.order = next.effectiveOrder.flipped
+        } else {
+            next.sort = key
+            next.order = nil
+        }
+        next.namePrefix = nil
+        await applyFilter(next)
+    }
+
+    func loadFacetsIfNeeded() async {
+        guard facets == nil, !isLoadingFacets else { return }
+        isLoadingFacets = true
+        facetsLoadFailed = false
+        defer { isLoadingFacets = false }
+        do {
+            facets = try await FacetLoader.shared.facets(libraryId: libraryId)
+        } catch {
+            guard !Task.isCancelled else { return }
+            facetsLoadFailed = true
+        }
+    }
+
+    var preserveEnabled: Bool { BrowsePrefsStore.shared.preserveEnabled(libraryId: libraryId, mediaScope: mediaType.catalogTypeParam) }
+
+    func setPreserveEnabled(_ enabled: Bool) {
+        BrowsePrefsStore.shared.setPreserveEnabled(enabled, libraryId: libraryId, mediaScope: mediaType.catalogTypeParam)
+        if enabled {
+            BrowsePrefsStore.shared.saveState(filter, libraryId: libraryId, mediaScope: mediaType.catalogTypeParam)
+        }
+    }
+
+    func setPosterRowVisibility(_ range: Range<Int>, isVisible: Bool) {
+        guard !range.isEmpty else { return }
+        if isVisible {
+            visiblePosterRows[range.lowerBound] = range
+        } else {
+            visiblePosterRows.removeValue(forKey: range.lowerBound)
+        }
+        refreshPosterPrefetch()
+    }
+
+    /// Data can change while the same row positions remain visible.
+    private func refreshPosterPrefetch() {
+        let rows = visiblePosterRows.values
+        guard let first = rows.map(\.lowerBound).min(),
+              let last = rows.map(\.upperBound).max(),
+              let widestRow = rows.map(\.count).max() else {
+            cancelPosterPrefetch()
+            return
+        }
+        // Two rows either side of the visible band.
+        let nearbyCount = widestRow * 2
+        prefetchPosters(in: (first - nearbyCount)..<(last + nearbyCount))
+    }
+
+    /// `range` may overrun `items`; the safe subscript clamps it.
+    private func prefetchPosters(in range: Range<Int>) {
+        // Keep one bounded window around the visible rows. Visible cells still
+        // request their own resized image through the same coalescing
+        // pipeline; the warmed decode only lets that first frame paint.
+        let urls = items[safe: range].prefix(48)
+            .compactMap { $0.posterUrl }
+            .compactMap { URL(string: $0) }
+        let desiredURLs = Set(urls)
+        let staleURLs = prefetchedPosterURLs.subtracting(desiredURLs)
+        let newURLs = urls.filter { !prefetchedPosterURLs.contains($0) }
+        prefetchedPosterURLs = desiredURLs
+        posterPrefetcher.stopPrefetching(with: staleURLs.map(PosterImageCache.cardWarmRequest(for:)))
+        posterPrefetcher.startPrefetching(with: newURLs.map(PosterImageCache.cardWarmRequest(for:)))
+    }
+
+    func cancelPosterPrefetch() {
+        stopPosterPrefetchRequests()
+        visiblePosterRows.removeAll()
+    }
+
+    private func stopPosterPrefetchRequests() {
+        posterPrefetcher.stopPrefetching()
+        prefetchedPosterURLs.removeAll()
+    }
+
+    // MARK: - Fetch logic
+
+    private func reload(useCache: Bool = true) async {
+        // A cache-backed reload can preserve the grid's row identities and
+        // visibility. Cancel old URLs without discarding that geometry.
+        stopPosterPrefetchRequests()
+        generation += 1
+        items = []
+        nextOffset = 0
+        hasMore = true
+        snapshot = nil
+        error = nil
+        if useCache { hydratePage1FromCache() }
+        refreshPosterPrefetch()
+        await fetchPage(reset: true)
+    }
+
+    private func fetchPage(reset: Bool) async {
+        let myGeneration = generation
+        if reset, !items.isEmpty {
+            isRefreshing = true
+        } else {
+            isLoading = true
+        }
+        defer {
+            if myGeneration == generation {
+                isLoading = false
+                isRefreshing = false
+            }
+        }
+
+        let requestOffset = reset ? 0 : nextOffset
+        let requestSnapshot = reset ? nil : snapshot
+        let query = CatalogQueryBuilder.build(
+            filter,
+            libraryId: libraryId,
+            mediaType: mediaType,
+            offset: requestOffset,
+            limit: pageSize,
+            snapshot: requestSnapshot,
+            includeTotal: false,
+            includeType: sendsType
+        )
+
+        do {
+            let response: CatalogResponse = try await VividAPI.shared.get(
+                "/api/v1/catalog", query: query
+            )
+
+            // Discard if another reload superseded us while we awaited.
+            guard myGeneration == generation else { return }
+
+            if reset {
+                items = response.items
+                ResponseCache.shared.set(response, for: currentCacheKey)
+                nextOffset = response.items.count
+                snapshot = response.snapshot
+            } else {
+                items.append(contentsOf: response.items)
+                nextOffset += response.items.count
+                if snapshot == nil { snapshot = response.snapshot }
+            }
+            hasMore = response.hasMore ?? false
+            refreshPosterPrefetch()
+        } catch {
+            guard myGeneration == generation else { return }
+            if items.isEmpty {
+                self.error = ErrorState(error)
+            }
+        }
+    }
+}
+
+// MARK: - Safe subscript
+
+private extension Array {
+    subscript(safe range: Range<Int>) -> ArraySlice<Element> {
+        let lower = Swift.max(0, range.lowerBound)
+        let upper = Swift.min(count, range.upperBound)
+        guard lower < upper else { return [] }
+        return self[lower..<upper]
+    }
+}
+#endif

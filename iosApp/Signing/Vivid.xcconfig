@@ -1,0 +1,11 @@
+// Retained iOS development signing defaults; Vivid distribution is not configured.
+// Override locally with Local.xcconfig; see Local.xcconfig.sample.
+// VIVID_* variables support repository-local signing overrides.
+
+VIVID_IOS_BUNDLE_ID = com.blurbery.vivid
+VIVID_IOS_ENTITLEMENTS = Vivid.entitlements
+
+PRODUCT_BUNDLE_IDENTIFIER = $(VIVID_IOS_BUNDLE_ID)
+CODE_SIGN_ENTITLEMENTS = $(VIVID_IOS_ENTITLEMENTS)
+
+#include? "Local.xcconfig"

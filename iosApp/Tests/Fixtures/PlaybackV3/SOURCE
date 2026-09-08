@@ -1,0 +1,11 @@
+Source: silo-server internal/playback/testdata/protocol_v3
+Server commit: 5afc5bdd616e4f9c304889c8cadc4c6d31fbc7b7
+Server repository: https://github.com/blurbery/silo-server
+Vendored: 2026-09-04
+
+All nine JSON files come from internal/playback/testdata/protocol_v3. Six are
+also published byte-identically under docs/design/schemas/playback-v3/v3/fixtures/valid;
+attempt_keys.json, conformance_matrix.json and subtitle_inventory.json exist only
+under testdata, so the testdata directory is the single copy source.
+
+Refresh these files together from the server, then regenerate Vivid.xcodeproj with cd iosApp && xcodegen generate.

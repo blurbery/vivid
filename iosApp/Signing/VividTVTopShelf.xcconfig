@@ -1,0 +1,12 @@
+// Retained Top Shelf development signing defaults.
+// Override locally with Local.xcconfig; see Local.xcconfig.sample.
+// Vivid release profiles and shared storage must be configured together.
+
+VIVID_TOPSHELF_BUNDLE_ID = com.blurbery.vivid.topshelf
+VIVID_TOPSHELF_ENTITLEMENTS = TopShelf/TopShelf.entitlements
+VIVID_USER_INDEPENDENT_KEYCHAIN = YES
+
+PRODUCT_BUNDLE_IDENTIFIER = $(VIVID_TOPSHELF_BUNDLE_ID)
+CODE_SIGN_ENTITLEMENTS = $(VIVID_TOPSHELF_ENTITLEMENTS)
+
+#include? "Local.xcconfig"

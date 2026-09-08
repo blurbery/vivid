@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "emby-logo.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "Emby LLC",
+    "version" : 1
+  }
+}

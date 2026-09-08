@@ -1,0 +1,11 @@
+// Retained notification-service development signing defaults.
+// Override locally with Local.xcconfig; see Local.xcconfig.sample.
+// Vivid release profiles and shared storage must be configured together.
+
+VIVID_NOTIFICATION_SERVICE_BUNDLE_ID = com.blurbery.vivid.NotificationService
+VIVID_NOTIFICATION_SERVICE_ENTITLEMENTS = NotificationService/NotificationService.entitlements
+
+PRODUCT_BUNDLE_IDENTIFIER = $(VIVID_NOTIFICATION_SERVICE_BUNDLE_ID)
+CODE_SIGN_ENTITLEMENTS = $(VIVID_NOTIFICATION_SERVICE_ENTITLEMENTS)
+
+#include? "Local.xcconfig"

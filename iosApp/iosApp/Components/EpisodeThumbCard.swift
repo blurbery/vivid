@@ -1,0 +1,561 @@
+import SwiftUI
+
+/// Horizontal (16:9) media card for episode and resume content — used in
+/// "Next Up", "Continue Watching", etc.
+///
+/// Shows the episode still / backdrop, series title, and episode metadata.
+/// Episode numbering stays in accessibility and detail metadata rather than
+/// being drawn over the artwork.
+/// On tvOS the image sits inside a `.card` button for focus lift/parallax and
+/// a FocusState binding drives the title highlight.
+struct EpisodeThumbCard: View {
+    let item: SectionItem
+    var showProgress: Bool = false
+    let action: () -> Void
+    /// Some hosts use thumbnail taps for an immediate action rather than
+    /// opening detail. Player "On Deck" is the concrete case: selecting a
+    /// card must start that episode. Ordinary Home and browse thumbnails keep
+    /// the source-aware detail-card presentation.
+    var usesProvidedTapAction: Bool = false
+    /// Use one episode caption beneath the artwork on Series pages.
+    var usesEpisodeCaption = false
+    var showsEpisodeDetails = false
+    var defersOffscreenArtwork = false
+    var onArtworkVisibilityChange: ((Bool) -> Void)? = nil
+    /// tvOS-only shortcut invoked by the remote's Play/Pause button while
+    /// this card owns focus. Select continues to invoke `action`.
+    var playAction: (() -> Void)? = nil
+    /// tvOS-only: parent row's focus tracking binding. See
+    /// `MediaCard.focusedItemId` for the contract.
+    var focusedItemId: FocusState<String?>.Binding? = nil
+    var contextPlayTitle: String? = nil
+    var contextDetailTitle: String? = nil
+    var onOpenContextDetail: (() -> Void)? = nil
+    var onRemoveFromContinueWatching: (() -> Void)? = nil
+    var onSetWatched: ((Bool) async -> Bool)? = nil
+    var initialIsFavorite = false
+    var onSetFavorite: ((Bool) async -> Bool)? = nil
+
+    @State private var playedOverride: Bool?
+    @State private var favoriteOverride: Bool?
+    @State private var uiCustomization = UICustomizationPreferences.shared
+    @Environment(\.homeCardPresentation) private var homeCardPresentation
+    private var resolvedPresentation: CardPresentationPreference {
+        homeCardPresentation ?? uiCustomization.cardPresentation
+    }
+    @EnvironmentObject private var overlayStore: OverlayPrefsStore
+    #if os(tvOS)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var continueWatchingMetadata = TVContinueWatchingPlaybackMetadataStore.shared
+    @State private var artworkIsVisible = false
+    #endif
+    /// iOS 26 zoom transition namespace, shared from `MainTabView`. Lets the
+    /// tapped thumbnail act as the `.matchedTransitionSource` for the zoom into
+    /// the episode's item detail, keyed on `item.contentId`. `nil` (tvOS/macOS
+    /// or unset) falls back to a plain push. (iOS branch only.)
+    @Environment(\.zoomNamespace) private var zoomNamespace
+    #if !os(tvOS)
+    @Environment(AppRouter.self) private var router
+    @Environment(\.itemDetailBrowseSource) private var detailBrowseSource
+    /// Unique per-placement zoom source id (see MediaCard) so the same episode
+    /// in two on-screen rows doesn't collide on `contentId`.
+    @State private var zoomInstanceID = UUID()
+    #endif
+
+    private var cardWidth: CGFloat {
+        VividTheme.thumbnailCardWidth * resolvedPresentation.posterSize.scale
+    }
+    private var cardHeight: CGFloat {
+        cardWidth * (VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth)
+    }
+
+    #if os(tvOS)
+    @FocusState private var standaloneFocused: Bool
+
+    private var isFocused: Bool {
+        guard let focusedItemId else { return standaloneFocused }
+        return focusedItemId.wrappedValue == item.contentId
+    }
+    #endif
+
+    var body: some View {
+        #if os(tvOS)
+        VStack(alignment: .leading, spacing: 14) {
+            thumbnailButton
+
+            if resolvedPresentation.caption.showsTitle || isTVResumeCard || showsEpisodeDetails {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayTitle)
+                        .font(.vividPosterTitle)
+                        .foregroundStyle(
+                            isFocused
+                                ? Color.vividOnSurface
+                                : Color.vividOnSurface.opacity(0.85)
+                        )
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(width: cardWidth, alignment: .leading)
+                        .clipped()
+                        .animation(.easeOut(duration: 0.15), value: isFocused)
+
+                    if resolvedPresentation.caption.showsMetadata || isTVResumeCard || showsEpisodeDetails,
+                       let subtitle = subtitleLine {
+                        Text(subtitle)
+                            .font(.vividPosterMetadata)
+                            .foregroundStyle(Color.vividSecondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(width: cardWidth, alignment: .leading)
+                            .clipped()
+                    }
+                }
+                .frame(width: cardWidth, alignment: .leading)
+            }
+        }
+        .frame(width: cardWidth)
+        .focusSection()
+        .onScrollVisibilityChange(threshold: 0.01) { isVisible in
+            guard defersOffscreenArtwork else { return }
+            artworkIsVisible = isVisible
+            onArtworkVisibilityChange?(isVisible)
+        }
+        .onChange(of: item.userState?.played) { _, _ in
+            playedOverride = nil
+        }
+        .onChange(of: initialIsFavorite) { _, _ in
+            favoriteOverride = nil
+        }
+        .task(id: continueWatchingMetadataTaskId) {
+            guard onRemoveFromContinueWatching != nil else { return }
+            _ = await continueWatchingMetadata.load(item: item)
+        }
+        #else
+        Group {
+            if hasContextActions {
+                iosButton.contextMenu {
+                    contextActions
+                }
+            } else {
+                iosButton
+            }
+        }
+        .onChange(of: item.userState?.played) { _, _ in
+            playedOverride = nil
+        }
+        .frame(width: cardWidth)
+        #endif
+    }
+
+    #if !os(tvOS)
+    private var iosButton: some View {
+        Button {
+            if usesProvidedTapAction {
+                action()
+            } else {
+                router.pendingZoomSourceID = zoomInstanceID.uuidString
+                router.presentItemDetail(
+                    contentId: item.contentId,
+                    browseSource: detailBrowseSource
+                )
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                thumbnail
+                if resolvedPresentation.caption.showsTitle {
+                    Text(displayTitle)
+                        .font(.vividSubheadline)
+                        .foregroundStyle(Color.vividOnSurface)
+                        .lineLimit(1)
+                }
+                if resolvedPresentation.caption.showsMetadata,
+                   let subtitle = subtitleLine {
+                    Text(subtitle)
+                        .font(.vividCaption)
+                        .foregroundColor(.vividSecondaryText)
+                        .lineLimit(1)
+                }
+            }
+            .zoomTransitionSource(id: zoomInstanceID.uuidString, in: zoomNamespace)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityDescription)
+    }
+    #endif
+
+    // MARK: - Thumbnail
+
+    @ViewBuilder
+    private var thumbnailArtwork: some View {
+        #if os(tvOS)
+        if defersOffscreenArtwork {
+            TVEpisodeArtwork(
+                url: imageUrl,
+                thumbhash: item.backdropThumbhash ?? item.posterThumbhash,
+                size: CGSize(width: cardWidth, height: cardHeight),
+                isVisible: artworkIsVisible || isFocused
+            )
+        } else {
+            standardThumbnailArtwork
+        }
+        #else
+        standardThumbnailArtwork
+        #endif
+    }
+
+    private var standardThumbnailArtwork: some View {
+        AsyncImageView(
+            url: imageUrl,
+            thumbhash: item.backdropThumbhash ?? item.posterThumbhash,
+            targetSize: CGSize(width: cardWidth, height: cardHeight),
+            contentMode: .fill
+        )
+    }
+
+    private var thumbnail: some View {
+        ZStack(alignment: .bottomLeading) {
+            thumbnailArtwork
+            .frame(width: cardWidth, height: cardHeight)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
+
+            #if !os(tvOS)
+            // Scrim keeps bottom overlays and progress legible over bright stills.
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.75)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            .frame(width: cardWidth, height: cardHeight)
+            .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
+            #endif
+
+            // Server / user-customized overlay badges. `wide` variant
+            // gives the bottom corners enough headroom for the progress bar.
+            if overlayStore.enabled {
+                CardOverlays(
+                    data: resolvedOverlayData,
+                    prefs: overlayStore.prefs,
+                    variant: .wide
+                )
+                .frame(width: cardWidth, height: cardHeight)
+                .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
+            }
+
+            // Progress bar (resume)
+            if showProgress, let p = progressValue, p > 0 {
+                #if os(tvOS)
+                tvResumeProgress(value: p)
+                #else
+                ResumeProgressBar(value: p)
+                #endif
+            }
+
+            // Watched check
+            if isPlayed {
+                HStack {
+                    Spacer()
+                    #if os(tvOS)
+                    TVWatchedBadge()
+                    #else
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 22, height: 22)
+                        .background(Color(red: 0.16, green: 0.62, blue: 0.34), in: Circle())
+                        .shadow(color: .black.opacity(0.3), radius: 3)
+                    #endif
+                }
+                .padding(badgeInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+
+            #if !os(tvOS)
+            DownloadedBadgeOverlay(contentId: item.contentId, padding: badgeInset)
+            #endif
+        }
+        .frame(width: cardWidth, height: cardHeight)
+    }
+
+    private var isPlayed: Bool {
+        playedOverride ?? (item.userState?.played == true)
+    }
+
+    private var isFavorite: Bool {
+        favoriteOverride ?? initialIsFavorite
+    }
+
+    private var resolvedOverlayData: OverlayData {
+        #if os(tvOS)
+        if onRemoveFromContinueWatching != nil,
+           let presentation = continueWatchingMetadata.presentation(for: item.contentId) {
+            return presentation.overlayData
+        }
+        #endif
+        return OverlayData.from(item)
+    }
+
+    private var continueWatchingMetadataTaskId: String {
+        "\(item.contentId)#\(item.progressUpdatedAt ?? "")#\(onRemoveFromContinueWatching != nil)"
+    }
+
+    // MARK: - Derived data
+
+    /// Prefer backdrop/still artwork; fall back to poster.
+    private var imageUrl: String {
+        if let backdrop = item.backdropUrl, !backdrop.isEmpty {
+            return backdrop
+        }
+        return item.posterUrl ?? ""
+    }
+
+    /// Series pages already show the series name in their hero, so their
+    /// primary caption identifies the individual episode instead.
+    private var displayTitle: String {
+        if usesEpisodeCaption, EpisodeCardCaption.isEpisode(item) {
+            let code: String?
+            if let season = item.seasonNumber, let episode = item.episodeNumber {
+                code = String(format: "S%02d E%02d", season, episode)
+            } else {
+                code = nil
+            }
+            let parts = [code, EpisodeCardCaption.episodeTitle(for: item)].compactMap { $0 }
+            return parts.isEmpty ? item.title : parts.joined(separator: " · ")
+        }
+        return item.seriesTitle ?? item.title
+    }
+
+    /// Secondary line — "S01E02 · Pilot" for episodes, otherwise year.
+    private var subtitleLine: String? {
+        if usesEpisodeCaption, EpisodeCardCaption.isEpisode(item) { return nil }
+        #if os(tvOS)
+        if isTVResumeCard || showsEpisodeDetails, EpisodeCardCaption.isEpisode(item) {
+            let code = [
+                item.seasonNumber.map { String(format: "S%02d", $0) },
+                item.episodeNumber.map { String(format: "E%02d", $0) }
+            ].compactMap { $0 }.joined(separator: " ")
+            let parts = [code.isEmpty ? nil : code, EpisodeCardCaption.episodeTitle(for: item)]
+                .compactMap { $0 }
+            return parts.isEmpty ? nil : parts.joined(separator: " – ")
+        }
+        #endif
+        if let episodeLine = EpisodeCardCaption.line(for: item) {
+            return episodeLine
+        }
+        if item.seriesTitle != nil {
+            return item.title
+        }
+        if let year = item.year {
+            return String(year)
+        }
+        return nil
+    }
+
+    private var accessibilityDescription: String {
+        var components = [usesEpisodeCaption ? (item.seriesTitle ?? item.title) : displayTitle]
+        if let episodeAccessibilityLabel {
+            components.append(episodeAccessibilityLabel)
+        } else if let subtitleLine {
+            components.append(subtitleLine)
+        }
+        if isPlayed {
+            components.append("Watched")
+        }
+        return components.joined(separator: ", ")
+    }
+
+    private var episodeAccessibilityLabel: String? {
+        EpisodeCardCaption.accessibilityLabel(for: item)
+    }
+
+    private var progressValue: Double? {
+        // Watched items store position 0 server-side (the watched latch and
+        // the resume point are independent), so a nonzero position is always
+        // a live resume point — including a rewatch of a played item.
+        guard let pos = item.positionSeconds,
+              let dur = item.durationSeconds,
+              dur > 0, pos > 0 else { return nil }
+        return pos / dur
+    }
+
+    // MARK: - Metrics
+
+    private var badgeInset: CGFloat {
+        #if os(tvOS)
+        return 10
+        #else
+        return 6
+        #endif
+    }
+
+    private var checkBadgeSize: CGFloat {
+        #if os(tvOS)
+        return 40
+        #else
+        return 20
+        #endif
+    }
+
+    private var checkIconSize: CGFloat {
+        #if os(tvOS)
+        return 20
+        #else
+        return 10
+        #endif
+    }
+
+    #if os(tvOS)
+    private var isTVResumeCard: Bool {
+        onRemoveFromContinueWatching != nil
+    }
+
+    private func tvResumeProgress(value: Double) -> some View {
+        ZStack(alignment: .bottom) {
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.45)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 64)
+
+            ResumeProgressBar(value: value)
+        }
+        .frame(width: cardWidth, height: cardHeight, alignment: .bottom)
+        .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var thumbnailButton: some View {
+        let button = Button(action: action) {
+            thumbnail
+                .tvArtworkEdge(isFocused: isFocused, cornerRadius: VividTheme.cornerRadius)
+        }
+        .buttonStyle(.card)
+        .applyEpisodeFocus(
+            focusedItemId,
+            itemId: item.contentId,
+            standaloneBinding: $standaloneFocused
+        )
+        .scaleEffect(isFocused && !reduceMotion ? 1.025 : 1)
+        .shadow(
+            color: .black.opacity(isFocused ? 0.5 : 0.2),
+            radius: isFocused ? 20 : 8,
+            y: isFocused ? 10 : 4
+        )
+        .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
+        .applyEpisodePlayPauseAction(playAction)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityDescription)
+
+        thumbnailButtonWithContext(button)
+    }
+
+    @ViewBuilder
+    private func thumbnailButtonWithContext<ButtonContent: View>(_ button: ButtonContent) -> some View {
+        if hasContextActions {
+            button.contextMenu {
+                contextActions
+            }
+        } else {
+            button
+        }
+    }
+    #endif
+
+    private var hasContextActions: Bool {
+        (contextPlayTitle != nil && playAction != nil)
+            || onOpenContextDetail != nil
+            || onSetWatched != nil
+            || onSetFavorite != nil
+            || onRemoveFromContinueWatching != nil
+    }
+
+    @ViewBuilder
+    private var contextActions: some View {
+        if let contextPlayTitle, let playAction {
+            Button(action: playAction) {
+                Label(contextPlayTitle, systemImage: "play.fill")
+            }
+        }
+
+        if let contextDetailTitle, let onOpenContextDetail {
+            Button(action: onOpenContextDetail) {
+                Label(contextDetailTitle, systemImage: "info.circle")
+            }
+        }
+
+        if let onSetWatched {
+            Button {
+                let played = !isPlayed
+                Task { @MainActor in
+                    playedOverride = played
+                    let succeeded = await onSetWatched(played)
+                    if !succeeded {
+                        playedOverride = nil
+                    }
+                }
+            } label: {
+                Label(
+                    isPlayed ? "Mark as Unwatched" : "Mark as Watched",
+                    systemImage: isPlayed ? "circle" : "checkmark.circle"
+                )
+            }
+        }
+
+        if let onSetFavorite {
+            Button {
+                let newFavoriteValue = !isFavorite
+                Task { @MainActor in
+                    favoriteOverride = newFavoriteValue
+                    let succeeded = await onSetFavorite(newFavoriteValue)
+                    if !succeeded {
+                        favoriteOverride = nil
+                    }
+                }
+            } label: {
+                Label(
+                    isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                    systemImage: isFavorite ? "heart.slash" : "heart"
+                )
+            }
+        }
+
+        if let onRemoveFromContinueWatching {
+            Button(role: .destructive) {
+                onRemoveFromContinueWatching()
+            } label: {
+                Label("Remove from Continue Watching", systemImage: "xmark.circle")
+            }
+        }
+    }
+}
+
+#if os(tvOS)
+private extension View {
+    @ViewBuilder
+    func applyEpisodePlayPauseAction(_ action: (() -> Void)?) -> some View {
+        if let action {
+            self.onPlayPauseCommand(perform: action)
+        } else {
+            self
+        }
+    }
+
+    /// A card must have one focus binding. Inside a managed row, that binding
+    /// is the row's item ID; standalone usage falls back to a local Boolean.
+    @ViewBuilder
+    func applyEpisodeFocus(
+        _ binding: FocusState<String?>.Binding?,
+        itemId: String,
+        standaloneBinding: FocusState<Bool>.Binding
+    ) -> some View {
+        if let binding {
+            self.focused(binding, equals: itemId)
+        } else {
+            self.focused(standaloneBinding)
+        }
+    }
+}
+#endif
