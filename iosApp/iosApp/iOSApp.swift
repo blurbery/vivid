@@ -7,6 +7,9 @@ struct VividApp: App {
     #endif
 
     init() {
+        #if os(iOS) || os(tvOS)
+        FreshInstallLocalData.prepare()
+        #endif
         #if os(tvOS)
         // No-op unless launched with `-perfHitchLog`.
         TVFrameHitchMonitor.installIfRequested()

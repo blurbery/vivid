@@ -252,6 +252,11 @@ struct ContentView: View {
                 break
             }
             #endif
+            #if os(iOS) || os(tvOS)
+            if newPhase == .active {
+                Task { await VividCloudAccountSync.shared.synchronize(router: router) }
+            }
+            #endif
 
             if newPhase == .background {
                 markProfileAwayStartIfNeeded()
@@ -686,6 +691,31 @@ struct ContentView: View {
     /// TokenStore only needs to be retargeted to that active server before the
     /// first authenticated request lazily loads the full token cache.
     private func checkInitialState() async {
+        #if os(iOS) || os(tvOS)
+        #if DEBUG
+        let shouldSyncCloudAccounts = ProcessInfo.processInfo.environment["VIVID_RESTART_SETUP"] != "1"
+        #else
+        let shouldSyncCloudAccounts = true
+        #endif
+        if shouldSyncCloudAccounts {
+            let needsCloudBootstrap = TVSavedAccountStore.shared.accounts.isEmpty
+                || ServerRegistry.shared.entries.isEmpty
+            if needsCloudBootstrap {
+                await VividCloudAccountSync.shared.synchronize(router: router)
+            } else {
+                // An existing installation can route immediately from its
+                // local Keychain. The fetch still runs before any cloud write,
+                // so remote deletion tombstones keep priority without adding
+                // iCloud latency to every normal launch.
+                Task { await VividCloudAccountSync.shared.synchronize(router: router) }
+            }
+        }
+        #if os(tvOS)
+        if !ServerRegistry.shared.entries.isEmpty {
+            didCompleteProviderSetup = true
+        }
+        #endif
+        #endif
         #if os(tvOS)
         #if DEBUG
         print("VIVID_SETUP_ENV_" + (ProcessInfo.processInfo.environment["VIVID_RESTART_SETUP"] ?? "absent"))

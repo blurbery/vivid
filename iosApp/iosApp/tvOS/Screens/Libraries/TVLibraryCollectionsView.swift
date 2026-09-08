@@ -283,62 +283,93 @@ struct TVLibraryCollectionsView: View {
             collectionLibraryIds = cached.libraryIds
             isLoadingCollections = false
         }
+
+        // Library tabs cache their own collection responses. Reuse those
+        // immediately when the combined Collections page has not yet built
+        // its aggregate cache, then replace them as fresh responses arrive.
+        var responses: [Int: [LibraryCollectionSection]] = [:]
+        for source in sourceLibraries {
+            let key = "library:\(source.id):collections"
+            if let cached: [LibraryCollectionSection] = ResponseCache.shared.get(key) {
+                responses[source.id] = cached
+            }
+        }
+        if collectionSections.isEmpty, !responses.isEmpty {
+            applyCollectionResponses(responses)
+            isLoadingCollections = false
+        }
+
         do {
-            var sections: [LibraryCollectionSection] = []
-            var sources: [String: Int] = [:]
-            var combined: [LibraryCollectionKind: [LibraryCollection]] = [:]
-            var seen = Set<String>()
-            var responses: [Int: LibraryCollectionsResponse] = [:]
-            for start in stride(from: 0, to: sourceLibraries.count, by: 2) {
-                let batch = Array(sourceLibraries[start..<min(start + 2, sourceLibraries.count)])
-                let fetched = try await withThrowingTaskGroup(of: (Int, LibraryCollectionsResponse).self) { group in
-                    for source in batch {
-                        group.addTask {
-                            (source.id, try await VividAPI.shared.libraryCollections(libraryId: source.id))
-                        }
-                    }
-                    var result: [Int: LibraryCollectionsResponse] = [:]
-                    for try await (id, response) in group { result[id] = response }
-                    return result
-                }
-                try Task.checkCancellation()
-                responses.merge(fetched) { _, new in new }
-            }
-            for source in sourceLibraries {
-                guard let response = responses[source.id] else { continue }
-                for section in response.resolvedSections {
-                    for collection in section.collections {
-                        let kind = collection.kind ?? section.kind
-                        let key = collectionKey(collection, kind: kind)
-                        guard seen.insert(key).inserted else { continue }
-                        sources[key] = source.id
-                        combined[kind, default: []].append(collection)
+            try await withThrowingTaskGroup(of: (Int, [LibraryCollectionSection]).self) { group in
+                for source in sourceLibraries {
+                    group.addTask {
+                        let response = try await VividAPI.shared.libraryCollections(libraryId: source.id)
+                        return (source.id, response.resolvedSections)
                     }
                 }
-                if library != nil { sections = response.resolvedSections }
-            }
-            if library == nil {
-                sections = [LibraryCollectionKind.regular, .userCollections].compactMap { kind in
-                    guard let items = combined[kind], !items.isEmpty else { return nil }
-                    return LibraryCollectionSection(
-                        id: kind.rawValue,
-                        name: kind == .regular ? "Collections" : "User Collections",
-                        kind: kind,
-                        collections: items.sorted { lhs, rhs in
-                            let order = lhs.name.localizedStandardCompare(rhs.name)
-                            return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
-                        }
-                    )
+
+                // Publish each completed library instead of leaving the page
+                // empty until the slowest server response finishes.
+                for try await (id, sections) in group {
+                    try Task.checkCancellation()
+                    responses[id] = sections
+                    ResponseCache.shared.set(sections, for: "library:\(id):collections")
+                    applyCollectionResponses(responses)
+                    isLoadingCollections = false
                 }
             }
-            collectionLibraryIds = sources
-            collectionSections = sections
-            ResponseCache.shared.set(CachedCollections(sections: sections, libraryIds: sources), for: cacheKey)
         } catch {
             guard !Task.isCancelled else { return }
-            collectionsError = ErrorState(error)
+            if collectionSections.isEmpty {
+                collectionsError = ErrorState(error)
+            }
         }
         isLoadingCollections = false
+    }
+
+    private func applyCollectionResponses(
+        _ responses: [Int: [LibraryCollectionSection]]
+    ) {
+        var sections: [LibraryCollectionSection] = []
+        var sources: [String: Int] = [:]
+        var combined: [LibraryCollectionKind: [LibraryCollection]] = [:]
+        var seen = Set<String>()
+
+        for source in sourceLibraries {
+            guard let responseSections = responses[source.id] else { continue }
+            for section in responseSections {
+                for collection in section.collections {
+                    let kind = collection.kind ?? section.kind
+                    let key = collectionKey(collection, kind: kind)
+                    guard seen.insert(key).inserted else { continue }
+                    sources[key] = source.id
+                    combined[kind, default: []].append(collection)
+                }
+            }
+            if library != nil { sections = responseSections }
+        }
+
+        if library == nil {
+            sections = [LibraryCollectionKind.regular, .userCollections].compactMap { kind in
+                guard let items = combined[kind], !items.isEmpty else { return nil }
+                return LibraryCollectionSection(
+                    id: kind.rawValue,
+                    name: kind == .regular ? "Collections" : "User Collections",
+                    kind: kind,
+                    collections: items.sorted { lhs, rhs in
+                        let order = lhs.name.localizedStandardCompare(rhs.name)
+                        return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
+                    }
+                )
+            }
+        }
+
+        collectionLibraryIds = sources
+        collectionSections = sections
+        ResponseCache.shared.set(
+            CachedCollections(sections: sections, libraryIds: sources),
+            for: cacheKey
+        )
     }
 
     private var resolvedColumnCount: Int {

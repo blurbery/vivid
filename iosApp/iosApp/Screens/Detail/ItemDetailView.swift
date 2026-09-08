@@ -320,6 +320,21 @@ private struct ItemDetailPhoneContent: View {
                 seedSubtitleOverrideIfNeeded()
             }
         }
+        #if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: .playbackProgressDidCommit)) { note in
+            guard let event = note.object as? PlaybackProgressCommittedEvent,
+                  event.contentIds.contains(contentId) else { return }
+            Task {
+                await viewModel.loadDetail(
+                    contentId: contentId,
+                    coalescesMetadataRequests: false
+                )
+                preferredSubtitleTrackIndex = nil
+                preferredSubtitleTrackWasManuallySelected = false
+                seedSubtitleOverrideIfNeeded()
+            }
+        }
+        #endif
         .alert(
             "Downloaded on This Device",
             isPresented: Binding(

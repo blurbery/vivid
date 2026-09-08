@@ -15,6 +15,8 @@ struct SeriesDownloadMenuButton: View {
     private var manager: DownloadManager { DownloadManager.shared }
     @State private var activeSheet: SeriesDownloadSheet?
     @State private var pendingMonitorSheet = false
+    @State private var resolvedSeriesPosterPath: String?
+    @State private var resolvedSeriesPosterThumbhash: String?
 
     /// Presentation of the trigger. `labeled` matches the detail page's named
     /// action row; `circle` is the original chrome, still used elsewhere.
@@ -27,6 +29,31 @@ struct SeriesDownloadMenuButton: View {
 
     private var seriesId: String { detail.seriesId ?? detail.contentId }
     private var isMonitored: Bool { manager.subscription(forSeriesId: seriesId) != nil }
+    private var isDownloading: Bool {
+        manager.isRegistering(contentId: seriesId)
+            || manager.records.contains { record in
+                guard record.seriesId == seriesId || record.contentId == seriesId else { return false }
+                switch record.localStatus {
+                case .registering, .preparing, .queued, .downloading, .fetchingAssets:
+                    return true
+                case .paused, .completed, .failed, .revoked:
+                    return false
+                }
+            }
+    }
+    private var seriesPosterPath: String? {
+        resolvedSeriesPosterPath
+            ?? (detail.type == "series" ? detail.posterUrl : cachedParentSeries?.posterUrl)
+            ?? detail.posterUrl
+    }
+    private var seriesPosterThumbhash: String? {
+        resolvedSeriesPosterThumbhash
+            ?? (detail.type == "series" ? detail.posterThumbhash : cachedParentSeries?.posterThumbhash)
+            ?? detail.posterThumbhash
+    }
+    private var cachedParentSeries: ItemDetail? {
+        ResponseCache.shared.get(CacheKey.itemDetail(seriesId))
+    }
     private var cachedEpisodesBySeason: [Int: [EpisodeListItem]] {
         var cached = episodesBySeason
         if let seasonNumber = selectedSeason?.seasonNumber,
@@ -38,31 +65,37 @@ struct SeriesDownloadMenuButton: View {
     }
 
     private var circleLabel: some View {
-        Image(systemName: isMonitored ? "arrow.down.circle.fill" : "arrow.down.circle")
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.white)
-            .frame(width: 44, height: 44)
-            .background(
-                Circle()
-                    .fill(Color.white.opacity(isMonitored ? 0.18 : 0.10))
-                    .overlay(Circle().stroke(Color.white.opacity(isMonitored ? 0.55 : 0.25), lineWidth: 1))
-            )
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(isMonitored || isDownloading ? 0.18 : 0.10))
+                .overlay(Circle().stroke(Color.white.opacity(isMonitored || isDownloading ? 0.55 : 0.25), lineWidth: 1))
+            Image(systemName: isDownloading ? "arrow.down" : (isMonitored ? "arrow.down.circle.fill" : "arrow.down.circle"))
+                .font(.system(size: isDownloading ? 12 : 16, weight: .semibold))
+                .foregroundColor(.white)
+            if isDownloading {
+                DownloadActivityRing(diameter: 36, lineWidth: 2.5)
+            }
+        }
+        .frame(width: 44, height: 44)
     }
 
     /// Filled, borderless circle over a caption, matching
     /// `PhoneLabeledAction`'s metrics.
     private var labeledLabel: some View {
         VStack(spacing: 6) {
-            Image(systemName: isMonitored ? "arrow.down.circle.fill" : "arrow.down.to.line")
-                .font(.system(size: 19, weight: .regular))
-                .foregroundColor(Color.vividOnSurface)
-                .frame(width: 42, height: 42)
-                .background(
-                    Circle().fill(Color.white.opacity(isMonitored ? 0.18 : 0.10))
-                )
-            Text(isMonitored ? "Monitored" : "Download")
+            ZStack {
+                Circle().fill(Color.white.opacity(isMonitored || isDownloading ? 0.18 : 0.10))
+                Image(systemName: isDownloading ? "arrow.down" : (isMonitored ? "arrow.down.circle.fill" : "arrow.down.to.line"))
+                    .font(.system(size: isDownloading ? 11 : 19, weight: isDownloading ? .bold : .regular))
+                    .foregroundColor(Color.vividOnSurface)
+                if isDownloading {
+                    DownloadActivityRing(diameter: 34, lineWidth: 2.5)
+                }
+            }
+            .frame(width: 42, height: 42)
+            Text(isDownloading ? "Downloading" : (isMonitored ? "Monitored" : "Download"))
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(Color.vividOnSurface.opacity(isMonitored ? 0.92 : 0.6))
+                .foregroundColor(Color.vividOnSurface.opacity(isMonitored || isDownloading ? 0.92 : 0.6))
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
@@ -99,7 +132,8 @@ struct SeriesDownloadMenuButton: View {
                     seasons: seasons,
                     selectedSeason: selectedSeason,
                     cachedEpisodesBySeason: cachedEpisodesBySeason,
-                    posterThumbhash: detail.posterThumbhash,
+                    posterThumbhash: seriesPosterThumbhash,
+                    preferredPosterPath: seriesPosterPath,
                     canDownloadSeason: manager.canDownloadSeason,
                     canMonitorSeries: manager.canMonitorSeries,
                     isMonitored: isMonitored,
@@ -108,6 +142,23 @@ struct SeriesDownloadMenuButton: View {
             case .monitor:
                 SeriesMonitorSheet(seriesId: seriesId, seriesTitle: detail.seriesTitle ?? detail.title, seasons: seasons)
             }
+        }
+        .task(id: seriesId) {
+            if detail.type == "series" {
+                resolvedSeriesPosterPath = detail.posterUrl
+                resolvedSeriesPosterThumbhash = detail.posterThumbhash
+                return
+            }
+            if let cachedParentSeries {
+                resolvedSeriesPosterPath = cachedParentSeries.posterUrl
+                resolvedSeriesPosterThumbhash = cachedParentSeries.posterThumbhash
+                return
+            }
+            guard let series = try? await VividAPI.shared.itemDetail(contentId: seriesId),
+                  !Task.isCancelled else { return }
+            ResponseCache.shared.set(series, for: CacheKey.itemDetail(seriesId))
+            resolvedSeriesPosterPath = series.posterUrl
+            resolvedSeriesPosterThumbhash = series.posterThumbhash
         }
     }
 }
@@ -131,6 +182,7 @@ private struct SeriesDownloadOptionsSheet: View {
     let selectedSeason: Season?
     let cachedEpisodesBySeason: [Int: [EpisodeListItem]]
     let posterThumbhash: String?
+    let preferredPosterPath: String?
     let canDownloadSeason: Bool
     let canMonitorSeries: Bool
     let isMonitored: Bool
@@ -152,7 +204,8 @@ private struct SeriesDownloadOptionsSheet: View {
                                 seriesTitle: seriesTitle,
                                 seasons: availableSeasons,
                                 cachedEpisodesBySeason: cachedEpisodesBySeason,
-                                posterThumbhash: posterThumbhash
+                                posterThumbhash: posterThumbhash,
+                                preferredPosterPath: preferredPosterPath
                             )
                         } label: {
                             optionLabel(
@@ -170,7 +223,13 @@ private struct SeriesDownloadOptionsSheet: View {
                             icon: "arrow.down.square.on.square"
                         ) {
                             startDownload {
-                                try await manager.downloadSeason(seriesId: seriesId, seasonNumber: selectedSeason.seasonNumber)
+                                try await manager.downloadSeason(
+                                    seriesId: seriesId,
+                                    seasonNumber: selectedSeason.seasonNumber,
+                                    seriesTitle: seriesTitle,
+                                    posterThumbhash: posterThumbhash,
+                                    preferredPosterPath: preferredPosterPath
+                                )
                             }
                         }
                     }
@@ -181,7 +240,12 @@ private struct SeriesDownloadOptionsSheet: View {
                         icon: "arrow.down.circle"
                     ) {
                         startDownload {
-                            try await manager.downloadSeries(seriesId: seriesId)
+                            try await manager.downloadSeries(
+                                seriesId: seriesId,
+                                seriesTitle: seriesTitle,
+                                posterThumbhash: posterThumbhash,
+                                preferredPosterPath: preferredPosterPath
+                            )
                         }
                     }
                 } header: {
@@ -313,6 +377,7 @@ private struct SeriesSeasonDownloadPicker: View {
     let seasons: [Season]
     let cachedEpisodesBySeason: [Int: [EpisodeListItem]]
     let posterThumbhash: String?
+    let preferredPosterPath: String?
 
     var body: some View {
         List {
@@ -324,7 +389,8 @@ private struct SeriesSeasonDownloadPicker: View {
                             seriesTitle: seriesTitle,
                             season: season,
                             initialEpisodes: cachedEpisodesBySeason[season.seasonNumber] ?? [],
-                            posterThumbhash: season.posterThumbhash ?? posterThumbhash
+                            posterThumbhash: posterThumbhash,
+                            preferredPosterPath: preferredPosterPath
                         )
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
@@ -362,6 +428,7 @@ private struct SeriesEpisodeDownloadPicker: View {
     let seriesTitle: String
     let season: Season
     let posterThumbhash: String?
+    let preferredPosterPath: String?
 
     @Environment(\.dismiss) private var dismiss
     private var manager: DownloadManager { DownloadManager.shared }
@@ -377,12 +444,14 @@ private struct SeriesEpisodeDownloadPicker: View {
         seriesTitle: String,
         season: Season,
         initialEpisodes: [EpisodeListItem],
-        posterThumbhash: String?
+        posterThumbhash: String?,
+        preferredPosterPath: String?
     ) {
         self.seriesId = seriesId
         self.seriesTitle = seriesTitle
         self.season = season
         self.posterThumbhash = posterThumbhash
+        self.preferredPosterPath = preferredPosterPath
         _episodes = State(initialValue: Self.sorted(initialEpisodes))
     }
 
@@ -673,7 +742,9 @@ private struct SeriesEpisodeDownloadPicker: View {
                         episodeId: episode.contentId,
                         displayTitle: episode.title ?? "Episode \(episode.episodeNumber)",
                         displaySubtitle: "S\(episode.seasonNumber) · E\(episode.episodeNumber)",
+                        seriesTitle: seriesTitle,
                         posterThumbhash: posterThumbhash,
+                        preferredPosterPath: preferredPosterPath,
                         quality: DownloadSettings.shared.resolvedFormat(
                             allowedFormats: manager.capability?.qualityPresets ?? []
                         )

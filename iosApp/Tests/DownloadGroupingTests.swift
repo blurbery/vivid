@@ -8,6 +8,31 @@ import Foundation
 /// counts, title resolution, and list sort options.
 final class DownloadGroupingTests: XCTestCase {
 
+    func testAbsoluteDownloadArtworkURLBecomesRelativeAuthenticatedRequest() throws {
+        let location = try DownloadAssetRequestLocation.resolve(
+            "https://media.example.com/vivid/api/v1/images/poster%20art?width=1000&format=jpg",
+            relativeTo: "https://media.example.com/vivid"
+        )
+        XCTAssertEqual(location.path, "/api/v1/images/poster%20art")
+        XCTAssertEqual(location.query, ["width": "1000", "format": "jpg"])
+    }
+
+    func testRelativeDownloadArtworkPathRemainsRelative() throws {
+        let location = try DownloadAssetRequestLocation.resolve(
+            "/api/v1/downloads/artwork/poster?width=600",
+            relativeTo: "https://media.example.com"
+        )
+        XCTAssertEqual(location.path, "/api/v1/downloads/artwork/poster")
+        XCTAssertEqual(location.query, ["width": "600"])
+    }
+
+    func testDownloadArtworkRejectsAnotherServerOrigin() {
+        XCTAssertThrowsError(try DownloadAssetRequestLocation.resolve(
+            "https://other.example.com/api/v1/images/poster",
+            relativeTo: "https://media.example.com"
+        ))
+    }
+
     func testDownloadPreferencesStayWithTheirProfileAcrossSwitches() throws {
         let domain = "vivid.download-profile-test.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))

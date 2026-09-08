@@ -104,7 +104,18 @@ class AppRouter {
             guard oldValue != authState else { return }
             #if os(tvOS)
             if authState == .needsLogin {
-                path = NavigationPath([Route.serverSetup, Route.login])
+                // A cold launch with a remembered server but no usable token
+                // should still begin at the provider/server chooser. This is
+                // especially important after reinstalling a development build:
+                // tvOS can retain the server registry while Keychain login has
+                // been cleared. Explicit connect/sign-out flows use
+                // `resetToLogin()`, which stages the setup + login path before
+                // changing state and therefore still land on the login form.
+                if oldValue == .loading {
+                    path = NavigationPath()
+                } else if path.isEmpty {
+                    path = NavigationPath([Route.serverSetup, Route.login])
+                }
             } else if authState == .needsServerSetup, oldValue != .loading {
                 path = NavigationPath([Route.serverSetup])
             }

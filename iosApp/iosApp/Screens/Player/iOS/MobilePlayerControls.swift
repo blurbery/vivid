@@ -10,8 +10,8 @@ import SwiftUI
 ///   preview bubble, with separate round Quality, Audio, Subtitles and
 ///   Chapters controls. Subtitle and chapter lists scroll in native popovers.
 ///
-/// The whole thing is wrapped in a tap-to-toggle gesture; auto-hide after 3 s
-/// of inactivity. The view is stateful only for sheet presentation and the
+/// The whole thing is wrapped in a tap-to-toggle gesture and remains visible
+/// until the viewer taps the video again. The view is stateful only for sheet presentation and the
 /// trailing-time display mode; the rest of the state lives on
 /// `PlayerViewModel`. Invisible gestures (double-tap skip, hold-2×, edge
 /// swipes) live in `MobilePlayerGestureLayer` underneath this overlay.
@@ -35,7 +35,7 @@ struct MobilePlayerControls: View {
     var body: some View {
         // NOTE: the .sheet modifier MUST live outside the `showControls` gate.
         // If it's attached to a view that only exists while controls are
-        // visible, the 3s auto-hide tears down the sheet's host and dismisses
+        // visible, hiding the controls would tear down the sheet's host and dismiss
         // the sheet mid-interaction — then re-presents it when controls come
         // back, because @State activeSheet survives the rebuild.
         ZStack {
@@ -167,7 +167,10 @@ struct MobilePlayerControls: View {
 
     @ViewBuilder
     private var externalPlaybackControls: some View {
-        let showsPiP = pictureInPicture.isSupported && pictureInPicture.hasSource
+        // Keep PiP mounted with the rest of the top controls. AVKit may publish
+        // source readiness a run loop later, but that should only affect the
+        // enabled state, never make the pill pop in after the user's tap.
+        let showsPiP = pictureInPicture.isSupported
         if showsPiP || viewModel.supportsExternalPlayback {
             HStack(spacing: 8) {
                 if showsPiP {
@@ -178,7 +181,10 @@ struct MobilePlayerControls: View {
                             .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
                     }
                     .buttonStyle(MobilePlayerGlassButtonStyle())
-                    .disabled(!pictureInPicture.isPossible && !pictureInPicture.isActive)
+                    .disabled(
+                        !pictureInPicture.hasSource
+                            || (!pictureInPicture.isPossible && !pictureInPicture.isActive)
+                    )
                     .accessibilityLabel(pictureInPicture.isActive ? "Stop Picture in Picture" : "Start Picture in Picture")
                 }
                 if viewModel.supportsExternalPlayback {
@@ -507,21 +513,18 @@ struct MobilePlayerControls: View {
             .buttonStyle(MobilePlayerGlassButtonStyle())
             .disabled(viewModel.isQualitySwitching)
             .accessibilityLabel("Streaming quality")
-            Menu {
-                ForEach(viewModel.audioTracks) { track in
-                    Button { viewModel.selectAudio(track) } label: {
-                        let title = [track.primaryLabel, track.attributesLabel]
-                            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-                        if viewModel.selectedAudioId == track.trackId {
-                            Label(title, systemImage: "checkmark")
-                        } else { Text(title) }
-                    }
-                }
-            } label: { selectorIcon("speaker.wave.2") }
-            .menuOrder(.fixed)
+            Button { activePopover = .audio } label: {
+                selectorIcon("speaker.wave.2")
+            }
             .buttonStyle(MobilePlayerGlassButtonStyle())
             .disabled(viewModel.audioTracks.isEmpty)
             .accessibilityLabel("Audio")
+            .accessibilityIdentifier("player.audio")
+            .popover(isPresented: popoverBinding(.audio), attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                TrackSelectionSheet(viewModel: viewModel, scope: .audio) { activePopover = nil }
+                    .frame(width: 320, height: popoverHeight)
+                    .presentationCompactAdaptation(.popover)
+            }
             Button { activePopover = .subtitles } label: {
                 selectorIcon("captions.bubble")
             }
@@ -692,7 +695,7 @@ struct MobilePlayerControls: View {
 
     // MARK: - Sheet identifier
 
-    private enum PlayerPopover { case subtitles, chapters }
+    private enum PlayerPopover { case audio, subtitles, chapters }
 
     private enum PlayerSheet: Identifiable {
         case settings
@@ -725,7 +728,10 @@ struct MobilePlayerChromeVisibility: ViewModifier {
             .opacity(isVisible ? 1 : 0)
             .allowsHitTesting(isVisible)
             .accessibilityHidden(!isVisible)
-            .animation(.easeOut(duration: 0.18), value: isVisible)
+            // Transport, PiP, rotate and lock must appear in the same frame.
+            // A separate implicit animation here made the detached top-right
+            // overlay visibly trail the main controls after a tap.
+            .transaction { transaction in transaction.animation = nil }
     }
 }
 

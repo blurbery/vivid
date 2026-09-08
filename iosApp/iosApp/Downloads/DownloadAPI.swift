@@ -1,5 +1,69 @@
 import Foundation
 
+/// Converts the artwork URLs used by detail screens into the relative API
+/// location expected by `HTTPClient`. Detail artwork is commonly absolute,
+/// while download manifests use relative paths. Passing an absolute URL to
+/// `URLComponents.percentEncodedPath` as though it were a path traps in
+/// Foundation, so normalise both forms before the request is built.
+struct DownloadAssetRequestLocation: Equatable {
+    let path: String
+    let query: [String: String]
+
+    static func resolve(_ rawValue: String, relativeTo serverURL: String) throws -> Self {
+        let rawValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawValue.isEmpty,
+              let asset = URLComponents(string: rawValue) else {
+            throw HTTPError.invalidURL(rawValue)
+        }
+
+        let resolvedPath: String
+        if asset.scheme != nil || asset.host != nil {
+            guard let server = URLComponents(string: serverURL),
+                  asset.scheme?.lowercased() == server.scheme?.lowercased(),
+                  asset.host?.lowercased() == server.host?.lowercased(),
+                  effectivePort(asset) == effectivePort(server),
+                  asset.user == nil,
+                  asset.password == nil else {
+                throw HTTPError.invalidURL(rawValue)
+            }
+
+            let serverBasePath = server.percentEncodedPath
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let basePrefix = serverBasePath.isEmpty ? "" : "/\(serverBasePath)"
+            let absolutePath = asset.percentEncodedPath
+            guard basePrefix.isEmpty
+                    || absolutePath == basePrefix
+                    || absolutePath.hasPrefix(basePrefix + "/") else {
+                throw HTTPError.invalidURL(rawValue)
+            }
+            resolvedPath = String(absolutePath.dropFirst(basePrefix.count))
+        } else {
+            resolvedPath = asset.percentEncodedPath
+        }
+
+        let normalizedPath: String
+        if resolvedPath.isEmpty {
+            normalizedPath = "/"
+        } else {
+            normalizedPath = resolvedPath.hasPrefix("/") ? resolvedPath : "/" + resolvedPath
+        }
+        let query = Dictionary(
+            (asset.queryItems ?? []).map { ($0.name, $0.value ?? "") },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        return Self(path: normalizedPath, query: query)
+    }
+
+    private static func effectivePort(_ components: URLComponents) -> Int? {
+        if let port = components.port { return port }
+        switch components.scheme?.lowercased() {
+        case "http": return 80
+        case "https": return 443
+        default: return nil
+        }
+    }
+}
+
 /// Typed download / offline-sync endpoints, grouped as an extension on the
 /// existing `VividAPI` facade. These reuse the facade's injected `http`
 /// transport (auth injection, 401 refresh, snake_case JSON coders) rather
@@ -60,7 +124,11 @@ extension VividAPI {
     /// (`artwork_urls.*` / `subtitles[].fetch_url`).
     func fetchDownloadAssetData(path: String) async throws -> Data {
         if MediaServerProvider.active == .emby { return try await EmbyConnection.current().assetData(path) }
-        return try await http.getData(path)
+        let location = try DownloadAssetRequestLocation.resolve(
+            path,
+            relativeTo: await currentServerUrl()
+        )
+        return try await http.getData(location.path, query: location.query)
     }
 
     /// Build the absolute file-endpoint URL for a download, resolved

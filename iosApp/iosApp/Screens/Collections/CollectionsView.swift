@@ -789,7 +789,7 @@ struct MobileForYouCollections: View {
     private struct Entry: Identifiable {
         let libraryID: Int
         let collection: LibraryCollection
-        var id: String { "\(libraryID):\(collection.kind):\(collection.id)" }
+        var id: String { "\(libraryID):\(collection.kind?.rawValue ?? "regular"):\(collection.id)" }
     }
 
     @State private var personal = CollectionsViewModel()
@@ -864,28 +864,81 @@ struct MobileForYouCollections: View {
             isLoading = false
             return
         }
-        await personal.loadCollections()
-        error = personal.error
+
+        async let personalLoad: Void = personal.loadCollections()
         do {
             let response = try await StartupContentPrefetcher.fetchUserLibraries()
-            var loaded: [Entry] = []
-            var seen = Set<String>()
-            let personalIDs = Set(personal.collections.map(\.id))
-            for library in response.libraries where library.isMovieLibrary || library.isSeriesLibrary || library.isMixedLibrary {
-                let model = LibraryCollectionsViewModel()
-                await model.loadCollections(libraryId: library.id)
-                if let failure = model.error { error = failure }
-                for collection in model.sections.flatMap(\.collections) {
-                    if collection.kind == .userCollections && personalIDs.contains(collection.id) { continue }
-                    let entry = Entry(libraryID: library.id, collection: collection)
-                    if seen.insert(entry.id).inserted { loaded.append(entry) }
+            let libraries = response.libraries.filter {
+                $0.isMovieLibrary || $0.isSeriesLibrary || $0.isMixedLibrary
+            }
+            var sectionsByLibrary: [Int: [LibraryCollectionSection]] = [:]
+
+            // Paint any library collection cache before refreshing the
+            // network. This makes a return visit immediate.
+            for library in libraries {
+                let key = "library:\(library.id):collections"
+                if let cached: [LibraryCollectionSection] = ResponseCache.shared.get(key) {
+                    sectionsByLibrary[library.id] = cached
                 }
             }
-            entries = loaded.sorted { $0.collection.name.localizedStandardCompare($1.collection.name) == .orderedAscending }
+            publishEntries(
+                from: sectionsByLibrary,
+                libraries: libraries,
+                excludingPersonalIDs: []
+            )
+
+            try await withThrowingTaskGroup(of: (Int, [LibraryCollectionSection]).self) { group in
+                for library in libraries {
+                    group.addTask {
+                        let response = try await VividAPI.shared.libraryCollections(libraryId: library.id)
+                        return (library.id, response.resolvedSections)
+                    }
+                }
+                for try await (libraryID, sections) in group {
+                    try Task.checkCancellation()
+                    sectionsByLibrary[libraryID] = sections
+                    ResponseCache.shared.set(sections, for: "library:\(libraryID):collections")
+                    publishEntries(
+                        from: sectionsByLibrary,
+                        libraries: libraries,
+                        excludingPersonalIDs: []
+                    )
+                }
+            }
+
+            await personalLoad
+            error = personal.error
+            publishEntries(
+                from: sectionsByLibrary,
+                libraries: libraries,
+                excludingPersonalIDs: Set(personal.collections.map(\.id))
+            )
         } catch {
             self.error = ErrorState(error)
+            await personalLoad
+            if self.error == nil { self.error = personal.error }
         }
         isLoading = false
+    }
+
+    private func publishEntries(
+        from sectionsByLibrary: [Int: [LibraryCollectionSection]],
+        libraries: [Library],
+        excludingPersonalIDs personalIDs: Set<String>
+    ) {
+        var loaded: [Entry] = []
+        var seen = Set<String>()
+        for library in libraries {
+            for collection in sectionsByLibrary[library.id, default: []].flatMap(\.collections) {
+                if collection.kind == .userCollections,
+                   personalIDs.contains(collection.id) { continue }
+                let entry = Entry(libraryID: library.id, collection: collection)
+                if seen.insert(entry.id).inserted { loaded.append(entry) }
+            }
+        }
+        entries = loaded.sorted {
+            $0.collection.name.localizedStandardCompare($1.collection.name) == .orderedAscending
+        }
     }
 }
 #endif

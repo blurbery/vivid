@@ -1985,7 +1985,11 @@ actor PlaybackSessionBridge {
     /// session-scoped state up front makes the loser a no-op. It also stops the
     /// late clears from wiping a *new* session adopted while these awaits were
     /// still in flight.
-    func stopSession(position: Double, isPaused: Bool) async {
+    func stopSession(
+        position: Double,
+        isPaused: Bool,
+        finalProgressAlreadyReported: Bool = false
+    ) async {
         guard let sid = sessionId else { return }
         if let playback = embyPlayback {
             embyPlayback = nil
@@ -2036,7 +2040,7 @@ actor PlaybackSessionBridge {
             )
         }
 
-        if position.isFinite, position >= 0 {
+        if !finalProgressAlreadyReported, position.isFinite, position >= 0 {
             let report = ProgressReport(position: position, isPaused: isPaused)
             do {
                 try await VividAPI.shared.postVoid(

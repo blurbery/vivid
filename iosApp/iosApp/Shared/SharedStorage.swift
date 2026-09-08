@@ -400,6 +400,42 @@ struct SharedKeychain {
         return false
     }
 
+    /// Removes every Vivid item in this Keychain audience. App containers and
+    /// UserDefaults are removed by iOS/tvOS when the app is uninstalled, but
+    /// Keychain items survive unless the app clears them on the next install.
+    @discardableResult
+    func deleteAll() -> Bool {
+        var succeeded = true
+        var candidates = [accessGroup]
+        if accessGroup != nil {
+            candidates.append(contentsOf: Self.legacyFallbackAccessGroups())
+        }
+        if allowsAppLocalFallback { candidates.append(nil) }
+
+        var seen = Set<String>()
+        for candidate in candidates {
+            let identity = candidate ?? "<default>"
+            guard seen.insert(identity).inserted else { continue }
+            var query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+            ]
+            if let candidate { query[kSecAttrAccessGroup as String] = candidate }
+            #if os(tvOS)
+            if audience == .userIndependent, usesUserIndependentKeychain {
+                query[kSecUseUserIndependentKeychain as String] = kCFBooleanTrue
+            }
+            #endif
+            let status = SecItemDelete(query as CFDictionary)
+            if status != errSecSuccess, status != errSecItemNotFound,
+               !(shouldUseAppLocalFallback(for: status) && candidate == accessGroup) {
+                succeeded = false
+                Self.logger.error("Keychain service cleanup failed: status=\(status, privacy: .public)")
+            }
+        }
+        return succeeded
+    }
+
     // MARK: - Private
 
     private func read(account: String, accessGroup: String?) -> String? {
@@ -465,5 +501,36 @@ struct SharedKeychain {
         }
         #endif
         return query
+    }
+}
+
+/// Detects a real reinstall without wiping credentials during the update that
+/// first introduces the marker. Existing Vivid defaults identify an upgrade;
+/// a missing marker and no Vivid defaults identify a fresh app container.
+enum FreshInstallLocalData {
+    private static let markerKey = "vivid.installationMarker.v1"
+
+    static func prepare() {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: markerKey) == nil else { return }
+
+        let knownExistingKeys: Set<String> = [
+            SharedStorage.serverUrlKey,
+            SharedStorage.activeServerIdKey,
+            SharedStorage.profileIdKey,
+            "vivid.accounts.v1",
+            "vivid.didCompleteProviderSetup",
+        ]
+        let existingInstall = defaults.dictionaryRepresentation().keys.contains {
+            $0.hasPrefix("vivid.") || knownExistingKeys.contains($0)
+        }
+
+        if !existingInstall {
+            _ = SharedKeychain(audience: .currentUser).deleteAll()
+            #if os(tvOS)
+            _ = SharedKeychain(audience: .userIndependent).deleteAll()
+            #endif
+        }
+        defaults.set(UUID().uuidString, forKey: markerKey)
     }
 }

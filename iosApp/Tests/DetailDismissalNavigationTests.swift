@@ -42,8 +42,10 @@ final class DetailDismissalNavigationTests: XCTestCase {
         model.isPlaying = true
         model.toggleControls()
         try await Task.sleep(for: .milliseconds(5300))
-        XCTAssertFalse(model.showControls)
-        XCTAssertFalse(model.shouldShowMobilePlayerChrome, "Close/rotate/lock auto-hide with transport")
+        XCTAssertTrue(model.showControls)
+        XCTAssertTrue(model.shouldShowMobilePlayerChrome, "All touch controls remain visible until another tap")
+        model.toggleControls()
+        XCTAssertFalse(model.shouldShowMobilePlayerChrome, "A tap dismisses all touch controls together")
     }
 
     func testContinueWatchingOpensTheExistingSeriesCardWithTheExactResumeContext() throws {

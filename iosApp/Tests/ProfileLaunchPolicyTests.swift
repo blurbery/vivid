@@ -5,6 +5,32 @@ final class ProfileLaunchPolicyTests: XCTestCase {
     private let serverID = "server-a"
     private let accountEpoch = "account-a"
 
+    func testCloudAccountIdentityIsStableAcrossDeviceLocalAccountIDs() {
+        let first = VividCloudAccountIdentity.key(serverID: "server-a", userID: "user-a")
+        let second = VividCloudAccountIdentity.key(serverID: "server-a", userID: "user-a")
+
+        XCTAssertEqual(first, second)
+        XCTAssertNotEqual(first, VividCloudAccountIdentity.key(serverID: "server-b", userID: "user-a"))
+        XCTAssertNotEqual(first, VividCloudAccountIdentity.key(serverID: "server-a", userID: "user-b"))
+    }
+
+    func testCloudDeletionTombstoneCannotBeOverriddenByStaleDeviceState() {
+        let deletion = Date(timeIntervalSinceReferenceDate: 2_000)
+
+        XCTAssertTrue(VividCloudDeletionPolicy.tombstoneWins(
+            deletedAt: deletion,
+            explicitAuthenticationAt: nil
+        ))
+        XCTAssertTrue(VividCloudDeletionPolicy.tombstoneWins(
+            deletedAt: deletion,
+            explicitAuthenticationAt: deletion.addingTimeInterval(-1)
+        ))
+        XCTAssertFalse(VividCloudDeletionPolicy.tombstoneWins(
+            deletedAt: deletion,
+            explicitAuthenticationAt: deletion.addingTimeInterval(1)
+        ))
+    }
+
     func testProfileSelectionPoliciesKeepStableOrderAndLegacyEveryTimeRawValue() {
         XCTAssertEqual(
             ProfileLaunchBehavior.allCases,

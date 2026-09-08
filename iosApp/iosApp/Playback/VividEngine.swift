@@ -95,6 +95,11 @@ final class VividEngine: ObservableObject {
     private var nativeSubtitleOptions: [Int: AVMediaSelectionOption] = [:]
     private var audioGroup: AVMediaSelectionGroup?
     private var subtitleGroup: AVMediaSelectionGroup?
+    /// Software/sample-buffer audio changes rebuild the demux/decode session.
+    /// Keep that work serialized and retain the latest tap so reopening the
+    /// picker while a change is settling can always switch back again.
+    private var pendingAudioTrackIndex: Int?
+    private var audioTrackSelectionTask: Task<Void, Never>?
 
     init() throws {
         #if os(tvOS)
@@ -331,10 +336,32 @@ final class VividEngine: ObservableObject {
     }
     func selectAudioTrack(index: Int) {
         if let group = audioGroup, let option = nativeAudioOptions[index] { currentAVPlayerItem?.select(option, in: group); activeAudioTrackIndex = index; return }
+        pendingAudioTrackIndex = index
+        guard audioTrackSelectionTask == nil else { return }
         let epoch = generation
-        Task {
-            do { try await player.selectAudioTrack(index); guard epoch == generation else { return }; activeAudioTrackIndex = index }
-            catch { if epoch == generation { report(error) } }
+        audioTrackSelectionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.audioTrackSelectionTask = nil }
+            while !Task.isCancelled,
+                  self.generation == epoch,
+                  let requestedIndex = self.pendingAudioTrackIndex {
+                self.pendingAudioTrackIndex = nil
+                do {
+                    try await self.player.selectAudioTrack(requestedIndex)
+                    guard !Task.isCancelled, self.generation == epoch else { return }
+                    self.audioTracks = self.player.tracks
+                        .filter { $0.kind == .audio }
+                        .map(TrackInfo.init)
+                    self.activeAudioTrackIndex = requestedIndex
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard self.generation == epoch else { return }
+                    self.pendingAudioTrackIndex = nil
+                    self.report(error)
+                    return
+                }
+            }
         }
     }
     func reloadAtCurrentPosition() async throws {
@@ -349,6 +376,8 @@ final class VividEngine: ObservableObject {
         if resetDisplayCriteria { tvDisplayCriteria.reset() }
         #endif
         generation &+= 1
+        audioTrackSelectionTask?.cancel(); audioTrackSelectionTask = nil
+        pendingAudioTrackIndex = nil
         for task in subtitleTasks.values { task.cancel() }; subtitleTasks.removeAll()
         if let nativeTimer { currentAVPlayer?.removeTimeObserver(nativeTimer) }; nativeTimer = nil
         if let nativeEndObserver { NotificationCenter.default.removeObserver(nativeEndObserver) }; nativeEndObserver = nil

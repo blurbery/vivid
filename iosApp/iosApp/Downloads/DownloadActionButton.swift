@@ -489,7 +489,12 @@ struct DownloadActionButton: View {
         if style == .labeled {
             labeledGlyph(tint: tint, active: active) {
                 if showSpinner {
-                    ProgressView().controlSize(.small).tint(.white)
+                    ZStack {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                        DownloadActivityRing(diameter: 27, lineWidth: 2)
+                    }
                 } else {
                     Image(systemName: icon)
                         .font(.system(size: 19, weight: .regular))
@@ -515,9 +520,13 @@ struct DownloadActionButton: View {
                     Circle().stroke(Color.white.opacity(active ? 0.55 : 0.25), lineWidth: 1)
                 )
             if showSpinner {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(.white)
+                Image(systemName: "arrow.down")
+                    .font(.system(size: iconPointSize - 1, weight: .bold))
+                    .foregroundColor(.white)
+                DownloadActivityRing(
+                    diameter: diameter - (style == .regular ? 7 : 5),
+                    lineWidth: style == .regular ? 2.5 : 2
+                )
             } else {
                 Image(systemName: icon)
                     .font(.system(size: iconPointSize, weight: .semibold))
@@ -543,6 +552,9 @@ struct DownloadActionButton: View {
                         )
                         .rotationEffect(.degrees(-90))
                     progressCenter(fraction: fraction, paused: paused)
+                    if !paused {
+                        DownloadActivityRing(diameter: 27, lineWidth: 2)
+                    }
                 }
                 .frame(width: 21, height: 21)
             }
@@ -565,6 +577,12 @@ struct DownloadActionButton: View {
                 .rotationEffect(.degrees(-90))
                 .padding(style == .regular ? 4 : 3)
             progressCenter(fraction: fraction, paused: paused)
+            if !paused {
+                DownloadActivityRing(
+                    diameter: diameter - (style == .regular ? 7 : 5),
+                    lineWidth: style == .regular ? 2.5 : 2
+                )
+            }
         }
         .frame(width: diameter, height: diameter)
     }

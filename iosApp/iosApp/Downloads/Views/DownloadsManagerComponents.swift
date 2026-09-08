@@ -38,12 +38,14 @@ struct DownloadsStorageHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(
+            Color.clear.vividGlass(
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                tint: Color.white.opacity(0.025)
+            )
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.vividSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.vividOutline, lineWidth: 1)
-                )
+                .stroke(Color.vividOnSurface.opacity(0.10), lineWidth: 1)
         )
         .padding(.horizontal, 16)
     }
@@ -258,6 +260,36 @@ struct DownloadPosterThumb: View {
         }
         .frame(width: width, height: width * 1.5)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+    }
+}
+
+/// A lightweight moving highlight around active download controls. The
+/// determinate ring still shows exact progress; this arc supplies the motion
+/// that makes an active transfer obvious even when its percentage changes
+/// slowly.
+struct DownloadActivityRing: View {
+    var diameter: CGFloat
+    var lineWidth: CGFloat = 2.5
+    var isAnimating = true
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: !isAnimating)) { timeline in
+            let turn = timeline.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: 1.15) / 1.15
+            Circle()
+                .trim(from: 0.02, to: 0.24)
+                .stroke(
+                    AngularGradient(
+                        colors: [.white.opacity(0.18), .white, .white.opacity(0.18)],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(turn * 360 - 90))
+        }
+        .frame(width: diameter, height: diameter)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

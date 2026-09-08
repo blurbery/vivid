@@ -36,36 +36,59 @@ struct DownloadActiveRow: View {
     }
 
     private var card: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 15) {
             DownloadPosterThumb(
                 thumbhash: record.posterThumbhash,
                 fileURL: DownloadManager.shared.posterImageURL(for: record),
-                width: 40
+                width: 66,
+                corner: 10
             )
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(displayTitle)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.vividOnSurface)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text(primaryTitle)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.vividOnSurface)
+                        .lineLimit(1)
+                    DownloadKindChip(text: record.type == "episode" ? "Series" : "Movie")
+                }
+                if let secondaryTitle {
+                    Text(secondaryTitle)
+                        .font(.system(size: 13))
+                        .foregroundColor(.vividSecondaryText)
+                        .lineLimit(1)
+                }
+                if record.localStatus == .downloading || record.localStatus == .paused {
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.vividOnSurface.opacity(0.12))
+                            Capsule()
+                                .fill(Color.vividOnSurface.opacity(record.localStatus == .paused ? 0.52 : 0.92))
+                                .frame(width: geometry.size.width * record.progressFraction)
+                        }
+                    }
+                    .frame(height: 4)
+                }
                 Text(statusLine)
-                    .font(.system(size: 12.5))
-                    .foregroundColor(.vividSecondaryText)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(.vividOnSurface.opacity(0.52))
                     .lineLimit(1)
+                    .monospacedDigit()
             }
 
             Spacer(minLength: 8)
             progressRing
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.vividSurfaceElevated)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.vividOutline, lineWidth: 1)
-                )
+            Color.clear.vividGlass(
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                tint: Color.white.opacity(0.025)
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.vividOnSurface.opacity(0.10), lineWidth: 1)
         )
     }
 
@@ -93,11 +116,24 @@ struct DownloadActiveRow: View {
         return "Cancel this download?"
     }
 
-    private var displayTitle: String {
-        if record.type == "episode", let sub = record.subtitle, !sub.isEmpty {
-            return "\(record.title ?? record.contentId) · \(sub)"
+    private var primaryTitle: String {
+        if record.type == "episode" {
+            return record.seriesTitle ?? record.title ?? record.contentId
         }
         return record.title ?? record.contentId
+    }
+
+    private var secondaryTitle: String? {
+        if record.type == "episode" {
+            let episode = record.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let tag = record.subtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts: [String] = [tag, episode].compactMap { (value: String?) -> String? in
+                guard let value, !value.isEmpty, value != primaryTitle else { return nil }
+                return value
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        }
+        return record.subtitle
     }
 
     private var statusLine: String {
@@ -156,6 +192,9 @@ struct DownloadActiveRow: View {
                             style: StrokeStyle(lineWidth: 3, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
+                    if !paused {
+                        DownloadActivityRing(diameter: 36, lineWidth: 3)
+                    }
                     Image(systemName: paused ? "play.fill" : "pause.fill")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.vividOnSurface)

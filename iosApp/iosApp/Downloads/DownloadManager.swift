@@ -549,7 +549,9 @@ final class DownloadManager {
         episodeId: String,
         displayTitle: String?,
         displaySubtitle: String?,
+        seriesTitle: String? = nil,
         posterThumbhash: String?,
+        preferredPosterPath: String? = nil,
         fileId: Int? = nil,
         quality: String? = nil
     ) async throws {
@@ -562,16 +564,44 @@ final class DownloadManager {
             seriesId: seriesId,
             displayTitle: displayTitle,
             displaySubtitle: displaySubtitle,
-            posterThumbhash: posterThumbhash
+            seriesTitle: seriesTitle,
+            posterThumbhash: posterThumbhash,
+            preferredPosterPath: preferredPosterPath
         )
     }
 
-    func downloadSeason(seriesId: String, seasonNumber: Int) async throws {
-        try await requestDownload(contentId: seriesId, series: true, seasonNumber: seasonNumber, seriesId: seriesId)
+    func downloadSeason(
+        seriesId: String,
+        seasonNumber: Int,
+        seriesTitle: String?,
+        posterThumbhash: String?,
+        preferredPosterPath: String?
+    ) async throws {
+        try await requestDownload(
+            contentId: seriesId,
+            series: true,
+            seasonNumber: seasonNumber,
+            seriesId: seriesId,
+            seriesTitle: seriesTitle,
+            posterThumbhash: posterThumbhash,
+            preferredPosterPath: preferredPosterPath
+        )
     }
 
-    func downloadSeries(seriesId: String) async throws {
-        try await requestDownload(contentId: seriesId, series: true, seriesId: seriesId)
+    func downloadSeries(
+        seriesId: String,
+        seriesTitle: String?,
+        posterThumbhash: String?,
+        preferredPosterPath: String?
+    ) async throws {
+        try await requestDownload(
+            contentId: seriesId,
+            series: true,
+            seriesId: seriesId,
+            seriesTitle: seriesTitle,
+            posterThumbhash: posterThumbhash,
+            preferredPosterPath: preferredPosterPath
+        )
     }
 
     private func requestDownload(
@@ -585,7 +615,9 @@ final class DownloadManager {
         seriesId: String? = nil,
         displayTitle: String? = nil,
         displaySubtitle: String? = nil,
-        posterThumbhash: String? = nil
+        seriesTitle: String? = nil,
+        posterThumbhash: String? = nil,
+        preferredPosterPath: String? = nil
     ) async throws {
         guard downloadsEnabled else { throw DownloadError.unavailable }
 
@@ -636,7 +668,9 @@ final class DownloadManager {
                 displaySubtitle: rows.count == 1 ? displaySubtitle : nil,
                 type: type,
                 seriesId: seriesId,
-                posterThumbhash: rows.count == 1 ? posterThumbhash : nil
+                seriesTitle: seriesTitle,
+                posterThumbhash: posterThumbhash,
+                preferredPosterPath: preferredPosterPath
             )
         }
         persist()
@@ -905,8 +939,9 @@ final class DownloadManager {
     }
 
     private func fetchArtwork(_ manifest: OfflineManifest, recordId: String) async {
+        let preferredPosterPath = file.records[recordId]?.preferredPosterPath
         let kinds: [(kind: String, path: String?, filename: String)] = [
-            ("poster", manifest.artworkUrls?.poster, "poster.jpg"),
+            ("poster", preferredPosterPath ?? manifest.artworkUrls?.poster, "poster.jpg"),
             ("backdrop", manifest.artworkUrls?.backdrop, "backdrop.jpg"),
             ("logo", manifest.artworkUrls?.logo, "logo.png"),
         ]
@@ -1534,7 +1569,9 @@ final class DownloadManager {
         displaySubtitle: String?,
         type: String?,
         seriesId: String?,
-        posterThumbhash: String?
+        seriesTitle: String?,
+        posterThumbhash: String?,
+        preferredPosterPath: String?
     ) {
         if let existing = file.records[row.id] {
             var merged = mergeExistingRecord(existing, with: row)
@@ -1550,7 +1587,9 @@ final class DownloadManager {
         record.title = displayTitle
         record.subtitle = displaySubtitle
         record.seriesId = seriesId ?? record.seriesId
+        record.seriesTitle = seriesTitle
         record.posterThumbhash = posterThumbhash
+        record.preferredPosterPath = preferredPosterPath
         file.records[row.id] = record
     }
 

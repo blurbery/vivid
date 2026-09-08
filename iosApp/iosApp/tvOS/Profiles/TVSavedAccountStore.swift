@@ -1,6 +1,8 @@
 #if os(tvOS) || os(iOS)
 import Foundation
 import CryptoKit
+import CloudKit
+import OSLog
 
 struct TVSavedAccount: Codable, Identifiable, Hashable {
     let id: String
@@ -18,6 +20,51 @@ struct TVSavedAccountSession: Codable {
     let profile: UserProfile?
     let profileToken: String?
     var nativeUserID: String? = nil
+}
+
+fileprivate struct VividCloudAccountEnvelope: Codable {
+    var account: TVSavedAccount
+    var session: TVSavedAccountSession?
+    var server: ServerEntry
+    var pinRecord: String?
+    var updatedAt: Date
+}
+
+fileprivate struct VividCloudAccountTombstone: Codable {
+    var deletedAt: Date
+}
+
+fileprivate struct VividCloudAccountVault: Codable {
+    var schemaVersion = 1
+    var accounts: [String: VividCloudAccountEnvelope] = [:]
+    var tombstones: [String: VividCloudAccountTombstone] = [:]
+}
+
+fileprivate struct VividCloudApplyResult {
+    var activeAccountDeleted = false
+    var activeSessionInvalidated = false
+    var orphanedServerIDs: Set<String> = []
+}
+
+enum VividCloudAccountIdentity {
+    static func key(serverID: String, userID: String) -> String {
+        SHA256.hash(data: Data("\(serverID)\u{0}\(userID)".utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    static func key(for account: TVSavedAccount) -> String {
+        key(serverID: account.serverID, userID: account.userID)
+    }
+}
+
+enum VividCloudDeletionPolicy {
+    /// A tombstone always wins over routine local state. It can be retired
+    /// only by a credential entry that happened after the deletion.
+    static func tombstoneWins(deletedAt: Date, explicitAuthenticationAt: Date?) -> Bool {
+        guard let explicitAuthenticationAt else { return true }
+        return explicitAuthenticationAt <= deletedAt
+    }
 }
 
 enum TVAccountRoute: Hashable {
@@ -47,12 +94,25 @@ final class TVSavedAccountStore {
     private let keychain = SharedKeychain(audience: .currentUser)
     private let listKey = "vivid.accounts.v1"
     private let activeKey = "vivid.activeAccount.v1"
+    private let modificationDatesKey = "vivid.accountModificationDates.v1"
+    private var modificationDates: [String: Date] = [:]
 
     init() {
         if let data = defaults.data(forKey: listKey), let values = try? JSONDecoder().decode([TVSavedAccount].self, from: data) {
             accounts = values
         }
+        if let data = defaults.data(forKey: modificationDatesKey),
+           let values = try? JSONDecoder().decode([String: Date].self, from: data) {
+            modificationDates = values
+        }
         activeID = defaults.string(forKey: activeKey)
+        let now = Date()
+        var seededDates = false
+        for account in accounts where modificationDates[account.id] == nil {
+            modificationDates[account.id] = now
+            seededDates = true
+        }
+        if seededDates { persist() }
     }
 
     var activeAccount: TVSavedAccount? { accounts.first { $0.id == activeID } }
@@ -72,7 +132,14 @@ final class TVSavedAccountStore {
 
     private func persist() {
         if let data = try? JSONEncoder().encode(accounts) { defaults.set(data, forKey: listKey) }
+        if let data = try? JSONEncoder().encode(modificationDates) {
+            defaults.set(data, forKey: modificationDatesKey)
+        }
         defaults.set(activeID, forKey: activeKey)
+    }
+
+    private func markAccountChanged(_ id: String, at date: Date = Date()) {
+        modificationDates[id] = date
     }
 
     private struct PINRecord: Codable {
@@ -98,14 +165,18 @@ final class TVSavedAccountStore {
             error = "Couldn’t save the PIN."; return false
         }
         if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index].pinEnabled = true }
+        markAccountChanged(accountID)
         persist()
+        Task { await VividCloudAccountSync.shared.synchronize() }
         return true
     }
     func removePIN(_ id: String) -> Bool {
         guard activeID == id, !showsSelector, AuthService.shared.isLoggedIn else { return false }
         guard keychain.delete(pinKey(id)) else { return false }
         if let index = accounts.firstIndex(where: { $0.id == id }) { accounts[index].pinEnabled = false }
+        markAccountChanged(id)
         persist()
+        Task { await VividCloudAccountSync.shared.synchronize() }
         return true
     }
     func unlock(_ id: String, pin: String) -> Bool {
@@ -180,7 +251,9 @@ final class TVSavedAccountStore {
             try saveSession(stored, id: id)
             if let index { accounts[index] = value } else { accounts.append(value) }
             activeID = id
+            markAccountChanged(id)
             persist()
+            Task { await VividCloudAccountSync.shared.synchronize() }
         } catch { self.error = "Couldn’t save this profile on this device." }
     }
 
@@ -254,7 +327,9 @@ final class TVSavedAccountStore {
             if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index] = account }
             else { accounts.append(account) }
             activeID = accountID
+            markAccountChanged(accountID)
             persist()
+            VividCloudAccountSync.shared.noteExplicitAuthentication(account)
             await finishLogin(router: router)
             return true
         } catch {
@@ -323,6 +398,7 @@ final class TVSavedAccountStore {
         // Delete the saved session first: a failed remote logout must never restore it later.
         guard keychain.delete(sessionKey(id)) else { error = "Couldn’t clear the saved login. Try again."; return }
         if let index = accounts.firstIndex(where: { $0.id == id }) { accounts[index].requiresLogin = true }
+        markAccountChanged(id)
         persist()
         guard await AuthService.shared.signOut() else {
             error = "Couldn’t finish signing out. Please try again."; return
@@ -333,6 +409,7 @@ final class TVSavedAccountStore {
         showsSelector = true
         showsAnimation = true
         router.resetToLogin()
+        await VividCloudAccountSync.shared.synchronize(router: router)
     }
     #if os(iOS)
     func deleteSignedOutAccount(_ id: String, router: AppRouter) async {
@@ -353,16 +430,346 @@ final class TVSavedAccountStore {
             }
         }
         accounts.removeAll { $0.id == id }
+        modificationDates.removeValue(forKey: id)
         if unlockedID == id { unlockedID = nil }
         persist()
+        VividCloudAccountSync.shared.noteDeletion(of: account)
         contentRevision = UUID()
         if activeID == nil {
             showsSelector = !accounts.isEmpty
             if accounts.isEmpty { router.resetToServerSetup() }
             else { router.resetToLogin() }
         }
+        await VividCloudAccountSync.shared.synchronize(router: router)
     }
     #endif
 
+    fileprivate func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {
+        var snapshot: [String: VividCloudAccountEnvelope] = [:]
+        for account in accounts {
+            guard let server = ServerRegistry.shared.entry(with: account.serverID) else { continue }
+            let envelope = VividCloudAccountEnvelope(
+                account: account,
+                session: session(account.id),
+                server: server,
+                pinRecord: keychain.get(pinKey(account.id)),
+                updatedAt: modificationDates[account.id] ?? .distantPast
+            )
+            let identity = VividCloudAccountIdentity.key(for: account)
+            if let existing = snapshot[identity], existing.updatedAt >= envelope.updatedAt { continue }
+            snapshot[identity] = envelope
+        }
+        return snapshot
+    }
+
+    fileprivate func applyCloudVault(_ vault: VividCloudAccountVault) async -> VividCloudApplyResult {
+        let previousActiveID = activeID
+        var result = VividCloudApplyResult()
+        var didChange = false
+
+        for identity in vault.tombstones.keys {
+            let matching = accounts.filter { VividCloudAccountIdentity.key(for: $0) == identity }
+            if !matching.isEmpty { didChange = true }
+            for account in matching {
+                _ = keychain.delete(sessionKey(account.id))
+                _ = keychain.delete(pinKey(account.id))
+                modificationDates.removeValue(forKey: account.id)
+                if account.id == previousActiveID { result.activeAccountDeleted = true }
+                result.orphanedServerIDs.insert(account.serverID)
+            }
+            accounts.removeAll { VividCloudAccountIdentity.key(for: $0) == identity }
+        }
+
+        for (identity, envelope) in vault.accounts where vault.tombstones[identity] == nil {
+            let existingIndex = accounts.firstIndex {
+                VividCloudAccountIdentity.key(for: $0) == identity
+            }
+            let localID = existingIndex.map { accounts[$0].id } ?? envelope.account.id
+            let localDate = modificationDates[localID] ?? .distantPast
+            guard envelope.updatedAt > localDate || existingIndex == nil else { continue }
+            didChange = true
+
+            var imported = envelope.account
+            imported = TVSavedAccount(
+                id: localID,
+                serverID: imported.serverID,
+                userID: imported.userID,
+                username: imported.username,
+                profile: imported.profile,
+                requiresLogin: imported.requiresLogin,
+                pinEnabled: imported.pinEnabled
+            )
+            if let saved = envelope.session {
+                guard (try? saveSession(saved, id: localID)) != nil else { continue }
+            } else {
+                _ = keychain.delete(sessionKey(localID))
+            }
+            if let pin = envelope.pinRecord {
+                guard keychain.set(pin, for: pinKey(localID)) else { continue }
+            } else {
+                _ = keychain.delete(pinKey(localID))
+            }
+            guard ServerRegistry.shared.addOrUpdate(envelope.server) != nil else { continue }
+            if let existingIndex { accounts[existingIndex] = imported }
+            else { accounts.append(imported) }
+            modificationDates[localID] = envelope.updatedAt
+            if localID == previousActiveID,
+               imported.requiresLogin || envelope.session == nil {
+                result.activeSessionInvalidated = true
+            }
+        }
+
+        if let activeID, !accounts.contains(where: { $0.id == activeID }) {
+            self.activeID = nil
+        }
+        if activeID == nil {
+            activeID = accounts
+                .filter { !$0.requiresLogin && session($0.id) != nil }
+                .max { (modificationDates[$0.id] ?? .distantPast) < (modificationDates[$1.id] ?? .distantPast) }?
+                .id
+        }
+        persist()
+        if didChange { contentRevision = UUID() }
+
+        if result.activeAccountDeleted || result.activeSessionInvalidated {
+            _ = await AuthService.shared.signOut()
+        }
+        for serverID in result.orphanedServerIDs
+        where !accounts.contains(where: { $0.serverID == serverID }) {
+            _ = await ServerRegistry.shared.remove(serverId: serverID)
+        }
+        return result
+    }
+
+    fileprivate func restoreActiveCloudSessionIfNeeded() async -> Bool {
+        guard let account = activeAccount, !account.requiresLogin,
+              let saved = session(account.id),
+              ServerRegistry.shared.entry(with: account.serverID) != nil else { return false }
+        if AuthService.shared.isLoggedIn,
+           ServerRegistry.shared.activeServerId == account.serverID {
+            return true
+        }
+        do {
+            try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+}
+
+@MainActor
+final class VividCloudAccountSync {
+    static let shared = VividCloudAccountSync()
+
+    private static let containerIdentifier = "iCloud.com.blurbery.vivid"
+    private static let recordType = "VividAccountVault"
+    private static let payloadKey = "payload"
+    private static let recordID = CKRecord.ID(recordName: "account-vault-v1")
+    private static let tombstoneDefaultsKey = "vivid.cloudAccountTombstones.v1"
+    private static let resurrectionDefaultsKey = "vivid.cloudAccountResurrections.v1"
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
+        category: "CloudAccountSync"
+    )
+
+    private let container = CKContainer(identifier: containerIdentifier)
+    private let defaults = UserDefaults.standard
+    private var isSynchronizing = false
+    private var needsAnotherSynchronization = false
+    private var pendingRouter: AppRouter?
+
+    private init() {}
+
+    func noteDeletion(of account: TVSavedAccount) {
+        let identity = VividCloudAccountIdentity.key(for: account)
+        var tombstones = loadTombstones()
+        tombstones[identity] = VividCloudAccountTombstone(deletedAt: Date())
+        save(tombstones, key: Self.tombstoneDefaultsKey)
+
+        var resurrections = loadResurrections()
+        resurrections.removeValue(forKey: identity)
+        save(resurrections, key: Self.resurrectionDefaultsKey)
+    }
+
+    /// Only an explicit credential entry may revive an account identity that
+    /// was previously deleted. Routine capture and stale-device uploads never
+    /// create this marker.
+    func noteExplicitAuthentication(_ account: TVSavedAccount) {
+        var resurrections = loadResurrections()
+        resurrections[VividCloudAccountIdentity.key(for: account)] = Date()
+        save(resurrections, key: Self.resurrectionDefaultsKey)
+    }
+
+    func synchronize(router: AppRouter? = nil) async {
+        if let router {
+            pendingRouter = router
+        }
+        guard !isSynchronizing else {
+            needsAnotherSynchronization = true
+            return
+        }
+
+        isSynchronizing = true
+        var routingContext = router
+        repeat {
+            needsAnotherSynchronization = false
+            if let pendingRouter {
+                routingContext = pendingRouter
+                self.pendingRouter = nil
+            }
+            await synchronizeOnce(router: routingContext)
+        } while needsAnotherSynchronization
+        isSynchronizing = false
+    }
+
+    private func synchronizeOnce(router: AppRouter?) async {
+        do {
+            guard try await container.accountStatus() == .available else { return }
+            var activeWasDeleted = false
+            var activeSessionWasInvalidated = false
+            var savedSuccessfully = false
+
+            for _ in 0..<3 {
+                let (record, existingPayload) = try await fetchRecord()
+                var vault = decodeVault(existingPayload)
+                let localTombstones = loadTombstones()
+                let resurrections = loadResurrections()
+
+                for (identity, resurrectionDate) in resurrections {
+                    if let tombstone = vault.tombstones[identity],
+                       !VividCloudDeletionPolicy.tombstoneWins(
+                           deletedAt: tombstone.deletedAt,
+                           explicitAuthenticationAt: resurrectionDate
+                       ) {
+                        vault.tombstones.removeValue(forKey: identity)
+                    }
+                }
+                for (identity, tombstone) in localTombstones {
+                    if !VividCloudDeletionPolicy.tombstoneWins(
+                        deletedAt: tombstone.deletedAt,
+                        explicitAuthenticationAt: resurrections[identity]
+                    ) {
+                        continue
+                    }
+                    if let existing = vault.tombstones[identity], existing.deletedAt >= tombstone.deletedAt {
+                        continue
+                    }
+                    vault.tombstones[identity] = tombstone
+                }
+                for identity in vault.tombstones.keys {
+                    vault.accounts.removeValue(forKey: identity)
+                }
+
+                let applyResult = await TVSavedAccountStore.shared.applyCloudVault(vault)
+                activeWasDeleted = activeWasDeleted || applyResult.activeAccountDeleted
+                activeSessionWasInvalidated = activeSessionWasInvalidated || applyResult.activeSessionInvalidated
+
+                for (identity, envelope) in TVSavedAccountStore.shared.cloudSnapshot()
+                where vault.tombstones[identity] == nil {
+                    if let existing = vault.accounts[identity], existing.updatedAt >= envelope.updatedAt {
+                        continue
+                    }
+                    vault.accounts[identity] = envelope
+                }
+
+                let payload = try Self.encoder.encode(vault)
+                if payload == existingPayload {
+                    savedSuccessfully = true
+                    break
+                }
+                record.encryptedValues[Self.payloadKey] = payload as NSData
+                do {
+                    _ = try await container.privateCloudDatabase.save(record)
+                    savedSuccessfully = true
+                    break
+                } catch let error as CKError where error.code == .serverRecordChanged {
+                    continue
+                }
+            }
+
+            guard savedSuccessfully else { return }
+            var retainedTombstones = loadTombstones()
+            for identity in loadResurrections().keys {
+                retainedTombstones.removeValue(forKey: identity)
+            }
+            save(retainedTombstones, key: Self.tombstoneDefaultsKey)
+            defaults.removeObject(forKey: Self.resurrectionDefaultsKey)
+            let restored = await TVSavedAccountStore.shared.restoreActiveCloudSessionIfNeeded()
+
+            if activeWasDeleted || activeSessionWasInvalidated {
+                if restored {
+                    if AuthService.shared.hasProfile { router?.resetToHome() }
+                    else { router?.showProfileSelection() }
+                } else if TVSavedAccountStore.shared.accounts.isEmpty {
+                    router?.resetToServerSetup()
+                } else {
+                    TVSavedAccountStore.shared.showsSelector = true
+                    router?.resetToLogin()
+                }
+            } else if restored,
+                      let router,
+                      router.authState == .needsLogin || router.authState == .needsServerSetup {
+                if AuthService.shared.hasProfile { router.resetToHome() }
+                else { router.showProfileSelection() }
+            }
+        } catch {
+            Self.logger.notice("Private iCloud account sync is temporarily unavailable.")
+        }
+    }
+
+    private func fetchRecord() async throws -> (CKRecord, Data?) {
+        do {
+            let record = try await container.privateCloudDatabase.record(for: Self.recordID)
+            return (record, Self.payloadData(from: record))
+        } catch let error as CKError where error.code == .unknownItem {
+            return (CKRecord(recordType: Self.recordType, recordID: Self.recordID), nil)
+        }
+    }
+
+    private func decodeVault(_ data: Data?) -> VividCloudAccountVault {
+        guard let data, let vault = try? Self.decoder.decode(VividCloudAccountVault.self, from: data) else {
+            return VividCloudAccountVault()
+        }
+        return vault
+    }
+
+    private static func payloadData(from record: CKRecord) -> Data? {
+        if let data = record.encryptedValues[payloadKey] as? Data { return data }
+        if let data = record.encryptedValues[payloadKey] as? NSData { return data as Data }
+        return nil
+    }
+
+    private func loadTombstones() -> [String: VividCloudAccountTombstone] {
+        load([String: VividCloudAccountTombstone].self, key: Self.tombstoneDefaultsKey) ?? [:]
+    }
+
+    private func loadResurrections() -> [String: Date] {
+        load([String: Date].self, key: Self.resurrectionDefaultsKey) ?? [:]
+    }
+
+    private func load<T: Decodable>(_ type: T.Type, key: String) -> T? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        return try? Self.decoder.decode(type, from: data)
+    }
+
+    private func save<T: Encodable>(_ value: T, key: String) {
+        guard let data = try? Self.encoder.encode(value) else { return }
+        defaults.set(data, forKey: key)
+    }
+
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        return encoder
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        return decoder
+    }()
 }
 #endif

@@ -677,6 +677,11 @@ struct DownloadRecord: Codable, Identifiable, Hashable, Sendable {
     var seasonNumber: Int? = nil
     var episodeNumber: Int? = nil
     var posterThumbhash: String?
+    /// Preferred parent-series poster endpoint for episode downloads. The
+    /// episode manifest may advertise a still or season image as its primary
+    /// art; keeping the parent endpoint lets every single/season/series
+    /// transfer use the same main series poster in Downloads.
+    var preferredPosterPath: String? = nil
     var container: String?               // media container, drives file ext + engine
 
     var stableIdentity: StableIdentity?

@@ -814,7 +814,7 @@ class PlayerViewModel {
     /// apply to the end-of-playback screen.
     private var nextUpPromptDismissed = false
     private(set) var contentIdsNeedingDetailRefresh: Set<String> = []
-    #if os(iOS)
+    #if os(iOS) || os(tvOS)
     @ObservationIgnored
     private var refreshHomeAfterPlaybackWrite: (@MainActor () -> Void)?
     #endif
@@ -3236,7 +3236,7 @@ class PlayerViewModel {
                currentTime >= 0 {
                 let priorNaturalEndProgressTask = naturalEndProgressTask
                 let endPosition = currentTime
-                #if os(iOS)
+                #if os(iOS) || os(tvOS)
                 let refreshHome = refreshHomeAfterPlaybackWrite
                 #endif
                 naturalEndProgressTask = Task { [sessionBridge] in
@@ -3245,7 +3245,7 @@ class PlayerViewModel {
                         position: endPosition,
                         isPaused: true
                     )
-                    #if os(iOS)
+                    #if os(iOS) || os(tvOS)
                     if result == .success { refreshHome?() }
                     #endif
                 }
@@ -3555,7 +3555,7 @@ class PlayerViewModel {
         origin: LoadOrigin = .userInitiated
     ) {
         guard !isDisposed else { return }
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
         if refreshHomeAfterPlaybackWrite == nil {
             refreshHomeAfterPlaybackWrite = StartupContentPrefetcher.homeRefreshAfterPlaybackWrite()
         }
@@ -3639,7 +3639,7 @@ class PlayerViewModel {
                 } else {
                     await self.sessionBridge.reportProgress(position: snapshotPosition, isPaused: true)
                 }
-                #if os(iOS)
+                #if os(iOS) || os(tvOS)
                 self.refreshHomeAfterPlaybackWrite?()
                 #endif
             }
@@ -5389,6 +5389,10 @@ class PlayerViewModel {
         // playback never latches watched from that surface, while offline
         // playback does.
         let finalPosition = completionProgressPositionForCurrentItem()
+        let playbackMutationContentIds = contentIdsNeedingDetailRefresh
+        #if os(iOS) || os(tvOS)
+        let refreshHome = refreshHomeAfterPlaybackWrite
+        #endif
         let scrubPreviewShutdown = disposeVividPlayback()
 
         cleanupCompletionTask = Task {
@@ -5396,11 +5400,42 @@ class PlayerViewModel {
             await realtimeClient.unbind()
             await pendingNaturalEndProgressTask?.value
             if stopServerSessionOnTeardown {
-                await sessionBridge.stopSession(position: finalPosition, isPaused: true)
+                // Commit the resume point first. Session event bookkeeping and
+                // DELETE can finish afterward; neither changes Continue
+                // Watching, so making Home wait for them only leaves stale
+                // progress visible after the player has closed.
+                let progressResult = await sessionBridge.reportProgress(
+                    position: finalPosition,
+                    isPaused: true
+                )
+                #if os(iOS) || os(tvOS)
+                if progressResult == .success {
+                    refreshHome?()
+                    NotificationCenter.default.post(
+                        name: .playbackProgressDidCommit,
+                        object: PlaybackProgressCommittedEvent(
+                            contentIds: playbackMutationContentIds
+                        )
+                    )
+                }
+                #endif
+                await sessionBridge.stopSession(
+                    position: finalPosition,
+                    isPaused: true,
+                    finalProgressAlreadyReported: progressResult == .success
+                )
+                #if os(iOS) || os(tvOS)
+                if progressResult != .success {
+                    refreshHome?()
+                    NotificationCenter.default.post(
+                        name: .playbackProgressDidCommit,
+                        object: PlaybackProgressCommittedEvent(
+                            contentIds: playbackMutationContentIds
+                        )
+                    )
+                }
+                #endif
             }
-            #if os(iOS)
-            refreshHomeAfterPlaybackWrite?()
-            #endif
         }
     }
 
@@ -6034,6 +6069,14 @@ class PlayerViewModel {
     private static let autoHideSeconds: UInt64 = 5
 
     private func scheduleHideControls() {
+        #if os(iOS)
+        // Touch controls stay together until the viewer explicitly taps the
+        // video to dismiss them. This also keeps every control pill visible
+        // while a native menu or sheet is being used.
+        hideControlsTask?.cancel()
+        hideControlsTask = nil
+        showControls = true
+        #else
         // The HUD pins its host visible (`pinControlsVisible` in `openHUD`).
         // Actions taken from inside it — track selection, remote play/pause —
         // funnel through here and must not re-arm the auto-hide out from
@@ -6051,42 +6094,12 @@ class PlayerViewModel {
             while true {
                 try? await Task.sleep(nanoseconds: Self.autoHideSeconds * 1_000_000_000)
                 guard !Task.isCancelled else { return }
-                #if os(iOS)
-                // A native Menu offers no isPresented hook, so the hide
-                // deadline checks for a live menu platter instead of the
-                // menus pinning the overlay: wait out an open menu, then
-                // give the overlay a fresh full window before hiding.
-                if Self.isSystemMenuPresented() {
-                    while Self.isSystemMenuPresented() {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        guard !Task.isCancelled else { return }
-                    }
-                    continue
-                }
-                #endif
                 break
             }
             guard let self, self.isPlaying else { return }
             withAnimation { self.showControls = false }
         }
+        #endif
     }
-
-    #if os(iOS)
-    /// True while a UIKit menu platter is on screen. SwiftUI `Menu`s are
-    /// UIContextMenuInteraction-backed, and the presented platter lives in
-    /// a window (or a window's immediate subview) whose class name carries
-    /// "ContextMenu" — there is no public presentation hook to observe.
-    private static func isSystemMenuPresented() -> Bool {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .contains { window in
-                NSStringFromClass(type(of: window)).contains("ContextMenu")
-                    || window.subviews.contains {
-                        NSStringFromClass(type(of: $0)).contains("ContextMenu")
-                    }
-            }
-    }
-    #endif
 
 }

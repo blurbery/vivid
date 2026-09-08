@@ -1,6 +1,16 @@
 import VividKit
 import SwiftUI
 
+/// Sent as soon as the final position has reached the active server. Home can
+/// refresh at that point without waiting for the remaining session teardown.
+struct PlaybackProgressCommittedEvent {
+    let contentIds: Set<String>
+}
+
+extension Notification.Name {
+    static let playbackProgressDidCommit = Notification.Name("playbackProgressDidCommit")
+}
+
 #if os(tvOS)
 /// Published only after final playback progress is committed and every
 /// resident detail model affected by that playback has refreshed.
