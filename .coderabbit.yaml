@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: en-AU
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: false
+  poem: false
+  in_progress_fortune: false
+  enable_prompt_for_ai_agents: false
+
+  slop_detection:
+    enabled: true
+    label: ai-slop
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 10
+    drafts: false
+    base_branches:
+      - main
+
+  path_filters:
+    - "!VividKit/Vendor/**"
+    - "!iosApp/Resources/OpenSourceLicenses/**"
+    - "!docs/branding/**/*.png"
+    - "!**/*.xcframework/**"
+
+  path_instructions:
+    - path: "iosApp/iosApp/**"
+      instructions: |
+        Treat this as a native SwiftUI application for iPhone, iPad and Apple TV.
+        Flag unnecessary abstractions, duplicate helpers, speculative fallbacks,
+        invented APIs, dead code and broad refactors unrelated to the PR's stated
+        problem. Check state ownership, actor isolation, cancellation, retain cycles,
+        error handling and preservation of existing navigation and UI behaviour.
+
+    - path: "VividKit/**"
+      instructions: |
+        Review playback and media code conservatively. Check memory ownership,
+        concurrency, cancellation, timestamp and stream identity handling, buffer
+        bounds, decoder lifecycle and error recovery. Flag claims that are not backed
+        by focused tests or measured evidence. Do not recommend replacing the existing
+        playback engine or pinned dependencies.
+
+    - path: "**/Tests/**"
+      instructions: |
+        Require tests to exercise observable behaviour and meaningful failure paths.
+        Flag tests that merely restate the implementation, cannot fail on the baseline,
+        weaken assertions, depend on timing without bounds, or claim device behaviour
+        that a simulator or unit test cannot establish.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        Treat workflow changes as security-sensitive. Flag pull_request_target use,
+        execution of untrusted PR code with secrets or write tokens, mutable downloads,
+        excessive permissions, unsafe interpolation, credential persistence and any
+        path that could publish releases or modify main without blurbery's approval.
+
+    - path: "docs/**"
+      instructions: |
+        Vivid documentation is controlled by blurbery. Flag documentation changes
+        unless the PR identifies prior explicit approval from blurbery. Check factual
+        claims, validation claims, links, versioning rules, Australian English and the
+        existing Vivid document structure.
+
+    - path: "AGENTS.md"
+      instructions: |
+        Flag any weakening of repository safety, validation, publishing, design,
+        documentation ownership or AI-disclosure requirements. This file may only be
+        changed with blurbery's explicit approval.
+
+    - path: "CONTRIBUTING.md"
+      instructions: |
+        Flag any weakening of contribution controls, physical-device validation,
+        design ownership, documentation ownership or AI-disclosure requirements.
+        This file may only be changed with blurbery's explicit approval.
