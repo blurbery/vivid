@@ -33,11 +33,15 @@ Vivid’s source releases in this repository begin at `v0.6.0`.
 
 ## Version shown in the app
 
-Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). Tagged builds must match the GitHub release used for the build: a build from `v0.14.3` is shown as `0.14.3`. A branch beta may use the next planned version before its source release; record the exact pushed commit with that upload. The build number in parentheses is Apple’s TestFlight build counter and is not part of the semantic version.
+Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The Apple marketing version and GitHub source-release version are independent. Record the exact pushed source commit for each TestFlight upload; do not change the Apple marketing version to match a GitHub tag.
 
-Every iOS and tvOS upload for the same Vivid release uses the same positive build number. That value also applies to every embedded extension, so the current paired baseline is shown consistently as `0.15.0 (4)` on iPhone, iPad and Apple TV. Increment the build number before replacing or retrying either platform’s uploaded binary, then archive both platforms with that new shared number. The build counter never resets when the marketing version changes. Continue from the highest previously uploaded shared build number.
+Routine TestFlight updates retain the current marketing version and increment only the build number. Changing the Apple marketing version requires explicit approval from blurbery before archiving or uploading. The current Apple version is `0.15.0`, the uploaded paired build is `4`, and the next pair uses build `5`.
 
-`iosApp/project.yml` is the committed source for the local marketing-version and build-number baseline shared by all shippable targets. Tagged distribution builds may resolve `MARKETING_VERSION` from the release tag using `scripts/ci/resolve-marketing-version.sh`; unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives before upload rather than relying on the tag or Xcode scheme alone.
+Apple requires TestFlight App Review for the first build of a version; later builds within that version may not need a full review. Keeping the version stable avoids introducing a new version for every beta update, but does not guarantee immediate approval. See [Apple’s TestFlight App Review guidance](https://developer.apple.com/help/glossary/testflight-app-review/).
+
+Each paired iOS and tvOS upload uses the same positive build number, including every embedded extension. Increment that shared number for the next pair of uploaded binaries. The counter never resets, even after an approved marketing-version change. Continue from the highest previously uploaded build number across both platforms.
+
+`iosApp/project.yml` is the committed source for the Apple marketing-version and build-number baseline shared by all shippable targets. TestFlight archives must retain that approved marketing version. The tag resolver in `scripts/ci/resolve-marketing-version.sh` remains available for source-tagged unsigned builds; it must not automatically select the marketing version for TestFlight. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives and their extensions before upload.
 
 The app does not query GitHub APIs at runtime. A local or simulator build must not claim to be an uploaded TestFlight build unless it was created with the exact released version and TestFlight counter.
 

@@ -29,6 +29,7 @@ This repository contains Vivid, an independent Apple media client. SwiftUI app c
 
 - Work only in `blurbery/vivid` for Vivid tasks. Changes here do not authorize changes to any other repository.
 - Read [the release docs](docs/release/versioning.md) before changing release tooling or publishing an update.
+- Routine TestFlight uploads retain the approved Apple marketing version and increment only the shared iOS/tvOS build counter, including extensions. Never reset the counter or copy GitHub release versions into the Apple version automatically. Ask blurbery before changing the Apple marketing version; follow [Versioning & Releases](docs/release/versioning.md).
 - Updates pushed to `main` use the existing `semantic-release` workflow. Features bump minor; fixes and other updates bump patch; breaking changes bump major. No new commits means no release.
 - Logo, branding, artwork and small visual polish updates bump patch (`0.0.1` → `0.0.2`). Use `fix:`, `style:` or `docs:` as appropriate; reserve `feat:` for new functionality. Do not rewrite earlier releases to apply this policy.
 - GitHub release titles must contain only the version, for example `0.1.1`. No app name, `v` prefix or descriptive title. Git tags retain the `v` prefix.
