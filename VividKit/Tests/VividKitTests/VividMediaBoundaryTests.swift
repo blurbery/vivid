@@ -6,6 +6,37 @@ import XCTest
 @testable import VividKit
 
 final class VividMediaBoundaryTests: XCTestCase {
+    func testBitmapSubtitleDisplaySetsEndWhenTheNextSetBegins() {
+        let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8,
+            bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let image = context.makeImage()!
+        func cue(_ id: Int, track: Int, start: Double, end: Double, bitmap: Bool) -> VividSubtitleCue {
+            VividSubtitleCue(id: id, track: track, start: start, end: end,
+                text: bitmap ? nil : "Text subtitle", image: bitmap ? image : nil,
+                rectangle: .zero, canvas: CGSize(width: 1, height: 1))
+        }
+
+        var timeline = [
+            cue(1, track: 4, start: 1, end: 6, bitmap: true),
+            cue(2, track: 8, start: 1, end: 6, bitmap: true),
+            cue(3, track: 4, start: 1, end: 6, bitmap: false)
+        ]
+        let nextSet = [
+            cue(4, track: 4, start: 2, end: 7, bitmap: true),
+            cue(5, track: 4, start: 2, end: 7, bitmap: true)
+        ]
+        VividSubtitleEngine.append(nextSet, to: &timeline)
+
+        XCTAssertEqual(timeline.first { $0.id == 1 }?.end, 2)
+        XCTAssertEqual(timeline.first { $0.id == 2 }?.end, 6)
+        XCTAssertEqual(timeline.first { $0.id == 3 }?.end, 6)
+        XCTAssertEqual(timeline.filter { $0.start == 2 }.count, 2)
+
+        VividSubtitleEngine.append([cue(6, track: 4, start: 2, end: 7, bitmap: true)], to: &timeline)
+        XCTAssertEqual(timeline.filter { $0.track == 4 && $0.start == 2 }.map(\.id), [6])
+    }
+
     func testClockStallRequiresSixSecondsAndFiresOnce() {
         var detector = VividClockStallDetector()
         XCTAssertFalse(detector.observe(time: 0, uptime: 0, eligible: true))

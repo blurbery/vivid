@@ -11,6 +11,10 @@ struct VividHDMIAudioCore {
     private var exhausted = false
     var isRecovering: Bool { recoveryStarted != nil }
 
+    static func enabled(debugBuild: Bool, arguments: [String]) -> Bool {
+        !debugBuild || arguments.contains("-VividHDMIAudioCore")
+    }
+
     static func accepts(routeTypes: [String]) -> Bool {
         !routeTypes.isEmpty && routeTypes.allSatisfy { $0 == "HDMIOutput" }
     }

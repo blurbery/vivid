@@ -48,9 +48,11 @@ public final class VividPlayer: ObservableObject {
     private var hdmiAudio = VividHDMIAudioCore()
     private var hdmiRouteActive = false
     #if DEBUG
-    private let hdmiAudioEnabled = ProcessInfo.processInfo.arguments.contains("-VividHDMIAudioCore")
+    private let hdmiAudioEnabled = VividHDMIAudioCore.enabled(
+        debugBuild: true, arguments: ProcessInfo.processInfo.arguments
+    )
     #else
-    private let hdmiAudioEnabled = false
+    private let hdmiAudioEnabled = VividHDMIAudioCore.enabled(debugBuild: false, arguments: [])
     #endif
     #endif
     private var audioOnly = false

@@ -12,6 +12,11 @@ public struct VividSubtitleCue: @unchecked Sendable {
     public let image: CGImage?
     public let rectangle: CGRect
     public let canvas: CGSize
+
+    fileprivate func ending(at time: Double) -> Self {
+        Self(id: id, track: track, start: start, end: time, text: text,
+             image: image, rectangle: rectangle, canvas: canvas)
+    }
 }
 final class VividSubtitleEngine {
     private var decoders: [Int32: UnsafeMutablePointer<AVCodecContext>] = [:]
@@ -22,6 +27,26 @@ final class VividSubtitleEngine {
     private var renderPending = false
     private var images: [VividSubtitleCue] = []
     private var epoch: UInt64 = 0
+
+    /// Bitmap subtitle codecs such as PGS publish a replacement display set.
+    /// Their decoded end time is often absent, so letting every set use the
+    /// fallback duration stacks several dialogue images on screen. Keep all
+    /// rectangles from one display set, but end the previous set when the next
+    /// one for that track begins.
+    static func append(_ decoded: [VividSubtitleCue], to timeline: inout [VividSubtitleCue]) {
+        let nextBitmapStart = Dictionary(grouping: decoded.filter { $0.image != nil }, by: \.track)
+            .mapValues { cues in cues.map(\.start).min()! }
+        if !nextBitmapStart.isEmpty {
+            timeline = timeline.compactMap { cue in
+                guard cue.image != nil, let next = nextBitmapStart[cue.track] else { return cue }
+                if abs(cue.start - next) < 0.001 { return nil }
+                guard cue.start < next, cue.end > next else { return cue }
+                return cue.ending(at: next)
+            }
+        }
+        timeline.append(contentsOf: decoded)
+    }
+
     func rendered(at time: Double, selected: Set<Int>) -> [VividSubtitleCue] {
         lock.lock(); defer { lock.unlock() }
         let result = images.filter { selected.contains($0.track) }

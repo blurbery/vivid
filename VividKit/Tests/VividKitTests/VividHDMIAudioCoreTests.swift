@@ -2,6 +2,14 @@ import XCTest
 @testable import VividKit
 
 final class VividHDMIAudioCoreTests: XCTestCase {
+    func testReleaseEnablesHDMIRecoveryWhileDebugRetainsExplicitGate() {
+        XCTAssertTrue(VividHDMIAudioCore.enabled(debugBuild: false, arguments: []))
+        XCTAssertFalse(VividHDMIAudioCore.enabled(debugBuild: true, arguments: []))
+        XCTAssertTrue(VividHDMIAudioCore.enabled(
+            debugBuild: true, arguments: ["VividTV", "-VividHDMIAudioCore"]
+        ))
+    }
+
     func testFullOverdueQueueRecoversPromptlyButNotOnOneLatePoll() {
         var core = VividHDMIAudioCore()
         XCTAssertEqual(core.observe(clock: 4.8, audioEnd: 4.64, ready: false,

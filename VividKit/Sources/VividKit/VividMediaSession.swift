@@ -291,7 +291,7 @@ final class VividMediaSession: @unchecked Sendable {
                         if generation == epoch {
                             let cutoff = synchronizer.currentTime().seconds - 5
                             subtitleCues.removeAll { $0.end < cutoff }
-                            subtitleCues.append(contentsOf: cues)
+                            VividSubtitleEngine.append(cues, to: &subtitleCues)
                             if subtitleCues.count > 512 { subtitleCues.removeFirst(subtitleCues.count - 512) }
                         }
                         condition.unlock()

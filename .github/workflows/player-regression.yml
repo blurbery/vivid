@@ -133,6 +133,7 @@ jobs:
             -only-testing:VividKitDeviceTests/VividHDMIAudioCoreTests \
             -only-testing:VividKitDeviceTests/VividAirPlayRecoveryTests \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testDemuxReadPreservesSourceFailureWithoutInventingOne \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testBitmapSubtitleDisplaySetsEndWhenTheNextSetBegins \
             -only-testing:VividKitDeviceTests/VividTransientRecoveryTests \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryRequiresClockMovementAndTimesOut \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryCancelsForPauseOrSupersededPlaybackBeforeAcceptingProgress \
