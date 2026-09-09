@@ -44,6 +44,13 @@ public final class VividPlayer: ObservableObject {
     private var audioRecoveryTask: Task<Void, Never>?
     private var audioRecoveryBudget = VividAudioRecoveryBudget()
     private var clockStall = VividClockStallDetector()
+    private var hdmiAudio = VividHDMIAudioCore()
+    private var hdmiRouteActive = false
+    #if DEBUG
+    private let hdmiAudioEnabled = ProcessInfo.processInfo.arguments.contains("-VividHDMIAudioCore")
+    #else
+    private let hdmiAudioEnabled = false
+    #endif
     #endif
     private var audioOnly = false
     private var softwareAudio = false
@@ -136,6 +143,7 @@ public final class VividPlayer: ObservableObject {
     public func play() { wantsPlayback = true; poll() }
     public func pause() {
         #if os(tvOS)
+        hdmiAudio.suspend()
         clockStall = VividClockStallDetector()
         #endif
         wantsPlayback = false
@@ -152,6 +160,7 @@ public final class VividPlayer: ObservableObject {
         guard seconds.isFinite, seconds >= 0 else { throw VividPlaybackError.invalidSource }
         let target = duration > 0 ? min(seconds, duration) : seconds
         #if os(tvOS)
+        hdmiAudio.suspend()
         clockStall = VividClockStallDetector()
         #endif
         seekGeneration &+= 1
@@ -195,6 +204,8 @@ public final class VividPlayer: ObservableObject {
         #if os(tvOS)
         audioRecoveryTask?.cancel(); audioRecoveryTask = nil
         audioRecoveryBudget = VividAudioRecoveryBudget()
+        hdmiAudio = VividHDMIAudioCore()
+        hdmiRouteActive = false
         clockStall = VividClockStallDetector()
         displayFormatDescription = nil
         hasStartedPlayback = false
@@ -393,9 +404,40 @@ public final class VividPlayer: ObservableObject {
             state = .playing
         }
         #if os(tvOS)
+        let hdmiRoute = hdmiAudioEnabled && VividHDMIAudioCore.accepts(routeTypes:
+            AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue })
+        #if DEBUG
+        if hdmiRoute != hdmiRouteActive { session.setHDMIProbeEnabled(hdmiRoute) }
+        #endif
+        if hdmiRouteActive && !hdmiRoute {
+            hdmiAudio.suspend()
+            session.clearHDMIRecovery()
+        }
+        hdmiRouteActive = hdmiRoute
+        if hdmiRoute {
+            let audio = session.hdmiAudioState()
+            let action = hdmiAudio.observe(clock: now, audioEnd: audio.end,
+                ready: audioRenderer.isReadyForMoreMediaData,
+                uptime: ProcessInfo.processInfo.systemUptime,
+                eligible: (state == .playing || state == .buffering) && wantsPlayback && snapshot.started
+                    && !audio.finished && audioRecoveryTask == nil,
+                buffering: state == .buffering,
+                sufficient: audioRenderer.hasSufficientMediaDataForReliablePlaybackStart)
+            if action == .flushAudio { session.resetHDMIAudio(at: now) }
+            if action == .failed {
+                error = .renderer(-11819); state = .failed
+                synchronizer.rate = 0; session.cancel(); timer?.invalidate()
+            }
+            #if DEBUG
+            if action != .none, ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                print("[VividTVProbe] audioOutputRecovery HDMI action=\(action) position=\(now)")
+            }
+            #endif
+        }
         if clockStall.observe(time: now, uptime: ProcessInfo.processInfo.systemUptime,
             eligible: state == .playing && wantsPlayback && snapshot.started
                 && !snapshot.finished && !audioOnly && selectedAudioTrack != nil
+                && !(hdmiRoute && hdmiAudio.isRecovering)
                 && decodedAhead >= 0.08 && bufferedAhead >= 1 && audioRecoveryTask == nil) {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {

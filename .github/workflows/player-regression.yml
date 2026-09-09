@@ -130,6 +130,7 @@ jobs:
           xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme VividKitDeviceTests \
             -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
             -only-testing:VividTests \
+            -only-testing:VividKitDeviceTests/VividHDMIAudioCoreTests \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testDemuxReadPreservesHTTP401WithoutChangingOtherFailures \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryRequiresClockMovementAndTimesOut \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryCancelsForPauseOrSupersededPlaybackBeforeAcceptingProgress \
