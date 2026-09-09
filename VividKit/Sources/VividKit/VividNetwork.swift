@@ -42,12 +42,20 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     private var buffer = Data()
     private var bufferStart: Int64 = 0
     private var requestEnd: Int64 = 0
+    private var requestStart: Int64 = 0
+    private var resumingRange = false
+    private var lastDelivery = ProcessInfo.processInfo.systemUptime
+    private var waitingForBytes = false
+    private var playbackActive = false
+    private var playableHeadroom: Double = 0
+    private var deliveryStall = VividDeliveryStall()
     private var accepted = false
     private var complete = true
     private var failure: VividPlaybackError?
     private var stopped = false
     private var interrupted = false
     private var validator: String?
+    private var recoveryValidator: VividRangeValidator?
     private(set) var transferredBytes: Int64 = 0
     private var previousRequestEnd: Int64?
     private var recoveryTimes: [TimeInterval] = []
@@ -145,6 +153,9 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
                 recoveryTimes.removeAll { now - $0 >= 60 }
                 guard retryable else { return -5 }
                 if let budget = source.recoveryBudget {
+                    // Without an identity validator, a new range cannot be
+                    // safely joined to this session's already decoded media.
+                    guard length == nil || recoveryValidator != nil else { return -5 }
                     guard budget.beginNetworkRetry() else {
                         traceRecovery(failure, outcome: "network_budget_exhausted")
                         return -5
@@ -156,10 +167,12 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
                 traceRecovery(failure, outcome: "network_retry")
                 self.failure = nil
                 task?.cancel()
-                startRequest()
+                startRequest(retainingBytes: source.recoveryBudget != nil && recoveryValidator != nil)
             }
             if complete { startRequest() }
+            waitingForBytes = true
             condition.wait()
+            waitingForBytes = false
         }
         return vv_exit()
     }
@@ -201,16 +214,49 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     private func traceRecovery(_ failure: VividPlaybackError, outcome: String) {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-VividTVProbe"), case .network(let code) = failure {
-            print("[VividTVProbe] streamRecovery domain=\(code > 0 ? "HTTP" : "NSURLErrorDomain") code=\(code) outcome=\(outcome)")
+            print("[VividTVProbe] streamRecovery domain=\(code > 0 ? "HTTP" : "NSURLErrorDomain") code=\(code) outcome=\(outcome) headroom=\(playableHeadroom) stalledSeconds=\(max(0, ProcessInfo.processInfo.systemUptime - lastDelivery))")
         }
         #endif
     }
 
-    private func startRequest() {
-        buffer.removeAll(keepingCapacity: true)
-        bufferStart = position
-        let chunkSize: Int64 = previousRequestEnd.map { position == $0 + 1 } == true ? 8_388_608 : 1_048_576
-        requestEnd = min(position + chunkSize - 1, length.map { max(0, $0 - 1) } ?? Int64.max)
+    func observeDelivery(headroom: Double, active: Bool, uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        condition.lock(); defer { condition.unlock() }
+        playbackActive = active && !stopped && !interrupted
+        playableHeadroom = headroom.isFinite ? max(0, headroom) : 0
+        guard source.recoveryBudget != nil, file == nil else { return }
+        if let failure, playbackActive, resumeRetainingBytes(after: failure) { return }
+        let stalled = deliveryStall.observe(headroom: playableHeadroom, uptime: uptime,
+            lastDelivery: lastDelivery, eligible: playbackActive && waitingForBytes && !complete && task != nil)
+        if stalled { _ = resumeRetainingBytes(after: .network(NSURLErrorTimedOut)) }
+    }
+
+    private func resumeRetainingBytes(after failure: VividPlaybackError) -> Bool {
+        guard playbackActive, !stopped, !interrupted,
+              case .network(let code) = failure, VividTransientRecoveryBudget.recognises(code),
+              recoveryValidator != nil, length != nil,
+              bufferStart + Int64(buffer.count) <= requestEnd,
+              let budget = source.recoveryBudget, budget.beginNetworkRetry() else { return false }
+        traceRecovery(failure, outcome: "resume_missing_range")
+        // Already received bytes remain available to the demuxer. The new
+        // request starts after them, not at its next unread position.
+        task?.cancel()
+        self.failure = nil
+        startRequest(retainingBytes: true)
+        condition.broadcast()
+        return true
+    }
+
+    private func startRequest(retainingBytes: Bool = false) {
+        if !retainingBytes {
+            buffer.removeAll(keepingCapacity: true)
+            bufferStart = position
+            let chunkSize: Int64 = previousRequestEnd.map { position == $0 + 1 } == true ? 8_388_608 : 1_048_576
+            requestEnd = min(position + chunkSize - 1, length.map { max(0, $0 - 1) } ?? Int64.max)
+        }
+        requestStart = bufferStart + Int64(buffer.count)
+        resumingRange = retainingBytes
+        lastDelivery = ProcessInfo.processInfo.systemUptime
+        deliveryStall = VividDeliveryStall()
         accepted = false
         complete = false
         var request = URLRequest(url: source.url)
@@ -218,9 +264,11 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
             guard !key.contains("\r"), !key.contains("\n"), !value.contains("\r"), !value.contains("\n") else { continue }
             request.setValue(value, forHTTPHeaderField: key)
         }
-        request.setValue("bytes=\(position)-\(requestEnd)", forHTTPHeaderField: "Range")
+        request.setValue("bytes=\(requestStart)-\(requestEnd)", forHTTPHeaderField: "Range")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        if let validator { request.setValue(validator, forHTTPHeaderField: "If-Range") }
+        if let validator = retainingBytes ? recoveryValidator?.value : validator {
+            request.setValue(validator, forHTTPHeaderField: "If-Range")
+        }
         task = session.dataTask(with: request)
         task?.resume()
     }
@@ -232,7 +280,7 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         guard dataTask === task, !stopped else { completionHandler(.cancel); return }
         guard let http = response as? HTTPURLResponse, http.statusCode == 206,
               let value = http.value(forHTTPHeaderField: "Content-Range"),
-              let range = Self.parseContentRange(value), range.start == bufferStart,
+              let range = Self.parseContentRange(value), range.start == requestStart,
               range.end <= requestEnd,
               length == nil || length == range.total,
               http.value(forHTTPHeaderField: "Content-Encoding").map({ $0.lowercased() == "identity" }) ?? true else {
@@ -242,13 +290,15 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
             return
         }
         let nextValidator = http.value(forHTTPHeaderField: "ETag").flatMap { $0.hasPrefix("W/") ? nil : $0 }
-        if let validator, let nextValidator, validator != nextValidator {
+        if (resumingRange && recoveryValidator?.matches(http) != true) ||
+            (validator != nil && nextValidator != nil && validator != nextValidator) {
             failure = .invalidRange
             condition.broadcast()
             completionHandler(.cancel)
             return
         }
         validator = nextValidator ?? validator
+        recoveryValidator = VividRangeValidator(http)
         length = range.total
         requestEnd = range.end
         accepted = true
@@ -267,6 +317,13 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         }
         buffer.append(data)
         transferredBytes += Int64(data.count)
+        if !data.isEmpty {
+            if resumingRange {
+                traceRecovery(.network(0), outcome: "delivery_resumed")
+                resumingRange = false
+            }
+            lastDelivery = ProcessInfo.processInfo.systemUptime
+        }
         condition.broadcast()
     }
 
@@ -278,6 +335,7 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         if !stopped && failure == nil && (error != nil || !accepted || buffer.count != requestEnd - bufferStart + 1) {
             failure = .network((error as NSError?)?.code ?? -1)
         }
+        if let failure, playbackActive { _ = resumeRetainingBytes(after: failure) }
         condition.broadcast()
     }
 

@@ -400,6 +400,9 @@ final class VividMediaSession: @unchecked Sendable {
     func setBufferTarget(seconds: Double) {
         videoPackets.setTarget(seconds: seconds); audioPackets.setTarget(seconds: seconds)
     }
+    func observeDelivery(headroom: Double, active: Bool) {
+        source.observeDelivery(headroom: headroom, active: active)
+    }
     private func decode(_ decoder: UnsafeMutablePointer<AVCodecContext>, queue: VividBuffer, isVideo: Bool, epoch: UInt64) {
         guard let frame = av_frame_alloc() else { fail(.media(-12)); return }
         defer { var optional: UnsafeMutablePointer<AVFrame>? = frame; av_frame_free(&optional) }

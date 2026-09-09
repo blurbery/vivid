@@ -410,6 +410,8 @@ public final class VividPlayer: ObservableObject {
         currentTime = max(startPosition, now)
         decodedAhead = max(0, snapshot.frontier - now)
         bufferedAhead = decodedAhead + snapshot.readAheadSeconds
+        session.observeDelivery(headroom: bufferedAhead,
+            active: wantsPlayback && snapshot.started && flushTask == nil && (state == .playing || state == .buffering))
         hardwareVideoDecode = snapshot.hardware
         nativeAudioDecode = snapshot.nativeAudio
         hasPresentedVideo = hasPresentedVideo || displayLayer.isReadyForDisplay
