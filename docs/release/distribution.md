@@ -59,7 +59,7 @@ Use an internal group first, then invite external testers after the matching iOS
 
 The uploaded TestFlight build and current source are separate revisions. A merge or GitHub source release does not update an uploaded binary or its review. Assess beta capabilities against the selected build, not the latest documentation or local development installation.
 
-Current source supports the audio formats listed in the [player engine core](../cores/player-engine.md#audio-support), including TrueHD 7.1 source playback. AirPlay recovery improvements are included in source; the HDMI stall-recovery component remains Debug-only and requires `-VividHDMIAudioCore`. Release archives do not enable that HDMI component. Successful debug-device testing does not establish equivalent recovery in a TestFlight build.
+Current source supports the audio formats listed in the [player engine core](../cores/player-engine.md#audio-support), including TrueHD 7.1 source playback. AirPlay recovery improvements are included in source. Release archives enable the bounded HDMI stall-recovery component only when every active output is HDMI; HomePod, AirPlay, Bluetooth, empty and mixed routes bypass it. Debug builds require `-VividHDMIAudioCore` and the same pure-HDMI route. A successful build does not establish audible recovery on every television or receiver, so verify the selected TestFlight build on the affected hardware.
 
 Remaining validation includes physical iPad behaviour, live two-device iCloud restoration/deletion, older Apple TV hardware, additional HDR/audio routes and the provider-specific limits in the [Emby guide](../cores/emby.md). External distribution requires the selected matching builds and any required Beta App Review to complete.
 
