@@ -1391,9 +1391,8 @@ class PlayerViewModel {
         )
     }
 
-    /// The periodic progress request uses the live API credential and owns its
-    /// refresh. If that request rotated the bearer, rebuild Vivid before its
-    /// next source request can reuse the credential frozen at asset creation.
+    /// Progress owns token refresh. Direct readers adopt new headers without
+    /// replacing their buffered session; native routes retain reload recovery.
     private func attemptProtocolV3AuthenticationReloadAfterProgress(
         _ result: PlaybackProgressReportResult
     ) async {
@@ -1404,6 +1403,7 @@ class PlayerViewModel {
                   PlaybackProtocolV3.headerAuthenticatedMediaFeature
               ),
               let sessionId = activePlaybackSessionId,
+              let loadEpoch = vividPlaybackController.activeLoadEpoch,
               let failedSpec = vividPlaybackController.activeSpec,
               failedSpec.planID == protocolV3.plan.planId,
               failedSpec.sessionID == sessionId,
@@ -1421,8 +1421,10 @@ class PlayerViewModel {
               ),
               activePlaybackSessionId == sessionId,
               activePreparedProtocolV3?.plan.planId == protocolV3.plan.planId,
+              vividPlaybackController.activeLoadEpoch == loadEpoch,
               vividPlaybackController.activeSpec?.planID == failedSpec.planID,
               vividPlaybackController.activeSpec?.sessionID == sessionId,
+              vividPlaybackController.activeSpec?.options.httpHeaders == failedSpec.options.httpHeaders,
               VividAuthenticationRecoveryPolicy.shouldReloadAfterProgress(
                   result,
                   activeHeaders: failedSpec.options.httpHeaders,
@@ -1431,11 +1433,62 @@ class PlayerViewModel {
             return
         }
 
+        if vividPlaybackController.updateSourceHeaders(streamRequest.headers, for: loadEpoch,
+            expectedHeaders: failedSpec.options.httpHeaders, sourceURL: streamRequest.url) {
+            Self.logger.info("Stream recovery reason=authorization_rotated outcome=headers_updated")
+            return
+        }
         _ = beginProtocolV3SameRouteReload(
             fallbackClassification: "authorization_rotated",
             fallbackMessage: "Playback authorization changed while media was active.",
             refreshedStreamRequest: streamRequest
         )
+    }
+
+    private func refreshDirectSourceHeaders(
+        epoch: VividPlaybackController.LoadEpoch,
+        generation: UInt64
+    ) async -> [String: String]? {
+        guard !Task.isCancelled, !isDisposed, streamLoadGeneration == generation,
+              protocolV3ReplanTask == nil,
+              vividPlaybackController.activeLoadEpoch == epoch,
+              committedProtocolV3LoadEpoch == epoch,
+              let spec = vividPlaybackController.activeSpec, !spec.options.nativeRemoteHLS,
+              let protocolV3 = activePreparedProtocolV3,
+              protocolV3.serverFeatures.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature),
+              protocolV3.plan.planId == spec.planID,
+              let sessionId = activePlaybackSessionId, sessionId == spec.sessionID else { return nil }
+        do {
+            try await sessionBridge.refreshPlaybackAuthentication(sessionId: sessionId,
+                position: currentTime.isFinite ? max(0, currentTime) : 0,
+                isPaused: !vividPlaybackController.shouldPlayWhenReady)
+            try requireCurrentStreamLoad(generation)
+            guard vividPlaybackController.activeLoadEpoch == epoch,
+                  let session = await sessionBridge.committedProtocolV3Session(
+                    planId: spec.planID, sessionId: sessionId),
+                  let request = await makeStreamRequest(session: session,
+                    additionalHeaders: protocolV3.plan.stream.headers,
+                    requiresHeaderAuthenticatedMedia: true,
+                    allowsAuthorizedMediaOrigins: protocolV3.negotiatedAuthorizedMediaOrigins) else { return nil }
+            try requireCurrentStreamLoad(generation)
+            guard vividPlaybackController.activeLoadEpoch == epoch,
+                  activePlaybackSessionId == sessionId,
+                  activePreparedProtocolV3?.plan.planId == spec.planID,
+                  request.url == spec.sourceURL,
+                  let current = vividPlaybackController.activeSpec else { return nil }
+            if current.options.httpHeaders != spec.options.httpHeaders {
+                return current.options.httpHeaders
+            }
+            guard VividAuthenticationRecoveryPolicy.shouldReload(
+                failedHeaders: spec.options.httpHeaders, refreshedHeaders: request.headers),
+                  vividPlaybackController.updateSourceHeaders(request.headers, for: epoch,
+                    expectedHeaders: spec.options.httpHeaders, sourceURL: request.url) else { return nil }
+            Self.logger.info("Stream recovery reason=http_401 outcome=headers_updated")
+            return request.headers
+        } catch {
+            Self.logger.info("Stream recovery reason=http_401 outcome=refresh_unavailable")
+            return nil
+        }
     }
 
     @discardableResult
@@ -1502,6 +1555,7 @@ class PlayerViewModel {
                 "Protocol V3 media credential rotated; proactively reloading plan \(planId, privacy: .public) at source position \(resumePosition, privacy: .public)"
             )
         }
+        Self.logger.info("Stream recovery outcome=session_reconstruction")
 
         protocolV3ReplanTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
@@ -2767,6 +2821,9 @@ class PlayerViewModel {
             spec,
             shouldPlayWhenReady: shouldPlayWhenReady
         )
+        vividPlaybackController.engine.refreshSourceHeaders = { @MainActor [weak self] in
+            await self?.refreshDirectSourceHeaders(epoch: loadEpoch, generation: expectedStreamLoadGeneration)
+        }
         activeVividLoadEpoch = loadEpoch
         establishedVividLoadEpoch = nil
         lastVividAudioTrackSwitchFailure = nil

@@ -141,6 +141,14 @@ public final class VividPlayer: ObservableObject {
         }
     }
 
+    public func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool {
+        guard let source, source.url == url, state != .idle, state != .failed, state != .ended,
+              session?.updateSourceHeaders(headers) == true else { return false }
+        self.source = VividSource(url: source.url, headers: headers, recoveryBudget: source.recoveryBudget,
+                                  refreshHeaders: source.refreshHeaders)
+        return true
+    }
+
     public func play() { wantsPlayback = true; poll() }
     public func pause() {
         #if os(tvOS)

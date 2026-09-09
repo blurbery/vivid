@@ -210,6 +210,18 @@ final class VividPlaybackController {
         publishSystemMediaChanged()
     }
 
+    @discardableResult
+    func updateSourceHeaders(_ headers: [String: String], for epoch: LoadEpoch,
+                             expectedHeaders: [String: String], sourceURL: URL) -> Bool {
+        guard activeLoadEpoch == epoch, var spec = activeSpec,
+              spec.sourceURL == sourceURL, spec.options.httpHeaders == expectedHeaders,
+              !spec.options.nativeRemoteHLS,
+              engine.updateSourceHeaders(headers, for: sourceURL) else { return false }
+        spec.updateHTTPHeaders(headers)
+        activeSpec = spec
+        return true
+    }
+
     func play() {
         shouldPlayWhenReady = true
         // `beginLoad` installs spec/epoch before `engine.load` returns, and

@@ -6,6 +6,43 @@ import XCTest
 
 @MainActor
 final class VividPlaybackBoundaryTests: XCTestCase {
+    func testDirectCredentialUpdatePreservesPausedPlaybackAndRejectsStaleEpoch() async throws {
+        let file = try embeddedMediaFixture()
+        defer { try? FileManager.default.removeItem(at: file) }
+        CredentialPlaybackProtocol.install(try Data(contentsOf: file))
+        defer { CredentialPlaybackProtocol.uninstall() }
+        let url = URL(string: "https://credential-playback.invalid/media.mkv")!
+        let old = ["Authorization": "Bearer fixture-old"]
+        let next = ["Authorization": "Bearer fixture-new"]
+        let controller = try VividPlaybackController()
+        controller.setMuted(true)
+        defer { controller.stop() }
+        let spec = try VividLoadSpec(directURL: url, headers: old, startPosition: 0, audioOnly: true)
+        let epoch = controller.beginLoad(spec, shouldPlayWhenReady: false)
+        try await controller.finishLoad(epoch)
+        let player = controller.engine.player
+        let deadline = Date().addingTimeInterval(5)
+        while player.state != .paused && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(player.state, .paused)
+        XCTAssertGreaterThan(player.bufferedAhead, 0)
+        let buffered = player.bufferedAhead
+        let time = player.currentTime
+        let track = player.selectedAudioTrack
+        XCTAssertTrue(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
+        XCTAssertEqual(controller.activeLoadEpoch, epoch)
+        XCTAssertEqual(controller.activeSpec?.options.httpHeaders, next)
+        XCTAssertEqual(player.state, .paused)
+        XCTAssertEqual(player.currentTime, time)
+        XCTAssertEqual(player.selectedAudioTrack, track)
+        XCTAssertGreaterThanOrEqual(player.bufferedAhead, buffered)
+        XCTAssertFalse(controller.shouldPlayWhenReady)
+        XCTAssertFalse(controller.updateSourceHeaders(old, for: epoch, expectedHeaders: old, sourceURL: url))
+        _ = controller.beginLoad(spec, shouldPlayWhenReady: false)
+        XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
+    }
+
     private func embeddedMediaFixture(secondAudio: Bool = false) throws -> URL {
         func integer(_ value: UInt64, width: Int? = nil) -> Data {
             let count = width ?? max(1, (64 - value.leadingZeroBitCount + 7) / 8)
@@ -1521,4 +1558,39 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             .play
         )
     }
+}
+
+private final class CredentialPlaybackProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var media = Data()
+    static func install(_ data: Data) {
+        lock.lock(); media = data; lock.unlock()
+        URLProtocol.registerClass(Self.self)
+    }
+    static func uninstall() {
+        URLProtocol.unregisterClass(Self.self)
+        lock.lock(); media = Data(); lock.unlock()
+    }
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "credential-playback.invalid"
+    }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); let data = Self.media; Self.lock.unlock()
+        let range = (request.value(forHTTPHeaderField: "Range") ?? "").dropFirst(6).split(separator: "-")
+        guard range.count == 2, let start = Int(range[0]), let requestedEnd = Int(range[1]),
+              start >= 0, start < data.count else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        let end = min(requestedEnd, data.count - 1)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/octet-stream",
+                "Content-Range": "bytes \(start)-\(end)/\(data.count)",
+                "Content-Length": "\(end - start + 1)", "ETag": "\"playback-fixture\""])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data.subdata(in: start..<(end + 1)))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

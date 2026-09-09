@@ -177,8 +177,12 @@ struct VividLoadSpec {
     /// declared start, but a same-plan credential reload resumes at the current
     /// source position translated through the still-active timeline.
     let vividStartPosition: Double
-    let options: LoadOptions
+    private(set) var options: LoadOptions
     let audioSourceStreamIndex: Int32?
+
+    mutating func updateHTTPHeaders(_ headers: [String: String]) {
+        options.httpHeaders = headers
+    }
 
     @MainActor
     init(

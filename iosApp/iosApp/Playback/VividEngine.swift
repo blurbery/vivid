@@ -84,6 +84,7 @@ final class VividEngine: ObservableObject {
     private var source: URL?
     private var options = LoadOptions()
     var transientRecoveryBudget: VividTransientRecoveryBudget?
+    var refreshSourceHeaders: (@Sendable () async -> [String: String]?)?
     private var generation: UInt64 = 0
     private var transportRate: Float = 1
     private var wantsPlayback = false
@@ -181,6 +182,13 @@ final class VividEngine: ObservableObject {
             }
         }
     }
+    func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool {
+        guard source == url, currentAVPlayer == nil, !options.nativeRemoteHLS,
+              player.updateSourceHeaders(headers, for: url) else { return false }
+        options.httpHeaders = headers
+        return true
+    }
+
     func load(url: URL, startPosition: Double = 0, options: LoadOptions = LoadOptions(), audioSourceStreamIndex: Int32? = nil) async throws {
         #if os(tvOS)
         stop(resetDisplayCriteria: options.audioOnly)
@@ -205,7 +213,7 @@ final class VividEngine: ObservableObject {
                 player.bufferAheadTarget = min(40, max(2, Double(options.forwardBufferSegments ?? 10) * 2))
                 do {
                     try await player.load(VividSource(url: url, headers: options.httpHeaders,
-                        recoveryBudget: transientRecoveryBudget), at: startPosition,
+                        recoveryBudget: transientRecoveryBudget, refreshHeaders: refreshSourceHeaders), at: startPosition,
                     autoplay: wantsPlayback, audioTrack: audioSourceStreamIndex.map(Int.init),
                     audioTrackOrdinal: options.audioTrackOrdinal, audioOnly: options.audioOnly,
                     preferredAudioLanguages: options.preferredAudioLanguages)

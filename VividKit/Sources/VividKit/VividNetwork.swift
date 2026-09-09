@@ -6,10 +6,13 @@ public struct VividSource: Sendable {
     public let url: URL
     public let headers: [String: String]
     public let recoveryBudget: VividTransientRecoveryBudget?
-    public init(url: URL, headers: [String: String] = [:], recoveryBudget: VividTransientRecoveryBudget? = nil) {
+    public let refreshHeaders: (@Sendable () async -> [String: String]?)?
+    public init(url: URL, headers: [String: String] = [:], recoveryBudget: VividTransientRecoveryBudget? = nil,
+                refreshHeaders: (@Sendable () async -> [String: String]?)? = nil) {
         self.url = url
         self.headers = headers
         self.recoveryBudget = recoveryBudget
+        self.refreshHeaders = refreshHeaders
     }
 }
 
@@ -59,12 +62,22 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     private(set) var transferredBytes: Int64 = 0
     private var previousRequestEnd: Int64?
     private var recoveryTimes: [TimeInterval] = []
+    private var headers: [String: String]
+    private var requestHeaders: [String: String] = [:]
+    private var authenticationAttempted = false
+    private var authenticationID: UUID?
+    private var authenticationTask: Task<Void, Never>?
+    private var authenticationDeadline: DispatchWorkItem?
+    private let authenticationTimeout: TimeInterval
 
-    init(_ source: VividSource, configuration suppliedConfiguration: URLSessionConfiguration? = nil) throws {
+    init(_ source: VividSource, configuration suppliedConfiguration: URLSessionConfiguration? = nil,
+         authenticationTimeout: TimeInterval = 6) throws {
         guard ["https", "http", "file"].contains(source.url.scheme?.lowercased() ?? "") else {
             throw VividPlaybackError.invalidSource
         }
         self.source = source
+        headers = source.headers
+        self.authenticationTimeout = authenticationTimeout
         super.init()
         if source.url.isFileURL {
             file = try FileHandle(forReadingFrom: source.url)
@@ -88,6 +101,7 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     func cancel() {
         condition.lock()
         stopped = true
+        cancelAuthentication()
         task?.cancel()
         condition.broadcast()
         condition.unlock()
@@ -106,6 +120,7 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     func interrupt() {
         condition.lock()
         interrupted = true
+        cancelAuthentication()
         task?.cancel()
         task = nil
         complete = true
@@ -145,6 +160,10 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
                 return Int32(size)
             }
             if let failure {
+                if failure == .network(401), authenticationID != nil || beginAuthenticationRecovery() {
+                    if authenticationID != nil { condition.wait() }
+                    continue
+                }
                 let retryable: Bool
                 if case let .network(code) = failure {
                     retryable = VividTransientRecoveryBudget.recognises(code)
@@ -167,7 +186,8 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
                 traceRecovery(failure, outcome: "network_retry")
                 self.failure = nil
                 task?.cancel()
-                startRequest(retainingBytes: source.recoveryBudget != nil && recoveryValidator != nil)
+                startRequest(retainingBytes: source.recoveryBudget != nil && recoveryValidator != nil
+                    && bufferStart + Int64(buffer.count) <= requestEnd)
             }
             if complete { startRequest() }
             waitingForBytes = true
@@ -201,6 +221,7 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         if let file {
             do { try file.seek(toOffset: UInt64(target)) } catch { return -1 }
         } else if target < bufferStart || target > bufferStart + Int64(buffer.count) {
+            cancelAuthentication()
             task?.cancel()
             task = nil
             buffer.removeAll(keepingCapacity: true)
@@ -209,6 +230,80 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         }
         position = target
         return target
+    }
+
+    func updateHeaders(_ headers: [String: String]) -> Bool {
+        condition.lock(); defer { condition.unlock() }
+        guard !stopped, file == nil else { return false }
+        self.headers = headers
+        if failure == .network(401), let id = authenticationID {
+            finishAuthenticationLocked(id, refreshedHeaders: nil)
+        }
+        return true
+    }
+
+    private static func authorization(_ headers: [String: String]) -> String? {
+        headers.first { $0.key.caseInsensitiveCompare("Authorization") == .orderedSame }?.value
+    }
+
+    private func cancelAuthentication() {
+        authenticationID = nil
+        authenticationTask?.cancel(); authenticationTask = nil
+        authenticationDeadline?.cancel(); authenticationDeadline = nil
+    }
+
+    private func beginAuthenticationRecovery() -> Bool {
+        guard !stopped, !interrupted, !authenticationAttempted,
+              length == nil || recoveryValidator != nil else { return false }
+        let hasNewCredential = Self.authorization(headers) != nil
+            && Self.authorization(headers) != Self.authorization(requestHeaders)
+        guard hasNewCredential || source.refreshHeaders != nil else { return false }
+        authenticationAttempted = true
+        let id = UUID()
+        authenticationID = id
+        if hasNewCredential {
+            finishAuthenticationLocked(id, refreshedHeaders: nil)
+            return true
+        }
+        guard let refresh = source.refreshHeaders else { return false }
+        traceRecovery(.network(401), outcome: "credential_refresh")
+        let deadline = DispatchWorkItem { [weak self] in
+            self?.finishAuthentication(id, refreshedHeaders: nil)
+        }
+        authenticationDeadline = deadline
+        DispatchQueue.global().asyncAfter(deadline: .now() + authenticationTimeout, execute: deadline)
+        authenticationTask = Task { [weak self] in
+            let refreshed = await refresh()
+            self?.finishAuthentication(id, refreshedHeaders: refreshed)
+        }
+        return true
+    }
+
+    private func finishAuthentication(_ id: UUID, refreshedHeaders: [String: String]?) {
+        condition.lock(); defer { condition.unlock() }
+        finishAuthenticationLocked(id, refreshedHeaders: refreshedHeaders)
+    }
+
+    private func finishAuthenticationLocked(_ id: UUID, refreshedHeaders: [String: String]?) {
+        guard authenticationID == id, !stopped, !interrupted else { return }
+        if Self.authorization(headers) == Self.authorization(requestHeaders), let refreshedHeaders {
+            headers = refreshedHeaders
+        }
+        cancelAuthentication()
+        guard let current = Self.authorization(headers), current != Self.authorization(requestHeaders) else {
+            traceRecovery(.network(401), outcome: "credential_refresh_unavailable")
+            condition.broadcast()
+            return
+        }
+        traceRecovery(.network(401), outcome: "authenticated_resume")
+        failure = nil
+        task?.cancel(); task = nil
+        if length != nil, bufferStart + Int64(buffer.count) > requestEnd {
+            complete = true
+        } else {
+            startRequest(retainingBytes: length != nil)
+        }
+        condition.broadcast()
     }
 
     private func traceRecovery(_ failure: VividPlaybackError, outcome: String) {
@@ -226,7 +321,8 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         guard source.recoveryBudget != nil, file == nil else { return }
         if let failure, playbackActive, resumeRetainingBytes(after: failure) { return }
         let stalled = deliveryStall.observe(headroom: playableHeadroom, uptime: uptime,
-            lastDelivery: lastDelivery, eligible: playbackActive && waitingForBytes && !complete && task != nil)
+            lastDelivery: lastDelivery, eligible: playbackActive && waitingForBytes && !complete && task != nil
+                && authenticationID == nil)
         if stalled { _ = resumeRetainingBytes(after: .network(NSURLErrorTimedOut)) }
     }
 
@@ -260,7 +356,8 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         accepted = false
         complete = false
         var request = URLRequest(url: source.url)
-        for (key, value) in source.headers {
+        requestHeaders = headers
+        for (key, value) in requestHeaders {
             guard !key.contains("\r"), !key.contains("\n"), !value.contains("\r"), !value.contains("\n") else { continue }
             request.setValue(value, forHTTPHeaderField: key)
         }
@@ -285,6 +382,7 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
               length == nil || length == range.total,
               http.value(forHTTPHeaderField: "Content-Encoding").map({ $0.lowercased() == "identity" }) ?? true else {
             failure = (response as? HTTPURLResponse).map { .network($0.statusCode) } ?? .invalidRange
+            if failure == .network(401) { _ = beginAuthenticationRecovery() }
             condition.broadcast()
             completionHandler(.cancel)
             return
@@ -318,6 +416,7 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         buffer.append(data)
         transferredBytes += Int64(data.count)
         if !data.isEmpty {
+            authenticationAttempted = false
             if resumingRange {
                 traceRecovery(.network(0), outcome: "delivery_resumed")
                 resumingRange = false
