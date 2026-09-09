@@ -574,6 +574,8 @@ class PlayerViewModel {
     /// reload whose only change is a refreshed bearer. Reusing this gate keeps
     /// credential recovery from racing route replans, seeks, or track changes.
     private var protocolV3ReplanTask: Task<Void, Never>?
+    private var authenticationRecoveryBudget = VividAuthenticationRecoveryBudget()
+    private var authenticationReloadGeneration: UInt64?
     private var nextUpLookupTask: Task<Void, Never>?
     private var nextUpOnDeckTask: Task<Void, Never>?
     private var nextUpCountdownTask: Task<Void, Never>?
@@ -1198,6 +1200,10 @@ class PlayerViewModel {
             // replans.
             return
         }
+        if authenticationReloadGeneration == streamLoadGeneration,
+           protocolV3ReplanTask != nil {
+            return
+        }
         if attemptProtocolV3AuthenticationReload(after: failure) {
             return
         }
@@ -1454,6 +1460,12 @@ class PlayerViewModel {
         let planId = protocolV3.plan.planId
         let resumePosition = currentTime.isFinite ? max(0, currentTime) : 0
         let failedHeaders = failedSpec.options.httpHeaders
+        let recoveryEpisode = freshLoadGeneration
+        guard refreshedStreamRequest != nil || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
+            progressTask?.cancel()
+            finalizeTerminalPlaybackError(fallbackMessage)
+            return true
+        }
 
         progressTask?.cancel()
         progressTask = nil
@@ -1463,6 +1475,7 @@ class PlayerViewModel {
         bufferingProgress = nil
         streamLoadGeneration &+= 1
         let recoveryGeneration = streamLoadGeneration
+        authenticationReloadGeneration = recoveryGeneration
 
         if refreshedStreamRequest == nil {
             Self.logger.warning(
@@ -1477,17 +1490,24 @@ class PlayerViewModel {
         protocolV3ReplanTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
             var shouldFallbackToReplan = true
+            var finalClassification = fallbackClassification
+            var finalMessage = fallbackMessage
             defer {
-                self.protocolV3ReplanTask = nil
+                if self.authenticationReloadGeneration == recoveryGeneration {
+                    self.authenticationReloadGeneration = nil
+                }
                 if !self.isDisposed,
                    recoveryGeneration == self.streamLoadGeneration {
+                    self.protocolV3ReplanTask = nil
                     if shouldFallbackToReplan {
-                        if !self.attemptProtocolV3Replan(
-                            position: resumePosition,
-                            classification: fallbackClassification,
-                            message: fallbackMessage
+                        if finalClassification == "authentication" {
+                            self.finalizeTerminalPlaybackError(finalMessage)
+                        } else if !self.attemptProtocolV3Replan(
+                            position: self.currentTime.isFinite ? max(0, self.currentTime) : resumePosition,
+                            classification: finalClassification,
+                            message: finalMessage
                         ) {
-                            self.finalizeTerminalPlaybackError(fallbackMessage)
+                            self.finalizeTerminalPlaybackError(finalMessage)
                         }
                     } else if let queuedTrackChange = self.pendingProtocolV3TrackChange {
                         self.pendingProtocolV3TrackChange = nil
@@ -1511,7 +1531,8 @@ class PlayerViewModel {
                     // This request uses the normal API transport, whose 401 path
                     // refreshes TokenStore before retrying. Its result is otherwise
                     // best-effort; the header comparison below is authoritative.
-                    _ = await self.sessionBridge.reportProgress(
+                    try await self.sessionBridge.refreshPlaybackAuthentication(
+                        sessionId: sessionId,
                         position: resumePosition,
                         isPaused: !self.vividPlaybackController.shouldPlayWhenReady
                     )
@@ -1554,6 +1575,7 @@ class PlayerViewModel {
                     failedHeaders: failedHeaders,
                     refreshedHeaders: streamRequest.headers
                 ) else {
+                    finalClassification = "authentication"
                     Self.logger.warning(
                         "Protocol V3 media credential did not change; using bounded route recovery"
                     )
@@ -1568,6 +1590,20 @@ class PlayerViewModel {
                     ? max(0, self.currentTime)
                     : resumePosition
                 let shouldPlayWhenReady = self.vividPlaybackController.shouldPlayWhenReady
+                self.pendingAudioFfIndex = self.resolvedAudioTrackIndexForResume()
+                self.pendingSubtitleFfIndex = self.resolvedSubtitleTrackIndexForResume()
+                if let subtitle = self.selectedSubtitleId, SubtitleTrackIdSpace.isSidecar(subtitle) {
+                    switch Self.protocolV3SidecarRestoreIntent(
+                        snapshot: subtitle,
+                        selectedSubtitleIndex: protocolV3.plan.selectedTracks.subtitle?.index,
+                        subtitleMode: protocolV3.plan.subtitle.mode,
+                        isEmbedded: protocolV3.plan.subtitle.embedded != nil
+                    ) {
+                    case .renderLocally(let trackId): self.pendingSidecarSubtitleTrackId = trackId
+                    case .serverRendered(let trackId): self.pendingServerRenderedSubtitleTrackId = trackId
+                    case nil: break
+                    }
+                }
                 self.resolvedServerUrl = streamRequest.serverUrl
                 try await self.loadVivid(
                     prepared: prepared,
@@ -1581,7 +1617,12 @@ class PlayerViewModel {
                       self.activePreparedProtocolV3?.plan.planId == planId else {
                     throw CancellationError()
                 }
+                self.applySecondarySubtitleTrackSelection(self.selectedSecondarySubtitleId)
                 self.markProtocolV3VividLoadCommitted()
+                if refreshedStreamRequest == nil {
+                    try await self.confirmAuthenticationRecovery(generation: recoveryGeneration)
+                    self.authenticationRecoveryBudget.recovered(generation: recoveryEpisode)
+                }
                 shouldFallbackToReplan = false
                 Self.logger.info(
                     "Protocol V3 media credential reload succeeded for plan \(planId, privacy: .public)"
@@ -1589,12 +1630,38 @@ class PlayerViewModel {
             } catch is CancellationError {
                 shouldFallbackToReplan = false
             } catch {
+                let failure = VividAuthenticationRecoveryPolicy.finalFailure(error)
+                finalClassification = VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(failure)
+                    ? "authentication" : failure.kind.rawValue
+                finalMessage = failure.message
                 Self.logger.error(
                     "Protocol V3 media credential reload failed; using bounded route recovery: \(MediaLogRedactor.sanitize(error), privacy: .public)"
                 )
             }
         }
         return true
+    }
+
+    private func confirmAuthenticationRecovery(generation: UInt64) async throws {
+        let engine = vividPlaybackController.engine
+        let deadline = ProcessInfo.processInfo.systemUptime + 12
+        var readiness = VividAuthenticationRecoveryReadiness()
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            try requireCurrentStreamLoad(generation)
+            if let failure = engine.errorInfo { throw failure }
+            let time = engine.clock.currentTime
+            let wantsPlayback = vividPlaybackController.shouldPlayWhenReady
+            let ready = engine.currentAVPlayer.map { $0.currentItem?.status == .readyToPlay }
+                ?? (engine.hasFirstFrameReadyForDisplay || engine.videoRoute == .audio)
+            if readiness.observe(time: time, ready: ready,
+                wantsPlayback: wantsPlayback,
+                playing: engine.state == .playing, paused: engine.state == .paused,
+                seeking: engine.isSeeking || seekTargetTime != nil) { return }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        throw PlaybackErrorInfo(kind: .vodSourceFailed,
+            message: "Playback did not resume after renewing authentication.",
+            underlyingDomain: NSURLErrorDomain, underlyingCode: NSURLErrorTimedOut)
     }
 
     /// The track a queued change is actually asking for. `.subtitle(nil)` is

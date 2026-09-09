@@ -203,8 +203,14 @@ final class VividMediaSession: @unchecked Sendable {
                 guard let pointer = av_packet_alloc() else { fail(.media(-12)); break }
                 let packet = VividPacket(pointer)
                 let result = av_read_frame(format, pointer)
-                if result == vv_eof() { break }
-                if result < 0 { if !shouldStop(epoch) { fail(.media(result)) }; break }
+                if result < 0 {
+                    let sourceFailure = source.lastFailure
+                    if result == vv_eof(), sourceFailure != .network(401) { break }
+                    if !shouldStop(epoch) {
+                        fail(VividPlaybackError.demuxReadFailure(result, sourceFailure: sourceFailure))
+                    }
+                    break
+                }
                 let index = pointer.pointee.stream_index
                 guard packet.byteCount <= 32 * 1024 * 1024 else { fail(.media(-22)); break }
                 if let stream = vv_stream(format, UInt32(index)) {

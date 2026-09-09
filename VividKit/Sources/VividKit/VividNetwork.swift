@@ -22,6 +22,11 @@ public enum VividPlaybackError: Error, Equatable {
     case media(Int32)
     case unsupportedTrack
     case renderer(Int)
+
+    static func demuxReadFailure(_ code: Int32, sourceFailure: VividPlaybackError?) -> VividPlaybackError {
+        if sourceFailure == .network(401) { return .network(401) }
+        return .media(code)
+    }
 }
 
 final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable {

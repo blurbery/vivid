@@ -19,6 +19,25 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
     var underlyingDomain: String? = nil
     var underlyingCode: Int? = nil
     var errorDescription: String? { message }
+
+    static func isHTTPAuthenticationFailure(_ error: Error, depth: Int = 0) -> Bool {
+        guard depth < 8 else { return false }
+        if let typed = error as? VividPlaybackError { return typed == .network(401) }
+        if let typed = error as? PlaybackErrorInfo {
+            return (typed.kind == .sourceRefused
+                && (typed.underlyingDomain == nil || typed.underlyingDomain == NSURLErrorDomain)
+                && typed.underlyingCode == 401)
+                || (typed.kind == .nativeItemFailed
+                    && typed.underlyingDomain == NSURLErrorDomain
+                    && typed.underlyingCode == NSURLErrorUserAuthenticationRequired)
+        }
+        let native = error as NSError
+        if native.domain == NSURLErrorDomain && native.code == NSURLErrorUserAuthenticationRequired {
+            return true
+        }
+        guard let underlying = native.userInfo[NSUnderlyingErrorKey] as? Error else { return false }
+        return isHTTPAuthenticationFailure(underlying, depth: depth + 1)
+    }
 }
 typealias PlaybackErrorKind = PlaybackErrorInfo.Kind
 struct TrackInfo: Identifiable, Equatable {
