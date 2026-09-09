@@ -1,6 +1,7 @@
 import VividKit
 import AVFoundation
 import Foundation
+import Network
 import XCTest
 @testable import Vivid
 
@@ -9,9 +10,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     func testDirectCredentialUpdatePreservesPausedPlaybackAndRejectsStaleEpoch() async throws {
         let file = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: file) }
-        CredentialPlaybackProtocol.install(try Data(contentsOf: file))
-        defer { CredentialPlaybackProtocol.uninstall() }
-        let url = URL(string: "https://credential-playback.invalid/media.mkv")!
+        let server = try CredentialPlaybackServer(media: Data(contentsOf: file))
+        let url = try await server.start()
+        defer { server.stop() }
         let old = ["Authorization": "Bearer fixture-old"]
         let next = ["Authorization": "Bearer fixture-new"]
         let controller = try VividPlaybackController()
@@ -1560,37 +1561,82 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 }
 
-private final class CredentialPlaybackProtocol: URLProtocol {
-    private static let lock = NSLock()
-    private static var media = Data()
-    static func install(_ data: Data) {
-        lock.lock(); media = data; lock.unlock()
-        URLProtocol.registerClass(Self.self)
+// A real loopback server exercises the production ephemeral URLSession. Global
+// URLProtocol registration is not reliably inherited by that session on iOS.
+private final class CredentialPlaybackServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "VividTests.credentialPlayback")
+    private let media: Data
+    private var connections: [NWConnection] = []
+
+    init(media: Data) throws {
+        self.media = media
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: parameters)
     }
-    static func uninstall() {
-        URLProtocol.unregisterClass(Self.self)
-        lock.lock(); media = Data(); lock.unlock()
+
+    func start() async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            var waiting = true
+            listener.stateUpdateHandler = { [weak self] state in
+                guard let self, waiting else { return }
+                switch state {
+                case .ready:
+                    guard let port = self.listener.port else { return }
+                    waiting = false
+                    continuation.resume(returning: URL(string: "http://127.0.0.1:\(port.rawValue)/media.mkv")!)
+                case .failed(let error):
+                    waiting = false
+                    continuation.resume(throwing: error)
+                default: break
+                }
+            }
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self else { connection.cancel(); return }
+                self.connections.append(connection)
+                connection.start(queue: self.queue)
+                self.receive(connection, accumulated: Data())
+            }
+            listener.start(queue: queue)
+        }
     }
-    override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "credential-playback.invalid"
+
+    func stop() {
+        queue.sync {
+            listener.cancel()
+            connections.forEach { $0.cancel() }
+            connections.removeAll()
+        }
     }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        Self.lock.lock(); let data = Self.media; Self.lock.unlock()
-        let range = (request.value(forHTTPHeaderField: "Range") ?? "").dropFirst(6).split(separator: "-")
+
+    private func receive(_ connection: NWConnection, accumulated: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, complete, error in
+            guard let self else { connection.cancel(); return }
+            var request = accumulated
+            if let data { request.append(data) }
+            guard request.count <= 32_768, error == nil else { connection.cancel(); return }
+            if let text = String(data: request, encoding: .utf8), text.contains("\r\n\r\n") {
+                self.respond(connection, request: text)
+            } else if complete {
+                connection.cancel()
+            } else {
+                self.receive(connection, accumulated: request)
+            }
+        }
+    }
+
+    private func respond(_ connection: NWConnection, request: String) {
+        let rangeLine = request.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("range: bytes=") }
+        let range = rangeLine?.dropFirst("Range: bytes=".count).split(separator: "-") ?? []
         guard range.count == 2, let start = Int(range[0]), let requestedEnd = Int(range[1]),
-              start >= 0, start < data.count else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+              start >= 0, start < media.count, requestedEnd >= start else {
+            connection.cancel()
             return
         }
-        let end = min(requestedEnd, data.count - 1)
-        let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/octet-stream",
-                "Content-Range": "bytes \(start)-\(end)/\(data.count)",
-                "Content-Length": "\(end - start + 1)", "ETag": "\"playback-fixture\""])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data.subdata(in: start..<(end + 1)))
-        client?.urlProtocolDidFinishLoading(self)
+        let end = min(requestedEnd, media.count - 1)
+        let headers = "HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes \(start)-\(end)/\(media.count)\r\nContent-Length: \(end - start + 1)\r\nETag: \"playback-fixture\"\r\nConnection: close\r\n\r\n"
+        let response = Data(headers.utf8) + media.subdata(in: start..<(end + 1))
+        connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }
-    override func stopLoading() {}
 }
