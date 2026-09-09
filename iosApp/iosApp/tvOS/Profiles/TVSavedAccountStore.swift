@@ -36,6 +36,7 @@ fileprivate struct VividCloudAccountTombstone: Codable {
 
 fileprivate struct VividCloudAccountVault: Codable {
     var schemaVersion = 1
+    var preferences: [String: VividCloudPreference]? = nil
     var accounts: [String: VividCloudAccountEnvelope] = [:]
     var tombstones: [String: VividCloudAccountTombstone] = [:]
 }
@@ -460,6 +461,14 @@ final class TVSavedAccountStore {
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
 
+    func applyCloudOrder(_ order: [String]) {
+        let identities = accounts.map { VividCloudAccountIdentity.key(for: $0) }
+        let sorted = VividCloudPreferencePolicy.ordered(identities, preferred: order)
+        let positions = Dictionary(uniqueKeysWithValues: sorted.enumerated().map { ($1, $0) })
+        accounts.sort { positions[VividCloudAccountIdentity.key(for: $0), default: 0] < positions[VividCloudAccountIdentity.key(for: $1), default: 0] }
+        if identities != sorted { persist(); contentRevision = UUID() }
+    }
+
     fileprivate func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {
         var snapshot: [String: VividCloudAccountEnvelope] = [:]
         for account in accounts {
@@ -496,7 +505,8 @@ final class TVSavedAccountStore {
             accounts.removeAll { VividCloudAccountIdentity.key(for: $0) == identity }
         }
 
-        for (identity, envelope) in vault.accounts where vault.tombstones[identity] == nil {
+        for identity in vault.accounts.keys.sorted() where vault.tombstones[identity] == nil {
+            guard let envelope = vault.accounts[identity] else { continue }
             let existingIndex = accounts.firstIndex {
                 VividCloudAccountIdentity.key(for: $0) == identity
             }
@@ -575,6 +585,7 @@ final class TVSavedAccountStore {
 
 }
 
+@Observable
 @MainActor
 final class VividCloudAccountSync {
     static let shared = VividCloudAccountSync()
@@ -592,6 +603,7 @@ final class VividCloudAccountSync {
 
     private let container = CKContainer(identifier: containerIdentifier)
     private let defaults = UserDefaults.standard
+    private(set) var bootstrapFailed = false
     private var isSynchronizing = false
     private var needsAnotherSynchronization = false
     private var pendingRouter: AppRouter?
@@ -599,6 +611,7 @@ final class VividCloudAccountSync {
     private init() {}
 
     func noteDeletion(of account: TVSavedAccount) {
+        try? VividCloudPreferences.shared.removeAccountPreferences(account)
         let identity = VividCloudAccountIdentity.key(for: account)
         var tombstones = loadTombstones()
         tombstones[identity] = VividCloudAccountTombstone(deletedAt: Date())
@@ -624,6 +637,9 @@ final class VividCloudAccountSync {
         }
         guard !isSynchronizing else {
             needsAnotherSynchronization = true
+            while isSynchronizing, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
             return
         }
 
@@ -642,14 +658,23 @@ final class VividCloudAccountSync {
 
     private func synchronizeOnce(router: AppRouter?) async {
         do {
-            guard try await container.accountStatus() == .available else { return }
+            bootstrapFailed = false
+            let status = try await container.accountStatus()
+            guard status == .available else {
+                bootstrapFailed = status != .noAccount
+                return
+            }
+            _ = try VividCloudPreferences.shared.capture(accounts: TVSavedAccountStore.shared.accounts)
+            // A media server outage must not block account restoration.
+            try? await VividCloudPreferences.shared.captureSharedSettings()
             var activeWasDeleted = false
             var activeSessionWasInvalidated = false
             var savedSuccessfully = false
 
             for _ in 0..<3 {
                 let (record, existingPayload) = try await fetchRecord()
-                var vault = decodeVault(existingPayload)
+                var vault = try decodeVault(existingPayload)
+                _ = try VividCloudPreferences.shared.capture(accounts: TVSavedAccountStore.shared.accounts)
                 let localTombstones = loadTombstones()
                 let resurrections = loadResurrections()
 
@@ -678,6 +703,10 @@ final class VividCloudAccountSync {
                     vault.accounts.removeValue(forKey: identity)
                 }
 
+                for account in TVSavedAccountStore.shared.accounts
+                where vault.tombstones[VividCloudAccountIdentity.key(for: account)] != nil {
+                    try VividCloudPreferences.shared.removeAccountPreferences(account)
+                }
                 let applyResult = await TVSavedAccountStore.shared.applyCloudVault(vault)
                 activeWasDeleted = activeWasDeleted || applyResult.activeAccountDeleted
                 activeSessionWasInvalidated = activeSessionWasInvalidated || applyResult.activeSessionInvalidated
@@ -690,6 +719,11 @@ final class VividCloudAccountSync {
                     vault.accounts[identity] = envelope
                 }
 
+                vault.preferences = try VividCloudPreferences.shared.reconcile(vault.preferences ?? [:], accounts: TVSavedAccountStore.shared.accounts)
+                if let data = vault.preferences?["accountOrder"]?.value,
+                   let order = try? JSONDecoder().decode([String].self, from: data) {
+                    TVSavedAccountStore.shared.applyCloudOrder(order)
+                }
                 let payload = try Self.encoder.encode(vault)
                 if payload == existingPayload {
                     savedSuccessfully = true
@@ -705,7 +739,8 @@ final class VividCloudAccountSync {
                 }
             }
 
-            guard savedSuccessfully else { return }
+            guard savedSuccessfully else { bootstrapFailed = true; return }
+            VividCloudPreferences.shared.startObserving()
             var retainedTombstones = loadTombstones()
             for identity in loadResurrections().keys {
                 retainedTombstones.removeValue(forKey: identity)
@@ -713,6 +748,7 @@ final class VividCloudAccountSync {
             save(retainedTombstones, key: Self.tombstoneDefaultsKey)
             defaults.removeObject(forKey: Self.resurrectionDefaultsKey)
             let restored = await TVSavedAccountStore.shared.restoreActiveCloudSessionIfNeeded()
+            if restored { try? await VividCloudPreferences.shared.applySharedSettings() }
 
             if activeWasDeleted || activeSessionWasInvalidated {
                 if restored {
@@ -731,6 +767,7 @@ final class VividCloudAccountSync {
                 else { router.showProfileSelection() }
             }
         } catch {
+            bootstrapFailed = true
             Self.logger.notice("Private iCloud account sync is temporarily unavailable.")
         }
     }
@@ -738,16 +775,17 @@ final class VividCloudAccountSync {
     private func fetchRecord() async throws -> (CKRecord, Data?) {
         do {
             let record = try await container.privateCloudDatabase.record(for: Self.recordID)
-            return (record, Self.payloadData(from: record))
+            guard let payload = Self.payloadData(from: record) else { throw ServerRegistryError.persistenceFailed }
+            return (record, payload)
         } catch let error as CKError where error.code == .unknownItem {
             return (CKRecord(recordType: Self.recordType, recordID: Self.recordID), nil)
         }
     }
 
-    private func decodeVault(_ data: Data?) -> VividCloudAccountVault {
-        guard let data, let vault = try? Self.decoder.decode(VividCloudAccountVault.self, from: data) else {
-            return VividCloudAccountVault()
-        }
+    private func decodeVault(_ data: Data?) throws -> VividCloudAccountVault {
+        guard let data else { return VividCloudAccountVault() }
+        let vault = try Self.decoder.decode(VividCloudAccountVault.self, from: data)
+        guard vault.schemaVersion == 1 else { throw ServerRegistryError.persistenceFailed }
         return vault
     }
 

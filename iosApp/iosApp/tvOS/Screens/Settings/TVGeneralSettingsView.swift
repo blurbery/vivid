@@ -521,7 +521,7 @@ private struct TVHomeSectionsControlButtonBody: View {
 }
 
 private struct TVMenuCustomizationSheet: View {
-    @AppStorage("vivid.tv.swapMenuUtilities") private var utilitiesSwapped = false
+    @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.swapMenuUtilities")) private var utilitiesSwapped = false
     let libraries: [Library]
     @State private var preferences = UICustomizationPreferences.shared
     @Environment(\.dismiss) private var dismiss

@@ -33,9 +33,9 @@ final class HomeSectionPreferences {
         refresh()
     }
 
-    func refresh() {
+    func refresh(force: Bool = false) {
         let key = storageKey()
-        guard key != loadedStorageKey else { return }
+        guard force || key != loadedStorageKey else { return }
         loadedStorageKey = key
 
         guard let key,

@@ -11,9 +11,9 @@ final class TVHomeSpotlightPreferences {
 
     init() { refresh() }
 
-    func refresh() {
+    func refresh(force: Bool = false) {
         let key = storageKey
-        guard key != loadedKey else { return }
+        guard force || key != loadedKey else { return }
         loadedKey = key
         selectedRowIDs = key.flatMap { key in
             defaults.data(forKey: key).flatMap {
@@ -113,28 +113,21 @@ final class TVHomeCardPreferences {
            let saved = try? JSONDecoder().decode(CardPresentationPreference.self, from: data) {
             value = saved
         }
-        #if os(tvOS)
         value.caption = key.flatMap { defaults.string(forKey: $0 + ".captions") }
             .flatMap(CardCaptionStyle.init(rawValue:)) ?? .titleMetadata
-        #endif
         return value
     }
+    func cloudPreferencesChanged() { revision += 1 }
     func setPosterSize(_ size: CardPosterSize) {
         var value = presentation; value.posterSize = size; save(value)
     }
     func setCaptionStyle(_ caption: CardCaptionStyle) {
-        #if os(tvOS)
         guard let key else { return }
         defaults.set(caption.rawValue, forKey: key + ".captions")
         revision += 1
-        #else
-        var value = presentation; value.caption = caption; save(value)
-        #endif
     }
     func reset() {
-        #if os(tvOS)
         if let key { defaults.removeObject(forKey: key + ".captions") }
-        #endif
         save(Self.profileDefault)
     }
     private func save(_ value: CardPresentationPreference) {

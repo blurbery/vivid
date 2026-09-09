@@ -37,7 +37,7 @@ struct CatalogGrid: View {
     private var columns: [GridItem] {
         if usesThreeColumnPhoneLayout {
             return Array(
-                repeating: GridItem(.flexible(), spacing: 8),
+                repeating: GridItem(.flexible(), spacing: 8, alignment: .top),
                 count: 3
             )
         }

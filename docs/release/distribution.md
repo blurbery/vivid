@@ -19,7 +19,7 @@ Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record 
 | Build tools | Local Xcode 26.6. Apple currently requires the iOS/iPadOS 26 and tvOS 26 SDKs or later for uploads. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
 | About | Version/build, contact, privacy information, TMDb attribution and bundled open-source notices are present. |
-| iCloud | Private CloudKit account sync is implemented for iPhone, iPad and Apple TV. The release container is registered; confirm the production schema before relying on cross-device restoration in an external beta. |
+| iCloud | The encrypted private account vault includes profile order, shared preferences and TMDB/Seerr credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The release container is registered; confirm the production schema and live restore on a second device before relying on it in an external beta. |
 | Local device coverage | iPhone 16 Pro Max on iOS 26.6.1 and Apple TV 4K (3rd generation) on tvOS 26.6. These are development installations, not distribution archives. |
 | iPad coverage | Focused simulator layout checks exist. Physical iPad playback, rotation and multitasking still need checking. |
 | Apple upload tooling | Signed archives can be uploaded from the maintainer’s local Xcode configuration. Signing credentials remain outside Git and there is no committed TestFlight uploader. |
@@ -60,6 +60,8 @@ Use an internal group first, then invite external testers after the matching iOS
 The uploaded TestFlight build and current source are separate revisions. A merge or GitHub source release does not update an uploaded binary or its review. Assess beta capabilities against the selected build, not the latest documentation or local development installation.
 
 Current source supports the audio formats listed in the [player engine core](../cores/player-engine.md#audio-support), including TrueHD 7.1 source playback. AirPlay recovery improvements are included in source. Release archives enable the bounded HDMI stall-recovery component only when every active output is HDMI; HomePod, AirPlay, Bluetooth, empty and mixed routes bypass it. Debug builds require `-VividHDMIAudioCore` and the same pure-HDMI route. A successful build does not establish audible recovery on every television or receiver, so verify the selected TestFlight build on the affected hardware.
+
+The preference-sync extension retains the existing encrypted `VividAccountVault.payload` field and adds optional values inside its encoded payload, without adding CloudKit schema fields. Existing vaults remain readable. Merge checks cover independent edits, deletion markers, deterministic conflict resolution and profile ordering. Live two-device restoration, API-key removal and device-specific playback/subtitle isolation still require verification against the selected build. Apple describes encrypted record fields in [Encrypting User Data](https://developer.apple.com/documentation/cloudkit/encrypting-user-data).
 
 Remaining validation includes physical iPad behaviour, live two-device iCloud restoration/deletion, older Apple TV hardware, additional HDR/audio routes and the provider-specific limits in the [Emby guide](../cores/emby.md). External distribution requires the selected matching builds and any required Beta App Review to complete.
 

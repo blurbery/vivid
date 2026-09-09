@@ -38,7 +38,9 @@ struct GeneralSettingsView: View {
                     ForEach(CardCaptionStyle.allCases) { Text($0.title).tag($0) }
                 }
                 Button("Use Profile Default") { homeCards.reset() }.foregroundStyle(.white)
-            } header: { PhoneSettingsSectionHeader("Poster Configuration") }
+            } header: { PhoneSettingsSectionHeader("Poster Configuration") } footer: {
+                Text("Captions apply across Home, Search, Movies, Series and For You. Title & Year, Title Only and Artwork Only keep the same text size and left alignment. Episodes show episode details instead of the year.")
+            }
             Section {
                 NavigationLink("Customise Tab Bar") { InterfaceCustomizationView(menuOnly: true) }
             } header: { PhoneSettingsSectionHeader("Tab Bar") }

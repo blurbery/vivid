@@ -166,7 +166,6 @@ struct SearchView: View {
                     isLoading: viewModel.isSearching,
                     hasMore: viewModel.hasMore,
                     forcesThreeColumnsOnPhone: true,
-                    cardTitleFont: .system(size: 11, weight: .semibold),
                     onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
                     onLoadMore: {
                         Task { await viewModel.loadMore() }

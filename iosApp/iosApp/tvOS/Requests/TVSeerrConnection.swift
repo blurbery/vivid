@@ -195,7 +195,15 @@ final class TVSeerrConnectionStore {
         let parts = [ServerRegistry.shared.activeServerId ?? "", accountContext, AuthService.shared.profileId ?? ""]
         return SHA256.hash(data: Data(parts.joined(separator: "\u{0}").utf8)).map { String(format: "%02x", $0) }.joined()
     }
-    private var key: String { "vivid.seerr.\(scope)" }
+    private var key: String {
+        let legacy = "vivid.seerr.\(scope)"
+        guard let canonical = VividCloudPreferences.activeCredentialKey("seerr") else { return legacy }
+        if keychain.get(canonical) == nil, let value = keychain.get(legacy), keychain.set(value, for: canonical) {
+            _ = keychain.delete(legacy)
+        }
+        return canonical
+    }
+    func cloudPreferencesChanged() { clients.removeAll(); revision += 1 }
     var configuration: TVSeerrConfiguration? {
         _ = revision
         guard let string = keychain.get(key), let data = string.data(using: .utf8) else { return nil }
@@ -222,11 +230,13 @@ final class TVSeerrConnectionStore {
         }
         clients = [config.id: client]
         revision += 1
+        VividCloudPreferences.shared.schedule()
     }
     func disconnect() throws {
         guard keychain.delete(key) else { throw TVSeerrError(message: "Couldn't remove the saved connection.") }
         clients.removeAll()
         revision += 1
+        VividCloudPreferences.shared.schedule()
     }
     private func client() throws -> TVSeerrClient {
         guard let config = configuration else { throw TVSeerrError(message: "Configure Seerr in Settings to request titles.") }

@@ -184,7 +184,7 @@ struct PhoneDetailParallaxArtwork: View {
                 .visualEffect { content, proxy in
                     let minY = proxy.frame(in: .named(coordinateSpaceName)).minY
                     let offset = min(max(0, -minY), 540)
-                    return content.offset(y: parallaxEnabled && !keepsTopAttached ? offset * 0.52 : 0)
+                    return content.offset(y: parallaxEnabled ? offset * 0.52 : 0)
                 }
 
             Color.black
@@ -507,9 +507,14 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 )
             }
         } else if let logoUrl, !logoUrl.isEmpty {
-            AsyncImageView(url: logoUrl, contentMode: .fit, placeholderStyle: .clear)
+            CachedAsyncImage(
+                url: logoUrl,
+                contentMode: .fit,
+                alignment: textAlignment == .leading ? .bottomLeading : .bottom,
+                placeholderStyle: .clear
+            )
                 .frame(maxWidth: textAlignment == .leading ? 430 : .infinity)
-                .frame(height: logoHeight, alignment: textAlignment == .leading ? .leading : .center)
+                .frame(height: logoHeight)
                 .accessibilityLabel(title)
         } else {
             PhoneHeroTitle(title: title, textAlignment: textAlignment)

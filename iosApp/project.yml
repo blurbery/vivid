@@ -42,7 +42,7 @@ targetTemplates:
   ShippableProduct:
     settings:
       base:
-        MARKETING_VERSION: "0.14.3"
+        MARKETING_VERSION: "0.15.0"
         CURRENT_PROJECT_VERSION: 1
         # Surfaced to the app as the `VividBuildChannel` Info.plist key and
         # reported to the server as X-Silo-Client-Channel. The unsigned
@@ -161,6 +161,7 @@ targets:
       - path: iosApp/Shared
         excludes:
           - "Diagnostics/**"
+          - "VividCloudPreferences.swift"
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
     # Signing/VividTVTopShelf.xcconfig so local contributors can
     # override them via Signing/Local.xcconfig without dirtying this

@@ -24,7 +24,7 @@ enum AdaptiveColumns {
             count = max(2, standardCount - 1)
         }
         return Array(
-            repeating: GridItem(.flexible(), spacing: spacing),
+            repeating: GridItem(.flexible(), spacing: spacing, alignment: .top),
             count: count
         )
     }

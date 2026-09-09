@@ -40,11 +40,7 @@ enum CardCaptionStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .titleMetadata:
-            #if os(tvOS)
             return "Title & Year"
-            #else
-            return "Title & Metadata"
-            #endif
         case .title: return "Title Only"
         case .artwork: return "Artwork Only"
         }
@@ -1835,7 +1831,7 @@ final class UICustomizationPreferences {
 @MainActor
 enum MobileProfilePreferenceKeys {
     static var scope: String? {
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
         guard let server = ServerRegistry.shared.activeServerId,
               let profile = AuthService.shared.profileId, !profile.isEmpty else { return nil }
         return Data("\(server)|\(profile)".utf8).base64EncodedString()
@@ -1845,6 +1841,16 @@ enum MobileProfilePreferenceKeys {
     }
     static func key(_ base: String) -> String {
         guard let scope else { return base }
-        return "\(base).profile.\(scope)"
+        let scoped = "\(base).profile.\(scope)"
+        #if os(tvOS)
+        if base == "vivid.mobile.swapMenuUtilities", !UserDefaults.standard.bool(forKey: scoped + ".migrated") {
+            if UserDefaults.standard.object(forKey: scoped) == nil,
+               let legacy = UserDefaults.standard.object(forKey: "vivid.tv.swapMenuUtilities") {
+                UserDefaults.standard.set(legacy, forKey: scoped)
+            }
+            UserDefaults.standard.set(true, forKey: scoped + ".migrated")
+        }
+        #endif
+        return scoped
     }
 }

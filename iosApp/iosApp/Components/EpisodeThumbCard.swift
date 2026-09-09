@@ -40,8 +40,15 @@ struct EpisodeThumbCard: View {
     @State private var favoriteOverride: Bool?
     @State private var uiCustomization = UICustomizationPreferences.shared
     @Environment(\.homeCardPresentation) private var homeCardPresentation
+    #if !os(tvOS)
+    @State private var mobileCardCaptions = TVHomeCardPreferences.shared
+    #endif
     private var resolvedPresentation: CardPresentationPreference {
-        homeCardPresentation ?? uiCustomization.cardPresentation
+        var value = homeCardPresentation ?? uiCustomization.cardPresentation
+        #if !os(tvOS)
+        value.caption = mobileCardCaptions.presentation.caption
+        #endif
+        return value
     }
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
     #if os(tvOS)
@@ -182,6 +189,7 @@ struct EpisodeThumbCard: View {
                         .font(.vividSubheadline)
                         .foregroundStyle(Color.vividOnSurface)
                         .lineLimit(1)
+                        .frame(width: cardWidth, alignment: .leading)
                 }
                 if resolvedPresentation.caption.showsMetadata,
                    let subtitle = subtitleLine {
@@ -189,6 +197,7 @@ struct EpisodeThumbCard: View {
                         .font(.vividCaption)
                         .foregroundColor(.vividSecondaryText)
                         .lineLimit(1)
+                        .frame(width: cardWidth, alignment: .leading)
                 }
             }
             .zoomTransitionSource(id: zoomInstanceID.uuidString, in: zoomNamespace)

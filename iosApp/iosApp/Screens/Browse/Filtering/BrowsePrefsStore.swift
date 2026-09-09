@@ -3,9 +3,8 @@ import Foundation
 /// Per-library, per-profile persistence of browse sort + filters, gated by a
 /// user-facing "Preserve sort & filters" toggle (default on). Mirrors the
 /// `TVLibraryScopeStore` pattern: `SharedDefaults`
-/// keyed by platform + server + profile + library, so a phone's filters
-/// never leak to the TV or to another profile, and an anonymous (no-profile)
-/// state is never persisted.
+/// keyed by server + profile + library on iOS and tvOS for iCloud sync.
+/// Other profiles and anonymous sessions remain isolated.
 struct BrowsePrefsStore {
     static let shared = BrowsePrefsStore()
 
@@ -79,7 +78,28 @@ struct BrowsePrefsStore {
         let serverId = ServerRegistry.shared.activeServerId ?? "default"
         let lib = libraryId.map(String.init) ?? "all"
         let scope = mediaScope.map { ".\($0)" } ?? ""
-        return "\(Self.platformPrefix).\(serverId).\(profileId).\(lib)\(scope)"
+        let key = "\(Self.platformPrefix).\(serverId).\(profileId).\(lib)\(scope)"
+        #if os(iOS) || os(tvOS)
+        #if os(tvOS)
+        let legacyPrefix = "tv.browsePrefs"
+        #else
+        let legacyPrefix = "ios.browsePrefs"
+        #endif
+        let legacy = "\(legacyPrefix).\(serverId).\(profileId).\(lib)\(scope)"
+        let marker = key + ".migrated"
+        if !defaults.bool(forKey: marker) {
+            if !defaults.containsObject(forKey: key + ".preserve"), defaults.containsObject(forKey: legacy + ".preserve") {
+                defaults.set(defaults.bool(forKey: legacy + ".preserve"), forKey: key + ".preserve")
+            }
+            if !defaults.containsObject(forKey: key + ".state"), let data = defaults.data(forKey: legacy + ".state") {
+                defaults.set(data, forKey: key + ".state")
+            }
+            defaults.removeObject(forKey: legacy + ".state")
+            defaults.removeObject(forKey: legacy + ".preserve")
+            defaults.set(true, forKey: marker)
+        }
+        #endif
+        return key
     }
 
     private func stateKey(libraryId: Int?, mediaScope: String? = nil) -> String? {
@@ -91,10 +111,8 @@ struct BrowsePrefsStore {
     }
 
     private static var platformPrefix: String {
-        #if os(tvOS)
-        "tv.browsePrefs"
-        #elseif os(iOS)
-        "ios.browsePrefs"
+        #if os(tvOS) || os(iOS)
+        "vivid.browsePrefs"
         #elseif os(macOS)
         "mac.browsePrefs"
         #else

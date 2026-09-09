@@ -478,7 +478,7 @@ private struct PhoneDiscoverySpotlight: View {
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: .infinity)
                                 .padding(.horizontal, 20)
-                                .padding(.bottom, 104)
+                                .padding(.bottom, 60)
                                 .foregroundStyle(.white)
                             }
                             .frame(maxWidth: .infinity)
@@ -513,7 +513,7 @@ private struct PhoneDiscoverySpotlight: View {
                     }
                     }
                     .animation(.easeInOut(duration: 0.4), value: selection)
-                    .padding(.bottom, 48)
+                    .padding(.bottom, 24)
                 }
             }
             .background(alignment: .top) {
@@ -579,18 +579,9 @@ private struct PhoneSpotlightArtworkSurface: View {
                         .scaleEffect(1.18)
                         .saturation(1.15)
                         .brightness(-0.12)
-                        .blur(radius: 36, opaque: true)
+                        .blur(radius: 48, opaque: true)
                         .overlay(tint.opacity(0.12))
                         .clipped()
-                }
-                .mask {
-                    LinearGradient(stops: (0...64).map { step in
-                        let position = CGFloat(step) / 64
-                        let y = position * (height + 360)
-                        let progress = min(1, max(0, (y - height + 65) / 195))
-                        let eased = progress * progress * progress * (progress * (progress * 6 - 15) + 10)
-                        return .init(color: .black.opacity(Double(eased)), location: position)
-                    }, startPoint: .top, endPoint: .bottom)
                 }
                 .allowsHitTesting(false)
             }
@@ -601,15 +592,15 @@ private struct PhoneSpotlightArtworkSurface: View {
                 isEnabled: true,
                 usesSubjectFraming: MediaServerProvider.active == .emby,
                 coordinateSpaceName: "phone-home-spotlight-scroll",
-                fadeStart: 0.84,
-                fadeMiddle: 0.95,
+                fadeStart: 0.64,
+                fadeMiddle: 0.84,
                 smoothFade: true
             )
             Canvas { context, size in
                 for x in stride(from: CGFloat.zero, to: size.width, by: 2) {
                     let fraction = x / max(1, size.width)
                     let wave = sin(fraction * .pi * 2 + 0.4) * 22 + sin(fraction * .pi * 3.1) * 10
-                    let start = height + 115 + wave
+                    let start = height + 25 + wave
                     let end = size.height - 4 - (wave + 32) * 0.35
                     let stops = (0...48).map { step -> Gradient.Stop in
                         let t = Double(step) / 48

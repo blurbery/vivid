@@ -16,6 +16,9 @@ final class TVTMDbStore {
     private(set) var revision = 0
     private let keychain = SharedKeychain(audience: .currentUser)
     private var credentialKey: String {
+        VividCloudPreferences.activeCredentialKey("tmdb") ?? legacyCredentialKey
+    }
+    private var legacyCredentialKey: String {
         #if os(iOS)
         MobileProfilePreferenceKeys.key("vivid.tmdb.credential.v1")
         #else
@@ -50,7 +53,7 @@ final class TVTMDbStore {
         reloadForCurrentProfile()
     }
 
-    func reloadForCurrentProfile() {
+    func reloadForCurrentProfile(force: Bool = false) {
         #if os(iOS)
         guard MobileProfilePreferenceKeys.scope != nil else {
             credential = ""
@@ -61,7 +64,10 @@ final class TVTMDbStore {
         }
         #endif
         let key = credentialKey
-        guard loadedCredentialKey != key else { return }
+        guard force || loadedCredentialKey != key else { return }
+        if key != legacyCredentialKey, keychain.get(key) == nil, let legacy = keychain.get(legacyCredentialKey) {
+            if keychain.set(legacy, for: key) { _ = keychain.delete(legacyCredentialKey) }
+        }
         #if os(iOS)
         let legacyKey = "vivid.tmdb.credential.v1"
         let ownerKey = "vivid.tmdb.legacyOwner"
@@ -94,6 +100,7 @@ final class TVTMDbStore {
         credential = candidate
         isConfigured = true
         invalidate()
+        VividCloudPreferences.shared.schedule()
     }
 
     func disconnect() throws {
@@ -102,6 +109,7 @@ final class TVTMDbStore {
         credential = ""
         isConfigured = false
         invalidate()
+        VividCloudPreferences.shared.schedule()
     }
 
     private func invalidate() {

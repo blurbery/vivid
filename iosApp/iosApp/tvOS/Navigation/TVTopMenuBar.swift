@@ -124,7 +124,7 @@ enum TVRootDestination: Hashable {
 /// it floats over each page's own scrim and dims to 70% while focus is
 /// down in the content zone.
 struct TVTopMenuBar: View {
-    @AppStorage("vivid.tv.swapMenuUtilities") private var utilitiesSwapped = false
+    @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.swapMenuUtilities")) private var utilitiesSwapped = false
     let roots: [TVRootDestination]
     let selectedRoot: TVRootDestination
     let currentProfile: UserProfile?

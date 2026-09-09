@@ -109,8 +109,15 @@ struct MediaCard: View {
     @State private var watchlistOverride: Bool?
     @State private var uiCustomization = UICustomizationPreferences.shared
     @Environment(\.homeCardPresentation) private var homeCardPresentation
+    #if !os(tvOS)
+    @State private var mobileCardCaptions = TVHomeCardPreferences.shared
+    #endif
     private var resolvedPresentation: CardPresentationPreference {
-        homeCardPresentation ?? uiCustomization.cardPresentation
+        var value = homeCardPresentation ?? uiCustomization.cardPresentation
+        #if !os(tvOS)
+        value.caption = mobileCardCaptions.presentation.caption
+        #endif
+        return value
     }
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
     /// iOS 26 zoom transition namespace, shared from `MainTabView`. When
@@ -425,10 +432,9 @@ struct MediaCard: View {
         Text(title)
             .font(titleFont)
             .foregroundColor(.vividOnSurface)
-            // Reserve 2 lines of space so single- and multi-line titles
-            // produce the same overall card height — keeps posters in a
-            // row top-aligned when titles wrap.
-            .lineLimit(2, reservesSpace: true)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+            .frame(width: cardWidth, alignment: .leading)
     }
 
     @ViewBuilder
