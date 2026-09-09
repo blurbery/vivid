@@ -1599,8 +1599,12 @@ class PlayerViewModel {
                         subtitleMode: protocolV3.plan.subtitle.mode,
                         isEmbedded: protocolV3.plan.subtitle.embedded != nil
                     ) {
-                    case .renderLocally(let trackId): self.pendingSidecarSubtitleTrackId = trackId
-                    case .serverRendered(let trackId): self.pendingServerRenderedSubtitleTrackId = trackId
+                    case .renderLocally(let trackId):
+                        self.pendingSidecarSubtitleTrackId = trackId
+                        self.pendingServerRenderedSubtitleTrackId = nil
+                    case .serverRendered(let trackId):
+                        self.pendingSidecarSubtitleTrackId = nil
+                        self.pendingServerRenderedSubtitleTrackId = trackId
                     case nil: break
                     }
                 }
