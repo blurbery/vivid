@@ -93,6 +93,8 @@ Vivid supports the following audio formats. On Apple TV, audio playback is suppo
 
 DTS-family and TrueHD playback uses local decoding to PCM. For these formats, source playback does not imply bitstream passthrough or preservation of DTS:X or TrueHD Atmos object metadata. Surround output depends on the audio route.
 
+E-AC-3/JOC Atmos playback support does not imply independently verified end-to-end bitstream passthrough or Atmos-object preservation.
+
 ## Picture and container support
 
 <table width="100%">
