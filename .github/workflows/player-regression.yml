@@ -134,6 +134,8 @@ jobs:
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryRequiresClockMovementAndTimesOut \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryCancelsForPauseOrSupersededPlaybackBeforeAcceptingProgress \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryIsBoundedAndRearmsAfterQuietPeriod \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testClockStallRequiresSixSecondsAndFiresOnce \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testClockStallIgnoresProgressAndResetsWhenIneligible \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 \
             -resultBundlePath /tmp/player-validation.xcresult \

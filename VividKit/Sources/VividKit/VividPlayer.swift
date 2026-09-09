@@ -43,6 +43,7 @@ public final class VividPlayer: ObservableObject {
     private var audioOutputObservers: [NSObjectProtocol] = []
     private var audioRecoveryTask: Task<Void, Never>?
     private var audioRecoveryBudget = VividAudioRecoveryBudget()
+    private var clockStall = VividClockStallDetector()
     #endif
     private var audioOnly = false
     private var softwareAudio = false
@@ -134,6 +135,9 @@ public final class VividPlayer: ObservableObject {
 
     public func play() { wantsPlayback = true; poll() }
     public func pause() {
+        #if os(tvOS)
+        clockStall = VividClockStallDetector()
+        #endif
         wantsPlayback = false
         synchronizer.rate = 0
         if state != .idle && state != .failed && state != .ended { state = .paused }
@@ -147,6 +151,9 @@ public final class VividPlayer: ObservableObject {
         guard let session else { return }
         guard seconds.isFinite, seconds >= 0 else { throw VividPlaybackError.invalidSource }
         let target = duration > 0 ? min(seconds, duration) : seconds
+        #if os(tvOS)
+        clockStall = VividClockStallDetector()
+        #endif
         seekGeneration &+= 1
         let epoch = seekGeneration
         let loadEpoch = generation
@@ -188,6 +195,7 @@ public final class VividPlayer: ObservableObject {
         #if os(tvOS)
         audioRecoveryTask?.cancel(); audioRecoveryTask = nil
         audioRecoveryBudget = VividAudioRecoveryBudget()
+        clockStall = VividClockStallDetector()
         displayFormatDescription = nil
         hasStartedPlayback = false
         #endif
@@ -220,7 +228,7 @@ public final class VividPlayer: ObservableObject {
     }
 
     #if os(tvOS)
-    private func recoverAudioOutput() {
+    private func recoverAudioOutput(replayFirst: Bool = true) {
         guard let session, audioRecoveryTask == nil,
               state != .idle, state != .failed, state != .ended,
               session.snapshot().started else { return }
@@ -230,7 +238,7 @@ public final class VividPlayer: ObservableObject {
             return
         }
         let position = synchronizer.currentTime().seconds
-        let replayed = session.recoverAudioOutput()
+        let replayed = replayFirst && session.recoverAudioOutput()
         if replayed {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
@@ -384,6 +392,19 @@ public final class VividPlayer: ObservableObject {
             #endif
             state = .playing
         }
+        #if os(tvOS)
+        if clockStall.observe(time: now, uptime: ProcessInfo.processInfo.systemUptime,
+            eligible: state == .playing && wantsPlayback && snapshot.started
+                && !snapshot.finished && !audioOnly && selectedAudioTrack != nil
+                && decodedAhead >= 0.08 && bufferedAhead >= 1 && audioRecoveryTask == nil) {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                print("[VividTVProbe] audioOutputRecovery clockStall position=\(now)")
+            }
+            #endif
+            recoverAudioOutput(replayFirst: false)
+        }
+        #endif
     }
 
     deinit {
@@ -392,6 +413,28 @@ public final class VividPlayer: ObservableObject {
         audioRecoveryTask?.cancel()
         audioOutputObservers.forEach(NotificationCenter.default.removeObserver)
         #endif
+    }
+}
+
+struct VividClockStallDetector {
+    private var position: Double?
+    private var lastProgress: TimeInterval = 0
+    private var fired = false
+
+    mutating func observe(time: Double, uptime: TimeInterval, eligible: Bool) -> Bool {
+        guard eligible, time.isFinite, uptime.isFinite else {
+            self = Self()
+            return false
+        }
+        guard let position, abs(time - position) < 0.001, uptime >= lastProgress else {
+            self.position = time
+            lastProgress = uptime
+            fired = false
+            return false
+        }
+        guard !fired, uptime - lastProgress >= 6 else { return false }
+        fired = true
+        return true
     }
 }
 

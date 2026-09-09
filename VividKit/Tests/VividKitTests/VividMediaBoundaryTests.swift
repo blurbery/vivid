@@ -6,6 +6,29 @@ import XCTest
 @testable import VividKit
 
 final class VividMediaBoundaryTests: XCTestCase {
+    func testClockStallRequiresSixSecondsAndFiresOnce() {
+        var detector = VividClockStallDetector()
+        XCTAssertFalse(detector.observe(time: 0, uptime: 0, eligible: true))
+        XCTAssertFalse(detector.observe(time: 0, uptime: 5.99, eligible: true))
+        XCTAssertTrue(detector.observe(time: 0, uptime: 6, eligible: true))
+        XCTAssertFalse(detector.observe(time: 0, uptime: 60, eligible: true))
+    }
+
+    func testClockStallIgnoresProgressAndResetsWhenIneligible() {
+        var detector = VividClockStallDetector()
+        for second in 0..<20 {
+            XCTAssertFalse(detector.observe(time: Double(second), uptime: Double(second), eligible: true))
+        }
+        XCTAssertFalse(detector.observe(time: 19, uptime: 24, eligible: false))
+        XCTAssertFalse(detector.observe(time: 19, uptime: 30, eligible: true))
+        XCTAssertFalse(detector.observe(time: 19, uptime: 35, eligible: true))
+        XCTAssertTrue(detector.observe(time: 19, uptime: 36, eligible: true))
+        detector = VividClockStallDetector()
+        XCTAssertFalse(detector.observe(time: 0, uptime: 40, eligible: true))
+        XCTAssertFalse(detector.observe(time: .nan, uptime: 46, eligible: true))
+        XCTAssertFalse(detector.observe(time: 0, uptime: 47, eligible: true))
+    }
+
     func testAudioRecoveryRequiresClockMovementAndTimesOut() {
         for elapsed in [0.0, 2, 5.99] {
             XCTAssertEqual(VividAudioRecoveryProgress.evaluate(position: 493.442294,
