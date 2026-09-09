@@ -9,18 +9,19 @@ VividKit is Vivid’s player engine core. It handles media reads, demuxing, deco
 
 ## Audio support
 
-Vivid supports TrueHD 7.1 playback through HomePod (2nd generation) speakers connected to Apple TV, using Silo or Emby.
+Vivid supports the following audio formats, including DTS, DTS:X and TrueHD 7.1 playback through HomePod (2nd generation) speakers connected to Apple TV.
 
 <table width="100%">
   <thead><tr><th align="left">Format</th><th align="left" width="10000">Playback</th></tr></thead>
   <tbody>
-    <tr><td>TrueHD 7.1</td><td>Supported through HomePod (2nd generation) speakers on Apple TV. Locally decoded to PCM, with direct source delivery from Silo and Emby.</td></tr>
-    <tr><td>E-AC-3</td><td>Native compressed-audio rendering on compatible Apple audio routes.</td></tr>
-    <tr><td>DTS</td><td>Local decoding to PCM.</td></tr>
+    <tr><td>DTS</td><td>Supported, including playback through HomePod (2nd generation).</td></tr>
+    <tr><td>DTS:X</td><td>Supported source playback, including through HomePod (2nd generation).</td></tr>
+    <tr><td>TrueHD 7.1</td><td>Supported, including playback through HomePod (2nd generation).</td></tr>
+    <tr><td>E-AC-3</td><td>Supported on compatible Apple audio routes.</td></tr>
   </tbody>
 </table>
 
-Source channel counts describe the input track. Final channel output depends on the Apple audio route. TrueHD playback is not TrueHD bitstream passthrough; Atmos and DTS:X object preservation are not claimed.
+DTS-family and TrueHD playback uses local decoding to PCM. Surround output depends on the audio route; bitstream passthrough and Atmos/DTS:X object preservation are not implied.
 
 ## Picture and container support
 
