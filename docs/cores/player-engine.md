@@ -17,6 +17,7 @@ Vivid supports the following audio formats, including DTS, DTS:X and TrueHD 7.1 
     <tr><td>DTS 5.1</td><td>Supported playback through HomePod (2nd generation).</td></tr>
     <tr><td>DTS:X 7.1</td><td>Supported playback through HomePod (2nd generation).</td></tr>
     <tr><td>TrueHD 7.1</td><td>Supported through HomePod (2nd generation).</td></tr>
+    <tr><td>Opus 5.1 / 7.1</td><td>Supported playback through HomePod (2nd generation).</td></tr>
     <tr><td>E-AC-3<br><sub>Dolby Digital Plus</sub></td><td>Dolby Atmos playback from Atmos-enabled sources on compatible audio routes.</td></tr>
   </tbody>
 </table>
@@ -29,6 +30,7 @@ DTS-family and TrueHD playback uses local decoding to PCM. For these formats, so
   <thead><tr><th align="left" width="25%">Format</th><th align="left" width="75%">Playback</th></tr></thead>
   <tbody>
     <tr><td>4K HEVC</td><td>Hardware-first video decoding.</td></tr>
+    <tr><td>AV1</td><td>1080p playback supported.</td></tr>
     <tr><td>Dolby Vision</td><td>Compatible Dolby Vision sources, subject to profile and display support. Not all profiles or enhancement layers are supported.</td></tr>
     <tr><td>MKV</td><td>Direct-file playback with local demuxing and decoding.</td></tr>
   </tbody>
