@@ -575,6 +575,7 @@ class PlayerViewModel {
     /// credential recovery from racing route replans, seeks, or track changes.
     private var protocolV3ReplanTask: Task<Void, Never>?
     private var authenticationRecoveryBudget = VividAuthenticationRecoveryBudget()
+    private var transientRecoveryBudget = VividTransientRecoveryBudget()
     private var authenticationReloadGeneration: UInt64?
     private var nextUpLookupTask: Task<Void, Never>?
     private var nextUpOnDeckTask: Task<Void, Never>?
@@ -1207,6 +1208,15 @@ class PlayerViewModel {
         if attemptProtocolV3AuthenticationReload(after: failure) {
             return
         }
+        if let code = failure.transientSourceCode,
+           vividPlaybackController.activeSpec?.options.nativeRemoteHLS == false,
+           beginProtocolV3SameRouteReload(
+               fallbackClassification: failure.kind.rawValue,
+               fallbackMessage: failure.message,
+               transientFailureCode: code
+           ) {
+            return
+        }
         let serverCanAdapt: Set<PlaybackErrorKind> = [
             .sourceRefused,
             .vodSourceFailed,
@@ -1375,7 +1385,7 @@ class PlayerViewModel {
         guard VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(failure) else {
             return false
         }
-        return beginProtocolV3AuthenticationReload(
+        return beginProtocolV3SameRouteReload(
             fallbackClassification: failure.kind.rawValue,
             fallbackMessage: failure.message
         )
@@ -1421,7 +1431,7 @@ class PlayerViewModel {
             return
         }
 
-        _ = beginProtocolV3AuthenticationReload(
+        _ = beginProtocolV3SameRouteReload(
             fallbackClassification: "authorization_rotated",
             fallbackMessage: "Playback authorization changed while media was active.",
             refreshedStreamRequest: streamRequest
@@ -1429,10 +1439,11 @@ class PlayerViewModel {
     }
 
     @discardableResult
-    private func beginProtocolV3AuthenticationReload(
+    private func beginProtocolV3SameRouteReload(
         fallbackClassification: String,
         fallbackMessage: String,
-        refreshedStreamRequest: StreamRequest? = nil
+        refreshedStreamRequest: StreamRequest? = nil,
+        transientFailureCode: Int? = nil
     ) -> Bool {
         guard protocolV3ReplanTask == nil,
               let protocolV3 = activePreparedProtocolV3,
@@ -1461,7 +1472,10 @@ class PlayerViewModel {
         let resumePosition = currentTime.isFinite ? max(0, currentTime) : 0
         let failedHeaders = failedSpec.options.httpHeaders
         let recoveryEpisode = freshLoadGeneration
-        guard refreshedStreamRequest != nil || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
+        if transientFailureCode != nil {
+            guard transientRecoveryBudget.beginReload() else { return false }
+        }
+        guard transientFailureCode != nil || refreshedStreamRequest != nil || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
             progressTask?.cancel()
             finalizeTerminalPlaybackError(fallbackMessage)
             return true
@@ -1477,7 +1491,9 @@ class PlayerViewModel {
         let recoveryGeneration = streamLoadGeneration
         authenticationReloadGeneration = recoveryGeneration
 
-        if refreshedStreamRequest == nil {
+        if let code = transientFailureCode {
+            Self.logger.warning("Stream recovery domain=NSURLErrorDomain code=\(code, privacy: .public) outcome=same_route_reload")
+        } else if refreshedStreamRequest == nil {
             Self.logger.warning(
                 "Protocol V3 media credential expired; refreshing and reloading plan \(planId, privacy: .public) at source position \(resumePosition, privacy: .public)"
             )
@@ -1527,7 +1543,7 @@ class PlayerViewModel {
             }
 
             do {
-                if refreshedStreamRequest == nil {
+                if refreshedStreamRequest == nil && transientFailureCode == nil {
                     // This request uses the normal API transport, whose 401 path
                     // refreshes TokenStore before retrying. Its result is otherwise
                     // best-effort; the header comparison below is authoritative.
@@ -1571,7 +1587,7 @@ class PlayerViewModel {
                     streamRequest = resolved
                 }
                 try self.requireCurrentStreamLoad(recoveryGeneration)
-                guard VividAuthenticationRecoveryPolicy.shouldReload(
+                guard transientFailureCode != nil || VividAuthenticationRecoveryPolicy.shouldReload(
                     failedHeaders: failedHeaders,
                     refreshedHeaders: streamRequest.headers
                 ) else {
@@ -1624,29 +1640,33 @@ class PlayerViewModel {
                 self.applySecondarySubtitleTrackSelection(self.selectedSecondarySubtitleId)
                 self.markProtocolV3VividLoadCommitted()
                 if refreshedStreamRequest == nil {
-                    try await self.confirmAuthenticationRecovery(generation: recoveryGeneration)
-                    self.authenticationRecoveryBudget.recovered(generation: recoveryEpisode)
+                    try await self.confirmAuthenticationRecovery(generation: recoveryGeneration,
+                        transientRecovery: transientFailureCode != nil)
+                    if transientFailureCode == nil {
+                        self.authenticationRecoveryBudget.recovered(generation: recoveryEpisode)
+                    }
                 }
                 shouldFallbackToReplan = false
                 Self.logger.info(
-                    "Protocol V3 media credential reload succeeded for plan \(planId, privacy: .public)"
+                    "Stream recovery outcome=recovered"
                 )
             } catch is CancellationError {
                 shouldFallbackToReplan = false
+                Self.logger.info("Stream recovery outcome=cancelled")
             } catch {
                 let failure = VividAuthenticationRecoveryPolicy.finalFailure(error)
                 finalClassification = VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(failure)
                     ? "authentication" : failure.kind.rawValue
                 finalMessage = failure.message
                 Self.logger.error(
-                    "Protocol V3 media credential reload failed; using bounded route recovery: \(MediaLogRedactor.sanitize(error), privacy: .public)"
+                    "Stream recovery outcome=failed classification=\(finalClassification, privacy: .public) code=\(failure.underlyingCode ?? 0, privacy: .public)"
                 )
             }
         }
         return true
     }
 
-    private func confirmAuthenticationRecovery(generation: UInt64) async throws {
+    private func confirmAuthenticationRecovery(generation: UInt64, transientRecovery: Bool = false) async throws {
         let engine = vividPlaybackController.engine
         let deadline = ProcessInfo.processInfo.systemUptime + 12
         var readiness = VividAuthenticationRecoveryReadiness()
@@ -1664,7 +1684,7 @@ class PlayerViewModel {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         throw PlaybackErrorInfo(kind: .vodSourceFailed,
-            message: "Playback did not resume after renewing authentication.",
+            message: transientRecovery ? "Playback did not resume after reconnecting the media source." : "Playback did not resume after renewing authentication.",
             underlyingDomain: NSURLErrorDomain, underlyingCode: NSURLErrorTimedOut)
     }
 
@@ -2742,6 +2762,7 @@ class PlayerViewModel {
         isLoadingSubtitles = false
         bufferingProgress = nil
         scrubPreviewProvider.endSession()
+        vividPlaybackController.engine.transientRecoveryBudget = transientRecoveryBudget
         let loadEpoch = vividPlaybackController.beginLoad(
             spec,
             shouldPlayWhenReady: shouldPlayWhenReady
@@ -3704,6 +3725,8 @@ class PlayerViewModel {
         protocolV3ReplanTask?.cancel()
         protocolV3ReplanTask = nil
         freshLoadGeneration &+= 1
+        transientRecoveryBudget.cancel()
+        transientRecoveryBudget = VividTransientRecoveryBudget()
         let currentFreshLoadGeneration = freshLoadGeneration
         streamLoadGeneration &+= 1
         let currentStreamLoadGeneration = streamLoadGeneration
@@ -5428,6 +5451,7 @@ class PlayerViewModel {
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
         isDisposed = true
+        transientRecoveryBudget.cancel()
         #if os(iOS)
         // A restore waiting on a cover that will now never mount has to be
         // answered, or AVKit is left holding a handler for a dead session.
@@ -5613,6 +5637,7 @@ class PlayerViewModel {
         MainActor.assumeIsolated {
             Self.logger.info("PlayerViewModel.deinit")
             isDisposed = true
+            transientRecoveryBudget.cancel()
             if let systemCaptionObserverToken {
                 NotificationCenter.default.removeObserver(systemCaptionObserverToken)
             }

@@ -261,6 +261,21 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         ))
     }
 
+    func testTransientRecoveryRequiresRecognisedSourceDomainAndCode() {
+        XCTAssertEqual(PlaybackErrorInfo(kind: .sourceRefused, message: "read failed",
+            underlyingDomain: NSURLErrorDomain, underlyingCode: NSURLErrorTimedOut).transientSourceCode,
+            NSURLErrorTimedOut)
+        for failure in [
+            PlaybackErrorInfo(kind: .sourceRefused, message: "auth", underlyingDomain: NSURLErrorDomain, underlyingCode: 401),
+            PlaybackErrorInfo(kind: .sourceRefused, message: "unrelated", underlyingDomain: "Decoder", underlyingCode: 503),
+            PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "decoder", underlyingDomain: NSURLErrorDomain, underlyingCode: 503),
+            PlaybackErrorInfo(kind: .sourceRefused, message: "unknown", underlyingCode: 503),
+            PlaybackErrorInfo(kind: .sourceRateLimited, message: "limited", underlyingDomain: NSURLErrorDomain, underlyingCode: 429)
+        ] {
+            XCTAssertNil(failure.transientSourceCode)
+        }
+    }
+
     func testExpiredBearerRecoveryRejectsNonAuthenticationFailures() {
         XCTAssertFalse(PlaybackErrorInfo.isHTTPAuthenticationFailure(
             NSError(domain: "UnrelatedDecoder", code: 401)

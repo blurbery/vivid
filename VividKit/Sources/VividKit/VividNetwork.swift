@@ -5,9 +5,11 @@ import CVividMedia
 public struct VividSource: Sendable {
     public let url: URL
     public let headers: [String: String]
-    public init(url: URL, headers: [String: String] = [:]) {
+    public let recoveryBudget: VividTransientRecoveryBudget?
+    public init(url: URL, headers: [String: String] = [:], recoveryBudget: VividTransientRecoveryBudget? = nil) {
         self.url = url
         self.headers = headers
+        self.recoveryBudget = recoveryBudget
     }
 }
 
@@ -24,7 +26,7 @@ public enum VividPlaybackError: Error, Equatable {
     case renderer(Int)
 
     static func demuxReadFailure(_ code: Int32, sourceFailure: VividPlaybackError?) -> VividPlaybackError {
-        if sourceFailure == .network(401) { return .network(401) }
+        if let sourceFailure { return sourceFailure }
         return .media(code)
     }
 }
@@ -137,14 +139,21 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
             if let failure {
                 let retryable: Bool
                 if case let .network(code) = failure {
-                    retryable = [500, 502, 503, 504, NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost,
-                                 NSURLErrorCannotConnectToHost, NSURLErrorDNSLookupFailed,
-                                 NSURLErrorNotConnectedToInternet].contains(code)
+                    retryable = VividTransientRecoveryBudget.recognises(code)
                 } else { retryable = false }
                 let now = ProcessInfo.processInfo.systemUptime
                 recoveryTimes.removeAll { now - $0 >= 60 }
-                guard retryable, recoveryTimes.count < 2 else { return -5 }
+                guard retryable else { return -5 }
+                if let budget = source.recoveryBudget {
+                    guard budget.beginNetworkRetry() else {
+                        traceRecovery(failure, outcome: "network_budget_exhausted")
+                        return -5
+                    }
+                } else {
+                    guard recoveryTimes.count < 2 else { return -5 }
+                }
                 recoveryTimes.append(now)
+                traceRecovery(failure, outcome: "network_retry")
                 self.failure = nil
                 task?.cancel()
                 startRequest()
@@ -187,6 +196,14 @@ final class VividNetwork: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         }
         position = target
         return target
+    }
+
+    private func traceRecovery(_ failure: VividPlaybackError, outcome: String) {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-VividTVProbe"), case .network(let code) = failure {
+            print("[VividTVProbe] streamRecovery domain=\(code > 0 ? "HTTP" : "NSURLErrorDomain") code=\(code) outcome=\(outcome)")
+        }
+        #endif
     }
 
     private func startRequest() {

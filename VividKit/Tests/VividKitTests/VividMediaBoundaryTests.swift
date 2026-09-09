@@ -51,11 +51,11 @@ final class VividMediaBoundaryTests: XCTestCase {
         }
     }
 
-    func testDemuxReadPreservesHTTP401WithoutChangingOtherFailures() {
-        XCTAssertEqual(VividPlaybackError.demuxReadFailure(-5, sourceFailure: .network(401)), .network(401))
-        for source: VividPlaybackError? in [nil, .network(403), .network(500), .network(NSURLErrorTimedOut), .invalidRange] {
-            XCTAssertEqual(VividPlaybackError.demuxReadFailure(-5, sourceFailure: source), .media(-5))
+    func testDemuxReadPreservesSourceFailureWithoutInventingOne() {
+        for source: VividPlaybackError in [.network(401), .network(403), .network(500), .network(NSURLErrorTimedOut), .invalidRange] {
+            XCTAssertEqual(VividPlaybackError.demuxReadFailure(-5, sourceFailure: source), source)
         }
+        XCTAssertEqual(VividPlaybackError.demuxReadFailure(-5, sourceFailure: nil), .media(-5))
     }
 
     func testAudioReplayRetainsOnlyUnplayedSamplesAndClearsOnSeek() throws {

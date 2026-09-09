@@ -20,6 +20,12 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
     var underlyingCode: Int? = nil
     var errorDescription: String? { message }
 
+    var transientSourceCode: Int? {
+        guard kind == .sourceRefused, underlyingDomain == NSURLErrorDomain,
+              let code = underlyingCode, VividTransientRecoveryBudget.recognises(code) else { return nil }
+        return code
+    }
+
     static func isHTTPAuthenticationFailure(_ error: Error, depth: Int = 0) -> Bool {
         guard depth < 8 else { return false }
         if let typed = error as? VividPlaybackError { return typed == .network(401) }

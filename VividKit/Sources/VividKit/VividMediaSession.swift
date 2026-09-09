@@ -268,7 +268,7 @@ final class VividMediaSession: @unchecked Sendable {
                 let result = av_read_frame(format, pointer)
                 if result < 0 {
                     let sourceFailure = source.lastFailure
-                    if result == vv_eof(), sourceFailure != .network(401) { break }
+                    if result == vv_eof(), sourceFailure == nil { break }
                     if !shouldStop(epoch) {
                         fail(VividPlaybackError.demuxReadFailure(result, sourceFailure: sourceFailure))
                     }

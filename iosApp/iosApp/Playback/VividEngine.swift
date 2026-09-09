@@ -83,6 +83,7 @@ final class VividEngine: ObservableObject {
     private var routeObserver: NSObjectProtocol?
     private var source: URL?
     private var options = LoadOptions()
+    var transientRecoveryBudget: VividTransientRecoveryBudget?
     private var generation: UInt64 = 0
     private var transportRate: Float = 1
     private var wantsPlayback = false
@@ -203,7 +204,8 @@ final class VividEngine: ObservableObject {
                 softwarePiPSource = options.audioOnly ? nil : SampleBufferPiPSource(layer: player.displayLayer, engine: self)
                 player.bufferAheadTarget = min(40, max(2, Double(options.forwardBufferSegments ?? 10) * 2))
                 do {
-                    try await player.load(VividSource(url: url, headers: options.httpHeaders), at: startPosition,
+                    try await player.load(VividSource(url: url, headers: options.httpHeaders,
+                        recoveryBudget: transientRecoveryBudget), at: startPosition,
                     autoplay: wantsPlayback, audioTrack: audioSourceStreamIndex.map(Int.init),
                     audioTrackOrdinal: options.audioTrackOrdinal, audioOnly: options.audioOnly,
                     preferredAudioLanguages: options.preferredAudioLanguages)
