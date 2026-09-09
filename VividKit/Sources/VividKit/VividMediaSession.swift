@@ -67,6 +67,11 @@ final class VividMediaSession: @unchecked Sendable {
     }
     #endif
 
+    func audioRecoveryState() -> (end: Double?, finished: Bool) {
+        condition.lock(); defer { condition.unlock() }
+        return (audioEnd, audioIndex == nil || audioDone)
+    }
+
     func hdmiAudioState() -> (end: Double?, finished: Bool) {
         condition.lock(); defer { condition.unlock() }
         return (audioEnd, audioIndex == nil || audioDone)

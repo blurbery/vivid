@@ -43,6 +43,7 @@ public final class VividPlayer: ObservableObject {
     private var audioOutputObservers: [NSObjectProtocol] = []
     private var audioRecoveryTask: Task<Void, Never>?
     private var audioRecoveryBudget = VividAudioRecoveryBudget()
+    private var airPlayRecovery = VividAirPlayRecovery()
     private var clockStall = VividClockStallDetector()
     private var hdmiAudio = VividHDMIAudioCore()
     private var hdmiRouteActive = false
@@ -204,6 +205,7 @@ public final class VividPlayer: ObservableObject {
         #if os(tvOS)
         audioRecoveryTask?.cancel(); audioRecoveryTask = nil
         audioRecoveryBudget = VividAudioRecoveryBudget()
+        airPlayRecovery = VividAirPlayRecovery()
         hdmiAudio = VividHDMIAudioCore()
         hdmiRouteActive = false
         clockStall = VividClockStallDetector()
@@ -240,9 +242,14 @@ public final class VividPlayer: ObservableObject {
 
     #if os(tvOS)
     private func recoverAudioOutput(replayFirst: Bool = true) {
-        guard let session, audioRecoveryTask == nil,
-              state != .idle, state != .failed, state != .ended,
-              session.snapshot().started else { return }
+        guard let session, state != .idle, state != .failed, state != .ended else { return }
+        let isAirPlay = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
+        if audioRecoveryTask != nil {
+            if isAirPlay && replayFirst { airPlayRecovery.recordFlush() }
+            return
+        }
+        guard session.snapshot().started else { return }
+        airPlayRecovery = VividAirPlayRecovery()
         guard audioRecoveryBudget.consume(at: ProcessInfo.processInfo.systemUptime) else {
             error = .renderer(-11819); state = .failed
             synchronizer.rate = 0; session.cancel(); timer?.invalidate()
@@ -262,10 +269,15 @@ public final class VividPlayer: ObservableObject {
         var expectedSeek = seekGeneration
         audioRecoveryTask = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled, self.generation == epoch else { return }
-            defer { if self.generation == epoch { self.audioRecoveryTask = nil } }
+            defer {
+                if self.generation == epoch {
+                    self.audioRecoveryTask = nil
+                    self.airPlayRecovery = VividAirPlayRecovery()
+                }
+            }
             do {
                 if replayed, try await self.confirmAudioRecovery(
-                    from: position, generation: epoch, seek: expectedSeek
+                    from: position, generation: epoch, seek: expectedSeek, airPlay: isAirPlay
                 ) { return }
                 guard !Task.isCancelled, self.generation == epoch,
                       self.seekGeneration == expectedSeek, self.wantsPlayback else { return }
@@ -274,7 +286,7 @@ public final class VividPlayer: ObservableObject {
                 // refills the lost audio from the same source/track/position.
                 try await self.seek(to: position)
                 guard try await self.confirmAudioRecovery(
-                    from: position, generation: epoch, seek: expectedSeek
+                    from: position, generation: epoch, seek: expectedSeek, airPlay: isAirPlay
                 ) else { throw VividPlaybackError.renderer(-11819) }
                 #if DEBUG
                 if self.generation == epoch, ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
@@ -296,9 +308,29 @@ public final class VividPlayer: ObservableObject {
     }
 
     private func confirmAudioRecovery(from position: Double, generation epoch: UInt64,
-                                      seek expectedSeek: UInt64) async throws -> Bool {
+                                      seek expectedSeek: UInt64, airPlay: Bool) async throws -> Bool {
         let started = ProcessInfo.processInfo.systemUptime
+        var audioBaseline = session?.audioRecoveryState().end ?? position
         while true {
+            if airPlay {
+                guard !Task.isCancelled, generation == epoch, seekGeneration == expectedSeek,
+                      wantsPlayback, state != .ended, state != .idle,
+                      AVAudioSession.sharedInstance().currentRoute.outputs.contains(where: { $0.portType == .airPlay })
+                else { throw CancellationError() }
+                if let error { throw error }
+                if airPlayRecovery.takeFlush() {
+                    guard audioRecoveryBudget.consume(at: ProcessInfo.processInfo.systemUptime) else {
+                        throw VividPlaybackError.renderer(-11819)
+                    }
+                    guard let session, session.recoverAudioOutput() else { return false }
+                    audioBaseline = session.audioRecoveryState().end ?? synchronizer.currentTime().seconds
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                        print("[VividTVProbe] audioOutputRecovery AirPlay replayed pending flush")
+                    }
+                    #endif
+                }
+            }
             let decision = VividAudioRecoveryProgress.evaluate(
                 position: position, currentTime: synchronizer.currentTime().seconds,
                 elapsed: ProcessInfo.processInfo.systemUptime - started,
@@ -307,7 +339,19 @@ public final class VividPlayer: ObservableObject {
             )
             switch decision {
             case .cancelled: throw CancellationError()
-            case .recovered: return true
+            case .recovered:
+                if !airPlay { return true }
+                let audio = session?.audioRecoveryState()
+                if VividAirPlayRecovery.audioAdvanced(from: audioBaseline, end: audio?.end,
+                    clock: synchronizer.currentTime().seconds, finished: audio?.finished ?? false) {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                        print("[VividTVProbe] audioOutputRecovery AirPlay confirmed audio progress")
+                    }
+                    #endif
+                    return true
+                }
+                if ProcessInfo.processInfo.systemUptime - started >= 6 { return false }
             case .timedOut: return false
             case .waiting: break
             }
