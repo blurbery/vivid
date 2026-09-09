@@ -131,6 +131,9 @@ jobs:
             -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
             -only-testing:VividTests \
             -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testDemuxReadPreservesHTTP401WithoutChangingOtherFailures \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryRequiresClockMovementAndTimesOut \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryCancelsForPauseOrSupersededPlaybackBeforeAcceptingProgress \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryIsBoundedAndRearmsAfterQuietPeriod \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 \
             -resultBundlePath /tmp/player-validation.xcresult \

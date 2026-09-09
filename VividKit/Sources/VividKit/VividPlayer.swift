@@ -229,33 +229,71 @@ public final class VividPlayer: ObservableObject {
             synchronizer.rate = 0; session.cancel(); timer?.invalidate()
             return
         }
-        if session.recoverAudioOutput() {
+        let position = synchronizer.currentTime().seconds
+        let replayed = session.recoverAudioOutput()
+        if replayed {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
                 print("[VividTVProbe] audioOutputRecovery replayed audio without seeking")
             }
             #endif
-            return
         }
+        guard wantsPlayback else { return }
         let epoch = generation
-        let position = currentTime
+        var expectedSeek = seekGeneration
         audioRecoveryTask = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled, self.generation == epoch else { return }
             defer { if self.generation == epoch { self.audioRecoveryTask = nil } }
             do {
+                if replayed, try await self.confirmAudioRecovery(
+                    from: position, generation: epoch, seek: expectedSeek
+                ) { return }
+                guard !Task.isCancelled, self.generation == epoch,
+                      self.seekGeneration == expectedSeek, self.wantsPlayback else { return }
+                expectedSeek &+= 1
                 // Seeking cancels both enqueue workers before flushing and
                 // refills the lost audio from the same source/track/position.
                 try await self.seek(to: position)
+                guard try await self.confirmAudioRecovery(
+                    from: position, generation: epoch, seek: expectedSeek
+                ) else { throw VividPlaybackError.renderer(-11819) }
                 #if DEBUG
                 if self.generation == epoch, ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
                     print("[VividTVProbe] audioOutputRecovery completed position=\(position)")
                 }
                 #endif
+            } catch is CancellationError {
+                return
             } catch {
-                guard self.generation == epoch, !Task.isCancelled else { return }
+                guard self.generation == epoch, self.seekGeneration == expectedSeek,
+                      self.wantsPlayback, !Task.isCancelled else { return }
                 self.error = (error as? VividPlaybackError) ?? .renderer(-11819)
                 self.state = .failed
+                self.synchronizer.rate = 0
+                self.session?.cancel()
+                self.timer?.invalidate()
             }
+        }
+    }
+
+    private func confirmAudioRecovery(from position: Double, generation epoch: UInt64,
+                                      seek expectedSeek: UInt64) async throws -> Bool {
+        let started = ProcessInfo.processInfo.systemUptime
+        while true {
+            let decision = VividAudioRecoveryProgress.evaluate(
+                position: position, currentTime: synchronizer.currentTime().seconds,
+                elapsed: ProcessInfo.processInfo.systemUptime - started,
+                isCurrent: !Task.isCancelled && generation == epoch && seekGeneration == expectedSeek,
+                wantsPlayback: wantsPlayback && state != .ended && state != .idle
+            )
+            switch decision {
+            case .cancelled: throw CancellationError()
+            case .recovered: return true
+            case .timedOut: return false
+            case .waiting: break
+            }
+            if let error { throw error }
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
     }
     #endif
@@ -354,6 +392,17 @@ public final class VividPlayer: ObservableObject {
         audioRecoveryTask?.cancel()
         audioOutputObservers.forEach(NotificationCenter.default.removeObserver)
         #endif
+    }
+}
+
+enum VividAudioRecoveryProgress {
+    enum Decision { case waiting, recovered, timedOut, cancelled }
+
+    static func evaluate(position: Double, currentTime: Double, elapsed: TimeInterval,
+                         isCurrent: Bool, wantsPlayback: Bool) -> Decision {
+        guard isCurrent, wantsPlayback else { return .cancelled }
+        if position.isFinite, currentTime.isFinite, currentTime - position >= 0.1 { return .recovered }
+        return elapsed >= 6 ? .timedOut : .waiting
     }
 }
 
