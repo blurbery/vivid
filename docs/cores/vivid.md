@@ -33,6 +33,7 @@ I confirmed IntroDB works on the current Apple TV setup. That confirmation appli
 
 ## Implementation references
 
+- [Player engine core](player-engine.md): VividKit ownership and confirmed audio/video playback results.
 - [Playback architecture](../playback/architecture.md): engine ownership, lifecycle and source/session boundaries.
 - [Playback guide](../playback/README.md): controls, IntroDB behaviour and validation.
 - [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): shared playback state and marker application.

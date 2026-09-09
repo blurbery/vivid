@@ -36,6 +36,7 @@ Vivid is the shared player core. Each server has a separate server core that sup
 | Core | Documentation |
 | --- | --- |
 | [Vivid core](cores/vivid.md) | Shared player, controls and IntroDB integration |
+| [Player engine core](cores/player-engine.md) | VividKit ownership and tested audio/video playback results |
 | [Silo server core](cores/silo.md) | Current Silo connection and its boundary with the player |
 | [Emby server core](cores/emby.md) | Emby implementation, provider boundaries and verification gaps |
 | [Jellyfin server core](cores/jellyfin.md) | Planned connection; no implementation yet |
