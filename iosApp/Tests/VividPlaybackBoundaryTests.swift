@@ -1,4 +1,5 @@
 import VividKit
+import AVFoundation
 import Foundation
 import XCTest
 @testable import Vivid
@@ -240,6 +241,10 @@ final class VividPlaybackBoundaryTests: XCTestCase {
 
     func testExpiredBearerRecoveryRecognizesTypedSourceAndAVPlayer401Failures() {
         XCTAssertTrue(VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(
+            PlaybackErrorInfo(kind: .sourceRefused, message: "engine failure",
+                underlyingDomain: NSURLErrorDomain, underlyingCode: 401)
+        ))
+        XCTAssertTrue(VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(
             PlaybackErrorInfo(
                 kind: .sourceRefused,
                 message: "origin refused source",
@@ -257,6 +262,13 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 
     func testExpiredBearerRecoveryRejectsNonAuthenticationFailures() {
+        XCTAssertFalse(PlaybackErrorInfo.isHTTPAuthenticationFailure(
+            NSError(domain: "UnrelatedDecoder", code: 401)
+        ))
+        XCTAssertFalse(PlaybackErrorInfo.isHTTPAuthenticationFailure(
+            PlaybackErrorInfo(kind: .sourceRefused, message: "unrelated",
+                underlyingDomain: "UnrelatedDecoder", underlyingCode: 401)
+        ))
         for failure in [
             PlaybackErrorInfo(
                 kind: .sourceRefused,
@@ -292,6 +304,69 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             failedHeaders: ["Authorization": "Bearer old-token"],
             refreshedHeaders: [:]
         ))
+    }
+
+    func testAuthenticationFailureSurvivesKnownUnderlyingErrorChains() {
+        XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(VividPlaybackError.network(401)))
+        XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(NSError(
+            domain: AVFoundationErrorDomain, code: -11800,
+            userInfo: [NSUnderlyingErrorKey: NSError(domain: NSURLErrorDomain,
+                code: NSURLErrorUserAuthenticationRequired)]
+        )))
+        XCTAssertFalse(PlaybackErrorInfo.isHTTPAuthenticationFailure(NSError(
+            domain: AVFoundationErrorDomain, code: -11800,
+            userInfo: [NSUnderlyingErrorKey: NSError(domain: "Decoder", code: 401)]
+        )))
+    }
+
+    func testAuthenticationRecoveryBudgetSurvivesReconstructionAndRejectsStaleCompletion() {
+        var budget = VividAuthenticationRecoveryBudget()
+        XCTAssertFalse(budget.attempted)
+        XCTAssertTrue(budget.begin(generation: 1))
+        XCTAssertFalse(budget.begin(generation: 1))
+        XCTAssertFalse(budget.begin(generation: 1))
+        XCTAssertTrue(budget.begin(generation: 2))
+        budget.recovered(generation: 1)
+        XCTAssertFalse(budget.begin(generation: 2))
+        budget.recovered(generation: 2)
+        XCTAssertTrue(budget.begin(generation: 2))
+    }
+
+    func testAuthenticationRecoveryRequiresAdvancementAndDoesNotCountASeek() {
+        var readiness = VividAuthenticationRecoveryReadiness()
+        for time in [10.0, 10.0, 10.0, 40.0] {
+            XCTAssertFalse(readiness.observe(time: time, ready: true, wantsPlayback: true,
+                playing: true, paused: false, seeking: false))
+        }
+        XCTAssertFalse(readiness.observe(time: 40.2, ready: true, wantsPlayback: true,
+            playing: true, paused: false, seeking: true))
+        XCTAssertFalse(readiness.observe(time: 40.4, ready: true, wantsPlayback: true,
+            playing: true, paused: false, seeking: false))
+        XCTAssertTrue(readiness.observe(time: 40.8, ready: true, wantsPlayback: true,
+            playing: true, paused: false, seeking: false))
+    }
+
+    func testPausedAuthenticationRecoveryRequiresUsableSession() {
+        var readiness = VividAuthenticationRecoveryReadiness()
+        XCTAssertFalse(readiness.observe(time: 20, ready: false, wantsPlayback: false,
+            playing: false, paused: true, seeking: false))
+        XCTAssertTrue(readiness.observe(time: 20, ready: true, wantsPlayback: false,
+            playing: false, paused: true, seeking: false))
+    }
+
+    func testAuthenticationRecoverySurfacesReplacementFailureRatherThanOriginal401() {
+        let final = PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Decoder failed",
+            underlyingDomain: "Decoder", underlyingCode: -5)
+        let wrapped = VividPlaybackController.LoadFailure(failure: final, underlying: VividPlaybackError.media(-5))
+        XCTAssertEqual(VividAuthenticationRecoveryPolicy.finalFailure(wrapped), final)
+        XCTAssertFalse(VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(final))
+        let network = VividAuthenticationRecoveryPolicy.finalFailure(
+            HTTPError.network(underlying: NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)))
+        XCTAssertEqual(network.kind, .vodSourceFailed)
+        XCTAssertEqual(network.underlyingCode, NSURLErrorTimedOut)
+        XCTAssertFalse(VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(network))
+        XCTAssertTrue(VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(
+            VividAuthenticationRecoveryPolicy.finalFailure(HTTPError.http(statusCode: 401, body: nil))))
     }
 
     func testPeriodicProgressReloadsOnlyAfterSuccessWithChangedAuthorization() {

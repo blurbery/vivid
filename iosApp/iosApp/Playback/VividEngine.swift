@@ -386,7 +386,11 @@ final class VividEngine: ObservableObject {
         #endif
         let native = error as NSError
         let failure: PlaybackErrorInfo
-        if let typed = error as? VividPlaybackError, case let .network(code) = typed {
+        if PlaybackErrorInfo.isHTTPAuthenticationFailure(error) {
+            failure = PlaybackErrorInfo(kind: .sourceRefused,
+                message: "The media source requires renewed authentication (401).",
+                underlyingDomain: NSURLErrorDomain, underlyingCode: 401)
+        } else if let typed = error as? VividPlaybackError, case let .network(code) = typed {
             failure = PlaybackErrorInfo(kind: code == 429 ? .sourceRateLimited : .sourceRefused,
                 message: "The media source could not be read (\(code)).", underlyingDomain: NSURLErrorDomain, underlyingCode: code)
         } else {

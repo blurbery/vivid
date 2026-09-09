@@ -6,6 +6,58 @@ import XCTest
 @testable import VividKit
 
 final class VividMediaBoundaryTests: XCTestCase {
+    func testClockStallRequiresSixSecondsAndFiresOnce() {
+        var detector = VividClockStallDetector()
+        XCTAssertFalse(detector.observe(time: 0, uptime: 0, eligible: true))
+        XCTAssertFalse(detector.observe(time: 0, uptime: 5.99, eligible: true))
+        XCTAssertTrue(detector.observe(time: 0, uptime: 6, eligible: true))
+        XCTAssertFalse(detector.observe(time: 0, uptime: 60, eligible: true))
+    }
+
+    func testClockStallIgnoresProgressAndResetsWhenIneligible() {
+        var detector = VividClockStallDetector()
+        for second in 0..<20 {
+            XCTAssertFalse(detector.observe(time: Double(second), uptime: Double(second), eligible: true))
+        }
+        XCTAssertFalse(detector.observe(time: 19, uptime: 24, eligible: false))
+        XCTAssertFalse(detector.observe(time: 19, uptime: 30, eligible: true))
+        XCTAssertFalse(detector.observe(time: 19, uptime: 35, eligible: true))
+        XCTAssertTrue(detector.observe(time: 19, uptime: 36, eligible: true))
+        detector = VividClockStallDetector()
+        XCTAssertFalse(detector.observe(time: 0, uptime: 40, eligible: true))
+        XCTAssertFalse(detector.observe(time: .nan, uptime: 46, eligible: true))
+        XCTAssertFalse(detector.observe(time: 0, uptime: 47, eligible: true))
+    }
+
+    func testAudioRecoveryRequiresClockMovementAndTimesOut() {
+        for elapsed in [0.0, 2, 5.99] {
+            XCTAssertEqual(VividAudioRecoveryProgress.evaluate(position: 493.442294,
+                currentTime: 493.442294, elapsed: elapsed, isCurrent: true, wantsPlayback: true), .waiting)
+        }
+        XCTAssertEqual(VividAudioRecoveryProgress.evaluate(position: 493.442294,
+            currentTime: 493.442294, elapsed: 6, isCurrent: true, wantsPlayback: true), .timedOut)
+        XCTAssertEqual(VividAudioRecoveryProgress.evaluate(position: 493.442294,
+            currentTime: 493.65, elapsed: 2, isCurrent: true, wantsPlayback: true), .recovered)
+        XCTAssertEqual(VividAudioRecoveryProgress.evaluate(position: 493.442294,
+            currentTime: .nan, elapsed: 6, isCurrent: true, wantsPlayback: true), .timedOut)
+    }
+
+    func testAudioRecoveryCancelsForPauseOrSupersededPlaybackBeforeAcceptingProgress() {
+        for current in [false, true] {
+            for wantsPlayback in [false, true] where !current || !wantsPlayback {
+                XCTAssertEqual(VividAudioRecoveryProgress.evaluate(position: 10,
+                    currentTime: 30, elapsed: 7, isCurrent: current, wantsPlayback: wantsPlayback), .cancelled)
+            }
+        }
+    }
+
+    func testDemuxReadPreservesHTTP401WithoutChangingOtherFailures() {
+        XCTAssertEqual(VividPlaybackError.demuxReadFailure(-5, sourceFailure: .network(401)), .network(401))
+        for source: VividPlaybackError? in [nil, .network(403), .network(500), .network(NSURLErrorTimedOut), .invalidRange] {
+            XCTAssertEqual(VividPlaybackError.demuxReadFailure(-5, sourceFailure: source), .media(-5))
+        }
+    }
+
     func testAudioReplayRetainsOnlyUnplayedSamplesAndClearsOnSeek() throws {
         var replay = VividAudioReplayBuffer()
         for index in 0..<4 {

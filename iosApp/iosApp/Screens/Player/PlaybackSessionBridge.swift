@@ -1905,6 +1905,16 @@ actor PlaybackSessionBridge {
     private static let orphanedSessionLogThreshold = 3
 
     @discardableResult
+    func refreshPlaybackAuthentication(sessionId expectedSession: String, position: Double, isPaused: Bool) async throws {
+        guard sessionId == expectedSession, embyPlayback == nil,
+              position.isFinite, position >= 0 else { throw CancellationError() }
+        try await VividAPI.shared.postVoid(
+            "/api/v1/playback/\(expectedSession)/progress",
+            body: ProgressReport(position: position, isPaused: isPaused)
+        )
+        guard sessionId == expectedSession else { throw CancellationError() }
+    }
+
     func reportProgress(position: Double, isPaused: Bool) async -> PlaybackProgressReportResult {
         guard let sid = sessionId else { return .transientFailure }
         guard position.isFinite, position >= 0 else { return .transientFailure }

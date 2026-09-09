@@ -43,6 +43,15 @@ public final class VividPlayer: ObservableObject {
     private var audioOutputObservers: [NSObjectProtocol] = []
     private var audioRecoveryTask: Task<Void, Never>?
     private var audioRecoveryBudget = VividAudioRecoveryBudget()
+    private var airPlayRecovery = VividAirPlayRecovery()
+    private var clockStall = VividClockStallDetector()
+    private var hdmiAudio = VividHDMIAudioCore()
+    private var hdmiRouteActive = false
+    #if DEBUG
+    private let hdmiAudioEnabled = ProcessInfo.processInfo.arguments.contains("-VividHDMIAudioCore")
+    #else
+    private let hdmiAudioEnabled = false
+    #endif
     #endif
     private var audioOnly = false
     private var softwareAudio = false
@@ -134,6 +143,10 @@ public final class VividPlayer: ObservableObject {
 
     public func play() { wantsPlayback = true; poll() }
     public func pause() {
+        #if os(tvOS)
+        hdmiAudio.suspend()
+        clockStall = VividClockStallDetector()
+        #endif
         wantsPlayback = false
         synchronizer.rate = 0
         if state != .idle && state != .failed && state != .ended { state = .paused }
@@ -147,6 +160,10 @@ public final class VividPlayer: ObservableObject {
         guard let session else { return }
         guard seconds.isFinite, seconds >= 0 else { throw VividPlaybackError.invalidSource }
         let target = duration > 0 ? min(seconds, duration) : seconds
+        #if os(tvOS)
+        hdmiAudio.suspend()
+        clockStall = VividClockStallDetector()
+        #endif
         seekGeneration &+= 1
         let epoch = seekGeneration
         let loadEpoch = generation
@@ -188,6 +205,10 @@ public final class VividPlayer: ObservableObject {
         #if os(tvOS)
         audioRecoveryTask?.cancel(); audioRecoveryTask = nil
         audioRecoveryBudget = VividAudioRecoveryBudget()
+        airPlayRecovery = VividAirPlayRecovery()
+        hdmiAudio = VividHDMIAudioCore()
+        hdmiRouteActive = false
+        clockStall = VividClockStallDetector()
         displayFormatDescription = nil
         hasStartedPlayback = false
         #endif
@@ -220,42 +241,122 @@ public final class VividPlayer: ObservableObject {
     }
 
     #if os(tvOS)
-    private func recoverAudioOutput() {
-        guard let session, audioRecoveryTask == nil,
-              state != .idle, state != .failed, state != .ended,
-              session.snapshot().started else { return }
+    private func recoverAudioOutput(replayFirst: Bool = true) {
+        guard let session, state != .idle, state != .failed, state != .ended else { return }
+        let isAirPlay = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
+        if audioRecoveryTask != nil {
+            if isAirPlay && replayFirst { airPlayRecovery.recordFlush() }
+            return
+        }
+        guard session.snapshot().started else { return }
+        airPlayRecovery = VividAirPlayRecovery()
         guard audioRecoveryBudget.consume(at: ProcessInfo.processInfo.systemUptime) else {
             error = .renderer(-11819); state = .failed
             synchronizer.rate = 0; session.cancel(); timer?.invalidate()
             return
         }
-        if session.recoverAudioOutput() {
+        let position = synchronizer.currentTime().seconds
+        let replayed = replayFirst && session.recoverAudioOutput()
+        if replayed {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
                 print("[VividTVProbe] audioOutputRecovery replayed audio without seeking")
             }
             #endif
-            return
         }
+        guard wantsPlayback else { return }
         let epoch = generation
-        let position = currentTime
+        var expectedSeek = seekGeneration
         audioRecoveryTask = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled, self.generation == epoch else { return }
-            defer { if self.generation == epoch { self.audioRecoveryTask = nil } }
+            defer {
+                if self.generation == epoch {
+                    self.audioRecoveryTask = nil
+                    self.airPlayRecovery = VividAirPlayRecovery()
+                }
+            }
             do {
+                if replayed, try await self.confirmAudioRecovery(
+                    from: position, generation: epoch, seek: expectedSeek, airPlay: isAirPlay
+                ) { return }
+                guard !Task.isCancelled, self.generation == epoch,
+                      self.seekGeneration == expectedSeek, self.wantsPlayback else { return }
+                expectedSeek &+= 1
                 // Seeking cancels both enqueue workers before flushing and
                 // refills the lost audio from the same source/track/position.
                 try await self.seek(to: position)
+                guard try await self.confirmAudioRecovery(
+                    from: position, generation: epoch, seek: expectedSeek, airPlay: isAirPlay
+                ) else { throw VividPlaybackError.renderer(-11819) }
                 #if DEBUG
                 if self.generation == epoch, ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
                     print("[VividTVProbe] audioOutputRecovery completed position=\(position)")
                 }
                 #endif
+            } catch is CancellationError {
+                return
             } catch {
-                guard self.generation == epoch, !Task.isCancelled else { return }
+                guard self.generation == epoch, self.seekGeneration == expectedSeek,
+                      self.wantsPlayback, !Task.isCancelled else { return }
                 self.error = (error as? VividPlaybackError) ?? .renderer(-11819)
                 self.state = .failed
+                self.synchronizer.rate = 0
+                self.session?.cancel()
+                self.timer?.invalidate()
             }
+        }
+    }
+
+    private func confirmAudioRecovery(from position: Double, generation epoch: UInt64,
+                                      seek expectedSeek: UInt64, airPlay: Bool) async throws -> Bool {
+        let started = ProcessInfo.processInfo.systemUptime
+        var audioBaseline = session?.audioRecoveryState().end ?? position
+        while true {
+            if airPlay {
+                guard !Task.isCancelled, generation == epoch, seekGeneration == expectedSeek,
+                      wantsPlayback, state != .ended, state != .idle,
+                      AVAudioSession.sharedInstance().currentRoute.outputs.contains(where: { $0.portType == .airPlay })
+                else { throw CancellationError() }
+                if let error { throw error }
+                if airPlayRecovery.takeFlush() {
+                    guard audioRecoveryBudget.consume(at: ProcessInfo.processInfo.systemUptime) else {
+                        throw VividPlaybackError.renderer(-11819)
+                    }
+                    guard let session, session.recoverAudioOutput() else { return false }
+                    audioBaseline = session.audioRecoveryState().end ?? synchronizer.currentTime().seconds
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                        print("[VividTVProbe] audioOutputRecovery AirPlay replayed pending flush")
+                    }
+                    #endif
+                }
+            }
+            let decision = VividAudioRecoveryProgress.evaluate(
+                position: position, currentTime: synchronizer.currentTime().seconds,
+                elapsed: ProcessInfo.processInfo.systemUptime - started,
+                isCurrent: !Task.isCancelled && generation == epoch && seekGeneration == expectedSeek,
+                wantsPlayback: wantsPlayback && state != .ended && state != .idle
+            )
+            switch decision {
+            case .cancelled: throw CancellationError()
+            case .recovered:
+                if !airPlay { return true }
+                let audio = session?.audioRecoveryState()
+                if VividAirPlayRecovery.audioAdvanced(from: audioBaseline, end: audio?.end,
+                    clock: synchronizer.currentTime().seconds, finished: audio?.finished ?? false) {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                        print("[VividTVProbe] audioOutputRecovery AirPlay confirmed audio progress")
+                    }
+                    #endif
+                    return true
+                }
+                if ProcessInfo.processInfo.systemUptime - started >= 6 { return false }
+            case .timedOut: return false
+            case .waiting: break
+            }
+            if let error { throw error }
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
     }
     #endif
@@ -346,6 +447,50 @@ public final class VividPlayer: ObservableObject {
             #endif
             state = .playing
         }
+        #if os(tvOS)
+        let hdmiRoute = hdmiAudioEnabled && VividHDMIAudioCore.accepts(routeTypes:
+            AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue })
+        #if DEBUG
+        if hdmiRoute != hdmiRouteActive { session.setHDMIProbeEnabled(hdmiRoute) }
+        #endif
+        if hdmiRouteActive && !hdmiRoute {
+            hdmiAudio.suspend()
+            session.clearHDMIRecovery()
+        }
+        hdmiRouteActive = hdmiRoute
+        if hdmiRoute {
+            let audio = session.hdmiAudioState()
+            let action = hdmiAudio.observe(clock: now, audioEnd: audio.end,
+                ready: audioRenderer.isReadyForMoreMediaData,
+                uptime: ProcessInfo.processInfo.systemUptime,
+                eligible: (state == .playing || state == .buffering) && wantsPlayback && snapshot.started
+                    && !audio.finished && audioRecoveryTask == nil,
+                buffering: state == .buffering,
+                sufficient: audioRenderer.hasSufficientMediaDataForReliablePlaybackStart)
+            if action == .flushAudio { session.resetHDMIAudio(at: now) }
+            if action == .failed {
+                error = .renderer(-11819); state = .failed
+                synchronizer.rate = 0; session.cancel(); timer?.invalidate()
+            }
+            #if DEBUG
+            if action != .none, ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                print("[VividTVProbe] audioOutputRecovery HDMI action=\(action) position=\(now)")
+            }
+            #endif
+        }
+        if clockStall.observe(time: now, uptime: ProcessInfo.processInfo.systemUptime,
+            eligible: state == .playing && wantsPlayback && snapshot.started
+                && !snapshot.finished && !audioOnly && selectedAudioTrack != nil
+                && !(hdmiRoute && hdmiAudio.isRecovering)
+                && decodedAhead >= 0.08 && bufferedAhead >= 1 && audioRecoveryTask == nil) {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-VividTVProbe") {
+                print("[VividTVProbe] audioOutputRecovery clockStall position=\(now)")
+            }
+            #endif
+            recoverAudioOutput(replayFirst: false)
+        }
+        #endif
     }
 
     deinit {
@@ -354,6 +499,39 @@ public final class VividPlayer: ObservableObject {
         audioRecoveryTask?.cancel()
         audioOutputObservers.forEach(NotificationCenter.default.removeObserver)
         #endif
+    }
+}
+
+struct VividClockStallDetector {
+    private var position: Double?
+    private var lastProgress: TimeInterval = 0
+    private var fired = false
+
+    mutating func observe(time: Double, uptime: TimeInterval, eligible: Bool) -> Bool {
+        guard eligible, time.isFinite, uptime.isFinite else {
+            self = Self()
+            return false
+        }
+        guard let position, abs(time - position) < 0.001, uptime >= lastProgress else {
+            self.position = time
+            lastProgress = uptime
+            fired = false
+            return false
+        }
+        guard !fired, uptime - lastProgress >= 6 else { return false }
+        fired = true
+        return true
+    }
+}
+
+enum VividAudioRecoveryProgress {
+    enum Decision { case waiting, recovered, timedOut, cancelled }
+
+    static func evaluate(position: Double, currentTime: Double, elapsed: TimeInterval,
+                         isCurrent: Bool, wantsPlayback: Bool) -> Decision {
+        guard isCurrent, wantsPlayback else { return .cancelled }
+        if position.isFinite, currentTime.isFinite, currentTime - position >= 0.1 { return .recovered }
+        return elapsed >= 6 ? .timedOut : .waiting
     }
 }
 

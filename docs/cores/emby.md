@@ -50,7 +50,7 @@ Original-file downloads use the existing download manager with native Emby authe
 
 Initial audio selection uses Emby’s existing track metadata. Vivid prefers a compatible non-commentary track in the selected language, maps its ordinal to the source stream index, and then requests PlaybackInfo. It preserves an explicit manual choice and falls back to the original choice when no same-language alternative exists. No separate media probe is added.
 
-I confirmed that Dune’s alternate AC-3 track plays with sound and that automatic selection keeps startup fast. The silent TrueHD track itself has not been confirmed fixed. This result does not guarantee every 7.1 layout or packaged audio-switching route. Direct playback describes the server delivery route; local FFmpeg decoding to PCM can still be used.
+I confirmed that Dune’s alternate AC-3 track plays with sound and that automatic selection keeps startup fast. On 9 September 2026, I also confirmed Dune’s TrueHD 7.1 source plays with sound on Apple TV through HomePod (2nd generation), with Emby reporting Direct Play. See the [player engine core](player-engine.md) for the tested revision, picture formats and output limits. This result does not guarantee every 7.1 layout or packaged audio-switching route. Direct playback describes the server delivery route; local FFmpeg decoding to PCM can still be used.
 
 ## Validation
 

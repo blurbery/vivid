@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'iosApp/iosApp/Screens/Player/**'
+      - 'iosApp/iosApp/Playback/**'
+      - 'VividKit/Sources/**'
+      - 'VividKit/Tests/**'
       - 'iosApp/Tests/**'
       - 'iosApp/project.yml'
       - 'iosApp/**/Package.resolved'
@@ -45,11 +48,11 @@ jobs:
             '[{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test"},
               {"scheme":"VividTV","destination":"generic/platform=tvOS Simulator","action":"build"}]') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           ref: ${{ inputs.baseline_ref || github.sha }}
-      - uses: maxim-lobanov/setup-xcode@v1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '26.3'
       - name: Prepare iOS simulator
@@ -100,7 +103,7 @@ jobs:
           if [ "$ACTION" = test ]; then
             # Simulator-only ad-hoc signing supplies the application identifier
             # required by Keychain. No certificate or release secret is used.
-            xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme "$SCHEME" \
+            xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme VividKitDeviceTests \
               -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
               CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-build.log
           else
@@ -114,7 +117,7 @@ jobs:
         run: ditto -c -k --keepParent /tmp/vivid-derived/Build/Products /tmp/Vivid-simulator-tests.zip
       - name: Upload compiled simulator tests
         if: matrix.action == 'test' && !inputs.baseline_ref
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Vivid-simulator-tests
           path: /tmp/Vivid-simulator-tests.zip
@@ -124,8 +127,17 @@ jobs:
         timeout-minutes: 12
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme Vivid \
+          xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme VividKitDeviceTests \
             -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
+            -only-testing:VividTests \
+            -only-testing:VividKitDeviceTests/VividHDMIAudioCoreTests \
+            -only-testing:VividKitDeviceTests/VividAirPlayRecoveryTests \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testDemuxReadPreservesHTTP401WithoutChangingOtherFailures \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryRequiresClockMovementAndTimesOut \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryCancelsForPauseOrSupersededPlaybackBeforeAcceptingProgress \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryIsBoundedAndRearmsAfterQuietPeriod \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testClockStallRequiresSixSecondsAndFiresOnce \
+            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testClockStallIgnoresProgressAndResetsWhenIneligible \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 \
             -resultBundlePath /tmp/player-validation.xcresult \
@@ -164,7 +176,7 @@ jobs:
           test -s /tmp/preview-transition.mp4
       - name: Upload validation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: player-validation-${{ matrix.scheme }}
           path: |

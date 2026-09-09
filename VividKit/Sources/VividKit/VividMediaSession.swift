@@ -27,6 +27,69 @@ final class VividMediaSession: @unchecked Sendable {
     var nativeDTSBridgeEnabled = false
     private var audioEnqueueAhead: Double = 1
     private var audioReplay = VividAudioReplayBuffer()
+    private var hdmiDiscardBefore: Double?
+    private var hdmiCatchUpFloor: Double? {
+        guard let hdmiDiscardBefore else { return nil }
+        return VividHDMIAudioCore.catchUpFloor(
+            recoveryFloor: hdmiDiscardBefore, clock: synchronizer.currentTime().seconds)
+    }
+    #if DEBUG
+    private var hdmiProbeEnabled = false
+    private var hdmiProbeLastWait: TimeInterval = -.infinity
+    private var hdmiProbeWaitCount = 0
+    private var hdmiProbeSampleCount = 0
+    private var hdmiProbeLastSampleEnd: Double?
+
+    func setHDMIProbeEnabled(_ enabled: Bool) {
+        condition.lock(); defer { condition.unlock() }
+        hdmiProbeEnabled = enabled && ProcessInfo.processInfo.arguments.contains("-VividTVProbe")
+    }
+
+    private func traceHDMIAudio(_ sample: CMSampleBuffer, pts: Double, duration: Double, waiting: Bool) {
+        guard hdmiProbeEnabled else { return }
+        let uptime = ProcessInfo.processInfo.systemUptime
+        if waiting {
+            guard hdmiProbeWaitCount < 24, uptime - hdmiProbeLastWait >= 2 else { return }
+            hdmiProbeLastWait = uptime
+            hdmiProbeWaitCount += 1
+        } else {
+            hdmiProbeSampleCount += 1
+        }
+        let actualPTS = CMSampleBufferGetPresentationTimeStamp(sample).seconds
+        let actualDuration = CMSampleBufferGetDuration(sample).seconds
+        let gap = hdmiProbeLastSampleEnd.map { actualPTS - $0 } ?? 0
+        if !waiting { hdmiProbeLastSampleEnd = actualPTS + actualDuration }
+        guard waiting || hdmiProbeSampleCount <= 3 else { return }
+        let description = CMSampleBufferGetFormatDescription(sample)
+        let asbd = description.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0) }?.pointee
+        let now = synchronizer.currentTime().seconds
+        print("[VividTVProbe] hdmiAudioQueue event=\(waiting ? "wait" : "enqueue") clock=\(now) pts=\(pts) duration=\(duration) samplePTS=\(actualPTS) sampleDuration=\(actualDuration) sampleGap=\(gap) samples=\(CMSampleBufferGetNumSamples(sample)) sampleRate=\(asbd?.mSampleRate ?? 0) sampleChannels=\(asbd?.mChannelsPerFrame ?? 0) formatID=\(asbd?.mFormatID ?? 0) audioEnd=\(audioEnd ?? -1) ready=\(audio.isReadyForMoreMediaData) sufficient=\(audio.hasSufficientMediaDataForReliablePlaybackStart) status=\(audio.status.rawValue) errorCode=\((audio.error as NSError?)?.code ?? 0) enqueueAhead=\(audioEnqueueAhead) discardBefore=\(hdmiDiscardBefore ?? -1) native=\(nativeAudioFormat != nil)")
+    }
+    #endif
+
+    func audioRecoveryState() -> (end: Double?, finished: Bool) {
+        condition.lock(); defer { condition.unlock() }
+        return (audioEnd, audioIndex == nil || audioDone)
+    }
+
+    func hdmiAudioState() -> (end: Double?, finished: Bool) {
+        condition.lock(); defer { condition.unlock() }
+        return (audioEnd, audioIndex == nil || audioDone)
+    }
+
+    func resetHDMIAudio(at time: Double) {
+        condition.lock(); defer { condition.unlock() }
+        guard !cancelled, audioIndex != nil, time.isFinite else { return }
+        hdmiDiscardBefore = time
+        audio.flush()
+        audioReplay.removeAll()
+        condition.broadcast()
+    }
+
+    func clearHDMIRecovery() {
+        condition.lock(); defer { condition.unlock() }
+        hdmiDiscardBefore = nil
+    }
 
     func recoverAudioOutput() -> Bool {
         condition.lock(); defer { condition.unlock() }
@@ -203,8 +266,14 @@ final class VividMediaSession: @unchecked Sendable {
                 guard let pointer = av_packet_alloc() else { fail(.media(-12)); break }
                 let packet = VividPacket(pointer)
                 let result = av_read_frame(format, pointer)
-                if result == vv_eof() { break }
-                if result < 0 { if !shouldStop(epoch) { fail(.media(result)) }; break }
+                if result < 0 {
+                    let sourceFailure = source.lastFailure
+                    if result == vv_eof(), sourceFailure != .network(401) { break }
+                    if !shouldStop(epoch) {
+                        fail(VividPlaybackError.demuxReadFailure(result, sourceFailure: sourceFailure))
+                    }
+                    break
+                }
                 let index = pointer.pointee.stream_index
                 guard packet.byteCount <= 32 * 1024 * 1024 else { fail(.media(-22)); break }
                 if let stream = vv_stream(format, UInt32(index)) {
@@ -271,6 +340,7 @@ final class VividMediaSession: @unchecked Sendable {
                     start = seconds; videoEnd = nil; audioEnd = nil; subtitleCues = []
                     #if os(tvOS)
                     audioReplay.removeAll()
+                    hdmiDiscardBefore = nil
                     #endif
                     videoDone = false; audioDone = false
                     condition.unlock()
@@ -394,6 +464,9 @@ final class VividMediaSession: @unchecked Sendable {
             }
             condition.lock()
             while !cancelled && generation == epoch {
+                #if os(tvOS)
+                if !isVideo, let floor = hdmiCatchUpFloor, pts + duration <= floor { break }
+                #endif
                 let ready = isVideo ? video.isReadyForMoreMediaData : audio.isReadyForMoreMediaData
                 let now = synchronizer.currentTime().seconds
                 #if os(tvOS)
@@ -402,9 +475,17 @@ final class VividMediaSession: @unchecked Sendable {
                 let enqueueAhead: Double = 1
                 #endif
                 if ready && pts < max(start, now) + enqueueAhead { break }
+                #if os(tvOS) && DEBUG
+                if !isVideo { traceHDMIAudio(sample, pts: pts, duration: duration, waiting: true) }
+                #endif
                 _ = condition.wait(until: Date(timeIntervalSinceNow: 0.02))
             }
             guard !cancelled, generation == epoch else { condition.unlock(); return }
+            #if os(tvOS)
+            if !isVideo, let floor = hdmiCatchUpFloor, pts + duration <= floor {
+                condition.unlock(); continue
+            }
+            #endif
             let rendererError: Error?
             if isVideo {
                 #if os(tvOS)
@@ -415,10 +496,18 @@ final class VividMediaSession: @unchecked Sendable {
                 videoEnd = max(videoEnd ?? start, pts + duration)
                 hardware = frame.pointee.format == AV_PIX_FMT_VIDEOTOOLBOX.rawValue
             } else {
+                #if os(tvOS) && DEBUG
+                traceHDMIAudio(sample, pts: pts, duration: duration, waiting: false)
+                #endif
                 #if os(tvOS)
                 audioReplay.append(sample, at: synchronizer.currentTime().seconds)
                 #endif
                 audio.enqueue(sample)
+                #if os(tvOS)
+                if let floor = hdmiCatchUpFloor, pts >= floor {
+                    hdmiDiscardBefore = nil
+                }
+                #endif
                 rendererError = audio.status == .failed ? audio.error : nil
                 audioEnd = max(audioEnd ?? start, pts + duration)
             }
@@ -468,18 +557,33 @@ final class VividMediaSession: @unchecked Sendable {
             condition.lock()
             while !cancelled && generation == epoch {
                 #if os(tvOS)
+                if let floor = hdmiCatchUpFloor, pts + duration <= floor { break }
                 let enqueueAhead = audioEnqueueAhead
                 #else
                 let enqueueAhead: Double = 1
                 #endif
                 if audio.isReadyForMoreMediaData && pts < max(start, synchronizer.currentTime().seconds) + enqueueAhead { break }
+                #if os(tvOS) && DEBUG
+                traceHDMIAudio(sample, pts: pts, duration: duration, waiting: true)
+                #endif
                 _ = condition.wait(until: Date(timeIntervalSinceNow: 0.02))
             }
             guard !cancelled, generation == epoch else { condition.unlock(); return }
             #if os(tvOS)
+            if let floor = hdmiCatchUpFloor, pts + duration <= floor {
+                condition.unlock(); continue
+            }
             audioReplay.append(sample, at: synchronizer.currentTime().seconds)
             #endif
+            #if os(tvOS) && DEBUG
+            traceHDMIAudio(sample, pts: pts, duration: duration, waiting: false)
+            #endif
             audio.enqueue(sample)
+            #if os(tvOS)
+            if let floor = hdmiCatchUpFloor, pts >= floor {
+                hdmiDiscardBefore = nil
+            }
+            #endif
             audioEnd = max(audioEnd ?? start, pts + duration)
             let error = audio.status == .failed ? audio.error : nil
             condition.unlock()

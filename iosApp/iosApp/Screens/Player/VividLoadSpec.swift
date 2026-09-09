@@ -57,13 +57,32 @@ enum VividInitialAudioPreference {
 /// credential generation; a revoked current token falls through to the normal
 /// Protocol V3 route ladder instead of looping on the same URL forever.
 enum VividAuthenticationRecoveryPolicy {
-    static func isExpiredBearerFailure(_ failure: PlaybackErrorInfo) -> Bool {
-        if failure.kind == .sourceRefused {
-            return failure.underlyingDomain == nil && failure.underlyingCode == 401
+    @MainActor
+    static func finalFailure(_ error: Error) -> PlaybackErrorInfo {
+        if let load = error as? VividPlaybackController.LoadFailure { return load.failure }
+        if let typed = error as? PlaybackErrorInfo { return typed }
+        if let http = error as? HTTPError {
+            switch http {
+            case .http(let status, _):
+                return PlaybackErrorInfo(kind: status == 429 ? .sourceRateLimited : .sourceRefused,
+                    message: "The server returned HTTP \(status) while renewing playback.",
+                    underlyingDomain: NSURLErrorDomain, underlyingCode: status)
+            case .network(let underlying):
+                let native = underlying as NSError
+                return PlaybackErrorInfo(kind: .vodSourceFailed,
+                    message: "The server could not be reached while renewing playback.",
+                    underlyingDomain: native.domain, underlyingCode: native.code)
+            default: break
+            }
         }
-        return failure.kind == .nativeItemFailed
-            && failure.underlyingDomain == NSURLErrorDomain
-            && failure.underlyingCode == NSURLErrorUserAuthenticationRequired
+        let native = error as NSError
+        return PlaybackErrorInfo(kind: .softwarePipelineFailed,
+            message: error.localizedDescription,
+            underlyingDomain: native.domain, underlyingCode: native.code)
+    }
+
+    static func isExpiredBearerFailure(_ failure: PlaybackErrorInfo) -> Bool {
+        PlaybackErrorInfo.isHTTPAuthenticationFailure(failure)
     }
 
     static func shouldReload(
@@ -89,6 +108,47 @@ enum VividAuthenticationRecoveryPolicy {
         headers.first { key, _ in
             key.caseInsensitiveCompare("Authorization") == .orderedSame
         }?.value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct VividAuthenticationRecoveryBudget {
+    private(set) var generation: UInt64?
+    private(set) var attempted = false
+
+    mutating func begin(generation: UInt64) -> Bool {
+        if self.generation != generation {
+            self.generation = generation
+            attempted = false
+        }
+        guard !attempted else { return false }
+        attempted = true
+        return true
+    }
+
+    mutating func recovered(generation: UInt64) {
+        guard self.generation == generation else { return }
+        attempted = false
+    }
+}
+
+struct VividAuthenticationRecoveryReadiness {
+    private var previousTime: Double?
+    private var advancingSeconds: Double = 0
+
+    mutating func observe(time: Double, ready: Bool, wantsPlayback: Bool,
+                          playing: Bool, paused: Bool, seeking: Bool) -> Bool {
+        defer { previousTime = time.isFinite ? time : nil }
+        guard ready, !seeking, time.isFinite else {
+            advancingSeconds = 0
+            return false
+        }
+        if !wantsPlayback { return paused }
+        guard playing, let previousTime, time > previousTime, time - previousTime < 1 else {
+            advancingSeconds = 0
+            return false
+        }
+        advancingSeconds += time - previousTime
+        return advancingSeconds >= 0.5
     }
 }
 
