@@ -43,6 +43,14 @@ Server HLS uses AVPlayer. Direct container playback uses AVSampleBufferDisplayLa
 
 VividKit playback has been tested on iPhone 16 Pro Max and Apple TV 4K (3rd generation). Broad remux coverage, Dolby Vision output, Atmos object preservation, interlaced content, external playback, long network stalls and older Apple TV hardware require their own media/device verification; passing the focused synthetic tests does not establish that coverage.
 
+## Direct-network recovery
+
+The demux boundary preserves the underlying network failure. Eligible transient failures include HTTP 500, 502, 503 and 504, timeouts, lost connections, connection failures, DNS failures and offline errors. A shared playback recovery budget permits two network retries and one same-route reload; reloading does not replenish that budget, and cancellation invalidates it. Normal compatibility fallback remains available when recovery cannot continue.
+
+Proactive recovery requires active playback, a reader waiting for bytes, an unfinished request and no authentication recovery in progress. Delivery must remain stalled for at least three seconds while reported playable headroom drops by more than 0.1 seconds. Pausing or normal queue backpressure resets eligibility. Resumption retains unread bytes and requests the first missing byte, using a strong ETag or a conservative Last-Modified/Date validator. Range responses and content identity must validate; superseded request callbacks cannot modify the active reader.
+
+Credential changes update the reader and controller snapshot in place. An in-flight 401 coordinates authenticated resumption with a six-second deadline, using newer credentials already available before requesting another refresh. Cancellation and request identity guard against late completions. Native HLS and unsupported recovery cases retain the reconstruction fallback. Debug probe recovery messages report error domain/code, outcome and buffer observations without URLs or credentials. These transport changes do not alter the HDMI or HomePod audio recovery policies.
+
 ## Loads and lifecycle
 
 - Keep one clear owner for the engine and its observations.

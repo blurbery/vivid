@@ -125,7 +125,7 @@ On Apple TV, frame-rate and dynamic-range matching follow the system’s Match C
 
 Apple TV audio recovery replays retained samples after renderer interruptions and checks that the playback clock advances. AirPlay additionally requires queued-audio progress and retains flush notifications received during recovery. If replay stalls, it attempts one seek recovery before reporting an error. The opt-in HDMI component handles blocked audio delivery with an audio-only reset. Recovery is bounded and respects pauses, user seeks and playback changes.
 
-The Vivid core coordinates credential renewal with the active server core and restores playback from the current position. Next-episode loading clears the outgoing controls while retaining the video surface.
+The Vivid core coordinates credential renewal with the active server core. Direct playback updates credentials in the existing network reader and controller snapshot, preserving buffered media; an in-flight 401 uses bounded authenticated resumption. Native HLS and unsupported recovery cases retain reconstruction from the current position. Transient delivery failures also support validated byte-range resumption before requesting another route, including proactive recovery while playable headroom is shrinking. See [direct-network recovery](../playback/architecture.md#direct-network-recovery) for eligibility and shared retry limits. Next-episode loading clears the outgoing controls while retaining the video surface.
 
 ## Implementation
 

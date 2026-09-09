@@ -42,6 +42,14 @@ The three capped modes are opt-in and local to the device/profile. After eight c
 
 Playback preferences remain local per device/profile. Existing Original and custom quality preferences are preserved. Buffer Ahead offers Automatic (about 20 seconds), 30 seconds and 40 seconds on iPhone, iPad and Apple TV, subject to the existing memory limits. There is no duplicate manual 20-second choice. These are direct-file packet read-ahead targets, not startup requirements; playback keeps its small startup threshold and server HLS retains AVPlayer’s buffering. Older saved manual selections retain their raw storage identifiers while the offered targets increase by ten seconds; the removed 10-second selection falls back to Auto. The obsolete Dolby Vision, Seek Cache, lossless-bridge and deinterlacing controls remain removed. IntroDB markers and the separate automatic intro/credit skip switches retain their existing roles.
 
+## Direct-stream recovery
+
+Eligible delivery interruptions first attempt bounded recovery on the same direct route. When playback is active, the reader needs more bytes and playable headroom shrinks during a sustained delivery stall, Vivid can reconnect while buffered media continues playing. Received, unread bytes are retained and the replacement request starts at the first missing byte, subject to HTTP range and content validation. Pauses and normal buffer backpressure do not qualify on their own. A longer outage can still interrupt playback.
+
+Refreshed credentials are passed to the existing direct network reader for subsequent requests without replacing the player or its buffers. An in-flight 401 uses coordinated, bounded authenticated resumption. Reconstruction remains a fallback where in-place recovery is unavailable, including native HLS. Temporary delivery failures retain their network error codes rather than being treated immediately as decoder incompatibility.
+
+These changes retain the existing buffer targets, startup thresholds and audio paths. The [architecture guide](architecture.md#direct-network-recovery) describes eligibility, retry limits and cancellation.
+
 ## Audio selection and startup
 
 Before loading, Vivid uses track metadata already supplied by the provider to prefer a compatible audio track in the chosen language. AAC, AC-3, E-AC-3, MP3, ALAC, FLAC and PCM are eligible; commentary-labelled alternatives are excluded. An explicit manual choice wins. If no compatible same-language alternative exists, the original choice remains available to the decoder fallback. This is a selection policy, not a guarantee that every codec/profile will play.

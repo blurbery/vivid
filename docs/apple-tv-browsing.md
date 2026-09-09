@@ -17,7 +17,7 @@ Vivid's Apple TV Home uses a discovery spotlight above ordinary media rows on a 
 - The artwork keeps a fixed spotlight size. Face and person detection guide cropping; detection is best effort and cannot guarantee perfect framing for every image. A dark fade protects the title logo, with a subdued colour fade around the edges. The internal fade uses eased stops and a subtle static dither to reduce banding; source artwork and display processing can still affect the result. Movie runtime is omitted from spotlight metadata.
 - Continue Watching uses 16:9 thumbnails. Other rows retain their existing card shapes. Its heading aligns with the other row headings and has no play icon. Continue Watching and Emby Next Up show `S01 E03 – Episode title` beneath the main title. Partly watched thumbnails use an inset white progress bar on a grey track.
 - Clicking Up from the spotlight returns to the tab bar; there is no separate upward-swipe override. Moving down from the spotlight enters the first Continue Watching card initially, then returns to the last card visited in that row. Returning from a detail page restores the launching card unless the user has moved elsewhere.
-- Settings → General places Home Sections below Home Screen. Home Sections controls row visibility and ordering. Poster Configuration changes Home only, saves locally per server/viewing profile, and defaults to Large posters with Title Only captions. It does not change catalog or detail-page cards.
+- Settings → General places Home Sections below Home Screen. Home Sections controls row visibility and ordering. Poster Configuration saves locally per server/viewing profile. Poster size affects Home only and defaults to Large. Captions apply across Search, Home, Movies, Series, For You, Continue Watching and series episode cards. The choices are Title & Year (the default), Title Only and Artwork Only; episode captions use episode details in place of a year.
 
 ## Device metadata cache
 
@@ -37,6 +37,8 @@ Sort, Filter and A–Z use native tvOS menus. Filters become available after the
 
 For You has Watchlist, Favourites and Collections sub-tabs, with no Sort or Filter controls. Each sub-tab has an independent native A–Z menu; choosing All restores the unfiltered list. Collections combines movie and series collections. It paints cached per-library sections immediately, refreshes source libraries together and publishes each response as it arrives instead of waiting for the slowest library. Catalog grids use seven posters across, with deliberate space above the first row for focus enlargement.
 
+Search uses seven posters across the available safe-area width, without the previous extra horizontal insets or width cap. The results sit closer to the Top Results, Movies and Series tabs.
+
 Library requests load seventy items at a time. Artwork retention uses a moving ten-row window, keeping a small look-behind and releasing earlier decoded image references as focus advances. Visible cards may retain their displayed image, and lightweight item metadata remains available for navigation; this is not a fixed total app-memory limit. Entering a newly loaded page must restart artwork requests without changing native card focus targets.
 
 Calendar's client screens, models, requests and navigation entries have been removed. Decoding older saved menus drops the retired Calendar entry while preserving supported destinations. This does not modify any media-server backend.
@@ -49,15 +51,15 @@ Settings categories open separate native navigation pages with white headings an
 
 ## Detail pages
 
-Search result captions use 20-point titles and an 18-point year beneath them, independently of Home poster preferences. Long titles remain truncated. Emby season selectors use numbered labels such as Season 4, with Specials for season zero; Silo’s season titles are unchanged.
+TV card captions share 20-point titles and 18-point secondary text, aligned to the left. The same caption setting applies to catalog posters, Home, Continue Watching and series episode cards. Long titles remain truncated. Emby season selectors use numbered labels such as Season 4, with Specials for season zero; Silo’s season titles are unchanged.
 
-Movie, series and episode pages share fixed positions for the credit line, playback readouts and action row. The loading screen reserves the same positions. Twelve-point gaps separate credits, readouts and actions. Plots wrap within the action row width; Read more opens a separate scrollable Description panel. Start Over lives in the More menu so resume state does not shift the buttons.
+Movie, series and episode pages share fixed positions for the credit line, playback readouts and action row. The loading screen reserves the same positions. Twelve-point gaps separate credits, readouts and actions. Plots wrap within the action row width; Read more opens a separate scrollable Description panel. Start Over remains in the More menu. When the primary movie or series action says Resume, long-pressing it also opens a native menu with Start from Beginning. It uses the existing playback action and selected file without adding another button to the row.
 
 The equal-width playback pills use white icons, a translucent background and a thin glass-style edge. Resolution is displayed as 4K, FHD for 1080, or HD below 1080; HDR/DV appears when present, otherwise the video codec is shown. Audio shows codec and channel layout. Subtitles show the selected language or Off. The full selectors retain the detailed track choices.
 
 Continue Watching carries the exact season and episode into the detail route. That season takes priority over cached progress, and the episode carousel refreshes its selection when the requested episode changes. Playback metadata for the selected episode loads its catalog and watch requests together; cached movie pages begin refreshing watch metadata on open. Uncached data still requires a server response.
 
-Poster, collection, episode and trailer artwork share a thin edge highlight that becomes brighter on focus. Watched artwork uses a small green badge with a white tick. Episode thumbnails on series details use the same inset resume bar as Continue Watching. Trailer focus enlarges the card. Movie and series pages now end with Media Information for the selected file or episode: separate Video & File and Audio glass panels. Video & File has up to five equal-width columns; audio has up to four. Sparse panels use fewer columns, while incomplete final rows keep their column alignment. Missing metadata is omitted. Video/file bitrates use Mbps with provider-specific unit conversion; audio below 1 Mbps uses kbps.
+Poster, collection, episode and trailer artwork share a thin edge highlight that becomes brighter on focus. Watched artwork uses a small green badge with a white tick. Episode thumbnails on series details use the same inset resume bar as Continue Watching. On tvOS, that bar sits outside the focused button and context-menu content so progress updates do not depend on moving focus. Watched mutations hide the bar immediately; a failed mutation restores it. Completed playback clears the local progress through the existing detail-state update. Trailer focus enlarges the card. Movie and series pages now end with Media Information for the selected file or episode: separate Video & File and Audio glass panels. Video & File has up to five equal-width columns; audio has up to four. Sparse panels use fewer columns, while incomplete final rows keep their column alignment. Missing metadata is omitted. Video/file bitrates use Mbps with provider-specific unit conversion; audio below 1 Mbps uses kbps.
 
 ## Trailers and More Like This
 
@@ -79,6 +81,8 @@ More Like This is independent of TMDb. It uses the active server/profile catalog
 </table>
 
 ## Validation
+
+The 9 September 2026 UI revision (`594d1e1`) passed a signed VividTV Debug device build and was installed on the living-room Apple TV 4K (3rd generation), tvOS 26.6, as 0.14.3 (1). Signing and keychain identifiers were unchanged. The latest focused-card resume-overlay revision still needs physical confirmation; the earlier overlay approach did not clear reliably while focused. Installation and compilation do not establish that the updated behaviour passes. Automated build and regression results for that source revision are recorded in [Player Regression CI](https://github.com/blurbery/vivid/actions/runs/34354737081).
 
 The earlier app checks are recorded through `v0.13.0` (`2ee9005c`). Device validation on 8 September 2026 covered Apple TV 4K (3rd generation), tvOS 26.6: smaller Search captions/year, Media Information, quality controls, normal and DTS audio through HomePod (2nd generation), the 20-second Auto buffer, Home refresh, profile deletion and Emby season labels. This was a local development build, 0.6.0 (1), not TestFlight. The paired iPhone checks are in [App Design](app-design.md#detail-pages-and-validation). No measured benchmark, universal output-format certification or physical iPad check is recorded.
 
