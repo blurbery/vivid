@@ -185,6 +185,7 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
             rowFocused: $actionRowFocused,
             stabilizesFocusMotion: true,
             primaryButtonWidth: 280,
+            onResumeStartOver: hasResumeProgress ? { onPlay(true) } : nil,
             playbackSelectors: {
                 TVPlaybackActionSelectors(
                     versions: availableVersions,

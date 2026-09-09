@@ -419,6 +419,7 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
     /// Series reserves one compact width across Play/Resume episode labels.
     /// Movies leave this nil so short labels use their natural pill width.
     var primaryButtonWidth: CGFloat? = nil
+    var onResumeStartOver: (() -> Void)? = nil
     @ViewBuilder let playbackSelectors: () -> PlaybackSelectors
     @ViewBuilder let moreMenu: () -> MoreMenu
 
@@ -442,6 +443,13 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
                         action: onPlay,
                         focused: playFocused
                     )
+                    .contextMenu {
+                        if let onResumeStartOver {
+                            Button(action: onResumeStartOver) {
+                                Label("Start from Beginning", systemImage: "backward.end.fill")
+                            }
+                        }
+                    }
                     .disabled(playTitle == nil)
                     .focused($focusedAction, equals: .play)
                     .onGeometryChange(for: Bool.self) { proxy in

@@ -39,7 +39,12 @@ enum CardCaptionStyle: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .titleMetadata: return "Title & Metadata"
+        case .titleMetadata:
+            #if os(tvOS)
+            return "Title & Year"
+            #else
+            return "Title & Metadata"
+            #endif
         case .title: return "Title Only"
         case .artwork: return "Artwork Only"
         }

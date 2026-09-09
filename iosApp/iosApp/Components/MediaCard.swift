@@ -147,7 +147,7 @@ struct MediaCard: View {
             year: year,
             subtitle: subtitle,
             episodeAccessibilityLabel: episodeAccessibilityLabel,
-            captionStyle: resolvedPresentation.caption,
+            captionStyle: TVHomeCardPreferences.shared.presentation.caption,
             cardWidth: cardWidth,
             action: action,
             playAction: playAction,

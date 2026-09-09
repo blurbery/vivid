@@ -546,6 +546,10 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             rowFocused: $showActionRowFocused,
             stabilizesFocusMotion: true,
             primaryButtonWidth: 280,
+            onResumeStartOver: playbackEpisode?.userData?.isInProgress == true ? {
+                guard let episode = playbackEpisode else { return }
+                onPlayEpisode(episode.contentId, selectedFileId(for: episode), true)
+            } : nil,
             playbackSelectors: {
                 // Keep all three triggers mounted while a newly focused
                 // episode's playback detail loads. They disable themselves

@@ -108,19 +108,35 @@ final class TVHomeCardPreferences {
     }
     var presentation: CardPresentationPreference {
         _ = revision
-        guard let key, let data = defaults.data(forKey: key),
-              let value = try? JSONDecoder().decode(CardPresentationPreference.self, from: data) else {
-            return Self.profileDefault
+        var value = Self.profileDefault
+        if let key, let data = defaults.data(forKey: key),
+           let saved = try? JSONDecoder().decode(CardPresentationPreference.self, from: data) {
+            value = saved
         }
+        #if os(tvOS)
+        value.caption = key.flatMap { defaults.string(forKey: $0 + ".captions") }
+            .flatMap(CardCaptionStyle.init(rawValue:)) ?? .titleMetadata
+        #endif
         return value
     }
     func setPosterSize(_ size: CardPosterSize) {
         var value = presentation; value.posterSize = size; save(value)
     }
     func setCaptionStyle(_ caption: CardCaptionStyle) {
+        #if os(tvOS)
+        guard let key else { return }
+        defaults.set(caption.rawValue, forKey: key + ".captions")
+        revision += 1
+        #else
         var value = presentation; value.caption = caption; save(value)
+        #endif
     }
-    func reset() { save(Self.profileDefault) }
+    func reset() {
+        #if os(tvOS)
+        if let key { defaults.removeObject(forKey: key + ".captions") }
+        #endif
+        save(Self.profileDefault)
+    }
     private func save(_ value: CardPresentationPreference) {
         guard let key, let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)

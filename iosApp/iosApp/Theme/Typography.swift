@@ -21,10 +21,10 @@ extension Font {
     /// Movie/series names directly beneath artwork. Kept quieter than general
     /// subheadlines so dense eight-across rows remain readable rather than
     /// visually shouting over the posters.
-    static let vividPosterTitle = Font.system(size: 24, weight: .medium)
+    static let vividPosterTitle = Font.system(size: 20, weight: .medium)
 
     /// Year, episode title, and other secondary poster-card metadata.
-    static let vividPosterMetadata = Font.system(size: 20, weight: .regular)
+    static let vividPosterMetadata = Font.system(size: 18, weight: .regular)
 
     /// Body text — descriptions, synopses (26pt regular)
     static let vividBody = Font.system(size: 26)

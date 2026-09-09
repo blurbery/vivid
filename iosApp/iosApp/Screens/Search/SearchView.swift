@@ -21,14 +21,13 @@ struct SearchView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: VividTheme.padding) {
+            VStack(spacing: contentSpacing) {
                 if shouldShowFilters {
                     mediaTypeFilter
                     #if os(tvOS)
                         .padding(.horizontal, VividTheme.padding)
-                        // The picker is a centered 760pt pill inside a
-                        // 1600pt column. Stretch its focus section across
-                        // the full row so up-moves from the grid's outer
+                        // Stretch the picker focus section across the
+                        // full row so up-moves from the grid's outer
                         // columns land here instead of skipping straight
                         // to the search field above.
                         .frame(maxWidth: .infinity)
@@ -49,19 +48,16 @@ struct SearchView: View {
                 RequestSearchSectionView(viewModel: requestsViewModel)
                 #endif
             }
-            .padding(.horizontal, VividTheme.padding)
             #if os(tvOS)
             .padding(.top, usesTVTopMenuInset ? TVTopMenuLayout.contentTopInset : VividTheme.padding)
+            .frame(maxWidth: .infinity)
             #else
+            .padding(.horizontal, VividTheme.padding)
             .padding(.top, VividTheme.smallPadding)
             #endif
-#if os(tvOS)
-            .vividFormWidth(tvSearchContentWidth)
-#endif
         }
         .background(Color.black.ignoresSafeArea())
         #if os(tvOS)
-        .safeAreaPadding(.horizontal, tvSearchSafeHorizontalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         #endif
@@ -110,6 +106,14 @@ struct SearchView: View {
         "Search movies and series..."
     }
 
+    private var contentSpacing: CGFloat {
+        #if os(tvOS)
+        VividTheme.spacing
+        #else
+        VividTheme.padding
+        #endif
+    }
+
     // MARK: - Shared Content
 
     @ViewBuilder
@@ -137,7 +141,7 @@ struct SearchView: View {
                 )
             }
         } else {
-            VStack(alignment: .leading, spacing: VividTheme.padding) {
+            VStack(alignment: .leading, spacing: contentSpacing) {
                 Text("\(viewModel.total) result\(viewModel.total == 1 ? "" : "s")")
                     .font(.vividCaption)
                     .foregroundColor(.vividSecondaryText)
@@ -154,8 +158,7 @@ struct SearchView: View {
                     columnCount: 7,
                     fixedColumnCount: 7,
                     cardWidth: 190,
-                    prefersDefaultFocusOnFirstItem: true,
-                    compactSearchCaption: true
+                    prefersDefaultFocusOnFirstItem: true
                 )
 #else
                 CatalogGrid(
@@ -236,15 +239,6 @@ struct SearchView: View {
     }
 
 #if os(tvOS)
-    /// Search needs a balanced horizontal inset so the page body clears the
-    /// collapsed sidebar without shifting the whole screen right.
-    private var tvSearchSafeHorizontalPadding: CGFloat { 110 }
-
-    /// Search needs a centered column so the segmented media-type pill and
-    /// the poster grid stay visually aligned while still clearing the
-    /// collapsed sidebar affordance.
-    private var tvSearchContentWidth: CGFloat { 1600 }
-
     /// Narrower than the results column so the segmented control reads as a
     /// centered pill rather than stretching across the whole search page.
     private var tvFilterWidth: CGFloat { 760 }

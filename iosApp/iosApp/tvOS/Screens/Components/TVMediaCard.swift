@@ -34,7 +34,7 @@ struct TVMediaCard: View {
     /// treatment of the episode and cast rails so the detail-page
     /// "Recommended / More Like This" rail reads consistently with its
     /// neighbours instead of using the subtler native lift.
-    var leadingCaption = false
+    var leadingCaption = true
     var focusTreatment: FocusTreatment = .nativeCard
     /// Optional external focus hook so a parent rail can make this card a
     /// `.defaultFocus` target on d-pad entry. The focusable element is the
@@ -45,8 +45,6 @@ struct TVMediaCard: View {
     /// Catalog identity for the long-press favorite/watchlist menu.
     /// `nil` (or a nil `userState`) leaves the card without a menu.
     var contentId: String? = nil
-    var compactSearchCaption = false
-
     enum FocusTreatment {
         case nativeCard
         case ring
@@ -56,6 +54,7 @@ struct TVMediaCard: View {
     @State private var favoriteOverride: Bool?
     @State private var watchlistOverride: Bool?
     @State private var uiCustomization = UICustomizationPreferences.shared
+    @State private var cardCaptions = TVHomeCardPreferences.shared
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
 
     private var resolvedCardWidth: CGFloat {
@@ -70,7 +69,7 @@ struct TVMediaCard: View {
         VStack(alignment: .leading, spacing: 16) {
             posterButton
                 .personalListContextMenu(hasPersonalActions ? personalMenuItems : nil)
-            if compactSearchCaption || uiCustomization.cardPresentation.caption.showsTitle {
+            if cardCaptions.presentation.caption.showsTitle {
                 caption
             }
         }
@@ -189,13 +188,13 @@ struct TVMediaCard: View {
 
     }
 
-    // Plex-style: centered title with year directly underneath in a
+    // Title with year directly underneath in a
     // lighter weight + dimmer color. Single-line truncation keeps the
     // caption a uniform two-row block across the whole grid.
     private var caption: some View {
         VStack(alignment: leadingCaption ? .leading : .center, spacing: 4) {
             Text(title)
-                .font(compactSearchCaption ? .system(size: 20, weight: .medium) : .vividPosterTitle)
+                .font(.vividPosterTitle)
                 .foregroundColor(isFocused ? .vividOnSurface : .vividOnSurface.opacity(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -203,10 +202,10 @@ struct TVMediaCard: View {
                 .clipped()
                 .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
 
-            if compactSearchCaption || uiCustomization.cardPresentation.caption.showsMetadata,
+            if cardCaptions.presentation.caption.showsMetadata,
                let secondLine = subtitle ?? year.map(String.init) {
                 Text(secondLine)
-                    .font(compactSearchCaption ? .system(size: 18) : .vividPosterMetadata)
+                    .font(.vividPosterMetadata)
                     .foregroundColor(.vividSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)

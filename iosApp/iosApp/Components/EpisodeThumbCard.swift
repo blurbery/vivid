@@ -71,6 +71,7 @@ struct EpisodeThumbCard: View {
 
     #if os(tvOS)
     @FocusState private var standaloneFocused: Bool
+    @State private var cardCaptions = TVHomeCardPreferences.shared
 
     private var isFocused: Bool {
         guard let focusedItemId else { return standaloneFocused }
@@ -81,9 +82,21 @@ struct EpisodeThumbCard: View {
     var body: some View {
         #if os(tvOS)
         VStack(alignment: .leading, spacing: 14) {
-            thumbnailButton
+            ZStack(alignment: .bottom) {
+                thumbnailButton
+                if showProgress, let progress = progressValue, progress > 0 {
+                    tvResumeProgress(value: progress)
+                }
+            }
+            .scaleEffect(isFocused && !reduceMotion ? 1.025 : 1)
+            .shadow(
+                color: .black.opacity(isFocused ? 0.5 : 0.2),
+                radius: isFocused ? 20 : 8,
+                y: isFocused ? 10 : 4
+            )
+            .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
 
-            if resolvedPresentation.caption.showsTitle || isTVResumeCard || showsEpisodeDetails {
+            if cardCaptions.presentation.caption.showsTitle {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(displayTitle)
                         .font(.vividPosterTitle)
@@ -98,7 +111,7 @@ struct EpisodeThumbCard: View {
                         .clipped()
                         .animation(.easeOut(duration: 0.15), value: isFocused)
 
-                    if resolvedPresentation.caption.showsMetadata || isTVResumeCard || showsEpisodeDetails,
+                    if cardCaptions.presentation.caption.showsMetadata,
                        let subtitle = subtitleLine {
                         Text(subtitle)
                             .font(.vividPosterMetadata)
@@ -120,6 +133,9 @@ struct EpisodeThumbCard: View {
             onArtworkVisibilityChange?(isVisible)
         }
         .onChange(of: item.userState?.played) { _, _ in
+            playedOverride = nil
+        }
+        .onChange(of: item.positionSeconds) { _, _ in
             playedOverride = nil
         }
         .onChange(of: initialIsFavorite) { _, _ in
@@ -243,13 +259,11 @@ struct EpisodeThumbCard: View {
             }
 
             // Progress bar (resume)
+            #if !os(tvOS)
             if showProgress, let p = progressValue, p > 0 {
-                #if os(tvOS)
-                tvResumeProgress(value: p)
-                #else
                 ResumeProgressBar(value: p)
-                #endif
             }
+            #endif
 
             // Watched check
             if isPlayed {
@@ -369,6 +383,9 @@ struct EpisodeThumbCard: View {
     }
 
     private var progressValue: Double? {
+        #if os(tvOS)
+        guard playedOverride == nil else { return nil }
+        #endif
         // Watched items store position 0 server-side (the watched latch and
         // the resume point are independent), so a nonzero position is always
         // a live resume point — including a rewatch of a played item.
@@ -438,13 +455,6 @@ struct EpisodeThumbCard: View {
             itemId: item.contentId,
             standaloneBinding: $standaloneFocused
         )
-        .scaleEffect(isFocused && !reduceMotion ? 1.025 : 1)
-        .shadow(
-            color: .black.opacity(isFocused ? 0.5 : 0.2),
-            radius: isFocused ? 20 : 8,
-            y: isFocused ? 10 : 4
-        )
-        .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
         .applyEpisodePlayPauseAction(playAction)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityDescription)
