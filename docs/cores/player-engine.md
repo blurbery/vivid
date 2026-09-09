@@ -17,11 +17,11 @@ Vivid supports the following audio formats, including DTS, DTS:X and TrueHD 7.1 
     <tr><td>DTS</td><td>Supported, including playback through HomePod (2nd generation).</td></tr>
     <tr><td>DTS:X</td><td>Supported source playback, including through HomePod (2nd generation).</td></tr>
     <tr><td>TrueHD 7.1</td><td>Supported, including playback through HomePod (2nd generation).</td></tr>
-    <tr><td>E-AC-3</td><td>Supported on compatible Apple audio routes.</td></tr>
+    <tr><td>E-AC-3 / Dolby Digital Plus</td><td>Supports Dolby Atmos playback from Atmos-enabled sources on compatible Apple audio routes.</td></tr>
   </tbody>
 </table>
 
-DTS-family and TrueHD playback uses local decoding to PCM. Surround output depends on the audio route; bitstream passthrough and Atmos/DTS:X object preservation are not implied.
+DTS-family and TrueHD playback uses local decoding to PCM. For these formats, source playback does not imply bitstream passthrough or preservation of DTS:X or TrueHD Atmos object metadata. Surround output depends on the audio route.
 
 ## Picture and container support
 
