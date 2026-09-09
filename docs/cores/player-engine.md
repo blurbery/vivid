@@ -12,12 +12,12 @@ VividKit is Vivid’s player engine core. It handles media reads, demuxing, deco
 Vivid supports the following audio formats, including DTS, DTS:X and TrueHD 7.1 playback through HomePod (2nd generation) speakers connected to Apple TV.
 
 <table width="100%">
-  <thead><tr><th align="left">Format</th><th align="left" width="10000">Playback</th></tr></thead>
+  <thead><tr><th align="left" width="25%">Format</th><th align="left" width="75%">Playback</th></tr></thead>
   <tbody>
-    <tr><td>DTS</td><td>Supported, including playback through HomePod (2nd generation).</td></tr>
-    <tr><td>DTS:X</td><td>Supported source playback, including through HomePod (2nd generation).</td></tr>
-    <tr><td>TrueHD 7.1</td><td>Supported, including playback through HomePod (2nd generation).</td></tr>
-    <tr><td>E-AC-3 / Dolby Digital Plus</td><td>Supports Dolby Atmos playback from Atmos-enabled sources on compatible Apple audio routes.</td></tr>
+    <tr><td>DTS</td><td>Supported through HomePod (2nd generation).</td></tr>
+    <tr><td>DTS:X</td><td>Source playback through HomePod (2nd generation).</td></tr>
+    <tr><td>TrueHD 7.1</td><td>Supported through HomePod (2nd generation).</td></tr>
+    <tr><td>E-AC-3<br><sub>Dolby Digital Plus</sub></td><td>Dolby Atmos playback from Atmos-enabled sources on compatible audio routes.</td></tr>
   </tbody>
 </table>
 
@@ -26,7 +26,7 @@ DTS-family and TrueHD playback uses local decoding to PCM. For these formats, so
 ## Picture and container support
 
 <table width="100%">
-  <thead><tr><th align="left">Format</th><th align="left" width="10000">Playback</th></tr></thead>
+  <thead><tr><th align="left" width="25%">Format</th><th align="left" width="75%">Playback</th></tr></thead>
   <tbody>
     <tr><td>4K HEVC</td><td>Hardware-first video decoding.</td></tr>
     <tr><td>Dolby Vision</td><td>Compatible Dolby Vision sources, subject to profile and display support. Not all profiles or enhancement layers are supported.</td></tr>
