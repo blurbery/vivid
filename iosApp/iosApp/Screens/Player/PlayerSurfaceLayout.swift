@@ -22,6 +22,7 @@ struct PlayerPreviewBoundsKey: PreferenceKey {
 
 struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
     let isPreview: Bool
+    var isTransitioning: Bool = false
     @ViewBuilder let surface: () -> Surface
     @ViewBuilder let content: () -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -31,18 +32,19 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
             .overlayPreferenceValue(PlayerPreviewBoundsKey.self) { geometry in
                 GeometryReader { proxy in
                     let fullFrame = CGRect(origin: .zero, size: proxy.size)
-                    let frame = isPreview ? geometry.bounds.map { proxy[$0] } ?? fullFrame : fullFrame
-                    let viewport = isPreview ? geometry.viewport.map { proxy[$0] } ?? fullFrame : fullFrame
+                    let showsPreview = isPreview && !isTransitioning
+                    let frame = showsPreview ? geometry.bounds.map { proxy[$0] } ?? fullFrame : fullFrame
+                    let viewport = showsPreview ? geometry.viewport.map { proxy[$0] } ?? fullFrame : fullFrame
                     // One structural identity in both modes. Only geometry changes;
                     // expansion must not load, seek, bind a second host, or resume.
                     surface()
                         .frame(width: frame.width, height: frame.height)
-                        .clipShape(RoundedRectangle(cornerRadius: isPreview ? 8 : 0))
+                        .clipShape(RoundedRectangle(cornerRadius: showsPreview ? 8 : 0))
                         .overlay {
-                            RoundedRectangle(cornerRadius: isPreview ? 8 : 0)
-                                .stroke(.white.opacity(isPreview ? 0.16 : 0), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: showsPreview ? 8 : 0)
+                                .stroke(.white.opacity(showsPreview ? 0.16 : 0), lineWidth: 1)
                         }
-                        .shadow(color: .black.opacity(isPreview ? 0.55 : 0), radius: isPreview ? 34 : 0, y: isPreview ? 18 : 0)
+                        .shadow(color: .black.opacity(showsPreview ? 0.55 : 0), radius: showsPreview ? 34 : 0, y: showsPreview ? 18 : 0)
                         .position(x: frame.midX, y: frame.midY)
                         // Respect the original ScrollView's clipping even though
                         // the video itself is a persistent sibling of that view.
@@ -51,7 +53,9 @@ struct PlayerSurfaceLayout<Surface: View, Content: View>: View {
                                 .frame(width: viewport.width, height: viewport.height)
                                 .position(x: viewport.midX, y: viewport.midY)
                         }
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: isPreview)
+                        .animation(reduceMotion || isTransitioning ? nil : .easeInOut(duration: 0.3), value: showsPreview)
+                        .overlay { Color.black.opacity(isTransitioning ? 1 : 0) }
+                        .animation(nil, value: isTransitioning)
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)

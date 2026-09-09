@@ -9,6 +9,7 @@ import XCTest
 final class PlayerSurfaceLayoutTests: XCTestCase {
     @Observable final class Presentation {
         var preview = false
+        var transitioning = false
         var hasPreviewBounds = true
         var viewport: CGSize?
     }
@@ -31,7 +32,8 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
                         VividPlayerSurface(engine: engine)
                     }
                 } else {
-                    PlayerSurfaceLayout(isPreview: presentation.preview) {
+                    PlayerSurfaceLayout(isPreview: presentation.preview,
+                                        isTransitioning: presentation.transitioning) {
                         VividPlayerSurface(engine: engine)
                     } content: {
                         ZStack {
@@ -56,6 +58,51 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
 
     private func surfaces(in view: UIView) -> [VividSurfaceView] {
         (view as? VividSurfaceView).map { [$0] } ?? view.subviews.flatMap { surfaces(in: $0) }
+    }
+
+    func testSuccessorTransitionUsesFullSizeSurfaceWithoutReplacingOrResumingPlayer() async throws {
+        let engine = try VividEngine()
+        let presentation = Presentation()
+        let window = makeWindow(Harness(presentation: presentation, engine: engine, reduceMotion: false))
+        defer { window.isHidden = true; window.rootViewController = nil; engine.stop() }
+        try await settle(window)
+        let surface = try XCTUnwrap(surfaces(in: window).first)
+        let fullSize = surface.bounds.size
+        let player = engine.player
+        let layer = player.displayLayer
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "v3_h264_aac", withExtension: "mp4"))
+        try await engine.load(url: url, options: LoadOptions(autoplay: false))
+        engine.pause()
+        let pausedPosition = engine.clock.currentTime
+        var loads = 0
+        let observation = engine.$startupProgress.compactMap { $0?.checkpoint }
+            .filter { $0 == "Opening source" }.sink { _ in loads += 1 }
+        defer { observation.cancel() }
+
+        presentation.preview = true
+        try await settle(window)
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertLessThan(surface.bounds.width, fullSize.width)
+
+        presentation.transitioning = true
+        try await settle(window)
+        XCTAssertEqual(surface.bounds.width, fullSize.width, accuracy: 1)
+        XCTAssertEqual(surface.bounds.height, fullSize.height, accuracy: 1)
+        XCTAssertTrue(surfaces(in: window).first === surface)
+        XCTAssertTrue(engine.player === player)
+        XCTAssertTrue(layer.superlayer === surface.layer)
+        XCTAssertEqual(player.synchronizer.rate, 0)
+        XCTAssertEqual(engine.clock.currentTime, pausedPosition, accuracy: 0.1)
+        XCTAssertEqual(loads, 0)
+
+        presentation.preview = false
+        presentation.transitioning = false
+        try await settle(window)
+        XCTAssertEqual(surface.bounds.width, fullSize.width, accuracy: 1)
+        XCTAssertTrue(surfaces(in: window).first === surface)
+        XCTAssertTrue(layer.superlayer === surface.layer)
+        XCTAssertEqual(player.synchronizer.rate, 0)
+        XCTAssertEqual(loads, 0)
     }
 
     private func settle(_ window: UIWindow) async throws {

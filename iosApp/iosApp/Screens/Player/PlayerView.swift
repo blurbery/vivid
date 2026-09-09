@@ -96,7 +96,8 @@ struct PlayerView: View {
     }
 
     var body: some View {
-        PlayerSurfaceLayout(isPreview: viewModel.showNextUpScreen) {
+        PlayerSurfaceLayout(isPreview: viewModel.showNextUpScreen,
+                            isTransitioning: viewModel.isNextUpTransitioning) {
             playerSurface()
                 .opacity(viewModel.error == nil ? 1 : 0)
                 .accessibilityHidden(viewModel.error != nil)
@@ -112,7 +113,7 @@ struct PlayerView: View {
                         }
                     }
                     #endif
-                if viewModel.showNextUpScreen && viewModel.error == nil {
+                if viewModel.showNextUpScreen && !viewModel.isNextUpTransitioning && viewModel.error == nil {
                     PlayerNextUpScreen(
                         viewModel: viewModel,
                         onBack: {
@@ -323,7 +324,9 @@ struct PlayerView: View {
         // `onExitCommand` handles the common case where focus is inside
         // it; this fallback keeps the user from getting stuck.
         .onExitCommand {
-            if viewModel.showNextUpScreen {
+            if viewModel.isNextUpTransitioning {
+                dismissPlayer()
+            } else if viewModel.showNextUpScreen {
                 if !viewModel.keepWatchingCurrentEpisode() {
                     dismissPlayer()
                 }
