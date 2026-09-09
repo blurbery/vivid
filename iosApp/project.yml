@@ -43,7 +43,7 @@ targetTemplates:
     settings:
       base:
         MARKETING_VERSION: "0.15.0"
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 4
         # Surfaced to the app as the `VividBuildChannel` Info.plist key and
         # reported to the server as X-Silo-Client-Channel. The unsigned
         # sideload lanes override this to `sideload`; DEBUG builds report
