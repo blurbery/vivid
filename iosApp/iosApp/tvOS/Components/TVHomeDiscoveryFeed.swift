@@ -38,7 +38,6 @@ struct TVHomeDiscoveryFeed: View {
                             },
                             onMoveUp: { onTopMenuFocusRequest?() }
                         )
-                        .padding(.horizontal, VividTheme.Skyline.safeAreaX)
                         .id(Self.spotlightAnchor)
                     }
 
@@ -170,7 +169,7 @@ private struct TVHomeSpotlightCarousel: View {
                 ZStack {
                     Color(white: 0.055)
                     ForEach(layers) { slide in
-                        TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
+                        TVHomeSpotlightArtwork(slide: slide, neighbours: neighbours(for: slide), onTint: { tint in
                             tints[slide.id] = tint
                             if slide.id == visibleID { ambientTint = tint }
                         }, onReady: {
@@ -182,10 +181,12 @@ private struct TVHomeSpotlightCarousel: View {
                     }
                 }
                 .frame(height: 580)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24)
-                        .strokeBorder(focus.wrappedValue ? .white : .clear, lineWidth: 2)
+                .clipped()
+                .overlay(alignment: .bottom) {
+                    Capsule()
+                        .fill(focus.wrappedValue ? .white.opacity(0.9) : .clear)
+                        .frame(width: 120, height: 2)
+                        .padding(.bottom, 8)
                 }
             }
             .buttonStyle(TVHomeSpotlightButtonStyle())
@@ -256,6 +257,11 @@ private struct TVHomeSpotlightCarousel: View {
             guard !Task.isCancelled else { return }
             advance(1)
         }
+    }
+
+    private func neighbours(for slide: TVHomeSpotlightSlide) -> [TVHomeSpotlightSlide] {
+        guard slides.count > 1, let position = slides.firstIndex(where: { $0.id == slide.id }) else { return [] }
+        return [slides[(position + slides.count - 1) % slides.count], slides[(position + 1) % slides.count]]
     }
 
     private func advance(_ step: Int) {
@@ -357,6 +363,7 @@ private struct TVHomeSpotlightButtonStyle: ButtonStyle {
 
 private struct TVHomeSpotlightArtwork: View {
     let slide: TVHomeSpotlightSlide
+    let neighbours: [TVHomeSpotlightSlide]
     let onTint: (Color) -> Void
     let onReady: () -> Void
     @State private var artworkReady = false
@@ -366,7 +373,7 @@ private struct TVHomeSpotlightArtwork: View {
     @State private var logo: UIImage?
 
     private static let fadeStops: [Gradient.Stop] = {
-        let anchors: [(Double, Double)] = [(0, 0.94), (0.28, 0.92), (0.45, 0.66), (0.72, 0.18), (1, 0)]
+        let anchors: [(Double, Double)] = [(0, 0), (0.28, 0.02), (0.45, 0.08), (0.72, 0.4), (1, 0.82)]
         return (0...128).map { step in
             let x = Double(step) / 128
             let segment = (0..<anchors.count - 1).first { x <= anchors[$0 + 1].0 } ?? anchors.count - 2
@@ -400,8 +407,16 @@ private struct TVHomeSpotlightArtwork: View {
                 width: min(geometry.size.width, geometry.size.height * 16 / 9 * 1.2),
                 height: geometry.size.height
             )
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .bottom) {
                 model.tintColor
+                ForEach(neighbours.indices, id: \.self) { side in
+                    TVSpotlightNeighbourArtwork(slide: neighbours[side], size: artworkSize)
+                        .id("\(side)-\(neighbours[side].id)")
+                        .blur(radius: 22)
+                        .opacity(0.65)
+                        .offset(x: (side == 0 ? -1 : 1) * artworkSize.width * 0.82)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
                 if let url = model.backdropURL {
                     TVSpotlightBackdropImage(url: url, size: artworkSize, onReady: { artworkReady = true })
                     .frame(width: artworkSize.width, height: artworkSize.height)
@@ -409,17 +424,18 @@ private struct TVHomeSpotlightArtwork: View {
                         LinearGradient(
                             stops: [
                                 .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.16),
-                                .init(color: .black, location: 1)
+                                .init(color: .black, location: 0.2),
+                                .init(color: .black, location: 0.8),
+                                .init(color: .clear, location: 1)
                             ],
                             startPoint: .leading, endPoint: .trailing
                         )
                     }
-                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .trailing)
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
                 }
                 LinearGradient(
                     stops: Self.fadeStops,
-                    startPoint: .leading, endPoint: .trailing
+                    startPoint: .top, endPoint: .bottom
                 )
                 LinearGradient(colors: [.clear, .black.opacity(0.4)], startPoint: .center, endPoint: .bottom)
                 Image(uiImage: Self.fadeDither)
@@ -442,7 +458,8 @@ private struct TVHomeSpotlightArtwork: View {
                         Text(slide.content.title)
                             .font(.system(size: 62, weight: .bold))
                             .lineLimit(2)
-                            .frame(maxWidth: 760, alignment: .leading)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 760, alignment: .center)
                     }
                     Text(([slide.item.type.capitalized] + spotlightMetaParts
                           + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
@@ -454,6 +471,7 @@ private struct TVHomeSpotlightArtwork: View {
                 }
                 .foregroundStyle(.white)
                 .padding(48)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .allowsHitTesting(false)
@@ -495,4 +513,25 @@ private struct TVHomeSpotlightArtwork: View {
         onReady()
     }
 }
+
+private struct TVSpotlightNeighbourArtwork: View {
+    let slide: TVHomeSpotlightSlide
+    let size: CGSize
+    @State private var model = TVFocusMarqueeModel()
+
+    var body: some View {
+        ZStack {
+            model.tintColor
+            if let url = model.backdropURL {
+                TVSpotlightBackdropImage(url: url, size: size)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear { model.resume(); model.seed(slide.content) }
+        .onDisappear { model.suspend() }
+    }
+}
+
 #endif

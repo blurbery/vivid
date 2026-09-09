@@ -46,7 +46,7 @@ Follow the [design ownership policy](../CONTRIBUTING.md#design-ownership). Refer
 
 ## Apple TV layout
 
-Home uses the discovery spotlight and standard media rows described in [Apple TV Browsing](apple-tv-browsing.md). Keep its dark title fade, subdued artwork-colour edge fade, thin focus outline and fixed spotlight size. Do not add a focus scale to the spotlight. Root tab pages use a slim glass bar with Search and Profile dividers, without a separate corner logo.
+Home uses the discovery spotlight and standard media rows described in [Apple TV Browsing](apple-tv-browsing.md). The experimental tvOS layout keeps the 580-point height, centres artwork and metadata, and blends blurred neighbouring artwork at the sides. A short underline indicates focus; device visual validation is pending. Do not add a focus scale to the spotlight. Root tab pages use a slim glass bar with Search and Profile dividers, without a separate corner logo.
 
 Movies, Series and For You are independent pages with sub-tabs. Settings opens categories as separate pages on black. Account settings uses a full-width black backdrop and labelled fields, while profile selection uses circular account cards. Home poster size remains local to Home. TV captions use one local server/profile setting across Search, Home, Movies, Series, For You, Continue Watching and series episode cards: Title & Year, Title Only or Artwork Only. Titles use 20-point text and secondary captions use 18-point text, both left aligned; episodes substitute episode details for the year. Search keeps seven columns across the safe-area width with reduced spacing below its result tabs.
 
