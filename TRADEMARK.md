@@ -39,6 +39,6 @@ The [branding guide](docs/branding/README.md) covers logo files, colour and pres
 > [!NOTE]
 > This is a project brand policy, not a trademark registration or availability clearance. Use ™ for the brand notice; do not use ® without a confirmed registration. See [IP Australia’s guidance](https://ipfirstresponse.ipaustralia.gov.au/options/use-your-trade-mark-prominently-build-recognition-and-protection).
 
-## Existing third-party notice
+## Third-party notices
 
-The original notice below is preserved for the third-party names and assets it covers. It does not describe Vivid’s brand ownership.
+Third-party components retain their own notices and licences. See [Third-Party Libraries](THIRD_PARTY_NOTICES.md) and the [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt). This policy describes Vivid’s branding, not ownership of third-party names or assets.

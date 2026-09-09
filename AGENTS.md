@@ -53,7 +53,7 @@ Use the configured Xcode and an available destination. The current scheme and ta
 
 ## Coding Style & Naming Conventions
 
-Use Swift 5 and SwiftUI naming conventions. Types use `PascalCase`; functions and properties use `camelCase`. Keep platform-specific code under the existing `iOS` or `tvOS` folders and update `project.yml` instead of hand-editing generated `.xcodeproj` files. Do not change bundle IDs, keychain groups, signing or API identifiers as part of documentation or branding edits. Vivid’s release identity and App Store Connect setup are pending; follow the distribution guide before preparing an Apple upload.
+Use Swift 5 and SwiftUI naming conventions. Types use `PascalCase`; functions and properties use `camelCase`. Keep platform-specific code under the existing `iOS` or `tvOS` folders and update `project.yml` instead of hand-editing generated `.xcodeproj` files. Do not change bundle IDs, keychain groups, signing or API identifiers as part of documentation or branding edits. Vivid’s release identifiers and App Store Connect record are configured. Follow the distribution guide to verify signing, production CloudKit schema and the exact archive before an Apple upload.
 
 For tvOS focus work, read `docs/apple-tv-focus.md` before editing navigation,
 menus, grids, or custom controls. Prefer a stable native focus graph or a

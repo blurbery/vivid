@@ -8,7 +8,7 @@
 Emby is available on iPhone, iPad and Apple TV. It connects to Emby and translates its library, media sources and user state into Vivid's screens and local VividKit player. Its current feature and verification limits are listed below.
 
 > [!IMPORTANT]
-> I’ve tested Emby playback and account switching on iPhone and Apple TV. The adapter still has the limits listed below. Physical iPad coverage and a complete format/transcoding matrix remain outstanding.
+> Emby playback and account switching have been device-tested on iPhone and Apple TV. The adapter still has the limits listed below. Physical iPad coverage and a complete format/transcoding matrix remain outstanding.
 
 ## Provider boundary
 
@@ -50,17 +50,17 @@ Original-file downloads use the existing download manager with native Emby authe
 
 Initial audio selection uses Emby’s existing track metadata. Vivid prefers a compatible non-commentary track in the selected language, maps its ordinal to the source stream index, and then requests PlaybackInfo. It preserves an explicit manual choice and falls back to the original choice when no same-language alternative exists. No separate media probe is added.
 
-I confirmed that Dune’s alternate AC-3 track plays with sound and that automatic selection keeps startup fast. On 9 September 2026, I also confirmed Dune’s TrueHD 7.1 source plays with sound on Apple TV through HomePod (2nd generation), with Emby reporting Direct Play. See the [player engine core](player-engine.md) for the tested revision, picture formats and output limits. This result does not guarantee every 7.1 layout or packaged audio-switching route. Direct playback describes the server delivery route; local FFmpeg decoding to PCM can still be used.
+Compatible AC-3 selection and TrueHD 7.1 source playback have been verified with Emby in development builds. See the [player engine core](player-engine.md#audio-support) for supported formats and output limits. This does not guarantee every channel layout or packaged audio-switching route. Emby Direct Play describes server delivery; local FFmpeg decoding to PCM can still be used.
 
 ## Validation
 
-The app changes published through `v0.13.0` (`2ee9005c`) include the device-tested Emby setup and account selection, episode labels, resume bars, compatible-audio selection and serialized manual audio changes. I confirmed the iPhone compatible-audio path and later confirmed Next Up labels and the shared episode-card changes. On Apple TV, I confirmed that switching to Emby worked after the initial add-account crash was addressed. That confirmation does not prove the cause of the original crash or cover every account-transition failure.
+The app changes published through `v0.13.0` (`2ee9005c`) include the device-tested Emby setup and account selection, episode labels, resume bars, compatible-audio selection and serialised manual audio changes. Device checks covered the iPhone compatible-audio path, Next Up labels and shared episode-card changes. Apple TV checks confirmed account switching after the initial add-account crash was addressed. That confirmation does not prove the cause of the original crash or cover every account-transition failure.
 
 Earlier automated checks covered Emby mapping, identity boundaries, local preferences, quality limits, Home-row filtering, collections, seasons and resolution labels. Separate TMDb and IntroDB checks covered request isolation and metadata mapping. Those checks passed on their recorded development revisions; they are not a new full-suite run against `v0.13.0`.
 
-On 8 September 2026, read-only inspection confirmed that Reacher’s fourth season was stored as Gone Tomorrow with season number 4 in the connected Emby library. The adapter now labels it Season 4 on both platforms without altering the server. Four source-derived mapping checks passed for numbered seasons, Specials, missing numbers and unchanged episode titles. The existing season regression test also includes the Reacher case. Both device builds passed, were installed, and the owner confirmed the completed update on iPhone and Living Room Apple TV. This does not expand the untested integration and format coverage below.
+On 8 September 2026, read-only inspection confirmed that Reacher’s fourth season was stored as Gone Tomorrow with season number 4 in the connected Emby library. The adapter now labels it Season 4 on both platforms without altering the server. Four source-derived mapping checks passed for numbered seasons, Specials, missing numbers and unchanged episode titles. The existing season regression test also includes the Reacher case. Both device builds passed, were installed, and device checks confirmed the completed update on iPhone and Apple TV. This does not expand the untested integration and format coverage below.
 
-Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. The current full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks. Use these limits when choosing the first TestFlight group.
+Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. Historical full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks. Use these limits when choosing the first TestFlight group.
 
 ## Source ownership
 

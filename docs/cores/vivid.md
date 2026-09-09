@@ -29,7 +29,7 @@ Vivid uses the series IMDb ID, season and episode number supplied through the se
 
 Vivid ignores Silo’s watch-detail and realtime markers. This does not disable or alter IntroDB on the Silo server itself. Lookups use a separate session without server credentials, validate identity and duration bounds, and do not block playback when data is unavailable. The endpoint covers TV episodes; movie credits and offline lookups are not provided.
 
-I confirmed IntroDB works on the current Apple TV setup. That confirmation applies to the current Silo-backed setup. The Emby core now supplies common episode identity, but IntroDB playback with Emby has not been verified. Jellyfin remains planned. Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
+IntroDB playback has been verified on Silo-backed Apple TV. The Emby core now supplies common episode identity, but IntroDB playback with Emby has not been verified. Jellyfin remains planned. Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
 
 ## Implementation references
 

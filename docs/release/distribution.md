@@ -3,7 +3,7 @@
 </p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">App Distribution</h1>
-<p align="center">Local device builds and future Apple distribution.</p>
+<p align="center">Local device builds and Apple beta distribution.</p>
 <p align="center"><a href="../../README.md">Home</a> · <a href="../README.md">Documentation</a> · <a href="../../CONTRIBUTING.md">Contributing</a> · <a href="https://github.com/blurbery/vivid/releases">Releases</a></p>
 
 ---
@@ -57,7 +57,11 @@ For What to Test:
 
 Use an internal group first, then invite external testers after the matching iOS and tvOS builds pass the relevant checks. Supply Apple’s review contact details privately in App Store Connect. For external review, provide a working review server/account with authorised sample media and any required PIN; a media-client login screen alone does not let Apple exercise playback. Do not put those credentials in Git or public release notes. Apple documents the [test information](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-test-information/) and [external testing review](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/) requirements.
 
-Known limits for this beta include physical iPad verification, live two-device iCloud restoration/deletion, older Apple TV hardware, broad HDR/audio-format coverage and provider-specific features listed in the [Emby guide](../cores/emby.md). The compatible AC-3 fallback was confirmed; the original silent TrueHD track has not been confirmed fixed. External distribution still requires the selected matching builds and any required Beta App Review to complete.
+The uploaded TestFlight build and current source are separate revisions. A merge or GitHub source release does not update an uploaded binary or its review. Assess beta capabilities against the selected build, not the latest documentation or local development installation.
+
+Current source supports the audio formats listed in the [player engine core](../cores/player-engine.md#audio-support), including TrueHD 7.1 source playback. AirPlay recovery improvements are included in source; the HDMI stall-recovery component remains Debug-only and requires `-VividHDMIAudioCore`. Release archives do not enable that HDMI component. Successful debug-device testing does not establish equivalent recovery in a TestFlight build.
+
+Remaining validation includes physical iPad behaviour, live two-device iCloud restoration/deletion, older Apple TV hardware, additional HDR/audio routes and the provider-specific limits in the [Emby guide](../cores/emby.md). External distribution requires the selected matching builds and any required Beta App Review to complete.
 
 ## GitHub and unsigned sideload builds
 
