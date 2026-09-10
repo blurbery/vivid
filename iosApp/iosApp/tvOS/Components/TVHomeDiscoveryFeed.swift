@@ -124,6 +124,8 @@ private struct TVHomeSpotlightCarousel: View {
     let onMoveUp: () -> Void
 
     @State private var selectedID: String?
+    @State private var visualPosition = 0
+    @State private var requestedPosition = 0
     @State private var isVisible = true
     @State private var manualStep = 0
     @State private var ambientTint = Color.black
@@ -143,14 +145,13 @@ private struct TVHomeSpotlightCarousel: View {
     }
     private var index: Int { slides.firstIndex { $0.id == visibleID } ?? 0 }
     private var current: TVHomeSpotlightSlide? { slides.first { $0.id == visibleID } ?? requested }
-    private var layers: [TVHomeSpotlightSlide] {
-        var seen = Set<String>()
-        let upcoming = visibleID != nil && requested?.id == visibleID && slides.count > 1
-            && isVisible && scenePhase == .active && router.path.isEmpty
-            ? slides[(index + 1) % slides.count].id : nil
-        return [retiringID, visibleID, requested?.id, upcoming].compactMap { $0 }
-            .filter { seen.insert($0).inserted }
-            .compactMap { id in slides.first { $0.id == id } }
+    private func slide(at position: Int) -> TVHomeSpotlightSlide {
+        slides[((position % slides.count) + slides.count) % slides.count]
+    }
+    private var layerPositions: [Int] {
+        guard !slides.isEmpty else { return [] }
+        guard slides.count > 1 else { return [visualPosition] }
+        return Array((min(visualPosition, requestedPosition) - 1)...(max(visualPosition, requestedPosition) + 1))
     }
     private var canRotate: Bool {
         slides.count > 1 && isVisible && scenePhase == .active
@@ -166,19 +167,30 @@ private struct TVHomeSpotlightCarousel: View {
             Button {
                 if let current { onSelect(current) }
             } label: {
-                ZStack {
-                    Color(white: 0.055)
-                    ForEach(layers) { slide in
-                        TVHomeSpotlightArtwork(slide: slide, neighbours: neighbours(for: slide), onTint: { tint in
-                            tints[slide.id] = tint
-                            if slide.id == visibleID { ambientTint = tint }
-                        }, onReady: {
-                            readyIDs.insert(slide.id)
-                            reveal(slide)
-                        })
-                        .opacity(slide.id == visibleID || slide.id == retiringID ? 1 : 0)
-                        .accessibilityHidden(slide.id != visibleID)
+                GeometryReader { geometry in
+                    let cardWidth = max(1, geometry.size.width - 120)
+                    ZStack {
+                        ForEach(layerPositions, id: \.self) { position in
+                            let slide = slide(at: position)
+                            TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
+                                tints[slide.id] = tint
+                                if slide.id == visibleID { ambientTint = tint }
+                            }, onReady: {
+                                readyIDs.insert(slide.id)
+                                reveal(slide)
+                            })
+                            .id("\(position)-\(slide.id)")
+                            .frame(width: cardWidth, height: 580)
+                            .clipShape(RoundedRectangle(cornerRadius: 22))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 22)
+                                    .strokeBorder(.white.opacity(position == visualPosition && focus.wrappedValue ? 0.75 : 0.12), lineWidth: 2)
+                            }
+                            .offset(x: CGFloat(position - visualPosition) * (cardWidth + 22))
+                            .accessibilityHidden(position != visualPosition)
+                        }
                     }
+                    .frame(width: geometry.size.width, height: 580)
                 }
                 .frame(height: 580)
                 .clipped()
@@ -233,7 +245,7 @@ private struct TVHomeSpotlightCarousel: View {
         .onChange(of: requested?.id) { _, id in
             if let id, readyIDs.contains(id), let slide = requested { reveal(slide) }
         }
-        .onChange(of: layers.map(\.id)) { _, ids in
+        .onChange(of: layerPositions.map { slide(at: $0).id }) { _, ids in
             readyIDs.formIntersection(ids)
             tints = tints.filter { ids.contains($0.key) }
         }
@@ -241,10 +253,24 @@ private struct TVHomeSpotlightCarousel: View {
         .onAppear {
             isVisible = true
             if let visibleID { selectedID = visibleID }
+            requestedPosition = visualPosition
             cycleStarted = Date()
             manualStep += 1
         }
-        .onDisappear { isVisible = false; retirementTask?.cancel() }
+        .onDisappear {
+            isVisible = false
+            retirementTask?.cancel()
+            retiringID = nil
+        }
+        .onChange(of: slides.map(\.id)) { _, ids in
+            retirementTask?.cancel()
+            retiringID = nil
+            visualPosition = ids.firstIndex(of: visibleID ?? "") ?? 0
+            requestedPosition = visualPosition
+            if !ids.contains(visibleID ?? "") { visibleID = nil }
+            selectedID = visibleID ?? ids.first
+            readyIDs.formIntersection(ids)
+        }
         .task(id: rotationKey) {
             guard canRotate else { return }
             cycleStarted = Date()
@@ -254,15 +280,10 @@ private struct TVHomeSpotlightCarousel: View {
         }
     }
 
-    private func neighbours(for slide: TVHomeSpotlightSlide) -> [TVHomeSpotlightSlide] {
-        guard slides.count > 1, let position = slides.firstIndex(where: { $0.id == slide.id }) else { return [] }
-        return [slides[(position + slides.count - 1) % slides.count], slides[(position + 1) % slides.count]]
-    }
-
     private func advance(_ step: Int) {
-        guard !slides.isEmpty else { return }
-        let requestedIndex = slides.firstIndex { $0.id == requested?.id } ?? index
-        selectedID = slides[(requestedIndex + step + slides.count) % slides.count].id
+        guard slides.count > 1, retiringID == nil, requested?.id == visibleID else { return }
+        requestedPosition = visualPosition + step
+        selectedID = slide(at: requestedPosition).id
         manualStep &+= 1
     }
 
@@ -273,6 +294,7 @@ private struct TVHomeSpotlightCarousel: View {
         cycleStarted = Date()
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
             visibleID = slide.id
+            visualPosition = requestedPosition
             ambientTint = tints[slide.id] ?? .black
         }
         retirementTask = Task {
@@ -358,7 +380,6 @@ private struct TVHomeSpotlightButtonStyle: ButtonStyle {
 
 private struct TVHomeSpotlightArtwork: View {
     let slide: TVHomeSpotlightSlide
-    let neighbours: [TVHomeSpotlightSlide]
     let onTint: (Color) -> Void
     let onReady: () -> Void
     @State private var artworkReady = false
@@ -366,9 +387,6 @@ private struct TVHomeSpotlightArtwork: View {
     @State private var reportedReady = false
     @State private var model = TVFocusMarqueeModel()
     @State private var logo: UIImage?
-    @State private var tmdbBackdropURL: String?
-    @State private var tmdbBackdropReady = false
-    private var tmdbContext: String { TVTMDbStore.shared.contextKey }
 
     private static let fadeStops: [Gradient.Stop] = {
         let anchors: [(Double, Double)] = [(0, 0), (0.28, 0.02), (0.45, 0.08), (0.72, 0.4), (1, 0.82)]
@@ -407,41 +425,11 @@ private struct TVHomeSpotlightArtwork: View {
             )
             ZStack(alignment: .bottom) {
                 model.tintColor
-                ForEach(neighbours.indices, id: \.self) { side in
-                    TVSpotlightNeighbourArtwork(slide: neighbours[side], size: artworkSize)
-                        .id("\(side)-\(neighbours[side].id)")
-                        .blur(radius: 10)
-                        .opacity(0.65)
-                        .offset(x: (side == 0 ? -1 : 1) * artworkSize.width * 0.82)
+                if let url = model.backdropURL {
+                    TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true,
+                                             onReady: { artworkReady = true })
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
-                ZStack {
-                    if let url = model.backdropURL {
-                        TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true,
-                                                 onReady: { artworkReady = true })
-                    }
-                    if let url = tmdbBackdropURL {
-                        TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true, onReady: {
-                            tmdbBackdropReady = true
-                            artworkReady = true
-                        })
-                        .id(tmdbContext + url)
-                        .opacity(tmdbBackdropReady ? 1 : 0)
-                    }
-                }
-                    .frame(width: artworkSize.width, height: artworkSize.height)
-                    .mask {
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.08),
-                                .init(color: .black, location: 0.92),
-                                .init(color: .clear, location: 1)
-                            ],
-                            startPoint: .leading, endPoint: .trailing
-                        )
-                    }
-                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
                 LinearGradient(
                     stops: Self.fadeStops,
                     startPoint: .top, endPoint: .bottom
@@ -480,7 +468,7 @@ private struct TVHomeSpotlightArtwork: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.vertical, 48)
-                .padding(.horizontal, VividTheme.Skyline.safeAreaX + 48)
+                .padding(.horizontal, 48)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -495,18 +483,6 @@ private struct TVHomeSpotlightArtwork: View {
             do { try await Task.sleep(for: .seconds(8)) } catch { return }
             guard !Task.isCancelled else { return }
             reportReady()
-        }
-        .task(id: tmdbContext + "|" + slide.item.contentId) {
-            tmdbBackdropURL = nil
-            tmdbBackdropReady = false
-            let context = tmdbContext
-            do {
-                let url = try await TVTMDbStore.shared.spotlightBackdrop(contentId: slide.item.contentId)
-                guard !Task.isCancelled, context == tmdbContext else { return }
-                tmdbBackdropURL = url
-            } catch {
-                // Existing server artwork stays visible if TMDB is unavailable.
-            }
         }
         .task(id: slide.item.logoUrl) {
             defer { logoReady = true }
@@ -533,26 +509,6 @@ private struct TVHomeSpotlightArtwork: View {
         reportedReady = true
         onTint(model.tintColor)
         onReady()
-    }
-}
-
-private struct TVSpotlightNeighbourArtwork: View {
-    let slide: TVHomeSpotlightSlide
-    let size: CGSize
-    @State private var model = TVFocusMarqueeModel()
-
-    var body: some View {
-        ZStack {
-            model.tintColor
-            if let url = model.backdropURL {
-                TVSpotlightBackdropImage(url: url, size: size)
-            }
-        }
-        .frame(width: size.width, height: size.height)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .onAppear { model.resume(); model.seed(slide.content) }
-        .onDisappear { model.suspend() }
     }
 }
 
