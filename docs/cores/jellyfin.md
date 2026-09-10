@@ -7,6 +7,6 @@
 
 Jellyfin is planned. Its provider card remains Coming Soon; there is no native Jellyfin login, library or playback adapter in the current app.
 
-VividKit is shared playback infrastructure. Its container and codec support does not implement a Jellyfin server connection. A future adapter must supply Jellyfin authentication, library/source metadata, session negotiation and progress reporting without reusing Silo credentials or pretending to implement Silo Protocol V3. It should use Vivid’s existing player, embedded subtitles and chapters, and optional IntroDB integration.
+Vivid’s platform engines provide playback infrastructure. Their container and codec support does not implement a Jellyfin server connection. A future adapter must supply Jellyfin authentication, library/source metadata, session negotiation and progress reporting without reusing Silo credentials or pretending to implement Silo Protocol V3. It should use Vivid’s existing player, embedded subtitles and chapters, and optional IntroDB integration.
 
 No Jellyfin device verification is claimed.

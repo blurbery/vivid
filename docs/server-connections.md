@@ -104,13 +104,13 @@ The server's display name labels that connection. It must not replace Vivid's ap
 
 ## Playback reporting
 
-VividKit supplies playback state and engine observations. Vivid owns reporting that state to the selected server; upgrading the engine does not replace the app’s session bridge.
+The platform engine supplies playback state and engine observations. Vivid owns reporting that state to the selected server; upgrading the engine does not replace the app’s session bridge.
 
 For Silo, `PlayerViewModel` runs a periodic progress report every ten seconds. `PlaybackSessionBridge` posts position and pause state to `/api/v1/playback/{session_id}/progress`, sends Protocol V3 route events, and flushes final progress before stopping the session. The Silo server owns playback persistence and watch history; its backend handlers do not belong in the Apple app. Vivid has no in-app diagnostics-report capture or upload.
 
 The progress request fields match `blurbery/silo-server` at `d91fd15194d126cf67c85db1e908ddb163fee62d`. This is a source-contract check, not an end-to-end device test of that server revision. Preserve the existing client reporting when changing branding, and keep Emby reporting separate when extending either provider or adding Jellyfin.
 
-Emby uses native PlaybackInfo negotiation and Sessions/Playing reporting, with tick conversion and authenticated VividKit inputs. Its local settings, subtitle wiring, download limits and device-check status are documented in the [Emby core](cores/emby.md). This does not change the Silo reporting contract.
+Emby uses native PlaybackInfo negotiation and Sessions/Playing reporting, with tick conversion and authenticated playback inputs. Its local settings, subtitle wiring, download limits and device-check status are documented in the [Emby core](cores/emby.md). This does not change the Silo reporting contract.
 
 ## Adding a provider
 

@@ -11,7 +11,7 @@ These cores describe responsibility boundaries. They are not a claim that the cu
 
 ## Player ownership
 
-Vivid owns playback controls and focus, play/pause and seeking, version/audio/subtitle selection, the Apple TV Info panel, mobile scrollable Quality/Audio/Subtitles/Chapters popovers, loading presentation, resume and next-episode behaviour, and playback-progress presentation. Its three capped quality modes can perform one lower-bitrate reload after sustained buffering; Auto and Original are not enrolled. The local Apache-2.0 VividKit package owns source reads, FFmpeg demuxing, hardware-first video decoding, Apple rendering, embedded subtitle/chapter extraction, buffering and seek execution.
+Vivid owns playback controls and focus, play/pause and seeking, version/audio/subtitle selection, platform Info panels, loading presentation, resume, the episode countdown and playback reporting. Its capped quality modes can perform one lower-bitrate reload after sustained buffering; Auto and Original are not enrolled. AetherEngine owns media execution on Apple TV through one session with automatic native Apple and software paths. VividKit retains that role on iPhone and iPad. The tvOS AVPlayerViewController hosts native picture and system playback integration while Vivid keeps its own controls and persistent Next Up surface.
 
 Shared player fixes belong here so each server core uses the same behaviour. Server-specific authentication, requests, session negotiation and progress persistence belong behind the relevant server connection. A new server core should translate its data into the shared player rather than copy Vivid’s controls or implement a separate player.
 
@@ -33,7 +33,7 @@ IntroDB playback has been verified on Silo-backed Apple TV. The Emby core now su
 
 ## Implementation references
 
-- [Player engine core](player-engine.md): VividKit mini cores, AirPlay/HDMI boundaries and audio/video support.
+- [Player engine core](player-engine.md): Platform engines, AirPlay/HDMI boundaries and audio/video support.
 - [Playback architecture](../playback/architecture.md): engine ownership, lifecycle and source/session boundaries.
 - [Playback guide](../playback/README.md): controls, IntroDB behaviour and validation.
 - [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): shared playback state and marker application.

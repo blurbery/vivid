@@ -5,7 +5,7 @@
 
 ---
 
-Emby is available on iPhone, iPad and Apple TV. It connects to Emby and translates its library, media sources and user state into Vivid's screens and local VividKit player. Its current feature and verification limits are listed below.
+Emby is available on iPhone, iPad and Apple TV. It connects to Emby and translates its library, media sources and user state into Vivid's screens and local player. Its current feature and verification limits are listed below.
 
 > [!IMPORTANT]
 > Emby playback and account switching have been device-tested on iPhone and Apple TV. The adapter still has the limits listed below. Physical iPad coverage and a complete format/transcoding matrix remain outstanding.
@@ -38,7 +38,7 @@ The Home endpoint listed in the 4.9 API schema is not sufficient evidence that t
 
 ## Playback and settings
 
-`EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to VividKit. It sends start, progress and stop reports through `/Sessions/Playing`, `/Sessions/Playing/Progress` and `/Sessions/Playing/Stopped`. Positions convert between seconds and Emby ticks. Transcoded-session cleanup uses Emby's active-encoding endpoint.
+`EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to Vivid’s platform engine. It sends start, progress and stop reports through `/Sessions/Playing`, `/Sessions/Playing/Progress` and `/Sessions/Playing/Stopped`. Positions convert between seconds and Emby ticks. Transcoded-session cleanup uses Emby's active-encoding endpoint.
 
 Vivid’s Emby preferences are stored locally per server and native user; they do not synchronise through Emby or the iCloud account vault. The shared player exposes embedded subtitles and device/local caption preferences, not external files, search or translation. The five shared [quality choices](../playback/README.md#quality-controls) feed native PlaybackInfo negotiation: Vivid’s kbps ceiling converts to Emby’s bps, and each mode keeps its resolution ceiling. An eligible one-time buffering fallback reloads the selected source at the current position through the same bridge. Auto and Original are not enrolled. Detail Media Information likewise converts Emby’s bps before display. This does not replace device/codec capability checks or establish live throttled-playback coverage.
 

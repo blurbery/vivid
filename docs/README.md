@@ -20,7 +20,7 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
     <tr><td><a href="app-design.md">App design</a></td><td>Shared appearance, downloads, components and accessibility</td></tr>
     <tr><td><a href="apple-tv-browsing.md">Apple TV browsing</a></td><td>Discovery spotlight, native catalog menus, detail pages, trailers, similarity, Settings and startup</td></tr>
     <tr><td><a href="apple-tv-focus.md">Apple TV focus</a></td><td>Focus ownership and navigation rules</td></tr>
-    <tr><td><a href="playback/README.md">Playback</a></td><td>VividKit, compatible audio, embedded subtitles, chapters, controls, downloads, resume updates and verification</td></tr>
+    <tr><td><a href="playback/README.md">Playback</a></td><td>AetherEngine on Apple TV, VividKit on iPhone/iPad, compatible audio, embedded subtitles, chapters, controls, downloads, resume updates and verification</td></tr>
     <tr><td><a href="branding/README.md">Branding</a></td><td>Vivid&#x27;s silver logo, documentation headers and Apple app icons</td></tr>
     <tr><td><a href="release/versioning.md">Releases</a></td><td>Semantic versions and GitHub release format</td></tr>
     <tr><td><a href="release/distribution.md">Device distribution</a></td><td>TestFlight preparation, signing blockers and device coverage</td></tr>
@@ -31,12 +31,12 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
 
 ## Cores
 
-Vivid is the shared player core. Each server has a separate server core that supplies its connection, data and playback sources. VividKit is a local Swift package; the server cores are responsibility boundaries within the app, not separate provider packages.
+Vivid is the shared player core. Each server has a separate server core that supplies its connection, data and playback sources. VividKit (iOS) and AetherEngine (tvOS) are local Swift packages; the server cores are responsibility boundaries within the app, not separate provider packages.
 
 | Core | Documentation |
 | --- | --- |
 | [Vivid core](cores/vivid.md) | Shared player, controls and IntroDB integration |
-| [Player engine core](cores/player-engine.md) | VividKit mini cores, shared responsibilities and audio/video support |
+| [Player engine core](cores/player-engine.md) | Platform engines, VividKit mini cores, shared responsibilities and audio/video support |
 | [Silo server core](cores/silo.md) | Current Silo connection and its boundary with the player |
 | [Emby server core](cores/emby.md) | Emby implementation, provider boundaries and verification gaps |
 | [Jellyfin server core](cores/jellyfin.md) | Planned connection; no implementation yet |

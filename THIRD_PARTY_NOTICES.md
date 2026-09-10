@@ -12,8 +12,8 @@ Vivid and VividKit application code use Apache-2.0. Third-party libraries retain
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
-| AetherEngine (tvOS experiment) | 6.80.0, local integration changes | LGPL-3.0 with Apple Store / DRM Exception; see `AetherEngine/LICENSE` |
-| LibDovi (tvOS experiment) | 2.1.0 | MIT |
+| AetherEngine (tvOS playback) | 6.80.0, local integration changes | LGPL-3.0 with Apple Store / DRM Exception; see `AetherEngine/LICENSE` |
+| LibDovi (tvOS playback) | 2.1.0 | MIT |
 | FFmpegBuild | `421e13be7061de67d91b85ac34a6b22a002b164f` | LGPL-2.1; embedded FFmpeg and codec dependencies retain the licences recorded below |
 | libass | 0.17.1 | ISC |
 | FreeType | 2.13.2 | FreeType License |
