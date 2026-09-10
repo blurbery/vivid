@@ -414,11 +414,45 @@ final class VividEngine: ObservableObject {
     }
 }
 
+/// Vivid owns loading presentation. Suppress only UIKit activity indicators
+/// within this native host, retaining AVKit's playback and system integration.
+@MainActor
+final class VividNativePlayerViewController: AVPlayerViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Scope appearance to this host; other app progress indicators keep
+        // their normal appearance. Layout also covers late-created indicators.
+        UIActivityIndicatorView.appearance(whenContainedInInstancesOf: [VividNativePlayerViewController.self]).color = .clear
+        suppressActivityIndicators(in: view)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        suppressActivityIndicators(in: view)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        suppressActivityIndicators(in: view)
+    }
+
+    private func suppressActivityIndicators(in container: UIView) {
+        for child in container.subviews {
+            if let indicator = child as? UIActivityIndicatorView {
+                indicator.alpha = 0
+                indicator.isAccessibilityElement = false
+            } else {
+                suppressActivityIndicators(in: child)
+            }
+        }
+    }
+}
+
 /// One persistent controller survives fullscreen, countdown preview and the
 /// next-episode swap. Native and software pictures have separate render hosts.
 @MainActor
 final class VividAetherPlayerController: UIViewController {
-    private let native = AVPlayerViewController()
+    private let native = VividNativePlayerViewController()
     private let software = AetherPlayerView(frame: .zero)
     private weak var engine: VividEngine?
     private var subscriptions = Set<AnyCancellable>()
