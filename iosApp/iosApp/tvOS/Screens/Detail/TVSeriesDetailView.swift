@@ -135,23 +135,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         )
     }
 
-    private var heroOverview: String? {
-        guard !isShowingSeriesOverview else { return detail.overview }
-        let episodeTitle = matchingPlaybackDetail?.title
-            ?? displayedEpisode?.title
-            ?? displayedEpisode.map { "Episode \($0.episodeNumber)" }
-        let overview = matchingPlaybackDetail?.overview ?? displayedEpisode?.overview
-        switch (episodeTitle, overview) {
-        case let (.some(title), .some(line)) where !title.isEmpty && !line.isEmpty:
-            return "\(title) · \(line)"
-        case let (.some(title), _):
-            return title
-        case let (_, .some(line)):
-            return line
-        default:
-            return nil
-        }
-    }
+    private var heroOverview: String? { detail.overview }
 
     private var heroSourceTokens: [String] {
         guard !isShowingSeriesOverview, let episode = displayedEpisode else {

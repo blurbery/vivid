@@ -987,6 +987,20 @@ struct FoldSnappingScrollTargetBehavior: ScrollTargetBehavior {
 }
 
 
+private struct TVDetailCurvedBlurMask: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 0.48))
+        path.addCurve(to: CGPoint(x: rect.width * 1.1, y: rect.height * 0.48),
+                      control1: CGPoint(x: rect.width * 0.28, y: rect.height * 1.02),
+                      control2: CGPoint(x: rect.width * 0.72, y: rect.height * 1.02))
+        path.addLine(to: CGPoint(x: rect.width * 1.1, y: rect.height * 1.2))
+        path.addLine(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 1.2))
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// Vivid supplies artwork and existing controls to Apple's fixed-background,
 /// gradient-mask and fold-snapping presentation.
 struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
@@ -1026,11 +1040,15 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                     }
                     Rectangle().fill(.regularMaterial)
                         .mask {
-                            LinearGradient(stops: [
-                                .init(color: .black, location: 0.25),
-                                .init(color: .black.opacity(belowFold ? 1 : 0.3), location: 0.375),
-                                .init(color: .black.opacity(belowFold ? 1 : 0), location: 0.5)
-                            ], startPoint: .bottom, endPoint: .top)
+                            ZStack {
+                                TVDetailCurvedBlurMask()
+                                    .fill(.black)
+                                    .blur(radius: geometry.size.height * 0.065)
+                                    .opacity(belowFold ? 0 : 1)
+                                Rectangle()
+                                    .fill(.black)
+                                    .opacity(belowFold ? 1 : 0)
+                            }
                         }
                 }
             }

@@ -732,6 +732,7 @@ struct TVContinuousEpisodeShelf: View {
     @FocusState private var focusedEpisode: String?
     @FocusState private var focusedSeason: String?
     @State private var highlightedSeason: String?
+    @State private var scrollHighlightedSeason: String?
     @State private var pendingJump: String?
     @State private var seeded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -740,12 +741,29 @@ struct TVContinuousEpisodeShelf: View {
     private var contentKey: [String] { seasons.flatMap { items($0)?.map(\.contentId) ?? [] } }
 
     private var visibleSeasonID: String? {
-        if let focusedSeason { return focusedSeason }
-        if let focusedEpisode,
-           let season = seasons.first(where: { items($0)?.contains { $0.contentId == focusedEpisode } == true }) {
-            return season.id
+        focusedSeason ?? scrollHighlightedSeason ?? highlightedSeason ?? selectedSeason?.id
+    }
+
+    private func seasonAtVisiblePosition(_ visibleRect: CGRect) -> String? {
+        var firstIndex = 0
+        var visibleSeason: String?
+        let leadingCardCentre = max(0, visibleRect.minX) + 200
+        for season in seasons {
+            let episodes = items(season)
+            let count = episodes?.count ?? 1
+            if let focusedEpisode,
+               let index = episodes?.firstIndex(where: { $0.contentId == focusedEpisode }) {
+                let centre = CGFloat(firstIndex + index) * 440 + 200
+                if centre >= visibleRect.minX && centre <= visibleRect.maxX {
+                    return season.id
+                }
+            }
+            if count > 0, leadingCardCentre >= CGFloat(firstIndex) * 440 {
+                visibleSeason = season.id
+            }
+            firstIndex += count
         }
-        return highlightedSeason ?? selectedSeason?.id
+        return visibleSeason
     }
 
     var body: some View {
@@ -770,6 +788,7 @@ struct TVContinuousEpisodeShelf: View {
                     }
                 }.scrollClipDisabled().focusSection()
                 .onChange(of: focusedSeason) { _, id in
+                    scrollHighlightedSeason = nil
                     guard let id,
                           id != (highlightedSeason ?? selectedSeason?.id),
                           let season = seasons.first(where: { $0.id == id }) else { return }
@@ -799,11 +818,20 @@ struct TVContinuousEpisodeShelf: View {
                     }.padding(.vertical, 20)
                 }
                 .scrollClipDisabled().focusSection()
+                .onScrollGeometryChange(for: String?.self) { geometry in
+                    seasonAtVisiblePosition(geometry.visibleRect)
+                } action: { _, seasonID in
+                    // Accelerated remote scrolling can move the rail before
+                    // native episode focus catches up. This only paints selection.
+                    guard focusedSeason == nil, let seasonID else { return }
+                    scrollHighlightedSeason = seasonID
+                }
                 .onChange(of: focusedEpisode) { _, id in
                     guard let id,
                           let season = seasons.first(where: { items($0)?.contains { $0.contentId == id } == true }),
                           let episode = items(season)?.first(where: { $0.contentId == id }) else { return }
                     pendingJump = nil
+                    scrollHighlightedSeason = nil
                     highlightedSeason = season.id
                     if selectedSeason?.id != season.id { onSeason(season) }
                     onFocus(episode)
