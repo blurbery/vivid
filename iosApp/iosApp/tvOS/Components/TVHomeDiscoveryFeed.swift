@@ -182,17 +182,12 @@ private struct TVHomeSpotlightCarousel: View {
                 }
                 .frame(height: 580)
                 .clipped()
-                .overlay(alignment: .bottom) {
-                    Capsule()
-                        .fill(focus.wrappedValue ? .white.opacity(0.9) : .clear)
-                        .frame(width: 120, height: 2)
-                        .padding(.bottom, 8)
-                }
             }
             .buttonStyle(TVHomeSpotlightButtonStyle())
             .focusEffectDisabled()
             .background {
                 TVSpotlightEdgeFade(tint: ambientTint)
+                    .opacity(focus.wrappedValue ? 1 : 0.75)
                     .padding(-TVSpotlightEdgeFade.canvasInset)
                 .allowsHitTesting(false)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.55), value: ambientTint)
@@ -470,8 +465,9 @@ private struct TVHomeSpotlightArtwork: View {
                         .frame(width: logo == nil ? 760 : 480, alignment: .center)
                 }
                 .foregroundStyle(.white)
-                .padding(48)
-                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 48)
+                .padding(.horizontal, VividTheme.Skyline.safeAreaX + 48)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .allowsHitTesting(false)
