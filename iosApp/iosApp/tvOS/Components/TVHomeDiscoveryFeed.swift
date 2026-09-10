@@ -44,7 +44,7 @@ struct TVHomeDiscoveryFeed: View {
                         .id(Self.spotlightAnchor)
                     }
 
-                    VStack(alignment: .leading, spacing: 30) {
+                    LazyVStack(alignment: .leading, spacing: 30) {
                         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                             SectionRow(
                                 section: section,
