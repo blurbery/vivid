@@ -793,7 +793,17 @@ struct TVContinuousEpisodeShelf: View {
                               priority: focusedSeason == nil ? .userInitiated : .automatic)
                 .onChange(of: focusedSeason) { _, id in
                     scrollHighlightedSeason = nil
-                    guard let id,
+                    if let id, id != (highlightedSeason ?? selectedSeason?.id) {
+                        pendingJump = nil
+                    }
+                }
+                .task(id: focusedSeason) { @MainActor in
+                    guard let id = focusedSeason,
+                          id != (highlightedSeason ?? selectedSeason?.id) else { return }
+                    do {
+                        try await Task.sleep(for: .milliseconds(120))
+                    } catch { return }
+                    guard !Task.isCancelled, focusedSeason == id,
                           id != (highlightedSeason ?? selectedSeason?.id),
                           let season = seasons.first(where: { $0.id == id }) else { return }
                     selectSeason(season, using: proxy)
