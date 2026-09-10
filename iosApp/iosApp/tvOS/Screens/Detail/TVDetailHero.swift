@@ -996,16 +996,57 @@ struct FoldSnappingScrollTargetBehavior: ScrollTargetBehavior {
 
 
 private struct TVDetailCurvedBlurMask: Shape {
+    var lift: CGFloat = 0
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 0.48))
-        path.addCurve(to: CGPoint(x: rect.width * 1.1, y: rect.height * 0.48),
-                      control1: CGPoint(x: rect.width * 0.28, y: rect.height * 1.02),
-                      control2: CGPoint(x: rect.width * 0.72, y: rect.height * 1.02))
+        path.move(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 0.48 - lift))
+        path.addCurve(to: CGPoint(x: rect.width * 1.1, y: rect.height * 0.48 - lift),
+                      control1: CGPoint(x: rect.width * 0.28, y: rect.height * 1.02 - lift),
+                      control2: CGPoint(x: rect.width * 0.72, y: rect.height * 1.02 - lift))
         path.addLine(to: CGPoint(x: rect.width * 1.1, y: rect.height * 1.2))
         path.addLine(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 1.2))
         path.closeSubpath()
         return path
+    }
+}
+
+private struct TVDetailScrollMaterial: ViewModifier {
+    let viewportSize: CGSize
+    let showcaseHeight: CGFloat
+    @State private var scrollOffset: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        let progress = min(1, max(0, scrollOffset / showcaseHeight))
+        content
+            .background {
+                ZStack {
+                    Rectangle().fill(.regularMaterial)
+                        .mask {
+                            TVDetailCurvedBlurMask(lift: progress * viewportSize.height * 1.2)
+                                .fill(.black)
+                                .blur(radius: viewportSize.height * 0.065)
+                        }
+                    EllipticalGradient(stops: [
+                        .init(color: .black.opacity(0.60), location: 0),
+                        .init(color: .black.opacity(0.56), location: 0.4),
+                        .init(color: .clear, location: 1)
+                    ], center: UnitPoint(x: 0.12, y: 0.68 - scrollOffset / max(1, viewportSize.height)),
+                       startRadiusFraction: 0, endRadiusFraction: 0.8)
+                    .drawingGroup(opaque: false, colorMode: .extendedLinear)
+                    .opacity(1 - progress)
+                }
+                .frame(width: viewportSize.width, height: viewportSize.height)
+                .clipped()
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                min(showcaseHeight, max(0, geometry.visibleRect.minY))
+            } action: { _, offset in
+                // The surface follows the native scroll, without a delayed
+                // fade or updates to the episode/season navigation state.
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { scrollOffset = offset }
+            }
     }
 }
 
@@ -1028,24 +1069,6 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                 VStack(alignment: .leading, spacing: 26) {
                     hero(showcaseHeight)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(alignment: .top) {
-                            LinearGradient(stops: [
-                                .init(color: .black.opacity(0.68), location: 0),
-                                .init(color: .black.opacity(0.68), location: 0.36),
-                                .init(color: .black.opacity(0.50), location: 0.48),
-                                .init(color: .clear, location: 0.78)
-                            ], startPoint: .leading, endPoint: .trailing)
-                            .frame(height: showcaseHeight + 160)
-                            .mask {
-                                LinearGradient(stops: [
-                                    .init(color: .clear, location: 0.05),
-                                    .init(color: .black, location: 0.34),
-                                    .init(color: .black, location: 0.82),
-                                    .init(color: .clear, location: 1)
-                                ], startPoint: .top, endPoint: .bottom)
-                            }
-                            .allowsHitTesting(false)
-                        }
                         .focusSection()
                         .onScrollVisibilityChange { visible in
                             belowFold = !visible
@@ -1070,6 +1093,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                 }
                 .scrollTargetLayout()
             }
+            .modifier(TVDetailScrollMaterial(viewportSize: geometry.size, showcaseHeight: showcaseHeight))
             .background {
                 ZStack {
                     Color.black
@@ -1078,18 +1102,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }
-                    Rectangle().fill(.regularMaterial)
-                        .mask {
-                            ZStack {
-                                TVDetailCurvedBlurMask()
-                                    .fill(.black)
-                                    .blur(radius: geometry.size.height * 0.065)
-                                Rectangle()
-                                    .fill(.black)
-                                    .opacity(belowFold ? 1 : 0)
-                            }
-                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: belowFold)
-                        }
+
                 }
             }
             .scrollTargetBehavior(FoldSnappingScrollTargetBehavior(
