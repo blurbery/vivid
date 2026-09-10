@@ -69,3 +69,15 @@ enum PlayerNextUpCompletionPolicy {
         ) ? duration : currentTime
     }
 }
+
+/// Unknown seasons must not connect otherwise non-adjacent episode pages.
+enum DetailEpisodeSequence {
+    static func contiguousEpisodes<Episode>(_ pages: [[Episode]?]) -> [Episode] {
+        var episodes: [Episode] = []
+        for page in pages {
+            guard let page else { break }
+            episodes.append(contentsOf: page)
+        }
+        return episodes
+    }
+}

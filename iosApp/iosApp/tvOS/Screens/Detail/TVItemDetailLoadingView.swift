@@ -10,7 +10,19 @@ struct TVItemDetailLoadingView: View {
     let seed: TVItemDetailRouteSeed?
 
     var body: some View {
-        cinematicLayout
+        Group {
+            if usesNativePage {
+                TVAppleDetailPage(backdropURL: seed?.backdropUrl, backdropThumbhash: seed?.backdropThumbhash, logoURL: seed?.logoUrl,
+                                  title: seed?.title ?? "") { height in
+                    cinematicEditorial(height: height, topInset: TVDetailLayout.browsingHeroTopInset(for: height))
+                        .frame(height: height, alignment: .topLeading)
+                } shelves: {
+                    EmptyView()
+                }
+            } else {
+                cinematicLayout
+            }
+        }
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
@@ -23,7 +35,7 @@ struct TVItemDetailLoadingView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     cinematicArtwork
-                    cinematicEditorial
+                    cinematicEditorial()
                 }
                 .frame(height: TVDetailLayout.heroHeight)
                 .frame(maxWidth: .infinity)
@@ -64,7 +76,8 @@ struct TVItemDetailLoadingView: View {
         }
     }
 
-    private var cinematicEditorial: some View {
+    private func cinematicEditorial(height: CGFloat = TVDetailLayout.heroHeight,
+                                    topInset: CGFloat = TVDetailLayout.heroTopInset) -> some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.disclosureSpacing) {
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 14) {
@@ -87,11 +100,11 @@ struct TVItemDetailLoadingView: View {
             .frame(width: TVDetailLayout.heroContentWidth, height: TVDetailLayout.editorialHeight, alignment: .topLeading)
             loadingActions
         }
-        .padding(.top, TVDetailLayout.heroTopInset)
+        .padding(.top, topInset)
         .padding(.horizontal, TVDetailLayout.horizontalInset)
         .frame(
             maxWidth: .infinity,
-            maxHeight: TVDetailLayout.heroHeight,
+            maxHeight: height,
             alignment: .topLeading
         )
     }
@@ -102,11 +115,11 @@ struct TVItemDetailLoadingView: View {
             TVDecodedLogoTitle(
                 logoUrl: seed?.logoUrl,
                 accessibilityLabel: title,
-                maxWidth: 700,
-                maxHeight: 132
+                maxWidth: usesNativePage ? 650 : 700,
+                maxHeight: usesNativePage ? 160 : 132
             ) {
                 Text(title)
-                    .font(.system(size: 64, weight: .bold))
+                    .font(.system(size: usesNativePage ? 78 : 64, weight: .bold))
                     .tracking(-0.8)
                     .foregroundStyle(Color.white)
                     .lineLimit(2)
@@ -183,6 +196,11 @@ struct TVItemDetailLoadingView: View {
     }
 
     // MARK: - Derived presentation
+
+    private var usesNativePage: Bool {
+        guard let type = seed?.mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+        return type == "movie" || VividMediaType.isSeries(type)
+    }
 
     private var metadataTokens: [String] {
         guard let seed else { return [] }

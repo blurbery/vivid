@@ -1,5 +1,6 @@
 #if os(tvOS)
 import SwiftUI
+import UIKit
 
 struct TVHomeDiscoveryFeed: View {
     let sections: [ResolvedSection]
@@ -15,7 +16,9 @@ struct TVHomeDiscoveryFeed: View {
     @State private var homeCards = TVHomeCardPreferences.shared
     @FocusState private var spotlightFocused: Bool
     @State private var rowOwner: String?
-    @State private var rowFocusItems: [String: String] = [:]
+    @State private var rowFocusMemory = TVHomeRowFocusMemory()
+    @State private var artworkWarmup = TVHomeArtworkWarmup()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var firstRowFocusRequest = 0
     @State private var spotlightOpenedDetail = false
     @State private var appliedFocusRequest = 0
@@ -38,7 +41,6 @@ struct TVHomeDiscoveryFeed: View {
                             },
                             onMoveUp: { onTopMenuFocusRequest?() }
                         )
-                        .padding(.horizontal, VividTheme.Skyline.safeAreaX)
                         .id(Self.spotlightAnchor)
                     }
 
@@ -53,16 +55,16 @@ struct TVHomeDiscoveryFeed: View {
                                 onRemoveFromContinueWatching: onRemoveFromContinueWatching,
                                 onSetWatched: onSetWatched,
                                 showsHeadingIcon: false,
-                                prefersDefaultFocusOnFirstItem: index == 0,
+                                prefersDefaultFocusOnFirstItem: slides.isEmpty && index == 0,
                                 defaultFocusPriority: .userInitiated,
                                 focusRequest: index == 0 ? firstRowFocusRequest : 0,
-                                defaultFocusItemId: rowFocusItems[section.id],
-                                focusRequestItemId: rowFocusItems[section.id],
+                                defaultFocusItemId: rowFocusMemory.items[section.id],
+                                focusRequestItemId: rowFocusMemory.items[section.id],
                                 detailReturnFocusRequest: spotlightOpenedDetail ? 0 : detailReturnFocusRequest,
-                                onMoveUp: index == 0 ? { enterSpotlight(using: proxy) } : nil,
+                                onMoveUp: index == 0 && slides.isEmpty ? { onTopMenuFocusRequest?() } : nil,
                                 onItemFocus: { item in
-                                    rowOwner = section.id
-                                    rowFocusItems[section.id] = item.contentId
+                                    rowFocusMemory.items[section.id] = item.contentId
+                                    if rowOwner != section.id { rowOwner = section.id }
                                 },
                                 cardWidth: VividTheme.Skyline.densePosterCardWidth,
                                 focusRestorationOwner: Binding(
@@ -93,16 +95,55 @@ struct TVHomeDiscoveryFeed: View {
             .onChange(of: isTopMenuFocused) { _, focused in
                 if focused { rowOwner = nil }
             }
+            .onChange(of: spotlightFocused) { _, focused in
+                if focused { rowOwner = nil }
+            }
+        }
+        .task(id: homeArtworkRequests) {
+            artworkWarmup.update(homeArtworkRequests)
+        }
+        .onDisappear { artworkWarmup.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            artworkWarmup.stop()
         }
         .environment(\.homeCardPresentation, homeCards.presentation)
         .ignoresSafeArea()
     }
 
+    private var homeArtworkRequests: [VividImageRequest] {
+        guard scenePhase == .active, !sections.isEmpty else { return [] }
+        let current = sections.firstIndex { $0.id == rowOwner } ?? 0
+        let indices = [current] + Array((current + 1)..<min(sections.count, current + 4))
+            + (current > 0 ? [current - 1] : [])
+        let scale = homeCards.presentation.posterSize.scale * PosterImageCache.displayScale
+        var requests: [VividImageRequest] = []
+        var seen = Set<VividImageRequest>()
+        for index in indices {
+            let section = sections[index]
+            // Match SectionRow's tvOS artwork layout, including mixed resume rows.
+            let wide = section.isContinueWatchingSection
+                || section.sectionType.lowercased().contains("next")
+                || section.items.contains { $0.type.lowercased() == "episode" }
+            let width = wide ? VividTheme.thumbnailCardWidth : VividTheme.Skyline.densePosterCardWidth
+            let ratio = wide ? VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth
+                : VividTheme.posterCardHeight / VividTheme.posterCardWidth
+            let size = CGSize(width: width * scale, height: width * ratio * scale)
+            for item in section.items.prefix(index == current ? 20 : 8) {
+                let value = wide ? (item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 } ?? item.posterUrl) : item.posterUrl
+                guard let value, let url = URL(string: value),
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
+                let request = PosterImageCache.displayRequest(url: url, pixelSize: size, priority: .low)
+                if seen.insert(request).inserted { requests.append(request) }
+            }
+        }
+        return requests
+    }
+
     private func enterSpotlight(using proxy: ScrollViewProxy) {
         guard !slides.isEmpty else { onTopMenuFocusRequest?(); return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-            proxy.scrollTo(Self.spotlightAnchor, anchor: .center)
-        }
+        // The spotlight is mounted eagerly. Let the focus engine perform its
+        // own scroll instead of racing a separate ScrollViewReader animation.
+        rowOwner = nil
         spotlightFocused = true
     }
 
@@ -117,6 +158,34 @@ struct TVHomeDiscoveryFeed: View {
     }
 }
 
+@MainActor
+private final class TVHomeArtworkWarmup {
+    private let prefetcher = VividImagePrefetcher(
+        pipeline: VividImagePipeline.shared, destination: .memoryCache,
+        maxConcurrentRequestCount: 2
+    )
+
+    func update(_ requests: [VividImageRequest]) {
+        guard !requests.isEmpty else { stop(); return }
+        // Finish at most two active requests, then favour the newly focused row.
+        PosterImageCache.setHomeBrowsingMemoryBudget(true)
+        prefetcher.replacePendingPrefetching(with: requests.filter {
+            VividImagePipeline.shared.cache[$0] == nil
+        })
+    }
+
+    func stop() {
+        prefetcher.stopPrefetching()
+        PosterImageCache.setHomeBrowsingMemoryBudget(false)
+    }
+}
+
+/// Remember card selection without invalidating the entire feed for every
+/// horizontal focus move. Each row already observes its own focused card.
+private final class TVHomeRowFocusMemory {
+    var items: [String: String] = [:]
+}
+
 private struct TVHomeSpotlightCarousel: View {
     let slides: [TVHomeSpotlightSlide]
     let focus: FocusState<Bool>.Binding
@@ -125,6 +194,8 @@ private struct TVHomeSpotlightCarousel: View {
     let onMoveUp: () -> Void
 
     @State private var selectedID: String?
+    @State private var visualPosition = 0
+    @State private var requestedPosition = 0
     @State private var isVisible = true
     @State private var manualStep = 0
     @State private var ambientTint = Color.black
@@ -144,14 +215,13 @@ private struct TVHomeSpotlightCarousel: View {
     }
     private var index: Int { slides.firstIndex { $0.id == visibleID } ?? 0 }
     private var current: TVHomeSpotlightSlide? { slides.first { $0.id == visibleID } ?? requested }
-    private var layers: [TVHomeSpotlightSlide] {
-        var seen = Set<String>()
-        let upcoming = visibleID != nil && requested?.id == visibleID && slides.count > 1
-            && isVisible && scenePhase == .active && router.path.isEmpty
-            ? slides[(index + 1) % slides.count].id : nil
-        return [retiringID, visibleID, requested?.id, upcoming].compactMap { $0 }
-            .filter { seen.insert($0).inserted }
-            .compactMap { id in slides.first { $0.id == id } }
+    private func slide(at position: Int) -> TVHomeSpotlightSlide {
+        slides[((position % slides.count) + slides.count) % slides.count]
+    }
+    private var layerPositions: [Int] {
+        guard !slides.isEmpty else { return [] }
+        guard slides.count > 1 else { return [visualPosition] }
+        return Array((min(visualPosition, requestedPosition) - 1)...(max(visualPosition, requestedPosition) + 1))
     }
     private var canRotate: Bool {
         slides.count > 1 && isVisible && scenePhase == .active
@@ -167,31 +237,39 @@ private struct TVHomeSpotlightCarousel: View {
             Button {
                 if let current { onSelect(current) }
             } label: {
-                ZStack {
-                    Color(white: 0.055)
-                    ForEach(layers) { slide in
-                        TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
-                            tints[slide.id] = tint
-                            if slide.id == visibleID { ambientTint = tint }
-                        }, onReady: {
-                            readyIDs.insert(slide.id)
-                            reveal(slide)
-                        })
-                        .opacity(slide.id == visibleID || slide.id == retiringID ? 1 : 0)
-                        .accessibilityHidden(slide.id != visibleID)
+                GeometryReader { geometry in
+                    let cardWidth = max(1, geometry.size.width - 120)
+                    ZStack {
+                        ForEach(layerPositions, id: \.self) { position in
+                            let slide = slide(at: position)
+                            TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
+                                tints[slide.id] = tint
+                                if slide.id == visibleID { ambientTint = tint }
+                            }, onReady: {
+                                readyIDs.insert(slide.id)
+                                reveal(slide)
+                            })
+                            .id("\(position)-\(slide.id)")
+                            .frame(width: cardWidth, height: 580)
+                            .clipShape(RoundedRectangle(cornerRadius: 22))
+                            .tvArtworkEdge(isFocused: position == visualPosition && focus.wrappedValue, cornerRadius: 22)
+                            .shadow(color: .black.opacity(position == visualPosition && focus.wrappedValue ? 0.45 : 0.2),
+                                    radius: position == visualPosition && focus.wrappedValue ? 18 : 8, y: 8)
+                            .scaleEffect(position == visualPosition && focus.wrappedValue && !reduceMotion ? 1.015 : 1)
+                            .animation(reduceMotion ? nil : .easeOut(duration: VividTheme.fastDuration), value: focus.wrappedValue)
+                            .offset(x: CGFloat(position - visualPosition) * (cardWidth + 22))
+                            .accessibilityHidden(position != visualPosition)
+                        }
                     }
+                    .frame(width: geometry.size.width, height: 580)
                 }
                 .frame(height: 580)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24)
-                        .strokeBorder(focus.wrappedValue ? .white : .clear, lineWidth: 2)
-                }
             }
             .buttonStyle(TVHomeSpotlightButtonStyle())
             .focusEffectDisabled()
             .background {
                 TVSpotlightEdgeFade(tint: ambientTint)
+                    .opacity(focus.wrappedValue ? 1 : 0.75)
                     .padding(-TVSpotlightEdgeFade.canvasInset)
                 .allowsHitTesting(false)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.55), value: ambientTint)
@@ -237,7 +315,7 @@ private struct TVHomeSpotlightCarousel: View {
         .onChange(of: requested?.id) { _, id in
             if let id, readyIDs.contains(id), let slide = requested { reveal(slide) }
         }
-        .onChange(of: layers.map(\.id)) { _, ids in
+        .onChange(of: layerPositions.map { slide(at: $0).id }) { _, ids in
             readyIDs.formIntersection(ids)
             tints = tints.filter { ids.contains($0.key) }
         }
@@ -245,10 +323,24 @@ private struct TVHomeSpotlightCarousel: View {
         .onAppear {
             isVisible = true
             if let visibleID { selectedID = visibleID }
+            requestedPosition = visualPosition
             cycleStarted = Date()
             manualStep += 1
         }
-        .onDisappear { isVisible = false; retirementTask?.cancel() }
+        .onDisappear {
+            isVisible = false
+            retirementTask?.cancel()
+            retiringID = nil
+        }
+        .onChange(of: slides.map(\.id)) { _, ids in
+            retirementTask?.cancel()
+            retiringID = nil
+            visualPosition = ids.firstIndex(of: visibleID ?? "") ?? 0
+            requestedPosition = visualPosition
+            if !ids.contains(visibleID ?? "") { visibleID = nil }
+            selectedID = visibleID ?? ids.first
+            readyIDs.formIntersection(ids)
+        }
         .task(id: rotationKey) {
             guard canRotate else { return }
             cycleStarted = Date()
@@ -259,9 +351,9 @@ private struct TVHomeSpotlightCarousel: View {
     }
 
     private func advance(_ step: Int) {
-        guard !slides.isEmpty else { return }
-        let requestedIndex = slides.firstIndex { $0.id == requested?.id } ?? index
-        selectedID = slides[(requestedIndex + step + slides.count) % slides.count].id
+        guard slides.count > 1, retiringID == nil, requested?.id == visibleID else { return }
+        requestedPosition = visualPosition + step
+        selectedID = slide(at: requestedPosition).id
         manualStep &+= 1
     }
 
@@ -272,6 +364,7 @@ private struct TVHomeSpotlightCarousel: View {
         cycleStarted = Date()
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
             visibleID = slide.id
+            visualPosition = requestedPosition
             ambientTint = tints[slide.id] ?? .black
         }
         retirementTask = Task {
@@ -366,7 +459,7 @@ private struct TVHomeSpotlightArtwork: View {
     @State private var logo: UIImage?
 
     private static let fadeStops: [Gradient.Stop] = {
-        let anchors: [(Double, Double)] = [(0, 0.94), (0.28, 0.92), (0.45, 0.66), (0.72, 0.18), (1, 0)]
+        let anchors: [(Double, Double)] = [(0, 0), (0.28, 0.02), (0.45, 0.08), (0.72, 0.4), (1, 0.82)]
         return (0...128).map { step in
             let x = Double(step) / 128
             let segment = (0..<anchors.count - 1).first { x <= anchors[$0 + 1].0 } ?? anchors.count - 2
@@ -397,29 +490,19 @@ private struct TVHomeSpotlightArtwork: View {
     var body: some View {
         GeometryReader { geometry in
             let artworkSize = CGSize(
-                width: min(geometry.size.width, geometry.size.height * 16 / 9 * 1.2),
+                width: min(geometry.size.width, 1800),
                 height: geometry.size.height
             )
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .bottom) {
                 model.tintColor
                 if let url = model.backdropURL {
-                    TVSpotlightBackdropImage(url: url, size: artworkSize, onReady: { artworkReady = true })
-                    .frame(width: artworkSize.width, height: artworkSize.height)
-                    .mask {
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.16),
-                                .init(color: .black, location: 1)
-                            ],
-                            startPoint: .leading, endPoint: .trailing
-                        )
-                    }
-                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .trailing)
+                    TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true,
+                                             onReady: { artworkReady = true })
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 LinearGradient(
                     stops: Self.fadeStops,
-                    startPoint: .leading, endPoint: .trailing
+                    startPoint: .top, endPoint: .bottom
                 )
                 LinearGradient(colors: [.clear, .black.opacity(0.4)], startPoint: .center, endPoint: .bottom)
                 Image(uiImage: Self.fadeDither)
@@ -442,7 +525,8 @@ private struct TVHomeSpotlightArtwork: View {
                         Text(slide.content.title)
                             .font(.system(size: 62, weight: .bold))
                             .lineLimit(2)
-                            .frame(maxWidth: 760, alignment: .leading)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 760, alignment: .center)
                     }
                     Text(([slide.item.type.capitalized] + spotlightMetaParts
                           + [slide.content.contentRatingBadge].compactMap { $0 }).joined(separator: "  ·  "))
@@ -453,7 +537,9 @@ private struct TVHomeSpotlightArtwork: View {
                         .frame(width: logo == nil ? 760 : 480, alignment: .center)
                 }
                 .foregroundStyle(.white)
-                .padding(48)
+                .padding(.vertical, 48)
+                .padding(.horizontal, 48)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .allowsHitTesting(false)
@@ -495,4 +581,5 @@ private struct TVHomeSpotlightArtwork: View {
         onReady()
     }
 }
+
 #endif

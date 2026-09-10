@@ -49,6 +49,12 @@ struct TVSavedAccountCards: View {
     @State private var store = TVSavedAccountStore.shared
     @State private var pinAccount: TVSavedAccount?
     @State private var pendingDeletion: TVSavedAccount?
+    @State private var isEditingProfiles = false
+    @State private var draftOrder: [String] = []
+    @State private var movingID: String?
+    @Environment(\.scenePhase) private var scenePhase
+    @FocusState private var editingFocused: Bool
+    @State private var deleteSelected = false
     @State private var profileStore = CurrentProfileStore.shared
     @Environment(AppRouter.self) private var router
 
@@ -56,20 +62,60 @@ struct TVSavedAccountCards: View {
         GeometryReader { viewport in
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 32) {
-                ForEach(store.accounts) { account in
-                    if (isSettings && account.id == store.activeID) || store.needsLogin(account) {
-                        NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
-                            .buttonStyle(TVAccountCircleStyle())
-                            .focused($focusedAccount, equals: account.id)
-                            .contextMenu { deletionMenu(for: account) }
+                ForEach(displayedAccounts) { account in
+                    if isEditingProfiles {
+                        if account.id == movingID {
+                            Button {
+                                if deleteSelected { pendingDeletion = account }
+                                else { finishArrangement() }
+                            } label: {
+                                VStack(spacing: 20) {
+                                    tile(account)
+                                        .overlay(alignment: .top) {
+                                            Circle().strokeBorder(deleteSelected ? Color.clear : .white, lineWidth: 3)
+                                                .frame(width: 112, height: 112)
+                                        }
+                                        .modifier(ProfileArrangeWobble(active: true))
+                                    deleteSymbol(selected: deleteSelected)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .focusEffectDisabled()
+                            .focused($editingFocused)
+                            .onAppear { editingFocused = true }
+                            .onMoveCommand { direction in
+                                switch direction {
+                                case .left: moveDraft(account.id, by: -1)
+                                case .right: moveDraft(account.id, by: 1)
+                                case .down: deleteSelected = true
+                                case .up: deleteSelected = false
+                                default: break
+                                }
+                            }
+                            .onExitCommand { finishArrangement() }
+                            .accessibilityLabel(deleteSelected ? "Delete \(account.username)" : "Move \(account.username). Press centre to save.")
+                        } else {
+                            tile(account).modifier(ProfileArrangeWobble(active: true))
+                        }
                     } else {
-                        Button {
-                            if store.hasPIN(account.id) { pinAccount = account }
-                            else { Task { await store.select(account, router: router) } }
-                        } label: { tile(account) }
-                        .buttonStyle(TVAccountCircleStyle())
-                            .focused($focusedAccount, equals: account.id)
-                            .contextMenu { deletionMenu(for: account) }
+                        Group {
+                            if (isSettings && account.id == store.activeID) || store.needsLogin(account) {
+                                NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
+                                    .buttonStyle(TVAccountCircleStyle())
+                                    .focused($focusedAccount, equals: account.id)
+
+                            } else {
+                                Button {
+                                    if store.hasPIN(account.id) { pinAccount = account }
+                                    else { Task { await store.select(account, router: router) } }
+                                } label: { tile(account) }
+                                .buttonStyle(TVAccountCircleStyle())
+                                    .focused($focusedAccount, equals: account.id)
+
+                            }
+                        }
+                        .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
+                        .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
                     }
                 }
                 NavigationLink(value: TVAccountRoute.editor(nil)) {
@@ -81,13 +127,14 @@ struct TVSavedAccountCards: View {
                     }.frame(width: 142)
                 }
                 .buttonStyle(TVAccountCircleStyle())
+                .disabled(isEditingProfiles)
             }
             .padding(16)
             .frame(minWidth: viewport.size.width, alignment: isSettings ? .leading : .center)
         }
         .scrollClipDisabled()
         }
-        .frame(height: 190)
+        .frame(height: isEditingProfiles ? 280 : 190)
         .disabled(store.busy || pinAccount != nil)
         .task {
             await profileStore.refresh(force: true)
@@ -96,12 +143,24 @@ struct TVSavedAccountCards: View {
         .focusSection()
         .focusScope(profileFocusScope)
         .defaultFocus($focusedAccount, store.accounts.first?.id, priority: .userInitiated)
+        .task(id: scenePhase == .active && !isEditingProfiles) {
+            guard scenePhase == .active, !isEditingProfiles else { return }
+            while !Task.isCancelled {
+                await VividCloudAccountSync.shared.synchronize(router: router)
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
         .confirmationDialog("Delete Profile?", isPresented: Binding(
             get: { pendingDeletion != nil },
             set: { if !$0 { pendingDeletion = nil } }
         ), titleVisibility: .visible, presenting: pendingDeletion) { account in
             Button("Delete Profile", role: .destructive) {
-                Task { await store.deleteAccount(account.id, router: router) }
+                Task {
+                    if await store.deleteAccount(account.id, router: router) {
+                        isEditingProfiles = false
+                        movingID = nil
+                    }
+                }
             }
             Button("Cancel", role: .cancel) { pendingDeletion = nil }
         } message: { account in
@@ -122,13 +181,36 @@ struct TVSavedAccountCards: View {
         }
     }
 
-    @ViewBuilder
-    private func deletionMenu(for account: TVSavedAccount) -> some View {
-        if isSettings || account.requiresLogin {
-            Button("Delete Profile", systemImage: "trash", role: .destructive) {
-                pendingDeletion = account
-            }
+    private var displayedAccounts: [TVSavedAccount] {
+        guard isEditingProfiles else { return store.accounts }
+        let ids = VividCloudPreferencePolicy.ordered(store.accounts.map(\.id), preferred: draftOrder)
+        let byID = Dictionary(uniqueKeysWithValues: store.accounts.map { ($0.id, $0) })
+        return ids.compactMap { byID[$0] }
+    }
+    private func beginArrangement(_ id: String) {
+        draftOrder = store.accounts.map(\.id)
+        movingID = id
+        isEditingProfiles = true
+        deleteSelected = false
+    }
+    private func finishArrangement() {
+        if store.saveAccountOrder(draftOrder) {
+            isEditingProfiles = false
+            movingID = nil
         }
+    }
+    private func moveDraft(_ id: String, by offset: Int) {
+        guard !deleteSelected else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            draftOrder = VividCloudPreferencePolicy.moving(draftOrder, id: id, by: offset)
+        }
+    }
+    private func deleteSymbol(selected: Bool) -> some View {
+        Image(systemName: "xmark")
+            .font(.system(size: 22, weight: .semibold))
+            .frame(width: 52, height: 52)
+            .vividGlass(in: Circle(), interactive: true)
+            .overlay(Circle().strokeBorder(selected ? Color.white : .clear, lineWidth: 3))
     }
 
     private func tile(_ account: TVSavedAccount) -> some View {

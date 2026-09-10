@@ -96,6 +96,7 @@ struct TVSeasonChipRow: View {
                             isSelected: selectedSeasonId == season.id,
                             onSelect: { onSelect(season) }
                         )
+                        .modifier(SeasonWatchedContextMenu(season: season))
                         .id(season.id)
                         .focused($focusedSeasonId, equals: season.id)
                     }

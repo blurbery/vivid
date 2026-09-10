@@ -416,14 +416,15 @@ final class TVSavedAccountStore {
         router.resetToLogin()
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
-    func deleteAccount(_ id: String, router: AppRouter) async {
-        guard !busy, let account = accounts.first(where: { $0.id == id }) else { return }
+    @discardableResult
+    func deleteAccount(_ id: String, router: AppRouter) async -> Bool {
+        guard !busy, let account = accounts.first(where: { $0.id == id }) else { return false }
         busy = true
         error = nil
         defer { busy = false }
         guard keychain.delete(sessionKey(id)), keychain.delete(pinKey(id)) else {
             error = "Couldn’t delete the saved profile. Try again."
-            return
+            return false
         }
         if let index = accounts.firstIndex(where: { $0.id == id }) {
             accounts[index].requiresLogin = true
@@ -434,7 +435,7 @@ final class TVSavedAccountStore {
         if activeID == id {
             guard await AuthService.shared.signOut() else {
                 error = "Couldn’t finish signing out. Try deleting the profile again."
-                return
+                return false
             }
             activeID = nil
             persist()
@@ -444,7 +445,7 @@ final class TVSavedAccountStore {
            ServerRegistry.shared.entry(with: account.serverID) != nil {
             guard await ServerRegistry.shared.remove(serverId: account.serverID) else {
                 error = "Couldn’t remove the saved server. Try again."
-                return
+                return false
             }
         }
         accounts.removeAll { $0.id == id }
@@ -459,6 +460,25 @@ final class TVSavedAccountStore {
             else { router.resetToLogin() }
         }
         await VividCloudAccountSync.shared.synchronize(router: router)
+        return true
+    }
+
+    @discardableResult
+    func saveAccountOrder(_ ids: [String]) -> Bool {
+        guard !busy else { return false }
+        let current = accounts.map(\.id)
+        let sorted = VividCloudPreferencePolicy.ordered(current, preferred: ids)
+        let byID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        let order = sorted.compactMap { byID[$0].map { VividCloudAccountIdentity.key(for: $0) } }
+        do {
+            try VividCloudPreferences.shared.setAccountOrder(order)
+            applyCloudOrder(order)
+            Task { await VividCloudAccountSync.shared.synchronize() }
+            return true
+        } catch {
+            self.error = "Couldn’t save the profile order. Try again."
+            return false
+        }
     }
 
     func applyCloudOrder(_ order: [String]) {
@@ -466,7 +486,7 @@ final class TVSavedAccountStore {
         let sorted = VividCloudPreferencePolicy.ordered(identities, preferred: order)
         let positions = Dictionary(uniqueKeysWithValues: sorted.enumerated().map { ($1, $0) })
         accounts.sort { positions[VividCloudAccountIdentity.key(for: $0), default: 0] < positions[VividCloudAccountIdentity.key(for: $1), default: 0] }
-        if identities != sorted { persist(); contentRevision = UUID() }
+        if identities != sorted { persist() }
     }
 
     fileprivate func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {

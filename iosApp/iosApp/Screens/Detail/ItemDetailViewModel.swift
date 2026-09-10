@@ -1353,6 +1353,11 @@ class ItemDetailViewModel {
         _ = await updateWatched(contentId: season.contentId, played: season.userData?.played != true)
     }
 
+    func setSeasonWatched(contentId: String, played: Bool) async -> Bool {
+        guard seasons.contains(where: { $0.contentId == contentId }) else { return false }
+        return await updateWatched(contentId: contentId, played: played)
+    }
+
     func setEpisodeWatched(contentId: String, played: Bool) async -> Bool {
         await updateWatched(contentId: contentId, played: played)
     }

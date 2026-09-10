@@ -151,3 +151,15 @@ struct ProfileAvatarView: View {
         return "\(Self.diceBearBaseURL)/\(encodedStyle)/png?seed=\(encodedSeed)&size=256"
     }
 }
+
+struct ProfileArrangeWobble: ViewModifier {
+    var active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ViewBuilder func body(content: Content) -> some View {
+        if active && !reduceMotion {
+            content.phaseAnimator([false, true]) { view, phase in
+                view.rotationEffect(.degrees(phase ? 1.8 : -1.8))
+            } animation: { _ in .easeInOut(duration: 0.14) }
+        } else { content }
+    }
+}

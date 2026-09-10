@@ -330,6 +330,7 @@ private extension View {
 struct TVEpisodeCard: View {
     let episode: EpisodeListItem
     var isCurrent: Bool = false
+    var usesNativeShelf = false
     var baseCardWidth: CGFloat = 480
     var posterSize: CardPosterSize = .standard
     var captionStyle: CardCaptionStyle = .titleMetadata
@@ -347,18 +348,7 @@ struct TVEpisodeCard: View {
     private let stillCornerRadius: CGFloat = 18
 
     var body: some View {
-        let button = Button(action: onSelect) {
-            EpisodeCardLabel(
-                episode: episode,
-                isPlayed: isPlayed,
-                isCurrent: isCurrent,
-                cardWidth: cardWidth,
-                stillHeight: stillHeight,
-                stillCornerRadius: stillCornerRadius,
-                captionStyle: captionStyle
-            )
-        }
-        .buttonStyle(TVCardFocusButtonStyle())
+        let button = cardButton
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityDescription)
 
@@ -376,6 +366,56 @@ struct TVEpisodeCard: View {
         .onChange(of: initialIsFavorite) { _, refreshedValue in
             guard let favoriteOverride, refreshedValue == favoriteOverride else { return }
             self.favoriteOverride = nil
+        }
+    }
+
+    @ViewBuilder
+    private var cardButton: some View {
+        if usesNativeShelf {
+            Button(action: onSelect) {
+                CachedAsyncImage(url: episode.stillUrl ?? "", targetSize: CGSize(width: cardWidth, height: stillHeight), contentMode: .fill)
+                    .frame(width: cardWidth, height: stillHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay(alignment: .bottomLeading) {
+                        HStack(spacing: 6) {
+                            if isPlayed { Image(systemName: "checkmark.circle.fill") }
+                            if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
+                        }
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: true, vertical: true)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        .padding(12)
+                    }
+                    .hoverEffect(.highlight)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("EPISODE \(episode.episodeNumber)").font(.system(size: 18)).foregroundStyle(.secondary)
+                    Text(episode.title ?? "Episode \(episode.episodeNumber)").font(.system(size: 24, weight: .semibold)).lineLimit(1)
+                    Text(episode.overview ?? "").font(.system(size: 20)).foregroundStyle(.secondary).lineLimit(2)
+                        .frame(height: 52, alignment: .topLeading)
+                    Text(DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
+                        .font(.system(size: 18)).foregroundStyle(.secondary)
+                }.frame(width: cardWidth, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .overlay(alignment: .topLeading) {
+                if !isPlayed, let position = episode.userData?.positionSeconds,
+                   let duration = episode.userData?.durationSeconds, duration > 0, position > 0 {
+                    ProgressView(value: min(1, max(0, position / duration)))
+                        .tint(.white)
+                        .frame(width: cardWidth - 32)
+                        .padding(.leading, 16)
+                        .padding(.top, stillHeight - 12)
+                        .allowsHitTesting(false)
+                }
+            }
+        } else {
+            Button(action: onSelect) {
+                EpisodeCardLabel(episode: episode, isPlayed: isPlayed, isCurrent: isCurrent,
+                                 cardWidth: cardWidth, stillHeight: stillHeight,
+                                 stillCornerRadius: stillCornerRadius, captionStyle: captionStyle)
+            }.buttonStyle(TVCardFocusButtonStyle())
         }
     }
 
@@ -673,6 +713,191 @@ struct TVEpisodeRailPlaceholder: View {
         .allowsHitTesting(false)
         .focusable(false)
         .accessibilityHidden(true)
+    }
+}
+
+
+/// One native shelf across seasons. Season buttons jump inside the same scroll view.
+struct TVContinuousEpisodeShelf: View {
+    let seasons: [Season]
+    let pages: [Int: [EpisodeListItem]]
+    let selectedSeason: Season?
+    let currentContentId: String?
+    let favorites: [String: Bool]
+    let onSeason: (Season) -> Void
+    let onFocus: (EpisodeListItem) -> Void
+    let onPlay: (EpisodeListItem) -> Void
+    let onWatched: (String, Bool) async -> Bool
+    let onFavorite: (String, Bool) async -> Bool
+    @FocusState private var focusedEpisode: String?
+    @FocusState private var focusedSeason: String?
+    @Namespace private var seasonFocusNamespace
+    @State private var highlightedSeason: String?
+    @State private var scrollHighlightedSeason: String?
+    @State private var pendingJump: String?
+    @State private var seeded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func items(_ season: Season) -> [EpisodeListItem]? { pages[season.seasonNumber] }
+    private var contentKey: [String] { seasons.flatMap { items($0)?.map(\.contentId) ?? [] } }
+
+    private var visibleSeasonID: String? {
+        focusedSeason ?? scrollHighlightedSeason ?? highlightedSeason ?? selectedSeason?.id
+    }
+
+    private func seasonAtVisiblePosition(_ visibleRect: CGRect) -> String? {
+        var firstIndex = 0
+        var visibleSeason: String?
+        let leadingCardCentre = max(0, visibleRect.minX) + 200
+        for season in seasons {
+            let episodes = items(season)
+            let count = episodes?.count ?? 1
+            if let focusedEpisode,
+               let index = episodes?.firstIndex(where: { $0.contentId == focusedEpisode }) {
+                let centre = CGFloat(firstIndex + index) * 440 + 200
+                if centre >= visibleRect.minX && centre <= visibleRect.maxX {
+                    return season.id
+                }
+            }
+            if count > 0, leadingCardCentre >= CGFloat(firstIndex) * 440 {
+                visibleSeason = season.id
+            }
+            firstIndex += count
+        }
+        return visibleSeason
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 24) {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 20) {
+                        ForEach(seasons) { season in
+                            Button {
+                                selectSeason(season, using: proxy)
+                            } label: {
+                                Text(season.seasonNumber == 0 ? "Specials" : "Season \(season.seasonNumber)")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .fixedSize()
+                            }
+                            .buttonStyle(TVContinuousSeasonButtonStyle(
+                                isFocused: focusedSeason == season.id,
+                                isSelected: visibleSeasonID == season.id))
+                            .focusEffectDisabled()
+                            .focused($focusedSeason, equals: season.id)
+                            .modifier(SeasonWatchedContextMenu(season: season))
+                        }
+                    }
+                }.scrollClipDisabled().focusSection()
+                .focusScope(seasonFocusNamespace)
+                .defaultFocus($focusedSeason, highlightedSeason ?? selectedSeason?.id,
+                              priority: focusedSeason == nil ? .userInitiated : .automatic)
+                .onChange(of: focusedSeason) { _, id in
+                    scrollHighlightedSeason = nil
+                    if let id, id != (highlightedSeason ?? selectedSeason?.id) {
+                        pendingJump = nil
+                    }
+                }
+                .task(id: focusedSeason) { @MainActor in
+                    guard let id = focusedSeason,
+                          id != (highlightedSeason ?? selectedSeason?.id) else { return }
+                    do {
+                        try await Task.sleep(for: .milliseconds(120))
+                    } catch { return }
+                    guard !Task.isCancelled, focusedSeason == id,
+                          id != (highlightedSeason ?? selectedSeason?.id),
+                          let season = seasons.first(where: { $0.id == id }) else { return }
+                    selectSeason(season, using: proxy)
+                }
+
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 40) {
+                        ForEach(seasons) { season in
+                            if let episodes = items(season) {
+                                ForEach(episodes) { episode in
+                                    TVEpisodeCard(episode: episode, isCurrent: currentContentId == episode.contentId,
+                                        usesNativeShelf: true, baseCardWidth: 400,
+                                        onSelect: { onPlay(episode) }, onPlay: { _ in onPlay(episode) },
+                                        onSetWatched: onWatched, initialIsFavorite: favorites[episode.contentId] ?? false,
+                                        onSetFavorite: onFavorite)
+                                        .id(episode.contentId)
+                                        .focused($focusedEpisode, equals: episode.contentId)
+
+                                }
+                            } else {
+                                Button("Load Season \(season.seasonNumber)") {
+                                    pendingJump = season.id
+                                    onSeason(season)
+                                }.frame(width: 400, height: 225)
+                            }
+                        }
+                    }.padding(.vertical, 20)
+                }
+                .scrollClipDisabled().focusSection()
+                .onScrollGeometryChange(for: String?.self) { geometry in
+                    seasonAtVisiblePosition(geometry.visibleRect)
+                } action: { _, seasonID in
+                    // Accelerated remote scrolling can move the rail before
+                    // native episode focus catches up. This only paints selection.
+                    guard focusedSeason == nil, let seasonID else { return }
+                    scrollHighlightedSeason = seasonID
+                }
+                .onChange(of: focusedEpisode) { _, id in
+                    guard let id,
+                          let season = seasons.first(where: { items($0)?.contains { $0.contentId == id } == true }),
+                          let episode = items(season)?.first(where: { $0.contentId == id }) else { return }
+                    pendingJump = nil
+                    scrollHighlightedSeason = nil
+                    highlightedSeason = season.id
+                    if selectedSeason?.id != season.id { onSeason(season) }
+                    onFocus(episode)
+                }
+            }
+            .onPlayPauseCommand {
+                guard let id = focusedEpisode,
+                      let episode = pages.values.lazy.flatMap({ $0 }).first(where: { $0.contentId == id }) else { return }
+                onPlay(episode)
+            }
+            .onChange(of: contentKey, initial: true) { _, _ in
+                if !seeded, let season = selectedSeason, items(season) != nil {
+                    seeded = true
+                    if let id = currentContentId ?? items(season)?.first?.contentId {
+                        proxy.scrollTo(id, anchor: .leading)
+                    }
+                }
+                jumpIfReady(proxy)
+            }
+        }
+    }
+
+    private func selectSeason(_ season: Season, using proxy: ScrollViewProxy) {
+        highlightedSeason = season.id
+        pendingJump = season.id
+        if selectedSeason?.id != season.id { onSeason(season) }
+        jumpIfReady(proxy)
+    }
+
+    private func jumpIfReady(_ proxy: ScrollViewProxy) {
+        guard let pendingJump, let season = seasons.first(where: { $0.id == pendingJump }),
+              let id = items(season)?.first?.contentId else { return }
+        withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(id, anchor: .leading) }
+        self.pendingJump = nil
+    }
+}
+
+private struct TVContinuousSeasonButtonStyle: ButtonStyle {
+    let isFocused: Bool
+    let isSelected: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isFocused ? Color.black : Color.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.36 : 0.10), in: Capsule())
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
     }
 }
 

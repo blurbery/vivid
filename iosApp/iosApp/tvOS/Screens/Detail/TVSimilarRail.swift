@@ -26,7 +26,7 @@ struct TVSimilarRail: View {
     @State private var lastAppliedFocusRequest = 0
     @FocusState private var focusedItemId: String?
 
-    private let cardWidth: CGFloat = 220
+    private let cardWidth: CGFloat = VividTheme.Skyline.densePosterCardWidth
     private let cardSpacing: CGFloat = 44
     private let railVerticalPadding: CGFloat = 12
     /// Header-to-content gap, matching the other detail sections'

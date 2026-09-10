@@ -262,6 +262,7 @@ private struct ItemDetailPhoneContent: View {
                 Color.clear
             }
         }
+        .environment(\.seasonWatchedAction, { id, played in await viewModel.setSeasonWatched(contentId: id, played: played) })
         .environment(\.episodeWatchedAction, { id, played in await viewModel.setEpisodeWatched(contentId: id, played: played) })
         .vividBackground()
         #if os(iOS)
@@ -1199,3 +1200,31 @@ private struct ItemDetailPhoneContent: View {
     }
 }
 #endif
+
+private struct SeasonWatchedActionKey: EnvironmentKey {
+    static let defaultValue: ((String, Bool) async -> Bool)? = nil
+}
+extension EnvironmentValues {
+    var seasonWatchedAction: ((String, Bool) async -> Bool)? {
+        get { self[SeasonWatchedActionKey.self] }
+        set { self[SeasonWatchedActionKey.self] = newValue }
+    }
+}
+
+struct SeasonWatchedContextMenu: ViewModifier {
+    let season: Season
+    @Environment(\.seasonWatchedAction) private var action
+    @State private var failed = false
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            if let action {
+                Button(season.userData?.played == true ? "Mark Season Unwatched" : "Mark Season Watched", systemImage: "checkmark.circle") {
+                    Task { failed = !(await action(season.contentId, season.userData?.played != true)) }
+                }
+            }
+        }
+        .alert("Couldn’t update season", isPresented: $failed) {
+            Button("OK", role: .cancel) {}
+        } message: { Text("Please try again.") }
+    }
+}

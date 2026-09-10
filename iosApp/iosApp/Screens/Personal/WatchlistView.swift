@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Grid of items in the user's watchlist.
 struct WatchlistView: View {
+    @Environment(\.forYouScrollHeader) private var scrollHeader
     let showsNavigationTitle: Bool
     let usesTVTopMenu: Bool
     var focusRequest: Int
@@ -49,6 +50,8 @@ struct WatchlistView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if items.isEmpty { scrollHeader }
         Group {
             if !items.isEmpty {
                 gridContent
@@ -69,6 +72,7 @@ struct WatchlistView: View {
                     subtitle: "Tap the bookmark icon on any item to add it here"
                 )
             }
+        }
         }
         .background(Color.black.ignoresSafeArea())
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Watchlist" : nil))
@@ -91,6 +95,7 @@ struct WatchlistView: View {
         tvGridContent
         #elseif os(iOS)
         ScrollView {
+            scrollHeader
             IOSPersonalMediaPosterLayout(items: items) { item, state in
                 guard !state.inWatchlist else { return }
                 withAnimation { items.removeAll { $0.contentId == item.contentId } }
@@ -156,6 +161,7 @@ struct WatchlistView: View {
                             focusedItemId: $focusedContentId,
                             contentId: item.contentId,
                             cardWidthOverride: tvCardWidthOverride,
+                            mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series",
                             onUserStateChanged: { state in
                                 guard !state.inWatchlist else { return }
                                 withAnimation(.easeInOut(duration: VividTheme.normalDuration)) {

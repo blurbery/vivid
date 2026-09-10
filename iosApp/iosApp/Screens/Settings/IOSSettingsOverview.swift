@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct IOSSettingsOverview: View {
     @Bindable var viewModel: SettingsViewModel
@@ -120,24 +121,52 @@ struct PhoneSavedAccountCards: View {
     @Environment(AppRouter.self) private var router
     @State private var selectedForPIN: TVSavedAccount?
     @State private var pendingDeletion: TVSavedAccount?
+    @State private var isEditingProfiles = false
+    @State private var draftOrder: [String] = []
+    @State private var movingID: String?
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var pin = ""
     @State private var pinError: String?
     var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            if isEditingProfiles {
+                Button("Done") { finishArrangement() }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 20).padding(.vertical, 10)
+                    .vividGlass(in: Capsule(), interactive: true)
+            }
         GeometryReader { geometry in
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 22) {
-                ForEach(store.accounts) { account in
-                    if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
-                        NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
-                            .contextMenu {
-                                deletionMenu(for: account)
+                ForEach(displayedAccounts) { account in
+                    if isEditingProfiles {
+                        VStack(spacing: 12) {
+                            tile(account)
+                                .modifier(ProfileArrangeWobble(active: true))
+                                .onDrag { movingID = account.id; return NSItemProvider(object: account.id as NSString) }
+                                .onDrop(of: [.text], delegate: ProfileArrangeDrop(target: account.id, order: $draftOrder, movingID: $movingID))
+                            Button(role: .destructive) { pendingDeletion = account } label: {
+                                Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                                    .frame(width: 38, height: 38).vividGlass(in: Circle(), interactive: true)
                             }
+                            .accessibilityLabel("Delete \(account.username)")
+                        }
                     } else {
-                        Button {
-                            if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
-                            else { Task { await store.select(account, router: router) } }
-                        } label: { tile(account) }
-                        .contextMenu { deletionMenu(for: account) }
+                        Group {
+                            if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
+                                NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
+
+                            } else {
+                                Button {
+                                    if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
+                                    else { Task { await store.select(account, router: router) } }
+                                } label: { tile(account) }
+
+                            }
+                        }
+                        .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
+                        .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
                     }
                 }
                 if store.canAddAccount {
@@ -152,14 +181,27 @@ struct PhoneSavedAccountCards: View {
             }.padding(.vertical, 12)
                 .frame(minWidth: geometry.size.width, alignment: isSettings ? .leading : .center)
         }
-        }.frame(height: 150).buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
+        }.frame(height: isEditingProfiles ? 210 : 150)
+        }.buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
         .task { await store.captureCurrent() }
+        .task(id: scenePhase == .active && !isEditingProfiles) {
+            guard scenePhase == .active, !isEditingProfiles else { return }
+            while !Task.isCancelled {
+                await VividCloudAccountSync.shared.synchronize(router: router)
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
         .confirmationDialog("Delete Profile?", isPresented: Binding(
             get: { pendingDeletion != nil },
             set: { if !$0 { pendingDeletion = nil } }
         ), titleVisibility: .visible, presenting: pendingDeletion) { account in
             Button("Delete Profile", role: .destructive) {
-                Task { await store.deleteAccount(account.id, router: router) }
+                Task {
+                    if await store.deleteAccount(account.id, router: router) {
+                        isEditingProfiles = false
+                        movingID = nil
+                    }
+                }
             }
             Button("Cancel", role: .cancel) { pendingDeletion = nil }
         } message: { account in
@@ -184,14 +226,24 @@ struct PhoneSavedAccountCards: View {
             }.presentationDetents([.medium])
         }
     }
-    @ViewBuilder
-    private func deletionMenu(for account: TVSavedAccount) -> some View {
-        if isSettings || account.requiresLogin {
-            Button("Delete Profile", systemImage: "trash", role: .destructive) {
-                pendingDeletion = account
-            }
+    private var displayedAccounts: [TVSavedAccount] {
+        guard isEditingProfiles else { return store.accounts }
+        let ids = VividCloudPreferencePolicy.ordered(store.accounts.map(\.id), preferred: draftOrder)
+        let byID = Dictionary(uniqueKeysWithValues: store.accounts.map { ($0.id, $0) })
+        return ids.compactMap { byID[$0] }
+    }
+    private func beginArrangement(_ id: String) {
+        draftOrder = store.accounts.map(\.id)
+        movingID = id
+        isEditingProfiles = true
+    }
+    private func finishArrangement() {
+        if store.saveAccountOrder(draftOrder) {
+            isEditingProfiles = false
+            movingID = nil
         }
     }
+
     private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {
         account.id == store.activeID && !account.requiresLogin && AuthService.shared.isLoggedIn
             && account.serverID == ServerRegistry.shared.activeServerId
@@ -214,6 +266,23 @@ struct PhoneSavedAccountCards: View {
             if store.needsLogin(account) { Text("Signed out").font(.caption).foregroundStyle(.secondary) }
         }.frame(width: 112)
     }
+}
+
+private struct ProfileArrangeDrop: DropDelegate {
+    let target: String
+    @Binding var order: [String]
+    @Binding var movingID: String?
+    func dropEntered(info: DropInfo) {
+        guard let movingID, movingID != target,
+              let from = order.firstIndex(of: movingID), let to = order.firstIndex(of: target) else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            order.remove(at: from)
+            order.insert(movingID, at: to)
+        }
+    }
+    func validateDrop(info: DropInfo) -> Bool { movingID != nil }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool { movingID = nil; return true }
 }
 
 struct PhoneSavedAccountEditor: View {

@@ -367,13 +367,7 @@ struct MediaCard: View {
             }
 
             if let mediaTypeLabel {
-                Text(mediaTypeLabel)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.black.opacity(0.7), in: Capsule())
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
+                MediaTypePill(title: mediaTypeLabel)
                     .padding(7)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
@@ -747,3 +741,32 @@ private extension View {
     }
 }
 #endif
+
+/// Shared saved-title badge, including the native tvOS catalogue cards.
+struct MediaTypePill: View {
+    let title: String
+    private var tint: Color { title == "Movie" ? Color(red: 0.40, green: 0.70, blue: 1) : Color(red: 0.78, green: 0.58, blue: 1) }
+    private var fontSize: CGFloat {
+        #if os(tvOS)
+        18
+        #else
+        10
+        #endif
+    }
+    var body: some View {
+        Text(title)
+            .font(.system(size: fontSize, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Capsule().fill(Color.black.opacity(0.78)))
+                    .overlay(Capsule().fill(tint.opacity(0.48)))
+            }
+            .overlay(Capsule().strokeBorder(tint.opacity(0.65), lineWidth: 1.5))
+            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+            .allowsHitTesting(false)
+    }
+}

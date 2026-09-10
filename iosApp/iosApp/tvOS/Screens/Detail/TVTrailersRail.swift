@@ -100,8 +100,8 @@ private struct TVTrailerCard: View {
     let focusScale: CGFloat
     let onSelect: () -> Void
 
-    private let cardWidth: CGFloat = 470
-    private let thumbHeight: CGFloat = 264
+    private let cardWidth: CGFloat = 400
+    private var thumbHeight: CGFloat { cardWidth * 9 / 16 }
     private let thumbCornerRadius: CGFloat = 18
 
     var body: some View {
@@ -126,14 +126,14 @@ private struct TrailerCardLabel: View {
     @Environment(\.isFocused) private var isFocused
 
     var body: some View {
-        VStack(alignment: .center, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             thumbnail
-            VStack(alignment: .center, spacing: 5) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(entry.title)
                     .font(.system(size: 21, weight: .semibold))
                     .foregroundColor(titleColor)
                     .lineLimit(1)
-                    .multilineTextAlignment(.center)
+                    .multilineTextAlignment(.leading)
 
                 if let secondaryLine {
                     Text(secondaryLine)

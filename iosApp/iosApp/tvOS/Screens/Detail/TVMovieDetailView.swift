@@ -75,7 +75,78 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
     @State private var focusedEpisodeContentId: String?
     @ObservedObject private var profilePrefsStore = ProfilePrefsStore.shared
 
+    @ViewBuilder
     var body: some View {
+        if detail.type == "movie" {
+            TVAppleDetailPage(backdropURL: detail.backdropUrl, backdropThumbhash: detail.backdropThumbhash, logoURL: heroLogoUrl, title: detail.title) { height in
+                nativeMovieHero(height: height)
+            } shelves: {
+                nativeMovieShelves
+            }
+            .focusScope(detailFocusNamespace)
+            .defaultFocus($playFocused, true, priority: .userInitiated)
+            .onPlayPauseCommand { onPlay(false) }
+        } else {
+            legacyBody
+        }
+    }
+
+    private func nativeMovieHero(height: CGFloat) -> some View {
+TVDetailHero(
+                            title: detail.title,
+                            seriesTitle: episodeSeriesTitle,
+                            logoUrl: heroLogoUrl,
+                            backdropUrl: detail.backdropUrl,
+                            backdropThumbhash: detail.backdropThumbhash,
+                            eyebrow: nil,
+                            sourceTokens: TVHeroMetadata.movieSourceTokens(from: detail),
+                            ratingChip: TVHeroMetadata.contentRatingChip(from: detail),
+                            overview: detail.overview,
+                            factsLine: TVHeroMetadata.movieFactsLine(from: detail, version: currentVersion),
+                            starringText: TVHeroMetadata.starringText(from: detail),
+                            playbackSummary: TVPlaybackSelectionSummary.make(
+                                currentVersion: currentVersion,
+                                selectedVersionFileId: selectedVersionFileId,
+                                selectedAudioTrackIndex: selectedAudioTrackIndex,
+                                selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
+                                subtitleMode: subtitleOverrideCleared
+                                    ? nil
+                                    : detail.effectiveSubtitleMode,
+                                subtitleSignature: subtitleOverrideCleared
+                                    ? nil
+                                    : detail.effectiveSubtitleTrackSignature,
+                                preferredSubtitleLanguage: profilePrefsStore.preferredSubtitleLanguage,
+                                showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false
+                            ),
+                            heroHeight: height,
+                            heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),
+                            usesFixedPageArtwork: true,
+                            extendsBackdropFadeBelowHero: true,
+                            actions: { actionColumn },
+                            belowSynopsis: belowSynopsis
+                        )
+    }
+
+    private var nativeMovieShelves: some View {
+VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
+                            if showsEpisodeRail {
+                                episodesSection
+                                    .id(episodeSectionScrollId)
+                            }
+                            trailersSection
+                            if showsSimilarRail {
+                                similarSection
+                                    .focused($similarRailFocused)
+                                    .id(similarSectionScrollId)
+                            }
+                            if let cast = supportingCast, !cast.isEmpty {
+                                castSection(cast: cast)
+                            }
+                            detailsSection
+                        }
+    }
+
+    private var legacyBody: some View {
         TVDetailPageSurface(backdropURL: detail.backdropUrl) {
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: false) {
@@ -117,14 +188,14 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
                                 episodesSection
                                     .id(episodeSectionScrollId)
                             }
-                            if let cast = supportingCast, !cast.isEmpty {
-                                castSection(cast: cast)
-                            }
                             trailersSection
                             if showsSimilarRail {
                                 similarSection
                                     .focused($similarRailFocused)
                                     .id(similarSectionScrollId)
+                            }
+                            if let cast = supportingCast, !cast.isEmpty {
+                                castSection(cast: cast)
                             }
                             detailsSection
                         }

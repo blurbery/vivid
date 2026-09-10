@@ -20,6 +20,14 @@ enum VividCloudPreferencePolicy {
         var seen = Set<String>()
         return (preferred.filter { available.contains($0) } + identities).filter { seen.insert($0).inserted }
     }
+    static func moving(_ identities: [String], id: String, by offset: Int) -> [String] {
+        guard offset == -1 || offset == 1,
+              let source = identities.firstIndex(of: id),
+              identities.indices.contains(source + offset) else { return identities }
+        var result = identities
+        result.swapAt(source, source + offset)
+        return result
+    }
     static func isSharedSetting(_ key: String) -> Bool {
         !(key.hasPrefix("playback.") || key.hasPrefix("player.") || key.hasPrefix("subtitle."))
     }
@@ -246,6 +254,17 @@ final class VividCloudPreferences {
         guard let value = SharedStorage.suite.object(forKey: key) ?? UserDefaults.standard.object(forKey: key) else { return nil }
         return try PropertyListSerialization.data(fromPropertyList: ["value": value], format: .binary, options: 0)
     }
+    /// Explicit moves must beat the bootstrap order, even before first capture.
+    func setAccountOrder(_ identities: [String]) throws {
+        try load()
+        let previous = entries
+        entries["accountOrder"] = VividCloudPreference(
+            value: try Self.encoder.encode(identities), modifiedAt: Date(), writer: writer
+        )
+        do { try persist() }
+        catch { entries = previous; throw error }
+    }
+
     func capture(accounts: [TVSavedAccount]) throws -> [String: VividCloudPreference] {
         try load()
         var values: [String: Data] = [:]

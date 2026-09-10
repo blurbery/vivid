@@ -10,6 +10,9 @@ enum TVDetailLayout {
     /// Shared title baseline for every detail page. Sits low enough that the
     /// first rail below the 690pt hero bottoms out just above the safe area.
     static let heroTopInset: CGFloat = 116
+    static func browsingHeroTopInset(for height: CGFloat) -> CGFloat {
+        max(heroTopInset, height - 580) + 30
+    }
     static let heroContentWidth: CGFloat = 750
     static let editorialHeight: CGFloat = 435
     static let disclosureSpacing: CGFloat = 12
@@ -147,6 +150,7 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
     /// Series keeps its compact layout but lets the standard Movie
     /// backdrop fade finish behind the season row. Movies retain the existing
     /// clipped hero through the default.
+    var usesFixedPageArtwork = false
     var extendsBackdropFadeBelowHero = false
     @ViewBuilder let actions: () -> Actions
     /// Affordance rendered directly under the synopsis (e.g. the on-view
@@ -165,7 +169,7 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
 
     private var heroComposition: some View {
         ZStack(alignment: .topLeading) {
-            backdrop
+            if !usesFixedPageArtwork { backdrop }
             content
         }
         .frame(height: heroHeight)
@@ -368,7 +372,12 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
                 maxWidth: 650,
                 maxHeight: 160
             ) {
-                TVHeroTitle(title: title)
+                if usesFixedPageArtwork {
+                    Text(title).font(.system(size: 78, weight: .bold)).lineLimit(2)
+                                    .minimumScaleFactor(0.72)
+                } else {
+                    TVHeroTitle(title: title)
+                }
             }
         }
     }
@@ -562,6 +571,7 @@ struct TVDecodedLogoTitle<Fallback: View>: View {
     let accessibilityLabel: String
     let maxWidth: CGFloat
     let maxHeight: CGFloat
+    let alignment: Alignment
     @ViewBuilder let fallback: () -> Fallback
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -571,12 +581,14 @@ struct TVDecodedLogoTitle<Fallback: View>: View {
         accessibilityLabel: String,
         maxWidth: CGFloat,
         maxHeight: CGFloat,
+        alignment: Alignment = .bottomLeading,
         @ViewBuilder fallback: @escaping () -> Fallback
     ) {
         self.logoUrl = logoUrl
         self.accessibilityLabel = accessibilityLabel
         self.maxWidth = maxWidth
         self.maxHeight = maxHeight
+        self.alignment = alignment
         self.fallback = fallback
     }
 
@@ -626,7 +638,7 @@ struct TVDecodedLogoTitle<Fallback: View>: View {
             .frame(
                 maxWidth: maxWidth,
                 maxHeight: maxHeight,
-                alignment: .bottomLeading
+                alignment: alignment
             )
             .accessibilityHidden(true)
     }
@@ -917,4 +929,196 @@ struct TVPlaybackSelectionSummaryView: View {
         .accessibilityLabel("\(label.capitalized), \(value ?? "loading")")
     }
 }
+
+// Apple's fold-snapping implementation from Creating a tvOS media catalog app in SwiftUI.
+/*
+Copyright © 2024 Apple Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+*/
+struct FoldSnappingScrollTargetBehavior: ScrollTargetBehavior {
+    var showcaseHeight: CGFloat
+
+    /// This takes a `ScrollTarget` that contains the proposed end point of
+    /// the current scroll event.  In tvOS, this is the target of a scroll
+    /// that the focus engine triggers when attempting to bring a newly focused
+    /// item into view.
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        // Use the origin of this scroll operation, not hero visibility that
+        // changes while the native animation is already moving.
+        let aboveFold = context.originalTarget.rect.minY < showcaseHeight * 0.5
+        // Keep Vivid's header controls aligned with its fixed logo while
+        // native focus moves within the hero. Lower shelves retain fold snapping.
+        if aboveFold && target.rect.minY < showcaseHeight * 0.3 {
+            target.rect.origin.y = 0
+            return
+        }
+
+        // If the header isn't visible and the target isn't high enough to
+        // reveal any of the header, the scroll can land anywhere the system
+        // determines within this area.
+        if !aboveFold && target.rect.minY > showcaseHeight {
+            // The target isn't far enough up to reveal the showcase.
+            return
+        }
+
+        // The view needs to snap upward to reveal the header only if the
+        // target is more than 30% of the way up from the bottom edge of the
+        // showcase.
+        let showcaseRevealThreshold = showcaseHeight * 0.7
+
+        // If the target of the scroll is anywhere between the header's bottom
+        // edge and that threshold, the view needs to snap to hide the header.
+        let snapToHideRange = showcaseRevealThreshold...showcaseHeight
+
+        if aboveFold || snapToHideRange.contains(target.rect.origin.y) {
+            // The view is either above the fold and scrolling more than 30% of
+            // the way down, or it's below the fold and isn't moving up far
+            // enough to reveal the showcase.
+
+            // This case likely triggers every time you move focus among the
+            // items on the top content shelf, as the focus system brings them a
+            // little farther onto the screen.  It's very likely that this code
+            // is setting the target origin to it's current position here,
+            // effectively denying any scrolling at all.
+            target.rect.origin.y = showcaseHeight
+        }
+        else {
+            // The view is below the fold and it's moving up beyond the bottom
+            // 30% of the header view.  Snap to the view's origin to reveal the
+            // entire header.
+            target.rect.origin.y = 0
+        }
+    }
+}
+
+
+private struct TVDetailCurvedBlurMask: Shape {
+    var lift: CGFloat = 0
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 0.48 - lift))
+        path.addCurve(to: CGPoint(x: rect.width * 1.1, y: rect.height * 0.48 - lift),
+                      control1: CGPoint(x: rect.width * 0.28, y: rect.height * 1.02 - lift),
+                      control2: CGPoint(x: rect.width * 0.72, y: rect.height * 1.02 - lift))
+        path.addLine(to: CGPoint(x: rect.width * 1.1, y: rect.height * 1.2))
+        path.addLine(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 1.2))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct TVDetailScrollMaterial: ViewModifier {
+    let viewportSize: CGSize
+    let showcaseHeight: CGFloat
+    @State private var scrollOffset: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        let progress = min(1, max(0, scrollOffset / showcaseHeight))
+        content
+            .background {
+                ZStack {
+                    Rectangle().fill(.regularMaterial)
+                        .mask {
+                            TVDetailCurvedBlurMask(lift: progress * viewportSize.height * 1.2)
+                                .fill(.black)
+                                .blur(radius: viewportSize.height * 0.065)
+                        }
+                    EllipticalGradient(stops: [
+                        .init(color: .black.opacity(0.60), location: 0),
+                        .init(color: .black.opacity(0.56), location: 0.4),
+                        .init(color: .clear, location: 1)
+                    ], center: UnitPoint(x: 0.12, y: 0.68 - scrollOffset / max(1, viewportSize.height)),
+                       startRadiusFraction: 0, endRadiusFraction: 0.8)
+                    .drawingGroup(opaque: false, colorMode: .extendedLinear)
+                    .opacity(1 - progress)
+                }
+                .frame(width: viewportSize.width, height: viewportSize.height)
+                .clipped()
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                min(showcaseHeight, max(0, geometry.visibleRect.minY))
+            } action: { _, offset in
+                // The surface follows the native scroll, without a delayed
+                // fade or updates to the episode/season navigation state.
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { scrollOffset = offset }
+            }
+    }
+}
+
+/// Vivid supplies artwork and existing controls to Apple's fixed-background,
+/// gradient-mask and fold-snapping presentation.
+struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
+    let backdropURL: String?
+    var backdropThumbhash: String? = nil
+    let logoURL: String?
+    let title: String
+    @ViewBuilder let hero: (CGFloat) -> Hero
+    @ViewBuilder let shelves: () -> Shelves
+    @State private var showsShelfLogo = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { geometry in
+            let showcaseHeight = max(800, geometry.size.height - 100)
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 26) {
+                    hero(showcaseHeight)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .focusSection()
+                    shelves()
+                        .padding(.top, 150)
+                        .padding(.horizontal, TVDetailLayout.horizontalInset)
+                        .padding(.bottom, TVDetailLayout.pageBottomPadding)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay(alignment: .top) {
+                            TVDecodedLogoTitle(logoUrl: logoURL, accessibilityLabel: title,
+                                               maxWidth: 480, maxHeight: 110, alignment: .bottom) {
+                                Text(title).font(.system(size: 54, weight: .bold)).lineLimit(2)
+                                    .minimumScaleFactor(0.72)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(width: 480, height: 110, alignment: .bottom)
+                            .padding(.top, 4)
+                            .opacity(showsShelfLogo ? 1 : 0)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        }
+                }
+                .scrollTargetLayout()
+            }
+            .modifier(TVDetailScrollMaterial(viewportSize: geometry.size, showcaseHeight: showcaseHeight))
+            .background {
+                ZStack {
+                    Color.black
+                    if let backdropURL {
+                        CachedAsyncImage(url: backdropURL, targetSize: geometry.size, thumbhash: backdropThumbhash, contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                    }
+
+                }
+            }
+            .scrollTargetBehavior(FoldSnappingScrollTargetBehavior(showcaseHeight: showcaseHeight))
+            .scrollClipDisabled()
+            .onScrollGeometryChange(for: Bool.self) { scroll in
+                scroll.visibleRect.minY >= TVDetailLayout.browsingHeroTopInset(for: showcaseHeight) + 160
+            } action: { _, visible in
+                withAnimation(reduceMotion ? nil : .easeOut(duration: visible ? 0.25 : 0.08)) {
+                    showsShelfLogo = visible
+                }
+            }
+
+        }
+        .ignoresSafeArea()
+    }
+}
+
 #endif

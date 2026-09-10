@@ -55,6 +55,12 @@ final class VividImageCache: @unchecked Sendable {
             } else { memory.removeObject(forKey: request.key) }
         }
     }
+    #if os(tvOS)
+    func setMemoryLimits(cost: Int, count: Int) {
+        memory.totalCostLimit = cost
+        memory.countLimit = count
+    }
+    #endif
     func removeAll(caches: Caches) { memory.removeAllObjects() }
     func containsData(for request: VividImageRequest) -> Bool { responses.cachedResponse(for: URLRequest(url: request.url)) != nil }
     func removeCachedData(for request: VividImageRequest) { responses.removeCachedResponse(for: URLRequest(url: request.url)) }
@@ -162,6 +168,16 @@ final class VividImagePrefetcher: @unchecked Sendable {
         launchLocked()
         lock.unlock()
     }
+    #if os(tvOS)
+    /// Reprioritise upcoming Home work without detaching active shared downloads.
+    func replacePendingPrefetching(with requests: [VividImageRequest]) {
+        lock.lock()
+        var seen = Set<VividImageRequest>()
+        pending = requests.filter { active[$0] == nil && seen.insert($0).inserted }
+        launchLocked()
+        lock.unlock()
+    }
+    #endif
     func stopPrefetching(with urls: [URL]) { stopPrefetching(with: urls.map { VividImageRequest(url: $0) }) }
     func stopPrefetching(with requests: [VividImageRequest]) {
         lock.lock()

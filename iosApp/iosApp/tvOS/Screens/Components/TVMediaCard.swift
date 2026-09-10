@@ -18,6 +18,7 @@ struct TVMediaCard: View {
     /// Data for optional overlay badges. `nil` skips overlay rendering;
     /// callers without per-item OverlaySummary should leave it off.
     var overlayData: OverlayData? = nil
+    var mediaTypeLabel: String? = nil
     let action: () -> Void
     /// Remote Play/Pause shortcut. When nil, the card does not intercept the
     /// command (used for non-playable containers such as series).
@@ -178,6 +179,12 @@ struct TVMediaCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
             }
 
+            if let mediaTypeLabel {
+                MediaTypePill(title: mediaTypeLabel)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+
             if userState?.played == true {
                 watchedBadge
                     .padding(10)
@@ -224,6 +231,7 @@ struct TVMediaCard: View {
     private var accessibilityDescription: String {
         let secondLine = subtitle ?? year.map(String.init)
         var components = [title]
+        if let mediaTypeLabel { components.append(mediaTypeLabel) }
         if let secondLine {
             components.append(secondLine)
         }
