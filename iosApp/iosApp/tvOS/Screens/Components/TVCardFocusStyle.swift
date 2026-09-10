@@ -72,20 +72,39 @@ private struct TVCardFocusButtonStyleBody: View {
 extension View {
     func tvArtworkEdge(isFocused: Bool, cornerRadius: CGFloat) -> some View {
         overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [.white.opacity(isFocused ? 0.65 : 0.16),
-                                 .white.opacity(isFocused ? 0.28 : 0.06),
-                                 .white.opacity(isFocused ? 0.48 : 0.12)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    ),
-                    lineWidth: isFocused ? 1.5 : 1
-                )
+            TVArtworkEdge(isFocused: isFocused, cornerRadius: cornerRadius)
                 .allowsHitTesting(false)
         }
         .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
     }
 
+}
+private struct TVArtworkEdge: View {
+    let isFocused: Bool
+    let cornerRadius: CGFloat
+    @Environment(\.homeCardPresentation) private var homePresentation
+
+    private var edge: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .strokeBorder(
+                LinearGradient(
+                    colors: [.white.opacity(isFocused ? 0.65 : 0.16),
+                             .white.opacity(isFocused ? 0.28 : 0.06),
+                             .white.opacity(isFocused ? 0.48 : 0.12)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ),
+                lineWidth: isFocused ? 1.5 : 1
+            )
+    }
+
+    @ViewBuilder var body: some View {
+        if homePresentation != nil {
+            // Home profiling identified CPU gradient-stroke rasterisation as a hotspot.
+            // Flatten only the decorative edge, never the button or its artwork.
+            edge.drawingGroup(opaque: false, colorMode: .nonLinear)
+        } else {
+            edge
+        }
+    }
 }
 #endif
