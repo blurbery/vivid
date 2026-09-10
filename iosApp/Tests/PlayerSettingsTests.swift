@@ -112,6 +112,8 @@ final class PlayerSettingsTests: XCTestCase {
     func testPlaybackAndSubtitlePreferencesSurviveLocalReload() async throws {
         let harness = try PlayerSettingsHarness()
         let settings = harness.settings
+        XCTAssertFalse(settings.preferLosslessAudio)
+        settings.preferLosslessAudio = true
         settings.setBufferAhead(.seconds30)
         settings.setBackgroundPlaybackEnabled(false)
         settings.setAutoPlayNextEpisode(false)
@@ -121,6 +123,7 @@ final class PlayerSettingsTests: XCTestCase {
         settings.showForcedSubtitles = false
         await settings.reloadForCurrentProfile()
         let restored = PlayerSettings(defaults: harness.defaults)
+        XCTAssertTrue(restored.preferLosslessAudio)
         XCTAssertEqual(restored.bufferAhead, .seconds30)
         XCTAssertFalse(restored.backgroundPlaybackEnabled)
         XCTAssertFalse(restored.autoPlayNextEpisode)
@@ -132,12 +135,14 @@ final class PlayerSettingsTests: XCTestCase {
 
     func testResetRestoresLocalPlaybackDefaults() async throws {
         let harness = try PlayerSettingsHarness()
+        harness.settings.preferLosslessAudio = true
         harness.settings.setBufferAhead(.seconds30)
         harness.settings.setPlaybackSpeed(2)
         harness.settings.preferredSubtitleLanguage = "ja"
         harness.settings.setSubtitleMatchesSystemAppearance(true)
         await harness.settings.resetAllDeviceSettings()
         let restored = PlayerSettings(defaults: harness.defaults)
+        XCTAssertFalse(restored.preferLosslessAudio)
         XCTAssertEqual(restored.bufferAhead, .automatic)
         XCTAssertEqual(restored.playbackSpeed, 1)
         XCTAssertEqual(restored.preferredSubtitleLanguage, PlaybackPrefSentinel.none)
@@ -151,9 +156,17 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertEqual(BufferAheadMode.automatic.label, "Automatic")
         XCTAssertEqual(BufferAheadMode.seconds20.forwardBufferSegments, 15)
         XCTAssertEqual(BufferAheadMode.seconds30.forwardBufferSegments, 20)
+        #if os(tvOS)
+        XCTAssertEqual(BufferAheadMode.seconds20.label, "1 minute")
+        XCTAssertEqual(BufferAheadMode.seconds30.label, "80 seconds")
+        XCTAssertEqual(BufferAheadMode.fiveMinutes.forwardBufferSegments, 75)
+        XCTAssertEqual(BufferAheadMode.maximum.forwardBufferSegments, 150)
+        XCTAssertEqual(BufferAheadMode.unlimited.forwardBufferSegments, Int.max)
+        #else
         XCTAssertEqual(BufferAheadMode.seconds20.label, "30 seconds")
         XCTAssertEqual(BufferAheadMode.seconds30.label, "40 seconds")
         XCTAssertEqual(BufferAheadMode.allCases.map(\.label), ["Automatic", "30 seconds", "40 seconds"])
+        #endif
         XCTAssertEqual(BufferAheadMode(rawValue: "seconds10") ?? .automatic, .automatic)
         XCTAssertEqual(BufferAheadMode(rawValue: "seconds20"), .seconds20)
         XCTAssertEqual(BufferAheadMode(rawValue: "seconds30"), .seconds30)

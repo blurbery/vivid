@@ -55,7 +55,7 @@ The mobile app uses a configurable glass tab bar, a looping Home spotlight and l
 
 ## Playback
 
-The player runs on [VividKit](VividKit), the native playback package in this repository. It uses FFmpeg to read media containers, VideoToolbox for supported hardware video decoding, and Apple output frameworks. Embedded subtitles and chapters come from the media, with IntroDB supplying optional intro and credits skips. See the [playback guide](docs/playback/README.md) for audio selection and current device coverage.
+Apple TV uses [AetherEngine](AetherEngine) behind Vivid’s player, with native Apple playback and an automatic software fallback. iPhone and iPad use [VividKit](VividKit). Vivid keeps its own controls, episode countdown, subtitles and optional IntroDB skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
 
 > [!IMPORTANT]
 > Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.
@@ -70,7 +70,7 @@ I'll add GitHub Sponsors once I've finished setting it up. For now, testing the 
 
 ## Licence
 
-Vivid and VividKit source use Apache-2.0; FFmpeg and other dependencies retain their own licences.
+Vivid and VividKit source use Apache-2.0. AetherEngine retains LGPL-3.0 with its Apple Store / DRM Exception; FFmpeg and other dependencies retain their own licences.
 
 [Apache-2.0](LICENSE) · [Third-party libraries](THIRD_PARTY_NOTICES.md) · [Brand policy](TRADEMARK.md)
 

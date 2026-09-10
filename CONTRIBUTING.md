@@ -18,7 +18,7 @@ xcodegen generate
 open Vivid.xcodeproj
 ```
 
-VividKit is a local Swift package included with this checkout. Its FFmpeg dependency is pinned in `VividKit/Package.swift`; the subtitle and font frameworks are in `VividKit/Vendor`. Keep their notices and binary slices together when building. The app’s Swift package resolution is tracked; do not substitute a different playback engine.
+VividKit is the local iPhone/iPad playback package; AetherEngine is the local Apple TV playback package. Their FFmpeg dependency uses the same pinned FFmpegBuild revision. Subtitle and font frameworks remain in `VividKit/Vendor`. Keep package pins, notices and binary slices together when building. The app’s Swift package resolution is tracked. AetherEngine retains its upstream licence and Apple Store / DRM Exception, including for local modifications.
 
 Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV. These are the current build identifiers. Choose an installed simulator in Xcode, or build the TV target without signing:
 

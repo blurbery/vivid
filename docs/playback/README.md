@@ -3,18 +3,18 @@
 </p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Playback</h1>
-<p align="center">VividKit and Vivid’s player integration.</p>
+<p align="center">Apple TV and iPhone/iPad playback integration.</p>
 <p align="center"><a href="../../README.md">Home</a> · <a href="../README.md">Documentation</a> · <a href="../../CONTRIBUTING.md">Contributing</a> · <a href="https://github.com/blurbery/vivid/releases">Releases</a></p>
 
 ---
 
-Vivid uses the [local VividKit package](../../VividKit) for library video playback. The app owns its controls, queues, user state and server integration; the engine owns media execution.
+Vivid uses [AetherEngine](../../AetherEngine) on Apple TV and [VividKit](../../VividKit) on iPhone and iPad. The app owns controls, queues, user state and server integration; each platform engine owns media execution. Apple TV automatically chooses prepared native Apple playback or software fallback within one Aether session, with no player switch.
 
 Read the [playback architecture](architecture.md) for current responsibilities and validation boundaries.
 
 ## Apple TV controls
 
-Vivid supplies the player UI for every VividKit playback path. On Apple TV, the bar uses a slim timeline and an Info pill above its right end. Info opens the Info, Stats, Video, Audio, Subtitles and Chapters tabs when applicable; subtitle options depend on the tracks in the opened media. Embedded bitmap subtitles such as PGS end the previous display set when its replacement begins, preventing successive dialogue images from stacking. The time row includes remaining media time; the remote retains play/pause and seeking. This is Vivid’s SwiftUI UI, not Apple’s AVPlayerViewController transport.
+Vivid supplies the player UI for every playback path. On Apple TV, the bar uses a slim timeline and an Info pill above its right end. Info opens the Info, Stats, Video, Audio, Subtitles and Chapters tabs when applicable; subtitle options depend on the tracks in the opened media. Embedded bitmap subtitles such as PGS end the previous display set when its replacement begins, preventing successive dialogue images from stacking. The time row includes remaining media time; the remote retains play/pause and seeking. The controls remain Vivid’s SwiftUI UI. On Apple TV, AVPlayerViewController hosts native playback with its transport bar hidden; Vivid’s dots provide loading presentation. Episode handoff retains this host and the existing countdown, accepting picture readiness only from the current item.
 
 At the end of an episode, Next Up places the continuing mini-player at the top right and Play Now, Keep Watching and Back along the bottom left as applicable. The primary button keeps a fixed width, and the autoplay countdown remains beside it when active. The tvOS On Deck shelf is removed. Loading and next-episode transitions use four staggered white bouncing dots at screen centre; Reduce Motion keeps them still.
 
@@ -40,7 +40,7 @@ The captions are compact single lines inside the open controls, such as “If bu
 
 The three capped modes are opt-in and local to the device/profile. After eight continuous seconds of eligible buffering with less than one second buffered ahead, a mode can request its lower ceiling once. Playback must already have started, and the active quality must match that mode. Startup, pause, seeking, scrubbing, offline/audio-only playback, errors, an in-flight quality replan and the last ten seconds of a known-duration item are excluded. Recovery or an ineligible phase cancels the timer. Source, position and selected tracks use the existing session/recovery path; the lower temporary ceiling does not overwrite the saved maximum. Original, Auto and older saved presets are not silently enrolled, and failed or rejected changes cannot trigger an unrelated fallback.
 
-Playback preferences remain local per device/profile. Existing Original and custom quality preferences are preserved. Buffer Ahead offers Automatic (about 20 seconds), 30 seconds and 40 seconds on iPhone, iPad and Apple TV, subject to the existing memory limits. There is no duplicate manual 20-second choice. These are direct-file packet read-ahead targets, not startup requirements; playback keeps its small startup threshold and server HLS retains AVPlayer’s buffering. Older saved manual selections retain their raw storage identifiers while the offered targets increase by ten seconds; the removed 10-second selection falls back to Auto. The obsolete Dolby Vision, Seek Cache, lossless-bridge and deinterlacing controls remain removed. IntroDB markers and the separate automatic intro/credit skip switches retain their existing roles.
+Playback preferences remain local per device/profile. iPhone and iPad retain Automatic (about 20 seconds), 30-second and 40-second packet read-ahead targets. Apple TV Automatic uses Aether’s ten-segment target, roughly 40 seconds beyond consumer requests. It also offers 1, 5 and 10 minutes and a disk-limited whole-file window; the existing 80-second selection is retained. Startup does not wait for the full target. Stats distinguish AVPlayer buffer from measured Read-ahead available; both Apple TV timeline bars show measured read-ahead when available and otherwise use the consumer buffer. Playback recovery still uses the consumer buffer. Prefer Lossless Audio sits below Buffer Ahead on Apple TV and defaults off: converted native-path audio normally uses E-AC-3 up to 5.1, while enabling it selects FLAC up to 7.1 for the next load. Lossless multichannel output needs a compatible route and can become stereo over some TV/ARC connections. IntroDB markers and the separate automatic intro/credit skip switches retain their existing roles.
 
 ## Direct-stream recovery
 
@@ -58,9 +58,9 @@ Silo original-file and offline audio ordinals resolve to actual stream IDs insid
 
 Automatic compatible-audio selection and TrueHD 7.1 source playback have been verified in development builds. See the [player engine core](../cores/player-engine.md#audio-support) for supported formats and output limits. Ten focused physical-iPhone tests previously passed for the audio preference and embedded-media path, including a non-contiguous audio stream ID and exactly one source open. Physical iPad coverage and additional output routes remain separate checks.
 
-### PCM continuity and current verification
+### VividKit PCM continuity and earlier verification
 
-The DTS crackle fix keeps software-decoded PCM timestamps continuous across container rounding and reuses the PCM format description until the audio format changes. Apple TV requests multichannel-output support; iPhone/iPad keep normal route negotiation. DTS uses the existing FFmpeg-to-PCM path, not a new native DTS decoder or a claim of DTS:X object output. The experimental tvOS DTS-to-HLS bridge is retained in source but disabled in Vivid.
+The following records concern VividKit and earlier Apple TV builds, not validation of the new Aether route. The DTS crackle fix keeps software-decoded PCM timestamps continuous across container rounding and reuses the PCM format description until the audio format changes. Apple TV requests multichannel-output support; iPhone/iPad keep normal route negotiation. DTS uses the existing FFmpeg-to-PCM path, not a new native DTS decoder or a claim of DTS:X object output. The experimental tvOS DTS-to-HLS bridge is retained in source but disabled in Vivid.
 
 Apple TV observes automatic audio-renderer flushes and output-configuration changes. It can replay retained, unplayed samples without restarting video or reopening the source. The replay queue is bounded to 16 MiB and 512 samples; a bounded seek fallback remains when replay cannot recover. AirPlay confirmation checks queued-audio progress as well as clock movement and retains flushes received during recovery. Recovery can introduce a pause; uninterrupted startup is not guaranteed. The separate HDMI stall-recovery component is enabled in Release only for a pure HDMI output route; Debug builds still require the existing launch argument. These audio recovery paths do not change HomePod, AirPlay or iPhone audio routes. See the [mini-core guide](../cores/player-engine.md#mini-cores) for exact policies.
 

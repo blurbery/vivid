@@ -23,7 +23,7 @@ These instructions apply to AI coding, documentation and review work in this rep
 
 ## Project Structure & Module Organization
 
-This repository contains Vivid, an independent Apple media client. SwiftUI app code lives under `iosApp/iosApp/`, the local native playback package lives in `VividKit/`, app tests live in `iosApp/Tests/`, engine tests live in `VividKit/Tests/`, Top Shelf code lives in `iosApp/TopShelf/`, resources live in `iosApp/Resources/`, and generated Xcode structure is controlled by `iosApp/project.yml`. Start with [the documentation index](docs/README.md). GitHub release automation lives in `.github/workflows/release.yml` and `scripts/release/`; unsigned sideload tooling lives in `fastlane/`. App Store Connect is configured for iOS and tvOS TestFlight, but Apple signing and upload credentials remain local and no upload automation is committed.
+This repository contains Vivid, an independent Apple media client. SwiftUI app code lives under `iosApp/iosApp/`, the local playback packages live in `VividKit/` (iOS) and `AetherEngine/` (tvOS), app tests live in `iosApp/Tests/`, engine tests live in `VividKit/Tests/`, Top Shelf code lives in `iosApp/TopShelf/`, resources live in `iosApp/Resources/`, and generated Xcode structure is controlled by `iosApp/project.yml`. Start with [the documentation index](docs/README.md). GitHub release automation lives in `.github/workflows/release.yml` and `scripts/release/`; unsigned sideload tooling lives in `fastlane/`. App Store Connect is configured for iOS and tvOS TestFlight, but Apple signing and upload credentials remain local and no upload automation is committed.
 
 ## Vivid repository and release rules
 

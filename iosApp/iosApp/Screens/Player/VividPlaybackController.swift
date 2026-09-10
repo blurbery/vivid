@@ -118,7 +118,10 @@ final class VividPlaybackController {
 
     init() throws {
         engine = try VividEngine()
-        #if os(iOS) || os(tvOS)
+        #if os(tvOS)
+        // AVPlayerViewController owns the native system session, as in Sodalite.
+        engine.ownsVideoNowPlayingSession = false
+        #elseif os(iOS)
         engine.ownsVideoNowPlayingSession = true
         #endif
         applyBackgroundPlaybackPreference()
@@ -338,7 +341,7 @@ final class VividPlaybackController {
     /// Vivid's player-scoped native-video session. It appears only after a
     /// native host has been constructed and is nil on the software route.
     var videoNowPlayingSession: MPNowPlayingSession? {
-        guard engine.videoRoute == .remoteBypass else {
+        guard engine.videoRoute.usesNativeVideoSession else {
             return nil
         }
         return engine.videoNowPlayingSession
@@ -350,7 +353,7 @@ final class VividPlaybackController {
     var shouldUseSharedVideoNowPlayingFallback: Bool {
         #if os(macOS)
         switch engine.videoRoute {
-        case .remoteBypass, .sampleBuffer:
+        case .remoteBypass, .loopback, .sampleBuffer:
             return true
         case .none, .audio:
             return false
@@ -653,13 +656,10 @@ final class VividPlaybackController {
     /// request headers; AVURLAsset headers stay on the sending device and are
     /// not credentials an AirPlay receiver can reproduce.
     private var externalPlaybackIsReceiverFetchable: Bool {
-        guard hasCommittedActiveLoad, activeSpec != nil else { return false }
-        switch engine.videoRoute {
-        case .remoteBypass:
-            return activeSpec?.options.httpHeaders.isEmpty == true
-        case .none, .sampleBuffer, .audio:
-            return false
-        }
+        engine.videoRoute.isReceiverFetchable(
+            hasCommittedLoad: hasCommittedActiveLoad && activeSpec != nil,
+            hasCustomHeaders: activeSpec?.options.httpHeaders.isEmpty != true
+        )
     }
 
     /// The outgoing player policy can survive only when the successor can use
@@ -684,7 +684,12 @@ final class VividPlaybackController {
     private func refreshExternalPlaybackState() {
         let player = engine.currentAVPlayer
         let playerIsActive = player?.isExternalPlaybackActive == true
-        let isNativeVideoRoute = engine.videoRoute == .remoteBypass
+        #if os(tvOS)
+        // HDMI is Apple TV's normal fullscreen output. Only AVPlayer's actual
+        // external-video state hands captions away from Vivid's overlay.
+        engine.setNativeSubtitleRendering(playerIsActive)
+        #endif
+        let isNativeVideoRoute = engine.videoRoute.usesNativeVideoSession
         let routeIsActive = playerIsActive
             || (isNativeVideoRoute && Self.isExternalOutputRoute)
         let allowed = Self.externalPlaybackAllowed(

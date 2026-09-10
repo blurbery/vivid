@@ -6,7 +6,46 @@ import VividKit
 
 enum PlaybackState: Equatable { case idle, loading, playing, paused, seeking, ended, error(String) }
 enum PlaybackPhase: Equatable { case idle, loading, playing, paused, seeking, rebuffering, stalled(reconnecting: Bool), ended, error(String) }
-enum VideoRoute: String { case none, remoteBypass, sampleBuffer, audio }
+enum VideoRoute: String {
+    case none, remoteBypass, loopback, sampleBuffer, audio
+
+    var usesNativeVideoSession: Bool { self == .remoteBypass || self == .loopback }
+
+    func isReceiverFetchable(hasCommittedLoad: Bool, hasCustomHeaders: Bool) -> Bool {
+        guard hasCommittedLoad else { return false }
+        switch self {
+        case .loopback: return true
+        case .remoteBypass: return !hasCustomHeaders
+        case .none, .sampleBuffer, .audio: return false
+        }
+    }
+}
+enum VividNativeFrameReadiness {
+    static func accepts(item: AnyObject, current: AnyObject?, outgoing: AnyObject?, alreadyPresented: Bool) -> Bool {
+        !alreadyPresented && item === current && item !== outgoing
+    }
+}
+
+/// A native caption renderer needs a new selection only after the item,
+/// selected track or presentation destination changes.
+struct VividNativeSubtitleHandoff {
+    private struct Selection: Equatable {
+        let item: ObjectIdentifier
+        let track: Int?
+        let active: Bool
+    }
+    private var applied: Selection?
+
+    mutating func needsUpdate(item: AnyObject, track: Int?, active: Bool) -> Bool {
+        let next = Selection(item: ObjectIdentifier(item), track: track, active: active)
+        guard next != applied else { return false }
+        applied = next
+        return true
+    }
+
+    mutating func reset() { applied = nil }
+}
+
 enum VideoFormat { case sdr, hdr10, hdr10Plus, dolbyVision, hlg }
 struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
     enum Kind: String {

@@ -5,6 +5,8 @@ on:
     paths:
       - 'iosApp/iosApp/Screens/Player/**'
       - 'iosApp/iosApp/Playback/**'
+      - 'AetherEngine/**'
+      - 'scripts/test-aether-audio-selection.swift'
       - 'VividKit/Sources/**'
       - 'VividKit/Tests/**'
       - 'iosApp/Tests/**'
@@ -12,7 +14,7 @@ on:
       - 'iosApp/**/Package.resolved'
       - '.github/workflows/player-regression.yml'
   push:
-    branches: [fix/next-up-persistent-surface]
+    branches: [fix/next-up-persistent-surface, test/aether-playback]
   workflow_dispatch:
     inputs:
       baseline_ref:
@@ -55,6 +57,11 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '26.3'
+      - name: Check initial audio selection
+        if: hashFiles('AetherEngine/Sources/AetherEngine/VividInitialAudioStream.swift') != ''
+        run: |
+          swiftc AetherEngine/Sources/AetherEngine/VividInitialAudioStream.swift scripts/test-aether-audio-selection.swift -o "$RUNNER_TEMP/aether-audio-selection"
+          "$RUNNER_TEMP/aether-audio-selection"
       - name: Prepare iOS simulator
         if: matrix.action == 'test'
         timeout-minutes: 10

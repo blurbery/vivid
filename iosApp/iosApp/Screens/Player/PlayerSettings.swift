@@ -37,26 +37,49 @@ enum VideoGravity: String, CaseIterable {
     }
 }
 
-/// VividKit read-ahead targets, expressed in two-second adapter units.
+/// Read-ahead presets for the active platform engine.
 enum BufferAheadMode: String, CaseIterable {
     case automatic = "automatic"
     case seconds20 = "seconds20"
     case seconds30 = "seconds30"
+
+    #if os(tvOS)
+    case fiveMinutes, maximum, unlimited
+    #endif
 
     var forwardBufferSegments: Int? {
         switch self {
         case .automatic: return nil
         case .seconds20: return 15
         case .seconds30: return 20
+        #if os(tvOS)
+        case .fiveMinutes: return 75
+        case .maximum: return 150
+        case .unlimited: return Int.max
+        #endif
         }
     }
 
     var label: String {
         guard let segments = forwardBufferSegments else { return "Automatic" }
+        #if os(tvOS)
+        switch self {
+        case .seconds20: return "1 minute"
+        case .fiveMinutes: return "5 minutes"
+        case .maximum: return "10 minutes"
+        case .unlimited: return "Whole file"
+        default: return "\(segments * 4) seconds"
+        }
+        #else
         return "\(segments * 2) seconds"
+        #endif
     }
 
+    #if os(tvOS)
+    static let explanation = "Automatic targets about 40 seconds of prepared segments beyond the player’s requests. Stats show AVPlayer’s playback buffer separately from read-ahead available. Larger buffers use more disk space and can reduce rewind history. Whole file buffers as much as fits within the engine’s disk budget. Playback does not wait for the full target. Changes apply to the next video; streaming playlists manage their own buffer."
+    #else
     static let explanation = "Automatic buffers about 20 seconds ahead. Playback starts before the target fills, and memory limits can shorten the buffer. Changes apply to the next video; streaming playlists manage their own buffer."
+    #endif
 }
 
 @Observable
@@ -197,7 +220,11 @@ final class PlayerSettings {
     /// Device-local: how far ahead of the playhead Vivid may buffer.
     ///
     /// Never synced to the server, and deliberately not a contract key — see
-    /// ``BufferAheadMode``. Default ``BufferAheadMode/automatic``, which buffers approximately ten seconds, within the memory limit.
+    /// ``BufferAheadMode``. Default ``BufferAheadMode/automatic``, which uses the active engine’s bounded default.
+    var preferLosslessAudio: Bool {
+        didSet { defaults.set(preferLosslessAudio, forKey: Self.cacheKey(Keys.preferLosslessAudio)) }
+    }
+
     var bufferAhead: BufferAheadMode {
         didSet {
             defaults.set(bufferAhead.rawValue, forKey: Self.cacheKey(Keys.bufferAhead))
@@ -311,6 +338,7 @@ final class PlayerSettings {
             key: Keys.backgroundPlaybackEnabled,
             defaultValue: true
         )
+        preferLosslessAudio = defaults.bool(forKey: Self.cacheKey(Keys.preferLosslessAudio))
         bufferAhead = Self.cachedBufferAhead(defaults)
         subtitleAppearance = SubtitleAppearance.decode(from: defaults.string(forKey: Self.cacheKey(Keys.subtitleAppearance)))
         subtitleUsesDeviceAppearanceOverride = Self.cachedBool(
@@ -488,6 +516,7 @@ final class PlayerSettings {
     /// Restore device playback and caption-source preferences to defaults.
     private func resetDeviceLocalPreferences() {
         backgroundPlaybackEnabled = true
+        preferLosslessAudio = false
         bufferAhead = .automatic
         subtitleMatchesSystemAppearance = false
     }
@@ -518,6 +547,7 @@ final class PlayerSettings {
             key: Keys.backgroundPlaybackEnabled,
             defaultValue: true
         )
+        preferLosslessAudio = defaults.bool(forKey: Self.cacheKey(Keys.preferLosslessAudio))
         bufferAhead = Self.cachedBufferAhead(defaults)
         playbackSpeed = Self.clampPlaybackSpeed(
             Self.cachedDouble(defaults, key: Keys.playbackSpeed, defaultValue: 1.0)
@@ -690,6 +720,7 @@ final class PlayerSettings {
         static let autoSkipIntro = "skipIntros"
         static let autoSkipCredits = "skipCredits"
         static let backgroundPlaybackEnabled = "player.backgroundPlaybackEnabled"
+        static let preferLosslessAudio = "player.preferLosslessAudio"
         static let bufferAhead = "player.bufferAhead"
         static let subtitleAppearance = "player.subtitleAppearance"
         static let subtitleUsesDeviceAppearanceOverride = "player.subtitleUsesDeviceAppearanceOverride"

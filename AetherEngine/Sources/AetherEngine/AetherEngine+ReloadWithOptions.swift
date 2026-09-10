@@ -1,0 +1,277 @@
+import Foundation
+import AetherLibavcodec
+
+/// AE#460: a session-preserving reload that changes a `LoadOption`.
+///
+/// Every in-place rebuild a host could ask for was tied to a selection (an audio-track switch, a
+/// subtitle-track switch, a disc-title switch) or replayed the session's own options verbatim
+/// (`reloadAtCurrentPosition()`). An option a host needed to CORRECT mid-session could therefore
+/// only be changed by a fresh `load()`, and a fresh load is not the same rebuild: `load` cannot
+/// reach `subtitleSessionCarryover` or `isLiveRejoin`, both settable only from inside the engine,
+/// so the id-exact external-subtitle registry, mid-session `addExternalSubtitleTrack`
+/// registrations, the host's explicit subtitle authority (subtitles explicitly OFF included) and
+/// the live rejoin contract are all wiped and re-derived by auto-selection. The correction bought
+/// the viewer a visible restart and lost session state on the way.
+///
+/// This is that same reload with the options it replays taken from the host. Three rules make it
+/// safe to hand a host the whole struct:
+///
+/// 1. **A field that NAMES the session is not correctable.** `isLive`, `audioOnly`,
+///    `nativeRemoteHLS` and `sequentialOrigin` decide which pipeline the source is opened on, and
+///    the engine writes the last two itself (the #154 / #168 remote-HLS reroute, the probe's
+///    no-video fallback). Changing one is a different item, not a correction of this one.
+/// 2. **A refusal costs nothing.** Both the identity check and the reloadability check run before
+///    any teardown, so a refused correction leaves the session exactly as it was, playing.
+/// 3. **The engine states what it took.** A reload that silently applied three quarters of a
+///    correction would be worse than one that refused it, so the changed fields are named in the
+///    log and the refused ones in the thrown error.
+extension AetherEngine {
+
+    /// Rebuild the session at the current playhead with one or more `LoadOptions` changed (#460).
+    ///
+    /// The closure is handed the options the session is CURRENTLY running on, which is not always
+    /// what the host passed to `load`: the engine rewrites its own routing fields on a reroute.
+    /// Change what needs correcting and leave the rest alone.
+    ///
+    /// ```swift
+    /// try await engine.reloadAtCurrentPosition { $0.httpHeaders["Authorization"] = "Bearer \(fresh)" }
+    /// ```
+    ///
+    /// Same contract as `reloadAtCurrentPosition()`: same teardown, same native-host preservation
+    /// where the load allows it, same subtitle carryover and live rejoin, and the audio pick rides
+    /// the load's own override. The changed options are installed into the session before the
+    /// rebuild, so the internal reopens that follow (audio switch, background reload) replay the
+    /// correction rather than reverting to the load-time value.
+    ///
+    /// Unlike `reloadAtCurrentPosition()`, which returns silently when there is nothing to rebuild,
+    /// this one throws `AetherEngineError.sessionNotReloadable`: a host correcting a session needs
+    /// to tell "corrected" from "did nothing" to decide whether to fall through to a fresh load.
+    ///
+    /// - Throws: `AetherEngineError.loadIdentityNotCorrectable` when the closure changed a field
+    ///   that names the session, `AetherEngineError.sessionNotReloadable` when this session cannot
+    ///   be rebuilt in place, or whatever the underlying load throws. The first two leave the
+    ///   session untouched.
+    public func reloadAtCurrentPosition(
+        applying change: (inout LoadOptions) -> Void
+    ) async throws {
+        var proposed = loadedOptions
+        change(&proposed)
+
+        let refused = SessionOptionCorrection.refusedFields(from: loadedOptions, to: proposed)
+        guard refused.isEmpty else {
+            EngineLog.emit(
+                "[AetherEngine] #460: correction refused, load identity is not correctable: "
+                + refused.joined(separator: ", "),
+                category: .engine
+            )
+            throw AetherEngineError.loadIdentityNotCorrectable(fields: refused)
+        }
+
+        if let refusal = sessionReloadRefusal {
+            EngineLog.emit(
+                "[AetherEngine] #460: correction refused, session cannot be rebuilt in place: \(refusal.rawValue)",
+                category: .engine
+            )
+            throw AetherEngineError.sessionNotReloadable(refusal)
+        }
+
+        // AE#461: the decode-path escape is the one correction that can move the session to a host
+        // that cannot serve this source. `load` catches both such sources, but only after the
+        // routing decision, which on a correction is after the teardown; decide it here instead so
+        // a refused correction still costs nothing (rule 2 above).
+        if let refusal = SessionOptionCorrection.decodePathRefusal(
+            routedSoftware: playbackBackend == .software,
+            preferred: proposed.preferredDecodePath,
+            codecID: lastDetectedVideoCodec,
+            dvProfile: sourceDVProfile,
+            dvBLCompatID: sourceDVBLCompatID,
+            isLive: loadedOptions.isLive,
+            hasCompanionAudioReader: (customReader as? LiveIngestSourceInfo)?.companionAudioReader != nil
+        ) {
+            EngineLog.emit(
+                "[AetherEngine] #461: decode-path correction refused, the software path cannot serve "
+                + "this session: \(refusal.rawValue)",
+                category: .engine
+            )
+            throw AetherEngineError.sessionNotReloadable(refusal)
+        }
+
+        // Stating the no-op matters for the same reason #364's teletext switch states it: a host
+        // that corrected an option and saw a plain reload cannot otherwise tell "the correction was
+        // already in force" from "the correction did not arrive".
+        let changed = SessionOptionCorrection.changedFields(from: loadedOptions, to: proposed)
+        EngineLog.emit(
+            changed.isEmpty
+                ? "[AetherEngine] #460: reload applying no option change (session already on these options)"
+                : "[AetherEngine] #460: reload applying \(changed.joined(separator: ", "))",
+            category: .engine
+        )
+
+        // Install BEFORE the rebuild, not through it: the URL branch carries these options into
+        // `load`, but the custom-source branch reaches `reloadWithAudioOverride`, which reads
+        // `loadedOptions` field by field at reload time and never takes a struct. One write covers
+        // both, and the didSet's route recompute cannot move (`nativeRemoteHLS` is refused above).
+        applySessionOptionCorrection(proposed)
+        try await reloadAtCurrentPosition()
+    }
+
+    /// Why `reloadAtCurrentPosition` would rebuild nothing for this session, or nil when it can
+    /// rebuild it (#460).
+    ///
+    /// `reloadAtCurrentPosition()` returns silently in both of these cases. Read this to tell that
+    /// silence apart from a rebuild that ran, without having to time one out.
+    public var sessionReloadRefusal: SessionReloadRefusal? {
+        guard loadedURL != nil else { return .noActiveSession }
+        if isCustomSource, !customSourceIsSeekable { return .customSourceNotSeekable }
+        return nil
+    }
+}
+
+/// Why a session cannot be rebuilt in place (#460).
+public enum SessionReloadRefusal: String, Sendable, Equatable, CustomStringConvertible {
+    /// No session: nothing has been loaded, or `stop()` cleared the source.
+    case noActiveSession
+    /// A custom `IOReader` source that reported itself non-seekable. The rebuild reopens the
+    /// retained reader at the current position, which a forward-only origin cannot serve.
+    case customSourceNotSeekable
+    /// AE#461: the correction would move the session onto the software path, and this source's only
+    /// signal is IPT-PQ-c2 (HEVC Profile 5, AV1 Profile 10.0), which has no compatible base layer.
+    /// The software decoders hand that signal on as YCbCr, so the picture would render green/purple.
+    /// Reached only from `reloadAtCurrentPosition(applying:)`, and only when the proposal moves a
+    /// native session across; a session already on the software path is not moved by it.
+    case softwarePathCannotRepresentSource
+    /// AE#461: the correction would move a demuxed-audio live session onto the software path. The
+    /// side-audio merge lives in the native path's segment producer, so the session would play
+    /// silent. Same reachability as `softwarePathCannotRepresentSource`.
+    case demuxedAudioLiveIsNativeOnly
+
+    public var description: String {
+        switch self {
+        case .noActiveSession: return "no active session"
+        case .customSourceNotSeekable: return "the custom source is not seekable"
+        case .softwarePathCannotRepresentSource:
+            return "the software path cannot represent this source's Dolby Vision signal"
+        case .demuxedAudioLiveIsNativeOnly:
+            return "this live source's audio is delivered separately and merged on the native path only"
+        }
+    }
+}
+
+/// The rules that decide which `LoadOptions` a running session can be corrected on (#460).
+///
+/// Split out of the engine so both halves are testable without one: the identity list is the
+/// correctness-critical half and is compared field by field rather than by reflection, and
+/// `LoadOptionsFieldInventoryTests` fails when a field is added to the struct without someone
+/// deciding which half it belongs in.
+enum SessionOptionCorrection {
+
+    /// The fields that NAME the session rather than tune it. Each opens the source on a different
+    /// pipeline, and the engine writes the last two itself, so a host write races its determination.
+    static let loadIdentityFields: [String] = [
+        "isLive",
+        "audioOnly",
+        "nativeRemoteHLS",
+        "sequentialOrigin",
+        "heldSourceConnection",
+    ]
+
+    /// Identity fields the proposal changed, in `loadIdentityFields` order. Empty means the
+    /// correction is honourable. Typed comparison on purpose: this decides whether a session is
+    /// torn down, so it does not ride on reflection.
+    static func refusedFields(from current: LoadOptions, to proposed: LoadOptions) -> [String] {
+        var refused: [String] = []
+        if proposed.isLive != current.isLive { refused.append("isLive") }
+        if proposed.audioOnly != current.audioOnly { refused.append("audioOnly") }
+        if proposed.nativeRemoteHLS != current.nativeRemoteHLS { refused.append("nativeRemoteHLS") }
+        if proposed.sequentialOrigin != current.sequentialOrigin { refused.append("sequentialOrigin") }
+        // #377: the transport is chosen when the source is opened, so a correction here would be
+        // accepted and then not happen until something else reopened the source.
+        if proposed.heldSourceConnection != current.heldSourceConnection {
+            refused.append("heldSourceConnection")
+        }
+        return refused
+    }
+
+    /// AE#461: why a decode-path correction cannot be honoured for this session, or nil when it can.
+    ///
+    /// The escape moves a session onto `SoftwarePlaybackHost`, and two sources cannot be served
+    /// there. `load` fails both of them, but it fails them AFTER the routing decision, which on a
+    /// correction means after `stopInternal` has already taken the session down. #460's second rule
+    /// is that a refusal costs nothing, so the same two facts are decided here, before any teardown,
+    /// off state the session already carries (its codec and Dolby Vision configuration from the
+    /// load-time probe, its live flag, its reader's companion audio reader).
+    ///
+    /// Only a FLIP is refusable. A session already on the software path is not moved by a software
+    /// preference, so it is not asked to represent anything new, and an `.automatic` preference
+    /// moves nothing at all: refusing on the source facts alone would start throwing on every
+    /// ordinary audio-track switch of a Dolby Vision source.
+    static func decodePathRefusal(
+        routedSoftware: Bool,
+        preferred: DecodePath,
+        codecID: AVCodecID,
+        dvProfile: Int?,
+        dvBLCompatID: Int?,
+        isLive: Bool,
+        hasCompanionAudioReader: Bool
+    ) -> SessionReloadRefusal? {
+        let flipsToSoftware = !routedSoftware
+            && VideoRoutingPolicy.usesSoftwarePath(routedSoftware: routedSoftware, preferred: preferred)
+        guard flipsToSoftware else { return nil }
+
+        if VideoRoutingPolicy.softwarePathCannotRepresent(
+            codecID: codecID, dvProfile: dvProfile, dvBlCompatID: dvBLCompatID) {
+            return .softwarePathCannotRepresentSource
+        }
+        // The companion reader exists only for a video-only live variant (the resolver spins one up
+        // for exactly that shape), so this is the demuxed-audio population rather than a superset of
+        // it. `load`'s own guard re-checks that the main container carries no audio; erring towards
+        // the refusal here is the safe direction, because the session it leaves alone is playing.
+        if isLive, hasCompanionAudioReader {
+            return .demuxedAudioLiveIsNativeOnly
+        }
+        return nil
+    }
+
+    /// Every field the proposal changed, for the log line. Reflection is right here and wrong
+    /// above: a diagnostic that names a new field the day it is added is worth more than one that
+    /// cannot be wrong, and being wrong here costs a log line.
+    static func changedFields(from current: LoadOptions, to proposed: LoadOptions) -> [String] {
+        guard current != proposed else { return [] }
+        var changed: [String] = []
+        for (lhs, rhs) in zip(Mirror(reflecting: current).children,
+                              Mirror(reflecting: proposed).children) {
+            guard let label = lhs.label else { continue }
+            if describe(lhs.value) != describe(rhs.value) { changed.append(label) }
+        }
+        return changed
+    }
+
+    /// `String(describing:)` on a Dictionary is order-unstable, so two equal `httpHeaders` can
+    /// describe differently and report a change nobody made. Sort those; everything else in
+    /// `LoadOptions` describes deterministically.
+    private static func describe(_ value: Any) -> String {
+        if let headers = value as? [String: String] {
+            return headers.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\u{1}")
+        }
+        return String(describing: value)
+    }
+
+    /// Every field `LoadOptions` carries, pinned so that adding one is a decision rather than an
+    /// omission. A new field is correctable by default (it falls through `refusedFields`), which is
+    /// right for a tuning lever and wrong for an identity one, so the choice has to be made
+    /// deliberately. Update this list and, if the field names the session, `loadIdentityFields`.
+    static let knownFields: [String] = [
+        "omitCriteriaColorExtensions", "suppressDisplayCriteria", "httpHeaders",
+        "keepDvh1TagWithoutDV", "forceDolbyVisionOnNonDVDisplay", "matchContentEnabled",
+        "panelIsInHDRMode", "panelPresentsDolbyVision", "audioBridgeMode", "isLive", "audioOnly",
+        "dvrWindowSeconds",
+        "liveBlockingReload", "liveJoinProfile", "liveJoinStartsImmediately",
+        "clampsLiveResumeToWindow", "nativeRemoteHLS", "nativeRemoteHLSIngestFallback",
+        "preserveASSMarkup", "prepareNativeSubtitles", "eagerNativeSubtitleReaders", "confirmAtmos",
+        "nativeSubtitlePreferredLanguages", "sequentialOrigin", "maxConcurrentSourceRequests", "heldSourceConnection",
+        "declaredDurationSeconds", "probesize", "maxAnalyzeDuration", "preferredAudioLanguages",
+        "preferredSubtitleLanguages", "externalSubtitles", "forwardBufferSegments", "autoplay",
+        "audioDelaySeconds", "teletextPage", "deinterlaceMode", "deinterlaceFieldRate", "preferredDecodePath",
+        "isLiveRejoin", "subtitleSessionCarryover",
+    ]
+}

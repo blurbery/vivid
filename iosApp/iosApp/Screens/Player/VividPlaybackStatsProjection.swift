@@ -75,6 +75,7 @@ struct VividPlaybackStatsSnapshot: Equatable {
     let route: VideoRoute
     let phase: PlaybackPhase
     let telemetry: LiveTelemetry?
+    let readAheadAvailableSeconds: Double?
     let activeVideoDecoder: String?
     let activeAudioDecoder: String?
     let sourceVideoFormat: VideoFormat
@@ -97,6 +98,11 @@ struct VividPlaybackStatsSnapshot: Equatable {
         route = engine.videoRoute
         phase = engine.playbackPhase
         telemetry = engine.liveTelemetry
+        #if os(tvOS)
+        readAheadAvailableSeconds = engine.readAheadAvailableSeconds
+        #else
+        readAheadAvailableSeconds = nil
+        #endif
         activeVideoDecoder = engine.activeVideoDecoder
         activeAudioDecoder = engine.activeAudioDecoder
         sourceVideoFormat = engine.sourceVideoFormat
@@ -119,6 +125,7 @@ struct VividPlaybackStatsSnapshot: Equatable {
         route: VideoRoute,
         phase: PlaybackPhase,
         telemetry: LiveTelemetry? = nil,
+        readAheadAvailableSeconds: Double? = nil,
         activeVideoDecoder: String? = nil,
         activeAudioDecoder: String? = nil,
         sourceVideoFormat: VideoFormat = .sdr,
@@ -139,6 +146,7 @@ struct VividPlaybackStatsSnapshot: Equatable {
         self.route = route
         self.phase = phase
         self.telemetry = telemetry
+        self.readAheadAvailableSeconds = readAheadAvailableSeconds
         self.activeVideoDecoder = activeVideoDecoder
         self.activeAudioDecoder = activeAudioDecoder
         self.sourceVideoFormat = sourceVideoFormat
@@ -191,6 +199,7 @@ enum VividPlaybackStatsProjection {
             playbackRate: source.playbackRate,
             playbackStatus: phaseLabel(snapshot.phase),
             bufferedAheadSeconds: telemetry?.forwardBufferSeconds,
+            readAheadAvailableSeconds: snapshot.readAheadAvailableSeconds,
             displayCushionSeconds: telemetry?.displayCushionSeconds,
             readerWindowAheadBytes: telemetry?.readerWindowAheadBytes.map(Int64.init),
             observedFrameRate: telemetry?.observedFps,
@@ -358,6 +367,7 @@ enum VividPlaybackStatsProjection {
         switch route {
         case .none: return nil
         case .remoteBypass: return "Vivid remote HLS"
+        case .loopback: return "Aether loopback HLS"
         case .sampleBuffer: return "Vivid sample-buffer video"
         case .audio: return "Vivid audio"
         }

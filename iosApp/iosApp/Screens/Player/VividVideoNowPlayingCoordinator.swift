@@ -107,6 +107,11 @@ final class VividVideoNowPlayingCoordinator {
         category: "VideoNowPlaying"
     )
 
+    #if os(tvOS)
+    /// AVKit owns native publication; reuse Vivid's title/artwork loading only.
+    var nativeMetadataHandler: ((String, MPMediaItemArtwork?) -> Void)?
+    #endif
+
     private var destination: Destination = .none
     private var handlers: Handlers?
     private var commandCenter: MPRemoteCommandCenter?
@@ -435,6 +440,10 @@ final class VividVideoNowPlayingCoordinator {
     }
 
     private func publishNowPlayingInfo() {
+        #if os(tvOS)
+        nativeMetadataHandler?(nowPlayingInfo[MPMediaItemPropertyTitle] as? String ?? "",
+                               nowPlayingInfo[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)
+        #endif
         guard let infoCenter else { return }
         infoCenter.nowPlayingInfo = nowPlayingInfo.isEmpty ? nil : nowPlayingInfo
     }

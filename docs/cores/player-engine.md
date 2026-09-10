@@ -5,9 +5,25 @@
 
 ---
 
-VividKit is Vivid’s player engine core. It handles media reads, demuxing, decoding, rendering, buffering and seeking. The Vivid core owns the interface and playback coordination; server cores supply authenticated sources and session reporting.
+Vivid uses AetherEngine on tvOS and VividKit on iOS. Each engine handles media reads, demuxing, decoding, rendering, buffering and seeking. The Vivid core owns the interface and playback coordination; server cores supply authenticated sources and session reporting.
 
-## Mini cores
+## Apple TV playback
+
+Vivid uses one AetherEngine session on tvOS, behind Vivid's existing playback controller. Native playback prepares local HLS for AVPlayer; unsupported native video uses Aether's software path automatically. There is no player selector. iOS continues using VividKit.
+
+The local `AetherEngine` package derives from upstream 6.80.0 (`89ef0c347a17180739d8ca7a1a1cfbb163135271`). Its source retains the upstream LGPL-3.0 licence and Apple Store exception. Vivid's adapter remains Apache-2.0. The package reuses Vivid's existing FFmpegBuild 3.0.0 revision, rather than introducing a second FFmpeg binary set. Upstream's later legacy Flash and Windows Media codec additions are therefore not promised by this integration.
+
+The integration resolves audio-list ordinals inside the initial probe. It uses Vivid's existing 2 MB probe and two-second media-analysis limits, with Aether's buffering and display-settling safeguards retained. Native subtitle readers prepare receiver-readable captions, matching Sodalite’s external-playback integration. Sidecars with a non-zero timeline offset stay on Vivid's overlay, with the offset applied before publication. `PlaybackStartup` logs record elapsed time at each checkpoint through the first displayed frame, without source URLs or credentials. The target is the reported 3–4 second opening on the same video; no improvement has yet been measured on a device.
+
+On tvOS, both native routes use a persistent AVPlayerViewController, which owns the native Now Playing session. Vivid forwards title and artwork as item metadata; the software route keeps its shared-session fallback. Local HLS permits Aether’s AirPlay host rewrite, while direct remote HLS with custom headers remains blocked for receiver fetching. The tvOS adapter follows Sodalite’s subtitle handoff: actual external video or PiP selects native renditions and hides the local overlays; returning to fullscreen restores the overlays. Item and track changes reapply the handoff, with duplicate notifications coalesced. Normal HDMI audio does not trigger it. Bitmap subtitles and secondary captions do not gain native rendition support from this change. Vivid retains its custom controls and countdown screen. Public AVKit flags hide the native transport and info panels, while Aether remains the sole display-criteria writer. UIKit activity indicators inside the native host are suppressed so Vivid owns the loading dots. This uses public view types, without matching private AVKit class names; the visible result still needs checking on the target tvOS version. PiP remains disabled in this tvOS host. The countdown preview and fullscreen reuse one controller. Next-episode loads retain Vivid’s in-place item replacement, matching Sodalite’s no-stop handoff. Native first-picture reporting comes from AVKit’s displayed-frame signal and rejects the outgoing item; software playback retains Aether’s readiness signal. These guards do not substitute for a device test of consecutive episodes. The reported startup pause still needs device verification.
+
+On tvOS, Automatic buffering uses Aether’s ten-segment read-ahead target (roughly 40 seconds beyond the consumer’s requests). Stats distinguish AVPlayer’s loaded-range buffer from Read-ahead available, calculated from Aether’s contiguous buffered frontier minus the playhead on the same display timeline. The latter includes consumer-fetched media plus contiguous prepared segments, and is omitted during seeks, live streams and routes without that measurement. Both Apple TV timeline bars use this measured read-ahead when available, falling back to the consumer buffer on other routes. Playback recovery continues using the separate consumer-buffer value. The target is not substituted for measured availability. Presets offer 1, 5 and 10 minutes and a disk-limited whole-file window. The existing 80-second selection remains available so saved preferences keep their actual buffer depth. Producer and cache windows stay under Aether’s control. Prefer Lossless Audio appears directly below Buffer Ahead in the Apple TV playback settings and defaults off; enabling it selects Aether’s lossless bridge for the next load. Multichannel PCM requires a compatible output route and may become stereo through some TV/ARC connections. Fullscreen subtitle styling and language choices remain Vivid’s; shifted sidecars still use its overlay.
+
+Credential changes use Vivid’s existing reload boundary because Aether does not expose in-place request-header replacement. blurbery accepted the local Apple TV build 11 for adoption after testing. That feedback does not establish coverage of every HDMI receiver, AirPlay route, HDR/Dolby Vision profile or subtitle format; those combinations still need device verification.
+
+## VividKit mini cores
+
+These sections describe VividKit, used on iPhone and iPad, and its retained earlier tvOS implementation. The HDMI and AirPlay recovery helpers below are not the active AetherEngine tvOS pipeline.
 
 One engine, smaller areas of responsibility. The mini cores describe where work belongs so an audio-output fix does not become a rewrite of playback. Code can stay where it is; these names are a map of the engine, not separate copies of it.
 
@@ -38,6 +54,8 @@ These are responsibility boundaries inside VividKit. `VividHDMIAudioCore` owns t
 `VividMediaSession` supplies supported compressed audio packets or locally decoded PCM to `AVSampleBufferAudioRenderer`. PCM conversion and channel descriptions live in `CVividMedia`; audio and video remain attached to the same synchroniser.
 
 Sample enqueueing and audio-recovery queue operations use the session's condition lock. The retained replay buffer belongs to this shared layer. A route-specific policy requests a queue operation through the session rather than directly changing decoder state or creating another playback clock.
+
+On Apple TV, `TVPCMAudioSession` declares multichannel content and requests an output channel count for HDMI video playback using decoded PCM. Requests respect the selected track and the active route's reported maximum. Native compressed audio, HLS and other output routes retain their existing configuration. Rejected requests are logged without failing playback; repeated identical requests are suppressed, and previous preferences are restored where still applicable when playback ends. Release logs under `AudioSession` record source, maximum, preferred and actual output channels without device identifiers. These APIs do not identify ARC or force Dolby Digital, and surround output with Apple TV set to Auto still requires receiver testing.
 
 ### AirPlay audio
 
@@ -91,7 +109,7 @@ Vivid supports the following audio formats. On Apple TV, audio playback is suppo
   </tbody>
 </table>
 
-DTS-family and TrueHD playback uses local decoding to PCM. For these formats, source playback does not imply bitstream passthrough or preservation of DTS:X or TrueHD Atmos object metadata. Surround output depends on the audio route.
+On iOS, DTS-family and TrueHD playback uses local decoding to PCM. On tvOS, Aether’s native bridge defaults to compatible E-AC-3 up to 5.1 for audio requiring conversion; Prefer Lossless Audio selects FLAC up to 7.1 instead. Native-compatible audio can be copied without conversion. These are engine bridge formats, not a guarantee of the signal reaching the receiver. For these formats, source playback does not imply bitstream passthrough or preservation of DTS:X or TrueHD Atmos object metadata. Surround output depends on the audio route.
 
 E-AC-3/JOC Atmos playback support does not imply independently verified end-to-end bitstream passthrough or Atmos-object preservation.
 
@@ -123,12 +141,14 @@ On Apple TV, frame-rate and dynamic-range matching follow the system’s Match C
 
 ## Playback recovery
 
-Apple TV audio recovery replays retained samples after renderer interruptions and checks that the playback clock advances. AirPlay additionally requires queued-audio progress and retains flush notifications received during recovery. If replay stalls, it attempts one seek recovery before reporting an error. The HDMI component handles blocked audio delivery with an audio-only reset. It is enabled in Release only when every active output is HDMI; Debug builds retain the launch-argument gate. Recovery is bounded and respects pauses, user seeks and playback changes.
+The retained VividKit Apple TV implementation replays retained samples after renderer interruptions and checks that the playback clock advances. AirPlay additionally requires queued-audio progress and retains flush notifications received during recovery. If replay stalls, it attempts one seek recovery before reporting an error. The HDMI component handles blocked audio delivery with an audio-only reset. It is enabled in Release only when every active output is HDMI; Debug builds retain the launch-argument gate. Recovery is bounded and respects pauses, user seeks and playback changes.
 
-The Vivid core coordinates credential renewal with the active server core. Direct playback updates credentials in the existing network reader and controller snapshot, preserving buffered media; an in-flight 401 uses bounded authenticated resumption. Native HLS and unsupported recovery cases retain reconstruction from the current position. Transient delivery failures also support validated byte-range resumption before requesting another route, including proactive recovery while playable headroom is shrinking. See [direct-network recovery](../playback/architecture.md#direct-network-recovery) for eligibility and shared retry limits. Next-episode loading clears the outgoing controls while retaining the video surface.
+The Vivid core coordinates credential renewal with the active server core. VividKit direct playback updates credentials in the existing network reader and controller snapshot, preserving buffered media; an in-flight 401 uses bounded authenticated resumption. Native HLS and unsupported recovery cases retain reconstruction from the current position. Transient delivery failures also support validated byte-range resumption before requesting another route, including proactive recovery while playable headroom is shrinking. See [direct-network recovery](../playback/architecture.md#direct-network-recovery) for eligibility and shared retry limits. Next-episode loading clears the outgoing controls while retaining the video surface.
 
 ## Implementation
 
+- [tvOS adapter](../../iosApp/iosApp/Playback/VividAetherEngine.swift): Aether session, AVKit host, track selection, native subtitle handoff and measured read-ahead.
+- [AetherEngine](../../AetherEngine): tvOS preparation, decoding and automatic native/software route selection.
 - [VividPlayer](../../VividKit/Sources/VividKit/VividPlayer.swift): playback clock, transport and bounded audio recovery.
 - [VividMediaSession](../../VividKit/Sources/VividKit/VividMediaSession.swift): decoding, sample queues and audio replay.
 - [VividHDMIAudioCore](../../VividKit/Sources/VividKit/VividHDMIAudioCore.swift): route-gated HDMI audio-stall detection and recovery policy.
