@@ -44,6 +44,15 @@ struct TVPlaybackSettingsPane: View {
             ) { showPicker(.bufferAhead) }
             .focused(detailFocus, equals: .playbackBufferAhead)
 
+            TVSettingsToggleRow(
+                title: "Prefer Lossless Audio",
+                isOn: PlayerSettings.shared.preferLosslessAudio,
+                detail: "Use lossless conversion when needed. Best with a receiver that supports multichannel PCM; some TV or ARC connections may output stereo. Applies to the next video."
+            ) {
+                PlayerSettings.shared.preferLosslessAudio.toggle()
+            }
+            .accessibilityIdentifier("settings.playback.preferLosslessAudio")
+
         }
         TVSettingsFooter("Preferences are saved in Vivid for this profile on this Apple TV.")
     }

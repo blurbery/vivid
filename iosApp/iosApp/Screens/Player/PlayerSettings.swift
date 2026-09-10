@@ -76,7 +76,7 @@ enum BufferAheadMode: String, CaseIterable {
     }
 
     #if os(tvOS)
-    static let explanation = "Automatic buffers about 40 seconds ahead. Larger buffers use more disk space and can reduce rewind history. Whole file buffers as much as fits within the engine’s disk budget. Playback does not wait for the full target. Changes apply to the next video; streaming playlists manage their own buffer."
+    static let explanation = "Automatic targets about 40 seconds of prepared segments beyond the player’s requests. Stats show AVPlayer’s playback buffer separately from read-ahead available. Larger buffers use more disk space and can reduce rewind history. Whole file buffers as much as fits within the engine’s disk budget. Playback does not wait for the full target. Changes apply to the next video; streaming playlists manage their own buffer."
     #else
     static let explanation = "Automatic buffers about 20 seconds ahead. Playback starts before the target fills, and memory limits can shorten the buffer. Changes apply to the next video; streaming playlists manage their own buffer."
     #endif

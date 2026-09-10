@@ -56,6 +56,13 @@ final class VividEngine: ObservableObject {
     var activeVideoDecoder: String? { backend.activeVideoDecoder }
     var activeAudioDecoder: String? { backend.activeAudioDecoder }
     var softwareDisplaySize: CGSize? { backend.softwareDisplaySize }
+    var readAheadAvailableSeconds: Double? {
+        guard videoRoute == .loopback, backend.isSessionReady, !backend.isLive, !backend.isSeeking else { return nil }
+        let frontier = backend.clock.bufferedPosition
+        let position = backend.clock.currentTime
+        guard frontier.isFinite, position.isFinite else { return nil }
+        return max(0, frontier - position)
+    }
     var liveTelemetry: LiveTelemetry? { diagnostics.liveTelemetry }
     var backgroundPlaybackEnabled: Bool {
         get { backend.backgroundPlaybackEnabled }

@@ -28,6 +28,7 @@ struct PlaybackStats: Equatable {
     // Vivid playback phase and route-appropriate live telemetry.
     var playbackStatus: String?
     var bufferedAheadSeconds: Double?
+    var readAheadAvailableSeconds: Double?
     var displayCushionSeconds: Double?
     var readerWindowAheadBytes: Int64?
     var observedFrameRate: Double?
@@ -103,7 +104,14 @@ extension PlaybackStats {
     var bufferRows: [(String, String)] {
         var rows = stringRows([("Playback status", playbackStatus)])
         if let bufferedAheadSeconds, bufferedAheadSeconds.isFinite {
+            #if os(tvOS)
+            rows.append(("AVPlayer buffer", formatSeconds(bufferedAheadSeconds)))
+            #else
             rows.append(("Forward buffer", formatSeconds(bufferedAheadSeconds)))
+            #endif
+        }
+        if let readAheadAvailableSeconds, readAheadAvailableSeconds.isFinite {
+            rows.append(("Read-ahead available", formatSeconds(readAheadAvailableSeconds)))
         }
         if let displayCushionSeconds, displayCushionSeconds.isFinite {
             rows.append(("Display cushion", formatSeconds(displayCushionSeconds)))
