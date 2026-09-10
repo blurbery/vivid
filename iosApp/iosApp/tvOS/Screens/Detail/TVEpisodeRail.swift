@@ -377,10 +377,16 @@ struct TVEpisodeCard: View {
                     .frame(width: cardWidth, height: stillHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                     .overlay(alignment: .bottomLeading) {
-                        HStack {
+                        HStack(spacing: 6) {
                             if isPlayed { Image(systemName: "checkmark.circle.fill") }
-                            if let runtime = episode.runtime { Text("\(runtime)m") }
-                        }.font(.system(size: 18)).padding(12)
+                            if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
+                        }
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: true, vertical: true)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        .padding(12)
                     }
                     .hoverEffect(.highlight)
                 VStack(alignment: .leading, spacing: 6) {
@@ -744,12 +750,14 @@ struct TVContinuousEpisodeShelf: View {
                             } label: {
                                 Text(season.seasonNumber == 0 ? "Specials" : "Season \(season.seasonNumber)")
                                     .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(focusedSeason == season.id ? Color.black : Color.white)
                                     .fixedSize()
                             }
                             .buttonStyle(.bordered)
                             .buttonBorderShape(.capsule)
                             .controlSize(.small)
-                            .tint((highlightedSeason ?? selectedSeason?.id) == season.id ? Color.white.opacity(0.22) : .clear)
+                            .background((highlightedSeason ?? selectedSeason?.id) == season.id
+                                && focusedSeason != season.id ? Color.white.opacity(0.18) : .clear, in: Capsule())
                             .focused($focusedSeason, equals: season.id)
                         }
                     }
