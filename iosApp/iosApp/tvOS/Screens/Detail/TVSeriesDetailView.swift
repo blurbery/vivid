@@ -69,8 +69,8 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                         onPlayEpisode(episode.contentId, selectedFileId(for: episode), false)
                     }, onWatched: onSetEpisodeWatched, onFavorite: onSetEpisodeFavorite)
                 trailersSection
-                if let cast = detail.cast, !cast.isEmpty { castSection(cast: cast) }
                 similarSection
+                if let cast = detail.cast, !cast.isEmpty { castSection(cast: cast) }
                 detailsSection
             }
         }

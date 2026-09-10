@@ -133,14 +133,14 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                 episodesSection
                                     .id(episodeSectionScrollId)
                             }
-                            if let cast = supportingCast, !cast.isEmpty {
-                                castSection(cast: cast)
-                            }
                             trailersSection
                             if showsSimilarRail {
                                 similarSection
                                     .focused($similarRailFocused)
                                     .id(similarSectionScrollId)
+                            }
+                            if let cast = supportingCast, !cast.isEmpty {
+                                castSection(cast: cast)
                             }
                             detailsSection
                         }
@@ -188,14 +188,14 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                 episodesSection
                                     .id(episodeSectionScrollId)
                             }
-                            if let cast = supportingCast, !cast.isEmpty {
-                                castSection(cast: cast)
-                            }
                             trailersSection
                             if showsSimilarRail {
                                 similarSection
                                     .focused($similarRailFocused)
                                     .id(similarSectionScrollId)
+                            }
+                            if let cast = supportingCast, !cast.isEmpty {
+                                castSection(cast: cast)
                             }
                             detailsSection
                         }

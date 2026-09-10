@@ -759,9 +759,14 @@ struct MediaTypePill: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
-            .background(.ultraThinMaterial, in: Capsule())
-            .background(tint.opacity(0.22), in: Capsule())
-            .overlay(Capsule().strokeBorder(tint.opacity(0.85), lineWidth: 1))
+            .background {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Capsule().fill(Color.black.opacity(0.78)))
+                    .overlay(Capsule().fill(tint.opacity(0.48)))
+            }
+            .overlay(Capsule().strokeBorder(tint.opacity(0.65), lineWidth: 1.5))
+            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
             .allowsHitTesting(false)
     }
 }

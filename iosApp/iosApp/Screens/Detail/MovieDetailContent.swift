@@ -282,9 +282,6 @@ struct MovieDetailContent<BelowOverview: View>: View {
                 episodesSection
             }
 
-            if let cast = detail.cast, !cast.isEmpty {
-                castSection(cast: cast)
-            }
 
             trailersSection
 
@@ -292,6 +289,9 @@ struct MovieDetailContent<BelowOverview: View>: View {
                 similarSection
             }
 
+            if let cast = detail.cast, !cast.isEmpty {
+                castSection(cast: cast)
+            }
             detailsSection
                 .padding(.horizontal, VividTheme.safePadding)
         }
