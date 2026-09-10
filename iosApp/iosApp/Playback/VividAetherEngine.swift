@@ -179,6 +179,8 @@ final class VividEngine: ObservableObject {
 
     func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool { false }
 
+    var preferLosslessAudio = false
+
     func load(url: URL, startPosition: Double = 0, options: LoadOptions = LoadOptions(),
               audioSourceStreamIndex: Int32? = nil) async throws {
         externalOffsets = Dictionary(uniqueKeysWithValues: options.externalSubtitles.enumerated().map {
@@ -188,6 +190,7 @@ final class VividEngine: ObservableObject {
         startedAt = .now
         var prepared = VividAetherTypes.Options()
         prepared.httpHeaders = options.httpHeaders
+        prepared.audioBridgeMode = preferLosslessAudio ? .lossless : .surroundCompat
         prepared.matchContentEnabled = options.matchContentEnabled
         prepared.panelIsInHDRMode = options.panelIsInHDRMode
         prepared.audioOnly = options.audioOnly
@@ -195,8 +198,8 @@ final class VividEngine: ObservableObject {
         prepared.preserveASSMarkup = options.preserveASSMarkup
         // Offset sidecars use Vivid's overlay axis; do not advertise unshifted native renditions.
         prepared.prepareNativeSubtitles = options.prepareNativeSubtitles && externalOffsets.values.allSatisfy { $0 == 0 }
-        // Start subtitle readers on demand, rather than opening unused tracks during startup.
-        prepared.eagerNativeSubtitleReaders = false
+        // Prepare receiver-readable captions alongside the fullscreen overlay.
+        prepared.eagerNativeSubtitleReaders = prepared.prepareNativeSubtitles
         prepared.nativeSubtitlePreferredLanguages = options.nativeSubtitlePreferredLanguages
         prepared.preferredAudioLanguages = options.preferredAudioLanguages
         prepared.preferredSubtitleLanguages = options.preferredSubtitleLanguages

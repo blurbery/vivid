@@ -2816,6 +2816,9 @@ class PlayerViewModel {
         isLoadingSubtitles = false
         bufferingProgress = nil
         scrubPreviewProvider.endSession()
+        #if os(tvOS)
+        vividPlaybackController.engine.preferLosslessAudio = settings.preferLosslessAudio
+        #endif
         vividPlaybackController.engine.transientRecoveryBudget = transientRecoveryBudget
         let loadEpoch = vividPlaybackController.beginLoad(
             spec,

@@ -59,6 +59,16 @@ struct PlaybackSettingsView: View {
             .pickerStyle(.navigationLink)
             #endif
 
+            #if os(tvOS)
+            Toggle("Prefer lossless audio", isOn: Binding(
+                get: { PlayerSettings.shared.preferLosslessAudio },
+                set: { PlayerSettings.shared.preferLosslessAudio = $0 }
+            ))
+            Text("Uses lossless audio conversion when needed. Best with a receiver that accepts multichannel PCM. Some TV and ARC connections may output stereo. Applies to the next video.")
+                .font(.footnote)
+                .foregroundStyle(Color.vividSecondaryText)
+            #endif
+
             Picker("Buffer Ahead", selection: Binding(
                 get: { viewModel.bufferAhead },
                 set: { newValue in

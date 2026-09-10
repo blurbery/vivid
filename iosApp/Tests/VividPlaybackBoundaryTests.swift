@@ -1357,6 +1357,19 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertEqual(controller.activeLoadEpoch, successorEpoch)
     }
 
+    func testNativeRoutesKeepSessionAndReceiverAuthenticationBoundaries() {
+        XCTAssertTrue(VideoRoute.loopback.usesNativeVideoSession)
+        XCTAssertTrue(VideoRoute.remoteBypass.usesNativeVideoSession)
+        XCTAssertTrue(VideoRoute.loopback.isReceiverFetchable(hasCommittedLoad: true, hasCustomHeaders: true))
+        XCTAssertFalse(VideoRoute.loopback.isReceiverFetchable(hasCommittedLoad: false, hasCustomHeaders: false))
+        XCTAssertFalse(VideoRoute.remoteBypass.isReceiverFetchable(hasCommittedLoad: true, hasCustomHeaders: true))
+        XCTAssertTrue(VideoRoute.remoteBypass.isReceiverFetchable(hasCommittedLoad: true, hasCustomHeaders: false))
+        for route in [VideoRoute.none, .sampleBuffer, .audio] {
+            XCTAssertFalse(route.usesNativeVideoSession)
+            XCTAssertFalse(route.isReceiverFetchable(hasCommittedLoad: true, hasCustomHeaders: false))
+        }
+    }
+
     func testReplacementExternalPlaybackPolicyOnlyWinsForReceiverSafeSuccessor() {
         XCTAssertTrue(VividPlaybackController.externalPlaybackAllowed(
             activePolicy: false,

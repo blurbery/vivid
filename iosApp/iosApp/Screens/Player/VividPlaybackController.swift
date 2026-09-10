@@ -338,7 +338,7 @@ final class VividPlaybackController {
     /// Vivid's player-scoped native-video session. It appears only after a
     /// native host has been constructed and is nil on the software route.
     var videoNowPlayingSession: MPNowPlayingSession? {
-        guard engine.videoRoute == .remoteBypass else {
+        guard engine.videoRoute.usesNativeVideoSession else {
             return nil
         }
         return engine.videoNowPlayingSession
@@ -653,13 +653,10 @@ final class VividPlaybackController {
     /// request headers; AVURLAsset headers stay on the sending device and are
     /// not credentials an AirPlay receiver can reproduce.
     private var externalPlaybackIsReceiverFetchable: Bool {
-        guard hasCommittedActiveLoad, activeSpec != nil else { return false }
-        switch engine.videoRoute {
-        case .remoteBypass:
-            return activeSpec?.options.httpHeaders.isEmpty == true
-        case .none, .loopback, .sampleBuffer, .audio:
-            return false
-        }
+        engine.videoRoute.isReceiverFetchable(
+            hasCommittedLoad: hasCommittedActiveLoad && activeSpec != nil,
+            hasCustomHeaders: activeSpec?.options.httpHeaders.isEmpty != true
+        )
     }
 
     /// The outgoing player policy can survive only when the successor can use
@@ -684,7 +681,7 @@ final class VividPlaybackController {
     private func refreshExternalPlaybackState() {
         let player = engine.currentAVPlayer
         let playerIsActive = player?.isExternalPlaybackActive == true
-        let isNativeVideoRoute = engine.videoRoute == .remoteBypass
+        let isNativeVideoRoute = engine.videoRoute.usesNativeVideoSession
         let routeIsActive = playerIsActive
             || (isNativeVideoRoute && Self.isExternalOutputRoute)
         let allowed = Self.externalPlaybackAllowed(
