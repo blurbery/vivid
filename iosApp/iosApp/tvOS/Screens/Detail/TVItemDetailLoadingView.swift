@@ -10,7 +10,20 @@ struct TVItemDetailLoadingView: View {
     let seed: TVItemDetailRouteSeed?
 
     var body: some View {
-        cinematicLayout
+        Group {
+            if let type = seed?.mediaType,
+               type == "movie" || VividMediaType.isSeries(type) {
+                TVAppleDetailPage(backdropURL: seed?.backdropUrl, logoURL: seed?.logoUrl,
+                                  title: seed?.title ?? "") { height in
+                    cinematicEditorial(height: height, topInset: max(116, height - 580), hidesTitle: true)
+                        .frame(height: height, alignment: .topLeading)
+                } shelves: {
+                    EmptyView()
+                }
+            } else {
+                cinematicLayout
+            }
+        }
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
@@ -23,7 +36,7 @@ struct TVItemDetailLoadingView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     cinematicArtwork
-                    cinematicEditorial
+                    cinematicEditorial()
                 }
                 .frame(height: TVDetailLayout.heroHeight)
                 .frame(maxWidth: .infinity)
@@ -64,11 +77,14 @@ struct TVItemDetailLoadingView: View {
         }
     }
 
-    private var cinematicEditorial: some View {
+    private func cinematicEditorial(height: CGFloat = TVDetailLayout.heroHeight,
+                                    topInset: CGFloat = TVDetailLayout.heroTopInset,
+                                    hidesTitle: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.disclosureSpacing) {
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 14) {
                     loadingTitle
+                        .opacity(hidesTitle ? 0 : 1)
                         .frame(width: 650, height: 160, alignment: .bottomLeading)
                     loadingMetadata
                         .frame(height: 36, alignment: .leading)
@@ -87,11 +103,11 @@ struct TVItemDetailLoadingView: View {
             .frame(width: TVDetailLayout.heroContentWidth, height: TVDetailLayout.editorialHeight, alignment: .topLeading)
             loadingActions
         }
-        .padding(.top, TVDetailLayout.heroTopInset)
+        .padding(.top, topInset)
         .padding(.horizontal, TVDetailLayout.horizontalInset)
         .frame(
             maxWidth: .infinity,
-            maxHeight: TVDetailLayout.heroHeight,
+            maxHeight: height,
             alignment: .topLeading
         )
     }

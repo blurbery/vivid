@@ -941,12 +941,10 @@ struct FoldSnappingScrollTargetBehavior: ScrollTargetBehavior {
     /// that the focus engine triggers when attempting to bring a newly focused
     /// item into view.
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        // If the current scroll offset is near the top of the view and the
-        // target is not lower than 30% of the header's height, all is good.
-        // This allows a little flexibility when moving toward any buttons that
-        // might be part of the header view.
+        // Keep Vivid's header controls aligned with its fixed logo while
+        // native focus moves within the hero. Lower shelves retain fold snapping.
         if aboveFold && target.rect.minY < showcaseHeight * 0.3 {
-            // The target isn't moving enough to pass the snap point.
+            target.rect.origin.y = 0
             return
         }
 

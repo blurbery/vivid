@@ -851,7 +851,7 @@ private struct TVContinuousSeasonButtonStyle: ButtonStyle {
             .foregroundStyle(isFocused ? Color.black : Color.white)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.28 : 0.10), in: Capsule())
+            .background(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.36 : 0.10), in: Capsule())
             .opacity(configuration.isPressed ? 0.8 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
     }
