@@ -107,4 +107,6 @@ Cast and crew filmography uses Home’s dense poster width and shared title/year
 
 Movie and series detail pages place Cast & Crew directly above Media Information, after trailers and similar titles.
 
-Season buttons offer native long-press watched/unwatched menus without adding layout space. The series More menu distinguishes whole-series and selected-season watched actions. The main series Play button retains its initial resume/next episode while browsing other episodes or seasons; explicitly playing a card and playback completion can update that target. Profile arrangement suppresses the large native button highlight and uses a ring around the selected avatar. These refinements require device confirmation.
+Season buttons offer native long-press watched/unwatched menus without adding layout space. The series More menu distinguishes whole-series and selected-season watched actions. The main series Play button retains its initial resume/next episode while browsing other episodes or seasons; explicitly playing a card and playback completion can update that target. Profile arrangement suppresses the large native button highlight and uses a ring around the selected avatar. The owner confirmed these refinements on the device.
+
+More Like This on tvOS movie and series details uses Home’s dense poster width, with the shared poster-size preference and title/year captions.
