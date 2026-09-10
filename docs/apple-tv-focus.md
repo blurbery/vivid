@@ -98,7 +98,7 @@ control should use, then remove the other one.
 
 Home, Movies, Series and For You are direct root tabs. Movies and Series expose native library sub-tabs within their own page; For You exposes Watchlist, Favourites and Collections. The Profile control opens Settings directly. Do not restore the removed Movies/Series/For You/Profile dropdowns when fixing focus.
 
-Each root owns its own sub-tab selection. A focus move within Movies must not change Series or For You. Keep card identities stable across paging and artwork eviction. Home's spotlight never scales on focus, and Down enters the first row's remembered card, using the first card before any visit. Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.
+Each root owns its own sub-tab selection. A focus move within Movies must not change Series or For You. Keep card identities stable across paging and artwork eviction. Home's experimental spotlight retains a 580-point layout height with a 1.5% visual focus lift, disabled by Reduce Motion. Down enters the first row's remembered card, using the first card before any visit. Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.
 
 ## Native catalog menus and detail controls
 

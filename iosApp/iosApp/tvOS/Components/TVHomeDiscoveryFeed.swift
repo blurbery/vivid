@@ -182,10 +182,11 @@ private struct TVHomeSpotlightCarousel: View {
                             .id("\(position)-\(slide.id)")
                             .frame(width: cardWidth, height: 580)
                             .clipShape(RoundedRectangle(cornerRadius: 22))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 22)
-                                    .strokeBorder(.white.opacity(position == visualPosition && focus.wrappedValue ? 0.75 : 0.12), lineWidth: 2)
-                            }
+                            .tvArtworkEdge(isFocused: position == visualPosition && focus.wrappedValue, cornerRadius: 22)
+                            .shadow(color: .black.opacity(position == visualPosition && focus.wrappedValue ? 0.45 : 0.2),
+                                    radius: position == visualPosition && focus.wrappedValue ? 18 : 8, y: 8)
+                            .scaleEffect(position == visualPosition && focus.wrappedValue && !reduceMotion ? 1.015 : 1)
+                            .animation(reduceMotion ? nil : .easeOut(duration: VividTheme.fastDuration), value: focus.wrappedValue)
                             .offset(x: CGFloat(position - visualPosition) * (cardWidth + 22))
                             .accessibilityHidden(position != visualPosition)
                         }
@@ -193,7 +194,6 @@ private struct TVHomeSpotlightCarousel: View {
                     .frame(width: geometry.size.width, height: 580)
                 }
                 .frame(height: 580)
-                .clipped()
             }
             .buttonStyle(TVHomeSpotlightButtonStyle())
             .focusEffectDisabled()
