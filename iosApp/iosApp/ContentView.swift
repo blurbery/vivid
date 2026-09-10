@@ -19,6 +19,9 @@ struct ContentView: View {
     @State private var didFinishStartupSplash = false
     @State private var pendingInitialAuthState: AppRouter.AuthState?
     #if os(tvOS)
+    @State private var showsCloudRestore = false
+    #endif
+    #if os(tvOS)
     @AppStorage("vivid.didCompleteProviderSetup") private var didCompleteProviderSetup = false
     #endif
     /// Deep link URL received before the auth state was ready. Content links
@@ -47,6 +50,16 @@ struct ContentView: View {
         .id(serverRegistry.activeServerId)
         #if os(iOS)
         .id(TVSavedAccountStore.shared.contentRevision)
+        #endif
+        #if os(tvOS)
+        .sheet(isPresented: $showsCloudRestore) {
+            TVCloudRestoreView {
+                didCompleteProviderSetup = true
+                TVSavedAccountStore.shared.showsSelector = true
+                showsCloudRestore = false
+                router.resetToLogin()
+            }
+        }
         #endif
         .environmentObject(overlayPrefs)
         .preferredColorScheme(.dark)
@@ -253,7 +266,13 @@ struct ContentView: View {
             }
             #endif
             #if os(iOS) || os(tvOS)
-            if newPhase == .active {
+            #if os(tvOS)
+            let canSyncCloudOnForeground = !TVSavedAccountStore.shared.accounts.isEmpty
+                && router.authState != .needsServerSetup && !showsCloudRestore
+            #else
+            let canSyncCloudOnForeground = true
+            #endif
+            if newPhase == .active, canSyncCloudOnForeground {
                 Task { await VividCloudAccountSync.shared.synchronize(router: router) }
             }
             #endif
@@ -524,7 +543,7 @@ struct ContentView: View {
         case .needsServerSetup, .needsLogin:
             #if os(tvOS)
             NavigationStack(path: $router.path) {
-                TVProviderSelectionView()
+                TVProviderSelectionView(onRestore: { showsCloudRestore = true })
                     .navigationDestination(for: Route.self) { route in
                         destinationView(for: route)
                     }
@@ -701,9 +720,11 @@ struct ContentView: View {
             let needsCloudBootstrap = TVSavedAccountStore.shared.accounts.isEmpty
                 || ServerRegistry.shared.entries.isEmpty
             if needsCloudBootstrap {
+                #if os(iOS)
                 await VividCloudAccountSync.shared.synchronize(router: router)
-                // iCloud restoration is optional. If it fails, route from
-                // local state so a new user can still set up a server.
+                #endif
+                // Apple TV offers explicit restoration from the server choices.
+                // Failed mobile restoration also falls through to local setup.
             } else {
                 // An existing installation can route immediately from its
                 // local Keychain. The fetch still runs before any cloud write,

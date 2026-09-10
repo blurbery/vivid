@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct TVProviderSelectionView: View {
+    let onRestore: () -> Void
     @Environment(AppRouter.self) private var router
     @FocusState private var focusedProvider: Provider?
 
@@ -59,6 +60,16 @@ struct TVProviderSelectionView: View {
                     comingSoonCard(.jellyfin, width: cardWidth)
                 }
             }
+            .overlay(alignment: .bottom) {
+                Button(action: onRestore) {
+                    Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
+                        .font(.system(size: 24, weight: .medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .offset(y: 100)
+            }
             .position(
                 x: geometry.size.width / 2,
                 y: geometry.size.height / 2 - (headerHeight + spacing) / 2
@@ -107,6 +118,52 @@ struct TVProviderSelectionView: View {
         .overlay {
             RoundedRectangle(cornerRadius: VividTheme.cardCornerRadius)
                 .strokeBorder(focusedProvider == provider ? Color.white : .clear, lineWidth: 3)
+        }
+    }
+}
+/// Restoration is optional and never owns the server-selection navigation.
+struct TVCloudRestoreView: View {
+    let onRestored: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var attempt = 0
+    @State private var message: String?
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("Restore from iCloud")
+                .font(.title2.bold())
+            if let message {
+                Text(message)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView("Checking for saved accounts…")
+            }
+            HStack(spacing: 24) {
+                Button("Back") { dismiss() }
+                if message != nil {
+                    Button("Try Again") { attempt += 1 }
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(60)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .onExitCommand { dismiss() }
+        .task(id: attempt) {
+            message = nil
+            // No router is supplied: backing out must not let this request
+            // navigate away from manual setup when it eventually completes.
+            await VividCloudAccountSync.shared.synchronize()
+            guard !Task.isCancelled else { return }
+            if !TVSavedAccountStore.shared.accounts.isEmpty {
+                onRestored()
+            } else if VividCloudAccountSync.shared.bootstrapFailed {
+                message = "Couldn’t restore from iCloud. Try again, or go back to set up your server manually."
+            } else {
+                message = "No saved accounts are available from iCloud. Go back to set up your server manually."
+            }
         }
     }
 }
