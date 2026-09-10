@@ -79,3 +79,18 @@ The links above identify the exact source and rebuild inputs for this build,
 including each component's rebuild script and patches at the pinned revision.
 They are this build's corresponding-source pointer; keep them matched to the
 revisions each release actually resolves.
+
+AetherEngine (tvOS test branch)
+  Upstream 6.80.0: 89ef0c347a17180739d8ca7a1a1cfbb163135271
+  Source: https://github.com/superuser404notfound/AetherEngine/tree/89ef0c347a17180739d8ca7a1a1cfbb163135271
+  Local source and integration changes: https://github.com/blurbery/vivid/tree/test/aether-playback/AetherEngine
+  LGPL-3.0 with the bundled Apple Store / DRM Exception.
+  The local package retains Vivid's FFmpegBuild revision above. It adds audio
+  ordinal selection inside the existing probe and integration type aliases.
+  Build the tvOS app using iosApp/project.yml and XcodeGen; replacing this local
+  source package and rebuilding replaces the linked engine.
+
+LibDovi (tvOS test branch)
+  Version: 2.1.0, dolby_vision 3.4.0
+  Source and rebuild script: https://github.com/superuser404notfound/LibDovi/tree/2.1.0
+  Licence: MIT, bundled separately.

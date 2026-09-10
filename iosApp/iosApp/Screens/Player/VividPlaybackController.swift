@@ -350,7 +350,7 @@ final class VividPlaybackController {
     var shouldUseSharedVideoNowPlayingFallback: Bool {
         #if os(macOS)
         switch engine.videoRoute {
-        case .remoteBypass, .sampleBuffer:
+        case .remoteBypass, .loopback, .sampleBuffer:
             return true
         case .none, .audio:
             return false
@@ -657,7 +657,7 @@ final class VividPlaybackController {
         switch engine.videoRoute {
         case .remoteBypass:
             return activeSpec?.options.httpHeaders.isEmpty == true
-        case .none, .sampleBuffer, .audio:
+        case .none, .loopback, .sampleBuffer, .audio:
             return false
         }
     }

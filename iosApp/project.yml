@@ -52,6 +52,8 @@ targetTemplates:
         VIVID_BUILD_CHANNEL: release
 
 packages:
+  AetherEngine:
+    path: ../AetherEngine
   VividKit:
     path: ../VividKit
 
@@ -144,6 +146,8 @@ targets:
     dependencies:
       - package: VividKit
         product: VividKit
+      - package: AetherEngine
+        product: AetherEngine
       - target: VividTVTopShelf
         embed: true
 

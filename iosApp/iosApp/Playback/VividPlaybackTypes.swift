@@ -6,7 +6,7 @@ import VividKit
 
 enum PlaybackState: Equatable { case idle, loading, playing, paused, seeking, ended, error(String) }
 enum PlaybackPhase: Equatable { case idle, loading, playing, paused, seeking, rebuffering, stalled(reconnecting: Bool), ended, error(String) }
-enum VideoRoute: String { case none, remoteBypass, sampleBuffer, audio }
+enum VideoRoute: String { case none, remoteBypass, loopback, sampleBuffer, audio }
 enum VideoFormat { case sdr, hdr10, hdr10Plus, dolbyVision, hlg }
 struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
     enum Kind: String {

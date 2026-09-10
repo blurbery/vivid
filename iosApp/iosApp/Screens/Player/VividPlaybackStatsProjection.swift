@@ -358,6 +358,7 @@ enum VividPlaybackStatsProjection {
         switch route {
         case .none: return nil
         case .remoteBypass: return "Vivid remote HLS"
+        case .loopback: return "Aether loopback HLS"
         case .sampleBuffer: return "Vivid sample-buffer video"
         case .audio: return "Vivid audio"
         }

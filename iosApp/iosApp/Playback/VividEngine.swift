@@ -1,3 +1,4 @@
+#if !os(tvOS)
 // SPDX-License-Identifier: Apache-2.0
 import AVFoundation
 import Combine
@@ -666,3 +667,5 @@ final class VividSurfaceView: UIView {
         CATransaction.begin(); CATransaction.setDisableActions(true); mounted?.frame = bounds; CATransaction.commit()
     }
 }
+
+#endif
