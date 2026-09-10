@@ -1,5 +1,6 @@
 #if os(tvOS)
 import SwiftUI
+import UIKit
 
 struct TVHomeDiscoveryFeed: View {
     let sections: [ResolvedSection]
@@ -16,6 +17,8 @@ struct TVHomeDiscoveryFeed: View {
     @FocusState private var spotlightFocused: Bool
     @State private var rowOwner: String?
     @State private var rowFocusMemory = TVHomeRowFocusMemory()
+    @State private var artworkWarmup = TVHomeArtworkWarmup()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var firstRowFocusRequest = 0
     @State private var spotlightOpenedDetail = false
     @State private var appliedFocusRequest = 0
@@ -58,7 +61,7 @@ struct TVHomeDiscoveryFeed: View {
                                 defaultFocusItemId: rowFocusMemory.items[section.id],
                                 focusRequestItemId: rowFocusMemory.items[section.id],
                                 detailReturnFocusRequest: spotlightOpenedDetail ? 0 : detailReturnFocusRequest,
-                                onMoveUp: index == 0 ? { enterSpotlight(using: proxy) } : nil,
+                                onMoveUp: index == 0 && slides.isEmpty ? { onTopMenuFocusRequest?() } : nil,
                                 onItemFocus: { item in
                                     rowFocusMemory.items[section.id] = item.contentId
                                     if rowOwner != section.id { rowOwner = section.id }
@@ -92,9 +95,48 @@ struct TVHomeDiscoveryFeed: View {
             .onChange(of: isTopMenuFocused) { _, focused in
                 if focused { rowOwner = nil }
             }
+            .onChange(of: spotlightFocused) { _, focused in
+                if focused { rowOwner = nil }
+            }
+        }
+        .task(id: homeArtworkRequests) {
+            artworkWarmup.update(homeArtworkRequests)
+        }
+        .onDisappear { artworkWarmup.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            artworkWarmup.stop()
         }
         .environment(\.homeCardPresentation, homeCards.presentation)
         .ignoresSafeArea()
+    }
+
+    private var homeArtworkRequests: [VividImageRequest] {
+        guard scenePhase == .active, !sections.isEmpty else { return [] }
+        let current = sections.firstIndex { $0.id == rowOwner } ?? 0
+        let indices = [current] + Array((current + 1)..<min(sections.count, current + 4))
+            + (current > 0 ? [current - 1] : [])
+        let scale = homeCards.presentation.posterSize.scale * PosterImageCache.displayScale
+        var requests: [VividImageRequest] = []
+        var seen = Set<VividImageRequest>()
+        for index in indices {
+            let section = sections[index]
+            // Match SectionRow's tvOS artwork layout, including mixed resume rows.
+            let wide = section.isContinueWatchingSection
+                || section.sectionType.lowercased().contains("next")
+                || section.items.contains { $0.type.lowercased() == "episode" }
+            let width = wide ? VividTheme.thumbnailCardWidth : VividTheme.Skyline.densePosterCardWidth
+            let ratio = wide ? VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth
+                : VividTheme.posterCardHeight / VividTheme.posterCardWidth
+            let size = CGSize(width: width * scale, height: width * ratio * scale)
+            for item in section.items.prefix(index == current ? 20 : 8) {
+                let value = wide ? (item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 } ?? item.posterUrl) : item.posterUrl
+                guard let value, let url = URL(string: value),
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
+                let request = PosterImageCache.displayRequest(url: url, pixelSize: size, priority: .low)
+                if seen.insert(request).inserted { requests.append(request) }
+            }
+        }
+        return requests
     }
 
     private func enterSpotlight(using proxy: ScrollViewProxy) {
@@ -113,6 +155,28 @@ struct TVHomeDiscoveryFeed: View {
             proxy.scrollTo(first.id, anchor: .center)
         }
         firstRowFocusRequest += 1
+    }
+}
+
+@MainActor
+private final class TVHomeArtworkWarmup {
+    private let prefetcher = VividImagePrefetcher(
+        pipeline: VividImagePipeline.shared, destination: .memoryCache,
+        maxConcurrentRequestCount: 2
+    )
+
+    func update(_ requests: [VividImageRequest]) {
+        guard !requests.isEmpty else { stop(); return }
+        // Finish at most two active requests, then favour the newly focused row.
+        PosterImageCache.setHomeBrowsingMemoryBudget(true)
+        prefetcher.replacePendingPrefetching(with: requests.filter {
+            VividImagePipeline.shared.cache[$0] == nil
+        })
+    }
+
+    func stop() {
+        prefetcher.stopPrefetching()
+        PosterImageCache.setHomeBrowsingMemoryBudget(false)
     }
 }
 

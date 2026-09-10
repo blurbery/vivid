@@ -185,6 +185,17 @@ enum PosterImageCache {
         VividImagePipeline.shared.cache.removeAll(caches: .memory)
     }
 
+    #if os(tvOS)
+    /// Extra decoded artwork capacity only while the discovery Home is visible.
+    static func setHomeBrowsingMemoryBudget(_ enabled: Bool) {
+        VividImagePipeline.shared.cache.setMemoryLimits(
+            cost: enabled ? (isConstrainedMemoryDevice ? 192 : 320) * 1024 * 1024
+                : decodedMemoryCacheBudgetBytes,
+            count: enabled ? 600 : decodedImageCountLimit
+        )
+    }
+    #endif
+
     private static func makePipeline() -> VividImagePipeline {
         VividImagePipeline(costLimit: decodedMemoryCacheBudgetBytes, countLimit: decodedImageCountLimit)
     }
