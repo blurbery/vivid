@@ -55,7 +55,7 @@ An account can have an optional four-digit Vivid PIN. Its salted digest is kept 
 
 Account metadata is stored locally and session tokens are kept in Keychain; the entered password is not retained. Restoring an account uses the HTTP identity-transition gate, cancels outgoing requests and clears active response/profile caches. Access and refresh tokens are captured together with the matching viewing-profile proof. A server can still revoke or expire a session, in which case fresh authentication may be necessary.
 
-Long-press a saved profile in the selector or Settings and choose Arrange Profiles to reveal left/right movement controls and an X beneath each profile. Choose Done to finish. Movement saves immediately and uses the same order in Settings and the selector on iPhone, iPad and Apple TV. The X requires deletion confirmation. These controls manage saved Vivid connections, not accounts on the media server.
+Long-press a saved profile to enter wobble editing. On Apple TV, left/right moves the selected profile; press centre to save, or press down to highlight its round glass X and centre to request deletion. On iPhone and iPad, hold and drag to reorder, then tap the glass Done pill above the row to save. Round glass X buttons request deletion confirmation. Reordering stays local to the editor until saved. Visible profile selector and Settings cards refresh iCloud every ten seconds while active and editing is closed. Wobble honours Reduce Motion. These controls manage saved Vivid connections, not accounts on the media server.
 
 ## Private iCloud account sync
 
