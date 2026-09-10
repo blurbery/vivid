@@ -16,24 +16,21 @@
 
 <!-- For performance claims, include measured before/after results, workload, environment and commands. Otherwise state why benchmarks are not applicable or that they were not run. Do not present estimates as measurements. -->
 
-## Physical-device testing
+## Testing status
 
-> [!IMPORTANT]
-> App changes must be installed and tested on physical Apple hardware for each affected platform. Confirm that the changed behaviour works on the tested revision. A successful build, simulator run or AI review does not satisfy this requirement.
+<!-- Ask whether this change has been tested only if the answer is not already known.
+Physical devices, simulators and emulators are accepted. Missing, failed or
+simulator-only testing does not require a draft PR or prevent review.
+Report results honestly so blurbery can decide whether to merge. -->
 
-- **Device model:** <!-- Include generation where relevant. -->
-- **OS version:**
-- **App version / build and tested commit:**
-- **Server type / version:** <!-- Where relevant; do not include credentials or private server URLs. -->
-- **Steps tested:** <!-- Describe how you exercised the change and relevant existing behaviour. -->
-- **Observed result:** <!-- State what worked, any failures and remaining limitations. -->
-- **Evidence:** <!-- Attach relevant screenshots, video or redacted logs when useful. -->
-- **Confirmation:** <!-- Explicitly confirm that you installed this revision on the device above, performed these checks and observed the changed behaviour working. Do not claim another person’s test as your own. -->
+- **Tested?** <!-- Yes / No / Partly; use existing confirmation rather than asking again. -->
+- **Environment:** <!-- Physical device, simulator or emulator; model and OS if known. -->
+- **Revision:** <!-- Tested commit or app version/build, if known. -->
+- **Checks and results:** <!-- What was tested, by whom, and the observed outcome. -->
+- **Limitations:** <!-- Failures, pending checks or behaviour not tested. -->
 
-<!-- If testing failed or was not run, say so and keep the PR in draft. Retest relevant changes after follow-up commits.
-For a documentation-only PR with no app behaviour changes, replace the fields with:
-Not applicable — documentation-only change; [explain why no app behaviour is affected].
-Do not claim device testing that was not performed. -->
+<!-- Documentation-only changes may say: Not applicable, documentation-only change.
+Do not invent testing or claim another person’s checks as your own. -->
 
 ## Design impact and approval
 

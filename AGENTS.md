@@ -65,16 +65,15 @@ manual directional focus mutation.
 
 Apple tests use XCTest under `iosApp/Tests/`. Do not add tests for small changes or UI changes unless requested. For shared logic changes, add focused tests only for critical or high-risk behavior.
 
-## Physical-device testing
+## Testing status
 
-> [!IMPORTANT]
-> **App changes require successful testing on physical Apple hardware for each affected platform before the PR is ready for review or merge.** A build, simulator run, automated test or AI review does not replace device testing.
+Ask whether the change has been tested if that is not already confirmed in the conversation. Accept testing on physical devices, simulators or emulators; physical Apple hardware is not mandatory. Do not ask again when blurbery has already confirmed testing.
 
-Complete the PR template’s device-testing section with the hardware model, OS version, app version/build, tested commit, relevant server version, steps and observed results. Explicitly confirm that the tested change works on that device, and disclose failures or untested behaviour. Use relevant screenshots, video or redacted logs to support the result where useful.
+Record the test environment, checks and results that are known. Clearly distinguish builds, automated tests, simulator/emulator checks and physical-device feedback. State failures or untested behaviour honestly, without inventing details or claiming another person’s testing as your own.
 
-Keep the PR in draft if device testing has failed or has not been performed. Retest affected behaviour after follow-up changes and update the tested commit; earlier results do not automatically validate a new revision.
+Testing status is informational, not a draft or review gate. Missing, failed or simulator-only testing does not require a draft PR and must not prevent opening or marking a PR ready for review. Report failures and limitations so blurbery can decide whether to merge; do not automatically block or merge based on this rule. Update the recorded results after relevant follow-up changes.
 
-Documentation-only PRs with no app behaviour changes may state **“Not applicable — documentation-only change”** and explain why. Never invent device testing or present another person’s checks as your own.
+Documentation-only changes may state “Not applicable, documentation-only change”.
 
 ## Contribution reports
 
