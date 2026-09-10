@@ -309,6 +309,7 @@ struct FavoritesView: View {
             playAction: playAction(for: item),
             contentId: item.contentId,
             cardWidthOverride: tvCardWidthOverride,
+            mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series",
             onUserStateChanged: { state in
                 guard !state.isFavorite else { return }
                 withAnimation(.easeInOut(duration: VividTheme.normalDuration)) {

@@ -372,7 +372,7 @@ struct MediaCard: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.black.opacity(0.7), in: Capsule())
+                    .background(mediaTypeLabel == "Movie" ? Color(red: 0.08, green: 0.34, blue: 0.76) : Color(red: 0.46, green: 0.22, blue: 0.72), in: Capsule())
                     .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
                     .padding(7)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

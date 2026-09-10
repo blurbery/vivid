@@ -85,6 +85,8 @@ enum CacheKey {
     /// type-derived tabs on tvOS.
     static let userLibraries = "user:libraries"
 
+    static func person(_ id: Int) -> String { "item:person:\(id)" }
+
     static func itemDetail(_ contentId: String) -> String { "item:\(contentId)" }
     static func itemSeasons(_ seriesId: String) -> String { "item:\(seriesId):seasons" }
     static func itemEpisodes(seriesId: String, seasonNumber: Int) -> String {

@@ -156,6 +156,7 @@ struct WatchlistView: View {
                             focusedItemId: $focusedContentId,
                             contentId: item.contentId,
                             cardWidthOverride: tvCardWidthOverride,
+                            mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series",
                             onUserStateChanged: { state in
                                 guard !state.inWatchlist else { return }
                                 withAnimation(.easeInOut(duration: VividTheme.normalDuration)) {

@@ -95,21 +95,28 @@ final class PersonDetailViewModel {
         resetFilmography()
         error = nil
 
-        isLoadingPerson = person == nil
-        defer { isLoadingPerson = false }
+        if person == nil {
+            person = ResponseCache.shared.get(CacheKey.person(personId))
+        }
+        async let metadata: Void = loadPerson(generation: currentGeneration)
+        async let availability: Void = refreshAvailableFilters(generation: currentGeneration)
+        await fetchPage(reset: true, generation: currentGeneration)
+        await metadata
+        await availability
+    }
 
+    private func loadPerson(generation currentGeneration: Int) async {
+        isLoadingPerson = true
+        defer { isLoadingPerson = false }
         do {
-            if person == nil {
-                person = try await VividAPI.shared.person(id: personId)
-            }
-            scheduleMetadataRefreshIfNeeded(for: person)
-            async let availability: Void = refreshAvailableFilters(generation: currentGeneration)
-            await fetchPage(reset: true, generation: currentGeneration)
-            await availability
+            let updatedPerson = try await VividAPI.shared.person(id: personId)
+            guard !Task.isCancelled, currentGeneration == generation else { return }
+            person = updatedPerson
+            ResponseCache.shared.set(updatedPerson, for: CacheKey.person(personId))
+            scheduleMetadataRefreshIfNeeded(for: updatedPerson)
         } catch {
-            guard currentGeneration == generation else { return }
-            self.error = ErrorState(error)
-            isLoadingItems = false
+            guard !Task.isCancelled, currentGeneration == generation else { return }
+            if person == nil { self.error = ErrorState(error) }
         }
     }
 
@@ -194,7 +201,8 @@ final class PersonDetailViewModel {
 
             do {
                 let updatedPerson = try await VividAPI.shared.person(id: personId)
-                guard personId == self.personId else { return }
+                guard !Task.isCancelled, personId == self.personId else { return }
+                ResponseCache.shared.set(updatedPerson, for: CacheKey.person(personId))
                 if updatedPerson == person {
                     unchangedPolls += 1
                     if unchangedPolls >= Self.metadataRefreshSettledPollCount {
@@ -325,7 +333,10 @@ struct PersonDetailView: View {
         } else if let error = viewModel.error {
             ErrorView(state: error, onRetry: { Task { await viewModel.reload() } })
         } else if viewModel.isInitialLoading {
-            Color.clear
+            ProgressView()
+                .tint(.vividOnSurface)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .vividPageBackground()
         } else {
             EmptyStateView(icon: "person", title: "Person not found")
                 .vividPageBackground()
@@ -401,7 +412,9 @@ private struct TVPersonDetailContent: View {
                                 Task { await viewModel.loadMoreIfNeeded() }
                                 let end = min(index + 48, viewModel.items.count)
                                 viewModel.prefetchPosters(in: index..<end)
-                            }
+                            },
+                            columnCount: 8,
+                            cardWidth: VividTheme.Skyline.densePosterCardWidth
                         )
                     }
                 }
@@ -414,11 +427,11 @@ private struct TVPersonDetailContent: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 48) {
-            PersonPortrait(person: person, width: 300)
+            PersonPortrait(person: person, width: VividTheme.Skyline.densePosterCardWidth)
 
             VStack(alignment: .leading, spacing: 22) {
                 Text(person.name)
-                    .font(.system(size: 72, weight: .bold))
+                    .font(.system(size: 64, weight: .bold))
                     .foregroundColor(.vividOnSurface)
                     .lineLimit(2)
 
@@ -523,6 +536,7 @@ private struct PhonePersonDetailContent: View {
                             items: viewModel.items,
                             isLoading: viewModel.isLoadingItems,
                             hasMore: viewModel.hasMore,
+                            matchesHomeCardSize: true,
                             onItemTap: { item in
                                 router.navigate(to: .itemDetail(browseItem: item))
                             },
@@ -542,7 +556,7 @@ private struct PhonePersonDetailContent: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 18) {
-            PersonPortrait(person: person, width: 132)
+            PersonPortrait(person: person, width: VividTheme.posterCardWidth)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text(person.name)

@@ -10,6 +10,7 @@ struct CatalogGrid: View {
     /// Search and library grids stay three-up on iPhone and compact iPad
     /// windows, independently of the shared card preference.
     var forcesThreeColumnsOnPhone = false
+    var matchesHomeCardSize = false
     var cardTitleFont: Font = .vividSubheadline
     let onItemTap: (BrowseItem) -> Void
     let onLoadMore: () -> Void
@@ -35,6 +36,11 @@ struct CatalogGrid: View {
     #else
     @Environment(\.horizontalSizeClass) private var hSize
     private var columns: [GridItem] {
+        if matchesHomeCardSize {
+            let width = VividTheme.posterCardWidth * uiCustomization.cardPresentation.posterSize.scale
+            let count = max(1, Int((gridWidth + 8) / (width + 8)))
+            return Array(repeating: GridItem(.fixed(width), spacing: 8, alignment: .top), count: count)
+        }
         if usesThreeColumnPhoneLayout {
             return Array(
                 repeating: GridItem(.flexible(), spacing: 8, alignment: .top),
@@ -51,7 +57,7 @@ struct CatalogGrid: View {
     #endif
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: rowSpacing) {
+        LazyVGrid(columns: columns, alignment: matchesHomeCardSize ? .leading : .center, spacing: rowSpacing) {
             ForEach(items) { item in
                 MediaCard(
                     title: item.title,
@@ -131,6 +137,7 @@ struct CatalogGrid: View {
     /// that scale here, then cap the standard width to the measured grid cell.
     private var gridCardWidthOverride: CGFloat? {
         #if os(iOS)
+        if matchesHomeCardSize { return VividTheme.posterCardWidth }
         let fittedWidth = AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columns.count,
