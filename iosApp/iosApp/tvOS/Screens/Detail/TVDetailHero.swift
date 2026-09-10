@@ -1030,6 +1030,17 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                         .padding(.top, 150)
                         .padding(.horizontal, TVDetailLayout.horizontalInset)
                         .padding(.bottom, TVDetailLayout.pageBottomPadding)
+                        .overlay(alignment: .top) {
+                            TVDecodedLogoTitle(logoUrl: logoURL, accessibilityLabel: title,
+                                               maxWidth: 480, maxHeight: 110) {
+                                Text(title).font(.system(size: 54, weight: .bold)).lineLimit(2)
+                            }
+                            .frame(width: 480, height: 110, alignment: .bottomLeading)
+                            .padding(.top, 4)
+                            .opacity(showsShelfLogo ? 1 : 0)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        }
                 }
                 .scrollTargetLayout()
             }
@@ -1065,17 +1076,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                     showsShelfLogo = visible
                 }
             }
-            .overlay(alignment: .topLeading) {
-                TVDecodedLogoTitle(logoUrl: logoURL, accessibilityLabel: title,
-                                   maxWidth: 480, maxHeight: 110) {
-                    Text(title).font(.system(size: 54, weight: .bold)).lineLimit(2)
-                }
-                .frame(width: 480, height: 110, alignment: .bottomLeading)
-                .position(x: geometry.size.width / 2, y: 85)
-                .opacity(showsShelfLogo ? 1 : 0)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
+
         }
         .ignoresSafeArea()
     }
