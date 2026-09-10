@@ -455,20 +455,10 @@ struct ContentView: View {
     @ViewBuilder
     private var startupPresentation: some View {
         #if os(tvOS) || os(iOS)
-        if VividCloudAccountSync.shared.bootstrapFailed {
-            VStack(spacing: 20) {
-                Text("Couldn’t restore from iCloud").font(.headline)
-                Text("Try again to check for your saved profiles before setting up this device.")
-                    .multilineTextAlignment(.center)
-                Button("Try Again") { Task { await checkInitialState() } }
-            }
-            .padding(40)
-        } else {
         VividStartupView(isContentReady: initialSplashContentReady) {
             LaunchTimeline.recordSplashFinished()
             didFinishStartupSplash = true
             finishInitialStartupIfReady()
-        }
         }
         #else
         ProgressView("Loading Vivid")
@@ -712,7 +702,8 @@ struct ContentView: View {
                 || ServerRegistry.shared.entries.isEmpty
             if needsCloudBootstrap {
                 await VividCloudAccountSync.shared.synchronize(router: router)
-                if VividCloudAccountSync.shared.bootstrapFailed { return }
+                // iCloud restoration is optional. If it fails, route from
+                // local state so a new user can still set up a server.
             } else {
                 // An existing installation can route immediately from its
                 // local Keychain. The fetch still runs before any cloud write,
