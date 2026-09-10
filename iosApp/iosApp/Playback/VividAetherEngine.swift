@@ -204,7 +204,7 @@ final class VividEngine: ObservableObject {
         name.value = title as NSString
         name.extendedLanguageTag = "und"
         var items: [AVMetadataItem] = [name]
-        if let data = artwork?.image(at: CGSize(width: 600, height: 600)).jpegData(compressionQuality: 0.85) {
+        if let data = artwork?.image(at: CGSize(width: 600, height: 600))?.jpegData(compressionQuality: 0.85) {
             let cover = AVMutableMetadataItem()
             cover.identifier = .commonIdentifierArtwork
             cover.value = data as NSData
