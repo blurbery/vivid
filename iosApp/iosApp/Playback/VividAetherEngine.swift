@@ -2,7 +2,9 @@
 #if os(tvOS)
 import AetherEngine
 import AVFoundation
+import AVKit
 import Combine
+import CoreMedia
 import MediaPlayer
 import OSLog
 import SwiftUI
@@ -61,7 +63,7 @@ final class VividEngine: ObservableObject {
     }
     var pictureInPictureActive: Bool {
         get { backend.pictureInPictureActive }
-        set { backend.pictureInPictureActive = newValue }
+        set { backend.pictureInPictureActive = newValue; scheduleSubtitleHandoff() }
     }
     var deactivatesAudioSessionOnStop: Bool {
         get { backend.deactivatesAudioSessionOnStop }
@@ -78,14 +80,22 @@ final class VividEngine: ObservableObject {
     }
     var videoGravity: AVLayerVideoGravity {
         get { backend.videoGravity }
-        set { backend.videoGravity = newValue }
+        set { backend.videoGravity = newValue; surfaceController?.refreshGravity() }
     }
     // Credential renewal remains with Vivid's existing generation-fenced reload.
     var transientRecoveryBudget: VividTransientRecoveryBudget?
     var refreshSourceHeaders: (@Sendable () async -> [String: String]?)?
+    weak var surfaceController: VividAetherPlayerController?
+    private var metadataTitle: String?
+    private var metadataArtwork: MPMediaItemArtwork?
+    private weak var outgoingNativeItem: AVPlayerItem?
     private var subscriptions = Set<AnyCancellable>()
     private var externalOffsets: [Int: Double] = [:]
     private var secondarySubtitleID: Int?
+    private var externalVideoPlaybackActive = false
+    private var nativeSubtitleRenderingActive = false
+    private var subtitleHandoffTask: Task<Void, Never>?
+    private var subtitleHandoff = VividNativeSubtitleHandoff()
     private var startedAt: ContinuousClock.Instant?
     private static let log = Logger(subsystem: "com.blurbery.vivid", category: "PlaybackStartup")
 
@@ -121,7 +131,13 @@ final class VividEngine: ObservableObject {
         backend.$duration.sink { [weak self] in self?.duration = $0 }.store(in: &subscriptions)
         backend.$isBuffering.sink { [weak self] in self?.isBuffering = $0 }.store(in: &subscriptions)
         backend.$isLoadingSubtitles.sink { [weak self] in self?.isLoadingSubtitles = $0 }.store(in: &subscriptions)
-        backend.$hasFirstFrameReadyForDisplay.sink { [weak self] in self?.hasFirstFrameReadyForDisplay = $0 }.store(in: &subscriptions)
+        backend.$hasFirstFrameReadyForDisplay.sink { [weak self] ready in
+            guard let self else { return }
+            // AVKit owns the native render layer. Aether's software renderer
+            // remains authoritative only when there is no native AVPlayer.
+            if !ready { self.hasFirstFrameReadyForDisplay = false }
+            else if self.backend.currentAVPlayer == nil { self.hasFirstFrameReadyForDisplay = true }
+        }.store(in: &subscriptions)
         backend.$errorInfo.sink { [weak self] value in
             self?.errorInfo = value.map { error in
                 let kind = PlaybackErrorInfo.Kind(rawValue: error.kind.rawValue)
@@ -147,15 +163,15 @@ final class VividEngine: ObservableObject {
         }.store(in: &subscriptions)
         backend.$subtitleCues.sink { [weak self] cues in
             guard let self else { return }
-            self.subtitleCues = cues.map { self.convertCue($0, trackID: self.backend.activeSubtitleTrackIndex) }
+            self.subtitleCues = self.nativeSubtitleRenderingActive ? [] : cues.map { self.convertCue($0, trackID: self.backend.activeSubtitleTrackIndex) }
         }.store(in: &subscriptions)
         backend.$secondarySubtitleCues.sink { [weak self] cues in
             guard let self else { return }
-            self.secondarySubtitleCues = cues.map { self.convertCue($0, trackID: self.secondarySubtitleID) }
+            self.secondarySubtitleCues = self.nativeSubtitleRenderingActive ? [] : cues.map { self.convertCue($0, trackID: self.secondarySubtitleID) }
         }.store(in: &subscriptions)
-        backend.$activeSubtitleTrackIndex.sink { [weak self] in self?.activeSubtitleTrackIndex = $0 }.store(in: &subscriptions)
+        backend.$activeSubtitleTrackIndex.sink { [weak self] in self?.activeSubtitleTrackIndex = $0; self?.scheduleSubtitleHandoff() }.store(in: &subscriptions)
         backend.$currentAVPlayer.sink { [weak self] in self?.currentAVPlayer = $0 }.store(in: &subscriptions)
-        backend.$currentAVPlayerItem.sink { [weak self] in self?.currentAVPlayerItem = $0 }.store(in: &subscriptions)
+        backend.$currentAVPlayerItem.sink { [weak self] in self?.currentAVPlayerItem = $0; self?.scheduleSubtitleHandoff() }.store(in: &subscriptions)
         backend.$videoRoute.sink { [weak self] value in
             switch value {
             case .none: self?.videoRoute = .none
@@ -165,6 +181,8 @@ final class VividEngine: ObservableObject {
             case .audio: self?.videoRoute = .audio
             }
         }.store(in: &subscriptions)
+        backend.$isSessionReady.sink { [weak self] _ in self?.scheduleSubtitleHandoff() }.store(in: &subscriptions)
+        backend.$nativeSubtitleRenditionsServed.sink { [weak self] _ in self?.scheduleSubtitleHandoff() }.store(in: &subscriptions)
         backend.$softwarePiPSource.sink { [weak self] source in
             guard let self else { return }
             self.softwarePiPSource = source.map { SampleBufferPiPSource(layer: $0.layer, engine: self) }
@@ -177,15 +195,51 @@ final class VividEngine: ObservableObject {
         }.store(in: &subscriptions)
     }
 
+    func updateNativeMetadata(title: String, artwork: MPMediaItemArtwork?) {
+        guard metadataTitle != title || metadataArtwork !== artwork else { return }
+        metadataTitle = title
+        metadataArtwork = artwork
+        let name = AVMutableMetadataItem()
+        name.identifier = .commonIdentifierTitle
+        name.value = title as NSString
+        name.extendedLanguageTag = "und"
+        var items: [AVMetadataItem] = [name]
+        if let data = artwork?.image(at: CGSize(width: 600, height: 600)).jpegData(compressionQuality: 0.85) {
+            let cover = AVMutableMetadataItem()
+            cover.identifier = .commonIdentifierArtwork
+            cover.value = data as NSData
+            cover.extendedLanguageTag = "und"
+            items.append(cover)
+        }
+        backend.setExternalMetadata(items)
+    }
+
+    func nativePictureReady(item: AVPlayerItem) {
+        guard backend.currentAVPlayer?.currentItem === item,
+              VividNativeFrameReadiness.accepts(item: item, current: backend.currentAVPlayerItem,
+                                               outgoing: outgoingNativeItem,
+                                               alreadyPresented: hasFirstFrameReadyForDisplay) else { return }
+        hasFirstFrameReadyForDisplay = true
+        if let startedAt {
+            let elapsed = startedAt.duration(to: .now)
+            let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+            Self.log.info("AVKit first picture elapsed=\(seconds, privacy: .public)s")
+        }
+    }
+
     func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool { false }
 
     var preferLosslessAudio = false
 
     func load(url: URL, startPosition: Double = 0, options: LoadOptions = LoadOptions(),
               audioSourceStreamIndex: Int32? = nil) async throws {
+        outgoingNativeItem = backend.currentAVPlayerItem
+        hasFirstFrameReadyForDisplay = false
         externalOffsets = Dictionary(uniqueKeysWithValues: options.externalSubtitles.enumerated().map {
             (Self.externalSubtitleTrackIDBase + $0.offset, $0.element.nativeTimelineOffsetSeconds)
         })
+        subtitleHandoff.reset()
+        nativeSubtitleRenderingActive = false
         secondarySubtitleID = nil
         startedAt = .now
         var prepared = VividAetherTypes.Options()
@@ -227,9 +281,18 @@ final class VividEngine: ObservableObject {
     func seek(to seconds: Double) async { await backend.seek(to: seconds) }
     func selectAudioTrack(index: Int) { backend.selectAudioTrack(index: index) }
     func reloadAtCurrentPosition() async throws { try await backend.reloadAtCurrentPosition() }
-    func prepareForItemReplacement() { backend.prepareForItemReplacement() }
+    func prepareForItemReplacement() {
+        outgoingNativeItem = backend.currentAVPlayerItem
+        hasFirstFrameReadyForDisplay = false
+        backend.prepareForItemReplacement()
+    }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         startedAt = nil
+        subtitleHandoffTask?.cancel()
+        subtitleHandoffTask = nil
+        subtitleHandoff.reset()
+        externalVideoPlaybackActive = false
+        nativeSubtitleRenderingActive = false
         backend.stop(resetDisplayCriteria: resetDisplayCriteria, finalTeardown: finalTeardown)
     }
     @discardableResult
@@ -242,7 +305,58 @@ final class VividEngine: ObservableObject {
     func clearSecondarySubtitle() { secondarySubtitleID = nil; backend.clearSecondarySubtitle() }
     func selectSubtitleTrack(index: Int) { backend.selectSubtitleTrack(index: index) }
     func selectSecondarySubtitleTrack(index: Int) { secondarySubtitleID = index; backend.selectSecondarySubtitleTrack(index: index) }
-    func setNativeSubtitleRendering(_ active: Bool) { backend.setNativeSubtitleRendering(active) }
+    func setNativeSubtitleRendering(_ active: Bool) {
+        externalVideoPlaybackActive = active
+        scheduleSubtitleHandoff()
+    }
+
+    private func scheduleSubtitleHandoff() {
+        subtitleHandoffTask?.cancel()
+        // Published values arrive before their properties change. Read the settled
+        // item and track together, also coalescing internal reload publications.
+        subtitleHandoffTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled, let self else { return }
+            self.syncSubtitleHandoff()
+        }
+    }
+
+    private func syncSubtitleHandoff() {
+        guard backend.isSessionReady, let item = backend.currentAVPlayerItem else { return }
+        // Remote HLS owns its own legible group. Only generated renditions
+        // participate in this handoff; shifted sidecars remain overlay-only.
+        guard videoRoute == .loopback, backend.nativeSubtitleRenditionsServed else {
+            subtitleHandoff.reset()
+            restoreSubtitleOverlay()
+            return
+        }
+        let active = externalVideoPlaybackActive || backend.pictureInPictureActive
+        guard subtitleHandoff.needsUpdate(item: item, track: backend.activeSubtitleTrackIndex,
+                                          active: active) else { return }
+        if active {
+            item.textStyleRules = nil
+        } else if let transparent = AVTextStyleRule(textMarkupAttributes: [
+            kCMTextMarkupAttribute_ForegroundColorARGB as String: [0.0, 0.0, 0.0, 0.0],
+            kCMTextMarkupAttribute_BackgroundColorARGB as String: [0.0, 0.0, 0.0, 0.0],
+            kCMTextMarkupAttribute_CharacterBackgroundColorARGB as String: [0.0, 0.0, 0.0, 0.0]
+        ]) {
+            item.textStyleRules = [transparent]
+        }
+        backend.setNativeSubtitleRendering(active)
+        nativeSubtitleRenderingActive = active
+        if active {
+            subtitleCues = []
+            secondarySubtitleCues = []
+        } else {
+            restoreSubtitleOverlay()
+        }
+    }
+
+    private func restoreSubtitleOverlay() {
+        nativeSubtitleRenderingActive = false
+        subtitleCues = backend.subtitleCues.map { convertCue($0, trackID: backend.activeSubtitleTrackIndex) }
+        secondarySubtitleCues = backend.secondarySubtitleCues.map { convertCue($0, trackID: secondarySubtitleID) }
+    }
     func makeFrameExtractor(url: URL, httpHeaders: [String: String]) -> FrameExtractor? {
         FrameExtractor(url: url, headers: httpHeaders)
     }
@@ -300,27 +414,115 @@ final class VividEngine: ObservableObject {
     }
 }
 
-struct VividPlayerSurface: UIViewRepresentable {
-    @ObservedObject var engine: VividEngine
-    final class Coordinator {
-        weak var engine: VividEngine?
-    }
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIView(context: Context) -> AetherPlayerView {
-        let view = AetherPlayerView(frame: .zero)
-        context.coordinator.engine = engine
-        engine.backend.bind(view: view)
-        return view
-    }
-    func updateUIView(_ view: AetherPlayerView, context: Context) {
-        if context.coordinator.engine !== engine {
-            context.coordinator.engine?.backend.unbind(view: view)
-            context.coordinator.engine = engine
+/// One persistent controller survives fullscreen, countdown preview and the
+/// next-episode swap. Native and software pictures have separate render hosts.
+@MainActor
+final class VividAetherPlayerController: UIViewController {
+    private let native = AVPlayerViewController()
+    private let software = AetherPlayerView(frame: .zero)
+    private weak var engine: VividEngine?
+    private var subscriptions = Set<AnyCancellable>()
+    private var readyObservation: NSKeyValueObservation?
+    private var softwareBound = false
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        native.showsPlaybackControls = true
+        native.playbackControlsIncludeTransportBar = false
+        native.playbackControlsIncludeInfoViews = false
+        native.contextualActions = []
+        native.appliesPreferredDisplayCriteriaAutomatically = false
+        native.allowsPictureInPicturePlayback = false
+        addChild(native)
+        native.view.frame = view.bounds
+        native.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // Vivid's existing SwiftUI controls remain the sole focus/input owner.
+        native.view.isUserInteractionEnabled = false
+        view.addSubview(native.view)
+        native.didMove(toParent: self)
+        software.frame = view.bounds
+        software.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        software.isUserInteractionEnabled = false
+        view.addSubview(software)
+        software.isHidden = true
+        readyObservation = native.observe(\.isReadyForDisplay, options: [.new]) { [weak self] controller, _ in
+            guard controller.isReadyForDisplay, let item = controller.player?.currentItem else { return }
+            Task { @MainActor [weak self, weak item] in
+                guard let self, let item, self.native.player?.currentItem === item else { return }
+                self.engine?.nativePictureReady(item: item)
+            }
         }
-        engine.backend.bind(view: view)
     }
-    static func dismantleUIView(_ view: AetherPlayerView, coordinator: Coordinator) {
-        coordinator.engine?.backend.unbind(view: view)
+
+    func bind(engine: VividEngine) {
+        loadViewIfNeeded()
+        guard self.engine !== engine else { refreshGravity(); return }
+        unbind()
+        self.engine = engine
+        engine.surfaceController = self
+        // Deliver after @Published stores the new value. Nil must clear AVKit
+        // on software fallback, including a retained player's item replacement.
+        Publishers.Merge3(engine.$currentAVPlayer.map { _ in () },
+                          engine.$currentAVPlayerItem.map { _ in () },
+                          engine.$videoRoute.map { _ in () })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.refreshPlayer() }
+            .store(in: &subscriptions)
+        engine.$isBuffering
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshPlayer() }
+            .store(in: &subscriptions)
+        refreshPlayer()
+    }
+
+    private func refreshPlayer() {
+        guard let engine else { return }
+        let player = engine.currentAVPlayer
+        if native.player !== player { native.player = player }
+        let useSoftware = engine.videoRoute == .sampleBuffer
+        if useSoftware && !softwareBound {
+            engine.backend.bind(view: software)
+            softwareBound = true
+        } else if !useSoftware && softwareBound {
+            engine.backend.unbind(view: software)
+            softwareBound = false
+        }
+        software.isHidden = !useSoftware
+        native.view.isHidden = useSoftware
+        refreshGravity()
+        if let player, let item = player.currentItem,
+           player.isExternalPlaybackActive && item.status == .readyToPlay {
+            engine.nativePictureReady(item: item)
+        }
+    }
+
+    func refreshGravity() {
+        if let engine { native.videoGravity = engine.videoGravity }
+    }
+
+    func unbind() {
+        subscriptions.removeAll()
+        if softwareBound { engine?.backend.unbind(view: software) }
+        softwareBound = false
+        if engine?.surfaceController === self { engine?.surfaceController = nil }
+        engine = nil
+        native.player = nil
+    }
+}
+
+struct VividPlayerSurface: UIViewControllerRepresentable {
+    @ObservedObject var engine: VividEngine
+    func makeUIViewController(context: Context) -> VividAetherPlayerController {
+        let controller = VividAetherPlayerController()
+        controller.bind(engine: engine)
+        return controller
+    }
+    func updateUIViewController(_ controller: VividAetherPlayerController, context: Context) {
+        controller.bind(engine: engine)
+    }
+    static func dismantleUIViewController(_ controller: VividAetherPlayerController, coordinator: ()) {
+        controller.unbind()
     }
 }
 #endif

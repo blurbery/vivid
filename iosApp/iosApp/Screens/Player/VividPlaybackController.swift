@@ -118,7 +118,10 @@ final class VividPlaybackController {
 
     init() throws {
         engine = try VividEngine()
-        #if os(iOS) || os(tvOS)
+        #if os(tvOS)
+        // AVPlayerViewController owns the native system session, as in Sodalite.
+        engine.ownsVideoNowPlayingSession = false
+        #elseif os(iOS)
         engine.ownsVideoNowPlayingSession = true
         #endif
         applyBackgroundPlaybackPreference()
@@ -681,6 +684,11 @@ final class VividPlaybackController {
     private func refreshExternalPlaybackState() {
         let player = engine.currentAVPlayer
         let playerIsActive = player?.isExternalPlaybackActive == true
+        #if os(tvOS)
+        // HDMI is Apple TV's normal fullscreen output. Only AVPlayer's actual
+        // external-video state hands captions away from Vivid's overlay.
+        engine.setNativeSubtitleRendering(playerIsActive)
+        #endif
         let isNativeVideoRoute = engine.videoRoute.usesNativeVideoSession
         let routeIsActive = playerIsActive
             || (isNativeVideoRoute && Self.isExternalOutputRoute)

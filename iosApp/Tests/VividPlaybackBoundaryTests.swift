@@ -1357,6 +1357,41 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertEqual(controller.activeLoadEpoch, successorEpoch)
     }
 
+    func testNextEpisodeRequiresItsOwnNativePicture() {
+        let outgoing = NSObject()
+        let successor = NSObject()
+        XCTAssertFalse(VividNativeFrameReadiness.accepts(item: outgoing, current: outgoing,
+                                                        outgoing: outgoing, alreadyPresented: false))
+        XCTAssertFalse(VividNativeFrameReadiness.accepts(item: outgoing, current: successor,
+                                                        outgoing: outgoing, alreadyPresented: false))
+        XCTAssertTrue(VividNativeFrameReadiness.accepts(item: successor, current: successor,
+                                                       outgoing: outgoing, alreadyPresented: false))
+        XCTAssertFalse(VividNativeFrameReadiness.accepts(item: successor, current: successor,
+                                                        outgoing: outgoing, alreadyPresented: true))
+        XCTAssertFalse(VividNativeFrameReadiness.accepts(item: successor, current: nil,
+                                                        outgoing: outgoing, alreadyPresented: false))
+    }
+
+    func testNativeSubtitleHandoffReappliesOnlyAtPresentationBoundaries() {
+        var handoff = VividNativeSubtitleHandoff()
+        let original = NSObject()
+        let replacement = NSObject()
+        XCTAssertTrue(handoff.needsUpdate(item: original, track: 3, active: false))
+        XCTAssertFalse(handoff.needsUpdate(item: original, track: 3, active: false))
+        XCTAssertTrue(handoff.needsUpdate(item: original, track: 3, active: true))
+        XCTAssertFalse(handoff.needsUpdate(item: original, track: 3, active: true))
+        // Track switches and Off must reach the receiver while it stays active.
+        XCTAssertTrue(handoff.needsUpdate(item: original, track: 8, active: true))
+        XCTAssertTrue(handoff.needsUpdate(item: original, track: nil, active: true))
+        // An audio switch can rebuild the item without changing the subtitle.
+        XCTAssertTrue(handoff.needsUpdate(item: replacement, track: nil, active: true))
+        XCTAssertTrue(handoff.needsUpdate(item: replacement, track: 8, active: true))
+        XCTAssertTrue(handoff.needsUpdate(item: replacement, track: 8, active: false))
+        XCTAssertFalse(handoff.needsUpdate(item: replacement, track: 8, active: false))
+        handoff.reset()
+        XCTAssertTrue(handoff.needsUpdate(item: replacement, track: 8, active: false))
+    }
+
     func testNativeRoutesKeepSessionAndReceiverAuthenticationBoundaries() {
         XCTAssertTrue(VideoRoute.loopback.usesNativeVideoSession)
         XCTAssertTrue(VideoRoute.remoteBypass.usesNativeVideoSession)

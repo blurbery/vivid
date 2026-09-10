@@ -3448,6 +3448,11 @@ class PlayerViewModel {
             nowPlaying.detach()
             return
         }
+        #if os(tvOS)
+        nowPlaying.nativeMetadataHandler = { [weak engine = vividPlaybackController.engine] title, artwork in
+            engine?.updateNativeMetadata(title: title, artwork: artwork)
+        }
+        #endif
         let handlers = VividVideoNowPlayingCoordinator.Handlers(
             // On tvOS the physical Play/Pause button can arrive through the
             // player-scoped media command center instead of SwiftUI's
