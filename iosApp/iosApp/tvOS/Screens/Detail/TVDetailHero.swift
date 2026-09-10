@@ -941,7 +941,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 struct FoldSnappingScrollTargetBehavior: ScrollTargetBehavior {
-    var aboveFold: Bool
     var showcaseHeight: CGFloat
 
     /// This takes a `ScrollTarget` that contains the proposed end point of
@@ -949,6 +948,9 @@ struct FoldSnappingScrollTargetBehavior: ScrollTargetBehavior {
     /// that the focus engine triggers when attempting to bring a newly focused
     /// item into view.
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        // Use the origin of this scroll operation, not hero visibility that
+        // changes while the native animation is already moving.
+        let aboveFold = context.originalTarget.rect.minY < showcaseHeight * 0.5
         // Keep Vivid's header controls aligned with its fixed logo while
         // native focus moves within the hero. Lower shelves retain fold snapping.
         if aboveFold && target.rect.minY < showcaseHeight * 0.3 {
@@ -1101,6 +1103,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
 
                 }
             }
+            .scrollTargetBehavior(FoldSnappingScrollTargetBehavior(showcaseHeight: showcaseHeight))
             .scrollClipDisabled()
             .onScrollGeometryChange(for: Bool.self) { scroll in
                 scroll.visibleRect.minY >= TVDetailLayout.browsingHeroTopInset(for: showcaseHeight) + 160
