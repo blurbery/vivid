@@ -567,6 +567,7 @@ struct TVDecodedLogoTitle<Fallback: View>: View {
     let accessibilityLabel: String
     let maxWidth: CGFloat
     let maxHeight: CGFloat
+    let alignment: Alignment
     @ViewBuilder let fallback: () -> Fallback
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -576,12 +577,14 @@ struct TVDecodedLogoTitle<Fallback: View>: View {
         accessibilityLabel: String,
         maxWidth: CGFloat,
         maxHeight: CGFloat,
+        alignment: Alignment = .bottomLeading,
         @ViewBuilder fallback: @escaping () -> Fallback
     ) {
         self.logoUrl = logoUrl
         self.accessibilityLabel = accessibilityLabel
         self.maxWidth = maxWidth
         self.maxHeight = maxHeight
+        self.alignment = alignment
         self.fallback = fallback
     }
 
@@ -631,7 +634,7 @@ struct TVDecodedLogoTitle<Fallback: View>: View {
             .frame(
                 maxWidth: maxWidth,
                 maxHeight: maxHeight,
-                alignment: .bottomLeading
+                alignment: alignment
             )
             .accessibilityHidden(true)
     }
@@ -1030,12 +1033,14 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                         .padding(.top, 150)
                         .padding(.horizontal, TVDetailLayout.horizontalInset)
                         .padding(.bottom, TVDetailLayout.pageBottomPadding)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .overlay(alignment: .top) {
                             TVDecodedLogoTitle(logoUrl: logoURL, accessibilityLabel: title,
-                                               maxWidth: 480, maxHeight: 110) {
+                                               maxWidth: 480, maxHeight: 110, alignment: .bottom) {
                                 Text(title).font(.system(size: 54, weight: .bold)).lineLimit(2)
+                                    .multilineTextAlignment(.center)
                             }
-                            .frame(width: 480, height: 110, alignment: .bottomLeading)
+                            .frame(width: 480, height: 110, alignment: .bottom)
                             .padding(.top, 4)
                             .opacity(showsShelfLogo ? 1 : 0)
                             .allowsHitTesting(false)
