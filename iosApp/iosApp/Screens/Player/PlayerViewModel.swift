@@ -328,11 +328,20 @@ class PlayerViewModel {
     /// The temporary rate is applied straight to the backend and never
     /// persisted, so releasing always restores `settings.playbackSpeed`.
     var isHoldFastForwarding = false
-    /// Seconds of media buffered ahead of `currentTime`, projected from
-    /// Vivid's public telemetry. The scrubber omits its buffered layer when
-    /// the active route cannot report a comparable value.
+    /// Consumer-ready buffer used by playback recovery. Keep this separate
+    /// from the deeper read-ahead cache shown by the Apple TV timeline.
     var bufferedAheadSeconds: Double = 0
     var playbackStats: PlaybackStats = .empty
+    #if os(tvOS)
+    /// Presentation only: prefer measured contiguous read-ahead, falling back
+    /// to the consumer buffer on routes without a cache-frontier measurement.
+    var timelineBufferedAheadSeconds: Double {
+        if let available = playbackStats.readAheadAvailableSeconds, available.isFinite {
+            return max(0, available)
+        }
+        return bufferedAheadSeconds.isFinite ? max(0, bufferedAheadSeconds) : 0
+    }
+    #endif
     var showNextUpScreen = false
     /// A Next Up load keeps its preview until the successor's own startup
     /// milestone. Repeated actions cannot reload it or expand an unready frame.

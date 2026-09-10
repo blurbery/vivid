@@ -76,7 +76,7 @@ struct TVPlayerScrubber: View {
 
     private var bufferedFraction: Double {
         guard viewModel.duration > 0 else { return 0 }
-        let end = viewModel.currentTime + viewModel.bufferedAheadSeconds
+        let end = viewModel.currentTime + viewModel.timelineBufferedAheadSeconds
         return min(max(end / viewModel.duration, 0), 1)
     }
 
@@ -193,7 +193,7 @@ struct TVPlayerScrubber: View {
                 // x=0 would put it entirely under the played fill (invisible)
                 // and mis-represent the semantic — buffer is inherently a
                 // forward-looking indicator. Vivid routes without comparable
-                // buffer telemetry leave `bufferedAheadSeconds` at zero.
+                // buffer telemetry leave `timelineBufferedAheadSeconds` at zero.
                 let bufferedAhead = max(0, bufferedFraction - progressFraction)
                 if bufferedAhead > 0 {
                     Capsule(style: .continuous)
