@@ -28,6 +28,9 @@ final class TVTMDbStore {
     private var loadedCredentialKey: String?
     private var credential = ""
     private let session: URLSession
+    #if os(tvOS)
+    private var spotlightCache: [String: (Date, String?)] = [:]
+    #endif
     private var videoCache: [String: (Date, [ItemVideo])] = [:]
 
     private var accountContext: String {
@@ -115,6 +118,9 @@ final class TVTMDbStore {
     private func invalidate() {
         revision += 1
         videoCache.removeAll()
+        #if os(tvOS)
+        spotlightCache.removeAll()
+        #endif
     }
 
     func videos(contentId: String) async throws -> [ItemVideo] {
@@ -151,6 +157,51 @@ final class TVTMDbStore {
         videoCache[cacheKey] = (Date(), videos)
         return videos
     }
+
+    #if os(tvOS)
+    /// Spotlight-only artwork lookup. Trailer selection and playback are unchanged.
+    func spotlightBackdrop(contentId: String) async throws -> String? {
+        reloadForCurrentProfile()
+        guard isConfigured else { return nil }
+        let context = contextKey
+        let cacheKey = context + "|" + contentId
+        if let cached = spotlightCache[cacheKey], Date().timeIntervalSince(cached.0) < 1800 {
+            return cached.1
+        }
+        guard let source = try await source(contentId: contentId, context: context) else { return nil }
+        try checkContext(context)
+        let response: SpotlightImages = try await request("\(source.kind)/\(source.id)/images", credential: credential,
+                                                          query: ["include_image_language": "null"])
+        try checkContext(context)
+        let candidates = response.backdrops.filter {
+            $0.width >= 1280 && $0.height >= 580 && $0.width > $0.height
+                && $0.iso_639_1 == nil
+                && $0.file_path.range(of: "^/[A-Za-z0-9_-]+\\.(jpg|jpeg|png)$", options: .regularExpression) != nil
+        }.sorted {
+            // Prefer a shape close to the banner, then resolution and community rating.
+            let a = (abs(Double($0.width) / Double($0.height) - 1800.0 / 580.0) * 10).rounded()
+            let b = (abs(Double($1.width) / Double($1.height) - 1800.0 / 580.0) * 10).rounded()
+            if a != b { return a < b }
+            let aResolution = $0.width >= 1920
+            let bResolution = $1.width >= 1920
+            if aResolution != bResolution { return aResolution }
+            return ($0.vote_average ?? 0) > ($1.vote_average ?? 0)
+        }
+        let url = candidates.first.map { "https://image.tmdb.org/t/p/original" + $0.file_path }
+        if spotlightCache.count >= 40 { spotlightCache.removeAll() }
+        spotlightCache[cacheKey] = (Date(), url)
+        return url
+    }
+
+    private struct SpotlightImages: Decodable { let backdrops: [SpotlightImage] }
+    private struct SpotlightImage: Decodable {
+        let file_path: String
+        let width: Int
+        let height: Int
+        let iso_639_1: String?
+        let vote_average: Double?
+    }
+    #endif
 
     private func source(contentId: String, context: String) async throws -> (kind: String, id: Int)? {
         var detail = try await MetadataRequestPool.shared.itemDetail(contentId: contentId)

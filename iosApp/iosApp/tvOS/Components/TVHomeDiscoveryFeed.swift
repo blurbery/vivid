@@ -366,6 +366,9 @@ private struct TVHomeSpotlightArtwork: View {
     @State private var reportedReady = false
     @State private var model = TVFocusMarqueeModel()
     @State private var logo: UIImage?
+    @State private var tmdbBackdropURL: String?
+    @State private var tmdbBackdropReady = false
+    private var tmdbContext: String { TVTMDbStore.shared.contextKey }
 
     private static let fadeStops: [Gradient.Stop] = {
         let anchors: [(Double, Double)] = [(0, 0), (0.28, 0.02), (0.45, 0.08), (0.72, 0.4), (1, 0.82)]
@@ -399,7 +402,7 @@ private struct TVHomeSpotlightArtwork: View {
     var body: some View {
         GeometryReader { geometry in
             let artworkSize = CGSize(
-                width: min(geometry.size.width, geometry.size.height * 16 / 9 * 1.2),
+                width: min(geometry.size.width, 1800),
                 height: geometry.size.height
             )
             ZStack(alignment: .bottom) {
@@ -407,27 +410,38 @@ private struct TVHomeSpotlightArtwork: View {
                 ForEach(neighbours.indices, id: \.self) { side in
                     TVSpotlightNeighbourArtwork(slide: neighbours[side], size: artworkSize)
                         .id("\(side)-\(neighbours[side].id)")
-                        .blur(radius: 22)
+                        .blur(radius: 10)
                         .opacity(0.65)
                         .offset(x: (side == 0 ? -1 : 1) * artworkSize.width * 0.82)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
-                if let url = model.backdropURL {
-                    TVSpotlightBackdropImage(url: url, size: artworkSize, onReady: { artworkReady = true })
+                ZStack {
+                    if let url = model.backdropURL {
+                        TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true,
+                                                 onReady: { artworkReady = true })
+                    }
+                    if let url = tmdbBackdropURL {
+                        TVSpotlightBackdropImage(url: url, size: artworkSize, fillsViewport: true, onReady: {
+                            tmdbBackdropReady = true
+                            artworkReady = true
+                        })
+                        .id(tmdbContext + url)
+                        .opacity(tmdbBackdropReady ? 1 : 0)
+                    }
+                }
                     .frame(width: artworkSize.width, height: artworkSize.height)
                     .mask {
                         LinearGradient(
                             stops: [
                                 .init(color: .clear, location: 0),
-                                .init(color: .black, location: 0.2),
-                                .init(color: .black, location: 0.8),
+                                .init(color: .black, location: 0.08),
+                                .init(color: .black, location: 0.92),
                                 .init(color: .clear, location: 1)
                             ],
                             startPoint: .leading, endPoint: .trailing
                         )
                     }
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
-                }
                 LinearGradient(
                     stops: Self.fadeStops,
                     startPoint: .top, endPoint: .bottom
@@ -481,6 +495,18 @@ private struct TVHomeSpotlightArtwork: View {
             do { try await Task.sleep(for: .seconds(8)) } catch { return }
             guard !Task.isCancelled else { return }
             reportReady()
+        }
+        .task(id: tmdbContext + "|" + slide.item.contentId) {
+            tmdbBackdropURL = nil
+            tmdbBackdropReady = false
+            let context = tmdbContext
+            do {
+                let url = try await TVTMDbStore.shared.spotlightBackdrop(contentId: slide.item.contentId)
+                guard !Task.isCancelled, context == tmdbContext else { return }
+                tmdbBackdropURL = url
+            } catch {
+                // Existing server artwork stays visible if TMDB is unavailable.
+            }
         }
         .task(id: slide.item.logoUrl) {
             defer { logoReady = true }
