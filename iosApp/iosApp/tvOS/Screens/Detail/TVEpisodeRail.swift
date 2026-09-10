@@ -785,6 +785,7 @@ struct TVContinuousEpisodeShelf: View {
                                 isSelected: visibleSeasonID == season.id))
                             .focusEffectDisabled()
                             .focused($focusedSeason, equals: season.id)
+                            .modifier(SeasonWatchedContextMenu(season: season))
                         }
                     }
                 }.scrollClipDisabled().focusSection()

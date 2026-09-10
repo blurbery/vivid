@@ -73,6 +73,7 @@ struct PhoneSeasonChips: View {
                 )
         }
         .buttonStyle(.plain)
+        .modifier(SeasonWatchedContextMenu(season: season))
     }
 
     private func label(for season: Season) -> String {

@@ -117,3 +117,5 @@ Use native touch, keyboard and Siri Remote behaviour for each platform. Keep foc
 For TV layout, read [browsing guidance](apple-tv-browsing.md) and [focus guidance](apple-tv-focus.md). Exercise slow clicks, rapid movement, reversals and return navigation on a physical Apple TV when changing those paths.
 
 The design is Vivid's. Server names identify connections and capabilities, not the app's branding.
+
+On iPhone, iPad and Apple TV, long-pressing a season opens its native watched/unwatched menu. Series More menus include whole-series and current-season watched actions. Season writes reuse the existing optimistic episode updates and rollback on failure. On tvOS, browsing episodes leaves the main resume target unchanged.

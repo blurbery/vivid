@@ -187,7 +187,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                         ? "Remove from Watchlist" : "Add to Watchlist",
                     action: onToggleWatchlist
                 )
-                PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
+                PhoneLabeledMenu(icon: "ellipsis", label: "More") {
                     Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
                     if let selectedSeason {
                         Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)

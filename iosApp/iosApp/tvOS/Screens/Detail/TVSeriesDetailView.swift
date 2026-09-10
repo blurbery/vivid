@@ -12,6 +12,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     let episodes: [EpisodeListItem]
     let episodesBySeason: [Int: [EpisodeListItem]]
     let activeEpisodeContentId: String?
+    let resumeEpisode: EpisodeListItem?
     let episodeFavoriteStates: [String: Bool]
     let isLoadingEpisodes: Bool
     let selectedNextUpFileId: Int?
@@ -40,6 +41,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     let onToggleFavorite: () -> Void
     let onToggleWatchlist: () -> Void
     let onToggleWatched: () -> Void
+    let onToggleSeasonWatched: () -> Void
     let onPersonTap: (String) -> Void
     let onNavigateToItem: (String) -> Void
     @ViewBuilder let belowSynopsis: () -> BelowSynopsis
@@ -63,7 +65,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     onFocus: { episode in
                         focusedEpisodeContentId = episode.contentId
                         isShowingSeriesOverview = false
-                        onActivateEpisode(episode.contentId)
                     }, onPlay: { episode in
                         onActivateEpisode(episode.contentId)
                         onPlayEpisode(episode.contentId, selectedFileId(for: episode), false)
@@ -241,10 +242,13 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     systemImage: isFavorite ? "heart.fill" : "heart"
                 )
             }
-            if selectedSeason != nil {
-                Button(action: onToggleWatched) {
+            Button(action: onToggleWatched) {
+                Label(isWatched ? "Mark Series Unwatched" : "Mark Series Watched", systemImage: "checkmark.circle")
+            }
+            if let selectedSeason {
+                Button(action: onToggleSeasonWatched) {
                     Label(
-                        isWatched ? "Mark Season Unwatched" : "Mark Season Watched",
+                        selectedSeason.userData?.played == true ? "Mark Season Unwatched" : "Mark Season Watched",
                         systemImage: isWatched ? "checkmark.circle.fill" : "checkmark.circle"
                     )
                 }
@@ -268,14 +272,14 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     }
 
     private var displayedEpisode: EpisodeListItem? {
-        if let activeEpisodeContentId {
-            return continuousPages.values.lazy.flatMap { $0 }.first { $0.contentId == activeEpisodeContentId }
+        if let focusedEpisodeContentId {
+            return continuousPages.values.lazy.flatMap { $0 }.first { $0.contentId == focusedEpisodeContentId }
         }
         return suggestedEpisode
     }
 
     private var playbackEpisode: EpisodeListItem? {
-        isShowingSeriesOverview ? suggestedEpisode : displayedEpisode
+        resumeEpisode
     }
 
     private var matchingPlaybackDetail: ItemDetail? {

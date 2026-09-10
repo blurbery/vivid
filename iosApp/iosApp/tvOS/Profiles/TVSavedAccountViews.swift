@@ -70,11 +70,17 @@ struct TVSavedAccountCards: View {
                                 else { finishArrangement() }
                             } label: {
                                 VStack(spacing: 20) {
-                                    tile(account).modifier(ProfileArrangeWobble(active: true))
+                                    tile(account)
+                                        .overlay(alignment: .top) {
+                                            Circle().strokeBorder(deleteSelected ? Color.clear : .white, lineWidth: 3)
+                                                .frame(width: 112, height: 112)
+                                        }
+                                        .modifier(ProfileArrangeWobble(active: true))
                                     deleteSymbol(selected: deleteSelected)
                                 }
                             }
                             .buttonStyle(.plain)
+                            .focusEffectDisabled()
                             .focused($editingFocused)
                             .onAppear { editingFocused = true }
                             .onMoveCommand { direction in
