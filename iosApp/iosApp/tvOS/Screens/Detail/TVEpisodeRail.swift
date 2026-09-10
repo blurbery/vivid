@@ -739,6 +739,15 @@ struct TVContinuousEpisodeShelf: View {
     private func items(_ season: Season) -> [EpisodeListItem]? { pages[season.seasonNumber] }
     private var contentKey: [String] { seasons.flatMap { items($0)?.map(\.contentId) ?? [] } }
 
+    private var visibleSeasonID: String? {
+        if let focusedSeason { return focusedSeason }
+        if let focusedEpisode,
+           let season = seasons.first(where: { items($0)?.contains { $0.contentId == focusedEpisode } == true }) {
+            return season.id
+        }
+        return highlightedSeason ?? selectedSeason?.id
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 24) {
@@ -754,7 +763,7 @@ struct TVContinuousEpisodeShelf: View {
                             }
                             .buttonStyle(TVContinuousSeasonButtonStyle(
                                 isFocused: focusedSeason == season.id,
-                                isSelected: (highlightedSeason ?? selectedSeason?.id) == season.id))
+                                isSelected: visibleSeasonID == season.id))
                             .focusEffectDisabled()
                             .focused($focusedSeason, equals: season.id)
                         }
@@ -842,7 +851,7 @@ private struct TVContinuousSeasonButtonStyle: ButtonStyle {
             .foregroundStyle(isFocused ? Color.black : Color.white)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.18 : 0.10), in: Capsule())
+            .background(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.28 : 0.10), in: Capsule())
             .opacity(configuration.isPressed ? 0.8 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
     }
