@@ -750,7 +750,7 @@ struct TVContinuousEpisodeShelf: View {
                             } label: {
                                 Text(season.seasonNumber == 0 ? "Specials" : "Season \(season.seasonNumber)")
                                     .font(.system(size: 22, weight: .semibold))
-                                    .foregroundStyle(focusedSeason == season.id ? Color.black : Color.white)
+                                    .foregroundStyle(Color.black)
                                     .fixedSize()
                             }
                             .buttonStyle(.bordered)
