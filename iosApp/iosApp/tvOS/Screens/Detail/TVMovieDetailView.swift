@@ -121,7 +121,6 @@ TVDetailHero(
                             heroHeight: height,
                             heroTopInset: max(116, height - 580),
                             usesFixedPageArtwork: true,
-                            hidesTitleForPageLogo: true,
                             extendsBackdropFadeBelowHero: true,
                             actions: { actionColumn },
                             belowSynopsis: belowSynopsis

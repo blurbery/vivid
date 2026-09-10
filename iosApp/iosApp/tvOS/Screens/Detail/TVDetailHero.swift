@@ -148,7 +148,6 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
     /// backdrop fade finish behind the season row. Movies retain the existing
     /// clipped hero through the default.
     var usesFixedPageArtwork = false
-    var hidesTitleForPageLogo = false
     var extendsBackdropFadeBelowHero = false
     @ViewBuilder let actions: () -> Actions
     /// Affordance rendered directly under the synopsis (e.g. the on-view
@@ -280,7 +279,6 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
                 TVHeroEyebrow(text: eyebrow)
             }
             titleBlock
-                .opacity(hidesTitleForPageLogo ? 0 : 1)
                 .frame(height: 160, alignment: .bottomLeading)
                 .padding(.top, eyebrow == nil ? 0 : 2)
             reservedMetadataBlock
@@ -371,7 +369,11 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
                 maxWidth: 650,
                 maxHeight: 160
             ) {
-                TVHeroTitle(title: title)
+                if usesFixedPageArtwork {
+                    Text(title).font(.system(size: 78, weight: .bold)).lineLimit(2)
+                } else {
+                    TVHeroTitle(title: title)
+                }
             }
         }
     }
@@ -1010,6 +1012,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
     @ViewBuilder let hero: (CGFloat) -> Hero
     @ViewBuilder let shelves: () -> Shelves
     @State private var belowFold = false
+    @State private var showsShelfLogo = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1055,14 +1058,21 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
             .scrollTargetBehavior(FoldSnappingScrollTargetBehavior(
                 aboveFold: !belowFold, showcaseHeight: showcaseHeight))
             .scrollClipDisabled()
+            .onScrollGeometryChange(for: Bool.self) { scroll in
+                scroll.visibleRect.minY >= max(116, showcaseHeight - 580) + 160
+            } action: { _, visible in
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+                    showsShelfLogo = visible
+                }
+            }
             .overlay(alignment: .topLeading) {
                 TVDecodedLogoTitle(logoUrl: logoURL, accessibilityLabel: title,
-                                   maxWidth: belowFold ? 480 : 650, maxHeight: belowFold ? 110 : 160) {
-                    Text(title).font(.system(size: belowFold ? 54 : 78, weight: .bold)).lineLimit(2)
+                                   maxWidth: 480, maxHeight: 110) {
+                    Text(title).font(.system(size: 54, weight: .bold)).lineLimit(2)
                 }
-                .frame(width: belowFold ? 480 : 650, height: belowFold ? 110 : 160, alignment: .bottomLeading)
-                .position(x: belowFold ? geometry.size.width / 2 : TVDetailLayout.horizontalInset + 325,
-                          y: belowFold ? 85 : max(116, showcaseHeight - 580) + 80)
+                .frame(width: 480, height: 110, alignment: .bottomLeading)
+                .position(x: geometry.size.width / 2, y: 85)
+                .opacity(showsShelfLogo ? 1 : 0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             }

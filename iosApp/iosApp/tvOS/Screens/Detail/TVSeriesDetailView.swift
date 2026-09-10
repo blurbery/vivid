@@ -122,7 +122,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             creditReservedHeight: 28,
             actionSpacing: TVDetailLayout.disclosureSpacing,
             usesFixedPageArtwork: true,
-            hidesTitleForPageLogo: true,
             extendsBackdropFadeBelowHero: true,
             actions: {
                 showActionRow

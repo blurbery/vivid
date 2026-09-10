@@ -11,11 +11,10 @@ struct TVItemDetailLoadingView: View {
 
     var body: some View {
         Group {
-            if let type = seed?.mediaType,
-               type == "movie" || VividMediaType.isSeries(type) {
+            if usesNativePage {
                 TVAppleDetailPage(backdropURL: seed?.backdropUrl, logoURL: seed?.logoUrl,
                                   title: seed?.title ?? "") { height in
-                    cinematicEditorial(height: height, topInset: max(116, height - 580), hidesTitle: true)
+                    cinematicEditorial(height: height, topInset: max(116, height - 580))
                         .frame(height: height, alignment: .topLeading)
                 } shelves: {
                     EmptyView()
@@ -78,13 +77,11 @@ struct TVItemDetailLoadingView: View {
     }
 
     private func cinematicEditorial(height: CGFloat = TVDetailLayout.heroHeight,
-                                    topInset: CGFloat = TVDetailLayout.heroTopInset,
-                                    hidesTitle: Bool = false) -> some View {
+                                    topInset: CGFloat = TVDetailLayout.heroTopInset) -> some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.disclosureSpacing) {
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 14) {
                     loadingTitle
-                        .opacity(hidesTitle ? 0 : 1)
                         .frame(width: 650, height: 160, alignment: .bottomLeading)
                     loadingMetadata
                         .frame(height: 36, alignment: .leading)
@@ -118,11 +115,11 @@ struct TVItemDetailLoadingView: View {
             TVDecodedLogoTitle(
                 logoUrl: seed?.logoUrl,
                 accessibilityLabel: title,
-                maxWidth: 700,
-                maxHeight: 132
+                maxWidth: usesNativePage ? 650 : 700,
+                maxHeight: usesNativePage ? 160 : 132
             ) {
                 Text(title)
-                    .font(.system(size: 64, weight: .bold))
+                    .font(.system(size: usesNativePage ? 78 : 64, weight: .bold))
                     .tracking(-0.8)
                     .foregroundStyle(Color.white)
                     .lineLimit(2)
@@ -199,6 +196,11 @@ struct TVItemDetailLoadingView: View {
     }
 
     // MARK: - Derived presentation
+
+    private var usesNativePage: Bool {
+        guard let type = seed?.mediaType else { return false }
+        return type == "movie" || VividMediaType.isSeries(type)
+    }
 
     private var metadataTokens: [String] {
         guard let seed else { return [] }
