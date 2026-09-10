@@ -786,6 +786,7 @@ struct LibraryCollectionDetailView: View {
 
 #if os(iOS)
 struct MobileForYouCollections: View {
+    @Environment(\.forYouScrollHeader) private var scrollHeader
     private struct Entry: Identifiable {
         let libraryID: Int
         let collection: LibraryCollection
@@ -808,6 +809,7 @@ struct MobileForYouCollections: View {
 
     var body: some View {
         ScrollView {
+            scrollHeader
             LazyVStack(spacing: 16) {
                 ForEach(personal.collections) { collection in
                     Button {

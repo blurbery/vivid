@@ -1302,7 +1302,70 @@ private struct TVForYouView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
-            HStack(spacing: 14) {
+
+            if selection == .collections {
+                TVLibraryCollectionsView(
+                    library: nil,
+                    combinedLibraries: libraries,
+                    namePrefix: selectedPrefix,
+                    suppressesEdgeShading: true,
+                    topContentInset: 0,
+                    fixedColumnCount: 7,
+                    focusRequest: focusedTab == nil && !alphabetFocused && !isTopMenuFocused ? gridFocusRequest : 0,
+                    isTopMenuFocused: isTopMenuFocused || focusedTab != nil || alphabetFocused,
+                    onMoveUp: { focusedTab = selection }
+                )
+                .environment(\.forYouScrollHeader, AnyView(sectionTabs))
+            } else {
+                ScrollView {
+                    sectionTabs
+                        .padding(.bottom, 32)
+                    if let error, items.isEmpty {
+                        ErrorView(state: error, onRetry: { Task { await reload() } })
+                    } else if items.isEmpty && !isLoading {
+                        EmptyStateView(
+                            icon: selection == .watchlist ? "bookmark" : "heart",
+                            title: "Your \(selection.title.lowercased()) is empty",
+                            subtitle: nil
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 360)
+                        .focusable()
+                        .onMoveCommand { if $0 == .up { focusedTab = selection } }
+                    } else {
+                        TVCatalogGrid(
+                            items: items,
+                            isLoading: isLoading,
+                            hasMore: hasMore,
+                            onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
+                            onNearEnd: { _ in Task { await loadMore() } },
+                            showsMediaTypePills: true,
+                            fixedColumnCount: 7,
+                            focusRequest: focusedTab == nil && !alphabetFocused && !isTopMenuFocused ? gridFocusRequest : 0,
+                            onFirstRowMoveUp: { focusedTab = selection }
+                        )
+                        .padding(.horizontal, VividTheme.safePadding)
+                        .padding(.bottom, 48)
+                    }
+                }
+                .contentMargins(.top, 28, for: .scrollContent)
+                .scrollClipDisabled()
+                .modifier(TVPersonalScrollAppearance())
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.black.ignoresSafeArea())
+        .padding(.top, 176)
+        .task(id: cacheKey) { await reload() }
+        .onChange(of: focusRequest) { _, request in
+            if request > 0, !isTopMenuFocused { focusedTab = selection }
+        }
+        .onAppear {
+            if focusRequest > 0, !isTopMenuFocused { focusedTab = selection }
+        }
+    }
+
+    private var sectionTabs: some View {
+        HStack(spacing: 14) {
                 ForEach(TVPersonalRootDestination.allCases, id: \.self) { tab in
                     let focused = focusedTab == tab
                     Button {
@@ -1339,62 +1402,6 @@ private struct TVForYouView: View {
                     gridFocusRequest += 1
                 }
             }
-
-            if selection == .collections {
-                TVLibraryCollectionsView(
-                    library: nil,
-                    combinedLibraries: libraries,
-                    namePrefix: selectedPrefix,
-                    suppressesEdgeShading: true,
-                    topContentInset: 0,
-                    fixedColumnCount: 7,
-                    focusRequest: focusedTab == nil && !alphabetFocused && !isTopMenuFocused ? gridFocusRequest : 0,
-                    isTopMenuFocused: isTopMenuFocused || focusedTab != nil || alphabetFocused,
-                    onMoveUp: { focusedTab = selection }
-                )
-            } else {
-                ScrollView {
-                    if let error, items.isEmpty {
-                        ErrorView(state: error, onRetry: { Task { await reload() } })
-                    } else if items.isEmpty && !isLoading {
-                        EmptyStateView(
-                            icon: selection == .watchlist ? "bookmark" : "heart",
-                            title: "Your \(selection.title.lowercased()) is empty",
-                            subtitle: nil
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 360)
-                        .focusable()
-                        .onMoveCommand { if $0 == .up { focusedTab = selection } }
-                    } else {
-                        TVCatalogGrid(
-                            items: items,
-                            isLoading: isLoading,
-                            hasMore: hasMore,
-                            onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
-                            onNearEnd: { _ in Task { await loadMore() } },
-                            fixedColumnCount: 7,
-                            focusRequest: focusedTab == nil && !alphabetFocused && !isTopMenuFocused ? gridFocusRequest : 0,
-                            onFirstRowMoveUp: { focusedTab = selection }
-                        )
-                        .padding(.horizontal, VividTheme.safePadding)
-                        .padding(.bottom, 48)
-                    }
-                }
-                .contentMargins(.top, 28, for: .scrollContent)
-                .scrollClipDisabled()
-                .modifier(TVPersonalScrollAppearance())
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.black.ignoresSafeArea())
-        .padding(.top, 176)
-        .task(id: cacheKey) { await reload() }
-        .onChange(of: focusRequest) { _, request in
-            if request > 0, !isTopMenuFocused { focusedTab = selection }
-        }
-        .onAppear {
-            if focusRequest > 0, !isTopMenuFocused { focusedTab = selection }
-        }
     }
 
     private func reload() async {

@@ -5,6 +5,7 @@ import SwiftUI
 /// collection in the scoped library (Skyline §6.3). Pressing a card pushes
 /// the existing collection detail screen.
 struct TVLibraryCollectionsView: View {
+    @Environment(\.forYouScrollHeader) private var scrollHeader
     let library: Library?
     var combinedLibraries: [Library] = []
     var namePrefix: String? = nil
@@ -91,6 +92,7 @@ struct TVLibraryCollectionsView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
+            scrollHeader
             LazyVStack(spacing: 44, pinnedViews: []) {
                 Color.clear
                     .frame(height: topContentInset)

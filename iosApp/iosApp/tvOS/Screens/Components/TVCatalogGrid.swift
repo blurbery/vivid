@@ -20,6 +20,7 @@ struct TVCatalogGrid: View {
     let hasMore: Bool
     let onItemTap: (BrowseItem) -> Void
     let onNearEnd: (Int) -> Void
+    var showsMediaTypePills = false
     var columnCount: Int = 6
     var fixedColumnCount: Int? = nil
     @State private var availableWidth: CGFloat = 1760
@@ -99,6 +100,7 @@ struct TVCatalogGrid: View {
                             year: item.year,
                             userState: item.userState,
                             overlayData: OverlayData.from(item),
+                            mediaTypeLabel: showsMediaTypePills ? (VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series") : nil,
                             action: { onItemTap(item) },
                             playAction: playAction(for: item),
                             cardWidth: fixedColumnCount.map {

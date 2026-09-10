@@ -76,6 +76,7 @@ struct IOSPersonalMediaPosterLayout: View {
 
 /// Grid of the user's favorited items.
 struct FavoritesView: View {
+    @Environment(\.forYouScrollHeader) private var scrollHeader
     let showsNavigationTitle: Bool
     let usesTVTopMenu: Bool
     var focusRequest: Int
@@ -125,6 +126,7 @@ struct FavoritesView: View {
     #if os(iOS)
     private var iosGridContent: some View {
         ScrollView {
+            scrollHeader
             IOSPersonalMediaPosterLayout(items: items) { item, state in
                 guard !state.isFavorite else { return }
                 withAnimation { items.removeAll { $0.contentId == item.contentId } }
@@ -137,6 +139,8 @@ struct FavoritesView: View {
     #endif
 
     var body: some View {
+        VStack(spacing: 0) {
+            if items.isEmpty { scrollHeader }
         Group {
             if !items.isEmpty {
                 #if os(iOS)
@@ -161,6 +165,7 @@ struct FavoritesView: View {
                     subtitle: "Tap the heart icon on any item to add it here"
                 )
             }
+        }
         }
         .background(Color.black.ignoresSafeArea())
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Favorites" : nil))

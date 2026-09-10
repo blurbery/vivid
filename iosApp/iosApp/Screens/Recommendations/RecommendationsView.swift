@@ -55,8 +55,20 @@ struct RecommendationsView: View {
 
     #if os(iOS)
     private var mobileSavedLists: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 4) {
+            Group {
+                switch mobileSelection {
+                case "Favourites": FavoritesView(showsNavigationTitle: false)
+                case "Collections": MobileForYouCollections()
+                default: WatchlistView(showsNavigationTitle: false)
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.forYouScrollHeader, AnyView(mobileSectionTabs))
+        .environment(chromeScrollState)
+        .background(Color.black.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+    private var mobileSectionTabs: some View {
+        HStack(spacing: 4) {
                 ForEach(["Watchlist", "Favourites", "Collections"], id: \.self) { title in
                     Button { mobileSelection = title; chromeScrollState.reset() } label: {
                         Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
@@ -66,17 +78,7 @@ struct RecommendationsView: View {
                     }.buttonStyle(.plain)
                 }
             }.padding(5).vividGlass(in: Capsule()).padding(.horizontal, 16)
-            Group {
-                switch mobileSelection {
-                case "Favourites": FavoritesView(showsNavigationTitle: false)
-                case "Collections": MobileForYouCollections()
-                default: WatchlistView(showsNavigationTitle: false)
-                }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }.padding(.top, 12)
-        .environment(chromeScrollState)
-        .background(Color.black.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+            .padding(.top, 12)
     }
     #endif
 
@@ -562,5 +564,16 @@ private struct SavedShortcutButtonBody: View {
         #else
         return 15
         #endif
+    }
+}
+
+private struct ForYouScrollHeaderKey: EnvironmentKey {
+    static let defaultValue: AnyView? = nil
+}
+
+extension EnvironmentValues {
+    var forYouScrollHeader: AnyView? {
+        get { self[ForYouScrollHeaderKey.self] }
+        set { self[ForYouScrollHeaderKey.self] = newValue }
     }
 }

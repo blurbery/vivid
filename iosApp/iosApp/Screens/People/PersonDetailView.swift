@@ -536,7 +536,7 @@ private struct PhonePersonDetailContent: View {
                             items: viewModel.items,
                             isLoading: viewModel.isLoadingItems,
                             hasMore: viewModel.hasMore,
-                            matchesHomeCardSize: true,
+                            forcesThreeColumnsOnPhone: true,
                             onItemTap: { item in
                                 router.navigate(to: .itemDetail(browseItem: item))
                             },
