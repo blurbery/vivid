@@ -807,6 +807,14 @@ struct TVContinuousEpisodeShelf: View {
                                         onSetFavorite: onFavorite)
                                         .id(episode.contentId)
                                         .focused($focusedEpisode, equals: episode.contentId)
+                                        .onMoveCommand { direction in
+                                            guard direction == .up else { return }
+                                            // Up crosses into this episode's season, without
+                                            // letting the nearest pill select another season.
+                                            highlightedSeason = season.id
+                                            scrollHighlightedSeason = nil
+                                            focusedSeason = season.id
+                                        }
                                 }
                             } else {
                                 Button("Load Season \(season.seasonNumber)") {

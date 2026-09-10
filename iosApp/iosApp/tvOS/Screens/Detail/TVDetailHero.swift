@@ -1061,7 +1061,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
             .onScrollGeometryChange(for: Bool.self) { scroll in
                 scroll.visibleRect.minY >= max(116, showcaseHeight - 580) + 160
             } action: { _, visible in
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: visible ? 0.25 : 0.12)) {
                     showsShelfLogo = visible
                 }
             }
