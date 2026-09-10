@@ -488,6 +488,7 @@ struct TVItemDetailView: View {
                 },
                 onPlayEpisode: { id, fileId, startFromBeginning in
                     let episode = viewModel.episodes.first(where: { $0.contentId == id })
+                        ?? viewModel.episodesBySeason.values.lazy.flatMap { $0 }.first(where: { $0.contentId == id })
                     let resumePosition = startFromBeginning
                         ? nil
                         : playableResumePosition(
@@ -1063,6 +1064,7 @@ struct TVItemDetailView: View {
         guard detail.type == "series" else { return nil }
         if let activeSeriesEpisodeContentId {
             return viewModel.episodes.first { $0.contentId == activeSeriesEpisodeContentId }
+                ?? viewModel.episodesBySeason.values.lazy.flatMap { $0 }.first { $0.contentId == activeSeriesEpisodeContentId }
         }
         if let inProgress = viewModel.episodes.first(where: { $0.userData?.isInProgress == true }) {
             return inProgress
@@ -1201,8 +1203,9 @@ struct TVItemDetailView: View {
                   $0.contentId == selectedSeason.contentId
               }) else { return }
 
-        let neighborIndices = [index - 1, index + 1]
-            .filter { viewModel.seasons.indices.contains($0) }
+        let neighborIndices = viewModel.seasons.indices
+            .filter { $0 != index }
+            .sorted { abs($0 - index) < abs($1 - index) }
 
         for neighborIndex in neighborIndices {
             guard !Task.isCancelled else { return }
@@ -1224,7 +1227,7 @@ struct TVItemDetailView: View {
                 response = fetched
             }
 
-            let stillURLs = response.episodes.compactMap { episode in
+            let stillURLs = response.episodes.prefix(6).compactMap { episode in
                 episode.stillUrl.flatMap(URL.init(string:))
             }
             PosterImageCache.prefetchCardArtwork(stillURLs)
