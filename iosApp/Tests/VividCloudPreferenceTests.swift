@@ -27,6 +27,15 @@ final class VividCloudPreferenceTests: XCTestCase {
         XCTAssertEqual(VividCloudPreferencePolicy.ordered(["c", "a", "b", "d"], preferred: ["b", "a", "deleted", "b", "c"]), ["b", "a", "c", "d"])
     }
 
+    func testExplicitProfileMovesPreserveAllIdentities() {
+        XCTAssertEqual(VividCloudPreferencePolicy.moving(["a", "b", "c"], id: "b", by: -1), ["b", "a", "c"])
+        XCTAssertEqual(VividCloudPreferencePolicy.moving(["a", "b", "c"], id: "b", by: 1), ["a", "c", "b"])
+        for (id, offset) in [("a", -1), ("c", 1), ("deleted", 1), ("b", 99)] {
+            XCTAssertEqual(VividCloudPreferencePolicy.moving(["a", "b", "c"], id: id, by: offset), ["a", "b", "c"])
+        }
+        XCTAssertEqual(VividCloudPreferencePolicy.ordered(["c", "a", "new"], preferred: ["b", "a", "c"]), ["a", "c", "new"])
+    }
+
     func testPlaybackAndSubtitleSettingsAreExcluded() {
         for key in ["playback.audio_language", "playback.subtitle_appearance", "player.buffer_ahead", "subtitle.matches_device"] {
             XCTAssertFalse(VividCloudPreferencePolicy.isSharedSetting(key))

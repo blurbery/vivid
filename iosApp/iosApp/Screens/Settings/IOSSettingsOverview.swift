@@ -120,6 +120,7 @@ struct PhoneSavedAccountCards: View {
     @Environment(AppRouter.self) private var router
     @State private var selectedForPIN: TVSavedAccount?
     @State private var pendingDeletion: TVSavedAccount?
+    @State private var isEditingProfiles = false
     @State private var pin = ""
     @State private var pinError: String?
     var body: some View {
@@ -127,18 +128,28 @@ struct PhoneSavedAccountCards: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 22) {
                 ForEach(store.accounts) { account in
-                    if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
-                        NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
-                            .contextMenu {
-                                deletionMenu(for: account)
+                    VStack(spacing: 12) {
+                        Group {
+                            if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
+                                NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
+                                    .contextMenu {
+                                        deletionMenu(for: account)
+                                    }
+                            } else {
+                                Button {
+                                    if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
+                                    else { Task { await store.select(account, router: router) } }
+                                } label: { tile(account) }
+                                .contextMenu { deletionMenu(for: account) }
                             }
-                    } else {
-                        Button {
-                            if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
-                            else { Task { await store.select(account, router: router) } }
-                        } label: { tile(account) }
-                        .contextMenu { deletionMenu(for: account) }
+                        }
+                        .disabled(isEditingProfiles)
+                        if isEditingProfiles { editingControls(for: account) }
                     }
+                }
+                if isEditingProfiles {
+                    Button("Done") { isEditingProfiles = false }
+                        .buttonStyle(.bordered)
                 }
                 if store.canAddAccount {
                 NavigationLink { PhoneSavedAccountEditor(accountID: nil) } label: {
@@ -152,7 +163,7 @@ struct PhoneSavedAccountCards: View {
             }.padding(.vertical, 12)
                 .frame(minWidth: geometry.size.width, alignment: isSettings ? .leading : .center)
         }
-        }.frame(height: 150).buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
+        }.frame(height: isEditingProfiles ? 260 : 150).buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
         .task { await store.captureCurrent() }
         .confirmationDialog("Delete Profile?", isPresented: Binding(
             get: { pendingDeletion != nil },
@@ -186,12 +197,36 @@ struct PhoneSavedAccountCards: View {
     }
     @ViewBuilder
     private func deletionMenu(for account: TVSavedAccount) -> some View {
-        if isSettings || account.requiresLogin {
-            Button("Delete Profile", systemImage: "trash", role: .destructive) {
-                pendingDeletion = account
-            }
+        Button("Arrange Profiles", systemImage: "arrow.left.arrow.right") {
+            isEditingProfiles = true
+        }
+        Button("Delete Profile", systemImage: "trash", role: .destructive) {
+            pendingDeletion = account
         }
     }
+
+    private func editingControls(for account: TVSavedAccount) -> some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Button { store.moveAccount(account.id, by: -1) } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(store.accounts.first?.id == account.id)
+                .accessibilityLabel("Move \(account.username) left")
+                Button { store.moveAccount(account.id, by: 1) } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(store.accounts.last?.id == account.id)
+                .accessibilityLabel("Move \(account.username) right")
+            }
+            Button(role: .destructive) { pendingDeletion = account } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .accessibilityLabel("Delete \(account.username) from iCloud devices")
+        }
+        .buttonStyle(.bordered)
+    }
+
     private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {
         account.id == store.activeID && !account.requiresLogin && AuthService.shared.isLoggedIn
             && account.serverID == ServerRegistry.shared.activeServerId

@@ -461,12 +461,28 @@ final class TVSavedAccountStore {
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
 
+    func moveAccount(_ id: String, by offset: Int) {
+        guard !busy, let account = accounts.first(where: { $0.id == id }) else { return }
+        let identities = accounts.map { VividCloudAccountIdentity.key(for: $0) }
+        let order = VividCloudPreferencePolicy.moving(
+            identities, id: VividCloudAccountIdentity.key(for: account), by: offset
+        )
+        guard order != identities else { return }
+        do {
+            try VividCloudPreferences.shared.setAccountOrder(order)
+            applyCloudOrder(order)
+            Task { await VividCloudAccountSync.shared.synchronize() }
+        } catch {
+            self.error = "Couldn’t save the profile order. Try again."
+        }
+    }
+
     func applyCloudOrder(_ order: [String]) {
         let identities = accounts.map { VividCloudAccountIdentity.key(for: $0) }
         let sorted = VividCloudPreferencePolicy.ordered(identities, preferred: order)
         let positions = Dictionary(uniqueKeysWithValues: sorted.enumerated().map { ($1, $0) })
         accounts.sort { positions[VividCloudAccountIdentity.key(for: $0), default: 0] < positions[VividCloudAccountIdentity.key(for: $1), default: 0] }
-        if identities != sorted { persist(); contentRevision = UUID() }
+        if identities != sorted { persist() }
     }
 
     fileprivate func cloudSnapshot() -> [String: VividCloudAccountEnvelope] {
