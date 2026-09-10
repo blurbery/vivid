@@ -124,6 +124,7 @@ public final class VividPlayer: ObservableObject {
             } onCancel: { next.cancel() }
             try Task.checkCancellation()
             guard generation == epoch else { next.cancel(); throw CancellationError() }
+            nativeAudioDecode = next.snapshot().nativeAudio
             tracks = inventory.tracks
             chapters = inventory.chapters
             duration = inventory.duration

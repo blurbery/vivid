@@ -5,6 +5,7 @@ import MediaPlayer
 import SwiftUI
 import UIKit
 import VividKit
+import OSLog
 
 @MainActor
 final class VividEngine: ObservableObject {
@@ -72,6 +73,8 @@ final class VividEngine: ObservableObject {
     private let tvDisplayCriteria = TVPlaybackDisplayCriteria()
     private var tvDisplayTask: Task<Void, Never>?
     private var dtsNativeBridge: VividDTSNativeBridge?
+    private let pcmAudioSession = TVPCMAudioSession()
+    private static let audioSessionLog = Logger(subsystem: "com.blurbery.vivid", category: "AudioSession")
     #endif
     private var nativeLayer: AVPlayerLayer?
     private var subscriptions = Set<AnyCancellable>()
@@ -107,6 +110,10 @@ final class VividEngine: ObservableObject {
     init() throws {
         #if os(tvOS)
         player.nativeDTSBridgeEnabled = false
+        AVAudioSession.sharedInstance().publisher(for: \.outputNumberOfChannels)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.observePCMAudioSession(phase: "outputChanged") }
+            .store(in: &subscriptions)
         player.$displayFormatDescription.sink { [weak self] format in
             guard let self, self.currentAVPlayer == nil, !self.options.audioOnly,
                   let format, let video = self.player.tracks.first(where: { $0.kind == .video }) else { return }
@@ -180,8 +187,41 @@ final class VividEngine: ObservableObject {
             if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
                 Task { @MainActor in self?.pause() }
             }
+            #if os(tvOS)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if reason != AVAudioSession.RouteChangeReason.routeConfigurationChange.rawValue,
+                   reason != AVAudioSession.RouteChangeReason.categoryChange.rawValue {
+                    self.configurePCMAudioSession()
+                }
+                self.observePCMAudioSession(phase: "routeChanged")
+            }
+            #endif
         }
     }
+    #if os(tvOS)
+    private var usesPCMAudioSession: Bool {
+        videoRoute == .sampleBuffer && currentAVPlayer == nil && !options.audioOnly && !player.nativeAudioDecode
+    }
+
+    private func configurePCMAudioSession() {
+        let channels = audioTracks.first { $0.id == activeAudioTrackIndex }?.channels ?? 0
+        pcmAudioSession.configure(AVAudioSession.sharedInstance(), sourceChannels: channels,
+                                  eligible: usesPCMAudioSession, log: Self.logAudioSession)
+    }
+
+    private func observePCMAudioSession(phase: String) {
+        guard usesPCMAudioSession else { return }
+        let channels = audioTracks.first { $0.id == activeAudioTrackIndex }?.channels ?? 0
+        pcmAudioSession.observe(AVAudioSession.sharedInstance(), sourceChannels: channels,
+                                phase: phase, log: Self.logAudioSession)
+    }
+
+    private static func logAudioSession(_ message: String) {
+        audioSessionLog.info("[VividAudioSession] \(message, privacy: .public)")
+    }
+    #endif
+
     func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool {
         guard source == url, currentAVPlayer == nil, !options.nativeRemoteHLS,
               player.updateSourceHeaders(headers, for: url) else { return false }
@@ -232,6 +272,9 @@ final class VividEngine: ObservableObject {
                 subtitleTracks = player.tracks.filter { $0.kind == .subtitle }.map(TrackInfo.init) + subtitleTracks.filter(\.isExternal)
                 mediaChapters = player.chapters.map { MediaChapter(id: $0.id, name: $0.name, startSeconds: $0.startSeconds) }
                 activeAudioTrackIndex = player.selectedAudioTrack
+                #if os(tvOS)
+                configurePCMAudioSession()
+                #endif
                 duration = player.duration
                 if let video = player.tracks.first(where: { $0.kind == .video }) {
                     sourceVideoWidth = Int32(video.width); sourceVideoHeight = Int32(video.height)
@@ -378,6 +421,9 @@ final class VividEngine: ObservableObject {
         else { state = .paused; playbackPhase = .paused }
     }
     private func receive(_ value: VividPlayer.State) {
+        #if os(tvOS)
+        if value == .playing { observePCMAudioSession(phase: "playing") }
+        #endif
         isBuffering = value == .buffering || value == .opening
         switch value {
         case .idle: state = .idle; playbackPhase = .idle
@@ -413,6 +459,9 @@ final class VividEngine: ObservableObject {
     func play() {
         wantsPlayback = true
         do { try AVAudioSession.sharedInstance().setActive(true) } catch { report(error); return }
+        #if os(tvOS)
+        configurePCMAudioSession()
+        #endif
         if let currentAVPlayer { currentAVPlayer.playImmediately(atRate: transportRate) } else { player.play() }
     }
     func pause() { wantsPlayback = false; currentAVPlayer?.pause(); player.pause(); if videoRoute != .none { state = .paused; playbackPhase = .paused } }
@@ -471,6 +520,9 @@ final class VividEngine: ObservableObject {
                         .filter { $0.kind == .audio }
                         .map(TrackInfo.init)
                     self.activeAudioTrackIndex = requestedIndex
+                    #if os(tvOS)
+                    self.configurePCMAudioSession()
+                    #endif
                 } catch is CancellationError {
                     return
                 } catch {
@@ -503,6 +555,9 @@ final class VividEngine: ObservableObject {
         currentAVPlayer?.pause(); currentAVPlayer?.replaceCurrentItem(with: nil)
         currentAVPlayer = nil; currentAVPlayerItem = nil; nativeLayer = nil; videoNowPlayingSession = nil
         softwarePiPSource = nil; videoRoute = .none; player.stop()
+        #if os(tvOS)
+        pcmAudioSession.restore(AVAudioSession.sharedInstance(), log: Self.logAudioSession)
+        #endif
         audioTracks = []; subtitleTracks = []; mediaChapters = []; externalSubtitles = [:]
         nativeAudioOptions = [:]; nativeSubtitleOptions = [:]; audioGroup = nil; subtitleGroup = nil
         assRenderers = [:]; subtitleGeneration &+= 1
