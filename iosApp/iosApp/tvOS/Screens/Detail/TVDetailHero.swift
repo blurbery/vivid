@@ -1058,7 +1058,6 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
     let title: String
     @ViewBuilder let hero: (CGFloat) -> Hero
     @ViewBuilder let shelves: () -> Shelves
-    @State private var belowFold = false
     @State private var showsShelfLogo = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1070,9 +1069,6 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                     hero(showcaseHeight)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .focusSection()
-                        .onScrollVisibilityChange { visible in
-                            belowFold = !visible
-                        }
                     shelves()
                         .padding(.top, 150)
                         .padding(.horizontal, TVDetailLayout.horizontalInset)
@@ -1105,8 +1101,6 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
 
                 }
             }
-            .scrollTargetBehavior(FoldSnappingScrollTargetBehavior(
-                aboveFold: !belowFold, showcaseHeight: showcaseHeight))
             .scrollClipDisabled()
             .onScrollGeometryChange(for: Bool.self) { scroll in
                 scroll.visibleRect.minY >= TVDetailLayout.browsingHeroTopInset(for: showcaseHeight) + 160
