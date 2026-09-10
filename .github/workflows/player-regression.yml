@@ -6,6 +6,7 @@ on:
       - 'iosApp/iosApp/Screens/Player/**'
       - 'iosApp/iosApp/Playback/**'
       - 'AetherEngine/**'
+      - 'scripts/test-aether-audio-selection.swift'
       - 'VividKit/Sources/**'
       - 'VividKit/Tests/**'
       - 'iosApp/Tests/**'
@@ -57,6 +58,7 @@ jobs:
         with:
           xcode-version: '26.3'
       - name: Check initial audio selection
+        if: hashFiles('AetherEngine/Sources/AetherEngine/VividInitialAudioStream.swift') != ''
         run: |
           swiftc AetherEngine/Sources/AetherEngine/VividInitialAudioStream.swift scripts/test-aether-audio-selection.swift -o "$RUNNER_TEMP/aether-audio-selection"
           "$RUNNER_TEMP/aether-audio-selection"

@@ -124,8 +124,11 @@ final class VividEngine: ObservableObject {
         backend.$hasFirstFrameReadyForDisplay.sink { [weak self] in self?.hasFirstFrameReadyForDisplay = $0 }.store(in: &subscriptions)
         backend.$errorInfo.sink { [weak self] value in
             self?.errorInfo = value.map { error in
-                PlaybackErrorInfo(kind: PlaybackErrorInfo.Kind(rawValue: error.kind.rawValue) ?? .softwarePipelineFailed,
-                    message: error.message, underlyingDomain: error.underlyingDomain, underlyingCode: error.underlyingCode)
+                let kind = PlaybackErrorInfo.Kind(rawValue: error.kind.rawValue)
+                    ?? (["sourceOpenFailed", "sourceCertificateRejected", "customSourceProbeFailed"].contains(error.kind.rawValue)
+                        ? .sourceRefused : .softwarePipelineFailed)
+                return PlaybackErrorInfo(kind: kind, message: error.message,
+                    underlyingDomain: error.underlyingDomain, underlyingCode: error.underlyingCode)
             }
         }.store(in: &subscriptions)
         backend.$startupProgress.sink { [weak self] value in
@@ -207,6 +210,8 @@ final class VividEngine: ObservableObject {
         do {
             try await backend.load(url: url, startPosition: startPosition, options: prepared,
                                    audioSourceStreamIndex: audioSourceStreamIndex)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             if let errorInfo { throw errorInfo }
             throw error
@@ -294,11 +299,25 @@ final class VividEngine: ObservableObject {
 
 struct VividPlayerSurface: UIViewRepresentable {
     @ObservedObject var engine: VividEngine
+    final class Coordinator {
+        weak var engine: VividEngine?
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> AetherPlayerView {
         let view = AetherPlayerView(frame: .zero)
+        context.coordinator.engine = engine
         engine.backend.bind(view: view)
         return view
     }
-    func updateUIView(_ view: AetherPlayerView, context: Context) { engine.backend.bind(view: view) }
+    func updateUIView(_ view: AetherPlayerView, context: Context) {
+        if context.coordinator.engine !== engine {
+            context.coordinator.engine?.backend.unbind(view: view)
+            context.coordinator.engine = engine
+        }
+        engine.backend.bind(view: view)
+    }
+    static func dismantleUIView(_ view: AetherPlayerView, coordinator: Coordinator) {
+        coordinator.engine?.backend.unbind(view: view)
+    }
 }
 #endif
