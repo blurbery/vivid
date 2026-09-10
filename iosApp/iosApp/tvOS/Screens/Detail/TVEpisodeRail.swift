@@ -731,6 +731,7 @@ struct TVContinuousEpisodeShelf: View {
     let onFavorite: (String, Bool) async -> Bool
     @FocusState private var focusedEpisode: String?
     @FocusState private var focusedSeason: String?
+    @Namespace private var seasonFocusNamespace
     @State private var highlightedSeason: String?
     @State private var scrollHighlightedSeason: String?
     @State private var pendingJump: String?
@@ -787,6 +788,9 @@ struct TVContinuousEpisodeShelf: View {
                         }
                     }
                 }.scrollClipDisabled().focusSection()
+                .focusScope(seasonFocusNamespace)
+                .defaultFocus($focusedSeason, highlightedSeason ?? selectedSeason?.id,
+                              priority: focusedSeason == nil ? .userInitiated : .automatic)
                 .onChange(of: focusedSeason) { _, id in
                     scrollHighlightedSeason = nil
                     guard let id,
@@ -807,14 +811,7 @@ struct TVContinuousEpisodeShelf: View {
                                         onSetFavorite: onFavorite)
                                         .id(episode.contentId)
                                         .focused($focusedEpisode, equals: episode.contentId)
-                                        .onMoveCommand { direction in
-                                            guard direction == .up else { return }
-                                            // Up crosses into this episode's season, without
-                                            // letting the nearest pill select another season.
-                                            highlightedSeason = season.id
-                                            scrollHighlightedSeason = nil
-                                            focusedSeason = season.id
-                                        }
+
                                 }
                             } else {
                                 Button("Load Season \(season.seasonNumber)") {

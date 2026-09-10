@@ -1024,7 +1024,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .focusSection()
                         .onScrollVisibilityChange { visible in
-                            withAnimation(reduceMotion ? nil : .default) { belowFold = !visible }
+                            belowFold = !visible
                         }
                     shelves()
                         .padding(.top, 150)
@@ -1058,11 +1058,11 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                                 TVDetailCurvedBlurMask()
                                     .fill(.black)
                                     .blur(radius: geometry.size.height * 0.065)
-                                    .opacity(belowFold ? 0 : 1)
                                 Rectangle()
                                     .fill(.black)
                                     .opacity(belowFold ? 1 : 0)
                             }
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.45), value: belowFold)
                         }
                 }
             }
@@ -1072,7 +1072,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
             .onScrollGeometryChange(for: Bool.self) { scroll in
                 scroll.visibleRect.minY >= max(116, showcaseHeight - 580) + 160
             } action: { _, visible in
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: visible ? 0.25 : 0.12)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: visible ? 0.25 : 0.08)) {
                     showsShelfLogo = visible
                 }
             }
