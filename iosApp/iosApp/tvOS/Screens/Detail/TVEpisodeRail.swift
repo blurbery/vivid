@@ -750,14 +750,12 @@ struct TVContinuousEpisodeShelf: View {
                             } label: {
                                 Text(season.seasonNumber == 0 ? "Specials" : "Season \(season.seasonNumber)")
                                     .font(.system(size: 22, weight: .semibold))
-                                    .foregroundStyle(Color.black)
                                     .fixedSize()
                             }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                            .controlSize(.small)
-                            .background((highlightedSeason ?? selectedSeason?.id) == season.id
-                                && focusedSeason != season.id ? Color.white.opacity(0.18) : .clear, in: Capsule())
+                            .buttonStyle(TVContinuousSeasonButtonStyle(
+                                isFocused: focusedSeason == season.id,
+                                isSelected: (highlightedSeason ?? selectedSeason?.id) == season.id))
+                            .focusEffectDisabled()
                             .focused($focusedSeason, equals: season.id)
                         }
                     }
@@ -831,6 +829,22 @@ struct TVContinuousEpisodeShelf: View {
               let id = items(season)?.first?.contentId else { return }
         withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(id, anchor: .leading) }
         self.pendingJump = nil
+    }
+}
+
+private struct TVContinuousSeasonButtonStyle: ButtonStyle {
+    let isFocused: Bool
+    let isSelected: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isFocused ? Color.black : Color.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(isFocused ? Color.white : Color.white.opacity(isSelected ? 0.18 : 0.10), in: Capsule())
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isFocused)
     }
 }
 
