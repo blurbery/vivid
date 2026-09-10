@@ -724,6 +724,7 @@ struct TVContinuousEpisodeShelf: View {
     let onWatched: (String, Bool) async -> Bool
     let onFavorite: (String, Bool) async -> Bool
     @FocusState private var focusedEpisode: String?
+    @FocusState private var focusedSeason: String?
     @State private var highlightedSeason: String?
     @State private var pendingJump: String?
     @State private var seeded = false
@@ -739,19 +740,26 @@ struct TVContinuousEpisodeShelf: View {
                     HStack(spacing: 20) {
                         ForEach(seasons) { season in
                             Button {
-                                highlightedSeason = season.id
-                                pendingJump = season.id
-                                onSeason(season)
-                                jumpIfReady(proxy)
+                                selectSeason(season, using: proxy)
                             } label: {
                                 Text(season.seasonNumber == 0 ? "Specials" : "Season \(season.seasonNumber)")
-                                    .font(.system(size: 24, weight: .semibold))
-                                    .padding(.horizontal, 14).padding(.vertical, 8)
-                                    .background((highlightedSeason ?? selectedSeason?.id) == season.id ? Color.white.opacity(0.22) : .clear, in: Capsule())
-                            }.buttonStyle(.plain)
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .fixedSize()
+                            }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.small)
+                            .tint((highlightedSeason ?? selectedSeason?.id) == season.id ? Color.white.opacity(0.22) : .clear)
+                            .focused($focusedSeason, equals: season.id)
                         }
                     }
                 }.scrollClipDisabled().focusSection()
+                .onChange(of: focusedSeason) { _, id in
+                    guard let id,
+                          id != (highlightedSeason ?? selectedSeason?.id),
+                          let season = seasons.first(where: { $0.id == id }) else { return }
+                    selectSeason(season, using: proxy)
+                }
 
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 40) {
@@ -801,6 +809,13 @@ struct TVContinuousEpisodeShelf: View {
                 jumpIfReady(proxy)
             }
         }
+    }
+
+    private func selectSeason(_ season: Season, using proxy: ScrollViewProxy) {
+        highlightedSeason = season.id
+        pendingJump = season.id
+        if selectedSeason?.id != season.id { onSeason(season) }
+        jumpIfReady(proxy)
     }
 
     private func jumpIfReady(_ proxy: ScrollViewProxy) {
