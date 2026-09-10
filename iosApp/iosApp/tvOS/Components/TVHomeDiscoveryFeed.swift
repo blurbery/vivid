@@ -15,7 +15,7 @@ struct TVHomeDiscoveryFeed: View {
     @State private var homeCards = TVHomeCardPreferences.shared
     @FocusState private var spotlightFocused: Bool
     @State private var rowOwner: String?
-    @State private var rowFocusItems: [String: String] = [:]
+    @State private var rowFocusMemory = TVHomeRowFocusMemory()
     @State private var firstRowFocusRequest = 0
     @State private var spotlightOpenedDetail = false
     @State private var appliedFocusRequest = 0
@@ -52,16 +52,16 @@ struct TVHomeDiscoveryFeed: View {
                                 onRemoveFromContinueWatching: onRemoveFromContinueWatching,
                                 onSetWatched: onSetWatched,
                                 showsHeadingIcon: false,
-                                prefersDefaultFocusOnFirstItem: index == 0,
+                                prefersDefaultFocusOnFirstItem: slides.isEmpty && index == 0,
                                 defaultFocusPriority: .userInitiated,
                                 focusRequest: index == 0 ? firstRowFocusRequest : 0,
-                                defaultFocusItemId: rowFocusItems[section.id],
-                                focusRequestItemId: rowFocusItems[section.id],
+                                defaultFocusItemId: rowFocusMemory.items[section.id],
+                                focusRequestItemId: rowFocusMemory.items[section.id],
                                 detailReturnFocusRequest: spotlightOpenedDetail ? 0 : detailReturnFocusRequest,
                                 onMoveUp: index == 0 ? { enterSpotlight(using: proxy) } : nil,
                                 onItemFocus: { item in
-                                    rowOwner = section.id
-                                    rowFocusItems[section.id] = item.contentId
+                                    rowFocusMemory.items[section.id] = item.contentId
+                                    if rowOwner != section.id { rowOwner = section.id }
                                 },
                                 cardWidth: VividTheme.Skyline.densePosterCardWidth,
                                 focusRestorationOwner: Binding(
@@ -99,9 +99,9 @@ struct TVHomeDiscoveryFeed: View {
 
     private func enterSpotlight(using proxy: ScrollViewProxy) {
         guard !slides.isEmpty else { onTopMenuFocusRequest?(); return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-            proxy.scrollTo(Self.spotlightAnchor, anchor: .center)
-        }
+        // The spotlight is mounted eagerly. Let the focus engine perform its
+        // own scroll instead of racing a separate ScrollViewReader animation.
+        rowOwner = nil
         spotlightFocused = true
     }
 
@@ -114,6 +114,12 @@ struct TVHomeDiscoveryFeed: View {
         }
         firstRowFocusRequest += 1
     }
+}
+
+/// Remember card selection without invalidating the entire feed for every
+/// horizontal focus move. Each row already observes its own focused card.
+private final class TVHomeRowFocusMemory {
+    var items: [String: String] = [:]
 }
 
 private struct TVHomeSpotlightCarousel: View {
