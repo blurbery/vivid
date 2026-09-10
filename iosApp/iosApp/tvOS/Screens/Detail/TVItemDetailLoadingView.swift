@@ -14,7 +14,7 @@ struct TVItemDetailLoadingView: View {
             if usesNativePage {
                 TVAppleDetailPage(backdropURL: seed?.backdropUrl, logoURL: seed?.logoUrl,
                                   title: seed?.title ?? "") { height in
-                    cinematicEditorial(height: height, topInset: max(116, height - 580))
+                    cinematicEditorial(height: height, topInset: TVDetailLayout.browsingHeroTopInset(for: height))
                         .frame(height: height, alignment: .topLeading)
                 } shelves: {
                     EmptyView()

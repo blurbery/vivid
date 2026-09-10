@@ -10,6 +10,9 @@ enum TVDetailLayout {
     /// Shared title baseline for every detail page. Sits low enough that the
     /// first rail below the 690pt hero bottoms out just above the safe area.
     static let heroTopInset: CGFloat = 116
+    static func browsingHeroTopInset(for height: CGFloat) -> CGFloat {
+        max(heroTopInset, height - 580) + 30
+    }
     static let heroContentWidth: CGFloat = 750
     static let editorialHeight: CGFloat = 435
     static let disclosureSpacing: CGFloat = 12
@@ -1025,6 +1028,24 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                 VStack(alignment: .leading, spacing: 26) {
                     hero(showcaseHeight)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(alignment: .top) {
+                            LinearGradient(stops: [
+                                .init(color: .black.opacity(0.68), location: 0),
+                                .init(color: .black.opacity(0.68), location: 0.36),
+                                .init(color: .black.opacity(0.50), location: 0.48),
+                                .init(color: .clear, location: 0.78)
+                            ], startPoint: .leading, endPoint: .trailing)
+                            .frame(height: showcaseHeight + 160)
+                            .mask {
+                                LinearGradient(stops: [
+                                    .init(color: .clear, location: 0.05),
+                                    .init(color: .black, location: 0.34),
+                                    .init(color: .black, location: 0.82),
+                                    .init(color: .clear, location: 1)
+                                ], startPoint: .top, endPoint: .bottom)
+                            }
+                            .allowsHitTesting(false)
+                        }
                         .focusSection()
                         .onScrollVisibilityChange { visible in
                             belowFold = !visible
@@ -1075,7 +1096,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                 aboveFold: !belowFold, showcaseHeight: showcaseHeight))
             .scrollClipDisabled()
             .onScrollGeometryChange(for: Bool.self) { scroll in
-                scroll.visibleRect.minY >= max(116, showcaseHeight - 580) + 160
+                scroll.visibleRect.minY >= TVDetailLayout.browsingHeroTopInset(for: showcaseHeight) + 160
             } action: { _, visible in
                 withAnimation(reduceMotion ? nil : .easeOut(duration: visible ? 0.25 : 0.08)) {
                     showsShelfLogo = visible

@@ -114,7 +114,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             ),
             backdropHeight: TVDetailLayout.heroHeight,
             heroHeight: height,
-            heroTopInset: max(116, height - 580),
+            heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),
             editorialContentWidth: TVDetailLayout.heroContentWidth,
             editorialReservedHeight: TVDetailLayout.editorialHeight,
             metadataReservedHeight: 36,

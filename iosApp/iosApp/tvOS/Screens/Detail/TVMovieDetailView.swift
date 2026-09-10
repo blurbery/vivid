@@ -119,7 +119,7 @@ TVDetailHero(
                                 showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false
                             ),
                             heroHeight: height,
-                            heroTopInset: max(116, height - 580),
+                            heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),
                             usesFixedPageArtwork: true,
                             extendsBackdropFadeBelowHero: true,
                             actions: { actionColumn },
