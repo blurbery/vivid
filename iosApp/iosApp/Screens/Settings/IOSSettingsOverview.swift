@@ -197,9 +197,10 @@ struct PhoneSavedAccountCards: View {
         ), titleVisibility: .visible, presenting: pendingDeletion) { account in
             Button("Delete Profile", role: .destructive) {
                 Task {
-                    await store.deleteAccount(account.id, router: router)
-                    isEditingProfiles = false
-                    movingID = nil
+                    if await store.deleteAccount(account.id, router: router) {
+                        isEditingProfiles = false
+                        movingID = nil
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { pendingDeletion = nil }

@@ -32,7 +32,8 @@ final class PersonDetailViewModel {
     var person: Person?
     var items: [BrowseItem] = []
     var isLoadingPerson = false
-    var isLoadingItems = false
+    private var loadingItemsGeneration: Int?
+    var isLoadingItems: Bool { loadingItemsGeneration == generation }
     var error: ErrorState?
     var hasMore = true
     var selectedFilter: PersonMediaFilter = .all
@@ -53,6 +54,7 @@ final class PersonDetailViewModel {
     private var nextOffset = 0
     private var snapshot: String?
     private var generation = 0
+    private var metadataGeneration = 0
     private var metadataRefreshTask: Task<Void, Never>?
     private var autoRefreshRequestedPersonId: Int?
     private var metadataRefreshExhaustedPersonId: Int?
@@ -61,15 +63,27 @@ final class PersonDetailViewModel {
     private var prefetchedPosterURLs: Set<URL> = []
     #endif
 
-    init(personId: Int) {
+    private let requestPerson: (Int) async throws -> Person
+    private let requestCatalog: (Int, String?, Int, Int, String?) async throws -> CatalogResponse
+
+    init(
+        personId: Int,
+        requestPerson: @escaping (Int) async throws -> Person = { try await VividAPI.shared.person(id: $0) },
+        requestCatalog: @escaping (Int, String?, Int, Int, String?) async throws -> CatalogResponse = {
+            try await VividAPI.shared.personCatalogItems(personId: $0, type: $1, offset: $2, limit: $3, snapshot: $4)
+        }
+    ) {
         self.personId = personId
+        self.requestPerson = requestPerson
+        self.requestCatalog = requestCatalog
     }
 
     /// Cancel the manually-spawned refresh poll when this page leaves the
     /// nav stack. SwiftUI only auto-cancels `.task`; this task otherwise
     /// retains the view model and keeps mutating state after the route pops.
     func stopMetadataRefresh() {
-        guard metadataRefreshTask != nil || isRefreshingMetadata else { return }
+        metadataGeneration += 1
+        isLoadingPerson = false
         Self.logger.debug("stopMetadataRefresh personId=\(self.personId, privacy: .public)")
         metadataRefreshTask?.cancel()
         metadataRefreshTask = nil
@@ -90,6 +104,8 @@ final class PersonDetailViewModel {
     }
 
     func reload() async {
+        stopMetadataRefresh()
+        let currentMetadataGeneration = metadataGeneration
         generation += 1
         let currentGeneration = generation
         resetFilmography()
@@ -98,7 +114,7 @@ final class PersonDetailViewModel {
         if person == nil {
             person = ResponseCache.shared.get(CacheKey.person(personId))
         }
-        async let metadata: Void = loadPerson(generation: currentGeneration)
+        async let metadata: Void = loadPerson(generation: currentMetadataGeneration)
         async let availability: Void = refreshAvailableFilters(generation: currentGeneration)
         await fetchPage(reset: true, generation: currentGeneration)
         await metadata
@@ -106,16 +122,19 @@ final class PersonDetailViewModel {
     }
 
     private func loadPerson(generation currentGeneration: Int) async {
+        guard !Task.isCancelled, currentGeneration == metadataGeneration else { return }
         isLoadingPerson = true
-        defer { isLoadingPerson = false }
+        defer {
+            if currentGeneration == metadataGeneration { isLoadingPerson = false }
+        }
         do {
-            let updatedPerson = try await VividAPI.shared.person(id: personId)
-            guard !Task.isCancelled, currentGeneration == generation else { return }
+            let updatedPerson = try await requestPerson(personId)
+            guard !Task.isCancelled, currentGeneration == metadataGeneration else { return }
             person = updatedPerson
             ResponseCache.shared.set(updatedPerson, for: CacheKey.person(personId))
             scheduleMetadataRefreshIfNeeded(for: updatedPerson)
         } catch {
-            guard !Task.isCancelled, currentGeneration == generation else { return }
+            guard !Task.isCancelled, currentGeneration == metadataGeneration else { return }
             if person == nil { self.error = ErrorState(error) }
         }
     }
@@ -163,21 +182,25 @@ final class PersonDetailViewModel {
         }
         isRefreshingMetadata = true
         Self.logger.debug("startMetadataRefresh personId=\(person.id, privacy: .public) queue=\(shouldQueueRefresh, privacy: .public)")
+        let currentGeneration = metadataGeneration
         metadataRefreshTask = Task { [weak self] in
             await self?.runMetadataAutoRefresh(
                 for: person.id,
-                shouldQueueRefresh: shouldQueueRefresh
+                shouldQueueRefresh: shouldQueueRefresh,
+                generation: currentGeneration
             )
         }
     }
 
-    private func runMetadataAutoRefresh(for personId: Int, shouldQueueRefresh: Bool) async {
+    private func runMetadataAutoRefresh(for personId: Int, shouldQueueRefresh: Bool, generation currentGeneration: Int) async {
         defer {
             let wasCancelled = Task.isCancelled
-            metadataRefreshTask = nil
-            isRefreshingMetadata = false
-            if !wasCancelled, person?.isMetadataIncomplete == true {
-                metadataRefreshExhaustedPersonId = personId
+            if currentGeneration == metadataGeneration {
+                metadataRefreshTask = nil
+                isRefreshingMetadata = false
+                if !wasCancelled, person?.isMetadataIncomplete == true {
+                    metadataRefreshExhaustedPersonId = personId
+                }
             }
             Self.logger.debug("finishMetadataRefresh personId=\(personId, privacy: .public) cancelled=\(wasCancelled, privacy: .public)")
         }
@@ -200,8 +223,8 @@ final class PersonDetailViewModel {
             guard !Task.isCancelled else { return }
 
             do {
-                let updatedPerson = try await VividAPI.shared.person(id: personId)
-                guard !Task.isCancelled, personId == self.personId else { return }
+                let updatedPerson = try await requestPerson(personId)
+                guard !Task.isCancelled, currentGeneration == metadataGeneration, personId == self.personId else { return }
                 ResponseCache.shared.set(updatedPerson, for: CacheKey.person(personId))
                 if updatedPerson == person {
                     unchangedPolls += 1
@@ -225,19 +248,15 @@ final class PersonDetailViewModel {
     }
 
     private func fetchPage(reset: Bool, generation currentGeneration: Int) async {
-        guard hasMore, !isLoadingItems else { return }
-        isLoadingItems = true
-        defer { isLoadingItems = false }
+        guard !Task.isCancelled, currentGeneration == generation, hasMore, !isLoadingItems else { return }
+        loadingItemsGeneration = currentGeneration
+        defer {
+            if loadingItemsGeneration == currentGeneration { loadingItemsGeneration = nil }
+        }
 
         do {
-            let response = try await VividAPI.shared.personCatalogItems(
-                personId: personId,
-                type: selectedFilter.catalogType,
-                offset: nextOffset,
-                limit: pageSize,
-                snapshot: snapshot
-            )
-            guard currentGeneration == generation else { return }
+            let response = try await requestCatalog(personId, selectedFilter.catalogType, nextOffset, pageSize, snapshot)
+            guard !Task.isCancelled, currentGeneration == generation else { return }
 
             if reset {
                 items = response.items
@@ -249,7 +268,7 @@ final class PersonDetailViewModel {
             nextOffset += response.items.count
             if snapshot == nil { snapshot = response.snapshot }
         } catch {
-            guard currentGeneration == generation else { return }
+            guard !Task.isCancelled, currentGeneration == generation else { return }
             self.error = ErrorState(error)
         }
     }
@@ -270,12 +289,7 @@ final class PersonDetailViewModel {
     /// remains visible rather than hiding content based on a network error.
     private func catalogHasItems(type: String) async -> Bool? {
         do {
-            let response = try await VividAPI.shared.personCatalogItems(
-                personId: personId,
-                type: type,
-                offset: 0,
-                limit: 1
-            )
+            let response = try await requestCatalog(personId, type, 0, 1, nil)
             return !response.items.isEmpty || (response.total ?? 0) > 0
         } catch {
             return nil

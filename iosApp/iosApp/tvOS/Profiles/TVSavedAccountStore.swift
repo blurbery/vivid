@@ -416,14 +416,15 @@ final class TVSavedAccountStore {
         router.resetToLogin()
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
-    func deleteAccount(_ id: String, router: AppRouter) async {
-        guard !busy, let account = accounts.first(where: { $0.id == id }) else { return }
+    @discardableResult
+    func deleteAccount(_ id: String, router: AppRouter) async -> Bool {
+        guard !busy, let account = accounts.first(where: { $0.id == id }) else { return false }
         busy = true
         error = nil
         defer { busy = false }
         guard keychain.delete(sessionKey(id)), keychain.delete(pinKey(id)) else {
             error = "Couldn’t delete the saved profile. Try again."
-            return
+            return false
         }
         if let index = accounts.firstIndex(where: { $0.id == id }) {
             accounts[index].requiresLogin = true
@@ -434,7 +435,7 @@ final class TVSavedAccountStore {
         if activeID == id {
             guard await AuthService.shared.signOut() else {
                 error = "Couldn’t finish signing out. Try deleting the profile again."
-                return
+                return false
             }
             activeID = nil
             persist()
@@ -444,7 +445,7 @@ final class TVSavedAccountStore {
            ServerRegistry.shared.entry(with: account.serverID) != nil {
             guard await ServerRegistry.shared.remove(serverId: account.serverID) else {
                 error = "Couldn’t remove the saved server. Try again."
-                return
+                return false
             }
         }
         accounts.removeAll { $0.id == id }
@@ -459,6 +460,7 @@ final class TVSavedAccountStore {
             else { router.resetToLogin() }
         }
         await VividCloudAccountSync.shared.synchronize(router: router)
+        return true
     }
 
     @discardableResult

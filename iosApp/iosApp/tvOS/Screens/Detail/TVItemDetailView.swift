@@ -21,9 +21,9 @@ struct TVItemDetailView: View {
     @State private var didClearSubtitleOverride = false
     @State private var didClearNextUpSubtitleOverride = false
     @State private var nextUpPlaybackDetail: ItemDetail?
-    /// Series owns one in-place episode selection. `nil` means the Show tab
-    /// and its suggested next episode are active.
+    /// Pin playback independently of browsing; nil uses the suggested episode.
     @State private var activeSeriesEpisodeContentId: String?
+    @State private var pendingCompletionRefresh: TVPlaybackStateRefreshEvent?
     @State private var pendingSeriesNavigationContext: TVSeriesDetailNavigationContextStore.Context?
     @State private var hasLoadedDetailVisit = false
     @State private var episodeSeriesDetail: ItemDetail?
@@ -176,6 +176,9 @@ struct TVItemDetailView: View {
             guard let event = note.object as? TVPlaybackStateRefreshEvent else { return }
             applyCompletedPlaybackRefresh(event)
         }
+        .onChange(of: viewModel.episodesBySeason.keys.sorted()) { _, _ in
+            if let event = pendingCompletionRefresh { applyCompletedPlaybackRefresh(event) }
+        }
     }
 
     // Selection state lives on the cached view model so a pushed player route
@@ -212,13 +215,20 @@ struct TVItemDetailView: View {
               !event.completedContentIds.isEmpty else { return }
         viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
 
-        // Playback can now remain pinned to a season other than the browsed
-        // one. Advance through resident seasons, without moving rail focus.
-        let playbackEpisodes = viewModel.seasons.sorted { $0.seasonNumber < $1.seasonNumber }.flatMap { season in
-            viewModel.selectedSeason?.seasonNumber == season.seasonNumber
-                ? viewModel.episodes
-                : viewModel.episodesBySeason[season.seasonNumber] ?? []
+        let seasons = viewModel.seasons.sorted { $0.seasonNumber < $1.seasonNumber }
+        let pages = seasons.map { viewModel.episodesBySeason[$0.seasonNumber] }
+        let activeSeasonIndex = pages.firstIndex { page in
+            page?.contains { $0.contentId == activeSeriesEpisodeContentId } == true
         }
+        // A missing page is a boundary, not an empty season. Resume this
+        // decision when the existing preloader supplies that page.
+        if activeSeriesEpisodeContentId != nil, activeSeasonIndex == nil {
+            pendingCompletionRefresh = event
+            return
+        }
+        let startIndex = activeSeasonIndex ?? 0
+        let remainingPages = Array(pages.dropFirst(startIndex))
+        let playbackEpisodes = DetailEpisodeSequence.contiguousEpisodes(remainingPages)
 
         let activeWasCompleted = activeSeriesEpisodeContentId.map {
             event.completedContentIds.contains($0)
@@ -230,10 +240,13 @@ struct TVItemDetailView: View {
                 || activeWasCompleted
                 || completedEpisodeIsVisible else { return }
 
+        pendingCompletionRefresh = remainingPages.contains(where: { $0 == nil }) ? event : nil
+
         if let inProgress = playbackEpisodes.first(where: {
             $0.userData?.isInProgress == true && !($0.userData?.played ?? false)
         }) {
             activeSeriesEpisodeContentId = inProgress.contentId
+            pendingCompletionRefresh = nil
             return
         }
 
@@ -245,13 +258,16 @@ struct TVItemDetailView: View {
                !($0.userData?.played ?? false)
            }) {
             self.activeSeriesEpisodeContentId = next.contentId
+            pendingCompletionRefresh = nil
             return
         }
 
-        if let nextUnwatched = playbackEpisodes.first(where: {
+        if activeSeriesEpisodeContentId == nil,
+           let nextUnwatched = playbackEpisodes.first(where: {
             !($0.userData?.played ?? false)
         }) {
             activeSeriesEpisodeContentId = nextUnwatched.contentId
+            pendingCompletionRefresh = nil
         }
     }
 
@@ -339,6 +355,7 @@ struct TVItemDetailView: View {
                 nextUpPlaybackDetail: nextUpPlaybackDetail,
                 nextUpSubtitleOverrideCleared: didClearNextUpSubtitleOverride,
                 onPlayEpisode: { id, fileId, startFromBeginning in
+                    pendingCompletionRefresh = nil
                     let episode = viewModel.episodes.first { $0.contentId == id }
                     let resumePosition = startFromBeginning
                         ? nil
@@ -493,9 +510,11 @@ struct TVItemDetailView: View {
                     }
                 },
                 onActivateEpisode: { id in
-                    if let id { activeSeriesEpisodeContentId = id }
+                    activeSeriesEpisodeContentId = id
+                    pendingCompletionRefresh = nil
                 },
                 onPlayEpisode: { id, fileId, startFromBeginning in
+                    pendingCompletionRefresh = nil
                     let episode = viewModel.episodes.first(where: { $0.contentId == id })
                         ?? viewModel.episodesBySeason.values.lazy.flatMap { $0 }.first(where: { $0.contentId == id })
                     let resumePosition = startFromBeginning

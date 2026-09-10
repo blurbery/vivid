@@ -78,14 +78,14 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
     @ViewBuilder
     var body: some View {
         if detail.type == "movie" {
-            TVAppleDetailPage(backdropURL: detail.backdropUrl, logoURL: heroLogoUrl, title: detail.title) { height in
+            TVAppleDetailPage(backdropURL: detail.backdropUrl, backdropThumbhash: detail.backdropThumbhash, logoURL: heroLogoUrl, title: detail.title) { height in
                 nativeMovieHero(height: height)
             } shelves: {
                 nativeMovieShelves
             }
             .focusScope(detailFocusNamespace)
             .defaultFocus($playFocused, true, priority: .userInitiated)
-            .onPlayPauseCommand(perform: playFocusedEpisodeOrCurrent)
+            .onPlayPauseCommand { onPlay(false) }
         } else {
             legacyBody
         }

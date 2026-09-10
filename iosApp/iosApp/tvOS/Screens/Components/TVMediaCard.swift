@@ -231,6 +231,7 @@ struct TVMediaCard: View {
     private var accessibilityDescription: String {
         let secondLine = subtitle ?? year.map(String.init)
         var components = [title]
+        if let mediaTypeLabel { components.append(mediaTypeLabel) }
         if let secondLine {
             components.append(secondLine)
         }

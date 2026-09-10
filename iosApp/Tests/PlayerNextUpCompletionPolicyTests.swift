@@ -2,6 +2,16 @@ import XCTest
 @testable import Vivid
 
 final class PlayerNextUpCompletionPolicyTests: XCTestCase {
+    func testDetailAdvancementStopsAtMissingSeason() {
+        XCTAssertEqual(DetailEpisodeSequence.contiguousEpisodes([["s1e1"], nil, ["s3e1"]]), ["s1e1"])
+        XCTAssertEqual(DetailEpisodeSequence.contiguousEpisodes([nil, ["s2e1"]]), [])
+    }
+
+    func testDetailAdvancementContinuesWhenGapLoadsAndSkipsKnownEmptySeasons() {
+        XCTAssertEqual(DetailEpisodeSequence.contiguousEpisodes([["s1e1"], [], ["s3e1"]]), ["s1e1", "s3e1"])
+        XCTAssertEqual(DetailEpisodeSequence.contiguousEpisodes([["s1e1"], ["s2e1"], ["s3e1"]]), ["s1e1", "s2e1", "s3e1"])
+    }
+
     func testAlreadyPlayingOrLoadingCandidateOnlyExpands() {
         XCTAssertEqual(
             PlayerNextUpPlaybackAction.resolve(candidateId: "episode-b", currentId: "episode-b"),

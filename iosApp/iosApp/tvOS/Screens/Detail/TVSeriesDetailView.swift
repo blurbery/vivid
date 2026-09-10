@@ -30,8 +30,8 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     let isFetchingTrailers: Bool
     let onTrailerStatusShown: () -> Void
     let onSelectSeason: (Season) -> Void
-    /// `nil` restores the show overview and its suggested next episode.
-    let onActivateEpisode: (_ contentId: String?) -> Void
+    /// Playback selection is independent of rail focus.
+    let onActivateEpisode: (_ contentId: String) -> Void
     let onPlayEpisode: (_ contentId: String, _ fileId: Int?, _ startFromBeginning: Bool) -> Void
     let onSetEpisodeWatched: (_ contentId: String, _ played: Bool) async -> Bool
     let onSetEpisodeFavorite: (_ contentId: String, _ isFavorite: Bool) async -> Bool
@@ -55,7 +55,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     @ObservedObject private var profilePrefsStore = ProfilePrefsStore.shared
 
     var body: some View {
-        TVAppleDetailPage(backdropURL: detail.backdropUrl, logoURL: detail.logoUrl, title: detail.title) { height in
+        TVAppleDetailPage(backdropURL: detail.backdropUrl, backdropThumbhash: detail.backdropThumbhash, logoURL: detail.logoUrl, title: detail.title) { height in
             heroView(height: height)
         } shelves: {
             VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
@@ -213,11 +213,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         return "\(verb) S\(episode.seasonNumber):E\(episode.episodeNumber)"
     }
 
-    private func showSeriesOverview() {
-        isShowingSeriesOverview = true
-        onActivateEpisode(nil)
-    }
-
     private var moreMenu: some View {
         TVCircleMenuButton(
             title: "More",
@@ -229,11 +224,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     onPlayEpisode(episode.contentId, selectedFileId(for: episode), true)
                 } label: {
                     Label("Start Over", systemImage: "backward.end.fill")
-                }
-            }
-            if !isShowingSeriesOverview {
-                Button(action: showSeriesOverview) {
-                    Label("Show Series Info", systemImage: "info.circle")
                 }
             }
             Button(action: onToggleFavorite) {
@@ -249,7 +239,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                 Button(action: onToggleSeasonWatched) {
                     Label(
                         selectedSeason.userData?.played == true ? "Mark Season Unwatched" : "Mark Season Watched",
-                        systemImage: isWatched ? "checkmark.circle.fill" : "checkmark.circle"
+                        systemImage: selectedSeason.userData?.played == true ? "checkmark.circle.fill" : "checkmark.circle"
                     )
                 }
             }

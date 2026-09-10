@@ -374,6 +374,7 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
             ) {
                 if usesFixedPageArtwork {
                     Text(title).font(.system(size: 78, weight: .bold)).lineLimit(2)
+                                    .minimumScaleFactor(0.72)
                 } else {
                     TVHeroTitle(title: title)
                 }
@@ -1056,6 +1057,7 @@ private struct TVDetailScrollMaterial: ViewModifier {
 /// gradient-mask and fold-snapping presentation.
 struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
     let backdropURL: String?
+    var backdropThumbhash: String? = nil
     let logoURL: String?
     let title: String
     @ViewBuilder let hero: (CGFloat) -> Hero
@@ -1080,6 +1082,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                             TVDecodedLogoTitle(logoUrl: logoURL, accessibilityLabel: title,
                                                maxWidth: 480, maxHeight: 110, alignment: .bottom) {
                                 Text(title).font(.system(size: 54, weight: .bold)).lineLimit(2)
+                                    .minimumScaleFactor(0.72)
                                     .multilineTextAlignment(.center)
                             }
                             .frame(width: 480, height: 110, alignment: .bottom)
@@ -1096,7 +1099,7 @@ struct TVAppleDetailPage<Hero: View, Shelves: View>: View {
                 ZStack {
                     Color.black
                     if let backdropURL {
-                        CachedAsyncImage(url: backdropURL, targetSize: geometry.size, contentMode: .fill)
+                        CachedAsyncImage(url: backdropURL, targetSize: geometry.size, thumbhash: backdropThumbhash, contentMode: .fill)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }

@@ -12,7 +12,7 @@ struct TVItemDetailLoadingView: View {
     var body: some View {
         Group {
             if usesNativePage {
-                TVAppleDetailPage(backdropURL: seed?.backdropUrl, logoURL: seed?.logoUrl,
+                TVAppleDetailPage(backdropURL: seed?.backdropUrl, backdropThumbhash: seed?.backdropThumbhash, logoURL: seed?.logoUrl,
                                   title: seed?.title ?? "") { height in
                     cinematicEditorial(height: height, topInset: TVDetailLayout.browsingHeroTopInset(for: height))
                         .frame(height: height, alignment: .topLeading)
@@ -198,7 +198,7 @@ struct TVItemDetailLoadingView: View {
     // MARK: - Derived presentation
 
     private var usesNativePage: Bool {
-        guard let type = seed?.mediaType else { return false }
+        guard let type = seed?.mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
         return type == "movie" || VividMediaType.isSeries(type)
     }
 
