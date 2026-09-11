@@ -39,7 +39,7 @@ Routine TestFlight updates retain the current marketing version and increment on
 
 Apple requires TestFlight App Review for the first build of a version; later builds within that version may not need a full review. Keeping the version stable avoids introducing a new version for every beta update, but does not guarantee immediate approval. Returning to a previously reviewed marketing version does not guarantee that a new build will skip review; expiring another build does not provide that guarantee either. See [Apple’s TestFlight App Review guidance](https://developer.apple.com/help/glossary/testflight-app-review/).
 
-Each paired iOS and tvOS upload uses the same positive build number, including every embedded extension. Increment that shared number for the next pair of uploaded binaries. The counter never resets, even after an approved marketing-version change. Check App Store Connect on both platforms first, then advance beyond the highest previously used shared build number, including local device builds. The latest committed baseline is 14; do not assume it is still the highest at the next upload.
+Each paired iOS and tvOS upload uses the same positive build number, including every embedded extension. Increment that shared number for the next pair of uploaded binaries. The counter never resets, even after an approved marketing-version change. Check App Store Connect on both platforms first, then advance beyond the highest previously used shared build number, including local device builds. The latest committed baseline is 15; do not assume it is still the highest at the next upload.
 
 `iosApp/project.yml` is the committed source for the Apple marketing-version and build-number baseline shared by all shippable targets. TestFlight archives must retain that approved marketing version. The tag resolver in `scripts/ci/resolve-marketing-version.sh` remains available for source-tagged unsigned builds; it must not automatically select the marketing version for TestFlight. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives and their extensions before upload.
 
@@ -85,7 +85,7 @@ The repository and its source releases are public. Apple beta distribution remai
 
 ## Recorded Apple builds
 
-These are distribution records, not the current feature list. [PR #8](https://github.com/blurbery/vivid/pull/8) subsequently added MDBList and OpenSubtitles features to main. Its local development builds also used `0.14.3 (14)`; no new TestFlight upload was made for that work. The next upload must increment the shared build number while retaining `0.14.3`.
+These are distribution records, not the current feature list. [PR #8](https://github.com/blurbery/vivid/pull/8) subsequently added MDBList and OpenSubtitles features to main. Its local development builds also used `0.14.3 (14)`; no new TestFlight upload was made for that work. Build `15` is reserved for the next paired upload from main, retaining `0.14.3`; its distribution status is recorded below once Apple accepts it.
 
 These are historical records, not a live App Store Connect status feed. Pending checks refer to the stated revision and are not automatically satisfied by a later build. Build 14 is the latest recorded upload.
 
