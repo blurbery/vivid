@@ -206,7 +206,9 @@ final class VividCloudPreferences {
             }
             migrateCredential(tmdb, aliases: tmdbAliases)
             migrateCredential(seerr, aliases: seerrAliases)
-            result.formUnion([tmdb, seerr])
+            let pluginScope = Self.pluginScope(server: account.serverID, user: account.userID, profile: profile)
+            result.formUnion([tmdb, seerr, "vivid.mdblist.key.v1." + pluginScope,
+                              "vivid.opensubtitles.key.v1." + pluginScope])
         }
         return result
     }
@@ -241,6 +243,10 @@ final class VividCloudPreferences {
         if keychain.get(key) != nil {
             for alias in aliases { _ = keychain.delete(alias) }
         }
+    }
+    nonisolated static func pluginScope(server: String, user: String, profile: String) -> String {
+        let data = try! JSONEncoder().encode([server, user, profile])
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
     static func credentialKey(_ name: String, server: String, profile: String) -> String {
         let scope = Data("\(server)|\(profile)".utf8).base64EncodedString()
@@ -325,6 +331,8 @@ final class VividCloudPreferences {
             TVHomeCardPreferences.shared.cloudPreferencesChanged()
             TVTMDbStore.shared.reloadForCurrentProfile(force: true)
             TVSeerrConnectionStore.shared.cloudPreferencesChanged()
+            MDBListSyncStore.shared.reload()
+            OpenSubtitlesStore.shared.reload()
             NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
         }
         return merged

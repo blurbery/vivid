@@ -23,12 +23,7 @@ struct GeneralSettingsView: View {
                         Text("Choose which rows appear on Home and arrange their order.").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                NavigationLink { PhoneTMDbSettingsView() } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Trailers")
-                        Text("Configure your personal TMDB API to show trailers for your media.").font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
+
             } header: { PhoneSettingsSectionHeader("Home Screen") }
             Section {
                 Picker("Poster Size", selection: Binding(get: { homeCards.presentation.posterSize }, set: { homeCards.setPosterSize($0) })) {
@@ -68,7 +63,12 @@ struct PhoneTMDbSettingsView: View {
             SettingsPageHeader(title: "Trailers", subtitle: "Configure your personal TMDB API to show trailers for your media.", systemImage: "film.stack")
                 .settingsPageHeaderRow()
             Section {
-                LabeledContent("Status", value: busy ? "Connecting…" : store.isConfigured ? "Connected" : "Not configured")
+                LabeledContent("Status") {
+                    HStack(spacing: 7) {
+                        if store.isConfigured && !busy { Circle().fill(.green).frame(width: 8, height: 8).accessibilityHidden(true) }
+                        Text(busy ? "Connecting…" : store.isConfigured ? "Connected" : "Not configured")
+                    }
+                }
                 SecureField("API key or read access token", text: $credential)
                     .autocorrectionDisabled()
                     #if os(iOS)

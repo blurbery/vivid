@@ -1482,6 +1482,7 @@ private struct AudioPane: View {
 
 private struct SubtitlesPane: View {
     let viewModel: PlayerViewModel
+    @State private var showOpenSubtitles = false
     @State private var showAppearanceDialog = false
     @State private var activePicker: HUDPickerPresentation?
     @State private var pickerReturnField: Option?
@@ -1592,6 +1593,9 @@ private struct SubtitlesPane: View {
                     viewModel.disableSubtitles()
                 }
                 .focused($entryTrackFocused)
+                if OpenSubtitlesStore.shared.isConnected, viewModel.openSubtitleContext != nil {
+                    Button("Find on OpenSubtitles") { showOpenSubtitles = true }.padding(.vertical, 12)
+                }
                 ForEach(viewModel.orderedSubtitleTracks) { track in
                     HUDTrackRow(
                         name: track.primaryLabel,
@@ -1632,6 +1636,8 @@ private struct SubtitlesPane: View {
                 }
             }
         }
+        .task { OpenSubtitlesStore.shared.reload() }
+        .sheet(isPresented: $showOpenSubtitles) { OpenSubtitlesSearchView(viewModel: viewModel) }
     }
 
     @ViewBuilder

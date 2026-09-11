@@ -247,6 +247,7 @@ class AppRouter {
     /// Present the player using the platform-appropriate path. iOS/iPadOS use
     /// a full-window cover; macOS pushes into the main navigation content so
     /// playback replaces the detail pane instead of opening in a sheet.
+    @MainActor
     func presentPlayer(
         contentId: String,
         fileId: Int? = nil,
@@ -260,6 +261,7 @@ class AppRouter {
         backdropURL: String? = nil
     ) {
         #if os(iOS) || os(tvOS)
+        MDBListSyncStore.shared.ignoreImport(contentID: contentId)
         DiagTrace.breadcrumb(.essential,
             category: .focus,
             tag: "Navigation",
@@ -307,6 +309,7 @@ class AppRouter {
 
     /// Present offline playback of a completed download. iOS/iPadOS use a
     /// full-window cover; macOS pushes the offline player route.
+    @MainActor
     func presentOfflinePlayer(
         downloadId: String,
         contentId: String,
@@ -314,6 +317,7 @@ class AppRouter {
         resumePosition: Double? = nil
     ) {
         #if os(iOS) || os(tvOS)
+        MDBListSyncStore.shared.ignoreImport(contentID: contentId)
         DiagTrace.breadcrumb(.essential,
             category: .focus,
             tag: "Navigation",

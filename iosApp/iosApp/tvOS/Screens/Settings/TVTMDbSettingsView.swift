@@ -27,7 +27,7 @@ struct TVTMDbSettingsView: View {
                 }.padding(.horizontal, 24).padding(.bottom, 18)
                 TVSettingsSectionHeader("TMDB CONNECTION")
                 TVSettingsGroup {
-                    TVSettingsInfoRow(title: "Status", value: busy ? "Connecting…" : (store.isConfigured ? "Connected" : "Not configured"))
+                    TVSettingsInfoRow(title: "Status", value: busy ? "Connecting…" : (store.isConfigured ? "Connected" : "Not configured"), showsConnectedDot: store.isConfigured && !busy)
                     if let message { TVSettingsFooter(message).padding(.horizontal, 24) }
                     TVSettingsFieldRow(title: "Personal API key", detail: "You can also use your API Read Access Token.") {
                         SecureField("API key or read access token", text: $credential)

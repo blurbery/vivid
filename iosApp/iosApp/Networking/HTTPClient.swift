@@ -10,6 +10,7 @@ struct HTTPRequestIdentity: Equatable, Sendable {
     let serverURL: String
     let profileId: String
     let clientFamily: String
+    var credentialGenerationID: UUID? = nil
 }
 
 enum CapturedHTTPRequestCredentialOwner: Equatable, Sendable {
@@ -231,7 +232,14 @@ actor HTTPClient {
         _ path: String,
         query: [String: String] = [:]
     ) async throws -> T {
-        try await send(method: "GET", path: path, query: query, body: Optional<String>.none)
+        #if os(iOS) || os(tvOS)
+        if T.self == ItemDetail.self || T.self == WatchDetail.self || T.self == EpisodesResponse.self {
+            let auth = await tokenStore.captureOrdinaryRequestAuth()
+            let value: T = try await send(method: "GET", path: path, query: query, body: Optional<String>.none)
+            return await MDBListSyncStore.shared.decorate(value, expected: auth)
+        }
+        #endif
+        return try await send(method: "GET", path: path, query: query, body: Optional<String>.none)
     }
 
     /// Probe a candidate server without mutating global routing state or

@@ -39,16 +39,6 @@ struct TVGeneralSettingsPane: View {
                 .buttonStyle(TVSettingsPaneRowStyle())
                 .focused(detailFocus, equals: .generalHomeSections)
 
-                NavigationLink {
-                    TVTMDbSettingsView()
-                } label: {
-                    HStack {
-                        TVSettingsRowLabel(title: "Trailers", detail: "Configure your personal TMDB API to show trailers for your media.")
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.system(size: 18, weight: .semibold)).opacity(0.55)
-                    }
-                }
-                .buttonStyle(TVSettingsPaneRowStyle())
 
             }
             if preferences.capabilityState != .checking, let message = preferences.capabilityMessage {

@@ -2,6 +2,14 @@ import XCTest
 @testable import Vivid
 
 final class VividCloudPreferenceTests: XCTestCase {
+    func testPluginCredentialScopePreservesAccountAndProfileIsolation() {
+        let scope = VividCloudPreferences.pluginScope(server: "server", user: "user", profile: "profile")
+        XCTAssertEqual(scope, "535ebf95cd5b844ea8e78b0b4ca88838b3b430f6cd2995f37a08f0a083896547")
+        for args in [("other", "user", "profile"), ("server", "other", "profile"), ("server", "user", "other")] {
+            XCTAssertNotEqual(scope, VividCloudPreferences.pluginScope(server: args.0, user: args.1, profile: args.2))
+        }
+    }
+
     func testIndependentEditsAndCredentialDeletionSurviveMerge() {
         let old = Date(timeIntervalSince1970: 10)
         let new = Date(timeIntervalSince1970: 20)
