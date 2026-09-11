@@ -1919,12 +1919,7 @@ struct MainTabView: View {
         }
         #endif
         #if os(iOS)
-        .sheet(
-            item: $router.presentedItemDetail,
-            onDismiss: { router.itemDetailPresentationDidDismiss() }
-        ) { presentation in
-            ItemDetailSheet(presentation: presentation, router: router)
-        }
+        .modifier(ItemDetailPresentationModifier(router: router))
         #endif
         #endif
         // Outside the presentation modifiers so the video player inherits
@@ -2065,7 +2060,7 @@ struct MainTabView: View {
     }
 
     private func presentSearchPage() {
-        PlayerOrientationCoordinator.shared.setPortraitPagePresented(true)
+        PlayerOrientationCoordinator.shared.setPortraitPagePresented(UIDevice.current.userInterfaceIdiom != .pad)
         showsSettingsPage = false
         withAnimation(.easeInOut(duration: 0.34)) {
             showsSearchPage = true
@@ -2098,7 +2093,7 @@ struct MainTabView: View {
 
     private func updateMobileUtilityOrientationPolicy() {
         PlayerOrientationCoordinator.shared.setPortraitPagePresented(
-            showsMobileUtilityPage
+            showsSettingsPage || (showsSearchPage && UIDevice.current.userInterfaceIdiom != .pad)
         )
     }
 
@@ -2547,6 +2542,25 @@ struct MainTabView: View {
 /// Native bottom-presented catalog detail card. The sheet owns a small nested
 /// navigation stack for episode and Cast & Crew hops, while the tab/sidebar
 /// navigation underneath remains exactly where the user left it.
+private struct ItemDetailPresentationModifier: ViewModifier {
+    @Bindable var router: AppRouter
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            content.fullScreenCover(item: $router.presentedItemDetail,
+                                    onDismiss: { router.itemDetailPresentationDidDismiss() }) { presentation in
+                ItemDetailSheet(presentation: presentation, router: router)
+            }
+        } else {
+            content.sheet(item: $router.presentedItemDetail,
+                          onDismiss: { router.itemDetailPresentationDidDismiss() }) { presentation in
+                ItemDetailSheet(presentation: presentation, router: router)
+            }
+        }
+    }
+}
+
 private struct ItemDetailSheet: View {
     let presentation: AppRouter.ItemDetailPresentation
     @Bindable var router: AppRouter

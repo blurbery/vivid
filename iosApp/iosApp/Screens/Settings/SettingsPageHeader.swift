@@ -81,12 +81,27 @@ extension View {
             .vividToolbarColorSchemeDark()
             #if os(iOS)
             .toolbar(.visible, for: .navigationBar)
+            .modifier(TabletSettingsWidth())
             #endif
     }
 }
 #endif
 
 #if os(iOS)
+private struct TabletSettingsWidth: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            content
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
+                .background(Color.black.ignoresSafeArea())
+        } else {
+            content
+        }
+    }
+}
+
 struct MobileGlassNavigationBar: View {
     struct Item: Identifiable { let id: String; let title: String; var icon: String = "house"; var selectedIcon: String? = nil }
     let items: [Item]

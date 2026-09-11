@@ -614,8 +614,13 @@ private struct PhoneSpotlightArtworkSurface: View {
     let topSafeAreaInset: CGFloat
     @State private var tint = Color(white: 0.12)
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    private var usesTabletFade: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     var body: some View {
+        // The dots end 42 points above the spotlight's height + 160 bottom.
+        // Introduce a faint tablet blend by the dots, then soften into the first row.
+        let artworkHeight = height + (usesTabletFade ? 300 : 90)
+        let fadeStart = usesTabletFade ? (height + 25) / artworkHeight : 0.64
         ZStack(alignment: .top) {
             Color.black
             tint
@@ -635,20 +640,21 @@ private struct PhoneSpotlightArtworkSurface: View {
             PhoneDetailParallaxArtwork(
                 url: url,
                 thumbhash: thumbhash,
-                height: height + 90,
+                height: artworkHeight,
                 isEnabled: true,
                 usesSubjectFraming: MediaServerProvider.active == .emby,
                 coordinateSpaceName: "phone-home-spotlight-scroll",
-                fadeStart: 0.64,
+                fadeStart: fadeStart,
                 fadeMiddle: 0.84,
+                fadeEnd: usesTabletFade ? (height + 220) / artworkHeight : 1,
                 smoothFade: true
             )
             Canvas { context, size in
                 for x in stride(from: CGFloat.zero, to: size.width, by: 2) {
                     let fraction = x / max(1, size.width)
                     let wave = sin(fraction * .pi * 2 + 0.4) * 22 + sin(fraction * .pi * 3.1) * 10
-                    let start = height + 25 + wave
-                    let end = size.height - 4 - (wave + 32) * 0.35
+                    let start = usesTabletFade ? height + 140 : height + 25 + wave
+                    let end = usesTabletFade ? size.height : size.height - 4 - (wave + 32) * 0.35
                     let stops = (0...48).map { step -> Gradient.Stop in
                         let t = Double(step) / 48
                         let alpha = t * t * t * (t * (t * 6 - 15) + 10)

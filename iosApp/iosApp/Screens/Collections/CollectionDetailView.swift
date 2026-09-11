@@ -13,6 +13,12 @@ struct CollectionDetailView: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
     private var columns: [GridItem] {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return Array(repeating: GridItem(.flexible(), spacing: 12),
+                         count: AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth, spacing: 12))
+        }
+        #endif
         if usesThreeColumnPhoneLayout {
             return Array(
                 repeating: GridItem(.flexible(), spacing: 12),
@@ -110,6 +116,10 @@ struct CollectionDetailView: View {
 
     private var gridCardWidthOverride: CGFloat? {
         #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth, spacing: 12)
+                / uiCustomization.cardPresentation.posterSize.scale
+        }
         let fittedWidth = AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columns.count,

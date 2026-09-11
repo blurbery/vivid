@@ -168,6 +168,7 @@ struct PhoneDetailParallaxArtwork: View {
     var coordinateSpaceName = PhoneDetailScrollCoordinateSpace.name
     var fadeStart: CGFloat = 0.72
     var fadeMiddle: CGFloat = 0.84
+    var fadeEnd: CGFloat = 1
     var smoothFade = false
     var keepsTopAttached = false
 
@@ -243,7 +244,7 @@ struct PhoneDetailParallaxArtwork: View {
         LinearGradient(
             stops: smoothFade ? (0...64).map { step in
                 let position = CGFloat(step) / 64
-                let progress = min(1, max(0, (position - fadeStart) / (1 - fadeStart)))
+                let progress = min(1, max(0, (position - fadeStart) / max(0.001, fadeEnd - fadeStart)))
                 let eased = progress * progress * progress * (progress * (progress * 6 - 15) + 10)
                 return .init(color: .black.opacity(Double(1 - eased)), location: position)
             } : [
