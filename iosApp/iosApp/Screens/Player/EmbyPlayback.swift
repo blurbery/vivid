@@ -129,6 +129,22 @@ final class EmbyPlayback {
         return (PreparedPlayback(watchDetail:detail,selectedVersion:version,session:session,activeQualityId:quality ?? ApplePlaybackQuality.autoId, nativeAudioStreamIndex:direct ? audioIndex.flatMap(Int32.init(exactly:)) : nil, nativeHLS:!direct, nativeQualityOptions:playable["SupportsTranscoding"] as? Bool == true ? ApplePlaybackQuality.settingsOptions : [ApplePlaybackQuality.auto,ApplePlaybackQuality.original]),playback)
     }
 
+    func ping() async throws {
+        guard !stopped else { return }
+        _ = try await connection.request("POST", "/Sessions/Playing/Ping",
+            query: ["PlaySessionId": playSessionID])
+    }
+
+    /// A preview shorter than a minute never starts a watch-progress session.
+    func stopWithoutProgress() async throws {
+        guard !stopped else { return }
+        if method == "Transcode" {
+            _ = try await connection.request("DELETE", "/Videos/ActiveEncodings",
+                query: ["DeviceId": EmbyConnection.deviceID, "PlaySessionId": playSessionID])
+        }
+        stopped = true
+    }
+
     func report(position: Double, isPaused: Bool, stopping: Bool = false) async throws {
         guard !stopped else { return }
         lastPosition = position.isFinite ? max(0,position) : lastPosition

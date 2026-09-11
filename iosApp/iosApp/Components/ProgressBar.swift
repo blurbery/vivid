@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ResumeProgressBar: View {
     let value: Double
+    var duration: Double? = nil
     #if os(tvOS)
     var height: CGFloat = 8
     var inset: CGFloat = 20
@@ -11,20 +12,29 @@ struct ResumeProgressBar: View {
     #endif
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Color.white.opacity(0.35)
-                Color.white
-                    .frame(width: geometry.size.width * (value.isFinite ? min(max(value, 0), 1) : 0))
+        HStack(spacing: 10) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Color.white.opacity(0.35)
+                    Color.white.frame(width: geometry.size.width * (value.isFinite ? min(max(value, 0), 1) : 0))
+                }.clipShape(Capsule())
             }
-            .clipShape(Capsule())
+            .frame(height: height)
+            if let progress = ResumePresentation(fraction: value, duration: duration) {
+                Text(progress.minutesLabel)
+                    .font(.system(size: height >= 8 ? 20 : (inset <= 8 ? 10 : 12), weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .fixedSize()
+            }
         }
-        .frame(height: height)
         .padding(.horizontal, inset)
         .padding(.bottom, inset)
+        .shadow(color: .black.opacity(0.7), radius: 2, y: 1)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+
 }
 
 /// A thin progress bar (0-1) for showing watch progress.
@@ -45,5 +55,46 @@ struct ProgressBar: View {
             }
         }
         .frame(height: 3)
+    }
+}
+
+struct ResumePresentation {
+    let fraction: Double
+    let minutesRemaining: Int
+    var minutesLabel: String { "\(minutesRemaining)m" }
+
+    init?(position: Double?, duration: Double?) {
+        guard let position, let duration, position.isFinite, duration.isFinite,
+              duration > 0, position > 0, position < duration,
+              duration / 60 < Double(Int.max) else { return nil }
+        fraction = position / duration
+        minutesRemaining = max(1, Int(ceil((duration - position) / 60)))
+    }
+
+    init?(fraction: Double, duration: Double?) {
+        guard let duration else { return nil }
+        self.init(position: fraction * duration, duration: duration)
+    }
+}
+
+struct ResumeButtonProgressLabel: View {
+    let progress: ResumePresentation
+    var body: some View {
+        HStack(spacing: 12) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill().opacity(0.25)
+                    Capsule().fill().frame(width: geometry.size.width * progress.fraction)
+                }
+            }
+            #if os(tvOS)
+            .frame(width: 64, height: 8)
+            #else
+            .frame(width: 54, height: 5)
+            #endif
+            Text(progress.minutesLabel).monospacedDigit().fixedSize()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Resume, \(progress.minutesRemaining) minutes remaining")
     }
 }

@@ -245,6 +245,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
         TVDetailActionRow(
             playTitle: primaryPlayLabel,
             playSubtitle: nil,
+            resumeProgress: ResumePresentation(position: resumePositionSeconds, duration: detail.userData?.durationSeconds),
             onPlay: { onPlay(false) },
             onStartOver: nil,
             inWatchlist: inWatchlist,
@@ -289,6 +290,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
             accessibilityLabel: "More options",
             stabilizesFocusMotion: true
         ) {
+            TVDetailVersionMenu(versions: availableVersions, selectedFileId: selectedVersionFileId, onSelect: onSelectVersion)
             if hasResumeProgress {
                 Button { onPlay(true) } label: {
                     Label("Start Over", systemImage: "backward.end.fill")
@@ -464,7 +466,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
         TVTrailersRail(
             entries: trailerEntries,
             onSelect: onSelectTrailer,
-            focusScale: 1.05
+            focusScale: TVMediaFocus.scale
         )
     }
 

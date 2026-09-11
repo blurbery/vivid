@@ -92,7 +92,7 @@ struct PlaybackStatsPanel: View {
     }
 
     private func column(_ sections: [StatsSection]) -> some View {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 24, verticalSpacing: 10) {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 24, verticalSpacing: usesTVTypography ? 6 : 10) {
             ForEach(sections) { section in
                 rows(for: section)
             }

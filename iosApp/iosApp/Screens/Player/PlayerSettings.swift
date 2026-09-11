@@ -756,13 +756,34 @@ actor VividIntroDBClient {
     }
     struct Segment: Decodable, Sendable {
         let start_ms: Double
-        let end_ms: Double
+        let end_ms: Double?
+
+        init(start_ms: Double, end_ms: Double?) {
+            self.start_ms = start_ms
+            self.end_ms = end_ms
+        }
+
+        init?(range: TimeRange?) {
+            guard let range, range.start.isFinite, range.end.isFinite,
+                  range.start >= 0, range.end > range.start,
+                  (range.start * 1000).isFinite, (range.end * 1000).isFinite else { return nil }
+            self.init(start_ms: range.start * 1000, end_ms: range.end * 1000)
+        }
+
+        private enum CodingKeys: String, CodingKey { case start_ms, end_ms }
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            start_ms = try values.decode(Double.self, forKey: .start_ms)
+            // IntroDB requires an explicit end. Only the fallback adapter
+            // creates an open-ended credits marker.
+            end_ms = try values.decode(Double.self, forKey: .end_ms)
+        }
 
         func range(duration: Double) -> TimeRange? {
             let start = start_ms / 1000
-            let end = end_ms / 1000
+            let end = end_ms.map { $0 / 1000 } ?? duration
             guard start.isFinite, end.isFinite, start >= 0, end > start,
-                  duration > 0, end <= duration + 1, start < duration else { return nil }
+                  duration.isFinite, duration > 0, end <= duration + 1, start < duration else { return nil }
             return TimeRange(start: start, end: min(end, duration))
         }
     }
@@ -772,7 +793,52 @@ actor VividIntroDBClient {
         let episode: Int
         let intro: Segment?
         let outro: Segment?
+        var recap: Segment? = nil
+
+        func fillingMissing(from fallback: Segments?) -> Segments {
+            guard let fallback, fallback.imdb_id == imdb_id,
+                  fallback.season == season, fallback.episode == episode else { return self }
+            return Segments(imdb_id: imdb_id, season: season, episode: episode,
+                            intro: intro ?? fallback.intro, outro: outro ?? fallback.outro,
+                            recap: recap ?? fallback.recap)
+        }
     }
+
+    struct FallbackResponse: Decodable, Sendable {
+        struct Timestamp: Decodable, Sendable {
+            let start_ms: Double?
+            let end_ms: Double?
+
+            func segment(credits: Bool) -> Segment? {
+                guard !credits || start_ms != nil else { return nil }
+                let start = start_ms ?? 0
+                guard start.isFinite, start >= 0 else { return nil }
+                if let end = end_ms {
+                    guard end.isFinite, end > start else { return nil }
+                } else if !credits {
+                    return nil
+                }
+                return Segment(start_ms: start, end_ms: end_ms)
+            }
+        }
+        let intro: [Timestamp]?
+        let credits: [Timestamp]?
+        let recap: [Timestamp]?
+
+        func segments(for episode: Episode) -> Segments {
+            // The current UI supports one prompt per kind. Keep the earliest
+            // valid segment intact, never join ranges across intervening scenes.
+            func first(_ timestamps: [Timestamp]?, credits: Bool) -> Segment? {
+                timestamps?.compactMap { $0.segment(credits: credits) }
+                    .sorted { $0.start_ms < $1.start_ms }.first
+            }
+            return Segments(imdb_id: episode.imdbID, season: episode.season, episode: episode.episode,
+                            intro: first(intro, credits: false), outro: first(credits, credits: true),
+                            recap: first(recap, credits: false))
+        }
+    }
+
+    private var fallbackCache: [Episode: (Date, Segments)] = [:]
     private var cache: [Episode: (Date, Segments)] = [:]
     private let session: URLSession
     init(session: URLSession? = nil) {
@@ -780,6 +846,27 @@ actor VividIntroDBClient {
         configuration.timeoutIntervalForRequest = 8
         configuration.timeoutIntervalForResource = 10
         self.session = session ?? URLSession(configuration: configuration)
+    }
+
+    func fallbackSegments(for episode: Episode) async throws -> Segments? {
+        guard episode.imdbID.range(of: "^tt[0-9]{7,8}$", options: .regularExpression) != nil,
+              episode.season > 0, episode.episode > 0 else { return nil }
+        if let cached = fallbackCache[episode], Date().timeIntervalSince(cached.0) < 3600 {
+            return cached.1
+        }
+        var url = URLComponents(string: "https://api.theintrodb.org/v3/media")!
+        url.queryItems = [URLQueryItem(name: "imdb_id", value: episode.imdbID),
+                         URLQueryItem(name: "season", value: String(episode.season)),
+                         URLQueryItem(name: "episode", value: String(episode.episode))]
+        // Public lookup, with no API key, server credentials or shared cookies.
+        let (data, response) = try await session.data(from: url.url!)
+        try Task.checkCancellation()
+        guard let response = response as? HTTPURLResponse,
+              response.statusCode == 200, data.count < 100_000 else { return nil }
+        let result = try JSONDecoder().decode(FallbackResponse.self, from: data).segments(for: episode)
+        if fallbackCache.count >= 200 { fallbackCache.removeAll() }
+        fallbackCache[episode] = (Date(), result)
+        return result
     }
 
     func segments(for episode: Episode) async throws -> Segments? {
@@ -802,5 +889,29 @@ actor VividIntroDBClient {
         if cache.count >= 200 { cache.removeAll() }
         cache[episode] = (Date(), result)
         return result
+    }
+}
+
+/// Counts elapsed viewing time, never distance jumped along the media timeline.
+struct PlaybackWatchTimeGate {
+    private(set) var watchedSeconds: Double = 0
+    private var previous: (position: Double, uptime: Double)?
+    var isEligible: Bool { watchedSeconds >= 60 }
+
+    mutating func interrupt() { previous = nil }
+
+    mutating func observe(position: Double, uptime: Double, playing: Bool, rate: Double) {
+        guard !isEligible else { return }
+        guard playing, position.isFinite, uptime.isFinite, rate.isFinite, rate > 0 else {
+            interrupt()
+            return
+        }
+        defer { previous = (position, uptime) }
+        guard let previous else { return }
+        let elapsed = uptime - previous.uptime
+        let advanced = position - previous.position
+        guard elapsed > 0, elapsed <= 3, advanced > 0,
+              advanced <= elapsed * rate + 0.5 else { return }
+        watchedSeconds += min(elapsed, advanced / rate)
     }
 }

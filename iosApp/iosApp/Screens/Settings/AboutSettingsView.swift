@@ -42,7 +42,10 @@ struct AboutSettingsView: View {
                 brand
                 TVSettingsGroup {
                     Button { showsLicenses = true } label: {
-                        TVSettingsRowLabel(title: "Open Source Licenses")
+                        TVSettingsRowLabel(title: "Open Source Licences")
+                    }.buttonStyle(TVSettingsPaneRowStyle())
+                    NavigationLink { ServiceAcknowledgementsView() } label: {
+                        TVSettingsRowLabel(title: "Acknowledgements")
                     }.buttonStyle(TVSettingsPaneRowStyle())
                     Button { showsPrivacy = true } label: {
                         TVSettingsRowLabel(title: "Privacy Policy")
@@ -51,10 +54,9 @@ struct AboutSettingsView: View {
                         TVSettingsRowLabel(title: "Contact", detail: VividAbout.email)
                     }.buttonStyle(TVSettingsPaneRowStyle())
                 }
-                attribution
                 VividCopyrightFooter().frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: 1080).padding(48).frame(maxWidth: .infinity)
+            .frame(maxWidth: TVSettingsLayout.contentWidth).padding(24).frame(maxWidth: .infinity)
         }
         .background(Color.black.ignoresSafeArea()).navigationTitle("")
         .fullScreenCover(isPresented: $showsPrivacy) {
@@ -70,7 +72,8 @@ struct AboutSettingsView: View {
                 .settingsPageHeaderRow()
             brand.listRowBackground(Color.clear).listRowSeparator(.hidden)
             Section {
-                NavigationLink("Open Source Licenses") { OpenSourceAcknowledgementsView() }
+                NavigationLink("Open Source Licences") { OpenSourceAcknowledgementsView() }
+                NavigationLink("Acknowledgements") { ServiceAcknowledgementsView() }
                 #if os(iOS)
                 NavigationLink("Privacy Policy") { PhoneVividPrivacyView() }
                 #else
@@ -85,8 +88,6 @@ struct AboutSettingsView: View {
                     }
                 }
             }.listRowBackground(Color.vividSurfaceElevated)
-            attribution.listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
-                .listRowBackground(Color.clear).listRowSeparator(.hidden)
             Text("© 2026 Vivid™").font(.footnote).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
@@ -102,18 +103,7 @@ struct AboutSettingsView: View {
         }.frame(maxWidth: .infinity).padding(.vertical, 20)
     }
 
-    private var attribution: some View {
-        HStack(spacing: 18) {
-            Image("TMDbAttributionLogo").resizable().scaledToFit().frame(width: 86)
-                .accessibilityLabel("The Movie Database")
-            Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
-                .font(.footnote).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(20)
-        .background(Color(white: 0.13), in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.1)))
-    }
+
 }
 
 private struct VividContactSettingsView: View {

@@ -13,6 +13,7 @@ struct PhonePrimaryPillButton: View {
     let title: String
     let action: () -> Void
     var fullWidth: Bool = false
+    var resumeProgress: ResumePresentation? = nil
 
     var body: some View {
         Button {
@@ -24,9 +25,12 @@ struct PhonePrimaryPillButton: View {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 17, weight: .bold))
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .lineLimit(1)
+                if let resumeProgress {
+                    ResumeButtonProgressLabel(progress: resumeProgress)
+                        .font(.system(size: 17, weight: .semibold))
+                } else {
+                    Text(title).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                }
             }
             .foregroundColor(.white)
             .frame(maxWidth: fullWidth ? .infinity : nil)

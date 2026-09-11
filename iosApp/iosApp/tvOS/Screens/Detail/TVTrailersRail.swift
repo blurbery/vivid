@@ -25,7 +25,7 @@ import UIKit
 struct TVTrailersRail: View {
     let entries: [TrailerRailEntry]
     let onSelect: (TrailerRailEntry) -> Void
-    var focusScale: CGFloat = 1.05
+    var focusScale: CGFloat = TVMediaFocus.scale
     /// Non-zero changes explicitly hand focus into the first trailer when a
     /// Series has no cast rail above it.
     var focusRequest = 0

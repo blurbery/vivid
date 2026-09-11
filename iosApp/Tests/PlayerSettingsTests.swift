@@ -3,6 +3,139 @@ import XCTest
 
 @MainActor
 final class PlayerSettingsTests: XCTestCase {
+    func testWatchProgressRequiresSixtySecondsOfViewing() {
+        var gate = PlaybackWatchTimeGate()
+        for second in 0...59 {
+            gate.observe(position: Double(second), uptime: Double(second), playing: true, rate: 1)
+        }
+        XCTAssertFalse(gate.isEligible)
+        gate.observe(position: 60, uptime: 60, playing: true, rate: 1)
+        XCTAssertTrue(gate.isEligible)
+    }
+
+    func testWatchTimeExcludesSeekingPausesBufferingAndBackgroundGaps() {
+        var gate = PlaybackWatchTimeGate()
+        gate.observe(position: 0, uptime: 0, playing: true, rate: 1)
+        gate.observe(position: 30, uptime: 1, playing: true, rate: 1)
+        XCTAssertEqual(gate.watchedSeconds, 0)
+        gate.interrupt()
+        gate.observe(position: 600, uptime: 2, playing: true, rate: 1)
+        gate.observe(position: 601, uptime: 3, playing: true, rate: 1)
+        gate.observe(position: 601, uptime: 4, playing: false, rate: 1)
+        gate.observe(position: 601, uptime: 80, playing: true, rate: 1)
+        gate.observe(position: 900, uptime: 400, playing: true, rate: 1)
+        XCTAssertEqual(gate.watchedSeconds, 1)
+        XCTAssertFalse(gate.isEligible)
+    }
+
+    func testPlaybackSpeedDoesNotShortenOneMinuteThreshold() {
+        for rate in [0.5, 1, 2.0] {
+            var gate = PlaybackWatchTimeGate()
+            for second in 0...59 {
+                gate.observe(position: Double(second) * rate, uptime: Double(second), playing: true, rate: rate)
+            }
+            XCTAssertFalse(gate.isEligible)
+            gate.observe(position: 60 * rate, uptime: 60, playing: true, rate: rate)
+            XCTAssertTrue(gate.isEligible)
+        }
+    }
+
+    func testRecapAndIntroRemainSeparatePrompts() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.duration = 200
+        model.updateIntroDBSegments(.init(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: .init(start_ms: 30_000, end_ms: 40_000), outro: nil,
+            recap: .init(start_ms: 0, end_ms: 20_000)))
+        model.currentTime = 10
+        XCTAssertEqual(model.introSkipLabel, "Skip Recap")
+        XCTAssertEqual(model.activeIntroSkipRange, TimeRange(start: 0, end: 20))
+        model.currentTime = 35
+        XCTAssertEqual(model.introSkipLabel, "Skip Intro")
+        XCTAssertEqual(model.activeIntroSkipRange, TimeRange(start: 30, end: 40))
+        XCTAssertEqual(model.openingSkipRanges.count, 2)
+    }
+
+    func testSelectedFileMarkersSurviveBeforeDurationAndRejectInvalidRanges() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        let intro = VividIntroDBClient.Segment(range: TimeRange(start: 454, end: 467))
+        let credits = VividIntroDBClient.Segment(range: TimeRange(start: 2194, end: 2434))
+        model.updateIntroDBSegments(.init(imdb_id: "", season: 4, episode: 6, intro: intro, outro: credits))
+        XCTAssertNil(model.introRange)
+        model.duration = 2434
+        XCTAssertEqual(model.introRange, TimeRange(start: 454, end: 467))
+        XCTAssertEqual(model.creditsRange, TimeRange(start: 2194, end: 2434))
+        XCTAssertNil(VividIntroDBClient.Segment(range: TimeRange(start: -1, end: 10)))
+        XCTAssertNil(VividIntroDBClient.Segment(range: TimeRange(start: 20, end: 10)))
+        XCTAssertNil(VividIntroDBClient.Segment(range: TimeRange(start: 0, end: .infinity)))
+    }
+
+    func testFallbackPreservesEachPrimaryMarker() {
+        typealias Client = VividIntroDBClient
+        let fallback = Client.Segments(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: .init(start_ms: 0, end_ms: 20_000),
+            outro: .init(start_ms: 90_000, end_ms: nil))
+        let primary = Client.Segments(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: .init(start_ms: 10_000, end_ms: 30_000), outro: nil)
+        let combined = primary.fillingMissing(from: fallback)
+        XCTAssertEqual(combined.intro?.range(duration: 100), TimeRange(start: 10, end: 30))
+        XCTAssertEqual(combined.outro?.range(duration: 100), TimeRange(start: 90, end: 100))
+        let creditsOnly = Client.Segments(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: nil, outro: .init(start_ms: 80_000, end_ms: 95_000))
+        XCTAssertEqual(creditsOnly.fillingMissing(from: fallback).outro?.range(duration: 100),
+                       TimeRange(start: 80, end: 95))
+        XCTAssertNil(primary.fillingMissing(from: nil).outro)
+        let wrongEpisode = Client.Segments(imdb_id: "tt1234567", season: 1, episode: 2,
+            intro: nil, outro: fallback.outro)
+        XCTAssertNil(primary.fillingMissing(from: wrongEpisode).outro)
+    }
+
+    func testFallbackDecodesNullBoundsAndKeepsSeparateSegments() throws {
+        let data = Data(#"{"intro":[{"start_ms":-1,"end_ms":50},{"start_ms":null,"end_ms":20000}],"credits":[{"start_ms":90000,"end_ms":null},{"start_ms":70000,"end_ms":80000}]}"#.utf8)
+        let response = try JSONDecoder().decode(VividIntroDBClient.FallbackResponse.self, from: data)
+        let markers = response.segments(for: .init(imdbID: "tt1234567", season: 1, episode: 1))
+        XCTAssertEqual(markers.intro?.range(duration: 100), TimeRange(start: 0, end: 20))
+        XCTAssertEqual(markers.outro?.range(duration: 100), TimeRange(start: 70, end: 80))
+        let openCredits = VividIntroDBClient.FallbackResponse.Timestamp(start_ms: 90_000, end_ms: nil)
+            .segment(credits: true)
+        XCTAssertNil(openCredits?.range(duration: 0))
+        XCTAssertEqual(openCredits?.range(duration: 100), TimeRange(start: 90, end: 100))
+        XCTAssertNil(VividIntroDBClient.FallbackResponse.Timestamp(start_ms: 1, end_ms: nil).segment(credits: false))
+        XCTAssertNil(VividIntroDBClient.FallbackResponse.Timestamp(start_ms: nil, end_ms: 20).segment(credits: true))
+        let empty = try JSONDecoder().decode(VividIntroDBClient.FallbackResponse.self, from: Data("{}".utf8))
+        XCTAssertNil(empty.segments(for: .init(imdbID: "tt1234567", season: 1, episode: 1)).intro)
+    }
+
+    func testIntroMarkersSurviveLookupBeforeDuration() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.updateIntroDBSegments(.init(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: .init(start_ms: 10_000, end_ms: 50_000),
+            outro: .init(start_ms: 90_000, end_ms: 100_000)))
+        XCTAssertNil(model.introRange)
+        model.duration = 100
+        XCTAssertEqual(model.introRange, TimeRange(start: 10, end: 50))
+        XCTAssertEqual(model.creditsRange, TimeRange(start: 90, end: 100))
+        model.updateIntroDBSegments(nil)
+        model.duration = 200
+        XCTAssertNil(model.introRange)
+        XCTAssertNil(model.creditsRange)
+    }
+
+    func testIntroMarkersDoNotCrossCleanupOrAcceptInvalidDuration() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.duration = .infinity
+        model.updateIntroDBSegments(.init(imdb_id: "tt1234567", season: 1, episode: 1,
+            intro: .init(start_ms: 10_000, end_ms: 50_000), outro: nil))
+        XCTAssertNil(model.introRange)
+        model.cleanup()
+        model.duration = 100
+        XCTAssertNil(model.introRange)
+        XCTAssertNil(VividIntroDBClient.Segment(start_ms: 10_000, end_ms: 150_000).range(duration: 100))
+    }
+
     func testFallbackNeedsEightContinuousSecondsAndRunsOnlyOnce() {
         var gate = PlaybackFallbackGate()
         gate.update(buffering: true, eligible: true, now: 100)

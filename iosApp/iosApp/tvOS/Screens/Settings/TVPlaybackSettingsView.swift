@@ -47,7 +47,7 @@ struct TVPlaybackSettingsPane: View {
             TVSettingsToggleRow(
                 title: "Prefer Lossless Audio",
                 isOn: PlayerSettings.shared.preferLosslessAudio,
-                detail: "Use lossless conversion when needed. Best with a receiver that supports multichannel PCM; some TV or ARC connections may output stereo. Applies to the next video."
+                detail: "Requires multichannel PCM for surround; some TV or ARC connections output stereo. Applies to the next video."
             ) {
                 PlayerSettings.shared.preferLosslessAudio.toggle()
             }
@@ -78,15 +78,15 @@ struct TVPlaybackSettingsPane: View {
             .focused(detailFocus, equals: .playbackNextUpPrompt)
 
             TVSettingsToggleRow(
-                title: "IntroDB",
+                title: "Intro & Credit Skipper",
                 isOn: PlayerSettings.shared.introDBEnabled,
-                detail: "Toggle on for native intro & credit skips."
+                detail: "Show intro and credit skip prompts when timestamps are available."
             ) {
                 PlayerSettings.shared.introDBEnabled.toggle()
             }
 
             TVSettingsToggleRow(
-                title: "Auto-Skip Intros",
+                title: "Auto-Skip Intros & Recaps",
                 isOn: viewModel.skipIntros
             ) {
                 let value = !viewModel.skipIntros

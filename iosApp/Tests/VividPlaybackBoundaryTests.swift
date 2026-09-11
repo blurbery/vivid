@@ -1566,6 +1566,24 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         )
     }
 
+    func testReplacementAndSpeedSettingsPreserveExplicitPause() throws {
+        let controller = try VividPlaybackController()
+        defer { controller.stop() }
+        let spec = try VividLoadSpec(
+            directURL: URL(string: "https://dev.example.test/media.mp4")!,
+            headers: [:], startPosition: 120, audioOnly: false)
+        controller.beginLoad(spec, shouldPlayWhenReady: true)
+        controller.pause()
+        controller.setSpeed(1.5)
+        XCTAssertFalse(controller.shouldPlayWhenReady)
+        controller.prepareForReplacement()
+        XCTAssertFalse(controller.shouldPlayWhenReady)
+        controller.beginLoad(spec, shouldPlayWhenReady: controller.shouldPlayWhenReady)
+        XCTAssertFalse(controller.shouldPlayWhenReady)
+        controller.setSpeed(1)
+        XCTAssertFalse(controller.shouldPlayWhenReady)
+    }
+
     func testTransportIntentCanChangeDuringAnUncommittedLoad() throws {
         let controller = try VividPlaybackController()
         defer { controller.stop() }

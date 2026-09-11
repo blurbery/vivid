@@ -1,6 +1,11 @@
 #if os(tvOS)
 import SwiftUI
 
+enum TVSettingsLayout {
+    static let contentWidth: CGFloat = 812
+    static let pageWidth: CGFloat = contentWidth + 48
+}
+
 enum TVSettingsPalette {
     static let sectionText = Color(white: 0.62)
 }
@@ -57,16 +62,16 @@ struct TVSettingsRowLabel: View {
         "Home Screen": "Choose up to three rows for your discovery spotlight.",
         "Home Sections": "Choose which rows appear on Home and arrange their order.",
         "Poster Size": "Adjust card sizes on Home only.",
-        "Captions": "Choose Title & Year, Title Only or Artwork Only across Search, Home, Movies, Series and For You. Text keeps the same size and left alignment. Episodes show episode details instead of the year.",
-        "Use Profile Default": "Restore Large posters on Home and Title & Year captions across the TV app.",
+        "Captions": "Choose titles and years, titles only, or artwork only.",
+        "Use Profile Default": "Restore Large Home posters and Title & Year captions.",
         "Customise Tab Bar": "Reorder or hide tabs. Changes save automatically.",
         "Quality": "Preferred playback resolution and bitrate.",
         "Audio Language": "Prefer a matching audio track when available.",
-        "Buffer Ahead": BufferAheadMode.explanation,
+        "Buffer Ahead": "Automatic prepares about 40 seconds ahead. Larger buffers use more storage. Applies to the next video.",
         "Auto-Play Next Episode": "Start the following episode automatically.",
         "Show Next Up": "Choose when the next-episode prompt appears.",
-        "Auto-Skip Intros": "Skip introductions found by IntroDB automatically.",
-        "Auto-Skip Credits": "Skip credits found by IntroDB automatically.",
+        "Auto-Skip Intros & Recaps": "Skip intros and recaps automatically when timestamps are available.",
+        "Auto-Skip Credits": "Skip credits automatically when timestamps are available.",
         "Language": "Prefer a matching subtitle track when available.",
         "Behavior": "Choose when subtitles should appear.",
         "Show Forced Subtitles": "Allow forced subtitles for translated dialogue and signs. Not used when Behavior is Off.",
@@ -601,17 +606,17 @@ struct TVPrivacyPolicyOverlay: View {
                 policySection("Information on this Apple TV", "Vivid saves preferences, Home metadata, artwork and playback buffers on this Apple TV. Saved account session tokens and optional Vivid PIN records use Keychain. The saved-account feature does not retain the media-server password you enter.")
                 policySection("Private iCloud account sync", "When iCloud is available, Vivid stores saved server addresses, account and viewing-profile details, login sessions and optional Vivid PIN records in encrypted fields in your private iCloud database so they can be used on your iPhone, iPad and Apple TV. Downloads, artwork, metadata caches, TMDb and Seerr connections, and app preferences are not included in this vault.")
                 policySection("Playback and connected features", "Vivid sends playback position, pause state and watched-progress updates to the selected server. Subtitles and chapters are read from the opened media on this device; Vivid does not request external subtitle files or subtitle translation. If you configure TMDb trailers, your personal API credential is stored in Keychain and sent to TMDb with media identifiers. Opening a trailer connects to YouTube. These services receive normal connection information and apply their own privacy policies.")
-                policySection("Optional IntroDB lookup", "With IntroDB enabled in Playback settings, Vivid sends the series IMDb ID, season and episode number directly to api.introdb.app to retrieve intro and credits timestamps. IntroDB also receives normal connection information such as your IP address. Vivid does not send your media-server credentials. IntroDB is enabled by default, can be turned off in Playback settings, and does not require an API key.")
+                policySection("Optional skip timestamp lookups", "With Intro & Credit Skipper enabled in Playback settings, Vivid can send the series IMDb ID, season and episode number to api.introdb.app and api.theintrodb.org to fill missing intro and credits timestamps. These services also receive normal connection information such as your IP address. Vivid does not send your media-server credentials. The skipper is enabled by default, can be turned off in Playback settings, and does not require an API key.")
                 policySection("Optional Seerr connection", "If you configure Seerr, Vivid stores its URL, username and password in Keychain on this Apple TV to restore your connection. Seerr receives your login, search queries and media requests. Disconnect in Settings → Seerr to remove the saved connection. Your Seerr operator controls records kept on that server.")
                 policySection("Diagnostics", "Vivid does not capture or upload in-app diagnostics reports. Technical logs used for development and troubleshooting stay local.")
                 policySection("Your controls", "You can clear Home metadata and unused artwork from Settings → Metadata. Manual Sign Out clears the current saved-account session while keeping its profile card for later sign-in, and that signed-out state syncs through iCloud. Deleting a saved account on another Vivid device records the deletion in the private vault so this Apple TV cannot add it back; signing in again later can restore it. Removing Vivid clears data stored by this Apple TV but does not delete the private iCloud vault, data on another device or records held by your media server. Contact the server operator about information stored there.")
                 policySection("Contact and changes", "For questions about Vivid, contact admin@vividapp.co. Vivid is in development; this information will be updated as its features and data handling change.")
             }
-            .frame(maxWidth: 1080, alignment: .leading)
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
             .padding(.horizontal, 24).padding(.vertical, 48)
             .frame(maxWidth: .infinity)
         }
-        .frame(width: min(1200, geometry.size.width - 120), height: min(820, geometry.size.height - 100))
+        .frame(width: min(TVSettingsLayout.pageWidth, geometry.size.width - 120), height: min(820, geometry.size.height - 100))
         .background(Color(white: 0.045), in: RoundedRectangle(cornerRadius: 24))
         .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.16), lineWidth: 1) }
         .defaultFocus($focusedSection, "Your accounts and media server")
@@ -676,7 +681,7 @@ struct TVSettingsPickerSheet: View {
                 .ignoresSafeArea()
 
                 pickerCard(
-                    width: min(760, geometry.size.width - 240),
+                    width: min(TVSettingsLayout.pageWidth, geometry.size.width - 240),
                     height: min(
                         max(preferredCardHeight, 390),
                         min(760, geometry.size.height - 160)

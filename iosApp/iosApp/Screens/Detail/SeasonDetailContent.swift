@@ -107,7 +107,8 @@ struct SeasonDetailContent<BelowOverview: View>: View {
                 icon: "play.fill",
                 title: nextUpEpisode.map(playButtonLabel) ?? "Play",
                 action: handlePrimaryPlayTap,
-                fullWidth: true
+                fullWidth: true,
+                resumeProgress: ResumePresentation(position: nextUpResumePositionSeconds, duration: nextUpEpisode?.userData?.durationSeconds)
             )
             labeledActionRow
             if nextUpEpisode != nil, let effectiveNextUpVersion {

@@ -33,6 +33,9 @@ struct HomeView: View {
     /// Feeds the glass strip behind the floating header as rows scroll under it.
     @State private var chromeScrollState = PageChromeScrollState()
     #if os(iOS)
+    @State private var pullRefreshArmed = false
+    @State private var pullRefreshRequest = 0
+    @State private var homeScrollPhase: ScrollPhase = .idle
     /// Breathing room between the status-bar safe area and the floating
     /// header. Uses the same value as the Libraries and For You top chrome so
     /// the shared action cluster sits at one height on every root page.
@@ -182,10 +185,17 @@ struct HomeView: View {
             #endif
 
             if isRefreshing {
+                #if os(iOS)
+                RefreshStatusPill(compactGlass: true)
+                    .padding(.top, 64)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(2)
+                #else
                 RefreshStatusPill()
                     .padding(.top, 64)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(2)
+                #endif
             } else if ConnectionMonitor.shared.isOffline, !viewModel.sections.isEmpty {
                 // Cached sections are painted but the server can't be
                 // reached — say so instead of silently showing stale data.
@@ -211,9 +221,11 @@ struct HomeView: View {
             TVHomeSpotlightPreferences.shared.initializeIfNeeded(from: viewModel.regularSections)
             #endif
         }
+        #if !os(iOS)
         .refreshable {
             await refreshHome()
         }
+        #endif
         #endif
         }
         #if os(iOS) || os(tvOS)
@@ -269,7 +281,7 @@ struct HomeView: View {
                     if displayedSections.isEmpty || TVHomeSpotlightPreferences.shared.slides(from: viewModel.regularSections).isEmpty {
                         Color.clear.frame(height: geometry.safeAreaInsets.top + 16)
                     }
-                    PhoneDiscoverySpotlight(sections: displayedSections.isEmpty ? [] : viewModel.regularSections, height: min(650, max(420, geometry.size.height * 0.68)) - geometry.safeAreaInsets.top) { item in
+                    PhoneDiscoverySpotlight(sections: displayedSections.isEmpty ? [] : viewModel.regularSections, height: min(650, max(420, geometry.size.height * 0.68)) - geometry.safeAreaInsets.top, topSafeAreaInset: geometry.safeAreaInsets.top) { item in
                         navigateToDetail(item.type == "episode" ? (item.seriesId ?? item.contentId) : item.contentId, item)
                     }
                     #endif
@@ -286,6 +298,35 @@ struct HomeView: View {
             }
             .reportsPageChromeScroll(to: chromeScrollState)
             #if os(iOS)
+            // Keep UIKit's refresh control out of this edge-to-edge hero:
+            // its active inset clips the poster above the status bar.
+            .onScrollGeometryChange(for: Bool.self) { scroll in
+                -(scroll.contentOffset.y + scroll.contentInsets.top) >= 90
+            } action: { _, beyondThreshold in
+                guard homeScrollPhase == .interacting, !isRefreshing else { return }
+                pullRefreshArmed = beyondThreshold
+            }
+            .onScrollPhaseChange { oldPhase, newPhase in
+                homeScrollPhase = newPhase
+                if newPhase == .tracking { pullRefreshArmed = false }
+                guard oldPhase == .interacting,
+                      newPhase != .interacting, newPhase != .tracking else { return }
+                let shouldRefresh = pullRefreshArmed && !isRefreshing
+                pullRefreshArmed = false
+                if shouldRefresh { pullRefreshRequest += 1 }
+            }
+            .sensoryFeedback(.impact(weight: .light), trigger: pullRefreshArmed) { _, armed in
+                armed
+            }
+            .sensoryFeedback(.impact(weight: .light), trigger: pullRefreshRequest)
+            .task(id: pullRefreshRequest) {
+                guard pullRefreshRequest > 0 else { return }
+                await refreshHome()
+            }
+            .accessibilityAction(named: Text("Refresh")) {
+                guard !isRefreshing else { return }
+                pullRefreshRequest += 1
+            }
             .coordinateSpace(name: "phone-home-spotlight-scroll")
             .ignoresSafeArea(.container, edges: .top)
             #endif
@@ -293,6 +334,9 @@ struct HomeView: View {
             .vividScrollEdgeEffect()
             #endif
         }
+        #if os(iOS)
+        .coordinateSpace(name: "phone-home-fixed-viewport")
+        #endif
     }
     #endif
 
@@ -432,6 +476,7 @@ struct HomeView: View {
 private struct PhoneDiscoverySpotlight: View {
     let sections: [ResolvedSection]
     let height: CGFloat
+    let topSafeAreaInset: CGFloat
     let onSelect: (SectionItem) -> Void
     @State private var preferences = TVHomeSpotlightPreferences.shared
     @State private var selection = 0
@@ -521,7 +566,8 @@ private struct PhoneDiscoverySpotlight: View {
                 PhoneSpotlightArtworkSurface(
                     url: item.backdropUrl ?? item.posterUrl,
                     thumbhash: item.backdropThumbhash,
-                    height: height
+                    height: height,
+                    topSafeAreaInset: topSafeAreaInset
                 )
                 .id(item.backdropUrl ?? item.contentId)
                 .transition(.opacity)
@@ -565,6 +611,7 @@ private struct PhoneSpotlightArtworkSurface: View {
     let url: String?
     let thumbhash: String?
     let height: CGFloat
+    let topSafeAreaInset: CGFloat
     @State private var tint = Color(white: 0.12)
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -618,6 +665,18 @@ private struct PhoneSpotlightArtworkSurface: View {
         }
         .frame(height: height + 360)
         .clipped()
+        .visualEffect { content, proxy in
+            // Stretch the complete artwork surface, including its fade, while
+            // cancelling the scroll view's pull-down translation. Uniform
+            // scaling zooms the poster without changing its aspect ratio.
+            // The refresh control changes the scroll view's inset. Measure
+            // against its fixed parent, including the ignored top safe area.
+            let pull = max(0, proxy.frame(in: .named("phone-home-fixed-viewport")).minY + topSafeAreaInset)
+            let scale = 1 + pull / max(proxy.size.height, 1)
+            return content
+                .scaleEffect(scale, anchor: .top)
+                .offset(y: -pull)
+        }
         .task(id: url) {
             guard let url, let imageURL = URL(string: url) else { return }
             tint = HeroBackdropPalette.cachedTint(for: imageURL) ?? Color(white: 0.12)

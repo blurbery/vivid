@@ -1,6 +1,8 @@
 #if os(tvOS)
 import SwiftUI
 
+enum TVMediaFocus { static let scale: CGFloat = 1.05 }
+
 struct TVWatchedBadge: View {
     var body: some View {
         Image(systemName: "checkmark")
@@ -13,8 +15,15 @@ struct TVWatchedBadge: View {
     }
 }
 
+/// The enclosing artwork owns the focus edge and transform, including its progress layer.
+struct TVArtworkContentButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.focusEffectDisabled()
+    }
+}
+
 struct TVCardFocusButtonStyle: ButtonStyle {
-    var scale: CGFloat = 1.05
+    var scale: CGFloat = TVMediaFocus.scale
     var focusedShadowOpacity: Double = 0.45
     var focusedShadowRadius: CGFloat = 18
     var focusedShadowY: CGFloat = 8

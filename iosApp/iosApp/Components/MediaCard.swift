@@ -56,7 +56,7 @@ func episodeRailAccessibilityLabel(
 }
 
 /// A poster-style media card with title, year, and optional progress.
-/// On tvOS the card uses `.buttonStyle(.card)` which gives proper focus lift,
+/// On tvOS the card uses `.buttonStyle(TVCardFocusButtonStyle())` which gives proper focus lift,
 /// parallax, and title reveal — no manual focus effects required.
 struct MediaCard: View {
     let title: String
@@ -68,6 +68,7 @@ struct MediaCard: View {
     /// name. Always one line; see `EpisodeCardCaption`.
     var subtitle: String? = nil
     var progress: Double? = nil
+    var progressDuration: Double? = nil
     var userState: MediaItemUserState? = nil
     /// Data for the optional overlay badges (resolution, ratings, …).
     /// `nil` skips overlay rendering on this card — callers that
@@ -377,7 +378,7 @@ struct MediaCard: View {
             if let progress, progress > 0 {
                 VStack {
                     Spacer()
-                    ProgressBar(value: progress)
+                    ResumeProgressBar(value: progress, duration: progressDuration, height: 4, inset: 8)
                 }
                 .frame(width: cardWidth, height: cardHeight)
                 .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
@@ -574,7 +575,7 @@ private struct FocusableMediaCard<Content: View>: View {
                     cornerRadius: VividTheme.cornerRadius
                 )
         }
-        .buttonStyle(.card)
+        .buttonStyle(TVCardFocusButtonStyle())
         .applyCardFocus(
             focusedItemId,
             itemId: itemId,

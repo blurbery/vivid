@@ -222,7 +222,8 @@ struct TVPlayerScrubber: View {
 
     @ViewBuilder
     private func introRegion(barWidth: CGFloat) -> some View {
-        if let introRange = viewModel.introRange, viewModel.duration > 0 {
+        ForEach(Array(viewModel.openingSkipRanges.enumerated()), id: \.offset) { _, introRange in
+            if viewModel.duration > 0 {
             let start = min(max(introRange.start / viewModel.duration, 0), 1)
             let end = min(max(introRange.end / viewModel.duration, 0), 1)
             if end > start {
@@ -231,6 +232,7 @@ struct TVPlayerScrubber: View {
                     .frame(width: barWidth * (end - start), height: trackHeight)
                     .offset(x: barWidth * start)
             }
+        }
         }
     }
 

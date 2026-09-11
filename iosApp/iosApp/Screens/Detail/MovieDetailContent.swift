@@ -173,7 +173,8 @@ struct MovieDetailContent<BelowOverview: View>: View {
                 icon: "play.fill",
                 title: primaryPlayLabel,
                 action: handlePlayTap,
-                fullWidth: true
+                fullWidth: true,
+                resumeProgress: ResumePresentation(position: resumePositionSeconds, duration: detail.userData?.durationSeconds)
             )
 
             PhoneLabeledActionRow {

@@ -4,6 +4,14 @@ import Combine
 import Foundation
 import VividKit
 
+enum VividPlaybackEngineIdentity {
+    #if os(tvOS)
+    static let name = "AetherEngine"
+    #else
+    static let name = "VividKit"
+    #endif
+}
+
 enum PlaybackState: Equatable { case idle, loading, playing, paused, seeking, ended, error(String) }
 enum PlaybackPhase: Equatable { case idle, loading, playing, paused, seeking, rebuffering, stalled(reconnecting: Bool), ended, error(String) }
 enum VideoRoute: String {

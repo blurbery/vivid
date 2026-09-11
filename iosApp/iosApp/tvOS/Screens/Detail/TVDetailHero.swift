@@ -877,7 +877,8 @@ struct TVPlaybackSelectionSummaryView: View {
                 placeholderWidth: 77
             )
         }
-        .frame(width: 616, height: 40, alignment: .leading)
+        // Match the 280-point Play button, four 76-point controls and four 18-point gaps.
+        .frame(width: 280 + 4 * 76 + 4 * 18, height: 40, alignment: .leading)
     }
 
     private func summaryItem(
@@ -896,7 +897,7 @@ struct TVPlaybackSelectionSummaryView: View {
             Group {
                 if let value {
                     Text(value)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(Color.white.opacity(0.82))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -912,19 +913,10 @@ struct TVPlaybackSelectionSummaryView: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(.horizontal, 12)
-        .frame(width: 200, height: 40, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .frame(height: 40, alignment: .leading)
         .background(Color.white.opacity(0.10),
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [.white.opacity(0.4), .white.opacity(0.12), .white.opacity(0.25)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label.capitalized), \(value ?? "loading")")
     }

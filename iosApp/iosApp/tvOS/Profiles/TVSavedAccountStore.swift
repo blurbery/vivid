@@ -510,11 +510,9 @@ final class TVSavedAccountStore {
     fileprivate func applyCloudVault(_ vault: VividCloudAccountVault) async -> VividCloudApplyResult {
         let previousActiveID = activeID
         var result = VividCloudApplyResult()
-        var didChange = false
 
         for identity in vault.tombstones.keys {
             let matching = accounts.filter { VividCloudAccountIdentity.key(for: $0) == identity }
-            if !matching.isEmpty { didChange = true }
             for account in matching {
                 _ = keychain.delete(sessionKey(account.id))
                 _ = keychain.delete(pinKey(account.id))
@@ -533,7 +531,6 @@ final class TVSavedAccountStore {
             let localID = existingIndex.map { accounts[$0].id } ?? envelope.account.id
             let localDate = modificationDates[localID] ?? .distantPast
             guard envelope.updatedAt > localDate || existingIndex == nil else { continue }
-            didChange = true
 
             var imported = envelope.account
             imported = TVSavedAccount(
@@ -575,7 +572,13 @@ final class TVSavedAccountStore {
                 .id
         }
         persist()
-        if didChange { contentRevision = UUID() }
+        // iOS keys its entire routed screen tree by this revision. Importing
+        // saved-account metadata must not discard an open Settings page or
+        // playback session. Only a changed active account or invalidated
+        // authority requires rebuilding that tree.
+        if activeID != previousActiveID || result.activeAccountDeleted || result.activeSessionInvalidated {
+            contentRevision = UUID()
+        }
 
         if result.activeAccountDeleted || result.activeSessionInvalidated {
             _ = await AuthService.shared.signOut()

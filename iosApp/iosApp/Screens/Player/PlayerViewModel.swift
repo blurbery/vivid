@@ -269,7 +269,11 @@ class PlayerViewModel {
 
     var isPlaying = false
     var currentTime: Double = 0
-    var duration: Double = 0
+    var duration: Double = 0 {
+        didSet {
+            if duration != oldValue { applyLoadedIntroDBSegments() }
+        }
+    }
     var title: String = ""
     var isLoading = true
     var isBuffering = false
@@ -295,6 +299,7 @@ class PlayerViewModel {
     /// language group to the top of the displayed track lists.
     private var subtitleOrderingLanguage: String?
     var chapters: [PlayerChapterInfo] = []
+    var recapRange: TimeRange?
     var introRange: TimeRange?
     var creditsRange: TimeRange?
     var introAutoSkipCountdownSeconds: Int?
@@ -377,8 +382,17 @@ class PlayerViewModel {
     /// on an indirection flag. Driven by `openHUD()` / `closeHUD()`.
     var isHUDPresented = false
 
+    var isRecapSkipActive: Bool {
+        guard let recapRange else { return false }
+        return currentTime >= recapRange.start && currentTime < recapRange.end
+    }
+
+    var introSkipLabel: String { isRecapSkipActive ? "Skip Recap" : "Skip Intro" }
+    var activeIntroSkipRange: TimeRange? { isRecapSkipActive ? recapRange : introRange }
+    var openingSkipRanges: [TimeRange] { [recapRange, introRange].compactMap { $0 } }
+
     var showIntroSkip: Bool {
-        guard settings.introDBEnabled, let introRange else { return false }
+        guard settings.introDBEnabled, let introRange = activeIntroSkipRange else { return false }
         return currentTime >= introRange.start && currentTime < introRange.end
     }
 
@@ -438,7 +452,7 @@ class PlayerViewModel {
     }
     var activeRouteLabel: String {
         guard let delivery = vividPlaybackController.activeSpec?.delivery else {
-            return "VividEngine"
+            return VividPlaybackEngineIdentity.name
         }
         switch delivery {
         case PlaybackProtocolV3.PlanDelivery.originalHTTP: return "Original"
@@ -450,12 +464,12 @@ class PlayerViewModel {
     }
     /// One-line, user-facing Vivid route description for the player HUD.
     var playbackRouteDisplay: String {
-        "VividEngine · \(activeRouteLabel)"
+        "\(VividPlaybackEngineIdentity.name) · \(activeRouteLabel)"
     }
     var routeStatusRows: [PlayerRouteStatusRow] {
         [
             PlayerRouteStatusRow(label: "Playback", value: activeRouteLabel),
-            PlayerRouteStatusRow(label: "Engine", value: "VividEngine"),
+            PlayerRouteStatusRow(label: "Engine", value: VividPlaybackEngineIdentity.name),
             PlayerRouteStatusRow(
                 label: "Route",
                 value: vividPlaybackController.engine.videoRoute.rawValue
@@ -548,6 +562,7 @@ class PlayerViewModel {
     /// is live so that event-delivery race cannot hide intro/credits prompts
     /// for the current Vivid load.
     private var introDBLookupTask: Task<Void, Never>?
+    private var loadedIntroDBSegments: VividIntroDBClient.Segments?
 
 
     private var cleanupCompletionTask: Task<Void, Never>?
@@ -817,6 +832,7 @@ class PlayerViewModel {
     }
 
     private static let autoplayStartSessionTimeout: TimeInterval = 15
+    private var watchTimeGate = PlaybackWatchTimeGate()
     private var lastLoadRequest: LoadRequest?
     private static let nextUpCountdownDefaultSeconds = 10
     private static let nextUpHUDCountdownThresholdSeconds: Double = 100
@@ -987,9 +1003,10 @@ class PlayerViewModel {
         let position = currentTime
         guard position.isFinite, position >= 0 else { return }
         let isPaused = !isPlaying
+        let eligible = watchTimeGate.isEligible
         Self.logger.debug("Flushing playback progress (\(reason, privacy: .public))")
         Task { [sessionBridge] in
-            _ = await sessionBridge.reportProgress(position: position, isPaused: isPaused)
+            _ = await sessionBridge.reportProgress(position: position, isPaused: isPaused, eligible: eligible)
         }
     }
 
@@ -998,6 +1015,7 @@ class PlayerViewModel {
         guard !isDisposed, scopedEvent.epoch == activeVividLoadEpoch else { return }
         switch scopedEvent.event {
         case .state(let state):
+            if state != .playing { watchTimeGate.interrupt() }
             switch state {
             case .playing:
                 isPlaying = true
@@ -1031,6 +1049,7 @@ class PlayerViewModel {
             switch phase {
             case .loading, .rebuffering, .stalled:
                 isLoading = true
+                watchTimeGate.interrupt()
             case .playing, .paused, .seeking, .ended, .idle, .error:
                 isLoading = false
             }
@@ -1058,6 +1077,9 @@ class PlayerViewModel {
                 seekFilterTimeoutTask?.cancel()
                 seekFilterTimeoutTask = nil
             }
+            watchTimeGate.observe(position: movieTime, uptime: ProcessInfo.processInfo.systemUptime,
+                                  playing: isPlaying && !isLoading && !isBuffering && seekTargetTime == nil,
+                                  rate: settings.playbackSpeed)
             currentTime = movieTime
             updateNextUpPresentation(for: movieTime)
             autoSkipIntroIfNeeded(at: movieTime)
@@ -1079,6 +1101,7 @@ class PlayerViewModel {
             }
         case .buffering(let buffering):
             isBuffering = buffering
+            if buffering { watchTimeGate.interrupt() }
             refreshPlaybackStats(force: true)
         case .subtitleLoading(let loading):
             isLoadingSubtitles = loading
@@ -1469,7 +1492,7 @@ class PlayerViewModel {
               let sessionId = activePlaybackSessionId, sessionId == spec.sessionID else { return nil }
         do {
             try await sessionBridge.refreshPlaybackAuthentication(sessionId: sessionId,
-                position: currentTime.isFinite ? max(0, currentTime) : 0,
+                position: watchTimeGate.isEligible && currentTime.isFinite ? max(0, currentTime) : 0,
                 isPaused: !vividPlaybackController.shouldPlayWhenReady)
             try requireCurrentStreamLoad(generation)
             guard vividPlaybackController.activeLoadEpoch == epoch,
@@ -1612,7 +1635,7 @@ class PlayerViewModel {
                     // best-effort; the header comparison below is authoritative.
                     try await self.sessionBridge.refreshPlaybackAuthentication(
                         sessionId: sessionId,
-                        position: resumePosition,
+                        position: self.watchTimeGate.isEligible ? resumePosition : 0,
                         isPaused: !self.vividPlaybackController.shouldPlayWhenReady
                     )
                 }
@@ -2735,6 +2758,7 @@ class PlayerViewModel {
     /// Series and synthetic season ids are included because tvOS keeps the
     /// combined Series page resident while its episode player is pushed.
     private func recordCurrentPlaybackMutation(markedCompleted: Bool) {
+        guard watchTimeGate.isEligible else { return }
         let currentContentId = currentWatchDetail?.contentId ?? lastLoadRequest?.contentId
         if let currentContentId, !currentContentId.isEmpty {
             contentIdsNeedingDetailRefresh.insert(currentContentId)
@@ -3410,6 +3434,7 @@ class PlayerViewModel {
                currentTime >= 0 {
                 let priorNaturalEndProgressTask = naturalEndProgressTask
                 let endPosition = currentTime
+                let eligible = watchTimeGate.isEligible
                 #if os(iOS) || os(tvOS)
                 let refreshHome = refreshHomeAfterPlaybackWrite
                 #endif
@@ -3417,7 +3442,7 @@ class PlayerViewModel {
                     await priorNaturalEndProgressTask?.value
                     let result = await sessionBridge.reportProgress(
                         position: endPosition,
-                        isPaused: true
+                        isPaused: true, eligible: eligible
                     )
                     #if os(iOS) || os(tvOS)
                     if result == .success { refreshHome?() }
@@ -3563,7 +3588,9 @@ class PlayerViewModel {
         audioTracks = []
         subtitleTracks = []
         chapters = []
+        loadedIntroDBSegments = nil
         introRange = nil
+        recapRange = nil
         creditsRange = nil
         introDBLookupTask?.cancel()
         introDBLookupTask = nil
@@ -3751,6 +3778,9 @@ class PlayerViewModel {
             promptSeconds: settings.nextUpPromptSeconds
         )
         recordCurrentPlaybackMutation(markedCompleted: currentItemCompleted)
+        let priorProgressEligible = watchTimeGate.isEligible
+        if lastLoadRequest?.contentId != request.contentId { watchTimeGate = PlaybackWatchTimeGate() }
+        watchTimeGate.interrupt()
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
         qualityFallbackTask?.cancel()
@@ -3826,9 +3856,9 @@ class PlayerViewModel {
             await pendingNaturalEndProgressTask?.value
             if let snapshotPosition, snapshotPosition.isFinite, snapshotPosition >= 0 {
                 if shouldFinalizeCurrentSession {
-                    await self.sessionBridge.stopSession(position: snapshotPosition, isPaused: true)
+                    await self.sessionBridge.stopSession(position: snapshotPosition, isPaused: true, eligible: priorProgressEligible)
                 } else {
-                    await self.sessionBridge.reportProgress(position: snapshotPosition, isPaused: true)
+                    await self.sessionBridge.reportProgress(position: snapshotPosition, isPaused: true, eligible: priorProgressEligible)
                 }
                 #if os(iOS) || os(tvOS)
                 self.refreshHomeAfterPlaybackWrite?()
@@ -3991,7 +4021,8 @@ class PlayerViewModel {
                     prepared: prepared,
                     streamRequest: streamRequest,
                     expectedStreamLoadGeneration: currentStreamLoadGeneration,
-                    shouldPlayWhenReady: true
+                    shouldPlayWhenReady: origin == .recovery
+                        ? self.vividPlaybackController.shouldPlayWhenReady : true
                 )
                 await self.sessionBridge.reportNativePlaybackStarted(prepared)
                 if prepared.protocolV3 != nil {
@@ -4052,7 +4083,7 @@ class PlayerViewModel {
                 guard !Task.isCancelled, !self.isDisposed else { return }
                 await self.sessionBridge.stopSession(
                     position: self.currentTime,
-                    isPaused: true
+                    isPaused: true, eligible: self.watchTimeGate.isEligible
                 )
                 Self.logger.error(
                     "Load failed: \(MediaLogRedactor.sanitize(error), privacy: .public)"
@@ -4262,12 +4293,14 @@ class PlayerViewModel {
         staleSessionRecoveryTask?.cancel()
         staleSessionRecoveryTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
+            if self.watchTimeGate.isEligible {
             _ = await self.sessionBridge.syncProgress(
                 contentId: contentId,
                 position: resumePosition,
                 duration: durationHint,
                 forceOverwrite: true
             )
+            }
             guard !Task.isCancelled, !self.isDisposed else { return }
 
             self.progressTask?.cancel()
@@ -4625,7 +4658,7 @@ class PlayerViewModel {
     }
 
     func skipIntro() {
-        guard let introRange else { return }
+        guard let introRange = activeIntroSkipRange else { return }
         if let key = currentIntroSkipKey(for: introRange) {
             autoSkippedIntroKey = key
         }
@@ -4642,7 +4675,7 @@ class PlayerViewModel {
     }
 
     func cancelIntroAutoSkip() {
-        if let introRange,
+        if let introRange = activeIntroSkipRange,
            let key = currentIntroSkipKey(for: introRange) {
             autoSkipIntroCancelledKey = key
             Self.logger.info("[CMP-MARKERS] cancelled auto-skip intro key=\(key, privacy: .public)")
@@ -4801,6 +4834,7 @@ class PlayerViewModel {
     /// the prior seek.
     @discardableResult
     private func commitSeek(to target: Double, source: String = "unspecified") -> Bool {
+        watchTimeGate.interrupt()
         let clampedTarget = duration > 0 ? min(max(0, target), duration) : max(0, target)
         let requiresReplan: Bool = {
             guard let timeline = vividPlaybackController.activeSpec?.timeline else { return true }
@@ -4934,9 +4968,16 @@ class PlayerViewModel {
 
     private func loadVividMarkers(for detail: WatchDetail) {
         introDBLookupTask?.cancel()
-        applyMarkerRanges(intro: nil, credits: nil)
-        guard VividSkipSource.isEnabled, offlinePlaybackContext == nil,
-              detail.type == "episode", let seriesID = detail.seriesId,
+        updateIntroDBSegments(nil)
+        guard VividSkipSource.isEnabled, offlinePlaybackContext == nil else { return }
+        // Use only the selected file's markers, never another edition's
+        // item-level timestamps. Keep them visible if a public lookup fails.
+        let fileMarkers = VividIntroDBClient.Segments(
+            imdb_id: "", season: detail.seasonNumber ?? 0, episode: detail.episodeNumber ?? 0,
+            intro: .init(range: currentSelectedVersion?.intro),
+            outro: .init(range: currentSelectedVersion?.credits))
+        updateIntroDBSegments(fileMarkers)
+        guard detail.type == "episode", let seriesID = detail.seriesId,
               let season = detail.seasonNumber, let episode = detail.episodeNumber else { return }
         let sessionID = activePlaybackSessionId
         let fileID = currentSelectedVersion?.fileId
@@ -4948,17 +4989,47 @@ class PlayerViewModel {
                 try Task.checkCancellation()
                 guard let imdb = series.imdbId, VividSkipSource.isEnabled else { return }
                 let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode)
-                let markers = try await VividIntroDBClient.shared.segments(for: identity)
+                let fetched = try? await VividIntroDBClient.shared.segments(for: identity)
+                let markers = VividIntroDBClient.Segments(
+                    imdb_id: imdb, season: season, episode: episode,
+                    intro: fileMarkers.intro, outro: fileMarkers.outro
+                ).fillingMissing(from: fetched)
                 guard let self, !Task.isCancelled, VividSkipSource.isEnabled,
                       self.activePlaybackSessionId == sessionID,
                       self.currentWatchDetail?.contentId == detail.contentId,
                       self.currentSelectedVersion?.fileId == fileID else { return }
-                self.applyMarkerRanges(intro: markers?.intro?.range(duration: self.duration),
-                                       credits: markers?.outro?.range(duration: self.duration))
+                self.updateIntroDBSegments(markers)
+                // Publish the primary result immediately. A slow or failed
+                // fallback must never delay an existing intro or credits prompt.
+                guard markers.intro == nil || markers.outro == nil || markers.recap == nil else { return }
+                let fallback = try? await VividIntroDBClient.shared.fallbackSegments(for: identity)
+                guard !Task.isCancelled, VividSkipSource.isEnabled,
+                      self.activePlaybackSessionId == sessionID,
+                      self.currentWatchDetail?.contentId == detail.contentId,
+                      self.currentSelectedVersion?.fileId == fileID else { return }
+                guard let fallback, fallback.intro != nil || fallback.outro != nil || fallback.recap != nil else { return }
+                let combined = markers.fillingMissing(from: fallback)
+                self.updateIntroDBSegments(combined)
             } catch {
                 // Missing timestamps or temporary service failure never block playback.
             }
         }
+    }
+
+    // Keep the raw response until the engine supplies a finite duration. A
+    // fast/cached lookup can finish before probing, especially on native HLS.
+    func updateIntroDBSegments(_ segments: VividIntroDBClient.Segments?) {
+        loadedIntroDBSegments = segments
+        recapRange = segments?.recap?.range(duration: duration)
+        applyMarkerRanges(intro: segments?.intro?.range(duration: duration),
+                          credits: segments?.outro?.range(duration: duration))
+    }
+
+    private func applyLoadedIntroDBSegments() {
+        guard let segments = loadedIntroDBSegments else { return }
+        recapRange = segments.recap?.range(duration: duration)
+        applyMarkerRanges(intro: segments.intro?.range(duration: duration),
+                          credits: segments.outro?.range(duration: duration))
     }
 
     private func validTimeRange(_ range: TimeRange?) -> TimeRange? {
@@ -4976,7 +5047,7 @@ class PlayerViewModel {
         guard settings.introDBEnabled, settings.autoSkipIntro,
               !isLoading,
               !hasReachedEndOfFile,
-              let introRange,
+              let introRange = activeIntroSkipRange,
               let key = currentIntroSkipKey(for: introRange) else {
             cancelPendingIntroAutoSkip()
             return
@@ -5546,7 +5617,9 @@ class PlayerViewModel {
         currentWatchDetail = nil
         currentSelectedVersion = nil
         playbackStats = .empty
+        loadedIntroDBSegments = nil
         introRange = nil
+        recapRange = nil
         creditsRange = nil
         introDBLookupTask?.cancel()
         introDBLookupTask = nil
@@ -5633,6 +5706,7 @@ class PlayerViewModel {
         // playback never latches watched from that surface, while offline
         // playback does.
         let finalPosition = completionProgressPositionForCurrentItem()
+        let finalProgressEligible = watchTimeGate.isEligible
         let playbackMutationContentIds = contentIdsNeedingDetailRefresh
         let completedPlaybackContentIds = completedContentIdsNeedingDetailAdvance
         #if os(iOS) || os(tvOS)
@@ -5641,8 +5715,6 @@ class PlayerViewModel {
         let scrubPreviewShutdown = disposeVividPlayback()
 
         cleanupCompletionTask = Task {
-            await scrubPreviewShutdown?.value
-            await realtimeClient.unbind()
             await pendingNaturalEndProgressTask?.value
             if stopServerSessionOnTeardown {
                 // Commit the resume point first. Session event bookkeeping and
@@ -5651,7 +5723,7 @@ class PlayerViewModel {
                 // progress visible after the player has closed.
                 let progressResult = await sessionBridge.reportProgress(
                     position: finalPosition,
-                    isPaused: true
+                    isPaused: true, eligible: finalProgressEligible
                 )
                 #if os(iOS) || os(tvOS)
                 if progressResult == .success {
@@ -5668,6 +5740,7 @@ class PlayerViewModel {
                 let stopProgressResult = await sessionBridge.stopSession(
                     position: finalPosition,
                     isPaused: true,
+                    eligible: finalProgressEligible,
                     finalProgressAlreadyReported: progressResult == .success
                 )
                 #if os(iOS) || os(tvOS)
@@ -5688,6 +5761,8 @@ class PlayerViewModel {
                 }
                 #endif
             }
+            await scrubPreviewShutdown?.value
+            await realtimeClient.unbind()
         }
     }
 
@@ -6279,7 +6354,7 @@ class PlayerViewModel {
                 }
                 let result = await self.sessionBridge.reportProgress(
                     position: self.currentTime,
-                    isPaused: !self.isPlaying
+                    isPaused: !self.isPlaying, eligible: self.watchTimeGate.isEligible
                 )
                 if result == .missingSession {
                     _ = self.attemptStaleSessionRenewal(
@@ -6304,6 +6379,7 @@ class PlayerViewModel {
         position: Double? = nil,
         markCompleted: Bool = false
     ) {
+        guard watchTimeGate.isEligible else { return }
         let position = position ?? currentTime
         guard position.isFinite, position >= 0 else { return }
         let duration = duration.isFinite && duration > 0 ? duration : 0

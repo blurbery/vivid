@@ -393,9 +393,7 @@ struct HomePosterCard: View {
         }
         .overlay(alignment: .bottom) {
             if showsProgress, let progress = HomeFeedMeta.progress(for: item) {
-                ProgressBar(value: progress)
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 6)
+                ResumeProgressBar(value: progress, duration: item.durationSeconds, height: 3, inset: 6)
             }
         }
         .overlay {
@@ -559,11 +557,9 @@ struct HomeStillCard: View {
 
             if let progress = HomeFeedMeta.progress(for: item) {
                 if isIOSResumeCard {
-                    ResumeProgressBar(value: progress)
+                    ResumeProgressBar(value: progress, duration: item.durationSeconds)
                 } else {
-                    ProgressBar(value: progress)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 7)
+                    ResumeProgressBar(value: progress, duration: item.durationSeconds, height: 3, inset: 8)
                 }
             }
         }

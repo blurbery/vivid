@@ -80,7 +80,7 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
         )
 
         XCTAssertEqual(stats.sampledAt, sampledAt)
-        XCTAssertEqual(stats.route, "Vivid sample-buffer video")
+        XCTAssertEqual(stats.route, "\(VividPlaybackEngineIdentity.name) sample-buffer video")
         XCTAssertEqual(stats.source, "media.example.test")
         XCTAssertFalse(stats.allRows.map(\.1).joined().contains("do-not-display"))
         XCTAssertFalse(stats.allRows.map(\.1).joined().contains("secret-title"))

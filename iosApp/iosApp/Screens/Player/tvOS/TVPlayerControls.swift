@@ -36,6 +36,9 @@ struct TVPlayerControls: View {
     /// than always snapping back to Info. Lives at this level because the
     /// HUD view is recreated each time HUD presentation toggles.
     @State private var activeHUDTab: TVPlayerInfoHUD.Tab = .info
+    @State private var subtitleOnlyHUD = false
+    @State private var rememberedInfoTab: TVPlayerInfoHUD.Tab = .info
+    @State private var hudReturnTarget: TVPlayerTransportCluster.FocusTarget?
 
     /// Flipped on immediately *before* the HUD appears so the scrubber's
     /// focus-lost path treats the resulting blur as a cancel rather than a
@@ -107,6 +110,7 @@ struct TVPlayerControls: View {
                     viewModel: viewModel,
                     activeTab: $activeHUDTab,
                     focusedTab: $focusedHUDTab,
+                    subtitleOnly: subtitleOnlyHUD,
                     onDismiss: { closeHUD() }
                 )
                 .transition(.opacity)
@@ -146,8 +150,14 @@ struct TVPlayerControls: View {
             if !presented {
                 cancelPendingScrub = false
                 focusedHUDTab = nil
-                focusedTransportButton = nil
-                isScrubberFocused = true
+                let target: TVPlayerTransportCluster.FocusTarget = subtitleOnlyHUD ? .subtitles : .options
+                hudReturnTarget = target
+                trapsTransportFocus = false
+                isScrubberFocused = false
+                DispatchQueue.main.async {
+                    guard !isHUDPresented, viewModel.showControls else { return }
+                    focusedTransportButton = target
+                }
             }
         }
         .onChange(of: viewModel.showIntroSkip) { _, visible in
@@ -194,8 +204,9 @@ struct TVPlayerControls: View {
             resumePlaybackAfterTimelineSelection = true
             enterTimelineSelection()
         }
-        .onChange(of: viewModel.showControls) { _, _ in
+        .onChange(of: viewModel.showControls) { _, visible in
             fullHUDContactCanToggle = false
+            if !visible { hudReturnTarget = nil }
         }
         // Re-arm the auto-hide whenever focus moves between transport controls,
         // so navigating the overlay doesn't let the fixed 5s timer hide it (and
@@ -329,7 +340,11 @@ struct TVPlayerControls: View {
             // instead of racing this scrubber seed — otherwise revealing the
             // controls during the intro window lands focus nondeterministically
             // on the scrubber or the Skip button.
-            if viewModel.showIntroSkip {
+            if let returnTarget = hudReturnTarget {
+                trapsTransportFocus = false
+                isScrubberFocused = false
+                focusedTransportButton = returnTarget
+            } else if viewModel.showIntroSkip {
                 isScrubberFocused = false
                 focusedIntroAction = .skip
             } else if viewModel.showCreditsSkip {
@@ -457,7 +472,7 @@ struct TVPlayerControls: View {
                     }
                     .buttonStyle(TVPillButtonStyle(kind: .secondary, focusTreatment: .compact))
                     .focused($focusedIntroAction, equals: .cancel)
-                    .accessibilityLabel("Cancel Auto-Skip Intro")
+                    .accessibilityLabel("Cancel " + viewModel.introSkipLabel)
                 }
 
                 skipIntroNowButton
@@ -470,7 +485,7 @@ struct TVPlayerControls: View {
             viewModel.skipIntro()
         } label: {
             Label(
-                viewModel.introAutoSkipCountdownSeconds == nil ? "Skip Intro" : "Skip Now",
+                viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : "Skip Now",
                 systemImage: "forward.end.fill"
             )
                 .font(.system(size: 26, weight: .semibold))
@@ -481,7 +496,7 @@ struct TVPlayerControls: View {
         .buttonStyle(TVPillButtonStyle(kind: .primary, focusTreatment: .compact))
         .focused($focusedIntroAction, equals: .skip)
         .accessibilityLabel(
-            viewModel.introAutoSkipCountdownSeconds == nil ? "Skip Intro" : "Skip Intro Now"
+            viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipLabel + " Now"
         )
     }
 
@@ -524,7 +539,7 @@ struct TVPlayerControls: View {
             HStack(alignment: .bottom, spacing: 24) {
                 titleFooter
                 Spacer(minLength: 24)
-                transportInfoButton.frame(width: 126)
+                transportInfoButton
             }
             TVPlayerScrubber(
                 viewModel: viewModel,
@@ -567,6 +582,7 @@ struct TVPlayerControls: View {
             TVPlayerTransportCluster(
                 viewModel: viewModel,
                 onOpenHUD: { openHUD() },
+                onOpenSubtitles: { openHUD(subtitles: true) },
                 onMoveToScrubber: {
                     // Same single-write rule as onMoveToTransport: nulling the
                     // transport focus first invites a geometric repair hop.
@@ -709,7 +725,10 @@ struct TVPlayerControls: View {
     ///      focus target — otherwise focus can land nowhere and the Menu
     ///      button has no exit handler to bubble to.
     ///   4. Present the HUD via the view model (single source of truth).
-    private func openHUD() {
+    private func openHUD(subtitles: Bool = false) {
+        if !subtitleOnlyHUD { rememberedInfoTab = activeHUDTab }
+        subtitleOnlyHUD = subtitles
+        activeHUDTab = subtitles ? .subtitles : rememberedInfoTab
         cancelPendingScrub = true
         isScrubberFocused = false
         focusedTransportButton = nil
@@ -728,6 +747,7 @@ struct TVPlayerControls: View {
     }
 
     private func applyHUDEntryPoint(_ entryPoint: PlayerViewModel.TVHUDEntryPoint) {
+        subtitleOnlyHUD = false
         cancelPendingScrub = true
         isScrubberFocused = false
         focusedTransportButton = nil
@@ -742,11 +762,11 @@ struct TVPlayerControls: View {
 
     private var preferredPlaybackHUDTab: TVPlayerInfoHUD.Tab {
         if !viewModel.audioTracks.isEmpty { return .audio }
-        if !viewModel.subtitleTracks.isEmpty { return .subtitles }
         return .video
     }
 
     private func closeHUD() {
+        hudReturnTarget = subtitleOnlyHUD ? .subtitles : .options
         viewModel.closeHUD()
     }
 

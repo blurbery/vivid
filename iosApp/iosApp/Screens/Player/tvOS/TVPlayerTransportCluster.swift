@@ -1,18 +1,12 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Info control above the scrubber. Post-redesign this is an
-/// icon-only row with no container pill — the buttons float on the bottom
-/// gradient, VidHub-style, so the overlay stays visually quiet. A single
-/// `focusSection()` keeps D-pad left/right pinned within transport; vertical
-/// presses remain inside the visible controls.
-///
-/// Consolidates what used to be three separate entry points (chapters,
-/// tracks, settings) into one `options` button that opens `TVPlayerInfoHUD`;
-/// the HUD's tab bar handles routing to the right pane.
+/// Subtitle and Info shortcuts share a native horizontal focus section.
+/// Each opens the existing HUD controls without changing the playback session.
 struct TVPlayerTransportCluster: View {
     let viewModel: PlayerViewModel
     let onOpenHUD: () -> Void
+    let onOpenSubtitles: () -> Void
     let onMoveToScrubber: () -> Void
     let onDismiss: () -> Void
     /// False while the scrubber's timeline-scrub mode is active — pulls every
@@ -23,11 +17,12 @@ struct TVPlayerTransportCluster: View {
     @FocusState.Binding var focusedButton: FocusTarget?
 
     enum FocusTarget: Hashable {
-        case skipBack, playPause, skipForward, nextUp, options, dismiss
+        case skipBack, playPause, skipForward, nextUp, subtitles, options, dismiss
     }
 
     var body: some View {
         HStack(spacing: 14) {
+            subtitleButton
             secondaryRow
         }
         .focusSection()
@@ -39,6 +34,32 @@ struct TVPlayerTransportCluster: View {
                 break
             }
         }
+    }
+
+    private var subtitleButton: some View {
+        let isFocused = focusedButton == .subtitles
+        return Button(action: onOpenSubtitles) {
+            Image("PlayerSubtitlesIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+                .foregroundStyle(isFocused ? .black : .white)
+                .frame(width: 52, height: 52)
+                .background(isFocused ? Color.white : Color.white.opacity(0.10), in: Circle())
+                .overlay {
+                    Circle().strokeBorder(.white.opacity(isFocused ? 0 : 0.3), lineWidth: 1)
+                }
+        }
+        .buttonStyle(TVPlayerInfoButtonStyle())
+        .disabled(!allowsFocus)
+        .focused($focusedButton, equals: .subtitles)
+        .focusEffectDisabled()
+        .animation(.easeOut(duration: 0.18), value: isFocused)
+        .accessibilityLabel("Subtitles")
+        .accessibilityValue(viewModel.subtitleTracks.first(where: {
+            $0.trackId == viewModel.selectedSubtitleId
+        })?.primaryLabel ?? "Off")
     }
 
     private var secondaryRow: some View {

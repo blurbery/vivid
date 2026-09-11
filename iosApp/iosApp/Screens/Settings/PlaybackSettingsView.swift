@@ -172,8 +172,8 @@ struct PlaybackSettingsView: View {
                 set: { PlayerSettings.shared.introDBEnabled = $0 }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("IntroDB")
-                    Text("Toggle on for native intro & credit skips.")
+                    Text("Intro & Credit Skipper")
+                    Text("Show intro and credit skip prompts when timestamps are available.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -189,8 +189,8 @@ struct PlaybackSettingsView: View {
                 }
             )) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Auto-Skip Intros")
-                    Text("Automatically skip intros when IntroDB has timestamps.")
+                    Text("Auto-Skip Intros & Recaps")
+                    Text("Automatically skip intros and recaps when timestamps are available.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -208,7 +208,7 @@ struct PlaybackSettingsView: View {
             )) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Auto-Skip Credits")
-                    Text("Automatically skip credits when IntroDB has timestamps.")
+                    Text("Automatically skip credits when timestamps are available.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

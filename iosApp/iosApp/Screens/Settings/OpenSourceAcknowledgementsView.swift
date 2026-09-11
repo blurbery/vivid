@@ -96,7 +96,14 @@ struct OpenSourceAcknowledgementsView: View {
                     .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20))
                     .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.12), lineWidth: 1))
                 }
-            }.padding(24).frame(maxWidth: 760).frame(maxWidth: .infinity)
+            }
+            #if os(tvOS)
+            .frame(maxWidth: TVSettingsLayout.contentWidth)
+            .padding(24)
+            #else
+            .padding(24).frame(maxWidth: 760)
+            #endif
+            .frame(maxWidth: .infinity)
         }.background(Color.black.ignoresSafeArea()).navigationTitle("")
         #if !os(tvOS)
         .settingsNavigationChrome()
@@ -146,11 +153,11 @@ struct TVOpenSourceAcknowledgementsOverlay: View {
                             .accessibilityElement(children: .combine)
                         }
                     }
-                    .frame(maxWidth: 1080, alignment: .leading)
+                    .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
                     .padding(.horizontal, 24).padding(.vertical, 48)
                     .frame(maxWidth: .infinity)
                 }
-                .frame(width: min(1200, geometry.size.width - 120), height: min(820, geometry.size.height - 100))
+                .frame(width: min(TVSettingsLayout.pageWidth, geometry.size.width - 120), height: min(820, geometry.size.height - 100))
                 .background(Color(white: 0.045), in: RoundedRectangle(cornerRadius: 24))
                 .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.16), lineWidth: 1) }
                 .defaultFocus($focusedBlock, 0)

@@ -9,6 +9,7 @@ struct TVPrimaryPillButton: View {
     let icon: String
     let title: String
     var subtitle: String? = nil
+    var resumeProgress: ResumePresentation? = nil
     var stabilizesFocusMotion = false
     var fixedWidth: CGFloat? = nil
     let action: () -> Void
@@ -25,6 +26,7 @@ struct TVPrimaryPillButton: View {
                 icon: icon,
                 title: title,
                 subtitle: subtitle,
+                resumeProgress: resumeProgress,
                 stabilizesFocusMotion: stabilizesFocusMotion
             )
         }
@@ -44,6 +46,7 @@ private struct TVPrimaryPillLabel: View {
     let icon: String
     let title: String
     let subtitle: String?
+    let resumeProgress: ResumePresentation?
     let stabilizesFocusMotion: Bool
 
     @Environment(\.isFocused) private var isFocused
@@ -53,7 +56,10 @@ private struct TVPrimaryPillLabel: View {
             Image(systemName: icon)
                 .font(.system(size: 31, weight: .bold))
                 .frame(width: 36, height: 36)
-            if isFocused || stabilizesFocusMotion {
+            if let resumeProgress {
+                ResumeButtonProgressLabel(progress: resumeProgress)
+                    .font(.system(size: 29, weight: .semibold))
+            } else if isFocused || stabilizesFocusMotion {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(title)
                         .font(.system(size: 29, weight: .semibold))
@@ -400,6 +406,7 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
 
     let playTitle: String?
     let playSubtitle: String?
+    var resumeProgress: ResumePresentation? = nil
     let onPlay: () -> Void
     let onStartOver: (() -> Void)?
     let inWatchlist: Bool
@@ -438,6 +445,7 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
                         icon: "play.fill",
                         title: playTitle ?? "Play",
                         subtitle: playSubtitle,
+                        resumeProgress: resumeProgress,
                         stabilizesFocusMotion: stabilizesFocusMotion,
                         fixedWidth: primaryButtonWidth,
                         action: onPlay,
@@ -446,7 +454,7 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
                     .contextMenu {
                         if let onResumeStartOver {
                             Button(action: onResumeStartOver) {
-                                Label("Start from Beginning", systemImage: "backward.end.fill")
+                                Label("Start Over", systemImage: "backward.end.fill")
                             }
                         }
                     }

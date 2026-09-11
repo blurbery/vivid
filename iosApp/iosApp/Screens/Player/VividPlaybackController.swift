@@ -102,6 +102,7 @@ final class VividPlaybackController {
     /// states such as loading, buffering, and error. A replacement load reads
     /// this after it commits so Play/Pause commands issued while loading win.
     private(set) var shouldPlayWhenReady = false
+    private var desiredPlaybackRate: Float = 1
     private var desiredVolume: Float = 1
     private var muted = false
     private var vividSubtitleIDByAppID: [Int64: Int] = [:]
@@ -270,6 +271,7 @@ final class VividPlaybackController {
                   self.activeSpec != nil,
                   self.engine.videoRoute != .none else { return }
             self.engine.play()
+            self.engine.setRate(self.desiredPlaybackRate)
             self.transportRestoreTask = nil
         }
     }
@@ -296,7 +298,14 @@ final class VividPlaybackController {
         engine.pause()
     }
 
-    func setRate(_ rate: Float) { engine.setRate(rate) }
+    func setRate(_ rate: Float) {
+        guard rate.isFinite, rate >= 0 else { return }
+        guard rate > 0 else { pause(); return }
+        desiredPlaybackRate = rate
+        // A non-zero AVPlayer rate is also a play command. Settings must not
+        // release an explicit pause; apply the pending speed when Play commits.
+        if shouldPlayWhenReady { engine.setRate(rate) }
+    }
 
     func setVolume(_ volume: Float) {
         desiredVolume = min(max(volume, 0), 1)
@@ -312,7 +321,7 @@ final class VividPlaybackController {
 
     var isMuted: Bool { muted }
 
-    func setSpeed(_ rate: Double) { engine.setRate(Float(rate)) }
+    func setSpeed(_ rate: Double) { setRate(Float(rate)) }
 
     func dispose() { stop() }
 

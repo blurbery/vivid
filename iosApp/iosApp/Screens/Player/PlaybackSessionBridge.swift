@@ -91,6 +91,7 @@ struct PreparedPlayback {
 
 enum PlaybackProgressReportResult: Equatable {
     case success
+    case deferred
     case missingSession
     case transientFailure
 }
@@ -387,6 +388,7 @@ enum PlaybackCancellationShield {
 }
 
 actor PlaybackSessionBridge {
+    private var progressWriteTail: Task<PlaybackProgressReportResult, Never>?
     private static let nearEndResumeSuppressionSeconds: Double = 5
     private static let pastEndResumeClampSeconds: Double = 0.25
 
@@ -711,7 +713,7 @@ actor PlaybackSessionBridge {
 
     func reportNativePlaybackStarted(_ prepared: PreparedPlayback) async {
         guard let playback = embyPlayback, playback.playSessionID == prepared.session.sessionId else { return }
-        try? await playback.report(position: prepared.session.position, isPaused: false)
+        try? await playback.ping()
     }
 
     func embyStreamRequest(sessionID: String) async -> StreamRequest? {
@@ -1908,21 +1910,33 @@ actor PlaybackSessionBridge {
     func refreshPlaybackAuthentication(sessionId expectedSession: String, position: Double, isPaused: Bool) async throws {
         guard sessionId == expectedSession, embyPlayback == nil,
               position.isFinite, position >= 0 else { throw CancellationError() }
-        try await VividAPI.shared.postVoid(
-            "/api/v1/playback/\(expectedSession)/progress",
-            body: ProgressReport(position: position, isPaused: isPaused)
-        )
+        let result = await reportProgress(position: position, isPaused: isPaused, eligible: position > 0)
+        guard result == .success || result == .deferred else { throw URLError(.cannotConnectToHost) }
         guard sessionId == expectedSession else { throw CancellationError() }
     }
 
-    func reportProgress(position: Double, isPaused: Bool) async -> PlaybackProgressReportResult {
-        guard let sid = sessionId else { return .transientFailure }
-        guard position.isFinite, position >= 0 else { return .transientFailure }
-
-        if let playback = embyPlayback {
-            do { try await playback.report(position: position, isPaused: isPaused); return .success }
-            catch { return .transientFailure }
+    func reportProgress(position: Double, isPaused: Bool, eligible: Bool) async -> PlaybackProgressReportResult {
+        guard let sid = sessionId, position.isFinite, position >= 0 else { return .transientFailure }
+        let playback = embyPlayback
+        let prior = progressWriteTail
+        let write = Task { [self] in
+            _ = await prior?.value
+            if let playback {
+                guard eligible else {
+                    do { try await playback.ping(); return PlaybackProgressReportResult.deferred }
+                    catch { return .transientFailure }
+                }
+                do { try await playback.report(position: position, isPaused: isPaused); return .success }
+                catch { return .transientFailure }
+            }
+            let result = await writeSiloProgress(sessionId: sid, position: eligible ? position : 0, isPaused: isPaused)
+            return !eligible && result == .success ? .deferred : result
         }
+        progressWriteTail = write
+        return await write.value
+    }
+
+    private func writeSiloProgress(sessionId sid: String, position: Double, isPaused: Bool) async -> PlaybackProgressReportResult {
         let report = ProgressReport(position: position, isPaused: isPaused)
         do {
             try await VividAPI.shared.postVoid(
@@ -2010,14 +2024,21 @@ actor PlaybackSessionBridge {
     func stopSession(
         position: Double,
         isPaused: Bool,
+        eligible: Bool,
         finalProgressAlreadyReported: Bool = false
     ) async -> PlaybackProgressReportResult {
         guard let sid = sessionId else { return .transientFailure }
+        let pendingProgress = progressWriteTail
         if let playback = embyPlayback {
             embyPlayback = nil
             sessionId = nil
             currentSession = nil
             do {
+                _ = await pendingProgress?.value
+                if !eligible {
+                    try await playback.stopWithoutProgress()
+                    return .deferred
+                }
                 try await playback.report(position: position, isPaused: isPaused, stopping: true)
                 return .success
             } catch {
@@ -2035,6 +2056,7 @@ actor PlaybackSessionBridge {
         consecutiveProgressFailures = 0
         emittedOrphanedSessionWarning = false
 
+        _ = await pendingProgress?.value
         if let supersededSessionId, supersededSessionId != sid {
             stopStaleSession(supersededSessionId)
         }
@@ -2069,13 +2091,13 @@ actor PlaybackSessionBridge {
         var finalProgressResult: PlaybackProgressReportResult =
             finalProgressAlreadyReported ? .success : .transientFailure
         if !finalProgressAlreadyReported, position.isFinite, position >= 0 {
-            let report = ProgressReport(position: position, isPaused: isPaused)
+            let report = ProgressReport(position: eligible ? position : 0, isPaused: isPaused)
             do {
                 try await VividAPI.shared.postVoid(
                     "/api/v1/playback/\(sid)/progress",
                     body: report
                 )
-                finalProgressResult = .success
+                finalProgressResult = eligible ? .success : .deferred
             } catch {
                 finalProgressResult = Self.isPlaybackSessionMissing(error)
                     ? .missingSession
