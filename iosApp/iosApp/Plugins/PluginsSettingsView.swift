@@ -11,7 +11,7 @@ struct PluginsSettingsView: View {
                 TVSettingsRowLabel(title: "OpenSubtitles", detail: "Find subtitles while watching.")
             }.buttonStyle(TVSettingsPaneRowStyle())
             NavigationLink { MDBListSettingsView() } label: {
-                TVSettingsRowLabel(title: "MDBList", detail: "Connect your watched history.")
+                TVSettingsRowLabel(title: "MDBList", detail: "Sync watch history and watchlists.")
             }.buttonStyle(TVSettingsPaneRowStyle())
         }
         #else

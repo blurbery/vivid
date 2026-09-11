@@ -8,7 +8,7 @@
 
 ---
 
-Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. The latest recorded pair is 0.14.3 (14), with processing complete and external distribution confirmed by blurbery; see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes the corresponding [source releases](versioning.md). TestFlight distribution is separate from public App Store submission.
+Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. The latest recorded pair is 0.14.3 (14), with processing complete and external distribution confirmed by blurbery; see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
 
 ## What is ready
 
@@ -19,7 +19,7 @@ Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record 
 | Build tools | Build 14 used local Xcode 26.6; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
 | About | Version/build, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution remains on the media information page and in acknowledgements. |
-| iCloud | The encrypted private account vault includes profile order, shared preferences and TMDB/Seerr credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The release container is registered; confirm the production schema and live restore on a second device before relying on it in an external beta. |
+| iCloud | The encrypted private account vault includes profile order, shared preferences and TMDb, Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The release container is registered; confirm the production schema and live restore on a second device before relying on it in an external beta. |
 | Local device coverage | Historical development checks include iPhone 16 Pro Max on iOS 26.6.1 and Apple TV 4K (3rd generation) on tvOS 26.6. These records do not state the devices’ current OS or validate every later TestFlight build. |
 | iPad coverage | Focused simulator layout checks exist. Physical iPad playback, rotation and multitasking still need checking. |
 | Apple upload tooling | Signed archives can be uploaded from the maintainer’s local Xcode configuration. Signing credentials remain outside Git and there is no committed TestFlight uploader. |
@@ -45,7 +45,7 @@ Keep [third-party notices](../../THIRD_PARTY_NOTICES.md) matched to the exact pa
 
 ## TestFlight information
 
-The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync and both timestamp services. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory.
+The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList history and watchlists, OpenSubtitles and both timestamp services. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory.
 
 Use `admin@vividapp.co` for feedback. A starting beta description is:
 

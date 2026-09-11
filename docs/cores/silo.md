@@ -21,7 +21,7 @@ Vivid owns the controls, focus, seeking, loading UI, resume/next-episode present
 
 Skip-marker selection belongs to Vivid. Selected-file intro/credits markers take priority; IntroDB and TheIntroDB fill missing ranges using series IMDb identity and episode numbering supplied by the connection. Item-level markers from other editions and realtime marker updates do not override the selected file. See [marker timing](../playback/architecture.md#introdb-marker-timing). No Silo server configuration is changed by that client behaviour.
 
-Vivid reads chapters and embedded subtitle tracks from the opened media. Silo subtitle sidecars, server appearance settings, live subtitle generation and skip markers do not supply the player’s subtitle or chapter inventory. Phone-assisted Apple TV setup and its Bonjour discovery are removed. Existing manual/QR account login and the TV remote-playback receiver remain distinct active paths.
+Vivid reads chapters and embedded subtitle tracks from the opened media. The optional OpenSubtitles plugin adds user-selected temporary SRT downloads through Vivid’s shared player. Silo subtitle sidecars, server appearance settings, live subtitle generation and skip markers do not supply the player’s subtitle or chapter inventory. Phone-assisted Apple TV setup and its Bonjour discovery are removed. Existing manual/QR account login and the TV remote-playback receiver remain distinct active paths.
 
 ## Current implementation
 
@@ -33,6 +33,6 @@ Vivid reads chapters and embedded subtitle tracks from the opened media. Silo su
 
 The source names above are retained implementation identifiers. Defining the core in documentation does not rename or refactor these files.
 
-The iPhone/iPad saved-account flow now uses the same Silo session-restoration path as TV. Saved Silo accounts and sessions can move through Vivid’s private iCloud vault, along with profile order, shared preferences and configured TMDb/Seerr credentials. Media-server passwords, playback/subtitle preferences, downloaded media and metadata caches stay out of it. Home metadata is cached locally per server/profile. Server artwork is displayed without Silo-configured poster-overlay pills. Emby has its own adapter; Jellyfin remains planned. These client features do not alter Silo’s production configuration.
+The iPhone/iPad saved-account flow now uses the same Silo session-restoration path as TV. Saved Silo accounts and sessions can move through Vivid’s private iCloud vault, along with profile order, shared preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials. Media-server passwords, playback/subtitle preferences, downloaded media and metadata caches stay out of it. Home metadata is cached locally per server/profile. Server artwork is displayed without Silo-configured poster-overlay pills. Emby has its own adapter; Jellyfin remains planned. These client features do not alter Silo’s production configuration.
 
 [Documentation](../README.md)

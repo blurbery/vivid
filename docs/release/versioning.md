@@ -85,6 +85,8 @@ The repository and its source releases are public. Apple beta distribution remai
 
 ## Recorded Apple builds
 
+These are distribution records, not the current feature list. [PR #8](https://github.com/blurbery/vivid/pull/8) subsequently added MDBList and OpenSubtitles features to main. Its local development builds also used `0.14.3 (14)`; no new TestFlight upload was made for that work. The next upload must increment the shared build number while retaining `0.14.3`.
+
 These are historical records, not a live App Store Connect status feed. Pending checks refer to the stated revision and are not automatically satisfied by a later build. Build 14 is the latest recorded upload.
 
 Both iOS/iPadOS and tvOS `0.14.3 (14)` were archived and uploaded from `24f992e24346b17f123c7a80d4360cb91e486869` on `fix/episode-card-resume-labels`. This includes the episode/resume labels, unused-controller audio-session ownership fix, larger tvOS Next Up picture and removal of tvOS seek thumbnails. Temporary transport diagnostics were removed before archiving. Both Release archives and exported apps/extensions passed signature, version, existing keychain and production CloudKit checks. Apple accepted both uploads on 11 September 2026; bundled media-library dSYM warnings limit symbolication without blocking upload. Processing completed for both platforms, testing notes were saved, and both builds are attached to the existing internal tester group. blurbery subsequently confirmed completing external distribution. The [regression run](https://github.com/blurbery/vivid/actions/runs/34566248396) passed both the tvOS build and iOS test suite for the uploaded source revision. The latest pause fix and thumbnail removal still need sustained device verification.
