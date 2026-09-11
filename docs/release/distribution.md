@@ -18,7 +18,7 @@ Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record 
 | Supported OS versions | iOS/iPadOS 18 or later; tvOS 26 or later. Mac and Vision Pro distribution are disabled. |
 | Build tools | Local Xcode 26.6. Apple currently requires the iOS/iPadOS 26 and tvOS 26 SDKs or later for uploads. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
-| About | Version/build, contact, privacy information, TMDb attribution and bundled open-source notices are present. |
+| About | Version/build, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution remains on the media information page and in acknowledgements. |
 | iCloud | The encrypted private account vault includes profile order, shared preferences and TMDB/Seerr credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The release container is registered; confirm the production schema and live restore on a second device before relying on it in an external beta. |
 | Local device coverage | iPhone 16 Pro Max on iOS 26.6.1 and Apple TV 4K (3rd generation) on tvOS 26.6. These are development installations, not distribution archives. |
 | iPad coverage | Focused simulator layout checks exist. Physical iPad playback, rotation and multitasking still need checking. |
