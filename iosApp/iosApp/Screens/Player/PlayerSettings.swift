@@ -915,3 +915,18 @@ struct PlaybackWatchTimeGate {
         watchedSeconds += min(elapsed, advanced / rate)
     }
 }
+
+/// Completion is independent of the one-minute partial-progress gate.
+enum PlaybackCompletionPolicy {
+    static func isComplete(position: Double, duration: Double, credits: TimeRange? = nil,
+                           endedNaturally: Bool = false) -> Bool {
+        guard position.isFinite, position >= 0 else { return false }
+        if endedNaturally { return position > 0 }
+        guard duration.isFinite, duration > 0 else { return false }
+        if position / duration >= 0.9 { return true }
+        guard let credits, credits.start.isFinite, credits.end.isFinite,
+              credits.start > 0, credits.end > credits.start,
+              credits.end <= duration else { return false }
+        return position >= credits.start
+    }
+}

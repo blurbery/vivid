@@ -654,11 +654,6 @@ class PlayerViewModel {
         let mediaItemId: String
     }
     private var offlinePlaybackContext: OfflinePlaybackContext?
-    /// Mirrors the server's default watched threshold (90%) so an offline
-    /// watch latches `completed` — and with it delete-watched retention and
-    /// the reclaim sheet — the same way an online session would.
-    private static let offlineWatchedFraction: Double = 0.9
-
     /// Server-supplied preferred track indices (ffmpeg stream indices). Kept
     /// until we've observed a matching track in the core's track-list and
     /// applied it, or until the user makes a manual selection.
@@ -833,6 +828,8 @@ class PlayerViewModel {
 
     private static let autoplayStartSessionTimeout: TimeInterval = 15
     private var watchTimeGate = PlaybackWatchTimeGate()
+    private var completedPlaybackContentId: String?
+    private var progressIsEligible: Bool { watchTimeGate.isEligible || completedPlaybackContentId != nil }
     private var lastLoadRequest: LoadRequest?
     private static let nextUpCountdownDefaultSeconds = 10
     private static let nextUpHUDCountdownThresholdSeconds: Double = 100
@@ -1003,10 +1000,11 @@ class PlayerViewModel {
         let position = currentTime
         guard position.isFinite, position >= 0 else { return }
         let isPaused = !isPlaying
-        let eligible = watchTimeGate.isEligible
+        let eligible = progressIsEligible
+        let completedContentId = completedPlaybackContentId
         Self.logger.debug("Flushing playback progress (\(reason, privacy: .public))")
         Task { [sessionBridge] in
-            _ = await sessionBridge.reportProgress(position: position, isPaused: isPaused, eligible: eligible)
+            _ = await sessionBridge.reportProgress(position: position, isPaused: isPaused, eligible: eligible, completedContentId: completedContentId)
         }
     }
 
@@ -1081,6 +1079,7 @@ class PlayerViewModel {
                                   playing: isPlaying && !isLoading && !isBuffering && seekTargetTime == nil,
                                   rate: settings.playbackSpeed)
             currentTime = movieTime
+            updatePlaybackCompletion(at: movieTime)
             updateNextUpPresentation(for: movieTime)
             autoSkipIntroIfNeeded(at: movieTime)
             autoSkipCreditsIfNeeded(at: movieTime)
@@ -1492,7 +1491,7 @@ class PlayerViewModel {
               let sessionId = activePlaybackSessionId, sessionId == spec.sessionID else { return nil }
         do {
             try await sessionBridge.refreshPlaybackAuthentication(sessionId: sessionId,
-                position: watchTimeGate.isEligible && currentTime.isFinite ? max(0, currentTime) : 0,
+                position: progressIsEligible && currentTime.isFinite ? max(0, currentTime) : 0,
                 isPaused: !vividPlaybackController.shouldPlayWhenReady)
             try requireCurrentStreamLoad(generation)
             guard vividPlaybackController.activeLoadEpoch == epoch,
@@ -1635,7 +1634,7 @@ class PlayerViewModel {
                     // best-effort; the header comparison below is authoritative.
                     try await self.sessionBridge.refreshPlaybackAuthentication(
                         sessionId: sessionId,
-                        position: self.watchTimeGate.isEligible ? resumePosition : 0,
+                        position: self.progressIsEligible ? resumePosition : 0,
                         isPaused: !self.vividPlaybackController.shouldPlayWhenReady
                     )
                 }
@@ -2744,13 +2743,35 @@ class PlayerViewModel {
     }
 
     private func completionProgressPositionForCurrentItem() -> Double {
-        PlayerNextUpCompletionPolicy.progressPosition(
-            isNextUpPresented: showNextUpScreen,
-            hasReachedEndOfFile: hasReachedEndOfFile,
-            currentTime: currentTime,
-            duration: duration,
-            promptSeconds: settings.nextUpPromptSeconds
-        )
+        currentTime.isFinite ? max(0, currentTime) : 0
+    }
+
+    private func updatePlaybackCompletion(at position: Double, endedNaturally: Bool = false) {
+        guard completedPlaybackContentId == nil,
+              let detail = currentWatchDetail,
+              ["movie", "episode"].contains(detail.type),
+              PlaybackCompletionPolicy.isComplete(
+                position: position, duration: duration,
+                credits: currentSelectedVersion?.credits ?? creditsRange,
+                endedNaturally: endedNaturally
+              ) else { return }
+        completedPlaybackContentId = detail.contentId
+        recordCurrentPlaybackMutation(markedCompleted: true)
+        if let offline = offlinePlaybackContext {
+            recordOfflineProgress(context: offline, position: position, markCompleted: true)
+            return
+        }
+        let contentId = detail.contentId
+        let prior = naturalEndProgressTask
+        let paused = !isPlaying
+        let refreshHome = refreshHomeAfterPlaybackWrite
+        naturalEndProgressTask = Task { [sessionBridge] in
+            await prior?.value
+            let result = await sessionBridge.reportProgress(
+                position: position, isPaused: paused, eligible: true,
+                completedContentId: contentId)
+            if result == .success { refreshHome?() }
+        }
     }
 
     /// Snapshot every detail surface affected by the current playback item
@@ -2758,11 +2779,11 @@ class PlayerViewModel {
     /// Series and synthetic season ids are included because tvOS keeps the
     /// combined Series page resident while its episode player is pushed.
     private func recordCurrentPlaybackMutation(markedCompleted: Bool) {
-        guard watchTimeGate.isEligible else { return }
+        guard progressIsEligible else { return }
         let currentContentId = currentWatchDetail?.contentId ?? lastLoadRequest?.contentId
         if let currentContentId, !currentContentId.isEmpty {
             contentIdsNeedingDetailRefresh.insert(currentContentId)
-            if markedCompleted {
+            if markedCompleted || completedPlaybackContentId != nil {
                 completedContentIdsNeedingDetailAdvance.insert(currentContentId)
             }
         }
@@ -3404,7 +3425,7 @@ class PlayerViewModel {
         hideControlsTask?.cancel()
         hideControlsTask = nil
         vividPlaybackController.pause()
-        if duration.isFinite, duration > 0 {
+        if !isPremature, duration.isFinite, duration > 0 {
             currentTime = duration
         }
         isLoading = false
@@ -3422,6 +3443,7 @@ class PlayerViewModel {
         )
 
         if !isPremature {
+            updatePlaybackCompletion(at: currentTime, endedNaturally: true)
             recordCurrentPlaybackMutation(markedCompleted: true)
 
             // Vivid has already delivered the native terminal event, so
@@ -3434,7 +3456,8 @@ class PlayerViewModel {
                currentTime >= 0 {
                 let priorNaturalEndProgressTask = naturalEndProgressTask
                 let endPosition = currentTime
-                let eligible = watchTimeGate.isEligible
+                let eligible = progressIsEligible
+                let completedContentId = completedPlaybackContentId
                 #if os(iOS) || os(tvOS)
                 let refreshHome = refreshHomeAfterPlaybackWrite
                 #endif
@@ -3442,7 +3465,7 @@ class PlayerViewModel {
                     await priorNaturalEndProgressTask?.value
                     let result = await sessionBridge.reportProgress(
                         position: endPosition,
-                        isPaused: true, eligible: eligible
+                        isPaused: true, eligible: eligible, completedContentId: completedContentId
                     )
                     #if os(iOS) || os(tvOS)
                     if result == .success { refreshHome?() }
@@ -3770,16 +3793,14 @@ class PlayerViewModel {
         PosterImageCache.trimDecodedMemory()
         #endif
         isNextUpTransitioning = origin == .autoplay && showNextUpScreen
-        let currentItemCompleted = PlayerNextUpCompletionPolicy.shouldFinalizeAsCompleted(
-            isNextUpPresented: showNextUpScreen,
-            hasReachedEndOfFile: hasReachedEndOfFile,
-            currentTime: currentTime,
-            duration: duration,
-            promptSeconds: settings.nextUpPromptSeconds
-        )
+        let currentItemCompleted = completedPlaybackContentId != nil
         recordCurrentPlaybackMutation(markedCompleted: currentItemCompleted)
-        let priorProgressEligible = watchTimeGate.isEligible
-        if lastLoadRequest?.contentId != request.contentId { watchTimeGate = PlaybackWatchTimeGate() }
+        let priorProgressEligible = progressIsEligible
+        let priorCompletedContentId = completedPlaybackContentId
+        if lastLoadRequest?.contentId != request.contentId {
+            watchTimeGate = PlaybackWatchTimeGate()
+            completedPlaybackContentId = nil
+        }
         watchTimeGate.interrupt()
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
@@ -3856,9 +3877,9 @@ class PlayerViewModel {
             await pendingNaturalEndProgressTask?.value
             if let snapshotPosition, snapshotPosition.isFinite, snapshotPosition >= 0 {
                 if shouldFinalizeCurrentSession {
-                    await self.sessionBridge.stopSession(position: snapshotPosition, isPaused: true, eligible: priorProgressEligible)
+                    await self.sessionBridge.stopSession(position: snapshotPosition, isPaused: true, eligible: priorProgressEligible, completedContentId: priorCompletedContentId)
                 } else {
-                    await self.sessionBridge.reportProgress(position: snapshotPosition, isPaused: true, eligible: priorProgressEligible)
+                    await self.sessionBridge.reportProgress(position: snapshotPosition, isPaused: true, eligible: priorProgressEligible, completedContentId: priorCompletedContentId)
                 }
                 #if os(iOS) || os(tvOS)
                 self.refreshHomeAfterPlaybackWrite?()
@@ -4083,7 +4104,7 @@ class PlayerViewModel {
                 guard !Task.isCancelled, !self.isDisposed else { return }
                 await self.sessionBridge.stopSession(
                     position: self.currentTime,
-                    isPaused: true, eligible: self.watchTimeGate.isEligible
+                    isPaused: true, eligible: self.progressIsEligible, completedContentId: self.completedPlaybackContentId
                 )
                 Self.logger.error(
                     "Load failed: \(MediaLogRedactor.sanitize(error), privacy: .public)"
@@ -4293,7 +4314,7 @@ class PlayerViewModel {
         staleSessionRecoveryTask?.cancel()
         staleSessionRecoveryTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
-            if self.watchTimeGate.isEligible {
+            if self.progressIsEligible {
             _ = await self.sessionBridge.syncProgress(
                 contentId: contentId,
                 position: resumePosition,
@@ -5585,13 +5606,7 @@ class PlayerViewModel {
         qualityFallbackTask?.cancel()
         qualityFallbackTask = nil
         Self.logger.info("PlayerViewModel.cleanup()")
-        let currentItemCompleted = PlayerNextUpCompletionPolicy.shouldFinalizeAsCompleted(
-            isNextUpPresented: showNextUpScreen,
-            hasReachedEndOfFile: hasReachedEndOfFile,
-            currentTime: currentTime,
-            duration: duration,
-            promptSeconds: settings.nextUpPromptSeconds
-        )
+        let currentItemCompleted = completedPlaybackContentId != nil
         recordCurrentPlaybackMutation(markedCompleted: currentItemCompleted)
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
@@ -5680,13 +5695,7 @@ class PlayerViewModel {
         let stopServerSessionOnTeardown = offlinePlaybackContext == nil
         if let offline = offlinePlaybackContext {
             let finalOfflinePosition = completionProgressPositionForCurrentItem()
-            let endedNaturally = PlayerNextUpCompletionPolicy.shouldFinalizeAsCompleted(
-                isNextUpPresented: showNextUpScreen,
-                hasReachedEndOfFile: hasReachedEndOfFile,
-                currentTime: currentTime,
-                duration: duration,
-                promptSeconds: settings.nextUpPromptSeconds
-            )
+            let endedNaturally = completedPlaybackContentId != nil
             // Strong capture on purpose: this is the last write of the
             // resume point and must not be dropped because the VM was
             // released between dismiss and the hop to the MainActor.
@@ -5699,14 +5708,11 @@ class PlayerViewModel {
             }
         }
 
-        // Same completion rule as the offline branch above. Closing from the
-        // Next Up prompt (or after EOF) means the user finished the item, so
-        // the final `stopSession` has to report the duration rather than the
-        // paused position a few seconds short of it — otherwise online
-        // playback never latches watched from that surface, while offline
-        // playback does.
+        // Preserve the real position. Watched completion is sent separately
+        // after progress and Stop, using the same policy as offline playback.
         let finalPosition = completionProgressPositionForCurrentItem()
-        let finalProgressEligible = watchTimeGate.isEligible
+        let finalProgressEligible = progressIsEligible
+        let finalCompletedContentId = completedPlaybackContentId
         let playbackMutationContentIds = contentIdsNeedingDetailRefresh
         let completedPlaybackContentIds = completedContentIdsNeedingDetailAdvance
         #if os(iOS) || os(tvOS)
@@ -5723,7 +5729,7 @@ class PlayerViewModel {
                 // progress visible after the player has closed.
                 let progressResult = await sessionBridge.reportProgress(
                     position: finalPosition,
-                    isPaused: true, eligible: finalProgressEligible
+                    isPaused: true, eligible: finalProgressEligible, completedContentId: finalCompletedContentId
                 )
                 #if os(iOS) || os(tvOS)
                 if progressResult == .success {
@@ -5741,6 +5747,7 @@ class PlayerViewModel {
                     position: finalPosition,
                     isPaused: true,
                     eligible: finalProgressEligible,
+                    completedContentId: finalCompletedContentId,
                     finalProgressAlreadyReported: progressResult == .success
                 )
                 #if os(iOS) || os(tvOS)
@@ -6354,7 +6361,7 @@ class PlayerViewModel {
                 }
                 let result = await self.sessionBridge.reportProgress(
                     position: self.currentTime,
-                    isPaused: !self.isPlaying, eligible: self.watchTimeGate.isEligible
+                    isPaused: !self.isPlaying, eligible: self.progressIsEligible, completedContentId: self.completedPlaybackContentId
                 )
                 if result == .missingSession {
                     _ = self.attemptStaleSessionRenewal(
@@ -6379,12 +6386,11 @@ class PlayerViewModel {
         position: Double? = nil,
         markCompleted: Bool = false
     ) {
-        guard watchTimeGate.isEligible else { return }
+        let watched = markCompleted || completedPlaybackContentId != nil
+        guard watchTimeGate.isEligible || watched else { return }
         let position = position ?? currentTime
         guard position.isFinite, position >= 0 else { return }
         let duration = duration.isFinite && duration > 0 ? duration : 0
-        let watched = markCompleted
-            || (duration > 0 && position / duration > Self.offlineWatchedFraction)
         DownloadManager.shared.recordOfflineProgress(
             mediaItemId: context.mediaItemId,
             position: position,

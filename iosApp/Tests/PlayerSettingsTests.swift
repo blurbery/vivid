@@ -3,6 +3,40 @@ import XCTest
 
 @MainActor
 final class PlayerSettingsTests: XCTestCase {
+    func testCompletionAtNinetyPercentIsIndependentOfPartialProgress() {
+        let gate = PlaybackWatchTimeGate()
+        XCTAssertFalse(gate.isEligible)
+        for duration in [30.0, 60, 1_800, 7_200] {
+            XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: duration * 0.899, duration: duration))
+            XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: duration * 0.9, duration: duration))
+        }
+    }
+
+    func testCreditsCanCompleteBeforeNinetyPercent() {
+        let credits = TimeRange(start: 80, end: 99)
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 79.9, duration: 100, credits: credits))
+        XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 80, duration: 100, credits: credits))
+        XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 85, duration: 100, credits: credits))
+    }
+
+    func testInvalidCreditsCannotCompleteEarly() {
+        for credits in [TimeRange(start: 0, end: 99), TimeRange(start: -1, end: 99),
+                        TimeRange(start: 80, end: 80), TimeRange(start: 80, end: 101),
+                        TimeRange(start: .nan, end: 99), TimeRange(start: 80, end: .infinity)] {
+            XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 85, duration: 100, credits: credits))
+        }
+    }
+
+    func testNaturalShortEndAndUnresolvedDuration() {
+        XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 25, duration: 25, endedNaturally: true))
+        XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: 25, duration: 0, endedNaturally: true))
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 25, duration: 100))
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 25, duration: 0))
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 0, duration: 0, endedNaturally: true))
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: .nan, duration: 100, endedNaturally: true))
+        XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: -1, duration: 100, endedNaturally: true))
+    }
+
     func testWatchProgressRequiresSixtySecondsOfViewing() {
         var gate = PlaybackWatchTimeGate()
         for second in 0...59 {

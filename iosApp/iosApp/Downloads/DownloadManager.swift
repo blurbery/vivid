@@ -1500,6 +1500,7 @@ final class DownloadManager {
     func flushProgressQueue() async {
         guard !file.progressQueue.isEmpty else { return }
         let batch = file.progressQueue
+        let completedIds = Set(batch.filter { file.localProgress[$0.mediaItemId]?.completed == true }.map { $0.mediaItemId })
         let items = batch.map {
             SyncProgressItem(
                 mediaItemId: $0.mediaItemId,
@@ -1511,7 +1512,13 @@ final class DownloadManager {
         }
         do {
             let results = try await VividAPI.shared.syncProgressBatch(items: items)
-            let okItemIds = Set(results.filter { $0.isOK }.map { $0.mediaItemId })
+            var okItemIds = Set(results.filter { $0.isOK }.map { $0.mediaItemId })
+            // Position sync alone cannot express credits-based completion.
+            // Keep the queued event if the separate watched write fails.
+            for contentId in completedIds.intersection(okItemIds) {
+                do { try await VividAPI.shared.setWatched(contentId: contentId, played: true) }
+                catch { okItemIds.remove(contentId) }
+            }
             // Match queue entries by identity, not media item — an entry
             // appended while the POST was in flight carries a newer position
             // the server never saw, so it must survive this batch with its
@@ -1520,7 +1527,8 @@ final class DownloadManager {
             let okEntryIds = Set(batch.filter { okItemIds.contains($0.mediaItemId) }.map { $0.id })
             file.progressQueue.removeAll {
                 okEntryIds.contains($0.id)
-                    || ($0.attempts >= Self.maxRetries && sentEntryIds.contains($0.id))
+                    || ($0.attempts >= Self.maxRetries && sentEntryIds.contains($0.id)
+                        && !completedIds.contains($0.mediaItemId))
             }
             for index in file.progressQueue.indices
             where sentEntryIds.contains(file.progressQueue[index].id) {

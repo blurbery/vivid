@@ -1915,9 +1915,10 @@ actor PlaybackSessionBridge {
         guard sessionId == expectedSession else { throw CancellationError() }
     }
 
-    func reportProgress(position: Double, isPaused: Bool, eligible: Bool) async -> PlaybackProgressReportResult {
+    func reportProgress(position: Double, isPaused: Bool, eligible: Bool, completedContentId: String? = nil) async -> PlaybackProgressReportResult {
         guard let sid = sessionId, position.isFinite, position >= 0 else { return .transientFailure }
         let playback = embyPlayback
+        let eligible = eligible || completedContentId != nil
         let prior = progressWriteTail
         let write = Task { [self] in
             _ = await prior?.value
@@ -1926,14 +1927,45 @@ actor PlaybackSessionBridge {
                     do { try await playback.ping(); return PlaybackProgressReportResult.deferred }
                     catch { return .transientFailure }
                 }
-                do { try await playback.report(position: position, isPaused: isPaused); return .success }
+                do {
+                    try await playback.report(position: position, isPaused: isPaused)
+                    return await writeCompletion(after: .success, contentId: completedContentId, playback: playback)
+                }
                 catch { return .transientFailure }
             }
             let result = await writeSiloProgress(sessionId: sid, position: eligible ? position : 0, isPaused: isPaused)
-            return !eligible && result == .success ? .deferred : result
+            return await writeCompletion(after: !eligible && result == .success ? .deferred : result,
+                                         contentId: completedContentId, playback: nil)
         }
         progressWriteTail = write
         return await write.value
+    }
+
+    /// Ordered after position writes, including Stop, so provider resume rules
+    /// cannot undo Vivid's credits/percentage completion decision.
+    private func writeCompletion(after result: PlaybackProgressReportResult,
+                                 contentId: String?, playback: EmbyPlayback?) async -> PlaybackProgressReportResult {
+        guard let contentId else { return result }
+        do {
+            if let playback {
+                let connection = await playback.connection
+                guard let userID = connection.userID else { return .transientFailure }
+                let item = try await connection.object("GET",
+                    "/Users/\(EmbyConnection.id(userID))/Items/\(EmbyConnection.id(contentId))")
+                // Emby's played action can update play counts. Reassert only
+                // when the preceding position/Stop write left it unwatched.
+                if (item["UserData"] as? [String: Any])?["Played"] as? Bool != true {
+                    _ = try await connection.request("POST",
+                        "/Users/\(EmbyConnection.id(userID))/PlayedItems/\(EmbyConnection.id(contentId))")
+                }
+            } else {
+                try await VividAPI.shared.setWatched(contentId: contentId, played: true)
+            }
+            return result
+        } catch {
+            logger.warning("Watched completion write failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+            return result == .missingSession ? .missingSession : .transientFailure
+        }
     }
 
     private func writeSiloProgress(sessionId sid: String, position: Double, isPaused: Bool) async -> PlaybackProgressReportResult {
@@ -2025,10 +2057,12 @@ actor PlaybackSessionBridge {
         position: Double,
         isPaused: Bool,
         eligible: Bool,
+        completedContentId: String? = nil,
         finalProgressAlreadyReported: Bool = false
     ) async -> PlaybackProgressReportResult {
         guard let sid = sessionId else { return .transientFailure }
         let pendingProgress = progressWriteTail
+        let eligible = eligible || completedContentId != nil
         if let playback = embyPlayback {
             embyPlayback = nil
             sessionId = nil
@@ -2040,7 +2074,7 @@ actor PlaybackSessionBridge {
                     return .deferred
                 }
                 try await playback.report(position: position, isPaused: isPaused, stopping: true)
-                return .success
+                return await writeCompletion(after: .success, contentId: completedContentId, playback: playback)
             } catch {
                 return .transientFailure
             }
@@ -2123,7 +2157,7 @@ actor PlaybackSessionBridge {
         // Nudge the Top Shelf to re-fetch now that progress has advanced.
         TVTopShelfContentProvider.topShelfContentDidChange()
         #endif
-        return finalProgressResult
+        return await writeCompletion(after: finalProgressResult, contentId: completedContentId, playback: nil)
     }
 
     // MARK: - Helpers
