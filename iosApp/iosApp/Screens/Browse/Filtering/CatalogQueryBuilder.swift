@@ -10,6 +10,19 @@ import Foundation
 /// the same shape the server itself produces for multi content-rating — see
 /// `catalog_parser.go`. The top-level `match` controls AND/OR across facets.
 enum CatalogQueryBuilder {
+    static func embyQuery(_ state: CatalogFilterState, base: [String: String]) -> [String: String] {
+        var query = base.filter { !$0.key.hasPrefix("groups[") && $0.key != "match" }
+        if let scope = state.mediaScope { query["type"] = scope }
+        if !state.genres.isEmpty { query["genre"] = state.genres.sorted().joined(separator: "|") }
+        if !state.contentRatings.isEmpty { query["content_rating"] = state.contentRatings.sorted().joined(separator: "|") }
+        if !state.decades.isEmpty {
+            query["years"] = state.decades.sorted().flatMap { Array($0...($0 + 9)) }.map(String.init).joined(separator: ",")
+        }
+        if state.watchStatus == .watchlist { query["source"] = "watchlist" }
+        else if let status = state.watchStatus { query["emby_watch_status"] = status.rawValue }
+        return query
+    }
+
     static func build(
         _ state: CatalogFilterState,
         libraryId: Int?,
@@ -63,7 +76,7 @@ enum CatalogQueryBuilder {
         if let status = state.watchStatus { groups.addWatchStatus(status) }
         groups.encode(into: &q)
 
-        return q
+        return MediaServerProvider.active == .emby ? embyQuery(state, base: q) : q
     }
 }
 

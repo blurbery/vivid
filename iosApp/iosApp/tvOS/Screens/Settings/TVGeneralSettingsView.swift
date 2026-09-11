@@ -6,6 +6,7 @@ import SwiftUI
 /// directional movement, preserving the stable focus graph described in
 /// `docs/apple-tv-focus.md`.
 struct TVGeneralSettingsPane: View {
+    @State private var homeSections = HomeSectionPreferences.shared
     @State private var preferences = UICustomizationPreferences.shared
     @State private var homeCards = TVHomeCardPreferences.shared
     @State private var activePicker: PickerKind?
@@ -38,6 +39,14 @@ struct TVGeneralSettingsPane: View {
                 }
                 .buttonStyle(TVSettingsPaneRowStyle())
                 .focused(detailFocus, equals: .generalHomeSections)
+
+                if MediaServerProvider.forServerID(registry.activeServerId) == .emby {
+                    TVSettingsToggleRow(
+                        title: "Combine Next Up with Continue Watching",
+                        isOn: homeSections.combineEmbyNextUp
+                    ) { homeSections.setCombineEmbyNextUp(!homeSections.combineEmbyNextUp) }
+                }
+
 
 
             }
@@ -95,6 +104,8 @@ struct TVGeneralSettingsPane: View {
         .fullScreenCover(isPresented: $showsMenuEditor) {
             TVMenuCustomizationSheet(libraries: libraries)
         }
+        .onAppear { homeSections.refresh() }
+        .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
         .task {
             await preferences.refresh()
         }

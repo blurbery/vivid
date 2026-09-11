@@ -6,6 +6,18 @@ final class EmbyAdapterTests: XCTestCase {
         EmbyAdapter(connection:EmbyConnection(serverURL:"https://media.example.test",token:nil,userID:"user-1",identity:nil))
     }
 
+    func testFilterOptionsDecodeNamesAndStringValues() throws {
+        let raw: [String: Any] = [
+            "Genres": ["Drama", ["Name": "Action"], "Drama"],
+            "OfficialRatings": [["Name": "PG"], "R"]
+        ]
+        let filters: CatalogFilters = try EmbyAdapter.decode(EmbyAdapter.catalogFilterOptions(raw))
+        XCTAssertEqual(filters.genres, ["Action", "Drama"])
+        XCTAssertEqual(filters.contentRatings, ["PG", "R"])
+        let empty: CatalogFilters = try EmbyAdapter.decode(EmbyAdapter.catalogFilterOptions([:]))
+        XCTAssertTrue(empty.genres.isEmpty)
+    }
+
     func testServerAddressPreservesProxyPrefixAndAvoidsDuplicateAPIPrefix() throws {
         XCTAssertEqual(try EmbyConnection.url(serverURL:"https://media.example.test:443/proxy",path:"/Users/AuthenticateByName").absoluteString,
                        "https://media.example.test:443/proxy/emby/Users/AuthenticateByName")

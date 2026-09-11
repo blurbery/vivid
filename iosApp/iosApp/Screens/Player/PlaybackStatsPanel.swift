@@ -17,6 +17,7 @@ struct PlaybackStatsPanel: View {
     var layout: Layout = .sectioned
     var usesTVTypography = false
     var usesTwoColumnLayout = false
+    var usesThreeColumnLayout = false
 
     static let sourceSectionID = "stats-source"
     static let mediaSectionID = "stats-media"
@@ -29,6 +30,14 @@ struct PlaybackStatsPanel: View {
             switch layout {
             case .plain:
                 plainList
+            case .sectioned where usesThreeColumnLayout:
+                HStack(alignment: .top, spacing: 24) {
+                    column(leftSections)
+                    divider
+                    column(Array(rightSections.prefix(2)))
+                    divider
+                    column(Array(rightSections.suffix(1)))
+                }
             case .sectioned where usesTwoColumnLayout:
                 HStack(alignment: .top, spacing: 34) {
                     column(leftSections)

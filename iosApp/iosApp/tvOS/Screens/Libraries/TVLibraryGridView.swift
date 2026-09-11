@@ -148,6 +148,7 @@ struct TVLibraryGridView: View {
                     facets: viewModel.facets,
                     isLoadingFacets: viewModel.isLoadingFacets,
                     facetsLoadFailed: viewModel.facetsLoadFailed,
+                    facetsFailureReason: viewModel.facetsFailureReason,
                     showsAlphabetMenu: showsAlphabetRail && viewModel.filter.sort == .title,
                     preserveEnabled: viewModel.preserveEnabled,
                     focusRequest: controlFocusRequest,

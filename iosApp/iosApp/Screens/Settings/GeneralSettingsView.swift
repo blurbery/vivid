@@ -4,6 +4,8 @@ import SwiftUI
 /// Device-local startup preferences that do not belong to playback or
 /// interface customization.
 struct GeneralSettingsView: View {
+    @State private var homeSections = HomeSectionPreferences.shared
+    @State private var registry = ServerRegistry.shared
     @State private var homeCards = TVHomeCardPreferences.shared
     var body: some View {
         List {
@@ -24,6 +26,12 @@ struct GeneralSettingsView: View {
                     }
                 }
 
+                if MediaServerProvider.forServerID(registry.activeServerId) == .emby {
+                    Toggle("Combine Next Up with Continue Watching", isOn: Binding(
+                        get: { homeSections.combineEmbyNextUp },
+                        set: { homeSections.setCombineEmbyNextUp($0) }
+                    ))
+                }
             } header: { PhoneSettingsSectionHeader("Home Screen") }
             Section {
                 Picker("Poster Size", selection: Binding(get: { homeCards.presentation.posterSize }, set: { homeCards.setPosterSize($0) })) {
@@ -46,6 +54,8 @@ struct GeneralSettingsView: View {
             #endif
             VividCopyrightFooter().frame(maxWidth: .infinity).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
+        .onAppear { homeSections.refresh() }
+        .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
         .settingsListChrome()
         .navigationTitle("")
         .vividNavigationTitleDisplayMode(.inline)

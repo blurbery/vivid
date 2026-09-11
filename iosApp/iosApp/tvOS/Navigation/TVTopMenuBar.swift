@@ -66,7 +66,9 @@ enum TVLibraryTabType: String, CaseIterable, Hashable {
     /// one browsable library, reachable from either dropdown.
     func matches(_ library: Library) -> Bool {
         switch self {
-        case .movies: return library.type == "movies" || library.isMixedLibrary
+        case .movies:
+            return library.type == "movies" || library.isMixedLibrary
+                || (MediaServerProvider.active == .emby && library.type == "movie")
         case .series: return library.isSeriesLibrary || library.isMixedLibrary
         case .music: return library.type == "music"
         }

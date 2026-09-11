@@ -15,6 +15,27 @@ final class CatalogQueryBuilderTests: XCTestCase {
                                   offset: 0, limit: 60, includeType: includeType)
     }
 
+    func testEmbyFiltersKeepLibraryPagingAndAlphabetWhileUsingNativeValues() {
+        var state = CatalogFilterState()
+        state.genres = ["Action", "Drama"]
+        state.contentRatings = ["PG", "R"]
+        state.decades = [1990]
+        state.watchStatus = .inProgress
+        let query = CatalogQueryBuilder.embyQuery(state, base: [
+            "library_id": "12", "offset": "40", "limit": "20", "name_prefix": "B",
+            "groups[0][match]": "any", "match": "any"
+        ])
+        XCTAssertEqual(query["genre"], "Action|Drama")
+        XCTAssertEqual(query["content_rating"], "PG|R")
+        XCTAssertEqual(query["years"], "1990,1991,1992,1993,1994,1995,1996,1997,1998,1999")
+        XCTAssertEqual(query["emby_watch_status"], "inProgress")
+        XCTAssertEqual(query["library_id"], "12")
+        XCTAssertEqual(query["offset"], "40")
+        XCTAssertEqual(query["name_prefix"], "B")
+        XCTAssertNil(query["match"])
+        XCTAssertFalse(query.keys.contains { $0.hasPrefix("groups[") })
+    }
+
     func testDefaultStateBaseParams() {
         let q = build(.none, libraryId: 5)
         XCTAssertEqual(q["source"], "query")

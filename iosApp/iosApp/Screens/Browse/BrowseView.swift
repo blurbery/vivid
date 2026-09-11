@@ -190,6 +190,7 @@ struct BrowseView: View {
                 }
             }
             Divider()
+            if MediaServerProvider.active != .emby {
             Toggle("Match all filters", isOn: Binding(
                 get: { viewModel.filterState.matchAll },
                 set: { value in
@@ -198,6 +199,7 @@ struct BrowseView: View {
                     Task { await viewModel.apply(next) }
                 }
             ))
+            }
             Toggle("Remember filters", isOn: Binding(
                 get: { viewModel.preserveEnabled },
                 set: { viewModel.setPreserveEnabled($0) }

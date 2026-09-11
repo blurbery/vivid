@@ -14,6 +14,7 @@ final class HomeSectionPreferences {
     /// Changes only for explicit preference/layout transitions—not ordinary
     /// Home data refreshes—so Home can reset its row band and marquee once.
     private(set) var layoutRevision = 0
+    private(set) var combineEmbyNextUp = false
 
     @ObservationIgnored private let defaults: SharedDefaults
     @ObservationIgnored private let storageKey: @MainActor () -> String?
@@ -22,6 +23,7 @@ final class HomeSectionPreferences {
     private struct StoredLayout: Codable {
         var orderedSectionIds: [String]
         var hiddenSectionIds: Set<String>
+        var combineEmbyNextUp: Bool? = nil
     }
 
     init(
@@ -41,12 +43,14 @@ final class HomeSectionPreferences {
         guard let key,
               let data = defaults.data(forKey: key),
               let stored = try? JSONDecoder().decode(StoredLayout.self, from: data) else {
+            combineEmbyNextUp = false
             orderedSectionIds = []
             hiddenSectionIds = []
             layoutRevision &+= 1
             return
         }
 
+        combineEmbyNextUp = stored.combineEmbyNextUp ?? false
         orderedSectionIds = Self.unique(stored.orderedSectionIds)
         hiddenSectionIds = stored.hiddenSectionIds
         layoutRevision &+= 1
@@ -95,7 +99,8 @@ final class HomeSectionPreferences {
         _ sections: [ResolvedSection],
         includingHidden: Bool = false
     ) -> [ResolvedSection] {
-        let nonEmpty = sections.filter {
+        let projected = Self.combinedSections(sections, enabled: combineEmbyNextUp, provider: MediaServerProvider.active)
+        let nonEmpty = projected.filter {
             !$0.items.isEmpty && (MediaServerProvider.active != .emby || !EmbyAdapter.excludesHomeRow(id:$0.id,type:$0.sectionType,title:$0.title))
         }
         let rank = Dictionary(
@@ -121,12 +126,51 @@ final class HomeSectionPreferences {
         return arranged.filter { !hiddenSectionIds.contains($0.id) }
     }
 
+    func setCombineEmbyNextUp(_ enabled: Bool) {
+        guard MediaServerProvider.active == .emby else { return }
+        refresh()
+        guard combineEmbyNextUp != enabled else { return }
+        combineEmbyNextUp = enabled
+        layoutRevision &+= 1
+        persist()
+        NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
+    }
+
+    static func combinesEmbyNextUp(server: String, profile: String) -> Bool {
+        let key = "\(platformStoragePrefix).\(server).\(profile)"
+        guard let data = SharedDefaults.shared.data(forKey: key),
+              let stored = try? JSONDecoder().decode(StoredLayout.self, from: data) else { return false }
+        return stored.combineEmbyNextUp ?? false
+    }
+
+    nonisolated static func combinedSections(
+        _ sections: [ResolvedSection], enabled: Bool, provider: MediaServerProvider
+    ) -> [ResolvedSection] {
+        guard enabled, provider == .emby else { return sections }
+        let resume = sections.filter { $0.sectionType == "continue_watching" }
+        let next = sections.filter { $0.sectionType == "next_up" }
+        guard let anchor = resume.first ?? next.first else { return sections }
+        var seen = Set<String>()
+        let items = (resume + next).flatMap(\.items).filter { seen.insert($0.contentId).inserted }
+        let combined = ResolvedSection(
+            id: resume.first?.id ?? "continue_watching", sectionType: "continue_watching",
+            title: "Continue Watching", featured: false, itemLimit: nil,
+            totalCount: items.count, isCustom: anchor.isCustom, customized: anchor.customized, items: items
+        )
+        return sections.compactMap { section in
+            if section.id == anchor.id { return combined }
+            if section.sectionType == "continue_watching" || section.sectionType == "next_up" { return nil }
+            return section
+        }
+    }
+
     private func persist() {
         guard let key = storageKey() else { return }
         loadedStorageKey = key
         let stored = StoredLayout(
             orderedSectionIds: orderedSectionIds,
-            hiddenSectionIds: hiddenSectionIds
+            hiddenSectionIds: hiddenSectionIds,
+            combineEmbyNextUp: combineEmbyNextUp
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
         defaults.set(data, forKey: key)
