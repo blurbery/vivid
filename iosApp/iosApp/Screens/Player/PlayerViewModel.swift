@@ -265,9 +265,7 @@ class PlayerViewModel {
             vividPlaybackController.dispose()
         }
         #if os(iOS) || os(tvOS)
-        for url in openSubtitleFiles { try? FileManager.default.removeItem(at: url) }
-        openSubtitleFiles = []
-        openSubtitleIDs = []
+        if !forReplacement { removeOpenSubtitleFiles(openSubtitleFiles.clear()) }
         #endif
         return previewShutdown
     }
@@ -2811,6 +2809,9 @@ class PlayerViewModel {
         shouldPlayWhenReady: Bool
     ) async throws {
         try requireCurrentStreamLoad(expectedStreamLoadGeneration)
+        #if os(iOS) || os(tvOS)
+        removeOpenSubtitleFiles(openSubtitleFiles.prepare(contentID: prepared.watchDetail.contentId))
+        #endif
         let preferredSubtitles = subtitleOrderingLanguage.map { [$0] } ?? []
         let preferredAudio = VividInitialAudioPreference.languages(
             selectedOrdinal: prepared.protocolV3?.plan.selectedTracks.audio?.index,
@@ -2933,7 +2934,19 @@ class PlayerViewModel {
         // settled and deferred track picks may drive the engine.
         establishedVividLoadEpoch = loadEpoch
         scrubPreviewProvider.activate(spec)
+        #if os(iOS) || os(tvOS)
+        for entry in openSubtitleFiles.entries.values {
+            vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: entry.url,
+                name: "OpenSubtitles · " + entry.name, language: entry.language,
+                isHearingImpaired: entry.hearingImpaired, formatHint: "srt"), appTrackID: entry.id)
+        }
+        #endif
         adoptVividInventory()
+        #if os(iOS) || os(tvOS)
+        if let id = openSubtitleFiles.selectedID, let track = subtitleTracks.first(where: { $0.trackId == id }) {
+            selectSubtitle(track)
+        }
+        #endif
         reapplyVividGain()
 
         if vividPlaybackController.shouldPlayWhenReady {
@@ -5325,8 +5338,11 @@ class PlayerViewModel {
     }
 
     #if os(iOS) || os(tvOS)
-    private var openSubtitleIDs = Set<Int64>()
-    private var openSubtitleFiles: [URL] = []
+    private var openSubtitleFiles = OpenSubtitleSessionFiles()
+    private var openSubtitleIDs: Set<Int64> { Set(openSubtitleFiles.entries.keys) }
+    private func removeOpenSubtitleFiles(_ files: [URL]) {
+        for url in files { try? FileManager.default.removeItem(at: url) }
+    }
     var openSubtitleContext: OpenSubtitlePlaybackContext? {
         guard !isDisposed, !isAudioOnlyVividLoad, let detail = currentWatchDetail else { return nil }
         return OpenSubtitlePlaybackContext(contentID: detail.contentId, generation: streamLoadGeneration,
@@ -5337,11 +5353,17 @@ class PlayerViewModel {
         guard openSubtitleContext == expected else { throw OpenSubtitlesError.context }
         guard OpenSubtitlesClient.isSubtitle(data), let text = String(data: data, encoding: .utf8),
               !VividSubtitleLoader.parse(text).isEmpty else { throw OpenSubtitlesError.file }
+        let id = 9_000_000_000 + Int64(result.id)
+        if openSubtitleIDs.contains(id), let track = subtitleTracks.first(where: { $0.trackId == id }), isSelectableSubtitle(track) {
+            selectSubtitle(track)
+            return
+        }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("vivid-opensubtitles-" + UUID().uuidString + ".srt")
         try data.write(to: url, options: .atomic)
-        openSubtitleFiles.append(url)
-        let id = 9_000_000_000 + Int64(result.id)
-        openSubtitleIDs.insert(id)
+        removeOpenSubtitleFiles(openSubtitleFiles.prepare(contentID: expected.contentID))
+        let replaced = openSubtitleFiles.register(.init(id: id, url: url, name: result.name,
+            language: result.language, hearingImpaired: result.hearingImpaired))
+        if let replaced { removeOpenSubtitleFiles([replaced]) }
         vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url, name: "OpenSubtitles · " + result.name,
             language: result.language, isHearingImpaired: result.hearingImpaired, formatHint: "srt"), appTrackID: id)
         adoptVividInventory()
@@ -5358,6 +5380,9 @@ class PlayerViewModel {
 
     func selectSubtitle(_ track: PlayerTrack) {
         guard isSelectableSubtitle(track) else { return }
+        #if os(iOS) || os(tvOS)
+        openSubtitleFiles.selectedID = openSubtitleIDs.contains(track.trackId) ? track.trackId : nil
+        #endif
         hasExplicitSubtitleChoice = true
         pendingSubtitleFfIndex = nil
         pendingSidecarSubtitleTrackId = nil
@@ -5370,6 +5395,9 @@ class PlayerViewModel {
     }
 
     func disableSubtitles() {
+        #if os(iOS) || os(tvOS)
+        openSubtitleFiles.selectedID = nil
+        #endif
         hasExplicitSubtitleChoice = true
         pendingSubtitleFfIndex = -1
         pendingSidecarSubtitleTrackId = nil

@@ -719,7 +719,12 @@ actor VividAPI {
         #if os(iOS) || os(tvOS)
         if !played {
             let auth = await tokenStore.captureOrdinaryRequestAuth()
-            if await MDBListSyncStore.shared.removeLocalImport(contentID: contentId, expected: auth) { return }
+            guard let auth, let profile = auth.profileId else { throw HTTPError.requestIdentityChanged }
+            if try await MDBListSyncStore.shared.removeLocalImport(contentID: contentId, expected: auth) { return }
+            let identity = HTTPRequestIdentity(serverId: auth.account.serverId, serverURL: auth.account.serverURL,
+                profileId: profile, clientFamily: "apple", credentialGenerationID: auth.account.credentialGenerationID)
+            _ = try await http.requestData(method: "DELETE", path: "/api/v1/watched/\(contentId)", requestIdentity: identity)
+            return
         }
         #endif
         if played {

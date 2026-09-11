@@ -305,16 +305,22 @@ final class MDBListSyncStore {
             }
             throw MDBListFailure.incomplete
         }
+        var detailCache: [String: MDBListWatchlistItem] = [:]
+        var missingDetails = Set<String>()
         func detail(_ contentID: String) async throws -> MDBListWatchlistItem? {
             try await validateContext()
+            if let cached = detailCache[contentID] { return cached }
+            if missingDetails.contains(contentID) { return nil }
             do {
                 let raw = try await HTTPClient.shared.requestData(method: "GET", path: "/api/v1/catalog/items/\(contentID)",
                     requestIdentity: identity)
                 let item = try Self.decoder().decode(ItemDetail.self, from: raw.data)
                 try await validateContext()
-                return MDBListWatchlistItem(type: item.type == "series" ? "show" : item.type,
+                let resolved = MDBListWatchlistItem(type: item.type == "series" ? "show" : item.type,
                     title: item.title, tmdb: item.tmdbId, imdb: item.imdbId)
-            } catch HTTPError.http(statusCode: 404, body: _) { return nil }
+                detailCache[contentID] = resolved
+                return resolved
+            } catch HTTPError.http(statusCode: 404, body: _) { missingDetails.insert(contentID); return nil }
         }
         let remote = try await client.watchlist(key: key)
         try await validateContext()
@@ -341,6 +347,8 @@ final class MDBListSyncStore {
             guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
             let candidates = try await catalog(path: "/api/v1/catalog",
                 query: ["q": item.title, "type": item.type == "show" ? "series" : "movie"])
+            // Never choose from a truncated candidate set or fan out across a huge ambiguous title.
+            guard candidates.count <= 100 else { continue }
             var matches: [String: MDBListWatchlistItem] = [:]
             for (candidateIndex, candidate) in candidates.enumerated() {
                 syncProgress = MDBListSyncProgress(step: 1, label: "Matching \(item.title)", completed: candidateIndex, total: candidates.count)
@@ -348,6 +356,8 @@ final class MDBListSyncStore {
             }
             if matches.count == 1 { resolved.merge(matches) { current, _ in current } }
         }
+        var localWrites = false
+        defer { if localWrites { watchlistRevision += 1 } }
         var remoteWrites = false
         var plans: [(String, MDBListWatchlistItem, Bool)] = []
         var mutations = 0
@@ -379,10 +389,11 @@ final class MDBListSyncStore {
                 try await validateContext()
                 ResponseCache.shared.remove(CacheKey.watchlist)
                 ResponseCache.shared.invalidateAllItemMetadata()
-                watchlistRevision += 1
+                localWrites = true
             }
             plans.append((id, item, desired))
         }
+        guard !plans.isEmpty else { try save(); return }
         // Read back writes. Failed or partial responses never advance the baseline.
         syncProgress = MDBListSyncProgress(step: 1, label: "Verifying watchlist changes")
         let confirmedRemote = remoteWrites ? try await client.watchlist(key: key) : remote
@@ -426,13 +437,23 @@ final class MDBListSyncStore {
         ResponseCache.shared.remove(CacheKey.itemWatchDetail(contentID))
     }
 
-    func removeLocalImport(contentID: String, expected: CapturedOrdinaryRequestAuth?) async -> Bool {
+    func removeLocalImport(contentID: String, expected: CapturedOrdinaryRequestAuth?) async throws -> Bool {
         guard let expected, let current = await TokenStore.shared.captureOrdinaryRequestAuth(),
               current.account == expected.account, current.profileId == expected.profileId else { return false }
         reload()
         guard imports.matched[contentID] != nil, !imports.ignored.contains(contentID) else { return false }
+        let generation = revision
+        let capturedScope = scope
+        guard let profile = expected.profileId else { throw HTTPError.requestIdentityChanged }
+        let identity = HTTPRequestIdentity(serverId: expected.account.serverId, serverURL: expected.account.serverURL,
+            profileId: profile, clientFamily: "apple", credentialGenerationID: expected.account.credentialGenerationID)
+        let raw = try await HTTPClient.shared.requestData(method: "GET", path: "/api/v1/catalog/items/\(contentID)", requestIdentity: identity)
+        let detail = try Self.decoder().decode(ItemDetail.self, from: raw.data)
+        guard revision == generation, scope == capturedScope else { throw CancellationError() }
+        let localOnly = MDBListImportPolicy.isEligible(played: detail.userData?.played,
+            inProgress: detail.userData?.isInProgress, position: detail.userData?.positionSeconds, locallyStarted: false)
         ignoreImport(contentID: contentID)
-        return true
+        return localOnly
     }
 
     func decorate<T>(_ value: T, expected: CapturedOrdinaryRequestAuth?) async -> T {

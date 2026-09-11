@@ -182,3 +182,34 @@ struct OpenSubtitlePlaybackContext: Equatable, Sendable {
     let generation: UInt64
     let query: OpenSubtitleQuery
 }
+
+/// Owns downloaded subtitles for one playing item across replacement loads.
+struct OpenSubtitleSessionFiles {
+    struct Entry {
+        let id: Int64
+        let url: URL
+        let name: String
+        let language: String
+        let hearingImpaired: Bool
+    }
+    private(set) var contentID: String?
+    private(set) var entries: [Int64: Entry] = [:]
+    var selectedID: Int64?
+
+    mutating func prepare(contentID: String) -> [URL] {
+        guard self.contentID != contentID else { return [] }
+        let removed = clear()
+        self.contentID = contentID
+        return removed
+    }
+    mutating func register(_ entry: Entry) -> URL? {
+        entries.updateValue(entry, forKey: entry.id)?.url
+    }
+    mutating func clear() -> [URL] {
+        let urls = entries.values.map(\.url)
+        entries = [:]
+        selectedID = nil
+        contentID = nil
+        return urls
+    }
+}

@@ -11,6 +11,7 @@ struct WatchlistView: View {
 
     @State private var items: [BrowseItem] = []
     @State private var isLoading = false
+    @State private var loadGeneration = UUID()
     @State private var error: ErrorState?
     @State private var uiCustomization = UICustomizationPreferences.shared
     @Environment(AppRouter.self) private var router
@@ -76,14 +77,8 @@ struct WatchlistView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Watchlist" : nil))
-        .task {
-            await loadWatchlist()
-        }
-        #if os(iOS) || os(tvOS)
-        .onChange(of: MDBListSyncStore.shared.watchlistRevision) { _, _ in
-            Task { await loadWatchlist() }
-        }
-        #endif
+        .task(id: watchlistRevision) { await loadWatchlist() }
+        .onDisappear { loadGeneration = UUID() }
         .refreshable {
             await loadWatchlist()
         }
@@ -224,7 +219,19 @@ struct WatchlistView: View {
         #endif
     }
 
+    private var watchlistRevision: Int {
+        #if os(iOS) || os(tvOS)
+        MDBListSyncStore.shared.watchlistRevision
+        #else
+        0
+        #endif
+    }
+
     private func loadWatchlist() async {
+        guard !Task.isCancelled else { return }
+        let generation = UUID()
+        loadGeneration = generation
+        defer { if loadGeneration == generation { isLoading = false } }
         if items.isEmpty,
            let cached: CatalogResponse = ResponseCache.shared.get(CacheKey.watchlist) {
             items = cached.items
@@ -237,13 +244,14 @@ struct WatchlistView: View {
             let response: CatalogResponse = try await VividAPI.shared.get(
                 "/api/v1/watchlist"
             )
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             ResponseCache.shared.set(response, for: CacheKey.watchlist)
             items = response.items
         } catch let err {
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             if items.isEmpty {
                 self.error = ErrorState(err)
             }
         }
-        isLoading = false
     }
 }

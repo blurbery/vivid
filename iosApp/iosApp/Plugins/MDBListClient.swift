@@ -106,7 +106,7 @@ final class MDBListClient: @unchecked Sendable {
         if let total = pagination?["total"] as? Int {
             let offset = pagination?["offset"] as? Int ?? 0
             guard total >= 0, offset >= 0, offset + itemCount >= total else { throw MDBListFailure.incomplete }
-        } else if itemCount >= 1000 && raw == nil {
+        } else if itemCount >= 1000 {
             throw MDBListFailure.incomplete
         }
         return nil

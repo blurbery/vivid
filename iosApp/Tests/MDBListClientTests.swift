@@ -460,6 +460,43 @@ final class MDBListClientTests: XCTestCase {
         }
     }
 
+    func testNullOrEmptyHistoryCursorCannotHideAnUnprovenFullPage() throws {
+        for cursor: Any in [NSNull(), ""] {
+            XCTAssertThrowsError(try MDBListClient.historyNextCursor(["next_cursor": cursor], itemCount: 1000))
+            XCTAssertNil(try MDBListClient.historyNextCursor(["next_cursor": cursor, "pagination": ["total": 1000, "offset": 0]], itemCount: 1000))
+            XCTAssertNil(try MDBListClient.historyNextCursor(["next_cursor": cursor], itemCount: 3))
+        }
+    }
+
+    func testDownloadedSubtitleAndSelectionSurviveSameItemReplacement() {
+        var files = OpenSubtitleSessionFiles()
+        XCTAssertTrue(files.prepare(contentID: "movie").isEmpty)
+        let url = URL(fileURLWithPath: "/tmp/test-subtitle.srt")
+        _ = files.register(.init(id: 7, url: url, name: "Subtitle", language: "en", hearingImpaired: false))
+        files.selectedID = 7
+        XCTAssertTrue(files.prepare(contentID: "movie").isEmpty)
+        XCTAssertEqual(files.entries[7]?.url, url)
+        XCTAssertEqual(files.selectedID, 7)
+        files.selectedID = nil
+        XCTAssertTrue(files.prepare(contentID: "movie").isEmpty)
+        XCTAssertNil(files.selectedID, "Off must remain off after replacement")
+    }
+
+    func testDownloadedSubtitlesNeverCarryIntoAnotherEpisodeOrSurviveFinalCleanup() {
+        var files = OpenSubtitleSessionFiles()
+        _ = files.prepare(contentID: "episode-1")
+        let url = URL(fileURLWithPath: "/tmp/test-subtitle.srt")
+        _ = files.register(.init(id: 7, url: url, name: "Subtitle", language: "en", hearingImpaired: false))
+        files.selectedID = 7
+        XCTAssertEqual(files.prepare(contentID: "episode-2"), [url])
+        XCTAssertTrue(files.entries.isEmpty)
+        XCTAssertNil(files.selectedID)
+        _ = files.register(.init(id: 8, url: url, name: "Other", language: "en", hearingImpaired: false))
+        XCTAssertEqual(files.clear(), [url])
+        XCTAssertTrue(files.entries.isEmpty)
+        XCTAssertNil(files.contentID)
+    }
+
     private func client() -> MDBListClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MDBListStubProtocol.self]
