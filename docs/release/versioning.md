@@ -35,7 +35,7 @@ Vivid’s source releases in this repository begin at `v0.6.0`.
 
 Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The Apple marketing version and GitHub source-release version are independent. Record the exact pushed source commit for each TestFlight upload; do not change the Apple marketing version to match a GitHub tag.
 
-Routine TestFlight updates retain the current marketing version and increment only the build number. Changing the Apple marketing version requires explicit approval from blurbery before archiving or uploading. The approved Apple marketing version is `0.14.3`. The latest recorded upload is build `14` on both platforms; see [recorded Apple builds](#recorded-apple-builds).
+Routine TestFlight updates retain the current marketing version and increment only the build number. Changing the Apple marketing version requires explicit approval from blurbery before archiving or uploading. The approved Apple marketing version is `0.14.3`. The latest recorded upload is build `15` on both platforms; see [recorded Apple builds](#recorded-apple-builds).
 
 Apple requires TestFlight App Review for the first build of a version; later builds within that version may not need a full review. Keeping the version stable avoids introducing a new version for every beta update, but does not guarantee immediate approval. Returning to a previously reviewed marketing version does not guarantee that a new build will skip review; expiring another build does not provide that guarantee either. See [Apple’s TestFlight App Review guidance](https://developer.apple.com/help/glossary/testflight-app-review/).
 
@@ -85,7 +85,9 @@ The repository and its source releases are public. Apple beta distribution remai
 
 ## Recorded Apple builds
 
-These are distribution records, not the current feature list. [PR #8](https://github.com/blurbery/vivid/pull/8) subsequently added MDBList and OpenSubtitles features to main. Its local development builds also used `0.14.3 (14)`; no new TestFlight upload was made for that work. Build `15` is reserved for the next paired upload from main, retaining `0.14.3`; its distribution status is recorded below once Apple accepts it.
+On 11 September 2026, iOS/iPadOS and tvOS `0.14.3 (15)` were archived from main commit `7d4ac7f55b8f04c755bb330c8844f2023930b5c9` and accepted by Apple. This includes MDBList history and watchlist sync, OpenSubtitles, iCloud plugin connections, player fixes and updated in-app privacy text. Both signed Release archives and exported apps/extensions passed version, signature, existing identity and production CloudKit checks. The [regression run](https://github.com/blurbery/vivid/actions/runs/34590133364) passed the iOS suite and tvOS build for the application logic in `d9f6d52`; subsequent app changes were verified as text-only, followed by the build-counter update. No new physical-device playback test was performed on these Release archives. Apple reported missing dSYMs for bundled media libraries, limiting their crash symbolication without blocking either upload. Processing completed for both platforms, testing notes were saved, and both builds are attached to the existing internal tester group. Neither build has been submitted to the external group in this upload.
+
+These are distribution records, not the current feature list. [PR #8](https://github.com/blurbery/vivid/pull/8) subsequently added MDBList and OpenSubtitles features to main. Its local development builds also used `0.14.3 (14)`; no new TestFlight upload was made for that work. Build `15` uploads the current main fixes with the same marketing version; see the record below.
 
 These are historical records, not a live App Store Connect status feed. Pending checks refer to the stated revision and are not automatically satisfied by a later build. Build 14 is the latest recorded upload.
 

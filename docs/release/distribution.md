@@ -8,7 +8,7 @@
 
 ---
 
-Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. The latest recorded pair is 0.14.3 (14), with processing complete and external distribution confirmed by blurbery; see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
+Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. The latest uploaded pair is 0.14.3 (15), processed with notes saved and the internal tester group attached. Build 14 remains the last confirmed external distribution. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
 
 ## What is ready
 
@@ -16,7 +16,7 @@ Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record 
 | --- | --- |
 | App targets | `Vivid` for iPhone/iPad and `VividTV` for Apple TV, generated from `iosApp/project.yml` |
 | Supported OS versions | iOS/iPadOS 18 or later; tvOS 26 or later. Mac and Vision Pro distribution are disabled. |
-| Build tools | Build 14 used local Xcode 26.6; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
+| Build tools | Build 15 used local Xcode 26.6; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
 | About | Version/build, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution remains on the media information page and in acknowledgements. |
 | iCloud | The encrypted private account vault includes profile order, shared preferences and TMDb, Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The release container is registered; confirm the production schema and live restore on a second device before relying on it in an external beta. |
