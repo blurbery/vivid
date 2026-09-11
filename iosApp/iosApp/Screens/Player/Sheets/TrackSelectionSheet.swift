@@ -8,6 +8,7 @@ struct TrackSelectionSheet: View {
     enum Scope { case all, audio, subtitles }
     var scope: Scope = .all
     let onDismiss: () -> Void
+    @State private var showOpenSubtitles = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -15,7 +16,7 @@ struct TrackSelectionSheet: View {
                 Text(scope == .audio ? "Audio" : scope == .subtitles ? "Subtitles" : "Audio & Subtitles")
                     .font(.headline)
                 if scope == .subtitles {
-                    Text("Embedded in this media file")
+                    Text("Available subtitle tracks")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -28,6 +29,9 @@ struct TrackSelectionSheet: View {
                         audioRows
                     }
                     if scope != .audio {
+                        if OpenSubtitlesStore.shared.isConnected, viewModel.openSubtitleContext != nil {
+                            Button("Find on OpenSubtitles") { showOpenSubtitles = true }.padding(.vertical, 12)
+                        }
                         subtitleRows(isSecondary: false)
                         if viewModel.orderedSubtitleTracks.isEmpty {
                             Text("This media file has no embedded subtitles.")
@@ -49,6 +53,8 @@ struct TrackSelectionSheet: View {
             }
             .scrollIndicators(.visible)
         }
+        .task { OpenSubtitlesStore.shared.reload() }
+        .sheet(isPresented: $showOpenSubtitles) { OpenSubtitlesSearchView(viewModel: viewModel) }
     }
 
     @ViewBuilder

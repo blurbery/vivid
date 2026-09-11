@@ -33,6 +33,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     let onToggleWatchlist: () -> Void
     let onToggleWatched: () -> Void
     let onToggleSeasonWatched: () -> Void
+    let onSetEpisodeWatched: (String, Bool) async -> Bool
     let onPersonTap: (String) -> Void
     let onNavigateToItem: (String) -> Void
     /// Play a local extra from the trailers rail. Routed separately from
@@ -188,11 +189,16 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                         ? "Remove from Watchlist" : "Add to Watchlist",
                     action: onToggleWatchlist
                 )
-                PhoneLabeledMenu(icon: "ellipsis", label: "More") {
-                    Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
+                PhoneLabeledMenu(icon: "checkmark.circle", label: "Watched") {
+                    if let episode = nextUpEpisode {
+                        Button(episode.userData?.played == true ? "Mark Episode as Unwatched" : "Mark Episode as Watched") {
+                            Task { _ = await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
+                        }
+                    }
                     if let selectedSeason {
                         Button("Mark " + selectedSeason.downloadDisplayName + (selectedSeason.userData?.played == true ? " as Unwatched" : " as Watched"), action: onToggleSeasonWatched)
                     }
+                    Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
                 }
                 if DownloadManager.shared.downloadsEnabled {
                     SeriesDownloadMenuButton(

@@ -18,7 +18,7 @@ struct ContentView: View {
     @State private var didStartInitialStateCheck = false
     @State private var didFinishStartupSplash = false
     @State private var pendingInitialAuthState: AppRouter.AuthState?
-    #if os(tvOS)
+    #if os(iOS) || os(tvOS)
     @State private var showsCloudRestore = false
     #endif
     #if os(tvOS)
@@ -51,10 +51,12 @@ struct ContentView: View {
         #if os(iOS)
         .id(TVSavedAccountStore.shared.contentRevision)
         #endif
-        #if os(tvOS)
+        #if os(iOS) || os(tvOS)
         .sheet(isPresented: $showsCloudRestore) {
             TVCloudRestoreView {
+                #if os(tvOS)
                 didCompleteProviderSetup = true
+                #endif
                 TVSavedAccountStore.shared.showsSelector = true
                 showsCloudRestore = false
                 router.resetToLogin()
@@ -156,6 +158,12 @@ struct ContentView: View {
         #if DEBUG
         .task {
             await maybeDebugAutoLogin()
+        }
+        #endif
+        #if os(iOS) || os(tvOS)
+        .task(id: MDBListSyncStore.shared.contextKey + String(describing: scenePhase) + String(describing: router.authState)) {
+            guard scenePhase == .active, router.authState == .authenticated else { return }
+            await MDBListSyncStore.shared.run()
         }
         #endif
         .task(id: router.authState) {
@@ -554,7 +562,7 @@ struct ContentView: View {
             if router.authState == .needsServerSetup {
                 #if os(iOS)
                 NavigationStack(path: $router.path) {
-                    PhoneProviderSelectionView(router: router)
+                    PhoneProviderSelectionView(router: router, onRestore: { showsCloudRestore = true })
                         .navigationDestination(for: Route.self) { route in
                             destinationView(for: route)
                         }
@@ -1806,6 +1814,8 @@ struct MainTabView: View {
                     }
                 }
             }
+            // A keyboard inside the player must not lift the underlying Home tab bar.
+            .ignoresSafeArea(.keyboard, edges: showsMobileUtilityPage ? [] : .bottom)
             #else
             if prefersSidebarLayout { sidebarLayout } else { tabLayout }
             #endif

@@ -660,6 +660,7 @@ private struct ItemDetailPhoneContent: View {
                 onToggleWatchlist: { Task { await viewModel.toggleWatchlist() } },
                 onToggleWatched: { Task { await viewModel.toggleWatched() } },
                 onToggleSeasonWatched: { Task { await viewModel.toggleSelectedSeasonWatched() } },
+                onSetEpisodeWatched: { id, played in await viewModel.setEpisodeWatched(contentId: id, played: played) },
                 onPersonTap: { personId in
                     if let pid = Int(personId) {
                         router.navigate(to: .personDetail(personId: pid))

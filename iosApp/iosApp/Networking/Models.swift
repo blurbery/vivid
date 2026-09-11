@@ -409,7 +409,7 @@ struct ItemDetail: Codable {
     let episodeCount: Int?
     let airDate: String?
     let isSpecials: Bool?
-    let userData: LeafItemUserData?
+    var userData: LeafItemUserData?
     let versions: [FileVersion]?
     let subtitles: [SubtitleInfoBasic]?
     let intro: TimeRange?
@@ -1090,7 +1090,7 @@ struct WatchDetail: Codable {
     let subtitles: [SubtitleInfoBasic]?
     let intro: TimeRange?
     let credits: TimeRange?
-    let userData: LeafItemUserData?
+    var userData: LeafItemUserData?
     let seriesId: String?
     let seriesTitle: String?
     let seasonNumber: Int?
@@ -1320,7 +1320,7 @@ struct SeasonsResponse: Codable {
 }
 
 struct EpisodesResponse: Codable {
-    let episodes: [EpisodeListItem]
+    var episodes: [EpisodeListItem]
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)

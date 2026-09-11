@@ -201,8 +201,9 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
 
     private var moreMenu: some View {
         TVCircleMenuButton(
-            title: "More",
-            accessibilityLabel: "More options",
+            icon: "checkmark.circle",
+            title: "Watched",
+            accessibilityLabel: "Watched options",
             stabilizesFocusMotion: true
         ) {
             TVDetailVersionMenu(versions: nextUpVersions, selectedFileId: selectedNextUpFileId, onSelect: onSelectNextUpVersion)

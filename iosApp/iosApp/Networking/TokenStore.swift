@@ -281,6 +281,10 @@ actor TokenStore {
             )
             throw HTTPError.requestIdentityChanged
         }
+        if let generation = expected.credentialGenerationID,
+           generation != account.credentialGenerationID {
+            throw HTTPError.requestIdentityChanged
+        }
         let currentServerId = activeServerId
         let currentURL = ServerRegistry.normalize(
             url: defaults.string(forKey: serverUrlDefaultsKey) ?? ""

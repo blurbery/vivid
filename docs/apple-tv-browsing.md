@@ -76,7 +76,7 @@ Home performance trial: a 64-second Living Room Time Profiler capture of the app
 
 ## Trailers and More Like This
 
-Settings → General → Trailers accepts a personal TMDb API key or read-access token. Without a configured connection, trailer rows are hidden. Detail-page requests select up to three unique YouTube trailers, preferring the main trailer and, for series, trailers for the latest season. Results are cached; the physical Apple TV opens YouTube to play them.
+Settings → Plugins → Trailers accepts a personal TMDb API key or read-access token. Without a configured connection, trailer rows are hidden. Detail-page requests select up to three unique YouTube trailers, preferring the main trailer and, for series, trailers for the latest season. Results are cached; the physical Apple TV opens YouTube to play them.
 
 More Like This is independent of TMDb. It uses the active server/profile catalog, filters by shared genres, studios or networks, and samples up to three hundred candidates across the matching catalog after reading its count. Genre overlap dominates ranking, followed by production and release era. Ties use a stable title-independent order. Up to ten results are shown, excluding the current item and wrong media types. This is bounded metadata matching, not a full-library semantic recommendation engine; sparse metadata can produce few or no matches.
 

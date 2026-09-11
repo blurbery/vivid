@@ -79,6 +79,11 @@ struct WatchlistView: View {
         .task {
             await loadWatchlist()
         }
+        #if os(iOS) || os(tvOS)
+        .onChange(of: MDBListSyncStore.shared.watchlistRevision) { _, _ in
+            Task { await loadWatchlist() }
+        }
+        #endif
         .refreshable {
             await loadWatchlist()
         }

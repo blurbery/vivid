@@ -442,7 +442,7 @@ struct EmbyAdapter {
         if let library = input["library_id"] { q["ParentId"] = try await libraryID(library) }
         if let person = input["person_id"] { q["PersonIds"] = try EmbyConnection.id(person) }
         if input["source"] == "favorites" { q["Filters"] = "IsFavorite" }
-        if input["source"] == "history" { q["Filters"] = "IsPlayed"; q["SortBy"] = "DatePlayed"; q["SortOrder"] = "Descending"; q["IncludeItemTypes"] = "Movie,Episode" }
+        if input["source"] == "history" { q["Filters"] = "IsPlayed"; q["SortBy"] = "DatePlayed"; q["SortOrder"] = "Descending"; q["IncludeItemTypes"] = input["type"] == "movie" ? "Movie" : input["type"] == "episode" ? "Episode" : "Movie,Episode" }
         if input["source"] == "watchlist" {
             let ids = watchlistIDs
             guard !ids.isEmpty else { return ["items": [], "total": 0, "hasMore": false] }

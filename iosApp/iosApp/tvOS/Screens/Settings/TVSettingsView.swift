@@ -365,6 +365,8 @@ struct TVSettingsView: View {
                 detailFocus: $detailFocus,
                 presentPicker: presentPicker
             )
+        case .plugins:
+            PluginsSettingsView()
         case .server:
             serverPane
         case .seerr:
@@ -455,6 +457,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
     case playback
     case subtitles
     case server
+    case plugins
     case seerr
     case metadata
     case about
@@ -466,6 +469,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .general: return "General"
         case .playback: return "Playback"
         case .subtitles: return "Subtitles"
+        case .plugins: return "Plugins"
         case .server: return "Servers"
         case .seerr: return "Seerr"
         case .metadata: return "Metadata"
@@ -478,6 +482,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .general: return "gearshape"
         case .playback: return "play.rectangle"
         case .subtitles: return "captions.bubble"
+        case .plugins: return "puzzlepiece.extension"
         case .server: return "server.rack"
         case .seerr: return "sparkles"
         case .metadata: return "internaldrive"
@@ -493,6 +498,8 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
             return "Streaming quality and episode behavior for this Apple TV."
         case .subtitles:
             return "Language, behavior, and on-screen appearance."
+        case .plugins:
+            return "Trailers and watched-history connections."
         case .server:
             return "The media server this Apple TV is connected to."
         case .seerr:
@@ -509,6 +516,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .general: return "App and navigation"
         case .playback: return "Quality and episodes"
         case .subtitles: return "Language and appearance"
+        case .plugins: return "Trailers and watched history"
         case .server: return "Connection and version"
         case .seerr: return "Media requests"
         case .metadata: return "Home cache and storage"

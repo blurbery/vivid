@@ -1,6 +1,6 @@
-#if os(tvOS)
 import SwiftUI
 
+#if os(tvOS)
 struct TVProviderSelectionView: View {
     let onRestore: () -> Void
     @Environment(AppRouter.self) private var router
@@ -121,6 +121,9 @@ struct TVProviderSelectionView: View {
         }
     }
 }
+#endif
+
+#if os(iOS) || os(tvOS)
 /// Restoration is optional and never owns the server-selection navigation.
 struct TVCloudRestoreView: View {
     let onRestored: () -> Void
@@ -147,10 +150,16 @@ struct TVCloudRestoreView: View {
             }
             .buttonStyle(.bordered)
         }
+        #if os(tvOS)
         .padding(60)
+        #else
+        .padding(24)
+        #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
+        #if os(tvOS)
         .onExitCommand { dismiss() }
+        #endif
         .task(id: attempt) {
             message = nil
             // No router is supplied: backing out must not let this request

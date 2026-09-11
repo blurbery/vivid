@@ -127,6 +127,7 @@ struct ServerSetupView: View {
 #if os(iOS)
 struct PhoneProviderSelectionView: View {
     var router: AppRouter
+    let onRestore: () -> Void
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -145,6 +146,10 @@ struct PhoneProviderSelectionView: View {
                     providerCard("Emby", image: "EmbyLogo", available: true)
                 }.buttonStyle(.plain)
                 providerCard("Jellyfin", image: "JellyfinLogo", available: false)
+                Button(action: onRestore) {
+                    Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
             }
             .frame(maxWidth: 480)
             .padding(24)

@@ -700,16 +700,28 @@ actor VividAPI {
     }
 
     func toggleWatchlist(contentId: String, isInWatchlist: Bool) async throws {
+        #if os(iOS) || os(tvOS)
+        let auth = await tokenStore.captureOrdinaryRequestAuth()
+        #endif
         if isInWatchlist {
             try await http.putVoid("/api/v1/watchlist/\(contentId)")
         } else {
             try await http.delete("/api/v1/watchlist/\(contentId)")
         }
+        #if os(iOS) || os(tvOS)
+        await MDBListSyncStore.shared.watchlistChanged(expected: auth)
+        #endif
     }
 
     /// Mark a content item (movie / series / season / episode) as watched
     /// or unwatched. Server resolves the leaf targets.
     func setWatched(contentId: String, played: Bool) async throws {
+        #if os(iOS) || os(tvOS)
+        if !played {
+            let auth = await tokenStore.captureOrdinaryRequestAuth()
+            if await MDBListSyncStore.shared.removeLocalImport(contentID: contentId, expected: auth) { return }
+        }
+        #endif
         if played {
             try await http.postVoid("/api/v1/watched/\(contentId)")
         } else {

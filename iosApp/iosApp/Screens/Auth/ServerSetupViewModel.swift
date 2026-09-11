@@ -61,11 +61,7 @@ class ServerSetupViewModel {
             attempted.append(candidate)
             do {
                 let status = try await auth.checkServer(url: candidate, provider: provider)
-                #if os(tvOS)
                 router.resetToLogin()
-                #else
-                router.authState = .needsLogin
-                #endif
                 if status.needsSetup {
                     router.navigate(to: .serverNeedsSetup)
                 }
