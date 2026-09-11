@@ -64,35 +64,9 @@ struct PhoneEpisodeListRow: View {
             .clipped()
             .accessibilityHidden(true)
 
-            if episode.userData?.played == true {
-                Color.black.opacity(0.3)
-            }
+            PhoneEpisodeStatusOverlay(episode: episode, compact: true)
+                .padding(7)
 
-            if isCurrent {
-                Text("NOW VIEWING")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.8)
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.white, in: Capsule())
-                    .padding(7)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-
-            if episode.userData?.played == true {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 21, height: 21)
-                    .background(.green, in: Circle())
-                    .padding(7)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            }
-
-            if let progress = PhoneEpisodeFormatting.progressFraction(for: episode) {
-                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds, height: 4, inset: 8)
-            }
         }
         .frame(width: thumbnailWidth, height: thumbnailHeight)
         .clipShape(RoundedRectangle(cornerRadius: VividTheme.smallCornerRadius))
@@ -104,12 +78,9 @@ struct PhoneEpisodeListRow: View {
 
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let metadataLine = PhoneEpisodeFormatting.metadataLine(for: episode) {
-                Text(metadataLine)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
+            Text("EPISODE \(episode.episodeNumber)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             Text(PhoneEpisodeFormatting.title(for: episode))
                 .font(.headline)
@@ -123,6 +94,9 @@ struct PhoneEpisodeListRow: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
+            Text(DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)

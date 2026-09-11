@@ -140,7 +140,7 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                 $0.userData?.isInProgress == true ? "Resume" : "Play"
             },
             playSubtitle: nextUpEpisode.map(playButtonSubtitle(for:)),
-            resumeProgress: ResumePresentation(position: nextUpEpisode?.userData?.positionSeconds, duration: nextUpEpisode?.userData?.durationSeconds),
+            resumeProgress: ResumePresentation(position: nextUpEpisode?.userData?.positionSeconds, duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" }),
             onPlay: {
                 guard let nextUp = nextUpEpisode else { return }
                 onPlayEpisode(nextUp.contentId, selectedNextUpFileId, false)

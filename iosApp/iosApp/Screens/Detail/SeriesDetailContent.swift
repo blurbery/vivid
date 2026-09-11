@@ -166,7 +166,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                 title: nextUpEpisode.map(playButtonLabel) ?? "Play",
                 action: handlePrimaryPlayTap,
                 fullWidth: true,
-                resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds)
+                resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds, episodeLabel: nextUpEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" })
             )
 
             PhoneLabeledActionRow {

@@ -137,9 +137,9 @@ private struct PhoneEpisodeCard: View {
             still
             if captionStyle.showsTitle {
                 VStack(alignment: .leading, spacing: 4) {
-                    if isCurrent {
-                        nowViewingTag
-                    }
+                    Text("EPISODE \(episode.episodeNumber)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
 
                     Text(PhoneEpisodeFormatting.title(for: episode))
                         .font(.system(size: 14, weight: .semibold))
@@ -148,23 +148,17 @@ private struct PhoneEpisodeCard: View {
                         .multilineTextAlignment(.leading)
 
                     if captionStyle.showsMetadata {
-                        if let metadataLine = PhoneEpisodeFormatting.metadataLine(for: episode) {
-                            Text(metadataLine)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.vividSecondaryText)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
-                                .multilineTextAlignment(.leading)
-                        }
-
-                        if let overview = episode.overview, !overview.isEmpty {
-                            Text(overview)
+                        Group {
+                            Text(episode.overview ?? "")
                                 .font(.system(size: 12, weight: .regular))
                                 .foregroundStyle(Color.vividSecondaryText)
-                                .lineLimit(3, reservesSpace: true)
+                                .lineLimit(2, reservesSpace: true)
                                 .lineSpacing(2)
                                 .multilineTextAlignment(.leading)
                         }
+                        Text(DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -175,16 +169,6 @@ private struct PhoneEpisodeCard: View {
 
     private var titleColor: Color {
         isCurrent ? .vividOnSurface : Color.vividOnSurface.opacity(0.92)
-    }
-
-    private var nowViewingTag: some View {
-        Text("NOW VIEWING")
-            .font(.system(size: 9, weight: .heavy))
-            .tracking(0.8)
-            .foregroundColor(.black)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(Color.white))
     }
 
     private var accessibilityDescription: String {
@@ -202,25 +186,9 @@ private struct PhoneEpisodeCard: View {
             .frame(width: cardWidth, height: stillHeight)
             .clipped()
 
-            if episode.userData?.played == true {
-                Color.black.opacity(0.32)
-                    .frame(width: cardWidth, height: stillHeight)
-            }
+            PhoneEpisodeStatusOverlay(episode: episode)
+                .padding(12)
 
-            if episode.userData?.played == true {
-                VStack {
-                    HStack {
-                        Spacer()
-                        watchedBadge.padding(8)
-                    }
-                    Spacer()
-                }
-                .frame(width: cardWidth, height: stillHeight)
-            }
-
-            if let progress = progressFraction {
-                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds)
-            }
         }
         .frame(width: cardWidth, height: stillHeight)
         .clipShape(RoundedRectangle(cornerRadius: stillCornerRadius))
@@ -239,24 +207,37 @@ private struct PhoneEpisodeCard: View {
         isCurrent ? 2 : 0
     }
 
-    private var watchedBadge: some View {
-        ZStack {
-            Circle()
-                .fill(Color.green)
-                .frame(width: 22, height: 22)
-                .shadow(color: .black.opacity(0.3), radius: 2)
-            Image(systemName: "checkmark")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.white)
+
+}
+
+struct PhoneEpisodeStatusOverlay: View {
+    let episode: EpisodeListItem
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: compact ? 6 : 10) {
+            HStack(spacing: 4) {
+                if episode.userData?.played == true {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
+            }
+            .font(.system(size: compact ? 10 : 12))
+            .foregroundStyle(.white)
+            .fixedSize()
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(.black.opacity(0.45), in: Capsule())
+            if let progress = PhoneEpisodeFormatting.progressFraction(for: episode) {
+                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds,
+                                  height: 5, inset: 0)
+            } else {
+                Spacer(minLength: 0)
+            }
         }
-    }
-
-
-
-    private var progressFraction: Double? {
-        PhoneEpisodeFormatting.progressFraction(for: episode)
+        .allowsHitTesting(false)
     }
 }
+
 #endif
 
 #if !os(tvOS)

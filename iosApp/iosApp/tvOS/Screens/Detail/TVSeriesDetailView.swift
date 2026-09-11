@@ -51,7 +51,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     @FocusState private var playFocused: Bool
     @FocusState private var showActionRowFocused: Bool
     @State private var isShowingSeriesOverview = true
-    @State private var focusedEpisodeContentId: String?
     @ObservedObject private var profilePrefsStore = ProfilePrefsStore.shared
 
     var body: some View {
@@ -63,8 +62,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     selectedSeason: selectedSeason, currentContentId: activeEpisodeContentId,
                     heroEntryEpisode: showActionRowFocused ? playbackEpisode : nil,
                     favorites: episodeFavoriteStates, onSeason: onSelectSeason,
-                    onFocus: { episode in
-                        focusedEpisodeContentId = episode.contentId
+                    onFocus: { _ in
                         isShowingSeriesOverview = false
                     }, onPlay: { episode in
                         onActivateEpisode(episode.contentId)
@@ -139,32 +137,18 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     private var heroOverview: String? { detail.overview }
 
     private var heroSourceTokens: [String] {
-        guard !isShowingSeriesOverview, let episode = displayedEpisode else {
-            return TVHeroMetadata.seriesSourceTokens(from: detail)
-        }
-        let season = episode.seasonNumber == 0 ? "Specials" : "Season \(episode.seasonNumber)"
-        return [season, "Episode \(episode.episodeNumber)"]
+        TVHeroMetadata.seriesSourceTokens(from: detail)
     }
 
     private var heroFactsLine: [TVHeroFactToken] {
-        guard !isShowingSeriesOverview, let episode = displayedEpisode else {
-            return TVHeroMetadata.seriesFactsLine(from: detail)
-        }
-        var facts: [TVHeroFactToken] = []
-        if let airDate = DetailDateFormatting.abbreviatedDate(episode.airDate) {
-            facts.append(.text(airDate))
-        }
-        if let runtime = episode.runtime, runtime > 0 {
-            facts.append(.text(runtimeLabel(runtime)))
-        }
-        return facts
+        TVHeroMetadata.seriesFactsLine(from: detail)
     }
 
     private var showActionRow: some View {
         TVDetailActionRow(
             playTitle: playbackEpisode.map(showPlayTitle(for:)),
             playSubtitle: nil,
-            resumeProgress: ResumePresentation(position: playbackEpisode?.userData?.positionSeconds, duration: playbackEpisode?.userData?.durationSeconds),
+            resumeProgress: ResumePresentation(position: playbackEpisode?.userData?.positionSeconds, duration: playbackEpisode?.userData?.durationSeconds, episodeLabel: playbackEpisode.map { "S\($0.seasonNumber) E\($0.episodeNumber)" }),
             onPlay: {
                 guard let episode = playbackEpisode else { return }
                 onPlayEpisode(episode.contentId, selectedFileId(for: episode), false)
@@ -265,23 +249,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         }
     }
 
-    private var suggestedEpisode: EpisodeListItem? {
-        if let inProgress = episodes.first(where: { $0.userData?.isInProgress == true }) {
-            return inProgress
-        }
-        if let unwatched = episodes.first(where: { !($0.userData?.played ?? false) }) {
-            return unwatched
-        }
-        return episodes.first
-    }
-
-    private var displayedEpisode: EpisodeListItem? {
-        if let focusedEpisodeContentId {
-            return continuousPages.values.lazy.flatMap { $0 }.first { $0.contentId == focusedEpisodeContentId }
-        }
-        return suggestedEpisode
-    }
-
     private var playbackEpisode: EpisodeListItem? {
         resumeEpisode
     }
@@ -315,10 +282,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         return nextUpVersions.contains(where: { $0.fileId == selectedNextUpFileId })
             ? selectedNextUpFileId
             : nil
-    }
-
-    private func runtimeLabel(_ minutes: Int) -> String {
-        minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
 
     private var detailsSection: some View {

@@ -61,12 +61,14 @@ struct ProgressBar: View {
 struct ResumePresentation {
     let fraction: Double
     let minutesRemaining: Int
+    let episodeLabel: String?
     var minutesLabel: String { "\(minutesRemaining)m" }
 
-    init?(position: Double?, duration: Double?) {
+    init?(position: Double?, duration: Double?, episodeLabel: String? = nil) {
         guard let position, let duration, position.isFinite, duration.isFinite,
               duration > 0, position > 0, position < duration,
               duration / 60 < Double(Int.max) else { return nil }
+        self.episodeLabel = episodeLabel
         fraction = position / duration
         minutesRemaining = max(1, Int(ceil((duration - position) / 60)))
     }
@@ -81,20 +83,37 @@ struct ResumeButtonProgressLabel: View {
     let progress: ResumePresentation
     var body: some View {
         HStack(spacing: 12) {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill().opacity(0.25)
-                    Capsule().fill().frame(width: geometry.size.width * progress.fraction)
+            VStack(spacing: 4) {
+                if let episodeLabel = progress.episodeLabel {
+                    Text(episodeLabel)
+                        #if os(tvOS)
+                        .font(.system(size: 20, weight: .semibold))
+                        #else
+                        .font(.system(size: 12, weight: .semibold))
+                        #endif
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill().opacity(0.25)
+                        Capsule().fill().frame(width: geometry.size.width * progress.fraction)
+                    }
+                }
+                #if os(tvOS)
+                .frame(height: 8)
+                #else
+                .frame(height: 5)
+                #endif
             }
             #if os(tvOS)
-            .frame(width: 64, height: 8)
+            .frame(width: progress.episodeLabel == nil ? 64 : 84)
             #else
-            .frame(width: 54, height: 5)
+            .frame(width: progress.episodeLabel == nil ? 54 : 64)
             #endif
             Text(progress.minutesLabel).monospacedDigit().fixedSize()
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Resume, \(progress.minutesRemaining) minutes remaining")
+        .accessibilityLabel("Resume, \(progress.episodeLabel.map { $0 + ", " } ?? "")\(progress.minutesRemaining) minutes remaining")
     }
 }
