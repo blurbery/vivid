@@ -8,7 +8,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Apple-iOS%20%C2%B7%20tvOS-555555?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Apple: iOS and tvOS">
   <img src="https://img.shields.io/badge/Swift-SwiftUI-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Built with Swift and SwiftUI">
-  <a href="https://github.com/blurbery/vivid/releases"><img src="https://img.shields.io/badge/releases-SemVer-3B82F6?style=flat-square" alt="Releases use semantic versioning"></a>
+  <a href="https://github.com/blurbery/vivid/releases/latest"><img src="https://img.shields.io/github/v/release/blurbery/vivid?style=flat-square&amp;label=releases&amp;color=3B82F6&amp;display_name=release" alt="Latest GitHub release"></a>
   <img src="https://img.shields.io/badge/status-in%20development-D29922?style=flat-square" alt="In development">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-555555?style=flat-square" alt="Licence: Apache-2.0"></a>
 </p>
