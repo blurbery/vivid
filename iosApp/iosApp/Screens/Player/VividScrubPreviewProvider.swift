@@ -49,12 +49,15 @@ final class VividScrubPreviewProvider {
     /// were validated by `VividLoadSpec`.
     func activate(_ spec: VividLoadSpec) {
         endSession()
+        // tvOS keeps timeline scrubbing without starting thumbnail work.
+        #if !os(tvOS)
         sessionGeneration &+= 1
         activeSpec = spec
         extractor = engine.makeFrameExtractor(
             url: spec.sourceURL,
             httpHeaders: spec.options.httpHeaders
         )
+        #endif
     }
 
     /// Starts one interaction. Prewarming is elective and Vivid will yield

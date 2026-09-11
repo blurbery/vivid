@@ -365,7 +365,8 @@ final class VividEngine: ObservableObject {
         secondarySubtitleCues = backend.secondarySubtitleCues.map { convertCue($0, trackID: secondarySubtitleID) }
     }
     func makeFrameExtractor(url: URL, httpHeaders: [String: String]) -> FrameExtractor? {
-        FrameExtractor(url: url, headers: httpHeaders)
+        // Apple TV transport does not request seek-preview images.
+        return nil
     }
 
     private static func format(_ value: VividAetherTypes.Video) -> VideoFormat {

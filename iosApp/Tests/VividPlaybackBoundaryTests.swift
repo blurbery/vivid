@@ -7,6 +7,22 @@ import XCTest
 
 @MainActor
 final class VividPlaybackBoundaryTests: XCTestCase {
+    func testUnusedControllerStopDoesNotReleaseSharedAudioSession() throws {
+        let controller = try VividPlaybackController()
+        controller.stop()
+        controller.stop()
+        XCTAssertFalse(controller.engine.deactivatesAudioSessionOnStop)
+        XCTAssertFalse(controller.hasActiveLoad)
+
+        let spec = try VividLoadSpec(directURL: URL(string: "https://example.invalid/video.mp4")!,
+                                    headers: [:], startPosition: 0, audioOnly: false)
+        _ = controller.beginLoad(spec)
+        controller.stop()
+        XCTAssertFalse(controller.engine.deactivatesAudioSessionOnStop,
+                       "Preparing a spec without starting the engine does not own shared audio")
+        XCTAssertFalse(controller.hasActiveLoad)
+    }
+
     func testDirectCredentialUpdatePreservesPausedPlaybackAndRejectsStaleEpoch() async throws {
         let file = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: file) }

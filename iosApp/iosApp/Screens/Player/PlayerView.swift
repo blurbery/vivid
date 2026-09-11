@@ -858,7 +858,7 @@ struct PlayerNextUpScreen: View {
     private var tvNextUpContent: some View {
         ZStack {
             VStack(alignment: .leading, spacing: 32) {
-                HStack(alignment: .top, spacing: 80) {
+                HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 22) {
                         eyebrow
                         if let episode = viewModel.nextUpEpisode {
@@ -873,7 +873,7 @@ struct PlayerNextUpScreen: View {
                     }
                     .frame(maxWidth: 750, alignment: .leading)
                     Spacer(minLength: 0)
-                    miniPlayerPane.frame(width: 560, height: 315)
+                    miniPlayerPane.frame(width: 960, height: 540)
                 }
                 Spacer(minLength: 40)
                 actionRow(hasNextEpisode: viewModel.nextUpEpisode != nil)

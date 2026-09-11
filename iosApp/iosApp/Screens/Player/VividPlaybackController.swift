@@ -91,6 +91,7 @@ final class VividPlaybackController {
     /// spec for receiver policy until the corresponding load has committed:
     /// the engine may still be exposing the outgoing AVPlayer in between.
     private var hasCommittedActiveLoad = false
+    private var hasStartedEngineLoad = false
     private var generation: UInt64 = 0
     private var subscriptions: Set<AnyCancellable> = []
     private var didPublishFirstFrame = false
@@ -171,6 +172,7 @@ final class VividPlaybackController {
             throw CancellationError()
         }
         do {
+            hasStartedEngineLoad = true
             try await engine.load(
                 url: spec.sourceURL,
                 startPosition: spec.vividStartPosition,
@@ -444,6 +446,13 @@ final class VividPlaybackController {
     func stop() {
         invalidateActiveLoad()
         shouldPlayWhenReady = false
+        // SwiftUI can discard an eagerly initialised State model that never
+        // played. Its cleanup must not deactivate another engine's shared
+        // audio session or reset the active player's display criteria.
+        guard hasStartedEngineLoad else {
+            return
+        }
+        hasStartedEngineLoad = false
         // Video is the app's only playback owner. Release the shared audio
         // session during final teardown so audio from other apps can resume.
         engine.deactivatesAudioSessionOnStop = true

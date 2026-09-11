@@ -20,8 +20,6 @@ enum TVPlayerTimeDisplayMode: Equatable {
 /// depending on what's on screen.
 struct TVPlayerControls: View {
     private static let transportHorizontalInset: CGFloat = 80
-    private static let scrubPreviewCardWidth: CGFloat = 340
-    private static let scrubPreviewBottomInset: CGFloat = 300
 
     let viewModel: PlayerViewModel
     let showsTimelinePreview: Bool
@@ -314,22 +312,6 @@ struct TVPlayerControls: View {
                 .padding(.top, viewModel.isBuffering ? 120 : 64)
                 .padding(.horizontal, 80)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            if viewModel.isScrubbing, let image = viewModel.scrubPreviewImage {
-                GeometryReader { proxy in
-                    scrubPreviewCard(image)
-                        .frame(width: Self.scrubPreviewCardWidth)
-                        .padding(.leading, scrubPreviewLeadingInset(in: proxy.size.width))
-                        .padding(.bottom, Self.scrubPreviewBottomInset)
-                        .frame(
-                            maxWidth: .infinity,
-                            maxHeight: .infinity,
-                            alignment: .bottomLeading
-                        )
-                }
-                .transition(.opacity)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
             transportStack
                 .padding(.horizontal, Self.transportHorizontalInset)
                 .padding(.bottom, 48)
@@ -369,42 +351,6 @@ struct TVPlayerControls: View {
             )
             .frame(height: 240)
         }
-    }
-
-    private func scrubPreviewCard(_ image: CGImage) -> some View {
-        VStack(spacing: 8) {
-            Image(decorative: image, scale: 1)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 320, height: 180)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            Text(PlayerTimeFormatter.formatHMS(viewModel.scrubPreviewTime))
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-                .monospacedDigit()
-        }
-        .padding(10)
-        .vividPlayerGlass(
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
-            tint: Color.black.opacity(0.28)
-        )
-        .shadow(color: .black.opacity(0.5), radius: 18, y: 7)
-    }
-
-    /// Aligns the preview with the scrubber puck while keeping the complete
-    /// card inside the same horizontal bounds as the transport timeline.
-    private func scrubPreviewLeadingInset(in containerWidth: CGFloat) -> CGFloat {
-        let trackWidth = max(containerWidth - (Self.transportHorizontalInset * 2), 0)
-        let playheadCenter = Self.transportHorizontalInset
-            + (trackWidth * CGFloat(progressFraction))
-        let minimumLeading = Self.transportHorizontalInset
-        let maximumLeading = containerWidth
-            - Self.transportHorizontalInset
-            - Self.scrubPreviewCardWidth
-        return min(
-            max(playheadCenter - (Self.scrubPreviewCardWidth / 2), minimumLeading),
-            maximumLeading
-        )
     }
 
     /// The sleep-timer chip floats in the top-right when active. Buffering is

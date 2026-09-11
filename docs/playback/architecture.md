@@ -92,7 +92,7 @@ Use the engine’s actual track identities. A dense server ordinal is not necess
 
 Chapters and embedded subtitle tracks come from the engine’s media inventory. Selection and disabling happen locally without a Silo replan. External subtitle search and AI translation are not exposed. iOS retains VividKit’s text, libass and bitmap path. tvOS maps primary and secondary selection, cues, delay and styling into Vivid’s subtitle overlay, with eager native subtitle preparation. For actual external native playback, the adapter hands a served primary text rendition to AVPlayer, keyed to item and track changes, then restores the local overlay when returning. Upstream can produce OCR text renditions from bitmap tracks; that is lossy and has not been verified across Vivid’s external routes. Secondary tracks and shifted sidecars do not gain equivalent native external presentation. ASS styling parity with VividKit is not promised. Preferences remain device/profile-local.
 
-Scrub previews use the existing bounded request owner and platform engine frame extractor. Late images from an old source or gesture must not paint over a new selection.
+iOS scrub previews use the existing bounded request owner and platform engine frame extractor. Late images from an old source or gesture must not paint over a new selection.
 
 ## IntroDB marker timing
 
@@ -133,3 +133,10 @@ For relevant changes, record the source commit, engine/package revisions, build,
 - diagnostic redaction and signed-archive contents before distribution.
 
 State passed, failed, pending and not-run checks separately. Retain measured results under their original builds. Neither old audits nor this guide establish current format support or certify a release.
+
+
+The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the existing metadata and action positions. The gap beside the metadata contracts to fit the larger picture. It resizes the same persistent player surface through the existing preview anchor; episode loading, first-frame gating and transport commands are unchanged.
+
+Final playback teardown releases shared audio only when that controller actually started an engine load. Discarded, unused SwiftUI player models and repeated stops cannot deactivate another player’s audio session or reset its display criteria. Replacement loads retain that ownership until the real final stop.
+
+Apple TV scrubbing shows the timeline and target time without a thumbnail overlay. Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker. Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
