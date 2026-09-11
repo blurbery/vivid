@@ -401,9 +401,21 @@ struct EmbyAdapter {
     private func supplyingCombinedNextUp(_ sections: [[String:Any]]) async throws -> [[String:Any]] {
         guard let server = connection.identity?.account.serverId else { return sections }
         let combine = await HomeSectionPreferences.combinesEmbyNextUp(server: server, profile: userID)
-        guard combine, !sections.contains(where: { $0["sectionType"] as? String == "next_up" }) else { return sections }
-        let result = try await items("/Shows/NextUp", query: ["Limit":"20", "LegacyNextUp":"true"])
-        return sections + [section("next_up", "Next Up", result)]
+        return try await supplyingCombinedNextUp(sections, enabled: combine)
+    }
+
+    func supplyingCombinedNextUp(_ sections: [[String:Any]], enabled: Bool) async throws -> [[String:Any]] {
+        guard enabled, !sections.contains(where: { $0["sectionType"] as? String == "next_up" }) else { return sections }
+        do {
+            let result = try await items("/Shows/NextUp", query: ["Limit":"20", "LegacyNextUp":"true"])
+            return sections + [section("next_up", "Next Up", result)]
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            if case HTTPError.requestIdentityChanged = error { throw error }
+            if case EmbyError.signInRequired = error { throw error }
+            return sections
+        }
     }
 
     func homeSection(_ definition: [String:Any], catalog: [String:Any]) -> [String:Any] {
@@ -658,17 +670,22 @@ struct EmbyAdapter {
                 var rows: [Any] = []
                 var pageQuery = filterQuery
                 pageQuery["Limit"] = "1000"
-                while true {
+                let maximumRows = 10_000
+                let maximumPages = 100
+                for _ in 0..<maximumPages {
                     try Task.checkCancellation()
                     pageQuery["StartIndex"] = String(rows.count)
                     let response: [String: Any]
                     do { response = try await connection.object("GET", path, query: pageQuery) }
                     catch HTTPError.http(let status, _) { throw EmbyError.filterRequestFailed(step: path == "/Genres" ? "Genres" : "Ratings", status: status) }
                     guard let page = response["Items"] as? [Any] else { throw EmbyError.invalidResponse }
+                    guard page.count <= maximumRows - rows.count else { throw EmbyError.invalidResponse }
                     rows.append(contentsOf: page)
                     let total = response["TotalRecordCount"] as? Int ?? rows.count
                     if page.isEmpty || rows.count >= total { return rows }
+                    guard rows.count < maximumRows else { throw EmbyError.invalidResponse }
                 }
+                throw EmbyError.invalidResponse
             }
             let genres = try await optionRows("/Genres")
             let ratings = try await optionRows("/OfficialRatings")
