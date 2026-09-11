@@ -28,7 +28,7 @@ Vivid owns its interface, browsing behaviour and playback experience. Each media
 
 ## Saved accounts on Apple TV, iPhone and iPad
 
-A fresh installation first checks the user’s private iCloud account vault. When it contains a usable saved session, Vivid restores the matching server account; otherwise the app opens the provider selector with Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin remains Coming Soon.
+A fresh iPhone/iPad installation attempts a private iCloud vault restore, falling through to local setup when no usable session is restored. A fresh Apple TV opens the provider selector directly, with an optional Restore from iCloud action. The selector uses Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin remains Coming Soon.
 
 The first-run marker belongs to the installation. Removing the app removes its sandbox, preferences, caches and downloads. Keychain can outlive an uninstall, so the next clean Vivid installation clears Vivid’s local Keychain audience before it restores anything from iCloud. An ordinary app update keeps the existing Keychain data. This cleanup is limited to Vivid’s storage identity.
 
@@ -41,7 +41,7 @@ Settings lists circular saved-account cards and Add Profile. Here, a **profile c
     <tr><td>Cold launch with multiple accounts</td><td>Show the saved-account selector. Selecting a signed-in card reuses its stored session.</td></tr>
     <tr><td>Return after fifteen minutes in the background</td><td>Show the selector through the Vivid animation when multiple accounts exist, or require entry for a PIN-protected account. Shorter returns keep the current account.</td></tr>
     <tr><td>Manual Sign Out</td><td>Keep the card, clear its saved session, and return through the animation to selection. That signed-out state syncs through iCloud, so the account requires credentials on its next sign-in on other devices too.</td></tr>
-    <tr><td>Delete Profile</td><td>Long-press a saved profile in Settings, choose Delete Profile from the native menu, then confirm. Remove that Vivid account connection across iCloud devices, signing out locally if it is active. Remove its saved server only when no other saved account uses it. The actual server, server user and media library are not deleted.</td></tr>
+    <tr><td>Delete Profile</td><td>Enter saved-profile editing, select its round X, then confirm. Remove that Vivid account connection across iCloud devices, signing out locally if it is active. Remove its saved server only when no other saved account uses it. The actual server, server user and media library are not deleted.</td></tr>
     <tr><td>Update Login</td><td>Validate the current server username/password and update the saved session for the same server user identity. It does not change the username or password on the server.</td></tr>
     <tr><td>First sign-in</td><td>Resolve the primary Silo viewing profile and enter it directly. There is no separate profile-choice step. An existing server PIN is still enforced.</td></tr>
   </tbody>
@@ -63,7 +63,7 @@ When iCloud is available, Vivid stores saved server accounts, login sessions and
 
 Deleting a saved account on mobile or Apple TV writes a dated tombstone, whether the account is currently signed in or signed out. Every device applies that tombstone before uploading its local accounts, which prevents a stale iPhone, iPad or Apple TV from adding the deleted account back. The saved server remains when another saved account still references it. Deletion reaches another device at its next successful iCloud sync; an offline device may retain the card until then. Only entering credentials again after the deletion can deliberately restore that same server/user identity. Removing the app does not delete the private CloudKit vault or accounts from the user’s other devices; it removes data held by that installation.
 
-This sync is limited to connection and login memory. Downloads, metadata and artwork caches, Home and player preferences, TMDb/Seerr settings and local playback data do not move through this account vault. Watched and resume state continues to sync through the selected media server’s own API. Detail-page watched/unwatched changes refresh the local Home immediately after a successful write. A visible, foreground Home also reloads every ten seconds to reconcile posters, Continue Watching and next-episode state changed on another device; hidden or inactive Home pages do not keep polling.
+The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured TMDb/Seerr credentials. Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local. Watched and resume state continues to sync through the selected media server’s own API. Detail-page watched/unwatched changes refresh the local Home immediately after a successful write. A visible, foreground Home also reloads every ten seconds to reconcile posters, Continue Watching and next-episode state changed on another device; hidden or inactive Home pages do not keep polling.
 
 The implementation lives in <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift">TVSavedAccountStore</a> and <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountViews.swift">TVSavedAccountViews</a>. On mobile, the account cards and editor are in `IOSSettingsOverview.swift`, using the same store. Servers remains a separate Settings category for registered connections. Mobile Sign Out is in the account editor, not Servers. Saved Emby sessions additionally preserve the native user ID; the Emby adapter implements its API translation. Saved-account storage alone does not establish provider compatibility.
 
@@ -106,11 +106,13 @@ The server's display name labels that connection. It must not replace Vivid's ap
 
 The platform engine supplies playback state and engine observations. Vivid owns reporting that state to the selected server; upgrading the engine does not replace the app’s session bridge.
 
-For Silo, `PlayerViewModel` runs a periodic progress report every ten seconds. `PlaybackSessionBridge` posts position and pause state to `/api/v1/playback/{session_id}/progress`, sends Protocol V3 route events, and flushes final progress before stopping the session. The Silo server owns playback persistence and watch history; its backend handlers do not belong in the Apple app. Vivid has no in-app diagnostics-report capture or upload.
+Partial resume reporting requires 60 seconds of actual viewing; completion uses the separate 90%/credits/natural-end rules for both movies and episodes. See [reporting and completion](playback/architecture.md#downloads-and-external-playback).
+
+For Silo, `PlayerViewModel` runs a periodic progress report every ten seconds, using zero-position heartbeats before partial-progress qualification. `PlaybackSessionBridge` posts position and pause state to `/api/v1/playback/{session_id}/progress`, sends Protocol V3 route events, and flushes final progress before stopping the session. The Silo server owns playback persistence and watch history; its backend handlers do not belong in the Apple app. Vivid has no in-app diagnostics-report capture or upload.
 
 The progress request fields match `blurbery/silo-server` at `d91fd15194d126cf67c85db1e908ddb163fee62d`. This is a source-contract check, not an end-to-end device test of that server revision. Preserve the existing client reporting when changing branding, and keep Emby reporting separate when extending either provider or adding Jellyfin.
 
-Emby uses native PlaybackInfo negotiation and Sessions/Playing reporting, with tick conversion and authenticated playback inputs. Its local settings, subtitle wiring, download limits and device-check status are documented in the [Emby core](cores/emby.md). This does not change the Silo reporting contract.
+Emby uses native PlaybackInfo negotiation, Ping before partial-progress qualification and Sessions/Playing reporting afterward, with tick conversion and authenticated playback inputs. Its account-scoped settings, subtitle wiring, download limits and device-check status are documented in the [Emby core](cores/emby.md). This does not change the Silo reporting contract.
 
 ## Adding a provider
 

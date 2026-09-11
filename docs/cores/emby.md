@@ -32,7 +32,7 @@ On iPhone, iPad and Apple TV, the Emby provider card opens the existing native s
   </tbody>
 </table>
 
-Continue Watching and Next Up show `S01 E03 – Episode title` beneath the main title on mobile and Apple TV. Partly watched cards use the same inset white progress bar as episode cards on series details.
+Continue Watching and Next Up identify the episode beneath the series title. Apple TV resume-card captions use unpadded `S1 E3 – Episode title`; shared mobile feed captions retain `S01E03 · Episode title`. Partly watched cards use the same inset white progress bar as episode cards on series details.
 
 The Home endpoint listed in the 4.9 API schema is not sufficient evidence that the newer Home workflow is usable. Emby's own client gates it at 4.10.0.4. Legacy library-navigation tiles, audio and live-TV sections are not mapped into this video feed.
 
@@ -40,11 +40,11 @@ The Home endpoint listed in the 4.9 API schema is not sufficient evidence that t
 
 `EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to Vivid’s platform engine. It sends start, progress and stop reports through `/Sessions/Playing`, `/Sessions/Playing/Progress` and `/Sessions/Playing/Stopped`. Positions convert between seconds and Emby ticks. Transcoded-session cleanup uses Emby's active-encoding endpoint.
 
-Vivid’s Emby preferences are stored locally per server and native user; they do not synchronise through Emby or the iCloud account vault. The shared player exposes embedded subtitles and device/local caption preferences, not external files, search or translation. The five shared [quality choices](../playback/README.md#quality-controls) feed native PlaybackInfo negotiation: Vivid’s kbps ceiling converts to Emby’s bps, and each mode keeps its resolution ceiling. An eligible one-time buffering fallback reloads the selected source at the current position through the same bridge. Auto and Original are not enrolled. Detail Media Information likewise converts Emby’s bps before display. This does not replace device/codec capability checks or establish live throttled-playback coverage.
+Vivid’s Emby preferences are scoped per server and native user. Eligible shared preferences can sync through the private iCloud vault; playback and subtitle settings stay device-local. These are Vivid preferences, not a claim that Emby synchronises them between its own clients. The shared player exposes embedded subtitles and device/local caption preferences, not external files, search or translation. The five shared [quality choices](../playback/README.md#quality-controls) feed native PlaybackInfo negotiation: Vivid’s kbps ceiling converts to Emby’s bps, and each mode keeps its resolution ceiling. An eligible one-time buffering fallback reloads the selected source at the current position through the same bridge. Auto and Original are not enrolled. Detail Media Information likewise converts Emby’s bps before display. This does not replace device/codec capability checks or establish live throttled-playback coverage.
 
-TMDb remains an optional personal credential stored in Keychain. Emby provider IDs supply metadata identity; when a TMDb ID is absent, the Emby path can resolve an IMDb ID through TMDb. IntroDB uses the common series IMDb ID and season/episode numbers, with the shared IntroDB toggle and separate automatic-skip switches. Live Emby playback with these integrations still needs verification.
+TMDb remains an optional personal credential stored in Keychain. Emby provider IDs supply metadata identity; when a TMDb ID is absent, the Emby path can resolve an IMDb ID through TMDb. IntroDB and TheIntroDB use the common series IMDb ID and season/episode numbers through the shared Intro & Credit Skipper toggle and separate automatic-skip switches. Live Emby playback with these integrations still needs verification.
 
-Original-file downloads use the existing download manager with native Emby authentication and the server's download policy. Their detail-page progress ring, poster artwork and Downloads cards use the shared mobile presentation. Transcoded downloads, season batches and monitoring are not implemented by the Emby adapter. Watchlist and Vivid preferences are local; native favourites and watched state use Emby. Collection editing, realtime events and other unmapped features must not be advertised as complete.
+Original-file downloads use the existing download manager with native Emby authentication and the server's download policy. Their detail-page progress ring, poster artwork and Downloads cards use the shared mobile presentation. Transcoded downloads, season batches and monitoring are not implemented by the Emby adapter. Watchlist is local to Vivid; eligible shared preferences use the private iCloud vault, while native favourites and watched state use Emby. Collection editing, realtime events and other unmapped features must not be advertised as complete.
 
 ## Compatible audio
 
@@ -60,7 +60,7 @@ Earlier automated checks covered Emby mapping, identity boundaries, local prefer
 
 On 8 September 2026, read-only inspection confirmed that Reacher’s fourth season was stored as Gone Tomorrow with season number 4 in the connected Emby library. The adapter now labels it Season 4 on both platforms without altering the server. Four source-derived mapping checks passed for numbered seasons, Specials, missing numbers and unchanged episode titles. The existing season regression test also includes the Reacher case. Both device builds passed, were installed, and device checks confirmed the completed update on iPhone and Apple TV. This does not expand the untested integration and format coverage below.
 
-Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. Historical full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks. Use these limits when choosing the first TestFlight group.
+Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. Historical full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks. Use these limits when planning further TestFlight checks.
 
 ## Source ownership
 

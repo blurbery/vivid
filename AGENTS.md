@@ -18,7 +18,7 @@ These instructions apply to AI coding, documentation and review work in this rep
 - Keep credentials, personal information and private server addresses out of generated files, logs and publications. Never copy signing keys or tokens into the repository.
 - Prefer existing CI for full build/test matrices. Use focused local checks and physical Apple hardware for behaviour that CI cannot verify. Do not enable paid runners or change distribution settings without approval.
 - Report what changed, why, exact checks and outcomes, and remaining risks. Separate observed results from assumptions, automated checks and user-reported device testing.
-- A successful build is not a successful playback or UI test. Do not mark work ready for review or merge when required validation is missing or failing.
+- A successful build is not a successful playback or UI test. Report missing or failing validation; testing status alone does not block review. blurbery decides whether to merge.
 - Publishing source, installing a device build, releasing an Apple binary and deploying a media server are separate actions. Obtain authorization for each operation and leave unrelated systems untouched.
 
 ## Project Structure & Module Organization
@@ -38,7 +38,7 @@ This repository contains Vivid, an independent Apple media client. SwiftUI app c
 - Use `blurbery` as the maintainer identity in all documentation, templates and approval rules. Keep the nickname and public byline in the root README only.
 - Keep the README focused on the app and supported Apple devices. Put setup instructions, implementation details and validation records in their relevant guides. Keep claims factual and preserve the approved structure.
 - Preserve the centred silver logo, Vivid name, flat-square badge row and header links. Keep badge claims accurate; do not claim passing CI or available server integrations without verification. Keep server support in a full-width bordered HTML table on the web, not a GitHub callout. Use compact tables and a small number of native coloured GitHub alerts where they help; shortening the text must not strip out this layout.
-- Give human-facing guides the same Vivid style: compact centred silver logo and Vivid name, clear title, navigation links, full-width bordered tables and a small number of useful coloured callouts. Keep technical details in their relevant guides. Preserve legal wording and vendored fixture payloads.
+- Preserve existing guide layouts. When an approved formatting change is requested, give human-facing guides the same Vivid style: compact centred silver logo and Vivid name, clear title, navigation links, full-width bordered tables and a small number of useful coloured callouts. Keep technical details in their relevant guides. Preserve legal wording and vendored fixture payloads.
 - Keep the project disclosure in the README: "Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me." Describe human direction and actual device testing accurately.
 - Treat Silo, Emby and Jellyfin as server providers, not Vivid branding. Present Vivid as its own app; do not add a “based on Silo” origin story or promotional credit. Preserve existing code copyright, licence and dependency notices. Read [server connections](docs/server-connections.md) before changing provider behaviour.
 - Silo and Emby connections are available on iPhone, iPad and Apple TV; consult `docs/cores/emby.md` for implemented paths and verification gaps. Jellyfin remains planned. Keep Emby changes conditional on the Emby provider and preserve Silo defaults; shared code does not establish feature or device parity. GitHub Sponsors is pending; do not present donations as active.
@@ -75,6 +75,8 @@ Testing status is informational, not a draft or review gate. Missing, failed or 
 
 Documentation-only changes may state “Not applicable, documentation-only change”.
 
+For blurbery’s own Vivid work, write concise, natural Australian English in the owner’s voice. Use short change bullets for GitHub, App Store and TestFlight release notes. Avoid em dashes and unnecessary formal sections. Include only relevant evidence and limitations, and keep the required AI disclosure brief.
+
 ## Contribution reports
 
 Issues, pull requests and review reports must contain enough detail for another contributor to reproduce the problem and assess the change without reading a chat history.
@@ -106,9 +108,9 @@ This covers layout, navigation and interaction design, focus behaviour, colours,
 
 This covers the README, guides, branding text and assets, notices, contribution rules, agent instructions, PR templates and documentation comments or references in source and build files.
 
-- Obtain approval before editing, adding, renaming or deleting documentation. Approval to change app code does not automatically authorize documentation changes.
-- Keep wording, formatting and scope within the owner’s approval. Typo fixes, link repairs, automated updates, cleanup and AI rewrites still require approval.
-- Include a link or reference to blurbery’s approval in the PR. If a code change needs a documentation update, identify it and obtain approval before making that update.
+- An explicit documentation request authorises the requested edits. For owner-directed Vivid builds, review relevant existing docs and update them when the authorised behaviour, setup or release process changes. Unrelated documentation changes still require approval.
+- Keep wording, formatting and scope within the owner’s approval. Typo fixes, link repairs, automated updates, cleanup and AI rewrites must be covered by that request or the standing build-documentation policy.
+- Reference blurbery’s request in the PR. For each Vivid build, state whether relevant docs were updated, no update was needed or an update remains outstanding.
 - PRs containing unapproved documentation changes are not ready for review and must not be merged, even if another reviewer approves.
 - Preserve applicable copyright and licence notices. Approval to restyle a document does not authorize changing its legal terms.
 
@@ -139,8 +141,7 @@ described above. Use the repository PR template and preserve its disclosure sect
 Include repository-required issue links, validation evidence, risks, and
 follow-up work.
 
-- Keep one concern per pull request. If an honest description needs the word
-  "also," split the work.
+- Keep each pull request focused on the authorised outcome. Related code, tests and documentation belong together when they address that outcome.
 - Include before-and-after images for UI changes. Include a short video when
   motion or timing matters.
 - Upload pull request evidence to GitHub. Never commit PR-only assets such as

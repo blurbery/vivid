@@ -40,6 +40,8 @@ Contributors are welcome to open pull requests from branches in their own forks.
 
 Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). Each update pushed to `main` can publish a source release, so review and validate it first. Keep release bullets factual and user-facing.
 
+For blurbery’s own Vivid work, write concise, natural Australian English in the owner’s voice. Use short change bullets for GitHub, App Store and TestFlight release notes. Avoid em dashes and unnecessary formal sections. Include only relevant evidence and limitations, and keep the required AI disclosure brief.
+
 Give reviewers enough detail to reproduce the problem and assess the change without a private conversation:
 
 - Explain the symptoms, reproduction steps, expected behaviour and root cause when known.
@@ -79,9 +81,9 @@ This covers layout, navigation and interaction design, focus behaviour, colours,
 
 This covers the README, guides, branding text and assets, notices, contribution rules, agent instructions, PR templates and documentation comments or references in source and build files.
 
-- Obtain approval before editing, adding, renaming or deleting documentation. Approval to change app code does not automatically authorize documentation changes.
-- Keep wording, formatting and scope within the owner’s approval. Typo fixes, link repairs, automated updates, cleanup and AI rewrites still require approval.
-- Include a link or reference to blurbery’s approval in the PR. If a code change needs a documentation update, identify it and obtain approval before making that update.
+- An explicit documentation request authorises the requested edits. For owner-directed Vivid builds, review relevant existing docs and update them when the authorised behaviour, setup or release process changes. Unrelated documentation changes still require approval.
+- Keep wording, formatting and scope within the owner’s approval. Typo fixes, link repairs, automated updates, cleanup and AI rewrites must be covered by that request or the standing build-documentation policy.
+- Reference blurbery’s request in the PR. For each Vivid build, state whether relevant docs were updated, no update was needed or an update remains outstanding.
 - PRs containing unapproved documentation changes are not ready for review and must not be merged, even if another reviewer approves.
 - Preserve applicable copyright and licence notices. Approval to restyle a document does not authorize changing its legal terms.
 

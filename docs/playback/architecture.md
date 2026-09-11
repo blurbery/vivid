@@ -41,7 +41,7 @@ Supported AAC, MP3, AC-3 and E-AC-3 audio can use Apple’s compressed-audio ren
 
 In the retained earlier VividKit tvOS implementation, automatic audio flush and output-configuration notifications first attempt audio-only recovery using retained samples that have not finished playing. The replay queue is bounded to 16 MiB/512 samples and cleared on seek or cancellation. Replay uses the session’s condition lock and the same synchronizer clock; it does not seek or reset video. If replay is unavailable or fails confirmation, recovery can seek within the existing session, with at most three notification-driven recovery attempts in thirty seconds. AirPlay confirmation requires both clock movement and queued-audio progress, and retains flush notifications received during recovery. Audio enqueue allowance accounts for the output route’s latency, and the synchronizer rate is only assigned when it changes. iOS retains its existing audio-route behaviour.
 
-The separate [HDMI recovery policy](../cores/player-engine.md#hdmi-audio) is enabled in tvOS Release builds only for a pure HDMI output route. Debug builds retain the explicit `-VividHDMIAudioCore` launch-argument gate and require the same route. It detects blocked audio delivery, permits one audio-only reset per load and skips overdue samples during catch-up. It does not replace the shared renderer or alter normal startup, decoding or display matching. HomePod, AirPlay, Bluetooth, empty and mixed output routes bypass it. The [mini-core guide](../cores/player-engine.md#mini-cores) defines these shared and route-specific responsibilities.
+The separate [HDMI recovery policy](../cores/player-engine.md#hdmi-audio) is enabled in tvOS Release builds only for a pure HDMI output route. Debug builds retain the explicit `-VividHDMIAudioCore` launch-argument gate and require the same route. It detects blocked audio delivery, permits one audio-only reset per load and skips overdue samples during catch-up. It does not replace the shared renderer or alter normal startup, decoding or display matching. HomePod, AirPlay, Bluetooth, empty and mixed output routes bypass it. The [mini-core guide](../cores/player-engine.md#vividkit-mini-cores) defines these shared and route-specific responsibilities.
 
 Seeking interrupts old queue work, reuses the demux session, seeks to a preceding keyframe and decodes forward to the requested timestamp. Generation checks prevent outgoing frames and cues from reaching a newer seek or media item.
 
@@ -61,6 +61,8 @@ Credential changes update the reader and controller snapshot in place. An in-fli
 
 ## Loads and lifecycle
 
+Final playback teardown releases shared audio only when that controller actually started an engine load. Discarded, unused SwiftUI player models and repeated stops cannot deactivate another player’s audio session or reset its display criteria. Replacement loads retain that ownership until the real final stop.
+
 - Keep one clear owner for the engine and its observations.
 - Generation-fence loads, session staging, callbacks and recovery. A cancelled or replaced load must not publish into a newer item.
 - Keep session/progress identity aligned with the committed source. Stop stale staged sessions on failure or supersession.
@@ -69,6 +71,8 @@ Credential changes update the reader and controller snapshot in place. An in-fli
 - Preserve pause intent, resume position, seek completion and exactly-once end/episode-handover work across recovery.
 
 ## Apple TV presentation
+
+The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the existing metadata and action positions. A 10-point gap separates the preview from its metadata. It resizes the same persistent player surface through the existing preview anchor; episode loading, first-frame gating and transport commands are unchanged.
 
 The same Vivid surface remains mounted as playback moves between full screen and Next Up preview geometry. Next Up owns only the preview bounds and action layout; it must never create a second player or restart the current item. Its top-right preview and bottom-left actions are constrained to the actual viewport. The countdown and Play Now depend on an available next episode; absence of a next episode must show an explicit end/error state instead.
 
@@ -82,7 +86,7 @@ Mobile controls remain Vivid-owned. Quality, Audio, Subtitles and Chapters use s
 
 ## Account storage and sync
 
-Local account metadata lives in Vivid defaults and session/PIN material lives in Vivid’s Keychain audience. `VividCloudAccountSync` merges those records through encrypted CloudKit fields in the user’s private `iCloud.com.blurbery.vivid` container. It fetches before writing, retries record-change conflicts and applies deletion tombstones before local snapshots. A tombstoned server/user identity can return only after an explicit later authentication. The cloud vault does not contain downloads, metadata caches or player preferences.
+Local account metadata lives in Vivid defaults and session/PIN material lives in Vivid’s Keychain audience. `VividCloudAccountSync` merges those records through encrypted CloudKit fields in the user’s private `iCloud.com.blurbery.vivid` container. It fetches before writing, retries record-change conflicts and applies deletion tombstones before local snapshots. A tombstoned server/user identity can return only after an explicit later authentication. The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured TMDb/Seerr credentials. Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local. Watched and resume state belongs to the connected media server.
 
 Fresh-install detection uses an app-container marker. A missing marker with no existing Vivid defaults clears the local Vivid Keychain audience before cloud restoration; an upgrade seeds the marker without clearing the current session. Account sync is best effort when iCloud is unavailable and must not block a working local account.
 
@@ -92,11 +96,13 @@ Use the engine’s actual track identities. A dense server ordinal is not necess
 
 Chapters and embedded subtitle tracks come from the engine’s media inventory. Selection and disabling happen locally without a Silo replan. External subtitle search and AI translation are not exposed. iOS retains VividKit’s text, libass and bitmap path. tvOS maps primary and secondary selection, cues, delay and styling into Vivid’s subtitle overlay, with eager native subtitle preparation. For actual external native playback, the adapter hands a served primary text rendition to AVPlayer, keyed to item and track changes, then restores the local overlay when returning. Upstream can produce OCR text renditions from bitmap tracks; that is lossy and has not been verified across Vivid’s external routes. Secondary tracks and shifted sidecars do not gain equivalent native external presentation. ASS styling parity with VividKit is not promised. Preferences remain device/profile-local.
 
+Apple TV scrubbing shows the timeline and target time without a thumbnail overlay. Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker. Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
+
 iOS scrub previews use the existing bounded request owner and platform engine frame extractor. Late images from an old source or gesture must not paint over a new selection.
 
 ## IntroDB marker timing
 
-The Intro & Credit Skipper toggle controls both IntroDB and TheIntroDB on iOS and tvOS. Valid markers supplied for the selected file are published first and survive provider failures; item-level markers from another edition are not used. IntroDB fills missing file markers and its results are published immediately. If either marker is absent, an independent public TheIntroDB `/v3/media` lookup fills only that missing kind, preserving existing intro and credits markers. Errors leave the primary result intact, and cancellation, settings and session/content/file guards apply after each request. Neither lookup blocks playback. Each provider has a bounded one-hour in-memory cache and uses an ephemeral session without media-server credentials or API keys.
+The Intro & Credit Skipper toggle controls both IntroDB and TheIntroDB on iOS and tvOS. Valid markers supplied for the selected file are published first and survive provider failures; item-level markers from another edition are not used. IntroDB fills missing file markers and its results are published immediately. If intro, credits or recap is absent, an independent public TheIntroDB `/v3/media` lookup fills only missing kinds, preserving existing ranges. Errors leave the primary result intact, and cancellation, settings and session/content/file guards apply after each request. Neither lookup blocks playback. Each provider has a bounded one-hour in-memory cache and uses an ephemeral session without media-server credentials or API keys.
 
 The fallback adapts milliseconds and nullable boundaries to the current prompt model: a null intro start means zero, and a null credits end resolves when finite media duration arrives. Invalid ranges are rejected. For multiple segments of one kind, only the earliest structurally valid range is used; ranges are never joined across scenes. Recaps use the same toggle, countdown and skip control on iOS and tvOS, labelled Skip Recap within the recap range. Intro and recap markers remain separate on the timeline. Preview and multiple prompts per kind are not included. Both services and TMDB are credited under About → Acknowledgements on iOS and tvOS. Open Source Licences remains separate. TMDB’s logo and attribution are in Acknowledgements; the duplicate About-page block has been removed on iOS and tvOS.
 
@@ -133,10 +139,3 @@ For relevant changes, record the source commit, engine/package revisions, build,
 - diagnostic redaction and signed-archive contents before distribution.
 
 State passed, failed, pending and not-run checks separately. Retain measured results under their original builds. Neither old audits nor this guide establish current format support or certify a release.
-
-
-The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the existing metadata and action positions. The gap beside the metadata contracts to fit the larger picture. It resizes the same persistent player surface through the existing preview anchor; episode loading, first-frame gating and transport commands are unchanged.
-
-Final playback teardown releases shared audio only when that controller actually started an engine load. Discarded, unused SwiftUI player models and repeated stops cannot deactivate another player’s audio session or reset its display criteria. Replacement loads retain that ownership until the real final stop.
-
-Apple TV scrubbing shows the timeline and target time without a thumbnail overlay. Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker. Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.

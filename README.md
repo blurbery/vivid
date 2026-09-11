@@ -26,7 +26,7 @@
 I’m building Vivid as an open-source media app for iPhone, iPad and Apple TV. Connect your own media server and browse and watch your library across your Apple devices.
 
 > [!NOTE]
-> Vivid is still in development. The source is public, and TestFlight access is limited to invited beta testers. There is no public App Store release yet.
+> Vivid is still in development. The source is public, and beta access is offered through the [TestFlight link](https://testflight.apple.com/join/Ycb8t685), subject to available places and device eligibility. There is no public App Store release yet.
 
 ## Server support
 
@@ -43,11 +43,11 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
-Saved server accounts, login sessions and optional Vivid PINs can sync through the user’s private iCloud database across iPhone, iPad and Apple TV. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches and player preferences stay on the device; watched and resume state remains owned by the connected media server.
+Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured TMDb/Seerr credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches and player preferences stay on the device; watched and resume state remains owned by the connected media server.
 
 ## Apple TV
 
-I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Search uses seven posters across the available width, and TV cards share consistent title and year captions. Detail pages include optional personal-TMDb trailers, server-only More Like This, compact playback selections and a Start from Beginning menu when you long-press Resume. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
+I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Search uses seven posters across the available width, and TV cards share consistent title and year captions. Detail pages include optional personal-TMDb trailers, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
 
 ## iPhone and iPad
 
@@ -55,7 +55,7 @@ The mobile app uses a configurable glass tab bar, a looping Home spotlight and l
 
 ## Playback
 
-Apple TV uses [AetherEngine](AetherEngine) behind Vivid’s player, with native Apple playback and an automatic software fallback. iPhone and iPad use [VividKit](VividKit). Vivid keeps its own controls, episode countdown, subtitles and optional IntroDB skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
+Apple TV uses [AetherEngine](AetherEngine) behind Vivid’s player, with native Apple playback and an automatic software fallback. iPhone and iPad use [VividKit](VividKit). Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
 
 > [!IMPORTANT]
 > Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.

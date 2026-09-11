@@ -21,15 +21,13 @@ Each server core must provide the available media sources and their required aut
 
 The same controls should behave consistently when the server supplies the required capabilities. Equivalent behaviour still needs testing with each server; shared UI alone does not establish compatibility.
 
-## IntroDB belongs to Vivid
+## Intro and credits skipping belongs to Vivid
 
-Intro and credits skipping is a Vivid feature, independent of the server’s marker integration. Playback → IntroDB is an on/off toggle, enabled by default, labelled “Toggle on for native intro & credit skips.” Public timestamp lookups need no personal API key; IntroDB keys are for submissions.
+The **Intro & Credit Skipper** toggle in Playback settings controls selected-file markers and public IntroDB/TheIntroDB lookups on iOS and tvOS. It defaults on and preserves an explicitly saved Off choice. Separate automatic-skip preferences control automatic skipping; valid markers also supply manual Skip Intro, Skip Recap and Skip Credits prompts.
 
-Vivid uses the series IMDb ID, season and episode number supplied through the server core to request IntroDB timestamps. Valid ranges feed the existing Skip Intro and Skip Credits buttons. The separate automatic-skip preferences control whether Vivid skips automatically.
+Valid markers for the selected file take priority. IntroDB fills missing ranges, then TheIntroDB can fill missing intro, credits or recap ranges. Item-level markers from another edition and realtime server marker updates do not override this selection. Lookups use the series IMDb ID, season and episode number, run without media-server credentials or API keys, and do not delay playback. Public lookups cover episodes; online movies can still use their selected-file markers. Offline playback does not load these skip markers.
 
-Vivid ignores Silo’s watch-detail and realtime markers. This does not disable or alter IntroDB on the Silo server itself. Lookups use a separate session without server credentials, validate identity and duration bounds, and do not block playback when data is unavailable. The endpoint covers TV episodes; movie credits and offline lookups are not provided.
-
-IntroDB playback has been verified on Silo-backed Apple TV. The Emby core now supplies common episode identity, but IntroDB playback with Emby has not been verified. Jellyfin remains planned. Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
+See [marker timing](../playback/architecture.md#introdb-marker-timing) for ordering, caching, duration validation and cancellation. Earlier IntroDB playback was verified on Silo-backed Apple TV; that does not establish device coverage of the newer fallback and recap paths or every Emby route. Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
 
 ## Implementation references
 
@@ -43,6 +41,6 @@ IntroDB playback has been verified on Silo-backed Apple TV. The Emby core now su
 
 ## Mobile implementation
 
-The iPhone/iPad shell shares the private iCloud account vault, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with TV. The vault syncs saved accounts, sessions and optional Vivid PIN records; downloads, caches and preferences stay local. Search and Settings use full-screen portrait slide-up pages with round close buttons. Detail cards remain above Search during playback, and movie/series Media Information uses separate aligned video/file and audio panels on mobile and TV. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim of device or format parity.
+The iPhone/iPad shell shares the private iCloud account vault, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with TV. The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured TMDb/Seerr credentials. Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local. Watched and resume state belongs to the connected media server. Search and Settings use full-screen portrait slide-up pages with round close buttons. Detail cards remain above Search during playback, and movie/series Media Information uses separate aligned video/file and audio panels on mobile and TV. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim of device or format parity.
 
 [Documentation](../README.md)

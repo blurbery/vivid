@@ -83,7 +83,7 @@ revisions each release actually resolves.
 AetherEngine (tvOS playback)
   Upstream 6.80.0: 89ef0c347a17180739d8ca7a1a1cfbb163135271
   Source: https://github.com/superuser404notfound/AetherEngine/tree/89ef0c347a17180739d8ca7a1a1cfbb163135271
-  Local source and integration changes: https://github.com/blurbery/vivid/tree/main/AetherEngine
+  Local source and integration changes: https://github.com/blurbery/vivid/tree/24f992e24346b17f123c7a80d4360cb91e486869/AetherEngine
   LGPL-3.0 with the bundled Apple Store / DRM Exception.
   The local package retains Vivid's FFmpegBuild revision above. It adds audio
   ordinal selection inside the existing probe and integration type aliases.

@@ -106,7 +106,7 @@ Sort, Filter and A–Z are real native menus. Do not restore the removed centred
 
 Settings enters the first saved account directly through the row’s default focus. Do not land on Add Profile and then redirect. Detail action geometry and loading placeholders share the same fixed baselines. The Description popup owns a separate scrollable set of text focus targets and closes with Back.
 
-The playback timeline and Info pill share one directional boundary: Up from an idle timeline enters Info; Down returns to the timeline. An active scrub keeps ownership until committed or cancelled. Remote Play/Pause remains available without a separate on-screen transport cluster.
+The playback timeline and Info/subtitle shortcuts share one directional boundary. Up from an idle timeline enters the shortcut row; Down returns to the timeline. Closing a panel restores its shortcut. An active scrub keeps ownership until committed or cancelled. Remote Play/Pause remains available without a separate on-screen transport cluster.
 
 ## Retained library panels
 
