@@ -259,7 +259,8 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                 }
             }
             Button(action: onToggleWatched) {
-                Label(isWatched ? "Mark Series Unwatched" : "Mark Series Watched", systemImage: "checkmark.circle")
+                Label(isWatched ? "Mark Series Unwatched" : "Mark Series Watched",
+                      systemImage: isWatched ? "checkmark.circle.fill" : "checkmark.circle")
             }
         }
     }

@@ -1566,22 +1566,33 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         )
     }
 
-    func testReplacementAndSpeedSettingsPreserveExplicitPause() throws {
+    func testReplacementAndSpeedSettingsPreserveExplicitPause() async throws {
+        let file = try embeddedMediaFixture()
+        defer { try? FileManager.default.removeItem(at: file) }
         let controller = try VividPlaybackController()
+        controller.setMuted(true)
         defer { controller.stop() }
         let spec = try VividLoadSpec(
-            directURL: URL(string: "https://dev.example.test/media.mp4")!,
-            headers: [:], startPosition: 120, audioOnly: false)
-        controller.beginLoad(spec, shouldPlayWhenReady: true)
+            directURL: file, headers: [:], startPosition: 0, audioOnly: true)
+        let first = controller.beginLoad(spec, shouldPlayWhenReady: false)
+        try await controller.finishLoad(first)
         controller.pause()
         controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
+        XCTAssertEqual(controller.engine.player.synchronizer.rate, 0)
         controller.prepareForReplacement()
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        controller.beginLoad(spec, shouldPlayWhenReady: controller.shouldPlayWhenReady)
+        let replacement = controller.beginLoad(spec, shouldPlayWhenReady: controller.shouldPlayWhenReady)
+        try await controller.finishLoad(replacement)
+        controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        controller.setSpeed(1)
-        XCTAssertFalse(controller.shouldPlayWhenReady)
+        XCTAssertEqual(controller.engine.player.synchronizer.rate, 0)
+        controller.play()
+        let deadline = Date().addingTimeInterval(5)
+        while controller.engine.player.synchronizer.rate != 1.5 && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(controller.engine.player.synchronizer.rate, 1.5)
     }
 
     func testTransportIntentCanChangeDuringAnUncommittedLoad() throws {

@@ -67,10 +67,8 @@ enum HomeFeedMeta {
     }
 
     static func remaining(position: Double?, duration: Double?) -> String? {
-        guard let position, let duration, duration > 0, position > 0 else { return nil }
-        let minutesLeft = Int((duration - position) / 60)
-        guard minutesLeft > 0 else { return nil }
-        return runtime(minutes: minutesLeft).map { "\($0) left" }
+        guard let progress = ResumePresentation(position: position, duration: duration) else { return nil }
+        return runtime(minutes: progress.minutesRemaining).map { "\($0) left" }
     }
 
     static func progress(for item: SectionItem) -> Double? {
