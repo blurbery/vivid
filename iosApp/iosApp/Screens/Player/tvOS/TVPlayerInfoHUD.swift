@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// Infuse-style floating top-center HUD. A pill-tab header (Info / Video /
-/// Audio / Subtitles / Chapters) selects which content pane renders below.
+/// Audio / Chapters) selects which content pane renders below.
 /// Drops on top of the video with no dimming backdrop so playback stays
 /// visible, matching the "HUD over media" idiom rather than a modal sheet.
 /// Menu dismisses via `onExitCommand` on the host view.
@@ -25,6 +25,7 @@ struct TVPlayerInfoHUD: View {
     /// deterministic initial focus the Menu button has nothing to bubble
     /// `onExitCommand` from and the user can get stuck.
     @FocusState.Binding var focusedTab: Tab?
+    var subtitleOnly = false
     let onDismiss: () -> Void
 
     enum Tab: Hashable, CaseIterable {
@@ -42,26 +43,26 @@ struct TVPlayerInfoHUD: View {
         }
     }
 
-    /// Tabs shown for the current session. Info + Video are always available;
-    /// Audio / Subtitles / Chapters disappear when the stream has none of
-    /// those — Infuse hides rather than disables, which keeps the bar tidy.
+    /// Subtitle access has its own shortcut; Info retains the other tabs.
+    /// Audio and Chapters appear when the current session supplies them.
     private var availableTabs: [Tab] {
+        if subtitleOnly { return [.subtitles] }
         var tabs: [Tab] = [.info, .stats, .video]
         if !viewModel.audioTracks.isEmpty { tabs.append(.audio) }
-        if !viewModel.subtitleTracks.isEmpty {
-            tabs.append(.subtitles)
-        }
         if !viewModel.chapters.isEmpty { tabs.append(.chapters) }
         return tabs
     }
 
     var body: some View {
-        VStack(spacing: 14) {
-            tabBar
-                .padding(.top, 32)
-            panel
-                .padding(.horizontal, 200)
-            Spacer(minLength: 0)
+        GeometryReader { geometry in
+            VStack(spacing: 14) {
+                tabBar
+                    .padding(.top, 32)
+                panel(height: max(240, min(600, geometry.size.height - 180)))
+                    .padding(.horizontal, 80)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
         }
         .onAppear {
             repairActiveTabIfUnavailable()
@@ -109,7 +110,7 @@ struct TVPlayerInfoHUD: View {
 
     // MARK: - Panel
 
-    private var panel: some View {
+    private func panel(height: CGFloat) -> some View {
         Group {
             switch activeTab {
             case .info:
@@ -132,12 +133,9 @@ struct TVPlayerInfoHUD: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 22)
-        // Width sits at ~60% of a 1920pt tvOS frame. Height is fixed at the
-        // tallest pane's needs — content-hugging here would resize the panel
-        // on every tab swap, which cascades into a SwiftUI relayout pass.
-        // Top-aligned so short panes (Video with few rows) keep their column
-        // headers pinned to the top instead of floating mid-panel.
-        .frame(maxWidth: 1100, minHeight: 380, maxHeight: 380, alignment: .top)
+        // Keep every pane the same size while allowing room for both columns.
+        .frame(maxWidth: 1280, alignment: .top)
+        .frame(height: height, alignment: .top)
         // Glass carries enough light that the panel lifts off the video
         // without extra dark tint; the stroke + shadow still define the
         // edge over a fully-black frame. Low-power TVs draw a flat
@@ -632,12 +630,6 @@ private struct InfoPane: View {
             if let codec = audio.codec, !codec.isEmpty { bits.append(codec.uppercased()) }
             if let channels = audio.channelCountLabel { bits.append(channels) }
             if !bits.isEmpty { rows.append(("Audio", bits.joined(separator: " · "))) }
-        }
-        if let sub = viewModel.subtitleTracks.first(where: { $0.trackId == viewModel.selectedSubtitleId }) {
-            let name = sub.title ?? sub.lang ?? "On"
-            rows.append(("Subtitles", name))
-        } else {
-            rows.append(("Subtitles", "Off"))
         }
         return rows
     }

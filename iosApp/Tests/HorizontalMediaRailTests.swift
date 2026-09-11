@@ -43,6 +43,14 @@ final class HorizontalMediaRailTests: XCTestCase {
         """#.utf8))
     }
 
+    func testRemainingCaptionMatchesResumeBarRounding() {
+        XCTAssertEqual(HomeFeedMeta.remaining(position: 59, duration: 120), "2m left")
+        XCTAssertEqual(HomeFeedMeta.remaining(position: 60, duration: 120), "1m left")
+        XCTAssertEqual(HomeFeedMeta.remaining(position: 119, duration: 120), "1m left")
+        XCTAssertNil(HomeFeedMeta.remaining(position: 120, duration: 120))
+        XCTAssertNil(HomeFeedMeta.remaining(position: .nan, duration: 120))
+    }
+
     func testNativeBoundsAffectOnlyTheNearestRail() {
         let page = UIScrollView()
         page.alwaysBounceVertical = true

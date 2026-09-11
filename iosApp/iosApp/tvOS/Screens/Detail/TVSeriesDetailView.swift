@@ -61,6 +61,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                 TVContinuousEpisodeShelf(seasons: seasons, pages: continuousPages,
                     selectedSeason: selectedSeason, currentContentId: activeEpisodeContentId,
+                    heroEntryEpisode: showActionRowFocused ? playbackEpisode : nil,
                     favorites: episodeFavoriteStates, onSeason: onSelectSeason,
                     onFocus: { episode in
                         focusedEpisodeContentId = episode.contentId
@@ -163,6 +164,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         TVDetailActionRow(
             playTitle: playbackEpisode.map(showPlayTitle(for:)),
             playSubtitle: nil,
+            resumeProgress: ResumePresentation(position: playbackEpisode?.userData?.positionSeconds, duration: playbackEpisode?.userData?.durationSeconds),
             onPlay: {
                 guard let episode = playbackEpisode else { return }
                 onPlayEpisode(episode.contentId, selectedFileId(for: episode), false)
@@ -177,12 +179,12 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             rowFocused: $showActionRowFocused,
             stabilizesFocusMotion: true,
             primaryButtonWidth: 280,
-            onResumeStartOver: playbackEpisode?.userData?.isInProgress == true ? {
+            onResumeStartOver: ResumePresentation(position: playbackEpisode?.userData?.positionSeconds, duration: playbackEpisode?.userData?.durationSeconds) != nil ? {
                 guard let episode = playbackEpisode else { return }
                 onPlayEpisode(episode.contentId, selectedFileId(for: episode), true)
             } : nil,
             playbackSelectors: {
-                // Keep all three triggers mounted while a newly focused
+                // Keep both track triggers mounted while a newly focused
                 // episode's playback detail loads. They disable themselves
                 // until a valid version arrives, preserving every x-position.
                 TVPlaybackActionSelectors(
@@ -219,11 +221,17 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             accessibilityLabel: "More options",
             stabilizesFocusMotion: true
         ) {
+            TVDetailVersionMenu(versions: nextUpVersions, selectedFileId: selectedNextUpFileId, onSelect: onSelectNextUpVersion)
             if let episode = playbackEpisode, episode.userData?.isInProgress == true {
                 Button {
                     onPlayEpisode(episode.contentId, selectedFileId(for: episode), true)
                 } label: {
                     Label("Start Over", systemImage: "backward.end.fill")
+                }
+            }
+            if supportsTrailerFetch {
+                Button(action: onFindTrailers) {
+                    Label("Find Trailers", systemImage: "film.stack")
                 }
             }
             Button(action: onToggleFavorite) {
@@ -232,8 +240,15 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     systemImage: isFavorite ? "heart.fill" : "heart"
                 )
             }
-            Button(action: onToggleWatched) {
-                Label(isWatched ? "Mark Series Unwatched" : "Mark Series Watched", systemImage: "checkmark.circle")
+            if let episode = playbackEpisode {
+                Button {
+                    Task { await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
+                } label: {
+                    Label(
+                        episode.userData?.played == true ? "Mark Episode Unwatched" : "Mark Episode Watched",
+                        systemImage: episode.userData?.played == true ? "checkmark.circle.fill" : "checkmark.circle"
+                    )
+                }
             }
             if let selectedSeason {
                 Button(action: onToggleSeasonWatched) {
@@ -243,10 +258,9 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     )
                 }
             }
-            if supportsTrailerFetch {
-                Button(action: onFindTrailers) {
-                    Label("Find Trailers", systemImage: "film.stack")
-                }
+            Button(action: onToggleWatched) {
+                Label(isWatched ? "Mark Series Unwatched" : "Mark Series Watched",
+                      systemImage: isWatched ? "checkmark.circle.fill" : "checkmark.circle")
             }
         }
     }
@@ -324,7 +338,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     }
 
     private var trailersSection: some View {
-        TVTrailersRail(entries: trailerEntries, onSelect: onSelectTrailer, focusScale: 1.05)
+        TVTrailersRail(entries: trailerEntries, onSelect: onSelectTrailer, focusScale: TVMediaFocus.scale)
     }
 
     private func castSection(cast: [CastMember]) -> some View {

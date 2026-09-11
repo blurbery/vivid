@@ -91,6 +91,7 @@ struct PreparedPlayback {
 
 enum PlaybackProgressReportResult: Equatable {
     case success
+    case deferred
     case missingSession
     case transientFailure
 }
@@ -387,6 +388,7 @@ enum PlaybackCancellationShield {
 }
 
 actor PlaybackSessionBridge {
+    private var progressWriteTail: Task<PlaybackProgressReportResult, Never>?
     private static let nearEndResumeSuppressionSeconds: Double = 5
     private static let pastEndResumeClampSeconds: Double = 0.25
 
@@ -711,7 +713,7 @@ actor PlaybackSessionBridge {
 
     func reportNativePlaybackStarted(_ prepared: PreparedPlayback) async {
         guard let playback = embyPlayback, playback.playSessionID == prepared.session.sessionId else { return }
-        try? await playback.report(position: prepared.session.position, isPaused: false)
+        try? await playback.ping()
     }
 
     func embyStreamRequest(sessionID: String) async -> StreamRequest? {
@@ -1908,21 +1910,65 @@ actor PlaybackSessionBridge {
     func refreshPlaybackAuthentication(sessionId expectedSession: String, position: Double, isPaused: Bool) async throws {
         guard sessionId == expectedSession, embyPlayback == nil,
               position.isFinite, position >= 0 else { throw CancellationError() }
-        try await VividAPI.shared.postVoid(
-            "/api/v1/playback/\(expectedSession)/progress",
-            body: ProgressReport(position: position, isPaused: isPaused)
-        )
+        let result = await reportProgress(position: position, isPaused: isPaused, eligible: position > 0)
+        guard result == .success || result == .deferred else { throw URLError(.cannotConnectToHost) }
         guard sessionId == expectedSession else { throw CancellationError() }
     }
 
-    func reportProgress(position: Double, isPaused: Bool) async -> PlaybackProgressReportResult {
-        guard let sid = sessionId else { return .transientFailure }
-        guard position.isFinite, position >= 0 else { return .transientFailure }
-
-        if let playback = embyPlayback {
-            do { try await playback.report(position: position, isPaused: isPaused); return .success }
-            catch { return .transientFailure }
+    func reportProgress(position: Double, isPaused: Bool, eligible: Bool, completedContentId: String? = nil) async -> PlaybackProgressReportResult {
+        guard let sid = sessionId, position.isFinite, position >= 0 else { return .transientFailure }
+        let playback = embyPlayback
+        let eligible = eligible || completedContentId != nil
+        let prior = progressWriteTail
+        let write = Task { [self] in
+            _ = await prior?.value
+            if let playback {
+                guard eligible else {
+                    do { try await playback.ping(); return PlaybackProgressReportResult.deferred }
+                    catch { return .transientFailure }
+                }
+                do {
+                    try await playback.report(position: position, isPaused: isPaused)
+                    return await writeCompletion(after: .success, contentId: completedContentId, playback: playback)
+                }
+                catch { return .transientFailure }
+            }
+            let result = await writeSiloProgress(sessionId: sid, position: eligible ? position : 0, isPaused: isPaused)
+            return await writeCompletion(after: !eligible && result == .success ? .deferred : result,
+                                         contentId: completedContentId, playback: nil)
         }
+        progressWriteTail = write
+        return await write.value
+    }
+
+    /// Ordered after position writes, including Stop, so provider resume rules
+    /// cannot undo Vivid's credits/percentage completion decision.
+    private func writeCompletion(after result: PlaybackProgressReportResult,
+                                 contentId: String?, playback: EmbyPlayback?) async -> PlaybackProgressReportResult {
+        guard let contentId else { return result }
+        do {
+            if let playback {
+                let connection = await playback.connection
+                guard let userID = connection.userID else { return .transientFailure }
+                let item = try await connection.object("GET",
+                    "/Users/\(EmbyConnection.id(userID))/Items/\(EmbyConnection.id(contentId))")
+                // Emby's played action can update play counts. Reassert only
+                // when the preceding position/Stop write left it unwatched.
+                if (item["UserData"] as? [String: Any])?["Played"] as? Bool != true {
+                    _ = try await connection.request("POST",
+                        "/Users/\(EmbyConnection.id(userID))/PlayedItems/\(EmbyConnection.id(contentId))")
+                }
+            } else {
+                try await VividAPI.shared.setWatched(contentId: contentId, played: true)
+            }
+            return result
+        } catch {
+            logger.warning("Watched completion write failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+            return result == .missingSession ? .missingSession : .transientFailure
+        }
+    }
+
+    private func writeSiloProgress(sessionId sid: String, position: Double, isPaused: Bool) async -> PlaybackProgressReportResult {
         let report = ProgressReport(position: position, isPaused: isPaused)
         do {
             try await VividAPI.shared.postVoid(
@@ -2010,16 +2056,25 @@ actor PlaybackSessionBridge {
     func stopSession(
         position: Double,
         isPaused: Bool,
+        eligible: Bool,
+        completedContentId: String? = nil,
         finalProgressAlreadyReported: Bool = false
     ) async -> PlaybackProgressReportResult {
         guard let sid = sessionId else { return .transientFailure }
+        let pendingProgress = progressWriteTail
+        let eligible = eligible || completedContentId != nil
         if let playback = embyPlayback {
             embyPlayback = nil
             sessionId = nil
             currentSession = nil
             do {
+                _ = await pendingProgress?.value
+                if !eligible {
+                    try await playback.stopWithoutProgress()
+                    return .deferred
+                }
                 try await playback.report(position: position, isPaused: isPaused, stopping: true)
-                return .success
+                return await writeCompletion(after: .success, contentId: completedContentId, playback: playback)
             } catch {
                 return .transientFailure
             }
@@ -2035,6 +2090,7 @@ actor PlaybackSessionBridge {
         consecutiveProgressFailures = 0
         emittedOrphanedSessionWarning = false
 
+        _ = await pendingProgress?.value
         if let supersededSessionId, supersededSessionId != sid {
             stopStaleSession(supersededSessionId)
         }
@@ -2069,13 +2125,13 @@ actor PlaybackSessionBridge {
         var finalProgressResult: PlaybackProgressReportResult =
             finalProgressAlreadyReported ? .success : .transientFailure
         if !finalProgressAlreadyReported, position.isFinite, position >= 0 {
-            let report = ProgressReport(position: position, isPaused: isPaused)
+            let report = ProgressReport(position: eligible ? position : 0, isPaused: isPaused)
             do {
                 try await VividAPI.shared.postVoid(
                     "/api/v1/playback/\(sid)/progress",
                     body: report
                 )
-                finalProgressResult = .success
+                finalProgressResult = eligible ? .success : .deferred
             } catch {
                 finalProgressResult = Self.isPlaybackSessionMissing(error)
                     ? .missingSession
@@ -2101,7 +2157,7 @@ actor PlaybackSessionBridge {
         // Nudge the Top Shelf to re-fetch now that progress has advanced.
         TVTopShelfContentProvider.topShelfContentDidChange()
         #endif
-        return finalProgressResult
+        return await writeCompletion(after: finalProgressResult, contentId: completedContentId, playback: nil)
     }
 
     // MARK: - Helpers

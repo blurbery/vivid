@@ -17,20 +17,25 @@ struct TVHomeScreenSettingsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    HStack {
-                        Text("Home Screen Discovery Spotlight")
-                            .font(.system(size: 38, weight: .bold))
-                        Spacer()
-                        Button { dismiss() } label: {
-                            Text("Done").frame(maxWidth: .infinity, alignment: .center)
+                VStack(alignment: .leading, spacing: 28) {
+                    TVSettingsSectionHeader("HOME SCREEN")
+                    HStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Home Screen")
+                                .font(.system(size: 26, weight: .medium))
+                            Text("Choose up to 3 spotlight rows. \(selected.count) selected.")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Color.vividSecondaryText)
                         }
-                            .buttonStyle(TVSettingsPaneRowStyle())
-                            .frame(width: 150)
+                        Spacer(minLength: 24)
+                        Button("Done") { dismiss() }
+                            .buttonStyle(TVHomeSectionsControlButtonStyle())
                             .focused($doneFocused)
                     }
-                    TVSettingsFooter("Choose up to 3 Home rows to supply the spotlight. It shows up to 10 slides and changes every 6 seconds. These choices are separate from Home Sections.")
-                    TVSettingsSectionHeader("\(selected.count) OF 3 ROWS SELECTED")
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(Color.vividChromeRestingFill)
+                    .overlay(Rectangle().strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1))
 
                     if isLoading && sections.isEmpty {
                         ProgressView().frame(maxWidth: .infinity)
@@ -56,9 +61,9 @@ struct TVHomeScreenSettingsView: View {
                         }
                     }
                 }
-                .frame(maxWidth: 1360, alignment: .leading)
-                .padding(.horizontal, 88)
-                .padding(.vertical, 64)
+                .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+                .padding(.horizontal, 72)
+                .padding(.vertical, 36)
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Home Screen")
@@ -72,9 +77,9 @@ struct TVHomeScreenSettingsView: View {
         let isSelected = selected.contains(id)
         return Button { preferences.toggle(id) } label: {
             HStack(spacing: 18) {
+                TVSettingsRowLabel(title: title)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                TVSettingsRowLabel(title: title, detail: isSelected ? "Used in the discovery spotlight." : "Choose this row as a spotlight source.")
-                Spacer()
+                    .frame(width: 44, height: 44)
             }
             .font(.system(size: 26))
         }

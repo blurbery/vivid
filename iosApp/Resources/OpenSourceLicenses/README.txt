@@ -3,7 +3,7 @@ Vivid — Third-Party Libraries
 
 This Vivid build includes the components listed below. Their complete license
 texts are bundled beside this file and are available from Settings > About >
-Open Source Licenses.
+Open Source Licences.
 
 Vivid and VividKit application code: Apache-2.0, copyright 2026 blurbery.
 

@@ -2729,10 +2729,14 @@ private struct MobileSettingsPage: View {
     let safeAreaInsets: EdgeInsets
     let onDismiss: () -> Void
 
+    @State private var isOverviewVisible = false
+
     var body: some View {
-        MobileUtilityPage(safeAreaInsets: safeAreaInsets, onDismiss: onDismiss) {
+        MobileUtilityPage(safeAreaInsets: safeAreaInsets, allowsPullToDismiss: isOverviewVisible, onDismiss: onDismiss) {
             NavigationStack {
                 SettingsView()
+                    .onAppear { isOverviewVisible = true }
+                    .onDisappear { isOverviewVisible = false }
                     .toggleStyle(SwitchToggleStyle(tint: .green))
                     .toolbar {
                         MobileUtilityCloseToolbar(accessibilityLabel: "Close settings", action: onDismiss)
@@ -2747,10 +2751,12 @@ private struct MobileUtilityPage<Content: View>: View {
     @State private var dragOffset: CGFloat = 0
 
     private let safeAreaInsets: EdgeInsets
+    private let allowsPullToDismiss: Bool
     private let onDismiss: () -> Void
     private let content: Content
 
-    init(safeAreaInsets: EdgeInsets, onDismiss: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+    init(safeAreaInsets: EdgeInsets, allowsPullToDismiss: Bool = true, onDismiss: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.allowsPullToDismiss = allowsPullToDismiss
         self.safeAreaInsets = safeAreaInsets
         self.onDismiss = onDismiss
         self.content = content()
@@ -2764,7 +2770,8 @@ private struct MobileUtilityPage<Content: View>: View {
             .ignoresSafeArea(.container)
             .compositingGroup()
             .offset(y: dragOffset)
-            .simultaneousGesture(dismissGesture)
+            .simultaneousGesture(dismissGesture, including: allowsPullToDismiss ? .all : .subviews)
+            .onChange(of: allowsPullToDismiss) { _, _ in dragOffset = 0 }
             .preferredColorScheme(.dark)
             .progressViewStyle(VividLoadingProgressStyle())
     }
@@ -2772,7 +2779,7 @@ private struct MobileUtilityPage<Content: View>: View {
     private var dismissGesture: some Gesture {
         DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onChanged { value in
-                guard value.startLocation.y <= 120,
+                guard allowsPullToDismiss, value.startLocation.y <= 120,
                       value.translation.height > 0,
                       abs(value.translation.height) > abs(value.translation.width) else { return }
                 dragOffset = value.translation.height
@@ -2780,8 +2787,9 @@ private struct MobileUtilityPage<Content: View>: View {
             .onEnded { value in
                 let isDownwardPull = value.startLocation.y <= 120
                     && value.translation.height > abs(value.translation.width)
-                let shouldDismiss = isDownwardPull
-                    && (value.translation.height >= 110 || value.predictedEndTranslation.height >= 220)
+                let shouldDismiss = allowsPullToDismiss && isDownwardPull
+                    && (value.translation.height >= 110
+                        || (value.translation.height >= 60 && value.predictedEndTranslation.height >= 220))
 
                 if shouldDismiss {
                     onDismiss()

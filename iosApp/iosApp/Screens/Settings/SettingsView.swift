@@ -263,7 +263,7 @@ struct SettingsView: View {
                 OpenSourceAcknowledgementsView()
             } label: {
                 SettingsRowLabel(
-                    title: "Open Source Licenses",
+                    title: "Open Source Licences",
                     systemImage: "curlybraces",
                     color: .indigo
                 )

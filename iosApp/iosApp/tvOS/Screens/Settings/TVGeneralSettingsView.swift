@@ -257,7 +257,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
                         )
                     }
                 }
-                .frame(maxWidth: 1120, alignment: .leading)
+                .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
                 .padding(.horizontal, 72)
                 .padding(.vertical, 36)
             }
@@ -471,7 +471,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
 /// Compact in-card control chrome for the Home Sections editor. The resting
 /// state keeps a dark platter and bright glyph, avoiding tvOS's default white
 /// bordered-button treatment that hid the eye until focus arrived.
-private struct TVHomeSectionsControlButtonStyle: ButtonStyle {
+struct TVHomeSectionsControlButtonStyle: ButtonStyle {
     var compact = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -582,7 +582,7 @@ private struct TVMenuCustomizationSheet: View {
 
                     TVSettingsFooter("Changes save automatically. Home stays visible; press Back to return.")
                 }
-                .frame(maxWidth: 1120, alignment: .leading)
+                .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
                 .padding(.horizontal, 72)
                 .padding(.vertical, 36)
             }

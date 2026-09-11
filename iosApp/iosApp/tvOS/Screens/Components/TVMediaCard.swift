@@ -4,7 +4,7 @@ import SwiftUI
 /// tvOS-only poster card. Uses the cached Nuke renderer so scrolling through
 /// a large grid doesn't re-download posters as cells are reused.
 ///
-/// `.buttonStyle(.card)` gives us native focus lift + parallax + shadow, so
+/// `.buttonStyle(TVCardFocusButtonStyle())` gives us native focus lift + parallax + shadow, so
 /// we do not roll our own scale animation. A title caption lives below the
 /// card and brightens on focus.
 struct TVMediaCard: View {
@@ -137,7 +137,7 @@ struct TVMediaCard: View {
         switch focusTreatment {
         case .nativeCard:
             Button(action: action) { posterImage }
-                .buttonStyle(.card)
+                .buttonStyle(TVCardFocusButtonStyle())
                 .focused($isFocused)
                 .applyDefaultFocusIfNeeded(prefersDefaultFocus, namespace: defaultFocusNamespace)
                 .applyRailFocus(focusBinding, contentId: focusContentId)
@@ -294,7 +294,7 @@ private struct TVPosterRingButtonBody: View {
     }
 
     private var scale: CGFloat {
-        let base: CGFloat = isFocused && !reduceMotion ? 1.05 : 1.0
+        let base: CGFloat = isFocused && !reduceMotion ? TVMediaFocus.scale : 1.0
         return configuration.isPressed ? base * 0.97 : base
     }
 }

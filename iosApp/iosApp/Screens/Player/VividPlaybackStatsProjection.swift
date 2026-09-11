@@ -366,10 +366,10 @@ enum VividPlaybackStatsProjection {
     private static func routeLabel(_ route: VideoRoute) -> String? {
         switch route {
         case .none: return nil
-        case .remoteBypass: return "Vivid remote HLS"
-        case .loopback: return "Aether loopback HLS"
-        case .sampleBuffer: return "Vivid sample-buffer video"
-        case .audio: return "Vivid audio"
+        case .remoteBypass: return "\(VividPlaybackEngineIdentity.name) remote HLS"
+        case .loopback: return "\(VividPlaybackEngineIdentity.name) loopback HLS"
+        case .sampleBuffer: return "\(VividPlaybackEngineIdentity.name) sample-buffer video"
+        case .audio: return "\(VividPlaybackEngineIdentity.name) audio"
         }
     }
 

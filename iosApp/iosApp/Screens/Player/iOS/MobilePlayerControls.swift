@@ -481,7 +481,8 @@ struct MobilePlayerControls: View {
 
     @ViewBuilder
     private func introMarker(width: CGFloat, height: CGFloat) -> some View {
-        if let introRange = viewModel.introRange, viewModel.duration > 0 {
+        ForEach(Array(viewModel.openingSkipRanges.enumerated()), id: \.offset) { _, introRange in
+            if viewModel.duration > 0 {
             let start = min(max(introRange.start / viewModel.duration, 0), 1)
             let end = min(max(introRange.end / viewModel.duration, 0), 1)
             if end > start {
@@ -490,6 +491,7 @@ struct MobilePlayerControls: View {
                     .frame(width: width * (end - start), height: height)
                     .offset(x: width * start)
             }
+        }
         }
     }
 
@@ -674,7 +676,7 @@ struct MobilePlayerControls: View {
                                 .frame(width: VividTheme.topBarIconHitSize, height: VividTheme.topBarIconHitSize)
                         }
                         .buttonStyle(MobilePlayerGlassButtonStyle())
-                        .accessibilityLabel("Cancel Auto-Skip Intro")
+                        .accessibilityLabel("Cancel " + viewModel.introSkipLabel)
                     }
 
                     Button {
@@ -682,7 +684,7 @@ struct MobilePlayerControls: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "forward.end.fill")
-                            Text("Skip Intro")
+                            Text(viewModel.introSkipLabel)
                             if let countdown = viewModel.introAutoSkipCountdownSeconds {
                                 Text("· \(countdown)")
                                     .opacity(0.55)
@@ -699,7 +701,7 @@ struct MobilePlayerControls: View {
                     // app-colored web button over video.
                     .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9)))
                     .accessibilityLabel(
-                        viewModel.introAutoSkipCountdownSeconds == nil ? "Skip Intro" : "Skip Intro Now"
+                        viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipLabel + " Now"
                     )
                 }
             }

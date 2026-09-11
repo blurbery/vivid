@@ -563,6 +563,7 @@ struct MediaRow: View {
                 year: item.year,
                 subtitle: EpisodeCardCaption.line(for: item),
                 progress: progressValue(for: item),
+                progressDuration: item.durationSeconds,
                 userState: item.userState,
                 overlayData: OverlayData.from(item),
                 action: { onItemTap(item.contentId) },

@@ -2,7 +2,7 @@
 import SwiftUI
 
 private enum EpisodeHomeHoverMetrics {
-    static let scale: CGFloat = 1.08
+    static let scale: CGFloat = TVMediaFocus.scale
 
 }
 
@@ -340,6 +340,8 @@ struct TVEpisodeCard: View {
     var initialIsFavorite = false
     var onSetFavorite: ((_ contentId: String, _ isFavorite: Bool) async -> Bool)? = nil
 
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var playedOverride: Bool?
     @State private var favoriteOverride: Bool?
 
@@ -387,8 +389,9 @@ struct TVEpisodeCard: View {
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(.black.opacity(0.45), in: Capsule())
                         .padding(12)
+                        .opacity(nativeResumeProgress == nil ? 1 : 0)
                     }
-                    .hoverEffect(.highlight)
+                    .tvArtworkEdge(isFocused: isFocused, cornerRadius: 18)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("EPISODE \(episode.episodeNumber)").font(.system(size: 18)).foregroundStyle(.secondary)
                     Text(episode.title ?? "Episode \(episode.episodeNumber)").font(.system(size: 24, weight: .semibold)).lineLimit(1)
@@ -398,18 +401,28 @@ struct TVEpisodeCard: View {
                         .font(.system(size: 18)).foregroundStyle(.secondary)
                 }.frame(width: cardWidth, alignment: .leading)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(TVArtworkContentButtonStyle())
+            .focused($isFocused)
             .overlay(alignment: .topLeading) {
-                if !isPlayed, let position = episode.userData?.positionSeconds,
-                   let duration = episode.userData?.durationSeconds, duration > 0, position > 0 {
-                    ProgressView(value: min(1, max(0, position / duration)))
-                        .tint(.white)
-                        .frame(width: cardWidth - 32)
-                        .padding(.leading, 16)
-                        .padding(.top, stillHeight - 12)
+                if let progress = nativeResumeProgress {
+                    HStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            if isPlayed { Image(systemName: "checkmark.circle.fill") }
+                            if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
+                        }
+                        .font(.system(size: 18)).foregroundStyle(.white)
+                        .fixedSize().padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        ResumeProgressBar(value: progress.fraction,
+                                          duration: episode.userData?.durationSeconds, height: 8, inset: 0)
+                    }
+                        .padding(.horizontal, 12).padding(.bottom, 12)
+                        .frame(width: cardWidth, height: stillHeight, alignment: .bottom)
                         .allowsHitTesting(false)
                 }
             }
+            .scaleEffect(isFocused && !reduceMotion ? TVMediaFocus.scale : 1)
+            .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
         } else {
             Button(action: onSelect) {
                 EpisodeCardLabel(episode: episode, isPlayed: isPlayed, isCurrent: isCurrent,
@@ -417,6 +430,12 @@ struct TVEpisodeCard: View {
                                  stillCornerRadius: stillCornerRadius, captionStyle: captionStyle)
             }.buttonStyle(TVCardFocusButtonStyle())
         }
+    }
+
+    private var nativeResumeProgress: ResumePresentation? {
+        guard playedOverride == nil else { return nil }
+        return ResumePresentation(position: episode.userData?.positionSeconds,
+                           duration: episode.userData?.durationSeconds)
     }
 
     private var isPlayed: Bool {
@@ -629,7 +648,7 @@ private struct EpisodeCardLabel: View {
             }
 
             if let progress = progressFraction {
-                ResumeProgressBar(value: progress)
+                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds)
             }
         }
         .frame(width: cardWidth, height: stillHeight)
@@ -723,6 +742,7 @@ struct TVContinuousEpisodeShelf: View {
     let pages: [Int: [EpisodeListItem]]
     let selectedSeason: Season?
     let currentContentId: String?
+    var heroEntryEpisode: EpisodeListItem? = nil
     let favorites: [String: Bool]
     let onSeason: (Season) -> Void
     let onFocus: (EpisodeListItem) -> Void
@@ -735,6 +755,7 @@ struct TVContinuousEpisodeShelf: View {
     @State private var highlightedSeason: String?
     @State private var scrollHighlightedSeason: String?
     @State private var pendingJump: String?
+    @State private var pendingEpisodeJump: String?
     @State private var seeded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -839,7 +860,7 @@ struct TVContinuousEpisodeShelf: View {
                 } action: { _, seasonID in
                     // Accelerated remote scrolling can move the rail before
                     // native episode focus catches up. This only paints selection.
-                    guard focusedSeason == nil, let seasonID else { return }
+                    guard heroEntryEpisode == nil, focusedSeason == nil, let seasonID else { return }
                     scrollHighlightedSeason = seasonID
                 }
                 .onChange(of: focusedEpisode) { _, id in
@@ -858,8 +879,20 @@ struct TVContinuousEpisodeShelf: View {
                       let episode = pages.values.lazy.flatMap({ $0 }).first(where: { $0.contentId == id }) else { return }
                 onPlay(episode)
             }
+            .onChange(of: heroEntryEpisode?.contentId, initial: true) { _, id in
+                guard let id, let episode = heroEntryEpisode,
+                      let season = seasons.first(where: { $0.seasonNumber == episode.seasonNumber }) else { return }
+                // Prepare the destination while focus is still in the hero.
+                // Native focus continues to own the downward transition.
+                scrollHighlightedSeason = nil
+                highlightedSeason = season.id
+                pendingJump = season.id
+                pendingEpisodeJump = id
+                if selectedSeason?.id != season.id { onSeason(season) }
+                jumpIfReady(proxy)
+            }
             .onChange(of: contentKey, initial: true) { _, _ in
-                if !seeded, let season = selectedSeason, items(season) != nil {
+                if !seeded, pendingJump == nil, let season = selectedSeason, items(season) != nil {
                     seeded = true
                     if let id = currentContentId ?? items(season)?.first?.contentId {
                         proxy.scrollTo(id, anchor: .leading)
@@ -872,6 +905,7 @@ struct TVContinuousEpisodeShelf: View {
 
     private func selectSeason(_ season: Season, using proxy: ScrollViewProxy) {
         highlightedSeason = season.id
+        pendingEpisodeJump = nil
         pendingJump = season.id
         if selectedSeason?.id != season.id { onSeason(season) }
         jumpIfReady(proxy)
@@ -879,9 +913,13 @@ struct TVContinuousEpisodeShelf: View {
 
     private func jumpIfReady(_ proxy: ScrollViewProxy) {
         guard let pendingJump, let season = seasons.first(where: { $0.id == pendingJump }),
-              let id = items(season)?.first?.contentId else { return }
+              let episodes = items(season),
+              let id = pendingEpisodeJump.flatMap({ target in episodes.first { $0.contentId == target }?.contentId })
+                ?? episodes.first?.contentId else { return }
         withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(id, anchor: .leading) }
+        seeded = true
         self.pendingJump = nil
+        pendingEpisodeJump = nil
     }
 }
 

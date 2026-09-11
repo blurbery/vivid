@@ -140,6 +140,7 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                 $0.userData?.isInProgress == true ? "Resume" : "Play"
             },
             playSubtitle: nextUpEpisode.map(playButtonSubtitle(for:)),
+            resumeProgress: ResumePresentation(position: nextUpEpisode?.userData?.positionSeconds, duration: nextUpEpisode?.userData?.durationSeconds),
             onPlay: {
                 guard let nextUp = nextUpEpisode else { return }
                 onPlayEpisode(nextUp.contentId, selectedNextUpFileId, false)
@@ -154,6 +155,10 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
             rowFocused: $actionRowFocused,
             stabilizesFocusMotion: true,
             primaryButtonWidth: 280,
+            onResumeStartOver: ResumePresentation(position: nextUpEpisode?.userData?.positionSeconds, duration: nextUpEpisode?.userData?.durationSeconds) != nil ? {
+                guard let episode = nextUpEpisode else { return }
+                onPlayEpisode(episode.contentId, selectedNextUpFileId, true)
+            } : nil,
             playbackSelectors: {
                 Group {
                     TVPlaybackActionSelectors(
@@ -183,6 +188,7 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
     @ViewBuilder
     private var moreMenu: some View {
         TVCircleMenuButton(title: "More", accessibilityLabel: "More options", stabilizesFocusMotion: true) {
+            TVDetailVersionMenu(versions: nextUpVersions, selectedFileId: selectedNextUpFileId, onSelect: onSelectNextUpVersion)
             if let nextUp = nextUpEpisode, nextUp.userData?.isInProgress == true {
                 Button { onPlayEpisode(nextUp.contentId, selectedNextUpFileId, true) } label: {
                     Label("Start Over", systemImage: "backward.end.fill")
@@ -193,6 +199,16 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                     isFavorite ? "Remove from Favorites" : "Add to Favorites",
                     systemImage: isFavorite ? "heart.fill" : "heart"
                 )
+            }
+            if let episode = nextUpEpisode {
+                Button {
+                    Task { await onSetEpisodeWatched(episode.contentId, episode.userData?.played != true) }
+                } label: {
+                    Label(
+                        episode.userData?.played == true ? "Mark Episode Unwatched" : "Mark Episode Watched",
+                        systemImage: episode.userData?.played == true ? "checkmark.circle.fill" : "checkmark.circle"
+                    )
+                }
             }
             Button(action: onToggleWatched) {
                 Label(

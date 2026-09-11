@@ -21,7 +21,6 @@ struct TVPlaybackActionSelectors: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            versionMenu
             audioMenu
             subtitleMenu
         }
@@ -29,33 +28,6 @@ struct TVPlaybackActionSelectors: View {
             await ProfilePrefsStore.shared.hydrateIfNeeded()
             preferredSubtitleLanguage = ProfilePrefsStore.shared.preferredSubtitleLanguage
         }
-    }
-
-    private var versionMenu: some View {
-        TVCircleMenuButton(
-            icon: "square.stack",
-            title: "Versions",
-            accessibilityLabel: "Version, \(versionValue)",
-            stabilizesFocusMotion: true
-        ) {
-            Button { onSelectVersion(nil) } label: {
-                menuItem(
-                    title: "Auto",
-                    detail: "Best match for this device",
-                    isSelected: selectedVersionFileId == nil
-                )
-            }
-            ForEach(versions) { version in
-                Button { onSelectVersion(version.fileId) } label: {
-                    menuItem(
-                        title: DetailPlaybackFormatting.versionShortLabel(version),
-                        detail: versionDetail(version),
-                        isSelected: selectedVersionFileId == version.fileId
-                    )
-                }
-            }
-        }
-        .disabled(currentVersion == nil || versions.isEmpty)
     }
 
     private var audioMenu: some View {
@@ -191,6 +163,32 @@ struct TVPlaybackActionSelectors: View {
         } else {
             Text(label)
         }
+    }
+}
+
+struct TVDetailVersionMenu: View {
+    let versions: [FileVersion]
+    let selectedFileId: Int?
+    let onSelect: (Int?) -> Void
+
+    var body: some View {
+        Menu {
+            Button { onSelect(nil) } label: {
+                if selectedFileId == nil { Label("Auto", systemImage: "checkmark") }
+                else { Text("Auto") }
+            }
+            ForEach(versions) { version in
+                Button { onSelect(version.fileId) } label: {
+                    let label = DetailPlaybackFormatting.versionShortLabel(version)
+                        + " · " + DetailPlaybackFormatting.versionDetailLabel(version)
+                    if selectedFileId == version.fileId { Label(label, systemImage: "checkmark") }
+                    else { Text(label) }
+                }
+            }
+        } label: {
+            Label("Version", systemImage: "square.stack")
+        }
+        .disabled(versions.isEmpty)
     }
 }
 

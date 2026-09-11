@@ -85,6 +85,7 @@ struct PlayerBufferingCapsule: View {
 
 struct VividLoadingDots: View {
     var compact = false
+    var dotDiameter: CGFloat? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -94,7 +95,7 @@ struct VividLoadingDots: View {
                     let phase = timeline.date.timeIntervalSinceReferenceDate * 2 * .pi / 1.1 - Double(index) * 0.65
                     Circle()
                         .fill(.primary)
-                        .frame(width: compact ? 4 : 12, height: compact ? 4 : 12)
+                        .frame(width: dotDiameter ?? (compact ? 4 : 12), height: dotDiameter ?? (compact ? 4 : 12))
                         .offset(y: reduceMotion ? 0 : -CGFloat((sin(phase) + 1) / 2) * (compact ? 6 : 18))
                 }
             }

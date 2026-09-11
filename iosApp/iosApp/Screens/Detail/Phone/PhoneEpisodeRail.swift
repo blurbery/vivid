@@ -219,7 +219,7 @@ private struct PhoneEpisodeCard: View {
             }
 
             if let progress = progressFraction {
-                ResumeProgressBar(value: progress)
+                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds)
             }
         }
         .frame(width: cardWidth, height: stillHeight)

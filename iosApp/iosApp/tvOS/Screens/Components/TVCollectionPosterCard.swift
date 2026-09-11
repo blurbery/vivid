@@ -48,7 +48,7 @@ struct TVCollectionPosterCard: View {
 
     private var posterButton: some View {
         Button(action: action) { poster }
-            .buttonStyle(.card)
+            .buttonStyle(TVCardFocusButtonStyle())
             .focused($isFocused)
             .applyDefaultFocusIfNeeded(prefersDefaultFocus, namespace: defaultFocusNamespace)
             .applyCollectionFocusBinding(focusBinding, contentId: focusContentId)

@@ -165,7 +165,8 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                 icon: "play.fill",
                 title: nextUpEpisode.map(playButtonLabel) ?? "Play",
                 action: handlePrimaryPlayTap,
-                fullWidth: true
+                fullWidth: true,
+                resumeProgress: ResumePresentation(position: resumePositionSeconds(for: nextUpEpisode), duration: nextUpEpisode?.userData?.durationSeconds)
             )
 
             PhoneLabeledActionRow {

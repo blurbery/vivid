@@ -67,10 +67,8 @@ enum HomeFeedMeta {
     }
 
     static func remaining(position: Double?, duration: Double?) -> String? {
-        guard let position, let duration, duration > 0, position > 0 else { return nil }
-        let minutesLeft = Int((duration - position) / 60)
-        guard minutesLeft > 0 else { return nil }
-        return runtime(minutes: minutesLeft).map { "\($0) left" }
+        guard let progress = ResumePresentation(position: position, duration: duration) else { return nil }
+        return runtime(minutes: progress.minutesRemaining).map { "\($0) left" }
     }
 
     static func progress(for item: SectionItem) -> Double? {
@@ -393,9 +391,7 @@ struct HomePosterCard: View {
         }
         .overlay(alignment: .bottom) {
             if showsProgress, let progress = HomeFeedMeta.progress(for: item) {
-                ProgressBar(value: progress)
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 6)
+                ResumeProgressBar(value: progress, duration: item.durationSeconds, height: 3, inset: 6)
             }
         }
         .overlay {
@@ -559,11 +555,9 @@ struct HomeStillCard: View {
 
             if let progress = HomeFeedMeta.progress(for: item) {
                 if isIOSResumeCard {
-                    ResumeProgressBar(value: progress)
+                    ResumeProgressBar(value: progress, duration: item.durationSeconds)
                 } else {
-                    ProgressBar(value: progress)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 7)
+                    ResumeProgressBar(value: progress, duration: item.durationSeconds, height: 3, inset: 8)
                 }
             }
         }

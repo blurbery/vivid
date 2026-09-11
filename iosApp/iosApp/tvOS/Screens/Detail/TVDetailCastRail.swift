@@ -103,7 +103,7 @@ private struct TVCastCard: View {
         }
         .buttonStyle(
             TVCardFocusButtonStyle(
-                scale: 1.05,
+                scale: TVMediaFocus.scale,
                 focusedShadowOpacity: 0.35,
                 focusedShadowRadius: 14,
                 focusedShadowY: 6,

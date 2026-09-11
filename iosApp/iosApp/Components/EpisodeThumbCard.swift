@@ -95,7 +95,7 @@ struct EpisodeThumbCard: View {
                     tvResumeProgress(value: progress)
                 }
             }
-            .scaleEffect(isFocused && !reduceMotion ? 1.025 : 1)
+            .scaleEffect(isFocused && !reduceMotion ? TVMediaFocus.scale : 1)
             .shadow(
                 color: .black.opacity(isFocused ? 0.5 : 0.2),
                 radius: isFocused ? 20 : 8,
@@ -270,7 +270,7 @@ struct EpisodeThumbCard: View {
             // Progress bar (resume)
             #if !os(tvOS)
             if showProgress, let p = progressValue, p > 0 {
-                ResumeProgressBar(value: p)
+                ResumeProgressBar(value: p, duration: item.durationSeconds)
             }
             #endif
 
@@ -436,20 +436,13 @@ struct EpisodeThumbCard: View {
     }
 
     private func tvResumeProgress(value: Double) -> some View {
-        ZStack(alignment: .bottom) {
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.45)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 64)
-
-            ResumeProgressBar(value: value)
-        }
-        .frame(width: cardWidth, height: cardHeight, alignment: .bottom)
-        .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        // Keep progress live outside the native focused label snapshot. The
+        // artwork already has a scrim; a second fixed-size scrim looked like
+        // a separate rectangle when the native card lifted on focus.
+        ResumeProgressBar(value: value, duration: item.durationSeconds)
+            .frame(width: cardWidth, height: cardHeight, alignment: .bottom)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -458,7 +451,7 @@ struct EpisodeThumbCard: View {
             thumbnail
                 .tvArtworkEdge(isFocused: isFocused, cornerRadius: VividTheme.cornerRadius)
         }
-        .buttonStyle(.card)
+        .buttonStyle(TVArtworkContentButtonStyle())
         .applyEpisodeFocus(
             focusedItemId,
             itemId: item.contentId,

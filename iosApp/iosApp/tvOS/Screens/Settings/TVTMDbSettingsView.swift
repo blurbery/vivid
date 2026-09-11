@@ -70,7 +70,7 @@ struct TVTMDbSettingsView: View {
                 TVSettingsSectionHeader("ABOUT TMDB")
                 TVTMDbAttribution()
             }
-            .frame(maxWidth: 1080, alignment: .leading)
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
             .padding(.horizontal, 24).padding(.top, 48).padding(.bottom, 64)
             .frame(maxWidth: .infinity)
         }

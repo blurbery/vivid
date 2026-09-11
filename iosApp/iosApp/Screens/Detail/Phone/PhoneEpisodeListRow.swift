@@ -91,7 +91,7 @@ struct PhoneEpisodeListRow: View {
             }
 
             if let progress = PhoneEpisodeFormatting.progressFraction(for: episode) {
-                ResumeProgressBar(value: progress, height: 4, inset: 8)
+                ResumeProgressBar(value: progress, duration: episode.userData?.durationSeconds, height: 4, inset: 8)
             }
         }
         .frame(width: thumbnailWidth, height: thumbnailHeight)

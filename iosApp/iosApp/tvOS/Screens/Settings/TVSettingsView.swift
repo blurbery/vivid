@@ -91,7 +91,7 @@ struct TVSettingsView: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         rail.padding(24)
                     }
-                        .frame(maxWidth: 860)
+                        .frame(maxWidth: TVSettingsLayout.pageWidth)
                         .disabled(hasSettingsOverlay || isRestoringDetailFocus)
                         .defaultFocus($railFocus, .category(selectedCategory), priority: .userInitiated)
                         .focusSection()
@@ -110,7 +110,7 @@ struct TVSettingsView: View {
         ZStack {
             SettingsBackdrop()
             detailPane
-                .frame(maxWidth: 1120, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: TVSettingsLayout.pageWidth, maxHeight: .infinity, alignment: .topLeading)
                 .disabled(hasSettingsOverlay)
                 .defaultFocus($detailFocus, preferredDetailFocus, priority: .userInitiated)
                 .focusSection()
@@ -307,12 +307,12 @@ struct TVSettingsView: View {
                 paneContent
                     .padding(.top, 18)
             }
-            .frame(maxWidth: 1080, alignment: .leading)
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
             .padding(.bottom, 64)
         }
         // Keep focused row scaling and shadows inside a deliberate gutter
         // instead of letting the scroll view trim their rounded edges.
-        .contentMargins(.horizontal, 18, for: .scrollContent)
+        .contentMargins(.horizontal, 24, for: .scrollContent)
         .scrollClipDisabled()
         // Rebuild the scroll view per category so it opens at the top.
         // Safe: selection only changes while focus is in the rail.

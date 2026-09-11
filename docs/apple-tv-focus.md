@@ -98,7 +98,7 @@ control should use, then remove the other one.
 
 Home, Movies, Series and For You are direct root tabs. Movies and Series expose native library sub-tabs within their own page; For You exposes Watchlist, Favourites and Collections. The Profile control opens Settings directly. Do not restore the removed Movies/Series/For You/Profile dropdowns when fixing focus.
 
-Each root owns its own sub-tab selection. A focus move within Movies must not change Series or For You. Keep card identities stable across paging and artwork eviction. Home's experimental spotlight retains a 580-point layout height with a 1.5% visual focus lift, disabled by Reduce Motion. Down enters the first row's remembered card, using the first card before any visit. Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.
+Media cards across Home, library and detail pages use the same 5% focus lift as the series episode shelf, with a shared artwork edge and Reduce Motion support. Continue Watching applies this lift once to the artwork and live progress overlay. The spotlight keeps its separate focus treatment. Each root owns its own sub-tab selection. A focus move within Movies must not change Series or For You. Keep card identities stable across paging and artwork eviction. Home's experimental spotlight retains a 580-point layout height with a 1.5% visual focus lift, disabled by Reduce Motion. Down enters the first row's remembered card, using the first card before any visit. Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.
 
 ## Native catalog menus and detail controls
 
@@ -173,3 +173,7 @@ Unexpected signs:
   https://developer.apple.com/documentation/swiftui/view/onmovecommand(perform:)
 - Focus Cookbook sample (WWDC23, "The SwiftUI cookbook for focus"):
   https://developer.apple.com/documentation/swiftui/focus-cookbook-sample
+
+When the series hero action row has focus, prepare the continuous shelf on the Play/Resume episode’s season and scroll that episode into view. Keep native downward focus movement and the existing season click and swipe handlers; do not force episode focus or replace the playback selection when browsing.
+
+Settings and its secondary pages share an 812-point content column. Home Screen uses the Home Sections control-card style, with its existing spotlight selection and save actions. About uses the same column, and compact 300-point acknowledgement cards keep the two-row grid on one screen; concise settings descriptions keep rows compact without changing their controls.
