@@ -22,6 +22,29 @@ struct SearchView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: contentSpacing) {
+                #if os(iOS)
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField(searchPrompt, text: $viewModel.query)
+                            .focused($isSearchFieldFocused)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                        if !viewModel.query.isEmpty {
+                            Button { viewModel.query = "" } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear search")
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .background(.white.opacity(0.1), in: Capsule())
+                    .frame(maxWidth: 640)
+                    .frame(maxWidth: .infinity)
+                }
+                #endif
                 if shouldShowFilters {
                     mediaTypeFilter
                     #if os(tvOS)
@@ -69,7 +92,7 @@ struct SearchView: View {
         #else
         .vividNavigationBarSurfaceBackground()
         #endif
-        .vividSearchable(text: $viewModel.query, prompt: searchPrompt)
+        .modifier(SearchNativeField(query: $viewModel.query, prompt: searchPrompt))
         #if os(iOS)
         .searchFocused($isSearchFieldFocused)
         .onChange(of: blurRequest) { _, _ in
@@ -199,6 +222,8 @@ struct SearchView: View {
             }
         }.padding(5).vividGlass(in: Capsule())
         .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1).allowsHitTesting(false))
+        .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
+        .frame(maxWidth: .infinity)
         #elseif os(tvOS)
         HStack(spacing: 24) {
             Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
@@ -264,3 +289,21 @@ private struct TVSearchTabBody: View {
     }
 }
 #endif
+
+private struct SearchNativeField: ViewModifier {
+    @Binding var query: String
+    let prompt: String
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            content
+        } else {
+            content.vividSearchable(text: $query, prompt: prompt)
+        }
+        #else
+        content.vividSearchable(text: $query, prompt: prompt)
+        #endif
+    }
+}

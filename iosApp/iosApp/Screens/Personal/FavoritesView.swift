@@ -14,7 +14,10 @@ struct IOSPersonalMediaPosterLayout: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
     private var columnCount: Int {
-        hSize == .regular && UIDevice.current.userInterfaceIdiom != .phone ? 5 : 3
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth)
+        }
+        return hSize == .regular && UIDevice.current.userInterfaceIdiom != .phone ? 5 : 3
     }
 
     var body: some View {
@@ -64,7 +67,11 @@ struct IOSPersonalMediaPosterLayout: View {
     /// MediaCard scales overrides by the selected global preference. Cancel
     /// that scale, then cap the standard width to the measured grid cell.
     private var cardWidthOverride: CGFloat {
-        AdaptiveColumns.fittedPosterWidth(
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth)
+                / uiCustomization.cardPresentation.posterSize.scale
+        }
+        return AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columnCount,
             spacing: 8

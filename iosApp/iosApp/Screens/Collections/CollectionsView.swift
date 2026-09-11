@@ -442,6 +442,12 @@ struct LibraryCollectionsView: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
     private var columns: [GridItem] {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return Array(repeating: GridItem(.flexible(), spacing: 12),
+                         count: AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth, spacing: 12))
+        }
+        #endif
         if usesThreeColumnPhoneLayout {
             return Array(
                 repeating: GridItem(.flexible(), spacing: 12),
@@ -538,6 +544,9 @@ struct LibraryCollectionsView: View {
 
     private var libraryCollectionCardWidthOverride: CGFloat? {
         #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth, spacing: 12)
+        }
         return AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columns.count,
@@ -802,9 +811,17 @@ struct MobileForYouCollections: View {
 
     @Environment(\.horizontalSizeClass) private var hSize
 
-    private var columnCount: Int { hSize == .regular && UIDevice.current.userInterfaceIdiom != .phone ? 5 : 3 }
+    private var columnCount: Int {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth, spacing: 12)
+        }
+        return hSize == .regular && UIDevice.current.userInterfaceIdiom != .phone ? 5 : 3
+    }
     private var cardWidth: CGFloat? {
-        AdaptiveColumns.fittedPosterWidth(containerWidth: gridWidth, columnCount: columnCount, spacing: 12)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth, spacing: 12)
+        }
+        return AdaptiveColumns.fittedPosterWidth(containerWidth: gridWidth, columnCount: columnCount, spacing: 12)
     }
 
     var body: some View {

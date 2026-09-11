@@ -35,6 +35,12 @@ struct CatalogGrid: View {
     #else
     @Environment(\.horizontalSizeClass) private var hSize
     private var columns: [GridItem] {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top),
+                         count: AdaptiveColumns.tabletPosterCount(containerWidth: gridWidth))
+        }
+        #endif
         if usesThreeColumnPhoneLayout {
             return Array(
                 repeating: GridItem(.flexible(), spacing: 8, alignment: .top),
@@ -131,6 +137,10 @@ struct CatalogGrid: View {
     /// that scale here, then cap the standard width to the measured grid cell.
     private var gridCardWidthOverride: CGFloat? {
         #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth)
+                / uiCustomization.cardPresentation.posterSize.scale
+        }
         let fittedWidth = AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columns.count,

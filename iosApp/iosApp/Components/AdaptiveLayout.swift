@@ -8,6 +8,16 @@ import SwiftUI
 /// their intended density instead of stretching to nearly 2× width.
 ///
 enum AdaptiveColumns {
+    /// iPad grids fill their container with evenly sized posters and small gaps.
+    static func tabletPosterCount(containerWidth: CGFloat, spacing: CGFloat = 8) -> Int {
+        max(1, Int((max(1, containerWidth) + spacing) / (160 + spacing)))
+    }
+
+    static func tabletPosterWidth(containerWidth: CGFloat, spacing: CGFloat = 8) -> CGFloat {
+        let count = tabletPosterCount(containerWidth: containerWidth, spacing: spacing)
+        return max(1, (containerWidth - CGFloat(count - 1) * spacing) / CGFloat(count))
+    }
+
     static func posters(
         for sizeClass: UserInterfaceSizeClass?,
         posterSize: CardPosterSize = .standard,

@@ -77,7 +77,10 @@ struct RecommendationsView: View {
                             .background(mobileSelection == title ? Color.white : .clear, in: Capsule())
                     }.buttonStyle(.plain)
                 }
-            }.padding(5).vividGlass(in: Capsule()).padding(.horizontal, 16)
+            }.padding(5).vividGlass(in: Capsule())
+            .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
             .padding(.top, 12)
     }
     #endif
