@@ -208,8 +208,11 @@ struct EmbyAdapter {
         let user = raw["UserData"] as? [String: Any] ?? [:]
         let seconds = Self.seconds(raw["RunTimeTicks"])
         let position = Self.seconds(user["PlaybackPositionTicks"])
+        guard let runtime = Int(exactly: (seconds / 60).rounded(.towardZero)) else {
+            throw EmbyError.invalidResponse
+        }
         var value: [String: Any] = ["contentId": id, "title": name, "type": kind == "boxset" ? "collection" : kind,
-            "status": "available", "runtime": Int(seconds / 60), "durationSeconds": seconds, "positionSeconds": position,
+            "status": "available", "runtime": runtime, "durationSeconds": seconds, "positionSeconds": position,
             "userState": ["played": user["Played"] as? Bool ?? false, "isFavorite": user["IsFavorite"] as? Bool ?? false, "inWatchlist": watchlistIDs.contains(id)],
             "userData": ["played": user["Played"] as? Bool ?? false, "isInProgress": position > 0, "positionSeconds": position, "durationSeconds": seconds],
             "versions": try (raw["MediaSources"] as? [[String: Any]] ?? []).map { try version($0, chapters: raw["Chapters"] as? [[String: Any]] ?? []) }]

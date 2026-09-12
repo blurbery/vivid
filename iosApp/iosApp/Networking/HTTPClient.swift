@@ -1033,7 +1033,7 @@ actor HTTPClient {
         let normalizedPath = path.hasPrefix("/") ? path : "/" + path
         let basePath = components.percentEncodedPath
         let trimmedBase = basePath.hasSuffix("/") ? String(basePath.dropLast()) : basePath
-        components.percentEncodedPath = trimmedBase + normalizedPath
+        components.percentEncodedPath = try Self.validatedRequestPath(trimmedBase + normalizedPath)
 
         if !query.isEmpty {
             components.queryItems = query
@@ -1060,8 +1060,17 @@ actor HTTPClient {
 
         return request
     }
-
-
+    /// Validate without using Foundation's trapping percentEncodedPath setter.
+    /// Already-encoded asset paths retain their original escaping.
+    static func validatedRequestPath(_ path: String) throws -> String {
+        guard path.hasPrefix("/"),
+              let parsed = URLComponents(string: "https://path.invalid" + path, encodingInvalidCharacters: false),
+              parsed.host == "path.invalid", parsed.query == nil, parsed.fragment == nil,
+              parsed.percentEncodedPath == path else {
+            throw HTTPError.invalidURL(path)
+        }
+        return parsed.percentEncodedPath
+    }
 
     /// Compatibility path for the pre-registry/no-active-server state. Normal
     /// authenticated requests use `attachOrdinaryAuthHeaders`, whose complete

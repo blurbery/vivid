@@ -328,7 +328,7 @@ final class HLSLocalServer: @unchecked Sendable {
 
     private var listenFd: Int32 = -1
     private var shouldStop = false
-    private var clientFds = Set<Int32>()
+    private var clientFds = HLSConnectionRegistry()
 
     /// Active connection count; engine memory probe watches for unexpectedly rising accumulation (AVPlayer normally holds 1-3 connections).
     var activeConnectionCount: Int {
@@ -523,8 +523,7 @@ final class HLSLocalServer: @unchecked Sendable {
         loggedReducedMasterPlaylist = false
         loggedMediaPlaylist = false
         mediaPlaylistBuildCount = 0
-        let clients = clientFds
-        clientFds.removeAll()
+        let clients = clientFds.removeAll()
         stateLock.unlock()
 
         // shutdown() BEFORE close() on the listen fd: close releases the fd number while the accept loop may have captured it; a new session could recycle that number and the dying loop would accept on the new session's socket. shutdown() wakes the blocked accept without releasing the number.
@@ -570,6 +569,17 @@ final class HLSLocalServer: @unchecked Sendable {
                 }
                 EngineLog.emit("[HLSLocalServer] accept failed errno=\(err)",
                                category: .hlsServer)
+                // Resource exhaustion must not turn accept into a busy loop.
+                _ = poll(nil, 0, 100)
+                continue
+            }
+
+            let acceptedAt = ProcessInfo.processInfo.systemUptime
+            stateLock.lock()
+            let admitted = !shouldStop && clientFds.insert(clientFd)
+            stateLock.unlock()
+            guard admitted else {
+                close(clientFd)
                 continue
             }
 
@@ -584,22 +594,19 @@ final class HLSLocalServer: @unchecked Sendable {
             _ = setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &timeout,
                            socklen_t(MemoryLayout<timeval>.size))
 
-            stateLock.lock()
-            clientFds.insert(clientFd)
-            stateLock.unlock()
-
             EngineLog.emit("[HLSLocalServer] conn opened fd=\(clientFd)",
                            category: .hlsServer, level: .verbose)
 
             workQueue.async { [weak self] in
-                self?.handleConnection(clientFd)
+                guard let self else { close(clientFd); return }
+                self.handleConnection(clientFd, acceptedAt: acceptedAt)
             }
         }
     }
 
     // MARK: - Per-connection handler
 
-    private func handleConnection(_ fd: Int32) {
+    private func handleConnection(_ fd: Int32, acceptedAt: TimeInterval) {
         defer {
             stateLock.lock()
             clientFds.remove(fd)
@@ -610,68 +617,15 @@ final class HLSLocalServer: @unchecked Sendable {
         }
 
         // HTTP/1.1 keep-alive loop: AVPlayer reuses connections across segment fetches. Connection:close per-request tried 2026-05-20; Instruments showed it shifted the leak from libnetwork into a 570 MiB Malloc heap bucket instead (strictly worse; reverted).
+        var authenticated = false
         while true {
             stateLock.lock()
             let stopping = shouldStop
             stateLock.unlock()
             if stopping { return }
-            guard let request = readHTTPRequest(fd) else { return }
+            guard let request = HLSRequestReader.read(fd: fd, acceptedAt: authenticated ? nil : acceptedAt) else { return }
             guard processRequest(request, on: fd) else { return }
-        }
-    }
-
-    /// Read until end of HTTP headers (`\r\n\r\n`). Returns the raw
-    /// request bytes (headers only, no body, since we only accept
-    /// GET). Returns nil on EOF, error, or oversize.
-    private func readHTTPRequest(_ fd: Int32) -> Data? {
-        var buffer = Data()
-        var chunk = [UInt8](repeating: 0, count: 4096)
-        while true {
-            let n = chunk.withUnsafeMutableBufferPointer { ptr -> Int in
-                recv(fd, ptr.baseAddress, ptr.count, 0)
-            }
-            if n == 0 {
-                if buffer.isEmpty { return nil }
-                EngineLog.emit("[HLSLocalServer] peer EOF mid-request fd=\(fd)",
-                               category: .hlsServer)
-                return nil
-            }
-            if n < 0 {
-                let err = errno
-                if err == EINTR { continue }
-                if err == EAGAIN || err == EWOULDBLOCK {
-                    EngineLog.emit("[HLSLocalServer] recv timeout fd=\(fd)",
-                                   category: .hlsServer)
-                    return nil
-                }
-                EngineLog.emit("[HLSLocalServer] recv error fd=\(fd) errno=\(err)",
-                               category: .hlsServer)
-                return nil
-            }
-            buffer.append(chunk, count: n)
-            if let end = findHeadersTerminator(buffer) {
-                return buffer.prefix(end + 4)
-            }
-            if buffer.count > 8192 {
-                EngineLog.emit("[HLSLocalServer] request too large fd=\(fd) bytes=\(buffer.count)",
-                               category: .hlsServer)
-                return nil
-            }
-        }
-    }
-
-    private func findHeadersTerminator(_ buf: Data) -> Int? {
-        guard buf.count >= 4 else { return nil }
-        let needle: [UInt8] = [0x0D, 0x0A, 0x0D, 0x0A]
-        return buf.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Int? in
-            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return nil }
-            for i in 0...(buf.count - 4) {
-                if base[i] == needle[0] && base[i + 1] == needle[1]
-                    && base[i + 2] == needle[2] && base[i + 3] == needle[3] {
-                    return i
-                }
-            }
-            return nil
+            authenticated = true
         }
     }
 

@@ -132,13 +132,16 @@ extension VividAPI {
     }
 
     /// Build the absolute file-endpoint URL for a download, resolved
-    /// against the active server origin. Used by the background downloader.
-    func downloadFileURL(downloadId: String) async -> URL? {
-        if MediaServerProvider.active == .emby {
-            guard let connection = try? await EmbyConnection.current() else { return nil }
+    /// against the captured account origin. Used by the background downloader.
+    func downloadFileURL(downloadId: String, auth: CapturedOrdinaryRequestAuth) async -> URL? {
+        if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
+            guard let connection = try? await EmbyConnection.current(),
+                  connection.identity?.account == auth.account,
+                  connection.identity?.profileId == auth.profileId,
+                  connection.identity?.profileToken == auth.profileToken else { return nil }
             return try? await EmbyDownloads.shared.fileURL(id:downloadId,connection:connection)
         }
-        let base = await currentServerUrl()
+        let base = auth.account.serverURL
         guard !base.isEmpty else { return nil }
         let trimmed = base.hasSuffix("/") ? String(base.dropLast()) : base
         return URL(string: "\(trimmed)/api/v1/downloads/\(downloadId)/file")

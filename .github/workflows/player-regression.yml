@@ -62,6 +62,10 @@ jobs:
         run: |
           swiftc AetherEngine/Sources/AetherEngine/VividInitialAudioStream.swift scripts/test-aether-audio-selection.swift -o "$RUNNER_TEMP/aether-audio-selection"
           "$RUNNER_TEMP/aether-audio-selection"
+      - name: Check HLS input and connection boundaries
+        run: |
+          swiftc AetherEngine/Sources/AetherEngine/IO/HLSIngest/HLSPlaylist.swift AetherEngine/Sources/AetherEngine/IO/HLSIngest/HLSPlaylistTracker.swift AetherEngine/Sources/AetherEngine/IO/HLSIngest/HLSIngestError.swift AetherEngine/Sources/AetherEngine/Network/HLSRequestReader.swift scripts/test-aether-security.swift -o "$RUNNER_TEMP/aether-security"
+          "$RUNNER_TEMP/aether-security"
       - name: Prepare iOS simulator
         if: matrix.action == 'test'
         timeout-minutes: 10

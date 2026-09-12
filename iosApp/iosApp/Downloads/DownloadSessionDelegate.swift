@@ -195,24 +195,38 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
 /// session, replicating the header set `HTTPClient.attachAuthHeaders`
 /// applies (the background session can't share that actor's `URLSession`).
 enum DownloadAuthHeaders {
-    static func authorizedRequest(url: URL, allowsCellular: Bool) async -> URLRequest {
+    static func authorizedRequest(
+        url: URL, allowsCellular: Bool, expected: CapturedOrdinaryRequestAuth,
+        tokenStore: TokenStore = .shared
+    ) async throws -> URLRequest {
+        guard let auth = await tokenStore.currentOrdinaryRequestAuth(matchingIdentityOf: expected) else {
+            throw HTTPError.requestIdentityChanged
+        }
+        try Task.checkCancellation()
+        return try request(url: url, allowsCellular: allowsCellular, auth: auth)
+    }
+
+    static func request(url: URL, allowsCellular: Bool, auth: CapturedOrdinaryRequestAuth) throws -> URLRequest {
+        // Resolve and validate the destination against the same immutable
+        // account snapshot that supplies every credential header.
+        _ = try DownloadAssetRequestLocation.resolve(url.absoluteString, relativeTo: auth.account.serverURL)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.allowsCellularAccess = allowsCellular
 
-        if MediaServerProvider.active == .emby {
-            guard let connection = try? await EmbyConnection.current(),
-                  let base = URL(string:connection.serverURL), url.scheme == base.scheme, url.host == base.host, url.port == base.port else { return request }
+        if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
+            let connection = EmbyConnection(serverURL: auth.account.serverURL, token: auth.accessToken,
+                                            userID: nil, identity: auth)
             connection.headers.forEach { request.setValue($0.value,forHTTPHeaderField:$0.key) }
             return request
         }
-        if let token = await TokenStore.shared.getAccessToken() {
+        if let token = auth.accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        if let profileId = await TokenStore.shared.getProfileId() {
+        if let profileId = auth.profileId {
             request.setValue(profileId, forHTTPHeaderField: "X-Profile-Id")
         }
-        if let profileToken = await TokenStore.shared.getProfileToken() {
+        if let profileToken = auth.profileToken {
             request.setValue(profileToken, forHTTPHeaderField: "X-Profile-Token")
         }
         AppleDeviceIdentity.current.applyHeaders(to: &request)
