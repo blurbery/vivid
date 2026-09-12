@@ -98,6 +98,8 @@ Watched/unwatched changes from details refresh Home after the server write succe
 
 ### Detail pages and validation
 
+On 12 September 2026, blurbery accepted the Settings and profile refinements after testing on iPhone and Bedroom Apple TV. The final mobile account divider and profile selection fixes passed signed device builds. The [download regression run](https://github.com/blurbery/vivid/actions/runs/34677477571) passed before the later visual refinements. This does not establish complete converted-download or offline-playback coverage for Emby.
+
 Series details use the Watched tick menu for the selected episode, selected season and whole-series watched actions.
 
 Cast and crew pages use Home-sized filmography posters (three columns on iPhone and compact iPad) and the shared, left-aligned title/year caption settings. Cached person metadata appears on reopening while fresh metadata and filmography load concurrently. First-time missing metadata still depends on server enrichment.
