@@ -1,14 +1,11 @@
 #if os(tvOS)
 import SwiftUI
 
-/// One backdrop footprint shared by Skyline landings and item details.
+/// Backdrop geometry used by item details.
 /// tvOS content is rendered in a 16:9 logical viewport, so deriving the
 /// height from the available width keeps the artwork request, crop, and mask
 /// identical even when the detail hero itself is shorter than the viewport.
 enum TVBackdropArtworkLayout {
-    /// tvOS renders every screen into a 1920 pt wide logical canvas, so the
-    /// hero artwork size is fixed and can be computed off the main thread.
-    static let viewportWidth: CGFloat = 1920
     static let widthFraction: CGFloat = 0.64
     static let heightFraction: CGFloat = 0.70
 
@@ -21,9 +18,7 @@ enum TVBackdropArtworkLayout {
     }
 }
 
-/// Shared corner falloff for the root marquee and movie/series details.
-/// Keeping one mask prevents the artwork edge from visibly changing while
-/// the already-focused card opens its seeded detail route.
+/// Shared corner falloff for movie and series details and their loading state.
 struct TVBackdropArtworkFadeMask: View {
     var softensLeadingFade = false
     var body: some View {
@@ -70,140 +65,4 @@ struct TVBackdropArtworkFadeMask: View {
     }
 }
 
-/// Page-level ambient hero backdrop for root tvOS screens.
-///
-/// Keeping this behind the whole page instead of inside the hero/marquee
-/// gives the custom top menu, marquee, and rows one shared visual plane.
-/// On Home and the library Browse landings the artwork tracks the
-/// marquee's focused item (Skyline §5.4): a crisp image is anchored in the
-/// top-right corner and fades out toward the leading edge and the bottom
-/// into a color sampled from the art itself, which is carried (dimmed)
-/// across the rest of the page so the metadata and rows below sit on the
-/// same tint. Calendar and Recommendations keep passing static (nil)
-/// artwork with `tintColor: .vividBackground`, so they render as the
-/// flat app background.
-struct TVRootHeroBackdrop: View {
-    let tintColor: Color
-    let artworkURL: String?
-    let artworkThumbhash: String?
-    var isVisible: Bool = true
-    /// Artwork/tint crossfade duration. Focus-marquee hosts pass the §4.2
-    /// 240 ms swap; other surfaces keep the slower ambient default.
-    var crossfadeDuration: Double = 0.55
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// False until the first artwork has painted. The very first backdrop
-    /// (cold entry, seeded before focus settles) should be there on frame
-    /// one — only artwork→artwork swaps get the ambient crossfade.
-    @State private var hasDisplayedArtwork = false
-
-    /// Full-width top scrim height so the menu bar stays legible over the
-    /// bright art now sitting directly behind the tabs and profile avatar.
-    private let topScrimHeight: CGFloat = 190
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            Color.vividBackground
-
-            tintBackground
-
-            if isVisible {
-                backdropImage
-                topChromeScrim
-            }
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .onAppear {
-            if artworkURL?.isEmpty == false { hasDisplayedArtwork = true }
-        }
-        .onChange(of: artworkURL) { _, url in
-            if url?.isEmpty == false { hasDisplayedArtwork = true }
-        }
-    }
-
-    /// Sampled-color wash: richest in the top-right behind the art, carried
-    /// dimmed down to the bottom-left so the page keeps the art's color
-    /// without washing out the metadata or row captions. When the caller
-    /// passes `.vividBackground` (Calendar/Recommendations) every stop
-    /// collapses to the app background, so the wash renders flat.
-    private var tintBackground: some View {
-        LinearGradient(
-            stops: [
-                .init(color: tintColor, location: 0.0),
-                .init(color: tintColor.opacity(isVisible ? 0.5 : 0.0), location: 0.45),
-                .init(color: tintColor.opacity(isVisible ? 0.18 : 0.0), location: 1.0),
-            ],
-            startPoint: .topTrailing,
-            endPoint: .bottomLeading
-        )
-        // The first tint (cold-entry seed with a prefetch-warmed sample)
-        // snaps in with the artwork; only tint→tint changes crossfade.
-        .animation(
-            reduceMotion || !hasDisplayedArtwork
-                ? nil
-                : .easeInOut(duration: crossfadeDuration),
-            value: tintColor
-        )
-        .animation(
-            reduceMotion || !hasDisplayedArtwork ? nil : .easeInOut(duration: 0.24),
-            value: isVisible
-        )
-    }
-
-    @ViewBuilder
-    private var backdropImage: some View {
-        GeometryReader { geometry in
-            let artworkSize = TVBackdropArtworkLayout.artworkSize(
-                forViewportWidth: geometry.size.width
-            )
-
-            // The mask wraps the crossfading pair rather than each image, so
-            // a swap renders one masked offscreen pass instead of two
-            // full-resolution ones while both artworks are on screen.
-            ZStack {
-                if let artworkURL, !artworkURL.isEmpty {
-                    AsyncImageView(
-                        url: artworkURL,
-                        thumbhash: artworkThumbhash,
-                        targetSize: artworkSize,
-                        contentMode: .fill
-                    )
-                    .id(artworkURL)
-                    .transition(
-                        reduceMotion || !hasDisplayedArtwork
-                            ? .identity
-                            : .opacity.animation(.easeInOut(duration: crossfadeDuration))
-                    )
-                }
-            }
-            .frame(width: artworkSize.width, height: artworkSize.height)
-            .clipped()
-            .mask { TVBackdropArtworkFadeMask() }
-            // Anchor the art block to the screen's top-right corner; the
-            // mask keeps only that corner opaque, so the corner reads as
-            // fully painted with no gap and the art dissolves inward.
-            .frame(
-                width: geometry.size.width,
-                height: geometry.size.height,
-                alignment: .topTrailing
-            )
-        }
-        .ignoresSafeArea()
-    }
-
-    /// Full-width black ramp pinned to the top so the wordmark, tabs, and
-    /// profile avatar stay legible now that bright art sits behind them.
-    private var topChromeScrim: some View {
-        LinearGradient(
-            colors: [.black.opacity(0.5), .clear],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(maxWidth: .infinity, maxHeight: topScrimHeight, alignment: .top)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .ignoresSafeArea()
-    }
-}
 #endif

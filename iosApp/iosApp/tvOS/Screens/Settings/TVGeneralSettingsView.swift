@@ -315,7 +315,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
         .padding(.vertical, 16)
         .background(
             Rectangle()
-                .fill(Color.vividChromeRestingFill)
+                .fill(TVSettingsPalette.groupFill)
         )
         .overlay {
             Rectangle()
@@ -382,7 +382,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
         .padding(.vertical, 12)
         .background(
             Rectangle()
-                .fill(Color.vividChromeRestingFill)
+                .fill(TVSettingsPalette.groupFill)
         )
         .overlay {
             Rectangle()
@@ -497,7 +497,7 @@ private struct TVHomeSectionsControlButtonBody: View {
             .frame(minWidth: 64, minHeight: 64)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isFocused ? Color.vividOnSurface : Color.vividSurfaceElevated.opacity(0.9))
+                    .fill(isFocused ? Color.vividOnSurface : TVSettingsPalette.groupFill)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -508,7 +508,7 @@ private struct TVHomeSectionsControlButtonBody: View {
             }
             .scaleEffect(configuration.isPressed ? 0.97 : (isFocused ? 1.04 : 1))
             .shadow(
-                color: isFocused ? Color.vividAccent.opacity(0.16) : .clear,
+                color: isFocused ? Color.black.opacity(0.2) : .clear,
                 radius: 16
             )
             .focusEffectDisabled()
@@ -630,7 +630,6 @@ private struct TVMenuCustomizationSheet: View {
         in items: [PrimaryMenuItem],
         libraries: [Library]
     ) -> [PrimaryMenuItem] {
-        let availableIds = Set(libraries.map(\.id))
         func hasLibrary(_ type: TVLibraryTabType) -> Bool {
             libraries.contains(where: { type.matches($0) })
         }
@@ -638,9 +637,7 @@ private struct TVMenuCustomizationSheet: View {
             switch item {
             case .builtin(.movies): return hasLibrary(.movies)
             case .builtin(.series): return hasLibrary(.series)
-            case .builtin(.music): return hasLibrary(.music)
-            case .library(let id, _): return availableIds.contains(id)
-            case .section, .collection: return false
+            case .builtin(.music), .library, .section, .collection: return false
             case .builtin(.home), .builtin(.forYou): return true
             }
         }
@@ -666,7 +663,6 @@ private struct TVMenuCustomizationSheet: View {
             switch type {
             case .movies: builtin = .movies
             case .series: builtin = .series
-            case .music: builtin = .music
             }
             items.append(.builtin(builtin))
         }
@@ -715,7 +711,7 @@ private struct TVMenuCustomizationSheet: View {
         .padding(.vertical, 12)
         .background(
             Rectangle()
-                .fill(Color.vividChromeRestingFill)
+                .fill(TVSettingsPalette.groupFill)
         )
         .overlay {
             Rectangle()

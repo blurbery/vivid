@@ -82,7 +82,7 @@ final class TVHomeSpotlightPreferences {
     }
 }
 
-struct TVHomeSpotlightSlide: Identifiable, Codable {
+struct TVHomeSpotlightSlide: Identifiable, Codable, Equatable {
     let item: SectionItem
     let rowID: String
     let rowTitle: String

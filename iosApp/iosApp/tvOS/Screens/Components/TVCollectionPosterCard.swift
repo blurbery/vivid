@@ -48,7 +48,7 @@ struct TVCollectionPosterCard: View {
 
     private var posterButton: some View {
         Button(action: action) { poster }
-            .buttonStyle(TVCardFocusButtonStyle())
+            .buttonStyle(.card)
             .focused($isFocused)
             .applyDefaultFocusIfNeeded(prefersDefaultFocus, namespace: defaultFocusNamespace)
             .applyCollectionFocusBinding(focusBinding, contentId: focusContentId)
@@ -77,7 +77,6 @@ struct TVCollectionPosterCard: View {
         }
         .frame(width: resolvedCardWidth, height: cardHeight)
         .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
-        .tvArtworkEdge(isFocused: isFocused, cornerRadius: VividTheme.cornerRadius)
     }
 
     /// Art-less fallback: a deterministic gradient + stack glyph so the tile
@@ -112,7 +111,7 @@ struct TVCollectionPosterCard: View {
                 .truncationMode(.tail)
                 .frame(width: resolvedCardWidth, alignment: .center)
                 .clipped()
-                .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
+
 
             if uiCustomization.cardPresentation.caption.showsMetadata, let countText {
                 Text(countText)

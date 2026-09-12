@@ -274,7 +274,7 @@ enum VividMediaType {
     }
 }
 
-struct ResolvedSection: Codable, Identifiable {
+struct ResolvedSection: Codable, Identifiable, Equatable {
     let id: String
     let sectionType: String
     let title: String

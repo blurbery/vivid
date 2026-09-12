@@ -448,7 +448,8 @@ class HomeViewModel {
         let revision = sectionsRevision
         let response = try await fetchHomeSections()
         guard revision == sectionsRevision else { return }
-        sections = response.sections.filter { !$0.items.isEmpty }
+        let updated = response.sections.filter { !$0.items.isEmpty }
+        if sections != updated { sections = updated }
         error = nil
     }
 

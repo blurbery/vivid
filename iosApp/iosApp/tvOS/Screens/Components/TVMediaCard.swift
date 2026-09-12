@@ -4,7 +4,7 @@ import SwiftUI
 /// tvOS-only poster card. Uses the cached Nuke renderer so scrolling through
 /// a large grid doesn't re-download posters as cells are reused.
 ///
-/// `.buttonStyle(TVCardFocusButtonStyle())` gives us native focus lift + parallax + shadow, so
+/// `.buttonStyle(.card)` gives us native focus lift + parallax + shadow, so
 /// we do not roll our own scale animation. A title caption lives below the
 /// card and brightens on focus.
 struct TVMediaCard: View {
@@ -27,16 +27,12 @@ struct TVMediaCard: View {
     /// Override with a smaller value in space-constrained grids (e.g. the
     /// Library tab where the alphabet rail forces cards to shrink).
     var cardWidth: CGFloat = VividTheme.posterCardWidth
+    /// An optional size preference for rails that follow Home settings.
+    var posterSize: CardPosterSize? = nil
     var loadsArtwork: Bool = true
     var prefersDefaultFocus: Bool = false
     var defaultFocusNamespace: Namespace.ID? = nil
-    /// Focus visual. `.nativeCard` keeps tvOS's `.card` lift + parallax
-    /// (library grids, search). `.ring` matches the white-ring + scale
-    /// treatment of the episode and cast rails so the detail-page
-    /// "Recommended / More Like This" rail reads consistently with its
-    /// neighbours instead of using the subtler native lift.
     var leadingCaption = true
-    var focusTreatment: FocusTreatment = .nativeCard
     /// Optional external focus hook so a parent rail can make this card a
     /// `.defaultFocus` target on d-pad entry. The focusable element is the
     /// inner Button, so the binding is applied there — a `.focused` on the
@@ -46,11 +42,6 @@ struct TVMediaCard: View {
     /// Catalog identity for the long-press favorite/watchlist menu.
     /// `nil` (or a nil `userState`) leaves the card without a menu.
     var contentId: String? = nil
-    enum FocusTreatment {
-        case nativeCard
-        case ring
-    }
-
     @FocusState private var isFocused: Bool
     @State private var favoriteOverride: Bool?
     @State private var watchlistOverride: Bool?
@@ -59,7 +50,7 @@ struct TVMediaCard: View {
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
 
     private var resolvedCardWidth: CGFloat {
-        cardWidth * uiCustomization.cardPresentation.posterSize.scale
+        cardWidth * (posterSize ?? uiCustomization.cardPresentation.posterSize).scale
     }
 
     private var cardHeight: CGFloat {
@@ -134,26 +125,14 @@ struct TVMediaCard: View {
 
     @ViewBuilder
     private var posterButton: some View {
-        switch focusTreatment {
-        case .nativeCard:
-            Button(action: action) { posterImage }
-                .buttonStyle(TVCardFocusButtonStyle())
-                .focused($isFocused)
-                .applyDefaultFocusIfNeeded(prefersDefaultFocus, namespace: defaultFocusNamespace)
-                .applyRailFocus(focusBinding, contentId: focusContentId)
-                .applyTVCardPlayPauseAction(playAction)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(accessibilityDescription)
-        case .ring:
-            Button(action: action) { posterImage }
-                .buttonStyle(TVPosterRingButtonStyle())
-                .focused($isFocused)
-                .applyDefaultFocusIfNeeded(prefersDefaultFocus, namespace: defaultFocusNamespace)
-                .applyRailFocus(focusBinding, contentId: focusContentId)
-                .applyTVCardPlayPauseAction(playAction)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(accessibilityDescription)
-        }
+        Button(action: action) { posterImage }
+            .buttonStyle(.card)
+            .focused($isFocused)
+            .applyDefaultFocusIfNeeded(prefersDefaultFocus, namespace: defaultFocusNamespace)
+            .applyRailFocus(focusBinding, contentId: focusContentId)
+            .applyTVCardPlayPauseAction(playAction)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityDescription)
     }
 
     // MARK: - Subviews
@@ -191,7 +170,6 @@ struct TVMediaCard: View {
             }
         }
         .frame(width: resolvedCardWidth, height: cardHeight)
-        .tvArtworkEdge(isFocused: isFocused, cornerRadius: VividTheme.cornerRadius)
 
     }
 
@@ -207,7 +185,7 @@ struct TVMediaCard: View {
                 .truncationMode(.tail)
                 .frame(width: resolvedCardWidth, alignment: leadingCaption ? .leading : .center)
                 .clipped()
-                .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
+
 
             if cardCaptions.presentation.caption.showsMetadata,
                let secondLine = subtitle ?? year.map(String.init) {
@@ -265,37 +243,4 @@ private extension View {
     }
 }
 
-/// Poster focus style matching the episode/cast cards: scale + drop shadow
-/// with the system halo suppressed. The white ring overlay on the poster
-/// (driven by `isFocused`) is the focus cue.
-private struct TVPosterRingButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        TVPosterRingButtonBody(configuration: configuration)
-    }
-}
-
-private struct TVPosterRingButtonBody: View {
-    let configuration: ButtonStyleConfiguration
-
-    @Environment(\.isFocused) private var isFocused
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        configuration.label
-            .scaleEffect(scale)
-            .shadow(
-                color: .black.opacity(isFocused ? 0.45 : 0.0),
-                radius: isFocused ? 18 : 0,
-                y: isFocused ? 8 : 0
-            )
-            .focusEffectDisabled()
-            .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
-            .animation(.easeOut(duration: VividTheme.fastDuration), value: configuration.isPressed)
-    }
-
-    private var scale: CGFloat {
-        let base: CGFloat = isFocused && !reduceMotion ? TVMediaFocus.scale : 1.0
-        return configuration.isPressed ? base * 0.97 : base
-    }
-}
 #endif

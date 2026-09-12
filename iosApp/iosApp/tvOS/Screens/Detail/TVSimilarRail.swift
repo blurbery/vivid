@@ -21,6 +21,7 @@ struct TVSimilarRail: View {
 
     @State private var items: [SimilarPosterItem] = []
     @State private var isLoading = false
+    @State private var homeCards = TVHomeCardPreferences.shared
     private let library = TVLibrarySimilarityStore.shared
     @State private var resultContext = ""
     @State private var lastAppliedFocusRequest = 0
@@ -71,8 +72,8 @@ struct TVSimilarRail: View {
                         year: item.year,
                         action: { onSelect(item.contentId) },
                         cardWidth: cardWidth,
+                        posterSize: homeCards.presentation.posterSize,
                         leadingCaption: true,
-                        focusTreatment: .nativeCard,
                         focusBinding: $focusedItemId,
                         focusContentId: item.contentId
                     )
@@ -96,8 +97,8 @@ struct TVSimilarRail: View {
                     RoundedRectangle(cornerRadius: VividTheme.cornerRadius)
                         .fill(Color.vividSurfaceElevated)
                         .frame(
-                            width: cardWidth,
-                            height: cardWidth * 1.5
+                            width: cardWidth * homeCards.presentation.posterSize.scale,
+                            height: cardWidth * homeCards.presentation.posterSize.scale * 1.5
                         )
                 }
             }

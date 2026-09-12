@@ -302,7 +302,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     }
 
     private var trailersSection: some View {
-        TVTrailersRail(entries: trailerEntries, onSelect: onSelectTrailer, focusScale: TVMediaFocus.scale)
+        TVTrailersRail(entries: trailerEntries, onSelect: onSelectTrailer)
     }
 
     private func castSection(cast: [CastMember]) -> some View {

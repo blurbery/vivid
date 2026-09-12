@@ -9,21 +9,13 @@ extension Notification.Name {
 
 @MainActor
 enum StartupContentPrefetcher {
-    // tvOS paints a full-width first row plus the focus marquee's logo and
-    // backdrop on entry, so it needs a deeper artwork warmup than the
-    // phone-sized first screen.
+    // tvOS warms card artwork across more visible rows than the phone layout.
     #if os(tvOS)
     private static let maxHomeArtworkURLs = 28
     #else
     private static let maxHomeArtworkURLs = 12
     #endif
     private static let maxSectionArtworkURLs = 12
-    /// For You shows two eight-card rows in its initial viewport. Logos are
-    /// tiny compared with backdrops, so warm exactly those visible candidates
-    /// rather than waiting for each focus rest to begin its own request.
-    #if os(tvOS)
-    private static let maxRecommendationLogoURLs = 16
-    #endif
     private static let maxBrowseArtworkURLs = 12
     private static let maxProfileArtworkURLs = 8
     private static let browsePageSize = 60
@@ -40,14 +32,6 @@ enum StartupContentPrefetcher {
     private static var userLibrariesTask: Task<LibrariesResponse, Error>?
     private static var librarySectionsTasks: [Int: Task<SectionsResponse, Error>] = [:]
     private static var browseFirstPageTasks: [String: Task<CatalogResponse, Error>] = [:]
-    #if os(tvOS)
-    /// One bounded cold-start warmup for the Series library the top-level tab
-    /// will actually open. This is separate from `librarySectionsTasks`: the
-    /// latter makes the landing page available, while this task also primes
-    /// the first Series hero payload so Select never has to paint a loading
-    /// action pill before the real detail screen.
-    private static var tvSeriesLandingTasks: [Int: Task<Void, Never>] = [:]
-    #endif
     private static var profileScopedGeneration = 0
     private static var homeSectionsGeneration = 0
     private static var profilesGeneration = 0
@@ -63,18 +47,12 @@ enum StartupContentPrefetcher {
         userLibrariesTask?.cancel()
         librarySectionsTasks.values.forEach { $0.cancel() }
         browseFirstPageTasks.values.forEach { $0.cancel() }
-        #if os(tvOS)
-        tvSeriesLandingTasks.values.forEach { $0.cancel() }
-        #endif
 
         homeSectionsTask = nil
         recommendationsTask = nil
         userLibrariesTask = nil
         librarySectionsTasks.removeAll()
         browseFirstPageTasks.removeAll()
-        #if os(tvOS)
-        tvSeriesLandingTasks.removeAll()
-        #endif
     }
 
     static func resetAllPrefetches() {
@@ -410,9 +388,6 @@ enum StartupContentPrefetcher {
             #endif
             ResponseCache.shared.set(response, for: CacheKey.recommendations)
             prefetchSectionArtwork(for: response, maxCount: maxSectionArtworkURLs)
-            #if os(tvOS)
-            prefetchRecommendationLogos(for: response)
-            #endif
             return response
         } catch {
             if profileScopedGeneration == generation {
@@ -485,52 +460,6 @@ enum StartupContentPrefetcher {
             _ = try? await fetchLibrarySections(libraryId: libraryId)
         }
     }
-
-    #if os(tvOS)
-    /// Warm the exact cold path used by a Series root tab: its section payload
-    /// plus one initial Series detail. The work is deliberately limited to a
-    /// single card and does not fetch cast portraits; Series cast sits below
-    /// the first viewport and keeps its existing lazy path.
-    static func prefetchTVSeriesLanding(libraryId: Int) {
-        guard tvSeriesLandingTasks[libraryId] == nil else { return }
-        let generation = profileScopedGeneration
-
-        tvSeriesLandingTasks[libraryId] = Task(priority: .userInitiated) {
-            defer {
-                // A task from the prior profile must never clear a replacement
-                // registered for the same numeric library id.
-                if profileScopedGeneration == generation {
-                    tvSeriesLandingTasks[libraryId] = nil
-                }
-            }
-
-            guard let response = try? await fetchLibrarySections(libraryId: libraryId),
-                  !Task.isCancelled,
-                  profileScopedGeneration == generation,
-                  let item = firstSeriesItem(in: response) else { return }
-
-            let key = CacheKey.itemDetail(item.contentId)
-            if let _: ItemDetail = ResponseCache.shared.get(key) { return }
-
-            guard let detail = try? await MetadataRequestPool.shared.itemDetail(
-                contentId: item.contentId
-            ),
-            !Task.isCancelled,
-            profileScopedGeneration == generation else { return }
-
-            ResponseCache.shared.set(detail, for: key)
-        }
-    }
-
-    private static func firstSeriesItem(in response: SectionsResponse) -> SectionItem? {
-        for section in response.sections where !section.isFeatured && !section.items.isEmpty {
-            if let item = section.items.first(where: { VividMediaType.isSeries($0.type) }) {
-                return item
-            }
-        }
-        return nil
-    }
-    #endif
 
     static func fetchLibrarySections(libraryId: Int) async throws -> SectionsResponse {
         let generation = profileScopedGeneration
@@ -649,8 +578,10 @@ enum StartupContentPrefetcher {
         TVHomeMetadataCache.shared.hydrate()
         #endif
         prefetchHomeSections()
+        #if !os(tvOS)
         prefetchRecommendations()
         prefetchActiveLibraryLanding()
+        #endif
         Task {
             await OverlayPrefsStore.shared.hydrateIfNeeded()
         }
@@ -688,31 +619,12 @@ enum StartupContentPrefetcher {
         }
     }
 
+    #if !os(tvOS)
     private static func prefetchActiveLibraryLanding() {
         Task {
-            guard let response = try? await fetchUserLibraries() else { return }
-
-            // Preserve the existing selected-library landing prefetch on every
-            // platform. tvOS additionally has a dedicated Series root tab;
-            // warm its persisted scope during the same launch window instead
-            // of waiting for the user to enter that tab.
-            if let library = preferredLibrary(from: response.libraries) {
-                prefetchLibraryLanding(libraryId: library.id)
-            }
-
-            #if os(tvOS)
-            let seriesLibraries = response.libraries
-                .filter { TVLibraryTabType.series.matches($0) }
-                .sorted {
-                    ($0.sortOrder ?? Int.max, $0.id) < ($1.sortOrder ?? Int.max, $1.id)
-                }
-            if let library = TVLibraryScopeStore.shared.resolvedLibrary(
-                for: .series,
-                in: seriesLibraries
-            ) {
-                prefetchTVSeriesLanding(libraryId: library.id)
-            }
-            #endif
+            guard let response = try? await fetchUserLibraries(),
+                  let library = preferredLibrary(from: response.libraries) else { return }
+            prefetchLibraryLanding(libraryId: library.id)
         }
     }
 
@@ -729,24 +641,13 @@ enum StartupContentPrefetcher {
         return visibleLibraries.first
     }
 
+    #endif
+
     private static func prefetchHomeArtwork(for response: SectionsResponse) {
-        // Each kind is warmed at the size its consumer reads synchronously:
-        // cards at the shared card thumbnail, the marquee logo at its native
-        // size, and the initial backdrop at the exact hero decode size. Warming
-        // full-size decodes instead used to cost ~4 MB per poster and ~8 MB
-        // per backdrop, which overflowed the 96 MB budget on 3 GB Apple TVs
-        // and evicted the very cards the warm-up was meant to paint.
+        // Warm row artwork at card size. The removed focus marquee no longer
+        // needs a first-item backdrop, logo or sampled tint on tvOS.
         var cardURLs: [URL] = []
-        var backdropURLs: [URL] = []
-        var logoURLs: [URL] = []
-        // Deduplicated per bucket: the same URL is a different cache key as
-        // a card thumbnail and as the hero decode, so an episode still that
-        // is also the marquee backdrop legitimately belongs to both.
         var seenCards = Set<String>()
-        var seenBackdrops = Set<String>()
-        var seenLogos = Set<String>()
-        // Tracked separately: reading the arrays while one is bound as an
-        // `inout` bucket is an exclusivity violation.
         var count = 0
 
         func append(_ urlString: String?, into bucket: inout [URL], seen: inout Set<String>) {
@@ -759,34 +660,16 @@ enum StartupContentPrefetcher {
             count += 1
         }
 
-        /// Hero backdrops render only on tvOS; other platforms must not
-        /// spend their smaller budget on requests that are never started.
-        func appendBackdrop(_ urlString: String?) {
-            #if os(tvOS)
-            append(urlString, into: &backdropURLs, seen: &seenBackdrops)
-            #endif
-        }
-
-        // No client renders a featured hero anymore — featured sections show
-        // as ordinary rows. Entry still earns the first logo and hero backdrop,
-        // but card slots are dealt round-robin across the first four rows. A
-        // row-major fill spent the whole budget on row one and left every row
-        // below it cold just as its LazyHStack began mounting new cards.
         let contentSections = response.sections.filter { !$0.items.isEmpty }
-        if let firstRow = contentSections.first {
-            append(firstRow.items.first?.logoUrl, into: &logoURLs, seen: &seenLogos)
-            // Only the marquee's initial selection earns a hero-size decode.
-            // A w1920 backdrop is ~8 MB decoded, so warming the whole first
-            // row would spend the entire 96 MB tvOS budget on artwork the
-            // user may never rest on and evict the very cards this warm-up
-            // exists to paint.
-            appendBackdrop(firstRow.items.first?.backdropUrl)
-        }
+        #if !os(tvOS)
+        var logoURLs: [URL] = []
+        var seenLogos = Set<String>()
+        append(contentSections.first?.items.first?.logoUrl, into: &logoURLs, seen: &seenLogos)
+        #endif
 
         func appendCardArtwork(_ item: SectionItem, in section: ResolvedSection) {
             if episodeSectionTypes.contains(section.sectionType.lowercased()) {
-                // Episode stills render the backdrop as the card art and the
-                // marquee may show the same source at a separate hero size.
+                // Episode rows still need their landscape card artwork.
                 append(item.backdropUrl ?? item.posterUrl, into: &cardURLs, seen: &seenCards)
             } else {
                 append(item.posterUrl, into: &cardURLs, seen: &seenCards)
@@ -818,22 +701,12 @@ enum StartupContentPrefetcher {
             }
         }
 
+        #if !os(tvOS)
         PosterImageCache.prefetchOriginalArtwork(logoURLs)
-        PosterImageCache.prefetchCardArtwork(cardURLs)
-        #if os(tvOS)
-        PosterImageCache.prefetchHeroBackdrops(backdropURLs)
         #endif
-
-        // Warm the marquee's initial tint: tvOS seeds the marquee with the
-        // first row's first item on cold entry, and a cached sample lets the
-        // tint wash paint on the same frame as the backdrop instead of
-        // fading up from the black background once sampling finishes. Other
-        // platforms render no marquee, so skip the fetch + sampling there.
-        #if os(tvOS)
-        if let firstBackdrop = normalizedURL(from: contentSections.first?.items.first?.backdropUrl) {
-            Task { _ = await HeroBackdropPalette.tintColor(for: firstBackdrop) }
-        }
-        #endif
+        PosterImageCache.prefetchCardArtwork(cardURLs.filter {
+            PosterImageCache.warmedCardImage(for: $0) == nil
+        })
     }
 
     private static func prefetchSectionArtwork(for response: SectionsResponse, maxCount: Int) {
@@ -864,30 +737,6 @@ enum StartupContentPrefetcher {
 
         PosterImageCache.prefetchCardArtwork(urls)
     }
-
-    #if os(tvOS)
-    /// Match `RecommendationsViewModel` ordering so the first two rows the
-    /// user can actually focus are the ones whose logo art is ready first.
-    private static func prefetchRecommendationLogos(for response: SectionsResponse) {
-        let nonEmpty = response.sections.filter { !$0.items.isEmpty }
-        let forYou = nonEmpty.filter { $0.title.lowercased() == "for you" }
-        let others = nonEmpty.filter { $0.title.lowercased() != "for you" }
-        let initialRows = (forYou + others).prefix(2)
-
-        var urls: [URL] = []
-        var seen = Set<String>()
-        for section in initialRows {
-            for item in section.items.prefix(8) {
-                guard urls.count < maxRecommendationLogoURLs,
-                      let url = normalizedURL(from: item.logoUrl),
-                      seen.insert(url.absoluteString).inserted else { continue }
-                urls.append(url)
-            }
-        }
-
-        PosterImageCache.prefetchOriginalArtwork(urls)
-    }
-    #endif
 
     private static func prefetchBrowseArtwork(for response: CatalogResponse) {
         var urls: [URL] = []

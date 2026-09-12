@@ -25,7 +25,6 @@ import UIKit
 struct TVTrailersRail: View {
     let entries: [TrailerRailEntry]
     let onSelect: (TrailerRailEntry) -> Void
-    var focusScale: CGFloat = TVMediaFocus.scale
     /// Non-zero changes explicitly hand focus into the first trailer when a
     /// Series has no cast rail above it.
     var focusRequest = 0
@@ -55,10 +54,9 @@ struct TVTrailersRail: View {
                 ForEach(entries) { entry in
                     TVTrailerCard(
                         entry: entry,
-                        focusScale: focusScale,
+                        focusedEntryId: $focusedEntryId,
                         onSelect: { onSelect(entry) }
                     )
-                        .focused($focusedEntryId, equals: entry.id)
                 }
             }
             .padding(.vertical, railVerticalPadding)
@@ -97,44 +95,28 @@ private extension View {
 
 private struct TVTrailerCard: View {
     let entry: TrailerRailEntry
-    let focusScale: CGFloat
+    let focusedEntryId: FocusState<String?>.Binding
     let onSelect: () -> Void
 
     private let cardWidth: CGFloat = 400
     private var thumbHeight: CGFloat { cardWidth * 9 / 16 }
     private let thumbCornerRadius: CGFloat = 18
 
-    var body: some View {
-        Button(action: onSelect) {
-            TrailerCardLabel(
-                entry: entry,
-                cardWidth: cardWidth,
-                thumbHeight: thumbHeight,
-                thumbCornerRadius: thumbCornerRadius
-            )
-        }
-        .buttonStyle(TVCardFocusButtonStyle(scale: focusScale))
-    }
-}
-
-private struct TrailerCardLabel: View {
-    let entry: TrailerRailEntry
-    let cardWidth: CGFloat
-    let thumbHeight: CGFloat
-    let thumbCornerRadius: CGFloat
-
-    @Environment(\.isFocused) private var isFocused
+    private var isFocused: Bool { focusedEntryId.wrappedValue == entry.id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            thumbnail
+            Button(action: onSelect) { thumbnail }
+                .buttonStyle(.card)
+                .buttonBorderShape(.roundedRectangle(radius: thumbCornerRadius))
+                .focused(focusedEntryId, equals: entry.id)
+                .accessibilityLabel(entry.title)
             VStack(alignment: .leading, spacing: 5) {
                 Text(entry.title)
                     .font(.system(size: 21, weight: .semibold))
                     .foregroundColor(titleColor)
                     .lineLimit(1)
                     .multilineTextAlignment(.leading)
-
                 if let secondaryLine {
                     Text(secondaryLine)
                         .font(.system(size: 17, weight: .medium))
@@ -142,7 +124,6 @@ private struct TrailerCardLabel: View {
                         .lineLimit(1)
                 }
             }
-            .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
         }
         .frame(width: cardWidth, alignment: .leading)
     }
@@ -174,7 +155,6 @@ private struct TrailerCardLabel: View {
         }
         .frame(width: cardWidth, height: thumbHeight)
         .clipShape(RoundedRectangle(cornerRadius: thumbCornerRadius))
-        .tvArtworkEdge(isFocused: isFocused, cornerRadius: thumbCornerRadius)
     }
 
     /// YouTube stills exist for every remote video; local extras have no

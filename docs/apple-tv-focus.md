@@ -52,7 +52,6 @@ Good local examples:
 
 - `TVCatalogGrid`
 - `TVLibraryCollectionsView`
-- `TVLibraryPillRow`
 - `TVSavedAccountCards`
 
 ### Composite Focus Control
@@ -76,10 +75,6 @@ multiple highlighted rows or columns. A cascading selector is the main example.
 - Add useful accessibility labels and button/selected traits to the composite
   or its rendered labels so VoiceOver still describes the action.
 
-Good local example:
-
-- `TVCascadeSelector`
-
 ## Do Not Mix Models
 
 The broken pattern is a hybrid control:
@@ -98,7 +93,11 @@ control should use, then remove the other one.
 
 Home, Movies, Series and For You are direct root tabs. Movies and Series expose native library sub-tabs within their own page; For You exposes Watchlist, Favourites and Collections. The Profile control opens Settings directly. Do not restore the removed Movies/Series/For You/Profile dropdowns when fixing focus.
 
-Media cards across Home, library and detail pages use the same 5% focus lift as the series episode shelf, with a shared artwork edge and Reduce Motion support. Continue Watching applies this lift once to the artwork and live progress overlay. The spotlight keeps its separate focus treatment. Each root owns its own sub-tab selection. A focus move within Movies must not change Series or For You. Keep card identities stable across paging and artwork eviction. Home's experimental spotlight retains a 580-point layout height with a 1.5% visual focus lift, disabled by Reduce Motion. Down enters the first row's remembered card, using the first card before any visit. Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.
+Media cards across Home, Search, Movies, Series, For You and detail pages use SwiftUI’s native `.card` button style, including collection posters, episodes, trailers and cast. The system owns their focus lift, shadow and animation; cards add no custom focus scale, shadow or animated artwork border. Resume progress is inside the artwork button so it moves with the native effect. Trailer and cast captions sit outside the native card button; its effect follows only the thumbnail or circular portrait. More Like This uses the same poster size preference as Home, including its loading placeholders. Watched and current-episode indicators remain content status cues. Full Home caching and card loading behaviour are unchanged. The spotlight presents its large slides as individual native `.card` buttons in a horizontal scroll view, preserving the 60-point side margins, 22-point card spacing and neighbouring previews. The system moves focus and scrolls between cards. Automatic rotation and ambient artwork tint remain active, and the carousel remembers its current card when returning from a detail page. Loop positions keep stable identities, with old copies trimmed after scrolling settles. Each root owns its own sub-tab selection. A focus move within Movies must not change Series or For You. Keep card identities stable across paging and artwork eviction. Home's experimental spotlight retains a 580-point layout height; its focus motion is controlled by the system. Down enters the first row's remembered card, using the first card before any visit. Settings uses one navigation stack for pushed category/account pages; avoid nesting another stack in a pushed Settings page.
+
+Home uses the discovery feed. Its visible rows reserve a stable card-strip height using the current Home card size and caption setting. Poster and landscape rows retain different artwork heights; missing metadata still reserves its caption line. Cards align at their top edge and row headings reserve one fixed line. The feed also reserves the exact combined height of its displayed rows using those same dimensions, so off-screen lazy-stack estimates cannot change the vertical scroll range during navigation. Home Sections visibility and ordering are applied before layout, so hidden rows leave no empty space. This sizing is scoped to Home-style feeds and does not change detail rails, Spotlight or caching. The standalone recommendation route uses the same rows without a spotlight. The full-screen marquee and its focus callbacks and backdrop rendering have been removed. The independent Home spotlight retains its own artwork and metadata. Home retains its existing lazy row layout, artwork presentation and full metadata cache. Row ownership is observed by the affected rows and a separate artwork worker, without making it a dependency of the entire feed. Startup warms row artwork without fetching the removed marquee’s first-item backdrop, logo or tint; landscape episode cards and the independent spotlight retain their artwork. tvOS startup no longer prefetches the former Recommendations feed, library-section landings, legacy Browse page or first Series detail. Current Movies, Series and For You pages load through their own caches when opened; Home and profile warmup remain active. Spotlight keeps its artwork and detail cache but no longer preloads series seasons or episode lists. Home has one visibility-driven load loop on tvOS, skips publishing unchanged rows and writing unchanged snapshots, and retries missing artwork without queuing already-warmed startup card images. The unused row warmer and unreachable personal-root shell have been removed. The tvOS bar supports Search, Home, Movies, Series, For You and Settings/Profile only. Music, library shortcuts, Recommended library landings and their dropdown focus machinery are removed, including their tvOS customisation options. Shared saved menu data remains compatible with other clients.
+
+Local Home diagnosis can be armed with the `--home-scroll-diagnostics` launch argument. The `com.blurbery.vivid.home-diagnostics.start` Darwin notification starts a 60-second capture; the corresponding `.stop` notification ends it early. The capture records scroll geometry, row positions, focus indices, display-link callback timing, CPU usage and process memory in `Library/Caches/vivid-home-navigation-diagnostics.json`. It does not record media titles, artwork URLs or account details. Display-link timing measures app callbacks, not GPU presentation time. Without the launch argument, the diagnostic observers remain inactive.
 
 ## Native catalog menus and detail controls
 
@@ -107,48 +106,6 @@ Sort, Filter and A–Z are real native menus. Do not restore the removed centred
 Settings enters the first saved account directly through the row’s default focus. Holding a profile picks it up for reordering within the same row height. The picked-up card owns left/right movement; centre drops and saves, while Back cancels. The normal profile focus returns to that card afterward. Deletion belongs to the profile editor, outside the reorder row. Do not land on Add Profile and then redirect. Detail action geometry and loading placeholders share the same fixed baselines. The Description popup owns a separate scrollable set of text focus targets and closes with Back.
 
 The playback timeline and Info/subtitle shortcuts share one directional boundary. Up from an idle timeline enters the shortcut row; Down returns to the timeline. Closing a panel restores its shortcut. An active scrub keeps ownership until committed or cancelled. Remote Play/Pause remains available without a separate on-screen transport cluster.
-
-## Retained library panels
-
-These rules apply to the retained library panels; Movies and Series use the native sub-tabs described above. A panel has three conceptual states:
-
-- `closed`: no panel is visible; focus belongs to content or the bar.
-- `preview`: a dwell-open panel is visible, but the bar still owns focus and
-  the panel is passive.
-- `entered`: the user pressed Down or otherwise entered the panel; the panel
-  owns focus and the bar is inert until the panel closes.
-
-Implementation details may use booleans, but the state machine above is the
-contract. In entered mode, it should be impossible for the bar to accept focus
-on another tab behind the panel. Treat `panelHasFocus` as telemetry from the
-child panel, not as the source of truth for ownership. The durable ownership
-signal is the host's "entered panel" state.
-
-When closing a panel, choose the next owner explicitly:
-
-- Menu/Back closes and returns focus to the panel's bar anchor.
-- Down past the last row closes and hands focus to page content.
-- Selecting a panel row closes, updates route/scope state, and then hands focus
-  to the destination content.
-
-## Debugging Checklist
-
-When tvOS focus feels random, capture logs for the ownership boundary first:
-
-- current focused top-bar item
-- open panel
-- whether the panel is in preview or entered mode
-- whether the panel reports focus
-- the panel's internal highlighted item
-- every `onMoveCommand` direction handled by the active owner
-
-Unexpected signs:
-
-- the bar logs a different focused tab while a panel is entered,
-- a single D-pad press produces multiple panel focus writes,
-- panel focus becomes `nil` without an explicit close or content handoff,
-- `onMoveCommand` is attached broadly and also expected to pass native movement
-  through the same zone.
 
 ## References
 
@@ -174,6 +131,8 @@ Unexpected signs:
 - Focus Cookbook sample (WWDC23, "The SwiftUI cookbook for focus"):
   https://developer.apple.com/documentation/swiftui/focus-cookbook-sample
 
+Episode cards bind the rail’s existing `FocusState` directly to their native button. The button also owns its accessibility description and context menu; separate captions do not hide or replace its activation action.
+
 When the series hero action row has focus, prepare the continuous shelf on the Play/Resume episode’s season and scroll that episode into view. Keep native downward focus movement and the existing season click and swipe handlers; do not force episode focus or replace the playback selection when browsing.
 
-Settings and its secondary pages share an 812-point content column and the same icon-and-title header. The overview joins circular profiles and category rows in one rounded panel, with each server name below its username and the copyright footer centred underneath. Profiles retain their existing native focus targets, focus scope and editing controls. Home Screen uses the Home Sections control-card style, with its existing spotlight selection and save actions. About uses the same column, and compact 300-point acknowledgement cards keep the two-row grid on one screen; concise settings descriptions keep rows compact without changing their controls.
+Settings uses the iOS Settings palette: a black canvas, neutral grey grouped panels, inset separators and subtly outlined icon tiles. Selected rows stay neutral and focus retains the existing white TV highlight; settings focus targets and actions are unchanged. Settings and its secondary pages share an 812-point content column and the same icon-and-title header. The overview joins circular profiles and category rows in one rounded panel, with each server name below its username and the copyright footer centred underneath. Profiles retain their existing native focus targets, focus scope and editing controls. Home Screen uses the Home Sections control-card style, with its existing spotlight selection and save actions. About uses the same column, and compact 300-point acknowledgement cards keep the two-row grid on one screen; concise settings descriptions keep rows compact without changing their controls.

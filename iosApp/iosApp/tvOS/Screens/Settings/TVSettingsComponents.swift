@@ -7,6 +7,11 @@ enum TVSettingsLayout {
 }
 
 enum TVSettingsPalette {
+    // Match the neutral dark grouped-list surfaces used by iOS Settings.
+    static let groupFill = Color(hex: "#1C1C1E")
+    static let selectedFill = Color(hex: "#2C2C2E")
+    static let iconFill = Color(red: 0.12, green: 0.13, blue: 0.15)
+    static let separator = Color.white.opacity(0.12)
     static let sectionText = Color(white: 0.62)
 }
 
@@ -25,9 +30,8 @@ struct TVSettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .environment(\.tvSettingsJoinedRows, true)
-            .background(Color.vividSurfaceElevated.opacity(0.84))
+            .background(TVSettingsPalette.groupFill)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.12), lineWidth: 1) }
     }
 }
 
@@ -41,7 +45,7 @@ struct TVSettingsFieldRow<Content: View>: View {
             content
         }
         .padding(24)
-        .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.leading, 24) }
+        .overlay(alignment: .bottom) { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
     }
 }
 
@@ -194,10 +198,8 @@ enum TVSettingsOptions {
 
 // MARK: - Rail row style
 
-/// Left-rail row: quiet at rest, `chrome.selected` fill when it is the
-/// active category, white platter with dark content on focus. Matches the
-/// Skyline panel-row grammar (`TVBrowsePanelRowStyle`) with a selected
-/// state added.
+/// Settings destination row with a neutral selected fill and a white
+/// focus surface, preserving the TV's existing focus target and geometry.
 struct TVSettingsRailRowStyle: ButtonStyle {
     var isSelected: Bool = false
     var isDestructive: Bool = false
@@ -239,18 +241,18 @@ private struct TVSettingsRailRowBody: View {
             )
             .overlay(alignment: .leading) {
                 Capsule()
-                    .fill(Color.vividAccent)
+                    .fill(Color.vividOnSurface)
                     .frame(width: 4)
                     .padding(.vertical, 12)
                     .opacity(isSelected && !isFocused ? 1 : 0)
             }
             .scaleEffect(joined ? 1 : (configuration.isPressed ? 0.98 : (isFocused ? 1.012 : 1)))
             .shadow(
-                color: isFocused && !joined ? Color.vividAccent.opacity(0.14) : .clear,
+                color: isFocused && !joined ? Color.black.opacity(0.2) : .clear,
                 radius: 18
             )
             .overlay(alignment: .bottom) {
-                if joined { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.leading, 24) }
+                if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
             }
             .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
     }
@@ -265,15 +267,15 @@ private struct TVSettingsRailRowBody: View {
     private var fill: Color {
         if isDestructive && isFocused { return .vividError }
         if isFocused { return .vividOnSurface }
-        if isSelected { return .vividSurfaceElevated.opacity(0.92) }
+        if isSelected { return TVSettingsPalette.selectedFill }
         return .clear
     }
 }
 
 // MARK: - Pane row style
 
-/// Detail-pane row: faint glass fill with a hairline at rest, white
-/// platter with dark content on focus.
+/// Settings control row with a neutral grouped surface at rest and a white
+/// focus surface with dark content.
 struct TVSettingsPaneRowStyle: ButtonStyle {
     var isDestructive: Bool = false
     var isSelected: Bool = false
@@ -313,12 +315,12 @@ private struct TVSettingsPaneRowBody: View {
             )
             .scaleEffect(joined ? 1 : (configuration.isPressed ? 0.98 : (isFocused ? 1.012 : 1)))
             .shadow(
-                color: isFocused && !joined ? Color.vividAccent.opacity(0.16) : .clear,
+                color: isFocused && !joined ? Color.black.opacity(0.2) : .clear,
                 radius: 18
             )
             .focusEffectDisabled()
             .overlay(alignment: .bottom) {
-                if joined { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.leading, 24) }
+                if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
             }
             .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
     }
@@ -332,11 +334,12 @@ private struct TVSettingsPaneRowBody: View {
 
     private var backgroundFill: Color {
         if isFocused { return .vividOnSurface }
-        if isSelected { return .vividChromeSelectedFill }
-        return joined ? .clear : .vividSurfaceElevated.opacity(0.84)
+        if isSelected { return TVSettingsPalette.selectedFill }
+        return joined ? .clear : TVSettingsPalette.groupFill
     }
 
     private var borderColor: Color {
+        if joined { return .clear }
         if isFocused { return .clear }
         if isSelected { return .vividChromeSelectedBorder }
         return .vividChromeRestingBorder
@@ -445,14 +448,14 @@ struct TVSettingsInfoRow: View {
         .foregroundColor(.vividOnSurface)
         .background(
             RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
-                .fill(joined ? Color.clear : Color.vividSurfaceElevated.opacity(0.84))
+                .fill(joined ? Color.clear : TVSettingsPalette.groupFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
-                .strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1)
+                .strokeBorder(joined ? Color.clear : Color.vividChromeRestingBorder, lineWidth: 1)
         )
         .overlay(alignment: .bottom) {
-            if joined { Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.leading, 24) }
+            if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
         }
         .accessibilityElement(children: .combine)
     }
@@ -567,7 +570,7 @@ struct TVSettingsConfirmationOverlay: View {
             .padding(.vertical, 42)
             .background(
                 RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .fill(Color.vividSurfaceElevated)
+                    .fill(TVSettingsPalette.groupFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 30, style: .continuous)
@@ -674,17 +677,6 @@ struct TVSettingsPickerSheet: View {
                 Color.vividBackground.opacity(0.88)
                     .ignoresSafeArea()
 
-                RadialGradient(
-                    colors: [
-                        Color.vividAccent.opacity(0.08),
-                        Color.clear,
-                    ],
-                    center: .center,
-                    startRadius: 40,
-                    endRadius: 680
-                )
-                .ignoresSafeArea()
-
                 pickerCard(
                     width: min(TVSettingsLayout.pageWidth, geometry.size.width - 240),
                     height: min(
@@ -779,7 +771,7 @@ struct TVSettingsPickerSheet: View {
         }
         .padding(30)
         .frame(width: width, height: height, alignment: .top)
-        .background(cardShape.fill(Color.vividSurfaceElevated.opacity(0.98)))
+        .background(cardShape.fill(TVSettingsPalette.groupFill))
         // Clip child layers first, then add the border and outer card shadow.
         // This preserves the floating dialog while containing scroll content.
         .clipShape(cardShape)

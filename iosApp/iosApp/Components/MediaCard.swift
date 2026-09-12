@@ -56,8 +56,8 @@ func episodeRailAccessibilityLabel(
 }
 
 /// A poster-style media card with title, year, and optional progress.
-/// On tvOS the card uses `.buttonStyle(TVCardFocusButtonStyle())` which gives proper focus lift,
-/// parallax, and title reveal — no manual focus effects required.
+/// Home uses the native tvOS card focus effect. Other tvOS surfaces use the
+/// shared custom focus style, with captions outside the artwork button.
 struct MediaCard: View {
     let title: String
     let posterUrl: String
@@ -495,8 +495,8 @@ extension View {
 // MARK: - tvOS Focusable wrapper
 
 #if os(tvOS)
-/// Wraps a poster inside a `.card` button so the image gets the native focus
-/// lift/parallax, and renders a title + year below that bolds/brightens on focus.
+/// Home wraps the poster in the native `.card` style. Captions stay outside
+/// the button, and other surfaces retain their existing custom focus style.
 private struct FocusableMediaCard<Content: View>: View {
     let title: String
     let year: Int?
@@ -570,12 +570,8 @@ private struct FocusableMediaCard<Content: View>: View {
     ) -> some View {
         let button = Button(action: action) {
             content()
-                .tvArtworkEdge(
-                    isFocused: itemId.map { focusedItemId?.wrappedValue == $0 } ?? (standaloneFocused?.wrappedValue ?? false),
-                    cornerRadius: VividTheme.cornerRadius
-                )
         }
-        .buttonStyle(TVCardFocusButtonStyle())
+        .buttonStyle(.card)
         .applyCardFocus(
             focusedItemId,
             itemId: itemId,
@@ -669,9 +665,9 @@ private struct TVStandaloneCardFocus<Content: View>: View {
     }
 }
 
-/// Only the caption reads focus. The native card button owns its lift and
-/// parallax without rebuilding its artwork and menu when a caption brightens.
+/// Observe caption focus separately from the artwork and context menu.
 private struct TVMediaCardCaption: View {
+    @Environment(\.tvHomeStableRows) private var stableHomeRows
     let title: String
     let secondLine: String?
     let showsMetadata: Bool
@@ -698,7 +694,7 @@ private struct TVMediaCardCaption: View {
                 .truncationMode(.tail)
                 .frame(width: cardWidth, alignment: .leading)
                 .clipped()
-                .animation(.easeOut(duration: 0.15), value: isFocused)
+
 
             if showsMetadata, let secondLine {
                 Text(secondLine)
@@ -710,7 +706,9 @@ private struct TVMediaCardCaption: View {
                     .clipped()
             }
         }
-        .frame(width: cardWidth, alignment: .leading)
+        .frame(width: cardWidth, height: stableHomeRows
+            ? TVHomeRowGeometry.captionHeight(showsMetadata ? .titleMetadata : .title) : nil,
+            alignment: .topLeading)
     }
 }
 

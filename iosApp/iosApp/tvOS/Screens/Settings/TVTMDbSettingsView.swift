@@ -15,7 +15,7 @@ struct TVTMDbSettingsView: View {
                         .font(.system(size: 27, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
                         .frame(width: 62, height: 62)
-                        .background(Color(red: 0.12, green: 0.13, blue: 0.15),
+                        .background(TVSettingsPalette.iconFill,
                                     in: RoundedRectangle(cornerRadius: 15.5))
                     VStack(alignment: .leading, spacing: 7) {
                         Text("Trailers")
