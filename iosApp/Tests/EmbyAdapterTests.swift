@@ -199,7 +199,7 @@ final class EmbyAdapterTests: XCTestCase {
 
     func testRuntimeRejectsOutOfRangeJSONNumbersWithoutTrapping() throws {
         for value in ["1e100", "1e308", "5.5340232221128655e27"] {
-            let json = Data("{\"Id\":\"1\",\"Type\":\"Movie\",\"RunTimeTicks\":\(value)}".utf8)
+            let json = Data("{\"Id\":\"1\",\"Name\":\"Movie\",\"Type\":\"Movie\",\"RunTimeTicks\":\(value)}".utf8)
             let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
             XCTAssertThrowsError(try adapter.item(raw)) { error in
                 guard case EmbyError.invalidResponse = error else { return XCTFail("Unexpected error: \(error)") }
@@ -209,10 +209,10 @@ final class EmbyAdapterTests: XCTestCase {
 
     func testRuntimePreservesOrdinaryFractionalMissingAndLargeIntegerTicks() throws {
         for (ticks, minutes) in [(0.0, 0), (-100.0, 0), (899_000_000.0, 1), (Double(Int64.max), 15_372_286_728)] {
-            let mapped = try adapter.item(["Id": "1", "Type": "Movie", "RunTimeTicks": ticks])
+            let mapped = try adapter.item(["Id": "1", "Name": "Movie", "Type": "Movie", "RunTimeTicks": ticks])
             XCTAssertEqual(mapped["runtime"] as? Int, minutes)
         }
-        let missing = try adapter.item(["Id": "1", "Type": "Movie"])
+        let missing = try adapter.item(["Id": "1", "Name": "Movie", "Type": "Movie"])
         XCTAssertEqual(missing["runtime"] as? Int, 0)
     }
 
