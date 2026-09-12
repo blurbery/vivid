@@ -465,6 +465,9 @@ struct EmbyAdapter {
                 let catalog = try await request.load()
                 row["items"] = catalog["items"] ?? []
                 row["totalCount"] = catalog["total"]
+            } else {
+                // A skipped request has an unknown count, not an empty library.
+                row.removeValue(forKey: "totalCount")
             }
             // Keep skipped row names/IDs so Settings can enable them again.
             sections.append(row)
