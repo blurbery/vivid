@@ -315,7 +315,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
         .padding(.vertical, 16)
         .background(
             Rectangle()
-                .fill(Color.vividChromeRestingFill)
+                .fill(TVSettingsPalette.groupFill)
         )
         .overlay {
             Rectangle()
@@ -382,7 +382,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
         .padding(.vertical, 12)
         .background(
             Rectangle()
-                .fill(Color.vividChromeRestingFill)
+                .fill(TVSettingsPalette.groupFill)
         )
         .overlay {
             Rectangle()
@@ -497,7 +497,7 @@ private struct TVHomeSectionsControlButtonBody: View {
             .frame(minWidth: 64, minHeight: 64)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isFocused ? Color.vividOnSurface : Color.vividSurfaceElevated.opacity(0.9))
+                    .fill(isFocused ? Color.vividOnSurface : TVSettingsPalette.groupFill)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -508,7 +508,7 @@ private struct TVHomeSectionsControlButtonBody: View {
             }
             .scaleEffect(configuration.isPressed ? 0.97 : (isFocused ? 1.04 : 1))
             .shadow(
-                color: isFocused ? Color.vividAccent.opacity(0.16) : .clear,
+                color: isFocused ? Color.black.opacity(0.2) : .clear,
                 radius: 16
             )
             .focusEffectDisabled()
@@ -711,7 +711,7 @@ private struct TVMenuCustomizationSheet: View {
         .padding(.vertical, 12)
         .background(
             Rectangle()
-                .fill(Color.vividChromeRestingFill)
+                .fill(TVSettingsPalette.groupFill)
         )
         .overlay {
             Rectangle()

@@ -34,7 +34,7 @@ struct TVHomeScreenSettingsView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 16)
-                    .background(Color.vividChromeRestingFill)
+                    .background(TVSettingsPalette.groupFill)
                     .overlay(Rectangle().strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1))
 
                     if isLoading && sections.isEmpty {

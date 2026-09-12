@@ -43,6 +43,7 @@ struct TVSettingsView: View {
 
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .tint(.white)
         .task {
             await viewModel.load()
         }
@@ -142,7 +143,7 @@ struct TVSettingsView: View {
             TVSettingsSectionHeader("PROFILES & SETTINGS")
             TVSettingsGroup {
                 profileRow
-                Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.horizontal, 24)
+                Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.horizontal, 24)
                 ForEach(visibleCategories) { category in categoryRow(category) }
             }
 
@@ -185,9 +186,13 @@ struct TVSettingsView: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 48, height: 48)
                     .background(
-                        Color(red: 0.12, green: 0.13, blue: 0.15),
+                        TVSettingsPalette.iconFill,
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(TVSettingsPalette.separator, lineWidth: 1)
+                    }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(category.title)
@@ -326,9 +331,13 @@ struct TVSettingsView: View {
                 .foregroundStyle(.white.opacity(0.85))
                 .frame(width: 62, height: 62)
                 .background(
-                    Color(red: 0.12, green: 0.13, blue: 0.15),
+                    TVSettingsPalette.iconFill,
                     in: RoundedRectangle(cornerRadius: 15.5, style: .continuous)
                 )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 15.5)
+                        .strokeBorder(TVSettingsPalette.separator, lineWidth: 1)
+                }
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 7) {
