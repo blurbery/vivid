@@ -66,7 +66,7 @@ struct TVTMDbSettingsView: View {
                     }
                 }
                 TVSettingsFooter("More Like This works without a key, using genres, studios and networks from your server library. Trailers require a TMDB connection and open in the YouTube app, which must be installed on your Apple TV.")
-                TVSettingsFooter("Your key is saved in this Apple TV’s Keychain and sent only to TMDB. Get a personal key from your account’s API settings at themoviedb.org. Non-commercial use requires TMDB attribution.")
+                TVSettingsFooter("Your key is saved in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Requests use it only with TMDB. Get your personal key at themoviedb.org. TMDB attribution is required.")
                 TVSettingsSectionHeader("ABOUT TMDB")
                 TVTMDbAttribution()
             }

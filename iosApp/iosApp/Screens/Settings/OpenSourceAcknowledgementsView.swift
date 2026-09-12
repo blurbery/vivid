@@ -14,15 +14,15 @@ enum OpenSourceAcknowledgements {
         Resource(title: "Earlier Apache-licensed code", name: "Vivid-Apache-2.0"),
         Resource(title: "AetherEngine: LGPLv3 with Apple exception", name: "AetherEngine-LGPL-3.0"),
         Resource(title: "LibDovi: MIT", name: "LibDovi-MIT"),
-        Resource(title: "FFmpegBuild and FFmpeg — LGPL 2.1", name: "FFmpegBuild-LGPL-2.1"),
-        Resource(title: "dav1d — BSD 2-Clause", name: "dav1d-BSD-2-Clause"),
-        Resource(title: "zimg — WTFPL version 2", name: "zimg-WTFPL"),
-        Resource(title: "libzvbi ure.c — MIT", name: "libzvbi-ure-MIT"),
-        Resource(title: "libass — ISC", name: "libass-ISC"),
-        Resource(title: "FriBidi — LGPL 2.1", name: "FriBidi-LGPL-2.1"),
-        Resource(title: "FreeType — FreeType License", name: "FreeType-FTL"),
-        Resource(title: "HarfBuzz — MIT", name: "HarfBuzz-MIT"),
-        Resource(title: "ThumbHash decoder — MIT", name: "ThumbHash-MIT"),
+        Resource(title: "FFmpegBuild and FFmpeg: LGPL 2.1", name: "FFmpegBuild-LGPL-2.1"),
+        Resource(title: "dav1d: BSD 2-Clause", name: "dav1d-BSD-2-Clause"),
+        Resource(title: "zimg: WTFPL version 2", name: "zimg-WTFPL"),
+        Resource(title: "libzvbi ure.c: MIT", name: "libzvbi-ure-MIT"),
+        Resource(title: "libass: ISC", name: "libass-ISC"),
+        Resource(title: "FriBidi: LGPL 2.1", name: "FriBidi-LGPL-2.1"),
+        Resource(title: "FreeType: FreeType License", name: "FreeType-FTL"),
+        Resource(title: "HarfBuzz: MIT", name: "HarfBuzz-MIT"),
+        Resource(title: "ThumbHash decoder: MIT", name: "ThumbHash-MIT"),
     ]
 
     static let text: String = resources.map { resource in
@@ -87,7 +87,7 @@ struct OpenSourceAcknowledgementsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                Text("Open Source Licenses").font(.system(size: 30, weight: .bold, design: .rounded))
+                Text("Open Source Licences").font(.system(size: 30, weight: .bold, design: .rounded))
                 if blocks.isEmpty { ProgressView("Loading licences…") }
                 ForEach(blocks) { block in
                     VStack(alignment: .leading, spacing: 12) {

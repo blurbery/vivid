@@ -8,7 +8,7 @@
 
 ---
 
-Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Third-party libraries retain their own licences.
+Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). The [Vivid attribution terms](ATTRIBUTION.md) apply only to the covered material identified there. Third-party libraries retain their own licences.
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |

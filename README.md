@@ -43,7 +43,7 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
-Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches and player preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList imports add local watched indicators without overwriting server history or resume positions; watchlists can sync additions and removals through MDBList.
+Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList imports add local watched indicators without overwriting server history or resume positions; watchlists can sync additions and removals through MDBList.
 
 ## Apple TV
 
@@ -51,7 +51,7 @@ I’ve built the TV experience around a configurable Home spotlight, local Home 
 
 ## iPhone and iPad
 
-The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections. Search and Settings are full-screen portrait pages with slide-up/down transitions; detail cards stay above Search during playback. Movie and series pages show aligned video/file and audio information. The player offers five quality choices with a one-time lower-bitrate reload for the capped modes. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the layout and device-testing limits.
+The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections. Search and Settings are full-screen pages with slide-up/down transitions, portrait on iPhone and rotatable on iPad. Movie and series details use cards on iPhone and full-screen pages on iPad, staying above Search during playback. Movie and series pages show aligned video/file and audio information. The player offers five quality choices with a one-time lower-bitrate reload for the capped modes. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the layout and device-testing limits.
 
 ## Playback
 

@@ -5,6 +5,8 @@ VividKit as a whole is licensed under GPL-3.0-only (see LICENSE), with the
 additional permission in ../LICENSE-APPLE-EXCEPTION. Earlier Apache-2.0
 grants remain valid; the original Apache text is retained in
 ../iosApp/Resources/OpenSourceLicenses/Vivid-Apache-2.0.txt.
+The attribution and origin terms in ../ATTRIBUTION.md apply only to the
+covered Vivid material identified there; third-party rights are unchanged.
 This package uses Apple system frameworks under their platform terms.
 FFmpegBuild, libass and their component libraries retain their own licences.
 The FFmpegBuild revision is pinned in Package.swift; subtitle/font binary

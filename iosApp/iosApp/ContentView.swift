@@ -2068,7 +2068,7 @@ struct MainTabView: View {
     }
 
     private func presentSettingsPage() {
-        PlayerOrientationCoordinator.shared.setPortraitPagePresented(true)
+        PlayerOrientationCoordinator.shared.setPortraitPagePresented(UIDevice.current.userInterfaceIdiom != .pad)
         showsSearchPage = false
         withAnimation(.easeInOut(duration: 0.34)) {
             showsSettingsPage = true
@@ -2093,7 +2093,7 @@ struct MainTabView: View {
 
     private func updateMobileUtilityOrientationPolicy() {
         PlayerOrientationCoordinator.shared.setPortraitPagePresented(
-            showsSettingsPage || (showsSearchPage && UIDevice.current.userInterfaceIdiom != .pad)
+            (showsSettingsPage || showsSearchPage) && UIDevice.current.userInterfaceIdiom != .pad
         )
     }
 

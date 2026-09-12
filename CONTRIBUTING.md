@@ -114,6 +114,8 @@ terms, and identify any exceptions before submission. Third-party code must
 retain its applicable licence and attribution; identify any such code in the
 contribution so its terms can be reviewed.
 
+Preserve the [Vivid attribution and origin terms](ATTRIBUTION.md) when reusing material covered by that notice. They apply only where blurbery holds copyright or has express authority; they do not claim ownership of independently authored contributions or third-party code.
+
 You retain copyright in your contribution; no assignment is requested.
 
 ## Notices

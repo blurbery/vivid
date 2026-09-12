@@ -172,7 +172,7 @@ struct MDBListSettingsView: View {
         .accessibilityLabel("Apps available through MDBList: Kodi, Plex, Trakt, Jellyfin and Emby")
     }
 
-    private var privacy: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud account vault. Sync shares media identifiers, watched dates and watchlist changes, never server login details. Disconnecting keeps existing history and watchlists." }
+    private var privacy: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Sync shares media identifiers, watched dates and watchlist changes, never server login details. Disconnecting keeps existing history and watchlists." }
 
     private func connect() {
         let candidate = key

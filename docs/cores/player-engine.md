@@ -11,7 +11,7 @@ Vivid uses AetherEngine on tvOS and VividKit on iOS. Each engine handles media r
 
 Vivid uses one AetherEngine session on tvOS, behind Vivid's existing playback controller. Native playback prepares local HLS for AVPlayer; unsupported native video uses Aether's software path automatically. There is no player selector. iOS continues using VividKit.
 
-The local `AetherEngine` package derives from upstream 6.80.0 (`89ef0c347a17180739d8ca7a1a1cfbb163135271`). Its source retains the upstream LGPL-3.0 licence and Apple Store exception. Vivid's adapter remains Apache-2.0. The package reuses Vivid's existing FFmpegBuild 3.0.0 revision, rather than introducing a second FFmpeg binary set. Upstream's later legacy Flash and Windows Media codec additions are therefore not promised by this integration.
+The local `AetherEngine` package derives from upstream 6.80.0 (`89ef0c347a17180739d8ca7a1a1cfbb163135271`). Its source retains the upstream LGPL-3.0 licence and Apple Store exception. Vivid's adapter uses GPL-3.0-only with the [Apple distribution permission](../../LICENSE-APPLE-EXCEPTION); earlier Apache grants remain valid. [Vivid attribution](../../ATTRIBUTION.md) applies to the covered material identified there. The package reuses Vivid's existing FFmpegBuild 3.0.0 revision, rather than introducing a second FFmpeg binary set. Upstream's later legacy Flash and Windows Media codec additions are therefore not promised by this integration.
 
 The integration resolves audio-list ordinals inside the initial probe. It uses Vivid's existing 2 MB probe and two-second media-analysis limits, with Aether's buffering and display-settling safeguards retained. Native subtitle readers prepare receiver-readable captions, matching Sodalite’s external-playback integration. Sidecars with a non-zero timeline offset stay on Vivid's overlay, with the offset applied before publication. `PlaybackStartup` logs record elapsed time at each checkpoint through the first displayed frame, without source URLs or credentials. The target is the reported 3–4 second opening on the same video; no improvement has yet been measured on a device.
 
@@ -219,7 +219,7 @@ On Apple TV, frame-rate and dynamic-range matching follow the system’s Match C
   <thead><tr><th align="left" width="25%">Format</th><th align="left" width="75%">Playback</th></tr></thead>
   <tbody>
     <tr><td>PGS</td><td>Embedded image-based subtitles.</td></tr>
-    <tr><td>ASS</td><td>Embedded styled text subtitles.</td></tr>
+    <tr><td>ASS</td><td>Embedded styled text subtitles. iPhone/iPad use libass; the tvOS Aether path maps basic styling and does not promise full libass animation/typesetting parity.</td></tr>
   </tbody>
 </table>
 

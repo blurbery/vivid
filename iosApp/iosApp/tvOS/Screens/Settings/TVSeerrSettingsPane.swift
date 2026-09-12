@@ -43,7 +43,7 @@ struct TVSeerrSettingsPane: View {
                     Button {
                         do { try store.disconnect(); password = ""; message = "Disconnected. Request results are hidden." }
                         catch { message = error.localizedDescription }
-                    } label: { TVSettingsRowLabel(title: "Disconnect", detail: "Remove the saved Seerr login from this Apple TV.") }
+                    } label: { TVSettingsRowLabel(title: "Disconnect", detail: "Remove this Seerr connection from matching accounts and profiles across iCloud devices.") }
                     .buttonStyle(TVSettingsPaneRowStyle())
                 }
             }

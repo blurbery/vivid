@@ -8,18 +8,18 @@
 
 ---
 
-Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. The latest accepted uploads are iPhone/iPad 0.14.3 (18) and tvOS 0.14.3 (17). Both have completed processing, have English (Australia) testing notes with exact-source links, and are available to the existing internal and external tester groups. App Store Connect confirmed Testing for both external builds. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
+Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. As recorded on 12 September 2026, the latest accepted uploads are iPhone/iPad 0.14.3 (18) and tvOS 0.14.3 (17). Both have completed processing, have English (Australia) testing notes with exact-source links, and are available to the existing internal and external tester groups. App Store Connect confirmed Testing for both external builds. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
 
 ## What is ready
 
 | Area | Current state |
 | --- | --- |
 | App targets | `Vivid` for iPhone/iPad and `VividTV` for Apple TV, generated from `iosApp/project.yml` |
-| Supported OS versions | iOS/iPadOS 18 or later; tvOS 26 or later. Mac and Vision Pro distribution are disabled. |
-| Build tools | Build 15 used local Xcode 26.6; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
+| Supported OS versions | iOS/iPadOS 18 or later; tvOS 26 or later. The committed project disables Designed for iPad distribution on Mac and Vision Pro; earlier local Mac layout tests used a development override. |
+| Build tools | The latest recorded archives used local Xcode 26.6; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
 | About | Version/build, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution remains on the media information page and in acknowledgements. |
-| iCloud | The encrypted private account vault includes profile order, shared preferences and TMDb, Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The release container is registered; confirm the production schema and live restore on a second device before relying on it in an external beta. |
+| iCloud | The encrypted private account vault includes profile order, shared preferences and TMDb, Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The Production schema was deployed on 12 September 2026 and Bedroom Apple TV restoration was confirmed. Check schema changes and live restoration separately from archive entitlements; see the dated build record. |
 | Local device coverage | Historical development checks include iPhone 16 Pro Max on iOS 26.6.1 and Apple TV 4K (3rd generation) on tvOS 26.6. These records do not state the devices’ current OS or validate every later TestFlight build. |
 | iPad coverage | Focused simulator layout checks exist. Physical iPad playback, rotation and multitasking still need checking. |
 | Apple upload tooling | Signed archives can be uploaded from the maintainer’s local Xcode configuration. Signing credentials remain outside Git and there is no committed TestFlight uploader. |
@@ -30,8 +30,10 @@ Check [Apple’s submission requirements](https://developer.apple.com/app-store/
 
 1. Confirm Apple Developer Program membership and the existing Vivid app and extension registrations. Reuse the configured signing team, identifiers and existing iOS/tvOS App Store Connect record. The bundle ID must match the uploaded build. [Apple’s distribution preparation guide](https://help.apple.com/xcode/mac/current/en.lproj/dev91fe7130a.html) explains why this needs to be settled before the first upload.
 2. Map all five targets: `Vivid`, `VividNotificationService`, `VividDownloadsActivity`, `VividTV` and `VividTVTopShelf`. Each extension needs its own identifier and provisioning profile. Configure the intended App Group, shared Keychain access, push capability and `iCloud.com.blurbery.vivid` CloudKit container; check the tvOS user-management entitlement as well. [Deploy the `VividAccountVault` record schema](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema) to CloudKit’s production environment before a TestFlight build relies on account restoration.
-3. Keep the registered release identifiers aligned across the signing configuration, entitlements, Info.plists and `SharedStorage`. The committed app defaults use `com.blurbery.vivid`, with `group.com.blurbery.vivid` for shared defaults and `com.blurbery.vivid.shared` for Keychain access. Extensions use the matching app prefix. The release identifiers and iCloud container are registered with Apple; confirm and deploy the production CloudKit schema before relying on account restoration in an external beta. The ignored `Signing/Local.xcconfig` retains development overrides. Install maintainer device updates in place, preserving accounts, Keychain and app data. Do not uninstall, reset, change identifiers or clean retained incremental caches as an update step. A clean install removes local preferences, metadata caches and download storage. On its first launch it clears any surviving Vivid Keychain entries, then can restore saved accounts and sessions from the user’s private iCloud vault. Watch history saved on the media server stays there.
+3. Keep the registered release identifiers aligned across the signing configuration, entitlements, Info.plists and `SharedStorage`. The committed app defaults use `com.blurbery.vivid`, with `group.com.blurbery.vivid` for shared defaults and `com.blurbery.vivid.shared` for Keychain access. Extensions use the matching app prefix. The release identifiers, iCloud container and current Production schema are registered with Apple. For future schema changes, inspect the Development-to-Production diff and obtain deployment authorisation; deployment does not copy saved records between environments. The ignored `Signing/Local.xcconfig` retains development overrides. Install maintainer device updates in place, preserving accounts, Keychain and app data. Do not uninstall, reset, change identifiers or clean retained incremental caches as an update step. A clean install removes local preferences, metadata caches and download storage. On its first launch it clears any surviving Vivid Keychain entries, then can restore saved accounts and sessions from the user’s private iCloud vault. Watch history saved on the media server stays there.
 4. Keep the current approved Apple marketing version for routine TestFlight updates and increment each platform’s build number from its latest upload recorded in App Store Connect, excluding local test numbers. Paired uploads can use different build numbers when the platforms have different upload histories; every embedded extension must match its app. Never reset the counter or copy a GitHub release version into the Apple version automatically. Changing the Apple marketing version requires explicit approval from blurbery. Record the exact pushed source commit and check both finished archives before upload. See [Versioning & Releases](versioning.md).
+
+Check that Production contains `VividAccountVault` with encrypted `payload`, separately from inspecting signed entitlements. Test restoration using an existing configured installation and another device. See [restore troubleshooting](../server-connections.md#restore-and-troubleshooting); do not uninstall the only populated copy to test sync.
 
 Uploads can use Xcode Organizer or the equivalent signed `xcodebuild -exportArchive` flow. New Fastlane upload automation is optional and must use Vivid’s registered app identity. Keep credentials and signing material out of this repository.
 
@@ -64,8 +66,10 @@ Before conveying any new GPL-covered binary, including through TestFlight:
   duration. A moving `main` URL alone is insufficient.
 - Put the immutable source link in that build's TestFlight information or
   release information available to its recipients. Check the app's bundled
-  Open Source Licences includes GPLv3, the Apple permission, earlier Apache
-  notices and all packaged third-party licences.
+  Open Source Licences includes GPLv3, the Apple permission, applicable
+  [Vivid attribution terms](../../ATTRIBUTION.md), earlier Apache notices and
+  all packaged third-party licences. The bundled overview carries the full
+  attribution terms; keep them aligned with `ATTRIBUTION.md`.
 - Preserve LGPL rights independently. Vivid's Apple permission applies to
   its authorised code; it cannot waive conditions on FFmpeg, FriBidi or
   other third-party components. Keep their corresponding source and
@@ -82,21 +86,29 @@ Use `admin@vividapp.co` for feedback. A starting beta description is:
 
 > I’m building Vivid for watching your own media on iPhone, iPad and Apple TV. Connect to Silo or Emby, browse your library and continue watching across your server accounts. Playback includes subtitles and chapters from your media and optional intro, recap and credits skips. Jellyfin is planned.
 
-For What to Test, use short plain-text bullet points with a blank line between each. Verify the saved line breaks in App Store Connect so the notes remain easy to scan.
+For What to Test, use the [paired bullet-block format](versioning.md#testflight-note-format), with each change followed by its own indented testing line and a blank line before the next change. Describe only changes present in that build and verify the saved line breaks in App Store Connect.
 
-For example:
+For example, when the uploaded build contains these changes:
 
-> Please check account setup and switching, iCloud account restore and cross-device deletion, Continue Watching and Next Up, episode selection, startup, seeking, repeated audio selection, embedded subtitles and chapters. On Apple TV, check swipe seeking and Match Frame Rate/Match Dynamic Range. On iPhone and iPad, check download progress and artwork, the Search keyboard, same-tap player controls and closing landscape playback. Please report the device, OS, server type, codec and steps when something fails. Do not include passwords or private server addresses in feedback.
+```text
+• Keep saved plugin connections when a local key is temporarily unavailable.
+  What to test: Update in place and check that MDBList and OpenSubtitles remain connected for the matching server account and profile.
 
-Use an internal group first, then invite external testers after the selected platform builds pass the relevant checks. A tvOS-only update does not require an iOS upload. Supply Apple’s review contact details privately in App Store Connect. For external review, provide a working review server/account with authorised sample media and any required PIN; a media-client login screen alone does not let Apple exercise playback. Do not put those credentials in Git or public release notes. Apple documents the [test information](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-test-information/) and [external testing review](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/) requirements.
+• Reuse confirmed MDBList progress after an interrupted sync.
+  What to test: Retry a failed sync and check that existing watched indicators and resume positions stay intact.
+```
+
+Ask for the affected device, OS, server type and reproduction steps when useful. Do not request passwords or private server addresses in public feedback.
+
+For each authorised upload, use the existing internal and external groups and verify availability separately, following the [test-group policy](versioning.md#testflight-test-groups). Do not create groups or invite new testers without separate approval. A tvOS-only update does not require an iOS upload. Supply Apple’s review contact details privately in App Store Connect. For external review, provide a working review server/account with authorised sample media and any required PIN; a media-client login screen alone does not let Apple exercise playback. Do not put those credentials in Git or public release notes. Apple documents the [test information](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-test-information/) and [external testing review](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers/) requirements.
 
 The uploaded TestFlight build and current source are separate revisions. A merge or GitHub source release does not update an uploaded binary or its review. Assess beta capabilities against the selected build, not the latest documentation or local development installation.
 
 Current source uses AetherEngine on tvOS and VividKit on iOS, as described in the [player engine core](../cores/player-engine.md). The tvOS native bridge defaults to compatible E-AC-3 conversion, with optional FLAC lossless bridging. HDMI output, AirPlay, HDR and Dolby Vision still depend on the source and route. Earlier VividKit HDMI stall-recovery verification does not validate the Aether route. Verify audible output and track switching on the selected TestFlight build.
 
-The preference-sync extension retains the existing encrypted `VividAccountVault.payload` field and adds optional values inside its encoded payload, without adding CloudKit schema fields. Existing vaults remain readable. Merge checks cover independent edits, deletion markers, deterministic conflict resolution and profile ordering. Live two-device restoration, API-key removal and device-specific playback/subtitle isolation still require verification against the selected build. Apple describes encrypted record fields in [Encrypting User Data](https://developer.apple.com/documentation/cloudkit/encrypting-user-data).
+The preference-sync extension retains the existing encrypted `VividAccountVault.payload` field and adds optional values inside its encoded payload, without adding CloudKit schema fields. Existing vaults remain readable. Merge checks cover independent edits, deletion markers, deterministic conflict resolution and profile ordering. Bedroom restoration was confirmed after the [Production schema deployment](versioning.md#production-icloud-restoration). Fresh iPhone restoration, API-key removal, deletion propagation and device-specific playback/subtitle isolation still need separate verification against the selected build. Apple describes encrypted record fields in [Encrypting User Data](https://developer.apple.com/documentation/cloudkit/encrypting-user-data).
 
-Remaining validation includes physical iPad behaviour, live two-device iCloud restoration/deletion, older Apple TV hardware, additional HDR/audio routes and the provider-specific limits in the [Emby guide](../cores/emby.md). External distribution requires the selected platform builds and any required Beta App Review to complete.
+Remaining validation includes physical iPad behaviour, the remaining iCloud scenarios above, older Apple TV hardware, additional HDR/audio routes and the provider-specific limits in the [Emby guide](../cores/emby.md). External distribution requires the selected platform builds and any required Beta App Review to complete.
 
 ## GitHub and unsigned sideload builds
 

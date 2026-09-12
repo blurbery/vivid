@@ -69,6 +69,18 @@ The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivi
 
 The implementation lives in <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift">TVSavedAccountStore</a> and <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccountViews.swift">TVSavedAccountViews</a>. On mobile, the account cards and editor are in `IOSSettingsOverview.swift`, using the same store. Servers remains a separate Settings category for registered connections. Mobile Sign Out is in the account editor, not Servers. Saved Emby sessions additionally preserve the native user ID; the Emby adapter implements its API translation. Saved-account storage alone does not establish provider compatibility.
 
+### Restore and troubleshooting
+
+Use the same Apple iCloud account and the matching saved server account and viewing profile on each device. On Apple TV, check the **current Apple TV user**, not only the App Store account or default user. Vivid uses that user's private CloudKit database. The three-card limit when manually adding saved accounts on iPhone/iPad is not a device limit; it cannot block a fourth device from syncing. Apple TV does not impose that three-card limit.
+
+Development and Production CloudKit databases are separate. TestFlight uses Production; a development installation can use Development even with the same Apple account. Deploying a schema makes its record types available in Production but does not copy Development records. Correct signed entitlements alone do not prove that the Production schema or saved records exist. The [12 September Production restore record](release/versioning.md#production-icloud-restoration) documents the schema repair and confirmed Apple TV restoration.
+
+Keep at least one configured installation intact when diagnosing restore. Open its profile/settings page and leave it active for about twenty seconds so the existing ten-second sync loop can publish, then use Restore from iCloud or Try Again on the other device. Delivery is best effort and can take longer. Do not delete the app, delete a saved account or disconnect a plugin just to test sync.
+
+“Couldn’t restore from iCloud” means the restore attempt failed; inspect the device's CloudKit error and the Production schema before assuming a device fault. “No saved accounts are available” can also appear when no iCloud account is available, so it does not prove that a signed-in private vault is empty. Redact credentials and account details from diagnostic output. Manual server setup remains available.
+
+The vault restores saved connections and shared settings, not local caches. MDBList imports and confirmed sync checkpoints survive connection failures on that installation, but a fresh installation reads MDBList again. OpenSubtitles' bounded download cache lasts only for the app session; temporary player files are removed when playback ends. Restoring a key cannot recover files or checkpoints removed with an installation.
+
 ## Plugins on iPhone, iPad and Apple TV
 
 Settings → Plugins appears immediately below Servers. Trailers uses the existing personal TMDb connection and settings. MDBList accepts a personal API key from [MDBList Preferences](https://mdblist.com/preferences/). A validated connection stays connected when history is empty or a later sync fails; sync messages appear separately. MDBList, Trailers and OpenSubtitles show a green dot beside Connected.
