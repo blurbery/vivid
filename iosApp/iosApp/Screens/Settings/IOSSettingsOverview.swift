@@ -411,7 +411,7 @@ struct PhoneSavedAccountEditor: View {
             }
             Section {
                 if account == nil { TextField("Server address", text: $serverURL).keyboardType(.URL) }
-                else { LabeledContent("Server", value: registry.entry(with: account!.serverID)?.displayName ?? serverURL) }
+                else { LabeledContent("Server", value: registry.entry(with: account!.serverID)?.url ?? serverURL) }
                 TextField("Username", text: $username).textContentType(.username)
                 SecureField("Password", text: $password).textContentType(.password)
                 Button(account == nil ? "Add Profile" : store.needsLogin(account!) ? "Sign In" : "Update Login") {
@@ -436,19 +436,22 @@ struct PhoneSavedAccountEditor: View {
                         Button("Remove PIN") { message = store.removePIN(accountID) ? "PIN removed" : "Couldn’t remove the PIN." }
                     }
                 } header: { PhoneSettingsSectionHeader("PIN Protection") }
-                Section {
-                    Button(role: .destructive) {
-                        Task { await store.signOut(router: router) }
-                    } label: {
-                        Text("Sign Out")
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                }
             }
             if account != nil {
                 Section {
-                    Button("Delete Profile", role: .destructive) { showsDeleteConfirm = true }
-                        .disabled(store.busy)
+                    if active {
+                        Button(role: .destructive) {
+                            Task { await store.signOut(router: router) }
+                        } label: {
+                            Text("Sign Out")
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
+                    }
+                    Button(role: .destructive) { showsDeleteConfirm = true } label: {
+                        Text("Delete Profile")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .disabled(store.busy)
                 }
             }
             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
