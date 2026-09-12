@@ -147,11 +147,13 @@ final class TVHomeMetadataCache {
         snapshot.rows = rows.map { Row(section: $0, updatedAt: now) }
         snapshot.spotlight = slides
         snapshot.spotlightUpdatedAt = now
-        let slideIDs = Set(snapshot.spotlight.map(\.id))
+        let slideIDs = Set(snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) })
         snapshot.details = snapshot.details.filter { slideIDs.contains($0.key) }
         for slide in snapshot.spotlight where oldSlides[slide.id] != nil && oldSlides[slide.id] != slide.item {
-            snapshot.details.removeValue(forKey: slide.id)
-            ResponseCache.shared.remove(CacheKey.itemDetail(slide.id))
+            for id in Self.detailContentIDs(for: slide.item) {
+                snapshot.details.removeValue(forKey: id)
+                ResponseCache.shared.remove(CacheKey.itemDetail(id))
+            }
         }
         for id in slideIDs {
             if let detail: ItemDetail = ResponseCache.shared.get(CacheKey.itemDetail(id)) {
@@ -179,7 +181,7 @@ final class TVHomeMetadataCache {
         if let ids = TVHomeSpotlightPreferences.shared.selectedRowIDs {
             snapshot.spotlight.removeAll { !ids.contains($0.rowID) }
         }
-        let slideIDs = Set(snapshot.spotlight.map(\.id))
+        let slideIDs = Set(snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) })
         snapshot.details = snapshot.details.filter { slideIDs.contains($0.key) }
         replaceArtwork(previous: oldURLs)
         persist()
@@ -258,20 +260,48 @@ final class TVHomeMetadataCache {
         warmedURLs = desired
     }
 
+    /// iOS episode spotlights display their parent series' year and ratings.
+    /// Keep that metadata in the same persistent cache as the slide itself.
+    static func detailContentIDs(for item: SectionItem) -> [String] {
+        #if os(iOS)
+        if MediaServerProvider.active == .emby, item.type == "episode",
+           let seriesID = item.seriesId, seriesID != item.contentId {
+            return [item.contentId, seriesID]
+        }
+        #endif
+        return [item.contentId]
+    }
+
+    func spotlightMetadata(for item: SectionItem) -> ItemDetail? {
+        guard MediaServerProvider.active == .emby,
+              let id = Self.detailContentIDs(for: item).last else { return nil }
+        return snapshot.details[id]
+    }
+
     private func enrichSpotlight() {
         enrichmentTask?.cancel()
         let expectedGeneration = generation
         let scope = loadedScope
-        let slides = snapshot.spotlight
+        var seen = Set<String>()
+        let ids = snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) }
+            .filter { seen.insert($0).inserted }
         enrichmentTask = Task { @MainActor in
-            for slide in slides where snapshot.details[slide.id] == nil {
+            for id in ids where snapshot.details[id] == nil {
                 guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
-                guard let detail = try? await MetadataRequestPool.shared.itemDetail(contentId: slide.id) else { continue }
+                let cached: ItemDetail? = ResponseCache.shared.get(CacheKey.itemDetail(id))
+                let detail: ItemDetail
+                if let cached {
+                    detail = cached
+                } else if let fetched = try? await MetadataRequestPool.shared.itemDetail(contentId: id) {
+                    detail = fetched
+                } else {
+                    continue
+                }
                 guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope,
-                      snapshot.spotlight.contains(where: { $0.id == slide.id }) else { return }
+                      snapshot.spotlight.contains(where: { Self.detailContentIDs(for: $0.item).contains(id) }) else { return }
                 let oldURLs = artworkURLs(in: snapshot)
-                snapshot.details[slide.id] = detail
-                ResponseCache.shared.set(detail, for: CacheKey.itemDetail(slide.id))
+                snapshot.details[id] = detail
+                ResponseCache.shared.set(detail, for: CacheKey.itemDetail(id))
                 replaceArtwork(previous: oldURLs)
                 persist()
             }

@@ -479,6 +479,7 @@ struct HomeSectionsCustomizationView: View {
         return HStack(spacing: 12) {
             Button {
                 preferences.setVisible(!isVisible, sectionId: section.id)
+                if !isVisible { Task { await refreshFromServer() } }
             } label: {
                 Image(systemName: isVisible ? "eye.fill" : "eye.slash.fill")
                     .font(.system(size: 17, weight: .semibold))
@@ -497,9 +498,11 @@ struct HomeSectionsCustomizationView: View {
                     .foregroundStyle(Color.vividOnSurface)
                     .lineLimit(1)
 
-                Text("\(section.items.count) item\(section.items.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(Color.vividSecondaryText)
+                if !section.items.isEmpty || section.totalCount != nil {
+                    Text("\(section.items.count) item\(section.items.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(Color.vividSecondaryText)
+                }
             }
 
             Spacer(minLength: 8)
@@ -518,7 +521,7 @@ struct HomeSectionsCustomizationView: View {
         preferences.refresh()
 
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
-            sections = cached.sections.filter { !$0.items.isEmpty }
+            sections = cached.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
         }
 
         _ = forceRefresh
@@ -535,7 +538,7 @@ struct HomeSectionsCustomizationView: View {
         do {
             let response = try await StartupContentPrefetcher.fetchHomeSections()
             guard !Task.isCancelled else { return }
-            sections = response.sections.filter { !$0.items.isEmpty }
+            sections = response.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
         } catch {
             guard !Task.isCancelled else { return }
             loadFailed = sections.isEmpty

@@ -349,15 +349,17 @@ struct EmbyAdapter {
             settings = response["CustomPrefs"] as? [String:Any] ?? [:]
         }
         let types = Self.legacyHomeSectionTypes(settings:settings)
-        var sections: [[String:Any]] = []
+        var requests: [HomeSectionRequest] = []
         for type in types {
             switch type {
             case "resume":
-                let result = try await items("/Users/\(userID)/Items/Resume",query:["Limit":"20","MediaTypes":"Video","IncludeNextUp":types.contains("nextup") ? "false" : "true"])
-                sections.append(section("continue_watching","Continue Watching",result))
+                requests.append(HomeSectionRequest(section: section("continue_watching", "Continue Watching", [:])) {
+                    try await items("/Users/\(userID)/Items/Resume", query: ["Limit":"20", "MediaTypes":"Video", "IncludeNextUp":types.contains("nextup") ? "false" : "true"])
+                })
             case "nextup":
-                let result = try await items("/Shows/NextUp",query:["Limit":"20","LegacyNextUp":"true"])
-                sections.append(section("next_up","Next Up",result))
+                requests.append(HomeSectionRequest(section: section("next_up", "Next Up", [:])) {
+                    try await items("/Shows/NextUp", query: ["Limit":"20", "LegacyNextUp":"true"])
+                })
             case "latestmedia":
                 let user = try await connection.object("GET", "/Users/\(userID)")
                 let configuration = user["Configuration"] as? [String:Any] ?? [:]
@@ -367,21 +369,25 @@ struct EmbyAdapter {
                     guard let id = view["Id"] as? String, let name = view["Name"] as? String,
                           ["movies","tvshows","mixed", ""].contains(view["CollectionType"] as? String ?? ""),
                           !excluded.contains(id), !excluded.contains(view["Guid"] as? String ?? "") else { continue }
-                    let latest = try await connection.request("GET", "/Users/\(userID)/Items/Latest",query:["ParentId":id,"Limit":"20","Fields":Self.fields,"EnableUserData":"true"])
-                    let rows = try (latest as? [[String:Any]] ?? []).map(item)
-                    sections.append(section("latestmedia_" + id,"Latest " + name,["items":rows,"total":rows.count]))
+                    requests.append(HomeSectionRequest(section: section("latestmedia_" + id, "Latest " + name, [:])) {
+                        let latest = try await connection.request("GET", "/Users/\(userID)/Items/Latest", query: ["ParentId":id, "Limit":"20", "Fields":Self.fields, "EnableUserData":"true"])
+                        let rows = try (latest as? [[String:Any]] ?? []).map(item)
+                        return ["items":rows, "total":rows.count]
+                    })
                 }
             case "collections":
-                let result = try await items(query:["IncludeItemTypes":"BoxSet","Limit":"20","SortBy":"SortName"])
-                sections.append(section("collections","Collections",result))
+                requests.append(HomeSectionRequest(section: section("collections", "Collections", [:])) {
+                    try await items(query: ["IncludeItemTypes":"BoxSet", "Limit":"20", "SortBy":"SortName"])
+                })
             case "latestmoviereleases":
-                let since = Calendar(identifier:.gregorian).date(byAdding:.year,value:-1,to:Date()) ?? Date()
-                let result = try await items(query:["IncludeItemTypes":"Movie","Limit":"20","SortBy":"ProductionYear,PremiereDate,SortName","SortOrder":"Descending","MinPremiereDate":ISO8601DateFormatter().string(from:since)])
-                sections.append(section(type,"Recently Released Movies",result))
+                requests.append(HomeSectionRequest(section: section(type, "Recently Released Movies", [:])) {
+                    let since = Calendar(identifier:.gregorian).date(byAdding:.year, value:-1, to:Date()) ?? Date()
+                    return try await items(query: ["IncludeItemTypes":"Movie", "Limit":"20", "SortBy":"ProductionYear,PremiereDate,SortName", "SortOrder":"Descending", "MinPremiereDate":ISO8601DateFormatter().string(from:since)])
+                })
             default: continue
             }
         }
-        return ["sections": try await supplyingCombinedNextUp(sections)]
+        return ["sections": try await fetchHomeSections(requests)]
     }
 
     func home(library: String? = nil) async throws -> [String: Any] {
@@ -401,20 +407,98 @@ struct EmbyAdapter {
         #endif
         let response = try await connection.request("GET", "/Users/\(userID)/HomeSections",query:["displayMode":displayMode])
         guard let definitions = response as? [[String:Any]] else { throw EmbyError.invalidResponse }
-        var sections: [[String:Any]] = []
+        var requests: [HomeSectionRequest] = []
         for definition in definitions {
             guard let id = definition["Id"] as? String,
                   !Self.excludesHomeRow(id:id,type:definition["SectionType"] as? String ?? "",title:definition["Name"] as? String ?? "") else { continue }
-            let result = try await items("/Users/\(userID)/Sections/\(EmbyConnection.id(id))/Items",query:["Limit":"20"])
-            sections.append(homeSection(definition, catalog:result))
+            requests.append(HomeSectionRequest(section: homeSection(definition, catalog: [:])) {
+                try await items("/Users/\(userID)/Sections/\(EmbyConnection.id(id))/Items", query: ["Limit":"20"])
+            })
         }
-        return ["sections": try await supplyingCombinedNextUp(sections)]
+        return ["sections": try await fetchHomeSections(requests)]
     }
 
-    private func supplyingCombinedNextUp(_ sections: [[String:Any]]) async throws -> [[String:Any]] {
-        guard let server = connection.identity?.account.serverId else { return sections }
-        let combine = await HomeSectionPreferences.combinesEmbyNextUp(server: server, profile: userID)
-        return try await supplyingCombinedNextUp(sections, enabled: combine)
+    struct HomeSectionRequest {
+        let section: [String: Any]
+        let load: () async throws -> [String: Any]
+    }
+
+    private func fetchHomeSections(_ requests: [HomeSectionRequest]) async throws -> [[String: Any]] {
+        let server = connection.identity?.account.serverId
+        let hidden: Set<String>
+        let spotlight: [String]?
+        let combine: Bool
+        if let server {
+            hidden = await HomeSectionPreferences.hiddenSections(server: server, profile: userID)
+            combine = await HomeSectionPreferences.combinesEmbyNextUp(server: server, profile: userID)
+            #if os(iOS) || os(tvOS)
+            spotlight = await TVHomeSpotlightPreferences.savedRowIDs(server: server, profile: userID)
+            #else
+            spotlight = []
+            #endif
+        } else {
+            hidden = []
+            spotlight = nil
+            combine = false
+        }
+        return try await loadHomeSections(requests, hidden: hidden, spotlight: spotlight, combine: combine)
+    }
+
+    func loadHomeSections(
+        _ requests: [HomeSectionRequest], hidden: Set<String>, spotlight: [String]?, combine: Bool
+    ) async throws -> [[String: Any]] {
+        var planned = requests
+        if combine, !planned.contains(where: { $0.section["sectionType"] as? String == "next_up" }) {
+            planned.append(HomeSectionRequest(section: section("next_up", "Next Up", [:])) {
+                // Preserve the existing optional Next Up failure policy.
+                let rows = try await supplyingCombinedNextUp([], enabled: true)
+                return ["items":rows.first?["items"] ?? [], "total":rows.first?["totalCount"] ?? 0]
+            })
+        }
+        let definitions = planned.map(\.section)
+        let required = Self.requiredHomeSectionIDs(definitions, hidden: hidden, spotlight: spotlight, combine: combine)
+        var sections: [[String: Any]] = []
+        for request in planned {
+            try Task.checkCancellation()
+            var row = request.section
+            if let id = row["id"] as? String, required.contains(id) {
+                let catalog = try await request.load()
+                row["items"] = catalog["items"] ?? []
+                row["totalCount"] = catalog["total"]
+            }
+            // Keep skipped row names/IDs so Settings can enable them again.
+            sections.append(row)
+        }
+        return sections
+    }
+
+    static func requiredHomeSectionIDs(
+        _ sections: [[String: Any]], hidden: Set<String>, spotlight: [String]?, combine: Bool
+    ) -> Set<String> {
+        let ids = sections.compactMap { $0["id"] as? String }
+        let available = Set(ids)
+        let spotlightIDs: Set<String>
+        if let spotlight, spotlight.isEmpty || !available.isDisjoint(with: spotlight) {
+            spotlightIDs = Set(spotlight)
+        } else {
+            // Discover populated candidates once before Spotlight chooses its
+            // initial sources, or replaces sources removed by the server.
+            spotlightIDs = available
+        }
+        var required = available.subtracting(hidden).union(spotlightIDs.intersection(available))
+        if combine {
+            let resume = sections.filter { $0["sectionType"] as? String == "continue_watching" }
+            let next = sections.filter { $0["sectionType"] as? String == "next_up" }
+            let playbackIDs = Set((resume + next).compactMap { $0["id"] as? String })
+            let combinedID = resume.first?["id"] as? String ?? "continue_watching"
+            // Next Up can feed a visible combined row even when its own row is hidden.
+            if !hidden.contains(combinedID) {
+                required.formUnion(playbackIDs)
+            } else {
+                required.subtract(playbackIDs.subtracting(spotlightIDs))
+            }
+        }
+        return required
     }
 
     func supplyingCombinedNextUp(_ sections: [[String:Any]], enabled: Bool) async throws -> [[String:Any]] {

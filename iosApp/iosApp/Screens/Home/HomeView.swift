@@ -89,10 +89,10 @@ struct HomeView: View {
         .task {
             homeSectionPreferences.refresh()
             spotlightPreferences.refresh()
-            spotlightPreferences.initializeIfNeeded(from: viewModel.regularSections)
+            spotlightPreferences.initializeIfNeeded(from: viewModel.sections)
         }
-        .onChange(of: viewModel.regularSections.map(\.id), initial: true) { _, _ in
-            spotlightPreferences.initializeIfNeeded(from: viewModel.regularSections)
+        .onChange(of: viewModel.sections.map(\.id), initial: true) { _, _ in
+            spotlightPreferences.initializeIfNeeded(from: viewModel.sections)
         }
         #else
         ZStack(alignment: .top) {
@@ -198,7 +198,7 @@ struct HomeView: View {
             #endif
             await viewModel.loadSections()
             #if os(iOS)
-            TVHomeSpotlightPreferences.shared.initializeIfNeeded(from: viewModel.regularSections)
+            TVHomeSpotlightPreferences.shared.initializeIfNeeded(from: viewModel.sections)
             #endif
         }
         #if !os(iOS)
@@ -261,7 +261,7 @@ struct HomeView: View {
                     if displayedSections.isEmpty || TVHomeSpotlightPreferences.shared.slides(from: viewModel.regularSections).isEmpty {
                         Color.clear.frame(height: geometry.safeAreaInsets.top + 16)
                     }
-                    PhoneDiscoverySpotlight(sections: displayedSections.isEmpty ? [] : viewModel.regularSections, height: min(650, max(420, geometry.size.height * 0.68)) - geometry.safeAreaInsets.top, topSafeAreaInset: geometry.safeAreaInsets.top) { item in
+                    PhoneDiscoverySpotlight(sections: displayedSections.isEmpty ? [] : viewModel.sections, height: min(650, max(420, geometry.size.height * 0.68)) - geometry.safeAreaInsets.top, topSafeAreaInset: geometry.safeAreaInsets.top) { item in
                         navigateToDetail(item.type == "episode" ? (item.seriesId ?? item.contentId) : item.contentId, item)
                     }
                     #endif
@@ -461,13 +461,11 @@ private struct PhoneDiscoverySpotlight: View {
     @State private var selection = 0
     @State private var visible = false
     @State private var cycleStarted = Date()
-    @State private var embyMetadata: [String: ItemDetail] = [:]
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var slides: [TVHomeSpotlightSlide] { preferences.slides(from: sections) }
     private func spotlightMetadata(for item: SectionItem) -> String {
-        let id = item.type == "episode" ? (item.seriesId ?? item.contentId) : item.contentId
-        let metadata = embyMetadata[id]
+        let metadata = TVHomeMetadataCache.shared.spotlightMetadata(for: item)
         let classification = metadata?.contentRating ?? item.contentRating
         let year = metadata?.year ?? item.year
         let genre = metadata?.genres?.first ?? item.genres?.first
@@ -565,15 +563,6 @@ private struct PhoneDiscoverySpotlight: View {
                 withTransaction(transaction) { selection = selectedIndex }
             }
             .onChange(of: selectedIndex) { _, _ in cycleStarted = Date() }
-            .task(id: slides[selectedIndex].item.contentId) {
-                guard MediaServerProvider.active == .emby else { return }
-                let item = slides[selectedIndex].item
-                let id = item.type == "episode" ? (item.seriesId ?? item.contentId) : item.contentId
-                guard embyMetadata[id] == nil else { return }
-                if let detail = try? await VividAPI.shared.itemDetail(contentId: id), !Task.isCancelled {
-                    embyMetadata[id] = detail
-                }
-            }
             .task(id: "\(visible)-\(scenePhase == .active)-\(reduceMotion)-\(selectedIndex)") {
                 guard visible, scenePhase == .active, !reduceMotion else { return }
                 cycleStarted = Date()

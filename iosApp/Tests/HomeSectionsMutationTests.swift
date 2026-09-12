@@ -3,6 +3,20 @@ import XCTest
 @testable import Vivid
 
 final class HomeSectionsMutationTests: XCTestCase {
+    @MainActor
+    func testHiddenEmptyRowRemainsInSettingsWithoutEnteringHome() throws {
+        let key = "test.home-hidden.\(UUID().uuidString)"
+        let defaults = SharedDefaults.shared
+        defer { defaults.removeObject(forKey: key) }
+        defaults.set(try JSONSerialization.data(withJSONObject: [
+            "orderedSectionIds": ["hidden"], "hiddenSectionIds": ["hidden"]
+        ]), forKey: key)
+        let preferences = HomeSectionPreferences(defaults: defaults, storageKey: { key })
+        let rows = [makeSection(id: "hidden", type: "latest", totalCount: nil, items: [])]
+        XCTAssertTrue(preferences.arrangedSections(rows).isEmpty)
+        XCTAssertEqual(preferences.arrangedSections(rows, includingHidden: true).map(\.id), ["hidden"])
+    }
+
     func testCombinedEmbyHomeKeepsResumeMetadataAndRemovesDuplicateNextUp() throws {
         let resume = try makeItem(contentId: "episode", progressUpdatedAt: "resume-state")
         let duplicate = try makeItem(contentId: "episode", progressUpdatedAt: nil)

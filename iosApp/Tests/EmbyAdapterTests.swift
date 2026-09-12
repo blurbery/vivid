@@ -23,6 +23,81 @@ final class EmbyAdapterTests: XCTestCase {
         ))
     }
 
+    func testHiddenHomeRowsSkipLoadingButRemainAvailableForSettingsAndSpotlight() async throws {
+        var loaded: [String] = []
+        let requests = ["visible", "hidden", "spotlight"].map { id in
+            EmbyAdapter.HomeSectionRequest(section: adapter.section(id, id, [:])) {
+                loaded.append(id)
+                return ["items": [["contentId": id]], "total": 1]
+            }
+        }
+        let rows = try await adapter.loadHomeSections(
+            requests, hidden: ["hidden", "spotlight"], spotlight: ["spotlight"], combine: false
+        )
+        XCTAssertEqual(loaded, ["visible", "spotlight"])
+        XCTAssertEqual(rows.compactMap { $0["id"] as? String }, ["visible", "hidden", "spotlight"])
+        XCTAssertEqual(rows[1]["title"] as? String, "hidden")
+        XCTAssertTrue((rows[1]["items"] as? [Any])?.isEmpty == true)
+        XCTAssertNil(rows[1]["totalCount"])
+
+        loaded = []
+        _ = try await adapter.loadHomeSections(requests, hidden: [], spotlight: ["spotlight"], combine: false)
+        XCTAssertEqual(loaded, ["visible", "hidden", "spotlight"])
+    }
+
+    func testCombinedHomeFetchRetainsHiddenNextUpOnlyWhenConsumed() {
+        let definitions = [
+            adapter.homeSection(["Id": "resume", "SectionType": "Resume"], catalog: [:]),
+            adapter.homeSection(["Id": "next", "SectionType": "NextUp"], catalog: [:])
+        ]
+        XCTAssertEqual(EmbyAdapter.requiredHomeSectionIDs(
+            definitions, hidden: ["next"], spotlight: [], combine: true
+        ), ["resume", "next"])
+        XCTAssertEqual(EmbyAdapter.requiredHomeSectionIDs(
+            definitions, hidden: ["resume"], spotlight: [], combine: true
+        ), [])
+        XCTAssertEqual(EmbyAdapter.requiredHomeSectionIDs(
+            definitions, hidden: ["resume", "next"], spotlight: ["next"], combine: true
+        ), ["next"])
+    }
+
+    func testHomeFetchMatchesInitialAndMissingSpotlightSelectionFallback() {
+        let definitions = ["a", "b", "c", "d"].map { adapter.section($0, $0, [:]) }
+        let selections: [[String]?] = [nil, ["removed"]]
+        for selected in selections {
+            XCTAssertEqual(EmbyAdapter.requiredHomeSectionIDs(
+                definitions, hidden: ["a", "b", "c", "d"], spotlight: selected, combine: false
+            ), ["a", "b", "c", "d"])
+        }
+        XCTAssertEqual(EmbyAdapter.requiredHomeSectionIDs(
+            definitions, hidden: ["a", "b", "c", "d"], spotlight: [], combine: false
+        ), [])
+    }
+
+    func testHiddenCombinedHomeDoesNotFetchSupplementalNextUp() async throws {
+        var nextUpRequests = 0
+        let adapter = stubbedAdapter { request in
+            nextUpRequests += 1
+            XCTAssertEqual(request.url?.path, "/emby/Shows/NextUp")
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        var resumeRequests = 0
+        let requests = [EmbyAdapter.HomeSectionRequest(
+            section: adapter.section("continue_watching", "Continue Watching", [:])
+        ) {
+            resumeRequests += 1
+            return ["items": [], "total": 0]
+        }]
+        _ = try await adapter.loadHomeSections(
+            requests, hidden: ["continue_watching"], spotlight: [], combine: true
+        )
+        XCTAssertEqual(resumeRequests, 0)
+        XCTAssertEqual(nextUpRequests, 0)
+        _ = try await adapter.loadHomeSections(requests, hidden: [], spotlight: [], combine: true)
+        XCTAssertEqual(resumeRequests, 1)
+        XCTAssertEqual(nextUpRequests, 1)
+    }
+
     func testDownloadConversionRequiresDownloadAndSyncPermissions() async throws {
         for (downloads, conversion) in [(false, false), (false, true), (true, false)] {
             let adapter = stubbedAdapter { request in
