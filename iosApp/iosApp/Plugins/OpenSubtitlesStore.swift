@@ -10,18 +10,19 @@ final class OpenSubtitlesStore {
     private let client = OpenSubtitlesClient()
     private var loadedScope: String?
     private var key = ""
+    private var downloads = OpenSubtitleDownloadCache()
     private(set) var revision = UUID()
     private(set) var isConnected = false
     var scope: String? {
-        guard let account = TVSavedAccountStore.shared.activeAccount, !account.requiresLogin,
-              account.serverID == ServerRegistry.shared.activeServerId,
-              let profile = AuthService.shared.profileId, !profile.isEmpty else { return nil }
+        guard let account = VividCloudPreferences.matchingActiveAccount,
+              let profile = account.profile?.id else { return nil }
         return VividCloudPreferences.pluginScope(server: account.serverID, user: account.userID, profile: profile)
     }
     private func storageKey(_ scope: String) -> String { "vivid.opensubtitles.key.v1." + scope }
     func reload() {
         let storedKey = scope.flatMap { keychain.get(storageKey($0)) } ?? ""
         guard loadedScope != scope || key != storedKey else { return }
+        downloads = OpenSubtitleDownloadCache()
         loadedScope = scope
         key = storedKey
         isConnected = !key.isEmpty
@@ -36,7 +37,8 @@ final class OpenSubtitlesStore {
         try await client.validate(key: candidate)
         try Task.checkCancellation()
         guard self.scope == scope, revision == generation else { throw OpenSubtitlesError.context }
-        guard keychain.set(candidate, for: storageKey(scope)) else { throw MDBListFailure.storage }
+        try VividCloudPreferences.shared.setPluginCredential(candidate, for: storageKey(scope))
+        if key != candidate { downloads = OpenSubtitleDownloadCache() }
         key = candidate
         isConnected = true
         revision = UUID()
@@ -44,7 +46,9 @@ final class OpenSubtitlesStore {
     }
     func disconnect() throws {
         reload()
-        guard let scope, keychain.delete(storageKey(scope)) else { throw MDBListFailure.storage }
+        guard let scope else { throw MDBListFailure.storage }
+        try VividCloudPreferences.shared.setPluginCredential(nil, for: storageKey(scope))
+        downloads = OpenSubtitleDownloadCache()
         key = ""
         isConnected = false
         revision = UUID()
@@ -62,8 +66,10 @@ final class OpenSubtitlesStore {
     func download(_ result: OpenSubtitleResult, expectedRevision: UUID) async throws -> Data {
         reload()
         guard isConnected, let scope, revision == expectedRevision else { throw OpenSubtitlesError.context }
+        if let cached = downloads.value(for: result.id) { return cached }
         let data = try await client.download(result, key: key)
         guard self.scope == scope, revision == expectedRevision else { throw OpenSubtitlesError.context }
+        downloads.insert(data, for: result.id)
         return data
     }
 }

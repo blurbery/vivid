@@ -206,6 +206,7 @@ final class TVSeerrConnectionStore {
     func cloudPreferencesChanged() { clients.removeAll(); revision += 1 }
     var configuration: TVSeerrConfiguration? {
         _ = revision
+        guard VividCloudPreferences.matchingActiveAccount != nil else { return nil }
         guard let string = keychain.get(key), let data = string.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(TVSeerrConfiguration.self, from: data)
     }
@@ -213,6 +214,7 @@ final class TVSeerrConnectionStore {
     var isConfigured: Bool { configuration != nil }
 
     func connect(url: String, username: String, password: String) async throws {
+        guard VividCloudPreferences.matchingActiveAccount != nil else { throw CancellationError() }
         let start = identity
         let cleanedURL = try TVSeerrClient.validatedURL(url).absoluteString
         let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -233,6 +235,7 @@ final class TVSeerrConnectionStore {
         VividCloudPreferences.shared.schedule()
     }
     func disconnect() throws {
+        guard VividCloudPreferences.matchingActiveAccount != nil else { throw CancellationError() }
         guard keychain.delete(key) else { throw TVSeerrError(message: "Couldn't remove the saved connection.") }
         clients.removeAll()
         revision += 1

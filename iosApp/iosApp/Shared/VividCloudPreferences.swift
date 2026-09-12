@@ -15,6 +15,25 @@ enum VividCloudPreferencePolicy {
             return lhs.writer >= rhs.writer ? lhs : rhs
         }
     }
+    /// A missing local credential is not an explicit disconnect. Keep the
+    /// last known value so an update or unavailable Keychain cannot erase it.
+    static func capturedPluginCredential(_ observed: Data?, previous: VividCloudPreference?,
+                                         modifiedAt: Date, writer: String) -> VividCloudPreference? {
+        guard let observed else { return previous }
+        guard previous?.value != observed else { return previous }
+        return VividCloudPreference(value: observed, modifiedAt: modifiedAt, writer: writer)
+    }
+
+    static func needsCredentialRestore(_ entry: VividCloudPreference, stored: Data?) -> Bool {
+        entry.value != stored
+    }
+
+    static func matchesAccountContext(server: String, profile: String,
+                                      accountServer: String, accountProfile: String?,
+                                      requiresLogin: Bool) -> Bool {
+        !requiresLogin && !profile.isEmpty && server == accountServer && profile == accountProfile
+    }
+
     static func ordered(_ identities: [String], preferred: [String]) -> [String] {
         let available = Set(identities)
         var seen = Set<String>()
@@ -47,6 +66,7 @@ final class VividCloudPreferences {
     private var entries: [String: VividCloudPreference] = [:]
     private var loaded = false
     private var capturedOnce = false
+    private var credentialSyncPending = false
     private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -72,7 +92,8 @@ final class VividCloudPreferences {
             let previous = self.entries
             guard (try? self.capture(accounts: TVSavedAccountStore.shared.accounts)) != nil else { return }
             try? await self.captureSharedSettings()
-            guard previous != self.entries else { return }
+            guard previous != self.entries || self.credentialSyncPending else { return }
+            self.credentialSyncPending = false
             await VividCloudAccountSync.shared.synchronize()
         }
     }
@@ -92,7 +113,8 @@ final class VividCloudPreferences {
     private var settingRows: [String: EffectiveSettingValue] = [:]
 
     private func activeSettingsIdentity() -> HTTPRequestIdentity? {
-        guard let server = ServerRegistry.shared.activeServer,
+        guard Self.matchingActiveAccount != nil,
+              let server = ServerRegistry.shared.activeServer,
               let profile = AuthService.shared.profileId, !profile.isEmpty,
               AuthService.shared.isLoggedIn else { return nil }
         return HTTPRequestIdentity(serverId: server.id, serverURL: server.url, profileId: profile,
@@ -198,8 +220,9 @@ final class VividCloudPreferences {
             let scope = Data("\(account.serverID)|\(profile)".utf8).base64EncodedString()
             let tmdb = Self.credentialKey("tmdb", server: account.serverID, profile: profile)
             let seerr = Self.credentialKey("seerr", server: account.serverID, profile: profile)
-            var tmdbAliases = ["vivid.tmdb.credential.v1.profile." + scope]
-            if TVSavedAccountStore.shared.activeID == account.id { tmdbAliases.append("vivid.tmdb.credential.v1") }
+            // An old global credential has no provable owner. Never assign it
+            // to whichever account happens to become active first.
+            let tmdbAliases = ["vivid.tmdb.credential.v1.profile." + scope]
             let seerrAliases = [account.id, profile].map { context in
                 let raw = [account.serverID, context, profile].joined(separator: "\u{0}")
                 return "vivid.seerr." + SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -252,9 +275,20 @@ final class VividCloudPreferences {
         let scope = Data("\(server)|\(profile)".utf8).base64EncodedString()
         return "vivid.cloud.credential.\(name).\(scope)"
     }
+    static var matchingActiveAccount: TVSavedAccount? {
+        guard AuthService.shared.isLoggedIn,
+              let account = TVSavedAccountStore.shared.activeAccount,
+              let server = ServerRegistry.shared.activeServerId,
+              let profile = AuthService.shared.profileId,
+              VividCloudPreferencePolicy.matchesAccountContext(
+                server: server, profile: profile, accountServer: account.serverID,
+                accountProfile: account.profile?.id, requiresLogin: account.requiresLogin
+              ) else { return nil }
+        return account
+    }
     static func activeCredentialKey(_ name: String) -> String? {
-        guard let server = ServerRegistry.shared.activeServerId, let profile = AuthService.shared.profileId, !profile.isEmpty else { return nil }
-        return credentialKey(name, server: server, profile: profile)
+        guard let account = matchingActiveAccount, let profile = account.profile?.id else { return nil }
+        return credentialKey(name, server: account.serverID, profile: profile)
     }
     private func encodedDefault(_ key: String) throws -> Data? {
         guard let value = SharedStorage.suite.object(forKey: key) ?? UserDefaults.standard.object(forKey: key) else { return nil }
@@ -271,6 +305,33 @@ final class VividCloudPreferences {
         catch { entries = previous; throw error }
     }
 
+    /// Record explicit plugin edits immediately, including disconnect tombstones.
+    /// Background observation cannot distinguish a missing key from a failed read.
+    func setPluginCredential(_ value: String?, for key: String) throws {
+        try load()
+        let name = "keychain|" + key
+        let previous = entries[name]
+        let oldValue = keychain.get(key)
+        let written = value.map { keychain.set($0, for: key) } ?? keychain.delete(key)
+        guard written else { throw ServerRegistryError.persistenceFailed }
+        entries[name] = VividCloudPreference(value: value.map { Data($0.utf8) },
+                                             modifiedAt: Date(), writer: writer)
+        do { try persist() }
+        catch {
+            entries[name] = previous
+            if let oldValue { _ = keychain.set(oldValue, for: key) }
+            else { _ = keychain.delete(key) }
+            throw error
+        }
+        credentialSyncPending = true
+        schedule()
+    }
+
+    private func isPluginCredential(_ name: String) -> Bool {
+        name.hasPrefix("keychain|vivid.mdblist.key.v1.") ||
+        name.hasPrefix("keychain|vivid.opensubtitles.key.v1.")
+    }
+
     func capture(accounts: [TVSavedAccount]) throws -> [String: VividCloudPreference] {
         try load()
         var values: [String: Data] = [:]
@@ -283,6 +344,14 @@ final class VividCloudPreferences {
         var changed = false
         for key in eligible {
             let value = values[key]
+            if isPluginCredential(key) {
+                let observation = VividCloudPreferencePolicy.capturedPluginCredential(
+                    value, previous: entries[key],
+                    modifiedAt: capturedOnce ? Date() : .distantPast, writer: writer
+                )
+                if entries[key] != observation { entries[key] = observation; changed = true }
+                continue
+            }
             if let old = entries[key] {
                 guard old.value != value else { continue }
                 entries[key] = VividCloudPreference(value: value, modifiedAt: Date(), writer: writer)
@@ -306,8 +375,9 @@ final class VividCloudPreferences {
         applying = true
         defer { applying = false }
         var changed = false
-        for (name, entry) in merged where local[name] != entry {
+        for (name, entry) in merged {
             if name.hasPrefix("defaults|"), keys.contains(String(name.dropFirst(9))) {
+                guard local[name] != entry else { continue }
                 let key = String(name.dropFirst(9))
                 if let data = entry.value {
                     let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
@@ -318,6 +388,8 @@ final class VividCloudPreferences {
                 changed = true
             } else if name.hasPrefix("keychain|"), credentials.contains(String(name.dropFirst(9))) {
                 let key = String(name.dropFirst(9))
+                let stored = keychain.get(key).map { Data($0.utf8) }
+                guard local[name] != entry || VividCloudPreferencePolicy.needsCredentialRestore(entry, stored: stored) else { continue }
                 if let value = entry.value {
                     guard let text = String(data: value, encoding: .utf8), keychain.set(text, for: key) else { throw ServerRegistryError.persistenceFailed }
                 } else if !keychain.delete(key) { throw ServerRegistryError.persistenceFailed }

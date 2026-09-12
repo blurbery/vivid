@@ -2,6 +2,23 @@ import XCTest
 @testable import Vivid
 
 final class MDBListClientTests: XCTestCase {
+    func testSubtitleDownloadCacheReusesDataAndBoundsStorage() {
+        var cache = OpenSubtitleDownloadCache(byteLimit: 6, countLimit: 2)
+        cache.insert(Data([1, 2, 3]), for: 1)
+        cache.insert(Data([4, 5, 6]), for: 2)
+        XCTAssertEqual(cache.value(for: 1), Data([1, 2, 3]))
+        cache.insert(Data([7, 8, 9]), for: 3)
+        XCTAssertNil(cache.value(for: 2))
+        XCTAssertEqual(cache.entries.count, 2)
+        cache.insert(Data([0]), for: 1)
+        XCTAssertEqual(cache.entries.count, 2)
+        XCTAssertEqual(cache.value(for: 1), Data([0]))
+        cache.insert(Data(repeating: 1, count: 7), for: 4)
+        XCTAssertNil(cache.value(for: 4))
+        cache = OpenSubtitleDownloadCache(byteLimit: 6, countLimit: 2)
+        XCTAssertNil(cache.value(for: 1))
+    }
+
     func testMDBListProgressOnlyShowsKnownTotalsAndClampsCounts() {
         XCTAssertNil(MDBListSyncProgress(step: 2, label: "Reading history").fraction)
         XCTAssertEqual(MDBListSyncProgress(step: 3, label: "Movies", completed: 5, total: 20).fraction, 0.25)

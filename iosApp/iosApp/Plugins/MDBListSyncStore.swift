@@ -47,9 +47,8 @@ final class MDBListSyncStore {
 
     var contextKey: String { scope ?? "signed-out" }
     private var scope: String? {
-        guard let account = TVSavedAccountStore.shared.activeAccount,
-              !account.requiresLogin, account.serverID == ServerRegistry.shared.activeServerId,
-              let profile = AuthService.shared.profileId, !profile.isEmpty else { return nil }
+        guard let account = VividCloudPreferences.matchingActiveAccount,
+              let profile = account.profile?.id else { return nil }
         return VividCloudPreferences.pluginScope(server: account.serverID, user: account.userID, profile: profile)
     }
     private func credentialKey(_ scope: String) -> String { "vivid.mdblist.key.v1." + scope }
@@ -90,7 +89,7 @@ final class MDBListSyncStore {
         let userID = try await client.validate(key: key)
         try Task.checkCancellation()
         guard scope == capturedScope, revision == capturedRevision else { throw CancellationError() }
-        guard keychain.set(key, for: credentialKey(capturedScope)) else { throw MDBListFailure.storage }
+        try VividCloudPreferences.shared.setPluginCredential(key, for: credentialKey(capturedScope))
         if state.userID != userID {
             state = Checkpoint(userID: userID)
             imports = ImportState()
@@ -110,7 +109,7 @@ final class MDBListSyncStore {
     func disconnect() throws {
         reload()
         guard let scope else { throw MDBListFailure.noProfile }
-        guard keychain.delete(credentialKey(scope)) else { throw MDBListFailure.storage }
+        try VividCloudPreferences.shared.setPluginCredential(nil, for: credentialKey(scope))
         credential = ""
         revision = UUID()
         isConnected = false
@@ -261,8 +260,9 @@ final class MDBListSyncStore {
                 status = pendingWatchlistWork ? "This batch is synced. More watchlist changes remain for the next check." : "Synced. Imported history stays in Vivid."
             }
         } catch is CancellationError {
-            if revision == generation { status = "Connected. Sync paused." }
+            if revision == generation { try? save(); status = "Connected. Sync paused." }
         } catch {
+            if revision == generation { try? save() }
             if revision == generation { status = (error as? MDBListFailure)?.localizedDescription ?? "Sync interrupted. It will try again later." }
             if case MDBListFailure.quota = error { nextSync = Date().addingTimeInterval(3600) }
         }

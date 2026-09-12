@@ -213,3 +213,28 @@ struct OpenSubtitleSessionFiles {
         return urls
     }
 }
+
+/// Session-only, bounded reuse. The owning store clears this on account/key changes.
+struct OpenSubtitleDownloadCache {
+    private(set) var entries: [Int: Data] = [:]
+    private var order: [Int] = []
+    let byteLimit: Int
+    let countLimit: Int
+    init(byteLimit: Int = 10 * 1024 * 1024, countLimit: Int = 8) {
+        self.byteLimit = max(0, byteLimit)
+        self.countLimit = max(0, countLimit)
+    }
+    mutating func value(for id: Int) -> Data? {
+        guard let value = entries[id] else { return nil }
+        order.removeAll { $0 == id }; order.append(id)
+        return value
+    }
+    mutating func insert(_ value: Data, for id: Int) {
+        guard !value.isEmpty, value.count <= byteLimit, countLimit > 0 else { return }
+        entries[id] = value
+        order.removeAll { $0 == id }; order.append(id)
+        while entries.count > countLimit || entries.values.reduce(0, { $0 + $1.count }) > byteLimit {
+            entries.removeValue(forKey: order.removeFirst())
+        }
+    }
+}

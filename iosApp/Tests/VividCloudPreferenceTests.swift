@@ -10,6 +10,44 @@ final class VividCloudPreferenceTests: XCTestCase {
         }
     }
 
+    func testAccountSwitchDoesNotUseAnotherServerOrProfilesCredentials() {
+        XCTAssertTrue(VividCloudPreferencePolicy.matchesAccountContext(server: "silo", profile: "a",
+            accountServer: "silo", accountProfile: "a", requiresLogin: false))
+        for (server, profile, login) in [("silo", "b", false), ("emby", "a", false), ("silo", "a", true), ("silo", "", false)] {
+            XCTAssertFalse(VividCloudPreferencePolicy.matchesAccountContext(server: server, profile: profile,
+                accountServer: "silo", accountProfile: "a", requiresLogin: login))
+        }
+        XCTAssertFalse(VividCloudPreferencePolicy.matchesAccountContext(server: "silo", profile: "a",
+            accountServer: "silo", accountProfile: nil, requiresLogin: false))
+    }
+
+    func testMissingPluginKeyPreservesSavedCredentialAndRemoteValue() {
+        let saved = VividCloudPreference(value: Data("test-key".utf8), modifiedAt: Date(timeIntervalSince1970: 10), writer: "phone")
+        let captured = VividCloudPreferencePolicy.capturedPluginCredential(nil, previous: saved,
+            modifiedAt: Date(timeIntervalSince1970: 20), writer: "tv")
+        XCTAssertEqual(captured, saved)
+        XCTAssertEqual(VividCloudPreferencePolicy.merge(["key": captured!], ["key": saved])["key"], saved)
+        XCTAssertTrue(VividCloudPreferencePolicy.needsCredentialRestore(saved, stored: nil))
+        XCTAssertFalse(VividCloudPreferencePolicy.needsCredentialRestore(saved, stored: saved.value))
+    }
+
+    func testMissingUnconfiguredPluginDoesNotCreateDeletion() {
+        XCTAssertNil(VividCloudPreferencePolicy.capturedPluginCredential(nil, previous: nil,
+            modifiedAt: Date(), writer: "tv"))
+    }
+
+    func testExplicitPluginDisconnectStillWinsAndCanBeReconnected() {
+        let saved = VividCloudPreference(value: Data("old-key".utf8), modifiedAt: Date(timeIntervalSince1970: 10), writer: "phone")
+        let disconnected = VividCloudPreference(value: nil, modifiedAt: Date(timeIntervalSince1970: 20), writer: "phone")
+        XCTAssertEqual(VividCloudPreferencePolicy.merge(["key": saved], ["key": disconnected])["key"], disconnected)
+        XCTAssertEqual(VividCloudPreferencePolicy.capturedPluginCredential(nil, previous: disconnected,
+            modifiedAt: Date(timeIntervalSince1970: 30), writer: "tv"), disconnected)
+        XCTAssertTrue(VividCloudPreferencePolicy.needsCredentialRestore(disconnected, stored: saved.value))
+        let reconnected = VividCloudPreferencePolicy.capturedPluginCredential(Data("new-key".utf8), previous: disconnected,
+            modifiedAt: Date(timeIntervalSince1970: 30), writer: "tv")!
+        XCTAssertEqual(VividCloudPreferencePolicy.merge(["key": reconnected], ["key": disconnected])["key"], reconnected)
+    }
+
     func testIndependentEditsAndCredentialDeletionSurviveMerge() {
         let old = Date(timeIntervalSince1970: 10)
         let new = Date(timeIntervalSince1970: 20)

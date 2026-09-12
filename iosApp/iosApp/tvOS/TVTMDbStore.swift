@@ -54,31 +54,18 @@ final class TVTMDbStore {
     }
 
     func reloadForCurrentProfile(force: Bool = false) {
-        #if os(iOS)
-        guard MobileProfilePreferenceKeys.scope != nil else {
+        guard VividCloudPreferences.matchingActiveAccount != nil else {
             credential = ""
             isConfigured = false
             loadedCredentialKey = nil
             invalidate()
             return
         }
-        #endif
         let key = credentialKey
         guard force || loadedCredentialKey != key else { return }
-        if key != legacyCredentialKey, keychain.get(key) == nil, let legacy = keychain.get(legacyCredentialKey) {
+        if key != legacyCredentialKey, legacyCredentialKey != "vivid.tmdb.credential.v1", keychain.get(key) == nil, let legacy = keychain.get(legacyCredentialKey) {
             if keychain.set(legacy, for: key) { _ = keychain.delete(legacyCredentialKey) }
         }
-        #if os(iOS)
-        let legacyKey = "vivid.tmdb.credential.v1"
-        let ownerKey = "vivid.tmdb.legacyOwner"
-        if UserDefaults.standard.string(forKey: ownerKey) == nil,
-           let legacy = keychain.get(legacyKey) {
-            UserDefaults.standard.set(key, forKey: ownerKey)
-            if keychain.get(key) == nil, keychain.set(legacy, for: key) {
-                _ = keychain.delete(legacyKey)
-            }
-        }
-        #endif
         loadedCredentialKey = key
         credential = keychain.get(key) ?? ""
         isConfigured = !credential.isEmpty
@@ -87,6 +74,7 @@ final class TVTMDbStore {
 
     func connect(_ input: String) async throws {
         reloadForCurrentProfile()
+        guard VividCloudPreferences.matchingActiveAccount != nil else { throw Failure.unavailable }
         let key = credentialKey
         let context = contextKey
         let candidate = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,6 +93,7 @@ final class TVTMDbStore {
 
     func disconnect() throws {
         reloadForCurrentProfile()
+        guard VividCloudPreferences.matchingActiveAccount != nil else { throw Failure.unavailable }
         guard keychain.delete(credentialKey) else { throw Failure.storage }
         credential = ""
         isConfigured = false

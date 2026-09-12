@@ -1842,15 +1842,8 @@ enum MobileProfilePreferenceKeys {
     static func key(_ base: String) -> String {
         guard let scope else { return base }
         let scoped = "\(base).profile.\(scope)"
-        #if os(tvOS)
-        if base == "vivid.mobile.swapMenuUtilities", !UserDefaults.standard.bool(forKey: scoped + ".migrated") {
-            if UserDefaults.standard.object(forKey: scoped) == nil,
-               let legacy = UserDefaults.standard.object(forKey: "vivid.tv.swapMenuUtilities") {
-                UserDefaults.standard.set(legacy, forKey: scoped)
-            }
-            UserDefaults.standard.set(true, forKey: scoped + ".migrated")
-        }
-        #endif
+        // Global legacy choices have no account owner and must not be copied
+        // into every newly selected profile.
         return scoped
     }
 }

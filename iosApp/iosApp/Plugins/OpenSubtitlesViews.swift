@@ -78,6 +78,7 @@ struct OpenSubtitlesSearchView: View {
     @State private var busy = false
     @State private var context: OpenSubtitlePlaybackContext?
     @State private var connectionRevision: UUID?
+    @State private var successfulParameters: [String: String]?
     @State private var operation: Task<Void, Never>?
     @FocusState private var focusedField: SearchField?
     private enum SearchField: Hashable { case title, language }
@@ -120,7 +121,11 @@ struct OpenSubtitlesSearchView: View {
         guard let current = viewModel.openSubtitleContext else { message = OpenSubtitlesError.context.localizedDescription; return }
         let requested = OpenSubtitleQuery(title: query, type: current.query.type, season: current.query.season, episode: current.query.episode)
         let requestedLanguage = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        busy = true; message = nil; results = []; context = nil
+        let parameters = requested.parameters(language: requestedLanguage)
+        if context != current || connectionRevision != store.revision || successfulParameters != parameters {
+            results = []; context = nil; successfulParameters = nil
+        }
+        busy = true; message = nil
         operation = Task { @MainActor in
             defer { busy = false }
             do {
@@ -128,6 +133,7 @@ struct OpenSubtitlesSearchView: View {
                 try Task.checkCancellation()
                 guard current == viewModel.openSubtitleContext else { throw OpenSubtitlesError.context }
                 results = found; context = current; connectionRevision = OpenSubtitlesStore.shared.revision
+                successfulParameters = parameters
                 if found.isEmpty { message = "No subtitles found. Try another title or language." }
             } catch is CancellationError { }
             catch { message = error.localizedDescription }

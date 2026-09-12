@@ -35,17 +35,23 @@ Vivid’s source releases in this repository begin at `v0.6.0`.
 
 Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The Apple marketing version and GitHub source-release version are independent. Record the exact pushed source commit for each TestFlight upload; do not change the Apple marketing version to match a GitHub tag.
 
-Routine TestFlight updates retain the current marketing version and increment only that platform’s build number. Paired uploads need not share a number when their latest uploaded builds differ. Changing the Apple marketing version requires explicit approval from blurbery before archiving or uploading. The approved Apple marketing version is `0.14.3`. The latest recorded uploads are build `17` for iPhone/iPad and build `16` for tvOS; see [recorded Apple builds](#recorded-apple-builds).
+TestFlight marketing version stays `0.14.3` until blurbery explicitly approves changing it before archiving or uploading. Each authorised update uses that platform's latest uploaded App Store Connect build number plus exactly 1. iOS/iPadOS and tvOS advance independently, including paired uploads; never skip numbers just to make them match. The latest recorded uploads are build `17` for iPhone/iPad and build `16` for tvOS; these are historical records, not a substitute for checking App Store Connect. See [recorded Apple builds](#recorded-apple-builds).
 
 Apple requires TestFlight App Review for the first build of a version; later builds within that version may not need a full review. Keeping the version stable avoids introducing a new version for every beta update, but does not guarantee immediate approval. Returning to a previously reviewed marketing version does not guarantee that a new build will skip review; expiring another build does not provide that guarantee either. See [Apple’s TestFlight App Review guidance](https://developer.apple.com/help/glossary/testflight-app-review/).
 
-TestFlight build numbers advance from the builds recorded in App Store Connect, not from local development or device-test builds. Local test numbers do not reserve TestFlight numbers. Check the uploaded history before each release. Paired iOS and tvOS uploads use the same number; a single-platform update increments from that platform’s latest uploaded build and leaves the other platform’s existing upload unchanged. Every embedded extension must match its containing app. The committed baseline is 16; confirm the latest uploaded number rather than assuming the baseline has been uploaded.
+Check the uploaded history before each release, including builds still processing. Local development and device-test builds do not reserve TestFlight numbers, and GitHub release versions do not control them. A single-platform update leaves the other platform's uploaded build unchanged. Every embedded extension must match its containing app. If the latest uploaded number cannot be verified or the next number is unavailable, stop and report the conflict rather than guessing, reusing or silently skipping a number. Do not assume the committed baseline has been uploaded.
 
 `iosApp/project.yml` is the committed source for the Apple marketing-version and build-number baseline shared by all shippable targets. TestFlight archives must retain that approved marketing version. The tag resolver in `scripts/ci/resolve-marketing-version.sh` remains available for source-tagged unsigned builds; it must not automatically select the marketing version for TestFlight. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives and their extensions before upload.
 
 The app does not query GitHub APIs at runtime. A local or simulator build is not an uploaded TestFlight binary, even when its version and counter match. Identify distribution by the actual uploaded archive and source revision.
 
 ## Release notes
+
+### TestFlight test groups
+
+Every user-authorised Vivid TestFlight upload includes distribution to the existing internal and external test groups for that platform, unless the user explicitly limits the audience. After processing, attach the exact uploaded build to those groups, save relevant What to Test notes, and submit for Beta App Review when required. Verify group assignment and actual availability separately; report processing, review or permission blockers as pending, never as distributed. Reuse existing groups and testers; do not create groups, invite new testers or change public-link settings without explicit permission. If the intended groups are ambiguous, ask before assigning. This standing distribution preference does not independently authorise a new upload.
+
+### Release note format
 
 An owner-requested housekeeping commit may include `[skip release]`. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release. Ordinary commits retain the normal versioning rules.
 
