@@ -97,10 +97,11 @@ extension VividAPI {
 
     /// Report local progression so the server row reflects reality. Only
     /// `downloading` / `completed` are accepted.
-    func patchDownloadStatus(id: String, status: String) async throws {
+    func patchDownloadStatus(id: String, status: String, auth: CapturedOrdinaryRequestAuth? = nil) async throws {
         try await http.patchVoid(
             "/api/v1/downloads/\(id)",
-            body: DownloadStatusUpdate(status: status)
+            body: DownloadStatusUpdate(status: status),
+            expectedAuth: auth
         )
     }
 
@@ -108,8 +109,8 @@ extension VividAPI {
         try await http.delete("/api/v1/downloads/\(id)")
     }
 
-    func fetchManifest(downloadId: String) async throws -> OfflineManifest {
-        try await http.get("/api/v1/downloads/\(downloadId)/manifest")
+    func fetchManifest(downloadId: String, auth: CapturedOrdinaryRequestAuth) async throws -> OfflineManifest {
+        try await http.get("/api/v1/downloads/\(downloadId)/manifest", expectedAuth: auth)
     }
 
     func fetchBatchManifests(batchId: String) async throws -> [OfflineManifest] {
@@ -122,23 +123,22 @@ extension VividAPI {
     /// Fetch the raw bytes of an authenticated proxy asset (artwork or
     /// subtitle). `path` is an API-relative path taken from the manifest
     /// (`artwork_urls.*` / `subtitles[].fetch_url`).
-    func fetchDownloadAssetData(path: String) async throws -> Data {
-        if MediaServerProvider.active == .emby { return try await EmbyConnection.current().assetData(path) }
+    func fetchDownloadAssetData(path: String, auth: CapturedOrdinaryRequestAuth) async throws -> Data {
+        if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
+            return try await EmbyConnection.current(matching: auth).assetData(path)
+        }
         let location = try DownloadAssetRequestLocation.resolve(
             path,
-            relativeTo: await currentServerUrl()
+            relativeTo: auth.account.serverURL
         )
-        return try await http.getData(location.path, query: location.query)
+        return try await http.getData(location.path, query: location.query, expectedAuth: auth)
     }
 
     /// Build the absolute file-endpoint URL for a download, resolved
     /// against the captured account origin. Used by the background downloader.
     func downloadFileURL(downloadId: String, auth: CapturedOrdinaryRequestAuth) async -> URL? {
         if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
-            guard let connection = try? await EmbyConnection.current(),
-                  connection.identity?.account == auth.account,
-                  connection.identity?.profileId == auth.profileId,
-                  connection.identity?.profileToken == auth.profileToken else { return nil }
+            guard let connection = try? await EmbyConnection.current(matching: auth) else { return nil }
             return try? await EmbyDownloads.shared.fileURL(id:downloadId,connection:connection)
         }
         let base = auth.account.serverURL

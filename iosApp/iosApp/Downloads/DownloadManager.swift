@@ -886,12 +886,12 @@ final class DownloadManager {
               pipelineIsCurrent(recordId: recordId, generation: generation),
               auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return }
         do {
-            let manifest = try await VividAPI.shared.fetchManifest(downloadId: recordId)
+            let manifest = try await VividAPI.shared.fetchManifest(downloadId: recordId, auth: auth)
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             await persistManifest(manifest, recordId: recordId, generation: generation)
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             applyManifestDisplay(manifest, recordId: recordId)
-            await fetchArtwork(manifest, recordId: recordId, generation: generation)
+            await fetchArtwork(manifest, recordId: recordId, generation: generation, auth: auth)
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             try await startMediaTransfer(recordId: recordId, generation: generation, auth: auth)
         } catch {
@@ -916,7 +916,7 @@ final class DownloadManager {
         record.localStatus = .downloading
         file.records[recordId] = record
         persist()
-        Task { try? await VividAPI.shared.patchDownloadStatus(id: recordId, status: "downloading") }
+        Task { try? await VividAPI.shared.patchDownloadStatus(id: recordId, status: "downloading", auth: auth) }
     }
 
     private func persistManifest(_ manifest: OfflineManifest, recordId: String, generation: UInt64) async {
@@ -960,7 +960,7 @@ final class DownloadManager {
         persist()
     }
 
-    private func fetchArtwork(_ manifest: OfflineManifest, recordId: String, generation: UInt64) async {
+    private func fetchArtwork(_ manifest: OfflineManifest, recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async {
         let preferredPosterPath = file.records[recordId]?.preferredPosterPath
         let kinds: [(kind: String, path: String?, filename: String)] = [
             ("poster", preferredPosterPath ?? manifest.artworkUrls?.poster, "poster.jpg"),
@@ -973,7 +973,7 @@ final class DownloadManager {
             // omits artwork_urls.* (omitempty) when a title has no poster/
             // backdrop/logo, so synthesizing a path here would guarantee a 404.
             guard let path = entry.path else { continue }
-            guard let data = try? await VividAPI.shared.fetchDownloadAssetData(path: path),
+            guard let data = try? await VividAPI.shared.fetchDownloadAssetData(path: path, auth: auth),
                   pipelineIsCurrent(recordId: recordId, generation: generation),
                   !data.isEmpty,
                   let url = absoluteFileURLForNewAsset(recordId: recordId, filename: entry.filename) else {

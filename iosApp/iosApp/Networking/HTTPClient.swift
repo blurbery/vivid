@@ -230,16 +230,17 @@ actor HTTPClient {
 
     func get<T: Decodable>(
         _ path: String,
-        query: [String: String] = [:]
+        query: [String: String] = [:],
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil
     ) async throws -> T {
         #if os(iOS) || os(tvOS)
         if T.self == ItemDetail.self || T.self == WatchDetail.self || T.self == EpisodesResponse.self {
             let auth = await tokenStore.captureOrdinaryRequestAuth()
-            let value: T = try await send(method: "GET", path: path, query: query, body: Optional<String>.none)
+            let value: T = try await send(method: "GET", path: path, query: query, body: Optional<String>.none, expectedAuth: expectedAuth)
             return await MDBListSyncStore.shared.decorate(value, expected: auth)
         }
         #endif
-        return try await send(method: "GET", path: path, query: query, body: Optional<String>.none)
+        return try await send(method: "GET", path: path, query: query, body: Optional<String>.none, expectedAuth: expectedAuth)
     }
 
     /// Probe a candidate server without mutating global routing state or
@@ -352,17 +353,18 @@ actor HTTPClient {
     func patchVoid(
         _ path: String,
         body: (any Encodable)? = nil,
-        query: [String: String] = [:]
+        query: [String: String] = [:],
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil
     ) async throws {
-        _ = try await sendRaw(method: "PATCH", path: path, query: query, body: body)
+        _ = try await sendRaw(method: "PATCH", path: path, query: query, body: body, expectedAuth: expectedAuth)
     }
 
     /// GET an endpoint that returns raw bytes (not JSON) — e.g. the
     /// download artwork/subtitle proxies. Goes through the same auth +
     /// 401-refresh path as the decoding `get`, but hands the caller the
     /// undecoded body.
-    func getData(_ path: String, query: [String: String] = [:]) async throws -> Data {
-        try await sendRaw(method: "GET", path: path, query: query, body: Optional<String>.none)
+    func getData(_ path: String, query: [String: String] = [:], expectedAuth: CapturedOrdinaryRequestAuth? = nil) async throws -> Data {
+        try await sendRaw(method: "GET", path: path, query: query, body: Optional<String>.none, expectedAuth: expectedAuth)
     }
 
     /// Send a request with a caller-supplied body and extra headers, doing no
@@ -745,9 +747,10 @@ actor HTTPClient {
         path: String,
         query: [String: String],
         body: (any Encodable)?,
-        timeout: HTTPTimeout = .standard
+        timeout: HTTPTimeout = .standard,
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil
     ) async throws -> T {
-        let data = try await sendRaw(method: method, path: path, query: query, body: body, timeout: timeout)
+        let data = try await sendRaw(method: method, path: path, query: query, body: body, timeout: timeout, expectedAuth: expectedAuth)
         if data.isEmpty, let empty = EmptyResponse.empty as? T {
             return empty
         }
@@ -882,13 +885,15 @@ actor HTTPClient {
         query: [String: String],
         body: (any Encodable)?,
         quietStatuses: Set<Int> = [],
-        timeout: HTTPTimeout = .standard
+        timeout: HTTPTimeout = .standard,
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil
     ) async throws -> Data {
         try await performWithAuthRetry(
             method: method,
             path: path,
             quietStatuses: quietStatuses,
-            timeout: timeout
+            timeout: timeout,
+            expectedAuth: expectedAuth
         ) { serverUrl in
             try self.buildRequest(
                 serverUrl: serverUrl,
@@ -916,13 +921,22 @@ actor HTTPClient {
         quietStatuses: Set<Int> = [],
         timeout: HTTPTimeout,
         expectedAccount: RefreshAccountIdentity? = nil,
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil,
         makeRequest: (String) throws -> URLRequest
     ) async throws -> (Data, HTTPURLResponse) {
         let dispatchRevision = try captureRequestDispatchRevision()
         if let requestCaptureBarrier {
             await requestCaptureBarrier()
         }
-        let capturedAuth = await tokenStore.captureOrdinaryRequestAuth()
+        let capturedAuth: CapturedOrdinaryRequestAuth?
+        if let expectedAuth {
+            guard let matchingAuth = await tokenStore.currentOrdinaryRequestAuth(matchingIdentityOf: expectedAuth) else {
+                throw HTTPError.requestIdentityChanged
+            }
+            capturedAuth = matchingAuth
+        } else {
+            capturedAuth = await tokenStore.captureOrdinaryRequestAuth()
+        }
         if let expectedAccount,
            capturedAuth?.account != expectedAccount {
             throw HTTPError.requestIdentityChanged

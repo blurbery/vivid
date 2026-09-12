@@ -48,6 +48,16 @@ struct EmbyConnection: Sendable {
         return Self(serverURL: auth.account.serverURL, token: token, userID: userID, identity: auth)
     }
 
+    static func current(matching expected: CapturedOrdinaryRequestAuth) async throws -> Self {
+        let connection = try await current()
+        guard connection.identity?.account == expected.account,
+              connection.identity?.profileId == expected.profileId,
+              connection.identity?.profileToken == expected.profileToken else {
+            throw HTTPError.requestIdentityChanged
+        }
+        return connection
+    }
+
     func validate() async throws {
         try Task.checkCancellation()
         if let identity,

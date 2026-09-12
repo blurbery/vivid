@@ -87,14 +87,17 @@ enum AetherSecurityChecks {
             sendText(request, to: writer)
             precondition(HLSRequestReader.read(fd: reader, acceptedAt: ProcessInfo.processInfo.systemUptime) == Data(request.utf8))
             let group = DispatchGroup()
+            let started = DispatchSemaphore(value: 0)
             group.enter()
             DispatchQueue.global().async {
+                started.signal()
                 Thread.sleep(forTimeInterval: 0.15)
                 sendText(request, to: writer)
                 group.leave()
             }
+            precondition(started.wait(timeout: .now() + 5) == .success, "Writer did not start")
             let second = HLSRequestReader.read(fd: reader, acceptedAt: nil, headerTimeout: 0.08, idleTimeout: 1)
-            group.wait()
+            precondition(group.wait(timeout: .now() + 5) == .success, "Writer did not finish")
             precondition(second == Data(request.utf8), "Authenticated idle allowance must exceed the partial-header timeout")
         }
         try sockets { reader, _ in

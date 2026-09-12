@@ -112,7 +112,9 @@ Raw marker results are retained when the lookup finishes before media duration i
 
 ## Downloads and external playback
 
-Fresh background downloads bind their destination and credential headers to one captured server account and profile. Account/profile changes discard pending pipeline results before starting a transfer, including on Silo; a refresh for the same account can still supply its updated access token. Existing paused transfers retain their resume data.
+Fresh background downloads bind their destination and credential headers to one captured server account and profile. Manifest, artwork and initial status requests carry that same identity and reject a changed account/profile before dispatch. Account/profile changes discard pending pipeline results before starting a transfer, including on Silo; a refresh for the same account can still supply its updated access token. Existing paused transfers retain their resume data.
+
+Downloads retain the configured server's HTTP or HTTPS scheme; an HTTPS configuration cannot be downgraded by the initial destination. Background transfers are managed by Apple's networking service, which follows redirects without calling the app's redirect delegate. Initial-origin checks therefore do not enforce redirect isolation. Preventing that requires a different transfer design or server support for URLs that do not carry reusable credentials. Vivid currently retains background transfers with this limitation.
 
 AetherEngine's local HLS listener allows up to 32 simultaneous connections. Initial request headers must arrive within ten seconds of acceptance; authenticated keep-alive connections retain a sixty-second idle allowance, with ten seconds to complete each started header. Oversized headers and unsupported media-sequence ranges are rejected before routing or segment tracking.
 
