@@ -2,6 +2,160 @@ import XCTest
 @testable import Vivid
 
 final class EmbyAdapterTests: XCTestCase {
+    private var testSession: URLSession?
+
+    override func tearDown() {
+        testSession?.invalidateAndCancel()
+        testSession = nil
+        EmbyReviewRequestStub.handler = nil
+        super.tearDown()
+    }
+
+    private func stubbedAdapter(_ handler: @escaping (URLRequest) throws -> (Int, Any)) -> EmbyAdapter {
+        EmbyReviewRequestStub.handler = handler
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [EmbyReviewRequestStub.self]
+        let session = URLSession(configuration: config)
+        testSession = session
+        return EmbyAdapter(connection: EmbyConnection(
+            serverURL: "https://media.example.test", token: nil, userID: "user-1", identity: nil,
+            sessionOverride: session
+        ))
+    }
+
+    func testFilterRoutePagesBothEndpointsAndPreservesLibraryScope() async throws {
+        let adapter = stubbedAdapter { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path.hasSuffix("/Views") { return (200, ["Items": [["Id": "12"]]]) }
+            let query = Dictionary(uniqueKeysWithValues: URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.map { ($0.name, $0.value!) })
+            XCTAssertEqual(query["ParentId"], "12")
+            XCTAssertEqual(query["UserId"], "user-1")
+            XCTAssertEqual(query["Limit"], "1000")
+            XCTAssertEqual(query["Recursive"], "true")
+            let start = try XCTUnwrap(Int(query["StartIndex"]!))
+            XCTAssertLessThan(start, 2)
+            let names = url.path.hasSuffix("/Genres") ? ["Action", "Drama"] : ["PG", "R"]
+            return (200, ["Items": [["Name": names[min(start, 1)]]], "TotalRecordCount": 2])
+        }
+        let result = try await adapter.route(method: "GET", path: "/api/v1/catalog/filters", query: ["library_id": "12"], body: nil)
+        let filters: CatalogFilters = try EmbyAdapter.decode(result)
+        XCTAssertEqual(filters.genres, ["Action", "Drama"])
+        XCTAssertEqual(filters.contentRatings, ["PG", "R"])
+    }
+
+    func testFilterRouteMapsHTTPFailuresAtEachStep() async throws {
+        for (suffix, step) in [("/Views", "Library lookup"), ("/Genres", "Genres"), ("/OfficialRatings", "Ratings")] {
+            let adapter = stubbedAdapter { request in
+                if request.url!.path.hasSuffix(suffix) { return (503, [:]) }
+                if request.url!.path.hasSuffix("/Views") { return (200, ["Items": [["Id": "12"]]]) }
+                return (200, ["Items": [], "TotalRecordCount": 0])
+            }
+            do {
+                _ = try await adapter.route(method: "GET", path: "/api/v1/catalog/filters", query: ["library_id": "12"], body: nil)
+                XCTFail("Expected a filter request failure")
+            } catch EmbyError.filterRequestFailed(let actualStep, let status) {
+                XCTAssertEqual(actualStep, step)
+                XCTAssertEqual(status, 503)
+            }
+            testSession?.invalidateAndCancel()
+        }
+    }
+
+    func testFilterRouteRejectsMissingItems() async throws {
+        let adapter = stubbedAdapter { _ in (200, ["TotalRecordCount": 1]) }
+        do {
+            _ = try await adapter.route(method: "GET", path: "/api/v1/catalog/filters", query: [:], body: nil)
+            XCTFail("Expected an invalid response")
+        } catch EmbyError.invalidResponse {}
+    }
+
+    func testFilterRouteStopsEmptyPageDespiteInflatedTotal() async throws {
+        let adapter = stubbedAdapter { _ in (200, ["Items": [], "TotalRecordCount": Int.max]) }
+        let raw = try await adapter.route(method: "GET", path: "/api/v1/catalog/filters", query: [:], body: nil)
+        let filters: CatalogFilters = try EmbyAdapter.decode(raw)
+        XCTAssertTrue(filters.genres.isEmpty)
+        XCTAssertTrue(filters.contentRatings.isEmpty)
+    }
+
+    func testFilterRouteBoundsRowsAndShortPages() async throws {
+        for (pageSize, expectedRequests) in [(1000, 10), (1, 100), (10_001, 1)] {
+            var requests = 0
+            let adapter = stubbedAdapter { _ in
+                requests += 1
+                guard requests <= expectedRequests else { throw URLError(.badServerResponse) }
+                return (200, ["Items": Array(repeating: ["Name": "Drama"], count: pageSize), "TotalRecordCount": Int.max])
+            }
+            do {
+                _ = try await adapter.route(method: "GET", path: "/api/v1/catalog/filters", query: [:], body: nil)
+                XCTFail("Expected the paging bound to reject the response")
+            } catch EmbyError.invalidResponse {}
+            XCTAssertEqual(requests, expectedRequests)
+            testSession?.invalidateAndCancel()
+        }
+    }
+
+    func testFilterRouteAcceptsExactlyTenThousandRows() async throws {
+        let adapter = stubbedAdapter { request in
+            if request.url!.path.hasSuffix("/OfficialRatings") { return (200, ["Items": []]) }
+            return (200, ["Items": Array(repeating: ["Name": "Drama"], count: 1000), "TotalRecordCount": 10_000])
+        }
+        let raw = try await adapter.route(method: "GET", path: "/api/v1/catalog/filters", query: [:], body: nil)
+        let filters: CatalogFilters = try EmbyAdapter.decode(raw)
+        XCTAssertEqual(filters.genres, ["Drama"])
+    }
+
+    func testSupplementalNextUpPreservesLoadedSectionsOnHTTPNetworkAndMalformedResponse() async throws {
+        let sections: [[String: Any]] = [["id": "resume", "sectionType": "continue_watching", "items": []]]
+        for failure in 0..<3 {
+            let adapter = stubbedAdapter { _ in
+                if failure == 0 { throw URLError(.notConnectedToInternet) }
+                if failure == 1 { return (200, []) }
+                return (503, [:])
+            }
+            let result = try await adapter.supplyingCombinedNextUp(sections, enabled: true)
+            XCTAssertTrue(NSArray(array: result).isEqual(to: sections))
+            testSession?.invalidateAndCancel()
+        }
+    }
+
+    func testSupplementalNextUpPreservesCancellationAndSignInFailure() async throws {
+        for cancelled in [false, true] {
+            let adapter = stubbedAdapter { _ in
+                if cancelled { throw URLError(.cancelled) }
+                return (401, [:])
+            }
+            do {
+                _ = try await adapter.supplyingCombinedNextUp([], enabled: true)
+                XCTFail("Expected cancellation or sign-in failure")
+            } catch EmbyError.signInRequired {
+                XCTAssertFalse(cancelled)
+            } catch let error as URLError {
+                XCTAssertTrue(cancelled)
+                XCTAssertEqual(error.code, .cancelled)
+            }
+            testSession?.invalidateAndCancel()
+        }
+    }
+
+    func testSupplementalNextUpOnlyLoadsWhenNeeded() async throws {
+        var requests = 0
+        let adapter = stubbedAdapter { request in
+            requests += 1
+            XCTAssertEqual(request.url?.path, "/emby/Shows/NextUp")
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        let existing: [[String: Any]] = [["id": "next", "sectionType": "next_up"]]
+        let disabled = try await adapter.supplyingCombinedNextUp([], enabled: false)
+        let unchanged = try await adapter.supplyingCombinedNextUp(existing, enabled: true)
+        XCTAssertTrue(disabled.isEmpty)
+        XCTAssertTrue(NSArray(array: unchanged).isEqual(to: existing))
+        XCTAssertEqual(requests, 0)
+        let loaded = try await adapter.supplyingCombinedNextUp([], enabled: true)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(loaded.last?["sectionType"] as? String, "next_up")
+    }
+
+
     private var adapter: EmbyAdapter {
         EmbyAdapter(connection:EmbyConnection(serverURL:"https://media.example.test",token:nil,userID:"user-1",identity:nil))
     }
@@ -197,4 +351,31 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(EmbyAdapter.legacyHomeSectionTypes(settings:settings),["collections","nextup","resume"])
     }
 
+}
+
+private final class EmbyReviewRequestStub: URLProtocol {
+    private static let lock = NSLock()
+    private static var storedHandler: ((URLRequest) throws -> (Int, Any))?
+    static var handler: ((URLRequest) throws -> (Int, Any))? {
+        get { lock.lock(); defer { lock.unlock() }; return storedHandler }
+        set { lock.lock(); defer { lock.unlock() }; storedHandler = newValue }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            guard let handler = Self.handler else { throw URLError(.badServerResponse) }
+            let (status, body) = try handler(request)
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+                                           headerFields: ["Content-Type": "application/json"])!
+            let data = try JSONSerialization.data(withJSONObject: body)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+    override func stopLoading() {}
 }

@@ -16,6 +16,8 @@ class BrowseViewModel {
     private(set) var mediaType: BrowseMediaType = .movie
     /// Live facet vocabulary for the filter sheet, loaded lazily.
     private(set) var facets: CatalogFacets?
+    private(set) var facetsLoadFailed = false
+    private(set) var isLoadingFacets = false
 
     private var currentPage = 0
     private let pageSize = 60
@@ -47,6 +49,8 @@ class BrowseViewModel {
         }
 
         facets = FacetLoader.shared.cachedFacets(libraryId: libraryId)
+        facetsLoadFailed = false
+        isLoadingFacets = false
         // Hydrate the page-1 snapshot the next reset will write back into.
         hydratePage1FromCache()
         return true
@@ -158,8 +162,22 @@ class BrowseViewModel {
 
     /// Load the live facet vocabulary for the filter sheet.
     func loadFacetsIfNeeded() async {
-        if facets != nil { return }
-        facets = try? await FacetLoader.shared.facets(libraryId: libraryId)
+        guard facets == nil, !isLoadingFacets else { return }
+        let myConfiguration = configurationGeneration
+        isLoadingFacets = true
+        facetsLoadFailed = false
+        defer {
+            if myConfiguration == configurationGeneration { isLoadingFacets = false }
+        }
+        do {
+            let loaded = try await FacetLoader.shared.facets(libraryId: libraryId)
+            guard myConfiguration == configurationGeneration, !Task.isCancelled else { return }
+            facets = loaded
+        } catch {
+            guard myConfiguration == configurationGeneration, !Task.isCancelled,
+                  !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
+            facetsLoadFailed = true
+        }
     }
 
     /// Probe the result count for a candidate state — drives the live count on

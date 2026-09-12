@@ -19,6 +19,17 @@ final class HomeSectionsMutationTests: XCTestCase {
         XCTAssertEqual(result[0].items[0].progressUpdatedAt, "resume-state")
     }
 
+    func testCombinedHomeRetainsResumeIdentityAndPositionWhenNextUpComesFirst() throws {
+        let sections = [
+            makeSection(id: "next", type: "next_up", totalCount: 1, items: [try makeItem(contentId: "next-episode")]),
+            makeSection(id: "latest", type: "latest", totalCount: 1, items: [try makeItem(contentId: "movie")]),
+            makeSection(id: "resume", type: "continue_watching", totalCount: 1, items: [try makeItem(contentId: "resume-episode")])
+        ]
+        let result = HomeSectionPreferences.combinedSections(sections, enabled: true, provider: .emby)
+        XCTAssertEqual(result.map(\.id), ["latest", "resume"])
+        XCTAssertEqual(result[1].items.map(\.contentId), ["resume-episode", "next-episode"])
+    }
+
     func testCombinedHomeDoesNotChangeSiloOrDisabledEmby() throws {
         let sections = [makeSection(id: "next", type: "next_up", totalCount: 1,
                                     items: [try makeItem(contentId: "episode")])]

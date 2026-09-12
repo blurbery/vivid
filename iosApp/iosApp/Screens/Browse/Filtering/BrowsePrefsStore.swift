@@ -37,7 +37,11 @@ struct BrowsePrefsStore {
               let data = defaults.data(forKey: key),
               let state = try? JSONDecoder().decode(CatalogFilterState.self, from: data)
         else { return nil }
-        return state
+        let normalised = state.normalised(for: MediaServerProvider.active)
+        if normalised != state {
+            saveState(normalised, libraryId: libraryId, mediaScope: mediaScope)
+        }
+        return normalised
     }
 
     /// Persist the committed state (minus the transient A–Z `namePrefix`).
