@@ -8,7 +8,7 @@
 
 ---
 
-Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. The latest accepted uploads are iPhone/iPad 0.14.3 (17) and tvOS 0.14.3 (16). Both have completed processing, have English (Australia) testing notes with exact-source links, and are available to the existing internal and external tester groups. App Store Connect confirmed Testing for both external builds. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
+Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. The latest accepted uploads are iPhone/iPad 0.14.3 (18) and tvOS 0.14.3 (17). Both have completed processing, have English (Australia) testing notes with exact-source links, and are available to the existing internal and external tester groups. App Store Connect confirmed Testing for both external builds. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
 
 ## What is ready
 
@@ -82,7 +82,9 @@ Use `admin@vividapp.co` for feedback. A starting beta description is:
 
 > I’m building Vivid for watching your own media on iPhone, iPad and Apple TV. Connect to Silo or Emby, browse your library and continue watching across your server accounts. Playback includes subtitles and chapters from your media and optional intro, recap and credits skips. Jellyfin is planned.
 
-For What to Test:
+For What to Test, use short plain-text bullet points with a blank line between each. Verify the saved line breaks in App Store Connect so the notes remain easy to scan.
+
+For example:
 
 > Please check account setup and switching, iCloud account restore and cross-device deletion, Continue Watching and Next Up, episode selection, startup, seeking, repeated audio selection, embedded subtitles and chapters. On Apple TV, check swipe seeking and Match Frame Rate/Match Dynamic Range. On iPhone and iPad, check download progress and artwork, the Search keyboard, same-tap player controls and closing landscape playback. Please report the device, OS, server type, codec and steps when something fails. Do not include passwords or private server addresses in feedback.
 
