@@ -135,6 +135,7 @@ struct TVEpisodeRail: View {
                     ForEach(episodes) { episode in
                         TVEpisodeCard(
                             episode: episode,
+                            focusedEpisode: $focusedCardId,
                             isCurrent: currentContentId == episode.contentId,
                             baseCardWidth: baseCardWidth,
                             posterSize: uiCustomization.cardPresentation.posterSize,
@@ -148,7 +149,6 @@ struct TVEpisodeRail: View {
                             onSetFavorite: onSetFavorite
                         )
                         .id(episode.contentId)
-                        .focused($focusedCardId, equals: episode.contentId)
                     }
                 }
                 .scrollTargetLayout()
@@ -261,6 +261,7 @@ private extension View {
 
 struct TVEpisodeCard: View {
     let episode: EpisodeListItem
+    let focusedEpisode: FocusState<String?>.Binding
     var isCurrent: Bool = false
     var usesNativeShelf = false
     var baseCardWidth: CGFloat = 480
@@ -272,7 +273,6 @@ struct TVEpisodeCard: View {
     var initialIsFavorite = false
     var onSetFavorite: ((_ contentId: String, _ isFavorite: Bool) async -> Bool)? = nil
 
-    @FocusState private var isFocused: Bool
     @State private var playedOverride: Bool?
     @State private var favoriteOverride: Bool?
 
@@ -281,17 +281,7 @@ struct TVEpisodeCard: View {
     private let stillCornerRadius: CGFloat = 18
 
     var body: some View {
-        let button = cardButton
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityDescription)
-
-        Group {
-            if onPlay != nil || onSetWatched != nil || onSetFavorite != nil {
-                button.contextMenu { contextActions }
-            } else {
-                button
-            }
-        }
+        cardButton
         .onChange(of: episode.userData?.played) { _, refreshedValue in
             guard let playedOverride, refreshedValue == playedOverride else { return }
             self.playedOverride = nil
@@ -306,7 +296,7 @@ struct TVEpisodeCard: View {
     private var cardButton: some View {
         if usesNativeShelf {
             VStack(alignment: .leading, spacing: 14) {
-                Button(action: onSelect) {
+                episodeButton {
                     CachedAsyncImage(url: episode.stillUrl ?? "", targetSize: CGSize(width: cardWidth, height: stillHeight), contentMode: .fill)
                         .frame(width: cardWidth, height: stillHeight)
                         .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -342,8 +332,6 @@ struct TVEpisodeCard: View {
                             }
                         }
                 }
-                .buttonStyle(.card)
-                .focused($isFocused)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("EPISODE \(episode.episodeNumber)").font(.system(size: 18)).foregroundStyle(.secondary)
                     Text(episode.title ?? "Episode \(episode.episodeNumber)").font(.system(size: 24, weight: .semibold)).lineLimit(1)
@@ -352,13 +340,28 @@ struct TVEpisodeCard: View {
                     Text(DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
                         .font(.system(size: 18)).foregroundStyle(.secondary)
                 }.frame(width: cardWidth, alignment: .leading)
+                    .accessibilityHidden(true)
             }
         } else {
-            Button(action: onSelect) {
+            episodeButton {
                 EpisodeCardLabel(episode: episode, isPlayed: isPlayed, isCurrent: isCurrent,
                                  cardWidth: cardWidth, stillHeight: stillHeight,
                                  stillCornerRadius: stillCornerRadius, captionStyle: captionStyle)
-            }.buttonStyle(.card)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func episodeButton<Label: View>(@ViewBuilder label: () -> Label) -> some View {
+        let button = Button(action: onSelect, label: label)
+            .buttonStyle(.card)
+            .focused(focusedEpisode, equals: episode.contentId)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityDescription)
+        if onPlay != nil || onSetWatched != nil || onSetFavorite != nil {
+            button.contextMenu { contextActions }
+        } else {
+            button
         }
     }
 
@@ -754,13 +757,12 @@ struct TVContinuousEpisodeShelf: View {
                         ForEach(seasons) { season in
                             if let episodes = items(season) {
                                 ForEach(episodes) { episode in
-                                    TVEpisodeCard(episode: episode, isCurrent: currentContentId == episode.contentId,
+                                    TVEpisodeCard(episode: episode, focusedEpisode: $focusedEpisode, isCurrent: currentContentId == episode.contentId,
                                         usesNativeShelf: true, baseCardWidth: 400,
                                         onSelect: { onPlay(episode) }, onPlay: { _ in onPlay(episode) },
                                         onSetWatched: onWatched, initialIsFavorite: favorites[episode.contentId] ?? false,
                                         onSetFavorite: onFavorite)
                                         .id(episode.contentId)
-                                        .focused($focusedEpisode, equals: episode.contentId)
 
                                 }
                             } else {

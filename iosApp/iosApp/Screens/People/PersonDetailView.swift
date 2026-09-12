@@ -877,7 +877,7 @@ private func parsePersonDate(_ value: String?) -> Date? {
     // Birth and death dates are calendar dates. Emby supplies ISO timestamps,
     // including seven fractional digits, while other providers supply dates.
     // Keep the source day rather than shifting it through the local time zone.
-    guard value.range(of: #"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$"#,
+    guard value.range(of: #"^\d{4}-\d{2}-\d{2}(?:T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?)?$"#,
                       options: .regularExpression) != nil else { return nil }
     let day = String(value.prefix(10))
     guard let date = SelfDateFormatter.personISO.date(from: day),
