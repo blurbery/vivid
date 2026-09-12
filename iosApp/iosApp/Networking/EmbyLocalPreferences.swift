@@ -12,9 +12,6 @@ actor EmbyLocalPreferences {
   "downloads.keep_watched": false,
   "downloads.wifi_only": true,
   "nav.primary_menu": null,
-  "nav.shortcuts": {
-    "items": []
-  },
   "playback.audio_language": null,
   "playback.auto_play_next": true,
   "playback.auto_play_next_preview": false,
@@ -120,15 +117,6 @@ actor EmbyLocalPreferences {
         }
         guard method == "PUT" else { throw EmbyError.unsupportedFeature }
         var value = body["value"] ?? NSNull()
-        if key == .navShortcuts, path.last == "item" {
-            guard let item = body["item"], let present = body["present"] as? Bool else { throw EmbyError.invalidResponse }
-            let selected: PrimaryMenuItem = try EmbyAdapter.decode(item)
-            guard selected.isContractValid else { throw EmbyError.invalidResponse }
-            var stored: NavigationShortcutsPreference = try EmbyAdapter.decode(rows[id]?["value"] ?? ["items":[]])
-            if !present { stored.items.removeAll { $0.id == selected.id } }
-            else if !stored.items.contains(where: { $0.id == selected.id }) { stored.items.append(selected) }
-            value = try JSONSerialization.jsonObject(with:JSONEncoder().encode(stored))
-        }
         if key == .navPrimaryMenu, !(value is NSNull) {
             let preference: PrimaryMenuPreference = try EmbyAdapter.decode(value)
             guard preference.isValid else { throw EmbyError.invalidResponse }

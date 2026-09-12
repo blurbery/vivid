@@ -165,60 +165,6 @@ extension VividAPI {
         }
     }
 
-    /// Atomically add or remove one semantic shortcut from `nav.shortcuts`.
-    ///
-    /// Unlike a whole-value PUT, this operation is safe when multiple clients
-    /// edit different shortcuts from stale effective snapshots. The mutation
-    /// id still belongs to one exact `{item, present}` operation and must be
-    /// reused when its response is ambiguous.
-    @discardableResult
-    func putNavigationShortcutItem(
-        _ item: PrimaryMenuItem,
-        present: Bool,
-        mutationId: String,
-        profileId: String? = nil,
-        requestIdentity: HTTPRequestIdentity? = nil
-    ) async throws -> SettingValueWriteReceipt {
-        guard item.isContractValid else {
-            throw SettingsAPIError.invalidValue(message: "Shortcut item is invalid.")
-        }
-        if case .builtin = item {
-            throw SettingsAPIError.invalidValue(message: "Built-in destinations cannot be shortcuts.")
-        }
-        let trimmedMutationId = mutationId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedMutationId.isEmpty else {
-            throw SettingsAPIError.invalidValue(message: "Mutation ID must not be blank.")
-        }
-
-        var headers = try await profileHeaders(explicit: profileId)
-        headers["X-Silo-Mutation-Id"] = trimmedMutationId
-
-        do {
-            let body = try SettingsWireCoding.makeEncoder().encode(
-                NavigationShortcutItemWriteRequest(item: item, present: present)
-            )
-            let response = try await http.requestData(
-                method: "PUT",
-                path: "/api/v1/settings/values/\(SettingKey.navShortcuts.rawValue)/item",
-                body: body,
-                headers: headers,
-                requestIdentity: requestIdentity
-            )
-            let stored = try SettingsWireCoding.makeDecoder()
-                .decode(StoredSettingValue.self, from: response.data)
-            return SettingValueWriteReceipt(
-                value: stored,
-                isIdempotentReplay: response.header("X-Silo-Idempotent-Replay") == "true"
-            )
-        } catch {
-            throw SettingsAPIError.from(
-                error,
-                key: SettingKey.navShortcuts.rawValue,
-                scope: .profile
-            )
-        }
-    }
-
     /// Clear the explicit value at one scope, so the setting inherits again.
     ///
     /// Throws ``SettingsAPIError/noValueAtScope`` when nothing was stored
@@ -270,9 +216,4 @@ extension VividAPI {
         }
         return ["X-Profile-Id": profile]
     }
-}
-
-private struct NavigationShortcutItemWriteRequest: Encodable {
-    let item: PrimaryMenuItem
-    let present: Bool
 }

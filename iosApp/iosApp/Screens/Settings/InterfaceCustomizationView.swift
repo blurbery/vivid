@@ -3,127 +3,20 @@ import SwiftUI
 
 struct PrimaryMenuEditorRow: Identifiable, Equatable {
     let item: PrimaryMenuItem
-    let parentMediaType: PrimaryMenuBuiltin?
-
     var id: String { item.id }
-    var isNestedLibrary: Bool { parentMediaType != nil }
-}
-
-func primaryMenuShortcutTypeTitle(
-    _ item: PrimaryMenuItem,
-    libraries: [Library] = [],
-    isNestedLibrary: Bool = false
-) -> String {
-    switch item {
-    case .builtin(.movies), .builtin(.series), .builtin(.music):
-        return "Media Type"
-    case .library(let libraryId, _):
-        guard !isNestedLibrary,
-              let library = libraries.first(where: { $0.id == libraryId })
-        else { return "Library" }
-        if library.isMixedLibrary { return "Mixed Library" }
-        if library.isMovieLibrary { return "Movies Library" }
-        if library.isSeriesLibrary { return "Series Library" }
-        return "Library"
-    case .section, .collection:
-        return "Library"
-    case .builtin(.forYou):
-        return "Discover"
-    case .builtin(.home):
-        return "Your Stuff"
-    }
-}
-
-func groupedPrimaryMenuEditorRows(
-    _ items: [PrimaryMenuItem],
-    libraries: [Library]
-) -> [PrimaryMenuEditorRow] {
-    groupPinnedLibrariesUnderMediaTypes(
-        items,
-        libraries: libraries,
-        libraryID: { item in
-            guard case .library(let libraryId, _) = item else { return nil }
-            return libraryId
-        },
-        mediaTypeCategory: { item in
-            guard case .builtin(let builtin) = item,
-                  builtin == .movies
-                    || builtin == .series
-                    || builtin == .music
-            else { return nil }
-            return builtin
-        }
-    ).map { .init(item: $0.element, parentMediaType: $0.parentCategory) }
-}
-
-func availablePrimaryMenuShortcuts(
-    candidates: [PrimaryMenuItem],
-    libraries: [Library],
-    visibleIds: Set<String>
-) -> [PrimaryMenuItem] {
-    let libraryItems = libraries.map {
-        PrimaryMenuItem.library(libraryId: $0.id, label: $0.name)
-    }
-    return (candidates + libraryItems).filter { !visibleIds.contains($0.id) }
 }
 
 func offsetPrimaryMenuEditorItem(
-    _ rows: [PrimaryMenuEditorRow],
-    itemId: String,
-    by offset: Int
+    _ rows: [PrimaryMenuEditorRow], itemId: String, by offset: Int
 ) -> [PrimaryMenuItem]? {
     guard offset != 0,
-          let sourceIndex = rows.firstIndex(where: { $0.id == itemId })
-    else { return nil }
-    let sourceRow = rows[sourceIndex]
-    guard !sourceRow.item.isHome else { return nil }
-
-    if let parent = sourceRow.parentMediaType {
-        let siblingIndices = rows.indices.filter {
-            rows[$0].parentMediaType == parent
-        }
-        guard let siblingSourceIndex = siblingIndices.firstIndex(of: sourceIndex) else {
-            return nil
-        }
-        let siblingTargetIndex = siblingSourceIndex + offset
-        guard siblingIndices.indices.contains(siblingTargetIndex) else { return nil }
-
-        var reorderedRows = rows
-        reorderedRows.swapAt(
-            siblingIndices[siblingSourceIndex],
-            siblingIndices[siblingTargetIndex]
-        )
-        return reorderedRows.map(\.item)
-    }
-
-    let movableRoots = rows.filter {
-        $0.parentMediaType == nil && !$0.item.isHome
-    }
-    guard let rootSourceIndex = movableRoots.firstIndex(where: { $0.id == itemId }) else {
-        return nil
-    }
-    let rootTargetIndex = rootSourceIndex + offset
-    guard movableRoots.indices.contains(rootTargetIndex) else { return nil }
-
-    var rootIds = rows.compactMap { row in
-        row.parentMediaType == nil ? row.id : nil
-    }
-    guard let sourceRootIndex = rootIds.firstIndex(of: itemId),
-          let targetRootIndex = rootIds.firstIndex(of: movableRoots[rootTargetIndex].id)
-    else { return nil }
-    rootIds.swapAt(sourceRootIndex, targetRootIndex)
-
-    var blockByRootId: [String: [PrimaryMenuItem]] = [:]
-    var currentRootId: String?
-    for row in rows {
-        if row.parentMediaType == nil {
-            currentRootId = row.id
-            blockByRootId[row.id] = [row.item]
-        } else if let currentRootId {
-            blockByRootId[currentRootId, default: []].append(row.item)
-        }
-    }
-    return rootIds.flatMap { blockByRootId[$0] ?? [] }
+          let source = rows.firstIndex(where: { $0.id == itemId }),
+          !rows[source].item.isHome else { return nil }
+    let target = source + offset
+    guard rows.indices.contains(target), !rows[target].item.isHome else { return nil }
+    var items = rows.map(\.item)
+    items.swapAt(source, target)
+    return items
 }
 
 /// Family-synced navigation and card presets for iPhone, iPad, and Mac.
@@ -252,18 +145,7 @@ struct InterfaceCustomizationView: View {
                 ForEach(visibleRows) { row in
                     let item = row.item
                     HStack(spacing: 12) {
-                        if row.isNestedLibrary {
-                            HStack(spacing: 8) {
-                                Image(systemName: "arrow.turn.down.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.vividSecondaryText)
-                                    .frame(width: 18)
-                                shortcutLabel(for: item, isNestedLibrary: true)
-                            }
-                            .padding(.leading, 20)
-                        } else {
-                            shortcutLabel(for: item)
-                        }
+                        menuLabel(for: item)
                         Spacer(minLength: 8)
                         if !item.isHome {
                             HStack(spacing: 4) {
@@ -314,9 +196,9 @@ struct InterfaceCustomizationView: View {
                 PhoneSettingsSectionHeader("Primary Menu")
             } footer: {
                 if isDefaultMenuApplied {
-                    Text("Default menu applied. Add shortcuts to customize.")
+                    Text("Default menu applied. Reorder or hide tabs to customise.")
                 } else {
-                    Text("Home is required. Use the arrows to reorder items. Libraries stay grouped under their media type and can only move within that group. Removing a library unpins it from your profile. Downloads (when available), Search, and Profile stay automatic.")
+                    Text("Home is required. Use the arrows to reorder tabs. Downloads (when available), Search, and Profile stay automatic.")
                 }
             }
             .disabled(
@@ -388,13 +270,6 @@ struct InterfaceCustomizationView: View {
         )
     }
 
-    private static let candidates: [PrimaryMenuItem] = [
-        .builtin(.home),
-        .builtin(.movies),
-        .builtin(.series),
-        .builtin(.music),
-        .builtin(.forYou),
-    ]
     private static let customPresetId = "custom"
 
     private var currentLibraryAuthority: MainTabLibraryAuthority? {
@@ -429,7 +304,7 @@ struct InterfaceCustomizationView: View {
     }
 
     private var visibleRows: [PrimaryMenuEditorRow] {
-        groupedPrimaryMenuEditorRows(visibleDestinations, libraries: libraries)
+        visibleDestinations.map { PrimaryMenuEditorRow(item: $0) }
     }
 
     private var isDefaultMenuApplied: Bool {
@@ -444,9 +319,17 @@ struct InterfaceCustomizationView: View {
         return item.title
     }
 
-    private func shortcutLabel(
-        for item: PrimaryMenuItem,
-        isNestedLibrary: Bool = false
+    private func menuTypeTitle(_ item: PrimaryMenuItem) -> String {
+        switch item {
+        case .builtin(.movies), .builtin(.series): return "Media Type"
+        case .builtin(.home): return "Your Stuff"
+        case .builtin(.forYou): return "Discover"
+        case .library, .section, .collection: return ""
+        }
+    }
+
+    private func menuLabel(
+        for item: PrimaryMenuItem
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: navigationIcon(for: item))
@@ -458,11 +341,7 @@ struct InterfaceCustomizationView: View {
                 Text(displayTitle(for: item))
                     .lineLimit(1)
                 Text(
-                    primaryMenuShortcutTypeTitle(
-                        item,
-                        libraries: libraries,
-                        isNestedLibrary: isNestedLibrary
-                    ).uppercased()
+                    menuTypeTitle(item).uppercased()
                 )
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Color.vividSecondaryText.opacity(0.75))
@@ -498,47 +377,15 @@ struct InterfaceCustomizationView: View {
 
     private func remove(_ item: PrimaryMenuItem) {
         guard !item.isHome else { return }
-        if case .library(let libraryId, _) = item,
-           let library = libraries.first(where: { $0.id == libraryId }) {
-            if preferences.isLibraryPinned(libraryId) {
-                preferences.setLibraryPinned(library, isPinned: false)
-            } else {
-                // Older or independently-authored menus can contain a library
-                // placement without a matching profile shortcut. There is
-                // nothing to unpin in that case, so remove the placement
-                // directly instead of letting setLibraryPinned no-op.
-                persistVisibleDestinations(
-                    visibleDestinations.filter { $0.id != item.id }
-                )
-            }
-            return
-        }
-        persistVisibleDestinations(visibleDestinations.filter { $0.id != item.id })
+        preferences.setPrimaryMenuItems(visibleDestinations.filter { $0.id != item.id })
     }
 
     private func removalVerb(for item: PrimaryMenuItem) -> String {
-        if case .library = item { return "Unpin" }
         return "Hide"
     }
 
     private func persistVisibleDestinations(_ destinations: [PrimaryMenuItem]) {
-        let currentlyVisibleIds = Set(visibleDestinations.map(\.id))
-        var replacements = destinations.makeIterator()
-        var result: [PrimaryMenuItem] = []
-
-        for item in preferences.resolvedPrimaryMenuItems() {
-            if currentlyVisibleIds.contains(item.id) {
-                if let replacement = replacements.next() {
-                    result.append(replacement)
-                }
-            } else {
-                result.append(item)
-            }
-        }
-        while let remaining = replacements.next() {
-            result.append(remaining)
-        }
-        preferences.setPrimaryMenuItems(result)
+        preferences.setPrimaryMenuItems(destinations)
     }
 
     private func librarySort(_ lhs: Library, _ rhs: Library) -> Bool {

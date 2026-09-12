@@ -104,9 +104,6 @@ enum CacheKey {
     static func catalogFilters(libraryId: Int?, includeTechnical: Bool = true) -> String {
         "catalogFilters:\(libraryId.map(String.init) ?? "all"):\(includeTechnical ? "technical" : "basic")"
     }
-    static func librarySections(_ libraryId: Int) -> String {
-        "library:\(libraryId):sections"
-    }
     static func tvLibrary(libraryId: Int, filterKey: String) -> String {
         "tvlibrary:\(libraryId):\(filterKey)"
     }

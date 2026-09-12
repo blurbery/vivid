@@ -1822,67 +1822,6 @@ final class SettingValuesAPITests: XCTestCase {
         XCTAssertEqual(serverBRefresh, "decoy-token")
     }
 
-    func testPutNavigationShortcutItemSendsAtomicBodyMutationAndProfileHeaders() async throws {
-        SettingsStubProtocol.reset(mode: .normal)
-        let api = await makeStubbedAPI()
-        let mutationId = newSettingMutationId()
-        let item = PrimaryMenuItem.section(
-            libraryId: 7,
-            sectionId: "recently-added",
-            label: "Recently Added"
-        )
-
-        let receipt = try await api.putNavigationShortcutItem(
-            item,
-            present: true,
-            mutationId: mutationId
-        )
-
-        XCTAssertEqual(receipt.value.settingKey, .navShortcuts)
-        XCTAssertEqual(
-            try receipt.value.value.decoded(as: NavigationShortcutsPreference.self),
-            NavigationShortcutsPreference(items: [item])
-        )
-
-        let recorded = try XCTUnwrap(SettingsStubProtocol.state().lastRequest)
-        XCTAssertEqual(recorded.method, "PUT")
-        XCTAssertEqual(recorded.path, "/api/v1/settings/values/nav.shortcuts/item")
-        XCTAssertTrue(recorded.query.isEmpty)
-        XCTAssertEqual(recorded.header("X-Silo-Mutation-Id"), mutationId)
-        XCTAssertEqual(recorded.header("X-Profile-Id"), Self.stubProfileId)
-
-        let body = try XCTUnwrap(recorded.body)
-        let object = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: body) as? [String: Any]
-        )
-        XCTAssertEqual(object["present"] as? Bool, true)
-        let encodedItem = try XCTUnwrap(object["item"] as? [String: Any])
-        XCTAssertEqual(encodedItem["type"] as? String, "section")
-        XCTAssertEqual(encodedItem["library_id"] as? Int, 7)
-        XCTAssertEqual(encodedItem["section_id"] as? String, "recently-added")
-        XCTAssertEqual(encodedItem["label"] as? String, "Recently Added")
-    }
-
-    func testPutNavigationShortcutItemRejectsBuiltinsBeforeSending() async throws {
-        SettingsStubProtocol.reset(mode: .normal)
-        let api = await makeStubbedAPI()
-
-        do {
-            _ = try await api.putNavigationShortcutItem(
-                .builtin(.home),
-                present: true,
-                mutationId: newSettingMutationId()
-            )
-            XCTFail("built-in destinations are not valid nav.shortcuts items")
-        } catch let error as SettingsAPIError {
-            guard case .invalidValue = error else {
-                return XCTFail("expected a local invalid-value error, got \(error)")
-            }
-        }
-
-        XCTAssertNil(SettingsStubProtocol.state().lastRequest)
-    }
-
     func testPutValueSurfacesAnIdempotentReplay() async throws {
         SettingsStubProtocol.reset(mode: .idempotentReplay)
         let api = await makeStubbedAPI()
@@ -2380,18 +2319,6 @@ final class SettingsStubProtocol: URLProtocol {
             {"settings":[{"key":"playback.auto_play_next","value":true,"source":"default"}],
              "revision":\(responseRevision)}
             """)
-        case ("PUT", "/api/v1/settings/values/nav.shortcuts/item"):
-            let value = Self.shortcutValueFromMutationBody(recorded.body) ?? #"{"items":[]}"#
-            let replay = mode == .idempotentReplay
-            respond(
-                status: 200,
-                body: """
-                {"key":"nav.shortcuts","scope":"profile",
-                 "value":\(value),"revision":\(replay ? 0 : 3)}
-                """,
-                contentType: "application/json",
-                headers: replay ? ["X-Silo-Idempotent-Replay": "true"] : [:]
-            )
         case ("PUT", let path) where path.hasPrefix("/api/v1/settings/values/"):
             let key = String(path.dropFirst("/api/v1/settings/values/".count))
             let value = Self.valueFromWriteBody(recorded.body) ?? "null"
@@ -2575,20 +2502,6 @@ final class SettingsStubProtocol: URLProtocol {
         guard let data = try? JSONSerialization.data(
             withJSONObject: value,
             options: [.fragmentsAllowed, .sortedKeys]
-        ) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    private static func shortcutValueFromMutationBody(_ body: Data?) -> String? {
-        guard let body,
-              let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-              let item = object["item"] as? [String: Any],
-              let present = object["present"] as? Bool
-        else { return nil }
-        let value: [String: Any] = ["items": present ? [item] : []]
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: value,
-            options: [.sortedKeys]
         ) else { return nil }
         return String(data: data, encoding: .utf8)
     }

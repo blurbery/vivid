@@ -691,7 +691,6 @@ struct SettingsContractCapabilities: Codable, Hashable, Sendable {
         revision >= 5
             && supportsBatchedEffective
             && supportsIdempotentWrites
-            && supportsAtomicShortcuts
     }
 }
 
