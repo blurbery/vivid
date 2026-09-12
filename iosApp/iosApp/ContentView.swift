@@ -1552,7 +1552,6 @@ extension EnvironmentValues {
 enum MainTabDestinationID: Hashable {
     case app(AppTab)
     case libraryCategory(PrimaryMenuBuiltin)
-    case library(Int)
 }
 
 struct MainTabDestination: Identifiable, Equatable {
@@ -1565,19 +1564,6 @@ struct MainTabDestination: Identifiable, Equatable {
         .init(id: .app(tab), title: tab.rawValue, icon: tab.icon, selectedIcon: tab.selectedIcon)
     }
 
-    static func library(
-        id: Int,
-        label: String,
-        icon: String = "rectangle.stack",
-        selectedIcon: String = "rectangle.stack.fill"
-    ) -> MainTabDestination {
-        .init(
-            id: .library(id),
-            title: label,
-            icon: icon,
-            selectedIcon: selectedIcon
-        )
-    }
 
     static func libraryCategory(_ category: PrimaryMenuBuiltin) -> MainTabDestination {
         return .init(
@@ -1589,10 +1575,8 @@ struct MainTabDestination: Identifiable, Equatable {
     }
 }
 
-/// Projects the cross-client menu into roots this Apple shell can navigate
-/// without discarding destination identity. Sections and collections remain
-/// stored in the synced document, but stay hidden until this shell has a
-/// destination-specific root for them.
+/// Projects the server menu onto the supported Apple tabs. Retired library,
+/// section and collection shortcuts never become navigation roots.
 func projectedMainTabDestinations(
     primaryMenu: PrimaryMenuPreference?,
     availableLibraries: [Library] = []
@@ -1689,7 +1673,7 @@ func resolvedRequestedMainTabDestination(
        !visibleDestinations.contains(where: { $0.id == .app(.libraries) }),
        let authoredLibraryRoot = visibleDestinations.first(where: {
            switch $0.id {
-           case .libraryCategory, .library:
+           case .libraryCategory:
                return true
            case .app:
                return false
@@ -2276,12 +2260,6 @@ struct MainTabView: View {
         case .libraryCategory(let category):
             LibrariesTabView(
                 category: category,
-                libraryAuthority: currentLibraryAuthority,
-                onLibrariesLoaded: acceptLoadedLibraries
-            )
-        case .library(let libraryId):
-            LibrariesTabView(
-                fixedLibraryId: libraryId,
                 libraryAuthority: currentLibraryAuthority,
                 onLibrariesLoaded: acceptLoadedLibraries
             )

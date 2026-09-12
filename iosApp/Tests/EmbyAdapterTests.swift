@@ -396,10 +396,16 @@ final class EmbyAdapterTests: XCTestCase {
         let suite = "Vivid.EmbyTests." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName:suite))
         defer { defaults.removePersistentDomain(forName:suite) }
+        defaults.set(try JSONSerialization.data(withJSONObject: [
+            "nav.shortcuts.profile": ["key": "nav.shortcuts", "value": ["items": []]]
+        ]), forKey: "account-a")
         let store = EmbyLocalPreferences(defaults:defaults)
         let path = ["api","v1","settings","values","playback.subtitle_language"]
         _ = try await store.apply(storageKey:"account-a",user:"user",method:"PUT",path:path,query:["scope":"profile"],body:["value":"eng"])
         _ = try await store.apply(storageKey:"account-a",user:"user",method:"PUT",path:path,query:["scope":"profile_device"],body:["value":"fra"])
+        let migrated = try XCTUnwrap(defaults.data(forKey: "account-a"))
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: migrated) as? [String: Any])
+        XCTAssertNil(rows["nav.shortcuts.profile"])
         let reopened = EmbyLocalPreferences(defaults:defaults)
         func effective(_ account: String) async throws -> String? {
             let result = try await reopened.apply(storageKey:account,user:"user",method:"GET",path:["effective"],query:["keys":"playback.subtitle_language"],body:[:]) as? [String:Any]

@@ -264,7 +264,6 @@ final class UICustomizationPreferencesTests: XCTestCase {
         XCTAssertEqual(destinations.map(\.id), [
             .app(.home), .libraryCategory(.movies), .libraryCategory(.series), .app(.recommendations),
         ])
-        XCTAssertEqual(resolvedVisibleMainTabDestination(.library(7), visibleDestinations: destinations), .app(.home))
     }
 
     func testHomeOnlyMainTabProjectionRestoresAppleDefaults() {
@@ -292,7 +291,6 @@ final class UICustomizationPreferencesTests: XCTestCase {
         let authoredDestinations: [MainTabDestination] = [
             .app(.home),
             .libraryCategory(.series),
-            .library(id: 8, label: "Pinned"),
             .app(.downloads),
         ]
         XCTAssertEqual(
@@ -364,7 +362,7 @@ final class UICustomizationPreferencesTests: XCTestCase {
         )
         let menu = PrimaryMenuPreference(items: [
             .builtin(.home),
-            .library(libraryId: library.id, label: library.name),
+            .builtin(.movies),
         ])
         let staleSnapshot = MainTabLibrarySnapshot(
             authority: firstProfile,
@@ -382,7 +380,7 @@ final class UICustomizationPreferencesTests: XCTestCase {
         )
         XCTAssertEqual(
             resolvedVisibleMainTabDestination(
-                .library(library.id),
+                .libraryCategory(.movies),
                 visibleDestinations: staleProjection
             ),
             .app(.home)
@@ -396,7 +394,7 @@ final class UICustomizationPreferencesTests: XCTestCase {
             primaryMenu: menu,
             availableLibraries: currentSnapshot.availableLibraries(for: secondProfile)
         )
-        XCTAssertEqual(currentProjection.map(\.id), [.app(.home), .library(library.id)])
+        XCTAssertEqual(currentProjection.map(\.id), [.app(.home), .libraryCategory(.movies)])
 
         let revokedProjection = projectedMainTabDestinations(
             primaryMenu: menu,
@@ -408,15 +406,15 @@ final class UICustomizationPreferencesTests: XCTestCase {
         XCTAssertEqual(
             revokedProjection.map(\.id),
             [.app(.home), .app(.recommendations)],
-            "revoking library access must restore app roots without retaining the library pin"
+            "revoking library access must restore app roots without retaining an inaccessible category"
         )
         XCTAssertEqual(
             resolvedVisibleMainTabDestination(
-                .library(library.id),
+                .libraryCategory(.movies),
                 visibleDestinations: revokedProjection
             ),
             .app(.home),
-            "a same-authority access revocation must remove the pin and select Home"
+            "a same-authority access revocation must remove the category and select Home"
         )
     }
 
@@ -647,7 +645,7 @@ final class UICustomizationPreferencesTests: XCTestCase {
                 usesDeviceMenuOverride: true,
                 changesFamilyMenu: false
             ),
-            "profile shortcut membership remains editable under a device menu override"
+            "card preferences remain editable under a device menu override"
         )
         XCTAssertFalse(
             tvCustomizationMutationIsEnabled(
@@ -661,7 +659,7 @@ final class UICustomizationPreferencesTests: XCTestCase {
     func testHiddenRequestedTabFallsBackToHomeAfterMenuReordering() {
         let visible = [
             MainTabDestination.app(.downloads),
-            MainTabDestination.library(id: 7, label: "Movies"),
+            MainTabDestination.libraryCategory(.movies),
             MainTabDestination.app(.home),
         ]
 
