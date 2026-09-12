@@ -14,8 +14,8 @@ struct Profile: Codable {
     let avatar: String?
     /// Server-resolved avatar URL (`avatar_url`). For uploads this is a
     /// short-lived presigned object-store URL that changes on every fetch, so
-    /// it must not be persisted long-term. For presets it is a DiceBear URL or
-    /// a server-relative `/profile-avatars/{id}.svg` path.
+    /// it must not be persisted long-term. Other pictures may use an absolute
+    /// URL or a server-relative path.
     let avatarUrl: String?
     /// `avatar_source`: "upload", "preset", or "none".
     let avatarSource: String?

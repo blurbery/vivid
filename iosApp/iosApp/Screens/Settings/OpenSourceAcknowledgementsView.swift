@@ -9,7 +9,11 @@ enum OpenSourceAcknowledgements {
 
     static let resources: [Resource] = [
         Resource(title: "Overview and provenance", name: "README"),
-        Resource(title: "Vivid and VividKit — Apache 2.0", name: "Vivid-Apache-2.0"),
+        Resource(title: "Vivid and VividKit: GPLv3", name: "Vivid-GPL-3.0"),
+        Resource(title: "Vivid: Apple distribution permission", name: "Vivid-Apple-Distribution"),
+        Resource(title: "Earlier Apache-licensed code", name: "Vivid-Apache-2.0"),
+        Resource(title: "AetherEngine: LGPLv3 with Apple exception", name: "AetherEngine-LGPL-3.0"),
+        Resource(title: "LibDovi: MIT", name: "LibDovi-MIT"),
         Resource(title: "FFmpegBuild and FFmpeg — LGPL 2.1", name: "FFmpegBuild-LGPL-2.1"),
         Resource(title: "dav1d — BSD 2-Clause", name: "dav1d-BSD-2-Clause"),
         Resource(title: "zimg — WTFPL version 2", name: "zimg-WTFPL"),

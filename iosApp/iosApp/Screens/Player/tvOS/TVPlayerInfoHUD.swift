@@ -54,22 +54,28 @@ struct TVPlayerInfoHUD: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            VStack(spacing: 14) {
+        Group {
+            if subtitleOnly {
+                TVPlayerSubtitleMenu(viewModel: viewModel, onDismiss: onDismiss)
+            } else {
+                GeometryReader { geometry in
+            VStack(spacing: 12) {
                 tabBar
                     .padding(.top, 32)
-                panel(height: max(240, min(600, geometry.size.height - 180)))
+                panel(height: min(activeTab == .chapters ? min(300, CGFloat(viewModel.chapters.count) * 54 + 76) : 300, max(180, geometry.size.height - 180)))
                     .padding(.horizontal, 80)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
+                }
+            }
         }
         .onAppear {
             repairActiveTabIfUnavailable()
             // If the parent didn't seed focus (edge case on re-present), at
             // least make sure focus lands on the active tab so Menu has a
             // handler to bubble to.
-            if focusedTab == nil {
+            if !subtitleOnly && focusedTab == nil {
                 focusedTab = activeTab
             }
         }
@@ -85,7 +91,7 @@ struct TVPlayerInfoHUD: View {
     // MARK: - Tab bar
 
     private var tabBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 4) {
             ForEach(availableTabs, id: \.self) { tab in
                 TabPill(
                     title: tab.title,
@@ -96,6 +102,7 @@ struct TVPlayerInfoHUD: View {
                 )
             }
         }
+        .modifier(TVTopMenuGlassChrome())
         .focusSection()
         // Info and Stats are single composite focus owners. Once either has
         // paged below its top anchor, remove the rail from the focus graph so
@@ -249,11 +256,11 @@ private struct HUDTabPillBody: View {
     private var background: Color {
         if isSelected { return .white }
         if isFocused  { return .white.opacity(0.9) }
-        return .black.opacity(0.45)
+        return .clear
     }
 
     private var strokeColor: Color {
-        (isSelected || isFocused) ? .clear : .white.opacity(0.18)
+        Color.clear
     }
 }
 
@@ -566,12 +573,14 @@ private struct InfoPane: View {
                             .foregroundStyle(.white.opacity(0.65))
                             .monospacedDigit()
                     }
-                    if let overview = viewModel.metadata.overview, !overview.isEmpty {
+                }
+
+                if let overview = viewModel.metadata.overview, !overview.isEmpty {
+                    PaneColumn("Overview") {
                         Text(overview)
                             .font(.system(size: 20))
                             .foregroundStyle(.white.opacity(0.75))
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 4)
                     }
                 }
 
@@ -664,7 +673,7 @@ private struct StatsPane: View {
                 PlaybackStatsPanel(
                     stats: viewModel.playbackStats,
                     usesTVTypography: true,
-                    usesTwoColumnLayout: true
+                    usesThreeColumnLayout: true
                 )
                 Color.clear.frame(height: 0).id(Self.bottomAnchor)
             }
@@ -946,7 +955,7 @@ private struct HUDPickerDialog: View {
                         }
                     }
                 }
-                .frame(maxHeight: 520)
+                .frame(maxHeight: 240)
                 .onAppear {
                     if let initialFocusID {
                         proxy.scrollTo(initialFocusID, anchor: .center)
@@ -1478,6 +1487,99 @@ private struct AudioPane: View {
     }
 }
 
+private struct TVPlayerSubtitleMenu: View {
+    let viewModel: PlayerViewModel
+    let onDismiss: () -> Void
+    @State private var destination: Destination?
+
+    private enum Destination: String, Identifiable {
+        case settings, search
+        var id: String { rawValue }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Subtitles").font(.title3.weight(.semibold))
+            ScrollView {
+                VStack(spacing: 12) {
+                    Button(viewModel.selectedSubtitleId == nil ? "✓ Off" : "Off") {
+                        viewModel.disableSubtitles()
+                        onDismiss()
+                    }
+                    ForEach(viewModel.orderedSubtitleTracks) { track in
+                        Button(trackLabel(track)) {
+                            viewModel.selectSubtitle(track)
+                            onDismiss()
+                        }
+                    }
+                    if OpenSubtitlesStore.shared.isConnected, viewModel.openSubtitleContext != nil {
+                        Button("Find on OpenSubtitles") { destination = .search }
+                    }
+                    Button("Subtitle Settings") { destination = .settings }
+                }
+                .buttonStyle(SubtitleMenuButtonStyle())
+                .frame(maxWidth: .infinity)
+                .padding(16)
+            }
+            .frame(maxHeight: 300)
+        }
+        .padding(28)
+        .frame(width: 760)
+        .vividPlayerGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .stroke(Color.white.opacity(0.14), lineWidth: 1))
+        .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { OpenSubtitlesStore.shared.reload() }
+        .onExitCommand(perform: onDismiss)
+            .sheet(item: $destination, onDismiss: onDismiss) { destination in
+                switch destination {
+                case .search:
+                    OpenSubtitlesSearchView(viewModel: viewModel)
+                case .settings:
+                    SubtitlesPane(viewModel: viewModel)
+                        .padding(28)
+                        .frame(width: 1080, height: 480)
+                        .vividPlayerGlass(in: RoundedRectangle(cornerRadius: 28))
+                        .onExitCommand { self.destination = nil }
+                }
+            }
+    }
+
+    private func trackLabel(_ track: PlayerTrack) -> String {
+        let selected = viewModel.selectedSubtitleId == track.trackId ? "✓ " : ""
+        let attributes = track.attributesLabel.map { " (\($0))" } ?? ""
+        return selected + track.primaryLabel + attributes
+    }
+}
+
+private struct SubtitleMenuButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        SubtitleMenuButtonBody(configuration: configuration)
+    }
+}
+
+private struct SubtitleMenuButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        configuration.label
+            .font(.system(size: 22, weight: .medium))
+            .foregroundStyle(isFocused ? Color.black : Color.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isFocused ? Color.white : Color.black.opacity(0.28))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .focusEffectDisabled()
+            .opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
 // MARK: - Subtitles pane
 
 private struct SubtitlesPane: View {
@@ -1749,6 +1851,7 @@ private struct SubtitlesPane: View {
 // MARK: - Chapters pane
 
 private struct ChaptersPane: View {
+    @FocusState private var focusedChapter: Int?
     let viewModel: PlayerViewModel
     let onSelect: () -> Void
 
@@ -1770,11 +1873,13 @@ private struct ChaptersPane: View {
                             viewModel.seekTo(seconds: chapter.time)
                             onSelect()
                         }
+                        .focused($focusedChapter, equals: index)
                     }
                 }
             }
         }
         .focusSection()
+        .defaultFocus($focusedChapter, currentIndex ?? 0, priority: .userInitiated)
     }
 }
 

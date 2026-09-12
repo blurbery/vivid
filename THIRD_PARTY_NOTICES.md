@@ -8,7 +8,7 @@
 
 ---
 
-Vivid and VividKit application code use Apache-2.0. Third-party libraries retain their own licences.
+Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Earlier Apache-2.0 grants remain valid, and their licence text is retained in the bundled notices. Third-party libraries retain their own licences.
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ The full version, source and rebuild inventory is maintained in the [bundled ack
 
 FFmpeg remains a set of separate dynamic frameworks. Its binary packaging retains the `AetherLib` prefix, which identifies the packaged FFmpeg frameworks. The exact build excludes GPL and nonfree FFmpeg features. VividKit links only the four standalone subtitle/font frameworks from the pinned FFmpegKit source tree; it does not link FFmpegKit's playback code or mpv.
 
-The subtitle/font frameworks are vendored in [VividKit/Vendor](VividKit/Vendor), with their provenance and licence texts. Their simulator and device slices are available as separately replaceable SwiftPM binary targets. External distribution must preserve source and relinking rights for the LGPL components; an Apache licence on Vivid's code does not relicense those dependencies.
+The subtitle/font frameworks are vendored in [VividKit/Vendor](VividKit/Vendor), with their provenance and licence texts. Their simulator and device slices are available as separately replaceable SwiftPM binary targets. External distribution must preserve source and relinking rights for the LGPL components; Vivid's GPL licence and Apple permission do not relicense those dependencies or waive their obligations.
 
 ## Timestamp services
 

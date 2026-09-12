@@ -10,8 +10,10 @@ enum MediaServerProvider: String, Codable, Sendable {
 
 enum EmbyError: LocalizedError {
     case invalidResponse, invalidURL, unsupportedFeature, signInRequired, playbackUnavailable
+    case filterRequestFailed(step: String, status: Int)
     var errorDescription: String? {
         switch self {
+        case .filterRequestFailed(let step, let status): "\(step): HTTP \(status)"
         case .invalidResponse: "Emby returned an unexpected response."
         case .invalidURL: "The Emby server returned an invalid address."
         case .unsupportedFeature: "This feature is not available with Emby yet."
@@ -366,7 +368,7 @@ struct EmbyAdapter {
             default: continue
             }
         }
-        return ["sections":sections]
+        return ["sections": try await supplyingCombinedNextUp(sections)]
     }
 
     func home(library: String? = nil) async throws -> [String: Any] {
@@ -393,7 +395,27 @@ struct EmbyAdapter {
             let result = try await items("/Users/\(userID)/Sections/\(EmbyConnection.id(id))/Items",query:["Limit":"20"])
             sections.append(homeSection(definition, catalog:result))
         }
-        return ["sections":sections]
+        return ["sections": try await supplyingCombinedNextUp(sections)]
+    }
+
+    private func supplyingCombinedNextUp(_ sections: [[String:Any]]) async throws -> [[String:Any]] {
+        guard let server = connection.identity?.account.serverId else { return sections }
+        let combine = await HomeSectionPreferences.combinesEmbyNextUp(server: server, profile: userID)
+        return try await supplyingCombinedNextUp(sections, enabled: combine)
+    }
+
+    func supplyingCombinedNextUp(_ sections: [[String:Any]], enabled: Bool) async throws -> [[String:Any]] {
+        guard enabled, !sections.contains(where: { $0["sectionType"] as? String == "next_up" }) else { return sections }
+        do {
+            let result = try await items("/Shows/NextUp", query: ["Limit":"20", "LegacyNextUp":"true"])
+            return sections + [section("next_up", "Next Up", result)]
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+            if case HTTPError.requestIdentityChanged = error { throw error }
+            if case EmbyError.signInRequired = error { throw error }
+            return sections
+        }
     }
 
     func homeSection(_ definition: [String:Any], catalog: [String:Any]) -> [String:Any] {
@@ -430,6 +452,18 @@ struct EmbyAdapter {
          "StartIndex":offset,"Limit":limit,"SortBy":"SortName","SortOrder":"Ascending"]
     }
 
+    nonisolated static func catalogFilterOptions(_ raw: [String: Any]) -> [String: Any] {
+        func names(_ value: Any?) -> [String] {
+            let values = (value as? [Any] ?? []).compactMap { entry -> String? in
+                if let name = entry as? String { return name }
+                return (entry as? [String: Any])?["Name"] as? String
+            }.filter { !$0.isEmpty }
+            return Array(Set(values)).sorted()
+        }
+        return ["genres": names(raw["Genres"]), "contentRatings": names(raw["OfficialRatings"]),
+                "studios": [String](), "networks": [String](), "countries": [String]()]
+    }
+
     func catalog(_ input: [String: String]) async throws -> [String: Any] {
         if let collection = input["collection_id"] {
             return try await items(query:Self.collectionQuery(id:EmbyConnection.id(collection),offset:input["offset"] ?? "0",limit:input["limit"] ?? "60"))
@@ -440,14 +474,25 @@ struct EmbyAdapter {
         let sorts = ["title":"SortName", "year":"ProductionYear", "added":"DateCreated", "added_at":"DateCreated", "rating":"CommunityRating", "random":"Random", "runtime":"Runtime"]
         if let sort = input["sort"], let mapped = sorts[sort] { q["SortBy"] = mapped }
         if let library = input["library_id"] { q["ParentId"] = try await libraryID(library) }
+        if let prefix = input["name_prefix"], !prefix.isEmpty {
+            if prefix == "#" { q["NameLessThan"] = "A" }
+            else { q["NameStartsWith"] = prefix }
+        }
         if let person = input["person_id"] { q["PersonIds"] = try EmbyConnection.id(person) }
+        switch input["emby_watch_status"] {
+        case "watched": q["IsPlayed"] = "true"
+        case "unwatched": q["IsPlayed"] = "false"
+        case "inProgress": q["Filters"] = "IsResumable"
+        case "favorited": q["IsFavorite"] = "true"
+        default: break
+        }
         if input["source"] == "favorites" { q["Filters"] = "IsFavorite" }
         if input["source"] == "history" { q["Filters"] = "IsPlayed"; q["SortBy"] = "DatePlayed"; q["SortOrder"] = "Descending"; q["IncludeItemTypes"] = input["type"] == "movie" ? "Movie" : input["type"] == "episode" ? "Episode" : "Movie,Episode" }
         if input["source"] == "watchlist" {
             let ids = watchlistIDs
             guard !ids.isEmpty else { return ["items": [], "total": 0, "hasMore": false] }
             q["Ids"] = ids.joined(separator: ",")
-            q.removeValue(forKey: "IncludeItemTypes")
+            if input["type"] == nil { q.removeValue(forKey: "IncludeItemTypes") }
         }
         return try await items(query: q)
     }
@@ -614,8 +659,37 @@ struct EmbyAdapter {
             return ["settings":settings]
         }
         if path == "/api/v1/catalog/filters" {
-            let filters = try await connection.object("GET", "/Items/Filters2", query: ["UserId":userID])
-            return ["genres": (filters["Genres"] as? [[String: Any]] ?? []).compactMap { $0["Name"] as? String }, "studios": [], "networks": [], "countries": [], "contentRatings": filters["OfficialRatings"] ?? []]
+            var filterQuery = ["UserId": userID]
+            if let library = query["library_id"] {
+                do { filterQuery["ParentId"] = try await libraryID(library) }
+                catch HTTPError.http(let status, _) { throw EmbyError.filterRequestFailed(step: "Library lookup", status: status) }
+            }
+            filterQuery["Recursive"] = "true"
+            filterQuery["EnableImages"] = "false"
+            func optionRows(_ path: String) async throws -> [Any] {
+                var rows: [Any] = []
+                var pageQuery = filterQuery
+                pageQuery["Limit"] = "1000"
+                let maximumRows = 10_000
+                let maximumPages = 100
+                for _ in 0..<maximumPages {
+                    try Task.checkCancellation()
+                    pageQuery["StartIndex"] = String(rows.count)
+                    let response: [String: Any]
+                    do { response = try await connection.object("GET", path, query: pageQuery) }
+                    catch HTTPError.http(let status, _) { throw EmbyError.filterRequestFailed(step: path == "/Genres" ? "Genres" : "Ratings", status: status) }
+                    guard let page = response["Items"] as? [Any] else { throw EmbyError.invalidResponse }
+                    guard page.count <= maximumRows - rows.count else { throw EmbyError.invalidResponse }
+                    rows.append(contentsOf: page)
+                    let total = response["TotalRecordCount"] as? Int ?? rows.count
+                    if page.isEmpty || rows.count >= total { return rows }
+                    guard rows.count < maximumRows else { throw EmbyError.invalidResponse }
+                }
+                throw EmbyError.invalidResponse
+            }
+            let genres = try await optionRows("/Genres")
+            let ratings = try await optionRows("/OfficialRatings")
+            return Self.catalogFilterOptions(["Genres": genres, "OfficialRatings": ratings])
         }
         if p.count >= 3, p[2] == "settings" {
             let key = "vivid.emby.setting.\(connection.identity!.account.serverId).\(userID).\(p.dropFirst(3).joined(separator: "."))"

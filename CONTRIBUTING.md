@@ -104,10 +104,13 @@ Review the changes you submit and explain what you tested. Keep credentials and 
 
 ## Licensing of contributions
 
-Vivid’s own source code is licensed under [Apache-2.0](LICENSE).
+Vivid’s own source code is licensed under [GPL-3.0-only](LICENSE) with the
+[Apple distribution permission](LICENSE-APPLE-EXCEPTION).
 
 Unless you explicitly state otherwise, a contribution intentionally submitted
-for inclusion in Vivid is licensed under Apache-2.0. Third-party code must
+for inclusion in Vivid is licensed under GPL-3.0-only with that additional
+permission. Submit only material you have the right to license on those
+terms, and identify any exceptions before submission. Third-party code must
 retain its applicable licence and attribution; identify any such code in the
 contribution so its terms can be reviewed.
 

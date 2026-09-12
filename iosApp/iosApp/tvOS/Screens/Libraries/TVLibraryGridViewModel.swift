@@ -28,6 +28,7 @@ final class TVLibraryGridViewModel {
     private(set) var filter: CatalogFilterState
     /// Live facet vocabulary for the filter panel (loaded lazily).
     private(set) var facetsLoadFailed = false
+    private(set) var facetsFailureReason: String?
     private(set) var isLoadingFacets = false
     private(set) var facets: CatalogFacets?
 
@@ -135,12 +136,26 @@ final class TVLibraryGridViewModel {
         guard facets == nil, !isLoadingFacets else { return }
         isLoadingFacets = true
         facetsLoadFailed = false
+        facetsFailureReason = nil
         defer { isLoadingFacets = false }
         do {
             facets = try await FacetLoader.shared.facets(libraryId: libraryId)
         } catch {
             guard !Task.isCancelled else { return }
             facetsLoadFailed = true
+            if MediaServerProvider.active == .emby {
+                switch error {
+                case EmbyError.filterRequestFailed(let step, let status): facetsFailureReason = "\(step): HTTP \(status)"
+                case HTTPError.http(let status, _): facetsFailureReason = "HTTP \(status)"
+                case HTTPError.decodingFailed: facetsFailureReason = "Unreadable response"
+                case HTTPError.requestIdentityChanged: facetsFailureReason = "Account changed"
+                case EmbyError.signInRequired: facetsFailureReason = "Sign-in required"
+                case EmbyError.invalidResponse: facetsFailureReason = "Unexpected response"
+                case EmbyError.unsupportedFeature: facetsFailureReason = "Unsupported request"
+                case let error as URLError: facetsFailureReason = "Network \(error.code.rawValue)"
+                default: facetsFailureReason = "Request failed"
+                }
+            }
         }
     }
 

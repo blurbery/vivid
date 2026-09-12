@@ -172,6 +172,15 @@ struct BrowseView: View {
     #if os(iOS)
     private var nativeFilterMenu: some View {
         Menu {
+            if viewModel.facetsLoadFailed {
+                Text("Couldn’t load filter options")
+                Button("Retry", systemImage: "arrow.clockwise") {
+                    Task { await viewModel.loadFacetsIfNeeded() }
+                }
+                Divider()
+            } else if viewModel.isLoadingFacets {
+                Text("Loading filter options…")
+            }
             ForEach(CatalogFacet.available(for: viewModel.mediaType), id: \.self) { facet in
                 let options = (viewModel.facets ?? CatalogFacets()).optionPairs(for: facet, hasProfile: AuthService.shared.profileId?.isEmpty == false)
                 if !options.isEmpty {
@@ -190,6 +199,7 @@ struct BrowseView: View {
                 }
             }
             Divider()
+            if MediaServerProvider.active != .emby {
             Toggle("Match all filters", isOn: Binding(
                 get: { viewModel.filterState.matchAll },
                 set: { value in
@@ -198,6 +208,7 @@ struct BrowseView: View {
                     Task { await viewModel.apply(next) }
                 }
             ))
+            }
             Toggle("Remember filters", isOn: Binding(
                 get: { viewModel.preserveEnabled },
                 set: { viewModel.setPreserveEnabled($0) }

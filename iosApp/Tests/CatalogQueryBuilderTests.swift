@@ -15,6 +15,65 @@ final class CatalogQueryBuilderTests: XCTestCase {
                                   offset: 0, limit: 60, includeType: includeType)
     }
 
+    func testNormalisingPersistedEmbyFacetsKeepsSupportedFiltersAndSiloState() throws {
+        var state = CatalogFilterState()
+        state.sort = .addedAt
+        state.order = .asc
+        state.namePrefix = "B"
+        state.matchAll = false
+        state.mediaScope = "series"
+        state.genres = ["Drama"]
+        state.contentRatings = ["PG"]
+        state.decades = [1990]
+        state.watchStatus = .watchlist
+        state.studios = ["Studio"]
+        state.networks = ["Network"]
+        state.countries = ["AU"]
+        state.resolutions = ["4K"]
+        state.audioLanguages = ["eng"]
+        state.subtitleLanguages = ["eng"]
+        state.originalLanguages = ["eng"]
+        state.hdr = true
+        state.dolbyVision = true
+        let restored = try JSONDecoder().decode(CatalogFilterState.self, from: JSONEncoder().encode(state))
+        let cleaned = restored.normalised(for: .emby)
+        XCTAssertEqual(restored.normalised(for: .silo), state)
+        XCTAssertTrue(cleaned.matchAll)
+        XCTAssertEqual(cleaned.activeFacetCount, 5)
+        XCTAssertEqual(Set(cleaned.activeChips().map(\.facet)), [.itemType, .genre, .contentRating, .decade, .watchStatus])
+        XCTAssertEqual(cleaned.sort, .addedAt)
+        XCTAssertEqual(cleaned.order, .asc)
+        XCTAssertEqual(cleaned.namePrefix, "B")
+        XCTAssertEqual(cleaned.normalised(for: .emby), cleaned)
+        let query = CatalogQueryBuilder.embyQuery(cleaned, base: [:])
+        XCTAssertEqual(query["genre"], "Drama")
+        XCTAssertEqual(query["content_rating"], "PG")
+        XCTAssertEqual(query["source"], "watchlist")
+        XCTAssertEqual(query["type"], "series")
+        XCTAssertEqual(Set(query.keys), ["genre", "content_rating", "source", "type", "years"])
+    }
+
+    func testEmbyFiltersKeepLibraryPagingAndAlphabetWhileUsingNativeValues() {
+        var state = CatalogFilterState()
+        state.genres = ["Action", "Drama"]
+        state.contentRatings = ["PG", "R"]
+        state.decades = [1990]
+        state.watchStatus = .inProgress
+        let query = CatalogQueryBuilder.embyQuery(state, base: [
+            "library_id": "12", "offset": "40", "limit": "20", "name_prefix": "B",
+            "groups[0][match]": "any", "match": "any"
+        ])
+        XCTAssertEqual(query["genre"], "Action|Drama")
+        XCTAssertEqual(query["content_rating"], "PG|R")
+        XCTAssertEqual(query["years"], "1990,1991,1992,1993,1994,1995,1996,1997,1998,1999")
+        XCTAssertEqual(query["emby_watch_status"], "inProgress")
+        XCTAssertEqual(query["library_id"], "12")
+        XCTAssertEqual(query["offset"], "40")
+        XCTAssertEqual(query["name_prefix"], "B")
+        XCTAssertNil(query["match"])
+        XCTAssertFalse(query.keys.contains { $0.hasPrefix("groups[") })
+    }
+
     func testDefaultStateBaseParams() {
         let q = build(.none, libraryId: 5)
         XCTAssertEqual(q["source"], "query")

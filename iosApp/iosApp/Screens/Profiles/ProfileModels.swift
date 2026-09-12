@@ -10,8 +10,8 @@ struct UserProfile: Codable, Identifiable, Hashable {
     let name: String
     let avatarEmoji: String?
     /// Server-resolved avatar image URL (`avatar_url`). Absolute for uploads
-    /// (short-lived presigned object-store URL) and DiceBear presets, or a
-    /// server-relative path for locally hosted preset art. Preferred over the
+    /// (short-lived presigned object-store URL), or a server-relative path
+    /// for locally hosted artwork. Preferred over the
     /// client-side resolution of ``avatarEmoji`` when present; optional so
     /// cached payloads written before this field existed still decode.
     let avatarImageUrl: String?

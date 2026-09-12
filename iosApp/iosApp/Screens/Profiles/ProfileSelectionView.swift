@@ -10,25 +10,15 @@ struct ProfileSelectionView: View {
     @State private var viewModel = ProfileSelectionViewModel()
     @State private var launchPreferences = ProfileLaunchPreferences.shared
     @State private var pinEntryContext: PINEntryContext?
-    @State private var showCreateProfile: Bool = false
     @State private var showSignOutConfirm: Bool = false
     @Namespace private var profileFocusNamespace
     #if os(tvOS)
     @FocusState private var isSignOutFocused: Bool
     #endif
 
-    private enum PINEntryPurpose: String {
-        case profileSelection
-        case profileManagement
-    }
-
     private struct PINEntryContext: Identifiable {
         let profile: UserProfile
-        let purpose: PINEntryPurpose
-
-        var id: String {
-            "\(purpose.rawValue)-\(profile.id)"
-        }
+        var id: String { profile.id }
     }
 
     private var isPINEntryPresented: Bool {
@@ -42,13 +32,10 @@ struct ProfileSelectionView: View {
             pickerContent
                 #if os(tvOS)
                 .disabled(
-                    viewModel.isClearingTemporaryManagementContext
-                        || isPINEntryPresented
+                    isPINEntryPresented
                         || showSignOutConfirm
                 )
                 .accessibilityHidden(isPINEntryPresented || showSignOutConfirm)
-                #else
-                .disabled(viewModel.isClearingTemporaryManagementContext)
                 #endif
         }
         .task {
@@ -57,23 +44,6 @@ struct ProfileSelectionView: View {
         #if os(tvOS)
         .overlay {
             profileOverlay
-        }
-        #endif
-        #if os(tvOS)
-        .fullScreenCover(isPresented: $showCreateProfile, onDismiss: handleCreateProfileDismissed) {
-            CreateProfileView {
-                showCreateProfile = false
-                Task { await viewModel.loadProfiles() }
-            }
-        }
-        #else
-        .sheet(isPresented: $showCreateProfile, onDismiss: handleCreateProfileDismissed) {
-            CreateProfileView {
-                showCreateProfile = false
-                Task { await viewModel.loadProfiles() }
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
         }
         #endif
         #if !os(tvOS)
@@ -284,7 +254,6 @@ struct ProfileSelectionView: View {
                 }
                 #endif
             }
-            AddProfileTile { handleAddProfileTap() }
         }
 
         #if os(tvOS)
@@ -304,40 +273,10 @@ struct ProfileSelectionView: View {
 
     private func handleProfileTap(_ profile: UserProfile) {
         if profile.hasPin {
-            pinEntryContext = PINEntryContext(profile: profile, purpose: .profileSelection)
+            pinEntryContext = PINEntryContext(profile: profile)
         } else {
             Task { await viewModel.selectProfile(profile, router: router) }
         }
-    }
-
-    private func handleAddProfileTap() {
-        guard let primaryProfile = viewModel.primaryProfile else {
-            viewModel.error = ErrorState(
-                statusCode: nil,
-                message: "Couldn't find the primary profile needed to create another profile."
-            )
-            return
-        }
-
-        if primaryProfile.hasPin {
-            pinEntryContext = PINEntryContext(profile: primaryProfile, purpose: .profileManagement)
-            return
-        }
-
-        Task {
-            do {
-                try await viewModel.prepareForProfileManagement()
-                await MainActor.run { showCreateProfile = true }
-            } catch {
-                await MainActor.run {
-                    viewModel.error = ErrorState(error)
-                }
-            }
-        }
-    }
-
-    private func handleCreateProfileDismissed() {
-        Task { await viewModel.clearTemporaryManagementContextIfNeeded() }
     }
 
     #if os(tvOS)
@@ -385,13 +324,7 @@ struct ProfileSelectionView: View {
 
         Task {
             do {
-                switch context.purpose {
-                case .profileSelection:
-                    try await viewModel.selectProfileWithPIN(context.profile, pin: pin, router: router)
-                case .profileManagement:
-                    try await viewModel.prepareForProfileManagement(pin: pin)
-                    await MainActor.run { showCreateProfile = true }
-                }
+                try await viewModel.selectProfileWithPIN(context.profile, pin: pin, router: router)
             } catch {
                 await MainActor.run {
                     viewModel.error = ErrorState(error)
@@ -429,4 +362,3 @@ struct ProfileSelectionView: View {
 }
 
 // `GhostChipButtonStyle` now lives in `Theme/VividButtonStyles.swift`
-// (shared with `CreateProfileView`).

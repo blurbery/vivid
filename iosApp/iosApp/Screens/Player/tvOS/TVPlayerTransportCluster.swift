@@ -65,13 +65,13 @@ struct TVPlayerTransportCluster: View {
     private var secondaryRow: some View {
         let isFocused = focusedButton == .options
         return Button(action: onOpenHUD) {
-            Label("Info", systemImage: "info.circle")
-                .font(.system(size: 21, weight: .semibold))
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(isFocused ? .black : .white)
-                .frame(width: 126, height: 52)
-                .background(isFocused ? Color.white : Color.white.opacity(0.10), in: Capsule())
+                .frame(width: 52, height: 52)
+                .background(isFocused ? Color.white : Color.white.opacity(0.10), in: Circle())
                 .overlay {
-                    Capsule().strokeBorder(.white.opacity(isFocused ? 0 : 0.3), lineWidth: 1)
+                    Circle().strokeBorder(.white.opacity(isFocused ? 0 : 0.3), lineWidth: 1)
                 }
         }
         .buttonStyle(TVPlayerInfoButtonStyle())

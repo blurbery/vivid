@@ -3,6 +3,52 @@ import XCTest
 @testable import Vivid
 
 final class HomeSectionsMutationTests: XCTestCase {
+    func testCombinedEmbyHomeKeepsResumeMetadataAndRemovesDuplicateNextUp() throws {
+        let resume = try makeItem(contentId: "episode", progressUpdatedAt: "resume-state")
+        let duplicate = try makeItem(contentId: "episode", progressUpdatedAt: nil)
+        let next = try makeItem(contentId: "next", progressUpdatedAt: nil)
+        let sections = [
+            makeSection(id: "resume", type: "continue_watching", totalCount: 1, items: [resume]),
+            makeSection(id: "next", type: "next_up", totalCount: 2, items: [duplicate, next])
+        ]
+        let result = HomeSectionPreferences.combinedSections(sections, enabled: true, provider: .emby)
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].id, "resume")
+        XCTAssertEqual(result[0].title, "Continue Watching")
+        XCTAssertEqual(result[0].items.map(\.contentId), ["episode", "next"])
+        XCTAssertEqual(result[0].items[0].progressUpdatedAt, "resume-state")
+    }
+
+    func testCombinedHomeRetainsResumeIdentityAndPositionWhenNextUpComesFirst() throws {
+        let sections = [
+            makeSection(id: "next", type: "next_up", totalCount: 1, items: [try makeItem(contentId: "next-episode")]),
+            makeSection(id: "latest", type: "latest", totalCount: 1, items: [try makeItem(contentId: "movie")]),
+            makeSection(id: "resume", type: "continue_watching", totalCount: 1, items: [try makeItem(contentId: "resume-episode")])
+        ]
+        let result = HomeSectionPreferences.combinedSections(sections, enabled: true, provider: .emby)
+        XCTAssertEqual(result.map(\.id), ["latest", "resume"])
+        XCTAssertEqual(result[1].items.map(\.contentId), ["resume-episode", "next-episode"])
+    }
+
+    func testCombinedHomeDoesNotChangeSiloOrDisabledEmby() throws {
+        let sections = [makeSection(id: "next", type: "next_up", totalCount: 1,
+                                    items: [try makeItem(contentId: "episode")])]
+        for (enabled, provider) in [(true, MediaServerProvider.silo), (false, .emby)] {
+            let result = HomeSectionPreferences.combinedSections(sections, enabled: enabled, provider: provider)
+            XCTAssertEqual(result[0].sectionType, "next_up")
+            XCTAssertEqual(result[0].title, "next")
+        }
+    }
+
+    func testCombinedEmbyHomeCreatesContinueWatchingForNextUpOnly() throws {
+        let sections = [makeSection(id: "next", type: "next_up", totalCount: 1,
+                                    items: [try makeItem(contentId: "episode", progressUpdatedAt: nil)])]
+        let result = HomeSectionPreferences.combinedSections(sections, enabled: true, provider: .emby)
+        XCTAssertEqual(result[0].sectionType, "continue_watching")
+        XCTAssertEqual(result[0].title, "Continue Watching")
+        XCTAssertEqual(result[0].items.count, 1)
+    }
+
     private enum TestError: Error {
         case failed
     }

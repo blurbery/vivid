@@ -34,6 +34,8 @@ The first-run marker belongs to the installation. Removing the app removes its s
 
 Settings lists circular saved-account cards and Add Profile. Here, a **profile card is a saved server account**, identified by server and user; it is distinct from a Silo viewing profile within that account. Add Profile signs in another Silo or Emby account. A ring highlights the signed-in account on both mobile and Apple TV. Selecting an inactive saved account switches sessions, while selecting the active card opens its account settings.
 
+Vivid uses server-provided account pictures with initials as a fallback. The legacy DiceBear avatar picker and household-profile creation screen have been removed; Add Profile continues to add a saved server account.
+
 <table width="100%">
   <thead><tr><th align="left">Action</th><th align="left" width="10000">Behaviour</th></tr></thead>
   <tbody>

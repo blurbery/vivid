@@ -8,6 +8,7 @@ struct TVBrowseControlRow: View {
     let facets: CatalogFacets?
     let isLoadingFacets: Bool
     let facetsLoadFailed: Bool
+    var facetsFailureReason: String? = nil
     let showsAlphabetMenu: Bool
     let preserveEnabled: Bool
     var focusRequest: Int = 0
@@ -43,7 +44,7 @@ struct TVBrowseControlRow: View {
             .focused($focusedControl, equals: .sort)
 
             if facetsLoadFailed {
-                Button("Retry filters", action: onLoadFacets)
+                Button(facetsFailureReason.map { "Retry filters · " + $0 } ?? "Retry filters", action: onLoadFacets)
                     .buttonStyle(TVBrowseControlPillStyle())
                     .focused($focusedControl, equals: .filter)
             } else {
@@ -76,12 +77,14 @@ struct TVBrowseControlRow: View {
                     Button(isLoadingFacets ? "Loading filters…" : "Reload filter options", action: onLoadFacets)
                         .disabled(isLoadingFacets)
                 }
+                if MediaServerProvider.active != .emby {
                 Section("Match") {
                     Toggle("Match all selected filters", isOn: Binding(
                         get: { filter.matchAll },
                         set: { value in var next = filter; next.matchAll = value; onFilterChange(next) }
                     ))
                     .menuActionDismissBehavior(.disabled)
+                }
                 }
                 Section {
                     Toggle("Preserve sort & filters", isOn: Binding(

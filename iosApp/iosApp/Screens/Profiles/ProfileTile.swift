@@ -163,7 +163,7 @@ struct ProfileTile: View {
             AsyncImageView(url: serverURL, contentMode: .fill)
                 .frame(width: tileSize, height: tileSize)
         } else if ProfileAvatarResolver.isImage(avatar) {
-            // Image avatars (DiceBear preset or URL) clip to the full tile
+            // Server image avatars clip to the full tile
             // bounds for a cinematic poster effect.
             if let url = ProfileAvatarResolver.imageURL(for: avatar) {
                 AsyncImageView(url: url, contentMode: .fill)
@@ -171,7 +171,7 @@ struct ProfileTile: View {
             } else {
                 initialFallback
             }
-        } else if !avatar.isEmpty {
+        } else if !avatar.isEmpty, !avatar.lowercased().hasPrefix("preset:") {
             Text(avatar)
                 .font(.system(size: emojiSize))
         } else {
@@ -224,67 +224,10 @@ struct ProfileTile: View {
     }
 }
 
-/// Add-profile tile. Matches the real profile tiles in size and focus
-/// treatment but uses a neutral surface + dashed plus icon, so a user can
-/// tell "this is where I add a new one" without it looking like an
-/// existing profile.
-struct AddProfileTile: View {
-    let action: () -> Void
-
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 20) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: tileCornerRadius)
-                        .fill(Color.white.opacity(isFocused ? 0.14 : 0.06))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: tileCornerRadius)
-                                .strokeBorder(
-                                    style: StrokeStyle(lineWidth: 2, dash: [8, 6])
-                                )
-                                .foregroundStyle(Color.white.opacity(isFocused ? 0.7 : 0.28))
-                        }
-
-                    Image(systemName: "plus")
-                        .font(.system(size: 84, weight: .light))
-                        .foregroundStyle(.white.opacity(isFocused ? 1.0 : 0.6))
-                }
-                .frame(width: tileSize, height: tileSize)
-                .overlay {
-                    RoundedRectangle(cornerRadius: tileCornerRadius + 4)
-                        .inset(by: -4)
-                        .stroke(isFocused ? Color.white : Color.clear, lineWidth: 4)
-                }
-                .scaleEffect(isFocused ? focusScale : 1.0)
-                .shadow(color: .black.opacity(isFocused ? 0.5 : 0),
-                        radius: isFocused ? 22 : 0, y: isFocused ? 14 : 0)
-
-                Text("Add Profile")
-                    .font(.system(size: nameSize, weight: isFocused ? .semibold : .medium))
-                    .foregroundStyle(isFocused ? .white : .white.opacity(0.55))
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .animation(.spring(response: 0.32, dampingFraction: 0.72), value: isFocused)
-        .focused($isFocused)
-        #if os(tvOS)
-        .focusEffectDisabled()
-        #endif
-        .accessibilityLabel("Add Profile")
-    }
-}
-
-// MARK: - Avatar resolver (mirrors ProfileAvatarView's image/emoji logic)
-
-/// Helpers extracted from `ProfileAvatarView` so the tile can render
-/// avatars in a tile shape rather than a circle. Kept as a small local
-/// utility rather than adjusting the shared view's API surface.
+/// Resolves server image URLs for profile cards and account avatars.
 enum ProfileAvatarResolver {
     /// Resolve the server-supplied `avatar_url`. Absolute URLs (presigned
-    /// upload URLs, DiceBear) are used verbatim; a server-relative path is
+    /// upload URLs) are used verbatim; a server-relative path is
     /// prefixed with the active server URL. Returns nil when absent or when
     /// no active server is known for a relative path.
     static func serverResolvedImageURL(_ value: String?) -> String? {
@@ -295,10 +238,8 @@ enum ProfileAvatarResolver {
 
         let lowercased = trimmed.lowercased()
 
-        // The Nuke pipeline registers no SVG decoder. Legacy presets use an
-        // `.svg` extension, while DiceBear uses an `/svg` format path.
-        // Decline both and let the caller's raw-ref fallback build a PNG URL.
-        // Uploaded avatars are WebP and continue through this path.
+        // The image pipeline has no SVG decoder. Decline SVG URLs so the
+        // caller can use another server image or its initials fallback.
         let pathOnly = lowercased.split(separator: "?", maxSplits: 1)[0]
         if pathOnly.hasSuffix(".svg") || pathOnly.hasSuffix("/svg") { return nil }
 
@@ -319,8 +260,8 @@ enum ProfileAvatarResolver {
 
     static func isImage(_ value: String) -> Bool {
         let lowercased = value.lowercased()
-        return lowercased.hasPrefix("preset:dicebear:")
-            || lowercased.hasPrefix("http://")
+        guard !lowercased.hasPrefix("preset:") else { return false }
+        return lowercased.hasPrefix("http://")
             || lowercased.hasPrefix("https://")
             || lowercased.hasPrefix("data:image/")
             || lowercased.hasPrefix("content://")
@@ -337,7 +278,7 @@ enum ProfileAvatarResolver {
     }
 
     static func imageURL(for value: String) -> String? {
-        if let diceBear = diceBearURL(for: value) { return diceBear }
+        guard !value.lowercased().hasPrefix("preset:") else { return nil }
 
         let lowercased = value.lowercased()
         if lowercased.hasPrefix("http://")
@@ -357,17 +298,5 @@ enum ProfileAvatarResolver {
             return serverURL + "/" + value.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         }
         return value
-    }
-
-    private static func diceBearURL(for value: String) -> String? {
-        guard value.lowercased().hasPrefix("preset:dicebear:") else { return nil }
-        let parts = value.split(separator: ":", maxSplits: 3, omittingEmptySubsequences: false)
-        guard parts.count == 4 else { return nil }
-        let style = String(parts[2]).trimmingCharacters(in: .whitespacesAndNewlines)
-        let seed = String(parts[3]).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !style.isEmpty, !seed.isEmpty else { return nil }
-        let s = style.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? style
-        let d = seed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? seed
-        return "https://api.dicebear.com/9.x/\(s)/png?seed=\(d)&size=256"
     }
 }

@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
 import CoreGraphics
 import CVividMedia
 import Foundation

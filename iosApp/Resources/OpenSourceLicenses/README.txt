@@ -5,7 +5,19 @@ This Vivid build includes the components listed below. Their complete license
 texts are bundled beside this file and are available from Settings > About >
 Open Source Licences.
 
-Vivid and VividKit application code: Apache-2.0, copyright 2026 blurbery.
+Vivid and VividKit as a whole: GPL-3.0-only with the Apple distribution
+permission, copyright 2026 blurbery and the respective contributors.
+You may copy, modify and redistribute covered code under GPLv3. There is
+no warranty except as required by applicable law. The full GPLv3 text and
+Apple permission are included in this screen. Earlier Apache-2.0 grants
+remain valid; their original licence text is also retained here.
+
+Corresponding source and build instructions:
+https://github.com/blurbery/vivid
+Each binary release must identify its exact public source revision and
+provide matching source and dependency rebuild materials. The Apple
+permission preserves source disclosure; it does not allow closed-source
+covered derivatives. Apple system frameworks retain Apple's terms.
 
 FFmpegBuild and embedded media frameworks
   Revision: 421e13be7061de67d91b85ac34a6b22a002b164f (release 3.0.0)

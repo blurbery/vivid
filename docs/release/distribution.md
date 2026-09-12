@@ -41,7 +41,38 @@ Archive Release builds for the authorised platforms from the exact source revisi
 
 Generate and review the archive’s privacy report. The app, notification service and Top Shelf have privacy manifests; verify the final embedded dependencies and required-reason API declarations too. Review App Store Connect’s privacy answers for the server, account, profile and session data Vivid stores through CloudKit; Apple’s [App Privacy guidance](https://developer.apple.com/app-store/app-privacy-details/) distinguishes data collected by the app through Apple frameworks from data Apple collects itself. Both app Info.plists currently declare `ITSAppUsesNonExemptEncryption = NO`. Confirm that answer against the finished build and complete any questions Apple presents; see [export compliance for beta builds](https://developer.apple.com/help/app-store-connect/test-a-beta-version/provide-export-compliance-information-for-beta-builds/).
 
-Keep [third-party notices](../../THIRD_PARTY_NOTICES.md) matched to the exact packaged libraries. Vivid and VividKit are Apache-2.0. The tvOS AetherEngine package retains LGPL-3.0 with its Apple Store / DRM Exception. This does not relicense FFmpeg or FriBidi. FFmpeg frameworks are dynamic, while the subtitle/font frameworks include static libraries. Before external distribution, verify the corresponding-source and replacement/relinking materials available to recipients. Use immutable public source revisions matched to the delivered build; a moving `main` link alone does not identify the shipped source.
+Keep [third-party notices](../../THIRD_PARTY_NOTICES.md) matched to the exact packaged libraries. Vivid and VividKit use GPL-3.0-only with the [Apple distribution permission](../../LICENSE-APPLE-EXCEPTION). The tvOS AetherEngine package retains LGPL-3.0 with its Apple Store / DRM Exception. This does not relicense FFmpeg or FriBidi. FFmpeg frameworks are dynamic, while the subtitle/font frameworks include static libraries. Before external distribution, verify the corresponding-source and replacement/relinking materials available to recipients. Use immutable public source revisions matched to the delivered build; a moving `main` link alone does not identify the shipped source.
+
+## Licence and source delivery
+
+Use Apple's standard EULA for the Apple-delivered binary. App Store Connect
+was checked on 12 September 2026 and showed Apple’s Standard License
+Agreement in the app-wide information shared by all platforms. No Apple
+metadata was changed during this licence update. Vivid's GPLv3
+[additional permission](../../LICENSE-APPLE-EXCEPTION) accommodates Apple's
+distribution restrictions without removing source rights. Do not paste the
+GPL alone as a custom App Store EULA. Apple's [standard EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/)
+and [custom EULA minimum terms](https://www.apple.com/legal/internet-services/itunes/dev/minterms/)
+remain separate from the source licence.
+
+Before conveying any new GPL-covered binary, including through TestFlight:
+
+- Publish and retain the exact source revision, dependency sources and
+  patches, build instructions and required replacement/relinking materials.
+  Provide a no-charge source download matching each delivered binary under
+  an applicable GPLv3 section 6 method; retain it for that method's required
+  duration. A moving `main` URL alone is insufficient.
+- Put the immutable source link in that build's TestFlight information or
+  release information available to its recipients. Check the app's bundled
+  Open Source Licences includes GPLv3, the Apple permission, earlier Apache
+  notices and all packaged third-party licences.
+- Preserve LGPL rights independently. Vivid's Apple permission applies to
+  its authorised code; it cannot waive conditions on FFmpeg, FriBidi or
+  other third-party components. Keep their corresponding source and
+  replacement/relinking materials available with the app sources.
+- Verify the app's actual EULA setting and packaged notices before upload.
+  The permission is a licensing provision, not an Apple approval or a
+  guarantee of compliance with unrelated API, privacy or review rules.
 
 ## TestFlight information
 
