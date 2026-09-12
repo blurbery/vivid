@@ -197,6 +197,25 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertNotEqual(EmbyAdapter.numberID("source-a"),EmbyAdapter.numberID("source-b"))
     }
 
+    func testRuntimeRejectsOutOfRangeJSONNumbersWithoutTrapping() throws {
+        for value in ["1e100", "1e308", "5.5340232221128655e27"] {
+            let json = Data("{\"Id\":\"1\",\"Name\":\"Movie\",\"Type\":\"Movie\",\"RunTimeTicks\":\(value)}".utf8)
+            let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+            XCTAssertThrowsError(try adapter.item(raw)) { error in
+                guard case EmbyError.invalidResponse = error else { return XCTFail("Unexpected error: \(error)") }
+            }
+        }
+    }
+
+    func testRuntimePreservesOrdinaryFractionalMissingAndLargeIntegerTicks() throws {
+        for (ticks, minutes) in [(0.0, 0), (-100.0, 0), (899_000_000.0, 1), (Double(Int64.max), 15_372_286_728)] {
+            let mapped = try adapter.item(["Id": "1", "Name": "Movie", "Type": "Movie", "RunTimeTicks": ticks])
+            XCTAssertEqual(mapped["runtime"] as? Int, minutes)
+        }
+        let missing = try adapter.item(["Id": "1", "Name": "Movie", "Type": "Movie"])
+        XCTAssertEqual(missing["runtime"] as? Int, 0)
+    }
+
     func testEpisodeMappingDecodesExistingScreensAndConvertsTicks() throws {
         let raw: [String:Any] = ["Id":"123", "Name":"Episode", "Type":"Episode", "SeriesId":"456", "SeriesName":"Series",
             "ParentIndexNumber":2,"IndexNumber":3,"RunTimeTicks":36_000_000_000 as Int64,

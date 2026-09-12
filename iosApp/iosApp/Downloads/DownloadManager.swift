@@ -136,6 +136,7 @@ final class DownloadManager {
     /// or replaced. Network responses captured under an older generation are
     /// discarded before they can mutate the newly active scope.
     private var registrationScopeGeneration: UInt64 = 0
+    private var pipelineTasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     var canDownloadSeason: Bool { downloadsEnabled && capability?.seasonDownload == true }
     var canMonitorSeries: Bool { downloadsEnabled && capability?.seriesMonitoring == true }
 
@@ -335,6 +336,7 @@ final class DownloadManager {
         var removed = false
         for id in ids {
             guard let record = file.records[id] else { continue }
+            pipelineTasks.removeValue(forKey: id)?.task.cancel()
             if let taskId = record.taskIdentifier {
                 intentionalCancels.insert(taskId)
                 sessionDelegate.cancel(taskId: taskId)
@@ -680,6 +682,8 @@ final class DownloadManager {
 
     private func invalidatePendingRegistrations() {
         registrationScopeGeneration &+= 1
+        for pipeline in pipelineTasks.values { pipeline.task.cancel() }
+        pipelineTasks.removeAll()
         pendingRegistrationTokens.removeAll()
         pendingRegistrationContentIds.removeAll()
     }
@@ -700,6 +704,7 @@ final class DownloadManager {
 
     func deleteDownload(id: String) {
         guard let record = file.records[id] else { return }
+        pipelineTasks.removeValue(forKey: id)?.task.cancel()
         if let taskId = record.taskIdentifier {
             intentionalCancels.insert(taskId)
             sessionDelegate.cancel(taskId: taskId)
@@ -857,50 +862,67 @@ final class DownloadManager {
             file.records[record.id] = record
         }
         setLocalStatus(.fetchingAssets, id: record.id)
-        Task { await self.startMediaPipeline(recordId: record.id) }
+        launchMediaPipeline(recordId: record.id)
     }
 
-    private func startMediaPipeline(recordId: String) async {
-        guard file.records[recordId] != nil else { return }
+    private func launchMediaPipeline(recordId: String) {
+        pipelineTasks.removeValue(forKey: recordId)?.task.cancel()
+        let generation = registrationScopeGeneration
+        let id = UUID()
+        let task = Task { @MainActor in
+            await self.startMediaPipeline(recordId: recordId, generation: generation)
+            if self.pipelineTasks[recordId]?.id == id { self.pipelineTasks[recordId] = nil }
+        }
+        pipelineTasks[recordId] = (id, task)
+    }
+
+    private func pipelineIsCurrent(recordId: String, generation: UInt64) -> Bool {
+        !Task.isCancelled && generation == registrationScopeGeneration && file.records[recordId] != nil
+    }
+
+    private func startMediaPipeline(recordId: String, generation: UInt64) async {
+        guard pipelineIsCurrent(recordId: recordId, generation: generation),
+              let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+              pipelineIsCurrent(recordId: recordId, generation: generation),
+              auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return }
         do {
-            let manifest = try await VividAPI.shared.fetchManifest(downloadId: recordId)
-            await persistManifest(manifest, recordId: recordId)
+            let manifest = try await VividAPI.shared.fetchManifest(downloadId: recordId, auth: auth)
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
+            await persistManifest(manifest, recordId: recordId, generation: generation)
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             applyManifestDisplay(manifest, recordId: recordId)
-            await fetchArtwork(manifest, recordId: recordId)
-            await startMediaTransfer(recordId: recordId)
+            await fetchArtwork(manifest, recordId: recordId, generation: generation, auth: auth)
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
+            try await startMediaTransfer(recordId: recordId, generation: generation, auth: auth)
         } catch {
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             handlePipelineError(error, recordId: recordId)
         }
     }
 
-    private func startMediaTransfer(recordId: String) async {
-        let generation = registrationScopeGeneration
-        let server = scopeServerId
-        let profile = scopeProfileId
-        guard var record = file.records[recordId] else { return }
-        guard let fileURL = await VividAPI.shared.downloadFileURL(downloadId: recordId) else {
-            handlePipelineError(DownloadError.fileURLUnavailable, recordId: recordId)
-            return
+    private func startMediaTransfer(recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async throws {
+        guard let fileURL = await VividAPI.shared.downloadFileURL(downloadId: recordId, auth: auth) else {
+            throw DownloadError.fileURLUnavailable
         }
-        let request = await DownloadAuthHeaders.authorizedRequest(
+        let request = try await DownloadAuthHeaders.authorizedRequest(
             url: fileURL,
-            allowsCellular: !DownloadSettings.shared.wifiOnly
+            allowsCellular: !DownloadSettings.shared.wifiOnly,
+            expected: auth
         )
-        if MediaServerProvider.forServerID(server) == .emby {
-            guard generation == registrationScopeGeneration, server == scopeServerId, profile == scopeProfileId,
-                  file.records[recordId] != nil else { return }
-        }
+        guard pipelineIsCurrent(recordId: recordId, generation: generation),
+              var record = file.records[recordId] else { return }
         let taskId = sessionDelegate.start(request: request)
         record.taskIdentifier = taskId
         record.localStatus = .downloading
         file.records[recordId] = record
         persist()
-        Task { try? await VividAPI.shared.patchDownloadStatus(id: recordId, status: "downloading") }
+        Task { try? await VividAPI.shared.patchDownloadStatus(id: recordId, status: "downloading", auth: auth) }
     }
 
-    private func persistManifest(_ manifest: OfflineManifest, recordId: String) async {
+    private func persistManifest(_ manifest: OfflineManifest, recordId: String, generation: UInt64) async {
         guard let url = absoluteFileURLForNewAsset(recordId: recordId, filename: "manifest.json") else { return }
         await DownloadStore.shared.saveManifest(manifest, to: url)
+        guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
         if var record = file.records[recordId] {
             record.manifestFilename = "manifest.json"
             file.records[recordId] = record
@@ -938,7 +960,7 @@ final class DownloadManager {
         persist()
     }
 
-    private func fetchArtwork(_ manifest: OfflineManifest, recordId: String) async {
+    private func fetchArtwork(_ manifest: OfflineManifest, recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async {
         let preferredPosterPath = file.records[recordId]?.preferredPosterPath
         let kinds: [(kind: String, path: String?, filename: String)] = [
             ("poster", preferredPosterPath ?? manifest.artworkUrls?.poster, "poster.jpg"),
@@ -946,11 +968,13 @@ final class DownloadManager {
             ("logo", manifest.artworkUrls?.logo, "logo.png"),
         ]
         for entry in kinds {
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             // Only fetch artwork the manifest actually advertises. The server
             // omits artwork_urls.* (omitempty) when a title has no poster/
             // backdrop/logo, so synthesizing a path here would guarantee a 404.
             guard let path = entry.path else { continue }
-            guard let data = try? await VividAPI.shared.fetchDownloadAssetData(path: path),
+            guard let data = try? await VividAPI.shared.fetchDownloadAssetData(path: path, auth: auth),
+                  pipelineIsCurrent(recordId: recordId, generation: generation),
                   !data.isEmpty,
                   let url = absoluteFileURLForNewAsset(recordId: recordId, filename: entry.filename) else {
                 continue
@@ -1214,6 +1238,7 @@ final class DownloadManager {
     }
 
     private func scheduleRetry(recordId: String, resumeData: Data?, refreshToken: Bool) {
+        let generation = registrationScopeGeneration
         let attempt = file.records[recordId]?.retryCount ?? 1
         let delaySeconds = min(120, Int(pow(2.0, Double(attempt))) * 5)
         retryTasks[recordId]?.cancel()
@@ -1233,6 +1258,9 @@ final class DownloadManager {
                 // background request carries a fresh token.
                 _ = try? await VividAPI.shared.listDownloads()
             }
+            guard self.pipelineIsCurrent(recordId: recordId, generation: generation),
+                  self.file.records[recordId]?.taskIdentifier == nil,
+                  self.file.records[recordId]?.localStatus == record.localStatus else { return }
             if let resumeData {
                 let taskId = self.sessionDelegate.resume(data: resumeData)
                 guard var rec = self.file.records[recordId] else { return }
@@ -1244,7 +1272,7 @@ final class DownloadManager {
                 // Restart from the manifest step — a pipeline failure may have
                 // been in the manifest/asset fetch, not the media transfer.
                 self.setLocalStatus(.fetchingAssets, id: recordId)
-                await self.startMediaPipeline(recordId: recordId)
+                self.launchMediaPipeline(recordId: recordId)
             }
         }
     }

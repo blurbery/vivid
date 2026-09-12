@@ -177,7 +177,10 @@ enum HLSPlaylistParser {
             if line.hasPrefix("#EXT-X-TARGETDURATION:") {
                 targetDuration = Double(line.dropFirst("#EXT-X-TARGETDURATION:".count))
             } else if line.hasPrefix("#EXT-X-MEDIA-SEQUENCE:") {
-                mediaSequence = Int(line.dropFirst("#EXT-X-MEDIA-SEQUENCE:".count)) ?? 0
+                guard let sequence = Int(line.dropFirst("#EXT-X-MEDIA-SEQUENCE:".count)), sequence >= 0 else {
+                    throw HLSIngestError.playlistInvalid(reason: "invalid media sequence")
+                }
+                mediaSequence = sequence
             } else if line.hasPrefix("#EXTINF:") {
                 let payload = line.dropFirst("#EXTINF:".count)
                 pendingDuration = Double(payload.split(separator: ",").first.map(String.init) ?? "")
@@ -211,7 +214,10 @@ enum HLSPlaylistParser {
             } else if !line.hasPrefix("#") {
                 let crypt: HLSSegmentCrypt?
                 if let keyURI = currentKeyURI {
-                    let sequence = mediaSequence + segments.count
+                    let (sequence, overflow) = mediaSequence.addingReportingOverflow(segments.count)
+                    guard !overflow else {
+                        throw HLSIngestError.playlistInvalid(reason: "media sequence exceeds supported range")
+                    }
                     crypt = HLSSegmentCrypt(
                         keyURI: keyURI,
                         iv: currentExplicitIV ?? sequenceIV(sequence)
@@ -238,6 +244,9 @@ enum HLSPlaylistParser {
         }
         guard !segments.isEmpty else {
             throw HLSIngestError.playlistInvalid(reason: "no segments")
+        }
+        guard !mediaSequence.addingReportingOverflow(segments.count).overflow else {
+            throw HLSIngestError.playlistInvalid(reason: "media sequence window exceeds supported range")
         }
         return HLSMediaPlaylist(
             targetDuration: target,
