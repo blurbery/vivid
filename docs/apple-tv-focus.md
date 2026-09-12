@@ -131,6 +131,8 @@ The playback timeline and Info/subtitle shortcuts share one directional boundary
 - Focus Cookbook sample (WWDC23, "The SwiftUI cookbook for focus"):
   https://developer.apple.com/documentation/swiftui/focus-cookbook-sample
 
+Episode cards bind the rail’s existing `FocusState` directly to their native button. The button also owns its accessibility description and context menu; separate captions do not hide or replace its activation action.
+
 When the series hero action row has focus, prepare the continuous shelf on the Play/Resume episode’s season and scroll that episode into view. Keep native downward focus movement and the existing season click and swipe handlers; do not force episode focus or replace the playback selection when browsing.
 
 Settings uses the iOS Settings palette: a black canvas, neutral grey grouped panels, inset separators and subtly outlined icon tiles. Selected rows stay neutral and focus retains the existing white TV highlight; settings focus targets and actions are unchanged. Settings and its secondary pages share an 812-point content column and the same icon-and-title header. The overview joins circular profiles and category rows in one rounded panel, with each server name below its username and the copyright footer centred underneath. Profiles retain their existing native focus targets, focus scope and editing controls. Home Screen uses the Home Sections control-card style, with its existing spotlight selection and save actions. About uses the same column, and compact 300-point acknowledgement cards keep the two-row grid on one screen; concise settings descriptions keep rows compact without changing their controls.
