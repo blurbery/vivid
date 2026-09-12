@@ -1,3 +1,6 @@
+// Vivid licensing: see ../../LICENSE and ../../LICENSE-APPLE-EXCEPTION.
+// GPLv3 section 7(b)/(c) attribution and origin terms: ../../ATTRIBUTION.md.
+// Those terms apply only to material within the authority and scope stated there.
 import SwiftUI
 
 @main
