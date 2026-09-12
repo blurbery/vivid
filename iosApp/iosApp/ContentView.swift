@@ -2522,6 +2522,9 @@ private struct ItemDetailSheet: View {
         // Native pull-down dismissal still returns to the exact source page.
         .presentationSizing(.page)
         .presentationDetents([.large])
+        // Keep one native sheet/scroll policy throughout a continuous drag.
+        // Switching policies at the top can leave a reversing drag in content bounce.
+        .presentationContentInteraction(.resizes)
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(28)
         .presentationBackground(.ultraThickMaterial)

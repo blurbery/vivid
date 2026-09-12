@@ -362,7 +362,8 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 .padding(.bottom, 6)
         }
         .frame(height: compactArtworkHeight)
-        .clipped()
+        // Artwork clips before its top-attachment transform. Clipping the
+        // parent here would cut off the pixels filling a top rubber-band gap.
         .accessibilityElement(children: .contain)
     }
 
