@@ -49,13 +49,11 @@ struct TVSavedAccountCards: View {
     @State private var store = TVSavedAccountStore.shared
     @State private var registry = ServerRegistry.shared
     @State private var pinAccount: TVSavedAccount?
-    @State private var pendingDeletion: TVSavedAccount?
     @State private var isEditingProfiles = false
     @State private var draftOrder: [String] = []
     @State private var movingID: String?
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var editingFocused: Bool
-    @State private var deleteSelected = false
     @State private var profileStore = CurrentProfileStore.shared
     @Environment(AppRouter.self) private var router
 
@@ -66,19 +64,13 @@ struct TVSavedAccountCards: View {
                 ForEach(displayedAccounts) { account in
                     if isEditingProfiles {
                         if account.id == movingID {
-                            Button {
-                                if deleteSelected { pendingDeletion = account }
-                                else { finishArrangement() }
-                            } label: {
-                                VStack(spacing: 20) {
-                                    tile(account)
-                                        .overlay(alignment: .top) {
-                                            Circle().strokeBorder(deleteSelected ? Color.clear : .white, lineWidth: 3)
-                                                .frame(width: 112, height: 112)
-                                        }
-                                        .modifier(ProfileArrangeWobble(active: true))
-                                    deleteSymbol(selected: deleteSelected)
-                                }
+                            Button { finishArrangement() } label: {
+                                tile(account)
+                                    .overlay(alignment: .top) {
+                                        Circle().strokeBorder(.white, lineWidth: 3)
+                                            .frame(width: 112, height: 112)
+                                    }
+                                    .modifier(ProfileArrangeWobble(active: true))
                             }
                             .buttonStyle(.plain)
                             .focusEffectDisabled()
@@ -88,13 +80,11 @@ struct TVSavedAccountCards: View {
                                 switch direction {
                                 case .left: moveDraft(account.id, by: -1)
                                 case .right: moveDraft(account.id, by: 1)
-                                case .down: deleteSelected = true
-                                case .up: deleteSelected = false
                                 default: break
                                 }
                             }
-                            .onExitCommand { finishArrangement() }
-                            .accessibilityLabel(deleteSelected ? "Delete \(account.username)" : "Move \(account.username). Press centre to save.")
+                            .onExitCommand { cancelArrangement() }
+                            .accessibilityLabel("Move \(account.username). Move left or right, then press centre to drop and save.")
                         } else {
                             tile(account).modifier(ProfileArrangeWobble(active: true))
                         }
@@ -135,7 +125,7 @@ struct TVSavedAccountCards: View {
         }
         .scrollClipDisabled()
         }
-        .frame(height: isEditingProfiles ? (isSettings ? 304 : 280) : (isSettings ? 222 : 190))
+        .frame(height: isSettings ? 222 : 190)
         .disabled(store.busy || pinAccount != nil)
         .task {
             await profileStore.refresh(force: true)
@@ -151,22 +141,10 @@ struct TVSavedAccountCards: View {
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
         }
-        .confirmationDialog("Delete Profile?", isPresented: Binding(
-            get: { pendingDeletion != nil },
-            set: { if !$0 { pendingDeletion = nil } }
-        ), titleVisibility: .visible, presenting: pendingDeletion) { account in
-            Button("Delete Profile", role: .destructive) {
-                Task {
-                    if await store.deleteAccount(account.id, router: router) {
-                        isEditingProfiles = false
-                        movingID = nil
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingDeletion = nil }
-        } message: { account in
-            Text("Remove \(account.username) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { cancelArrangement() }
         }
+        .onDisappear { cancelArrangement() }
         .alert("Profile", isPresented: Binding(
             get: { store.error != nil }, set: { if !$0 { store.error = nil } }
         )) {
@@ -189,31 +167,27 @@ struct TVSavedAccountCards: View {
         return ids.compactMap { byID[$0] }
     }
     private func beginArrangement(_ id: String) {
+        guard !store.busy, store.accounts.count > 1 else { return }
         draftOrder = store.accounts.map(\.id)
         movingID = id
         isEditingProfiles = true
-        deleteSelected = false
     }
     private func finishArrangement() {
-        if store.saveAccountOrder(draftOrder) {
-            isEditingProfiles = false
-            movingID = nil
-        }
+        _ = store.saveAccountOrder(draftOrder)
+        cancelArrangement()
+    }
+    private func cancelArrangement() {
+        let returnID = movingID
+        isEditingProfiles = false
+        movingID = nil
+        draftOrder = []
+        if let returnID { focusedAccount = returnID }
     }
     private func moveDraft(_ id: String, by offset: Int) {
-        guard !deleteSelected else { return }
         withAnimation(.easeInOut(duration: 0.18)) {
             draftOrder = VividCloudPreferencePolicy.moving(draftOrder, id: id, by: offset)
         }
     }
-    private func deleteSymbol(selected: Bool) -> some View {
-        Image(systemName: "xmark")
-            .font(.system(size: 22, weight: .semibold))
-            .frame(width: 52, height: 52)
-            .vividGlass(in: Circle(), interactive: true)
-            .overlay(Circle().strokeBorder(selected ? Color.white : .clear, lineWidth: 3))
-    }
-
     private func serverLabel(for account: TVSavedAccount) -> String {
         if MediaServerProvider.forServerID(account.serverID) == .emby { return "Emby" }
         return registry.entry(with: account.serverID)?.displayName ?? "Media server"
@@ -288,6 +262,7 @@ struct TVSavedAccountEditor: View {
     @State private var pin = ""
     @State private var confirmation = ""
     @State private var message: String?
+    @State private var showsDeleteConfirm = false
     @State private var pinIsSet = false
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
@@ -427,6 +402,14 @@ struct TVSavedAccountEditor: View {
                         .buttonStyle(TVSettingsPaneRowStyle(isDestructive: true))
                     }
                 }
+                if account != nil {
+                    TVSettingsGroup {
+                        Button(role: .destructive) { showsDeleteConfirm = true } label: {
+                            TVSettingsRowLabel(title: "Delete Profile")
+                        }
+                        .buttonStyle(TVSettingsPaneRowStyle(isDestructive: true))
+                    }
+                }
                 if let error = store.error { Text(error).foregroundStyle(.red).font(.system(size: 21)) }
                 if let message { Text(message).font(.system(size: 21)) }
                 if store.busy { ProgressView() }
@@ -439,6 +422,17 @@ struct TVSavedAccountEditor: View {
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .disabled(store.busy)
+        .confirmationDialog("Delete Profile?", isPresented: $showsDeleteConfirm,
+                            titleVisibility: .visible, presenting: account) { account in
+            Button("Delete Profile", role: .destructive) {
+                Task {
+                    if await store.deleteAccount(account.id, router: router) { dismiss() }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { account in
+            Text("Remove \(account.username) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+        }
         .onAppear {
             username = account?.username ?? ""
             serverURL = account.flatMap { ServerRegistry.shared.entry(with: $0.serverID)?.url } ?? (addingServer ? "" : ServerRegistry.shared.activeServerUrl)

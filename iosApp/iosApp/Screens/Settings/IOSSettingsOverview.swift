@@ -1,20 +1,19 @@
 #if os(iOS)
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct IOSSettingsOverview: View {
     @Bindable var viewModel: SettingsViewModel
     @Bindable var uiCustomization: UICustomizationPreferences
     @Binding var showSignOutConfirm: Bool
     @Environment(AppRouter.self) private var router
+    @State private var profileEditorRoute: PhoneProfileEditorRoute?
 
     var body: some View {
         List {
             SettingsPageHeader(title: "Settings", subtitle: "Make Vivid work the way you like.", systemImage: "gearshape")
                 .settingsPageHeaderRow()
             Section {
-                PhoneSavedAccountCards(isSettings: true)
-                    .navigationLinkIndicatorVisibility(.hidden)
+                PhoneSavedAccountCards(isSettings: true, editorRoute: $profileEditorRoute)
                     .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 12, trailing: 20))
                     destination("General", "App and navigation", "gearshape") { GeneralSettingsView() }
                     destination("Playback", "Quality and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
@@ -34,6 +33,9 @@ struct IOSSettingsOverview: View {
         }
         .settingsListChrome()
         .navigationTitle("")
+        .navigationDestination(item: $profileEditorRoute) { route in
+            PhoneSavedAccountEditor(accountID: route.accountID)
+        }
     }
 
     private func destination<Content: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder content: () -> Content) -> some View {
@@ -94,16 +96,21 @@ struct PhoneVividPrivacyView: View {
 
 #if os(iOS)
 struct PhoneSavedProfilesScreen: View {
+    @State private var profileEditorRoute: PhoneProfileEditorRoute?
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 28) {
                 Spacer()
                 VividLogoView(size: 140)
                 Text("Who’s watching?").font(.system(size: 30, weight: .bold, design: .rounded))
-                PhoneSavedAccountCards(isSettings: false)
+                PhoneSavedAccountCards(isSettings: false, editorRoute: $profileEditorRoute)
                 Spacer()
                 VividCopyrightFooter().padding(.bottom, 24)
             }.background(Color.black.ignoresSafeArea())
+                .navigationDestination(item: $profileEditorRoute) { route in
+                    PhoneSavedAccountEditor(accountID: route.accountID)
+                }
         }
     }
 }
@@ -114,9 +121,12 @@ struct PhoneSavedAccountCards: View {
     @State private var registry = ServerRegistry.shared
     @Environment(AppRouter.self) private var router
     @State private var selectedForPIN: TVSavedAccount?
-    @State private var pendingDeletion: TVSavedAccount?
-    @State private var isEditingProfiles = false
-    @State private var draftOrder: [String] = []
+    @Binding var editorRoute: PhoneProfileEditorRoute?
+    @GestureState private var reorderGestureActive = false
+    @State private var cardFrames: [String: CGRect] = [:]
+    @State private var dragFrames: [String: CGRect] = [:]
+    @State private var dragOffset: CGSize = .zero
+    @State private var dropTargetID: String?
     @State private var movingID: String?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -124,12 +134,6 @@ struct PhoneSavedAccountCards: View {
     @State private var pinError: String?
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            if isEditingProfiles {
-                Button("Done") { finishArrangement() }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 20).padding(.vertical, 10)
-                    .vividGlass(in: Capsule(), interactive: true)
-            }
             if isSettings {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 88, maximum: 112), spacing: 12, alignment: .top)], alignment: .leading, spacing: 16) {
                     profileCards
@@ -144,32 +148,28 @@ struct PhoneSavedAccountCards: View {
                         .frame(minWidth: geometry.size.width, alignment: .center)
                     }
                 }
-                .frame(height: isEditingProfiles ? 210 : 150)
+                .frame(height: 150)
             }
-        }.buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
+        }
+        .coordinateSpace(name: "savedProfileCards")
+        .onPreferenceChange(ProfileCardFrames.self) { frames in
+            if movingID == nil { cardFrames = frames }
+        }
+        .onChange(of: reorderGestureActive) { _, active in
+            if !active { resetDrag() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { resetDrag() }
+        }
+        .onDisappear { resetDrag() }
+        .buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
         .task { await store.captureCurrent() }
-        .task(id: scenePhase == .active && !isEditingProfiles) {
-            guard scenePhase == .active, !isEditingProfiles else { return }
+        .task(id: scenePhase == .active && movingID == nil) {
+            guard scenePhase == .active, movingID == nil else { return }
             while !Task.isCancelled {
                 await VividCloudAccountSync.shared.synchronize(router: router)
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
-        }
-        .confirmationDialog("Delete Profile?", isPresented: Binding(
-            get: { pendingDeletion != nil },
-            set: { if !$0 { pendingDeletion = nil } }
-        ), titleVisibility: .visible, presenting: pendingDeletion) { account in
-            Button("Delete Profile", role: .destructive) {
-                Task {
-                    if await store.deleteAccount(account.id, router: router) {
-                        isEditingProfiles = false
-                        movingID = nil
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingDeletion = nil }
-        } message: { account in
-            Text("Remove \(account.username) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
         }
         .alert("Profile", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
             Button("OK", role: .cancel) { store.error = nil }
@@ -194,38 +194,40 @@ struct PhoneSavedAccountCards: View {
 
     @ViewBuilder
     private var profileCards: some View {
-        ForEach(displayedAccounts) { account in
-            if isEditingProfiles {
-                VStack(spacing: 12) {
-                    tile(account)
-                        .modifier(ProfileArrangeWobble(active: true))
-                        .onDrag { movingID = account.id; return NSItemProvider(object: account.id as NSString) }
-                        .onDrop(of: [.text], delegate: ProfileArrangeDrop(target: account.id, order: $draftOrder, movingID: $movingID))
-                    Button(role: .destructive) { pendingDeletion = account } label: {
-                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
-                            .frame(width: 38, height: 38).vividGlass(in: Circle(), interactive: true)
-                    }
-                    .accessibilityLabel("Delete \(account.username)")
+        ForEach(store.accounts) { account in
+            Group {
+                if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
+                    Button {
+                        guard movingID == nil else { return }
+                        editorRoute = .account(account.id)
+                    } label: { tile(account) }
+                } else {
+                    Button {
+                        guard movingID == nil else { return }
+                        if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
+                        else { Task { await store.select(account, router: router) } }
+                    } label: { tile(account) }
                 }
-            } else {
-                Group {
-                    if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
-                        NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
-
-                    } else {
-                        Button {
-                            if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
-                            else { Task { await store.select(account, router: router) } }
-                        } label: { tile(account) }
-
-                    }
-                }
-                .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
-                .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
             }
+            .contentShape(Rectangle())
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: ProfileCardFrames.self,
+                        value: [account.id: geometry.frame(in: .named("savedProfileCards"))])
+                }
+            }
+            .background(dropTargetID == account.id ? Color.white.opacity(0.08) : .clear,
+                        in: RoundedRectangle(cornerRadius: 14))
+            .scaleEffect(movingID == account.id ? 1.04 : 1)
+            .offset(movingID == account.id ? dragOffset : .zero)
+            .zIndex(movingID == account.id ? 1 : 0)
+            .highPriorityGesture(reorderGesture(for: account))
+            .accessibilityHint("Hold and drag onto another profile to reorder. Release to save.")
+            .accessibilityAction(named: "Move earlier") { moveProfile(account.id, by: -1) }
+            .accessibilityAction(named: "Move later") { moveProfile(account.id, by: 1) }
         }
         if store.canAddAccount {
-            NavigationLink { PhoneSavedAccountEditor(accountID: nil) } label: {
+            Button { editorRoute = .add } label: {
                 VStack(spacing: isSettings ? 8 : 12) {
                     Image(systemName: "plus").font(.system(size: 32))
                         .frame(width: avatarSize, height: avatarSize).background(.white.opacity(0.12), in: Circle())
@@ -241,22 +243,55 @@ struct PhoneSavedAccountCards: View {
         return registry.entry(with: account.serverID)?.displayName ?? "Media server"
     }
 
-    private var displayedAccounts: [TVSavedAccount] {
-        guard isEditingProfiles else { return store.accounts }
-        let ids = VividCloudPreferencePolicy.ordered(store.accounts.map(\.id), preferred: draftOrder)
-        let byID = Dictionary(uniqueKeysWithValues: store.accounts.map { ($0.id, $0) })
-        return ids.compactMap { byID[$0] }
+    private func reorderGesture(for account: TVSavedAccount) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("savedProfileCards")))
+            .updating($reorderGestureActive) { value, active, _ in
+                if case .second(true, _) = value { active = true }
+            }
+            .onChanged { value in
+                guard !store.busy, store.accounts.count > 1,
+                      case .second(true, let drag) = value else { return }
+                if movingID == nil {
+                    movingID = account.id
+                    dragFrames = cardFrames
+                }
+                guard movingID == account.id, let drag else { return }
+                dragOffset = drag.translation
+                dropTargetID = dropTarget(at: drag.location, excluding: account.id)
+            }
+            .onEnded { value in
+                defer { resetDrag() }
+                guard movingID == account.id,
+                      case .second(true, let drag?) = value,
+                      let target = dropTarget(at: drag.location, excluding: account.id) else { return }
+                var order = store.accounts.map(\.id)
+                guard let from = order.firstIndex(of: account.id),
+                      let to = order.firstIndex(of: target) else { return }
+                order.remove(at: from)
+                order.insert(account.id, at: to)
+                withAnimation(.easeInOut(duration: 0.18)) { _ = store.saveAccountOrder(order) }
+            }
     }
-    private func beginArrangement(_ id: String) {
-        draftOrder = store.accounts.map(\.id)
-        movingID = id
-        isEditingProfiles = true
+
+    private func dropTarget(at point: CGPoint, excluding id: String) -> String? {
+        store.accounts.first { account in
+            account.id != id && dragFrames[account.id]?.insetBy(dx: -6, dy: -6).contains(point) == true
+        }?.id
     }
-    private func finishArrangement() {
-        if store.saveAccountOrder(draftOrder) {
-            isEditingProfiles = false
-            movingID = nil
-        }
+
+    private func resetDrag() {
+        movingID = nil
+        dragOffset = .zero
+        dropTargetID = nil
+        dragFrames = [:]
+    }
+
+    private func moveProfile(_ id: String, by offset: Int) {
+        let current = store.accounts.map(\.id)
+        let order = VividCloudPreferencePolicy.moving(current, id: id, by: offset)
+        guard current != order else { return }
+        _ = store.saveAccountOrder(order)
     }
 
     private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {
@@ -290,21 +325,23 @@ struct PhoneSavedAccountCards: View {
     }
 }
 
-private struct ProfileArrangeDrop: DropDelegate {
-    let target: String
-    @Binding var order: [String]
-    @Binding var movingID: String?
-    func dropEntered(info: DropInfo) {
-        guard let movingID, movingID != target,
-              let from = order.firstIndex(of: movingID), let to = order.firstIndex(of: target) else { return }
-        withAnimation(.easeInOut(duration: 0.18)) {
-            order.remove(at: from)
-            order.insert(movingID, at: to)
+enum PhoneProfileEditorRoute: Hashable {
+    case add
+    case account(String)
+
+    var accountID: String? {
+        switch self {
+        case .add: nil
+        case .account(let id): id
         }
     }
-    func validateDrop(info: DropInfo) -> Bool { movingID != nil }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-    func performDrop(info: DropInfo) -> Bool { movingID = nil; return true }
+}
+
+private struct ProfileCardFrames: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
 }
 
 struct PhoneSavedAccountEditor: View {
@@ -318,6 +355,7 @@ struct PhoneSavedAccountEditor: View {
     @State private var pin = ""
     @State private var confirmPIN = ""
     @State private var message: String?
+    @State private var showsDeleteConfirm = false
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -376,9 +414,26 @@ struct PhoneSavedAccountEditor: View {
                     }
                 }
             }
+            if account != nil {
+                Section {
+                    Button("Delete Profile", role: .destructive) { showsDeleteConfirm = true }
+                        .disabled(store.busy)
+                }
+            }
             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
             VividCopyrightFooter().frame(maxWidth: .infinity).listRowBackground(Color.clear)
         }.settingsListChrome().navigationTitle("")
+        .confirmationDialog("Delete Profile?", isPresented: $showsDeleteConfirm,
+                            titleVisibility: .visible, presenting: account) { account in
+            Button("Delete Profile", role: .destructive) {
+                Task {
+                    if await store.deleteAccount(account.id, router: router) { dismiss() }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { account in
+            Text("Remove \(account.username) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+        }
         .onAppear {
             if let account {
                 provider = MediaServerProvider.forServerID(account.serverID) == .emby ? "Emby" : "Silo"
