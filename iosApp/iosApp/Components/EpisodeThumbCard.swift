@@ -52,7 +52,7 @@ struct EpisodeThumbCard: View {
     }
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
     #if os(tvOS)
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.tvHomeStableRows) private var stableHomeRows
     @State private var continueWatchingMetadata = TVContinueWatchingPlaybackMetadataStore.shared
     @State private var artworkIsVisible = false
     #endif
@@ -89,19 +89,7 @@ struct EpisodeThumbCard: View {
     var body: some View {
         #if os(tvOS)
         VStack(alignment: .leading, spacing: 14) {
-            ZStack(alignment: .bottom) {
-                thumbnailButton
-                if showProgress, let progress = progressValue, progress > 0 {
-                    tvResumeProgress(value: progress)
-                }
-            }
-            .scaleEffect(isFocused && !reduceMotion ? TVMediaFocus.scale : 1)
-            .shadow(
-                color: .black.opacity(isFocused ? 0.5 : 0.2),
-                radius: isFocused ? 20 : 8,
-                y: isFocused ? 10 : 4
-            )
-            .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
+            thumbnailButton
 
             if cardCaptions.presentation.caption.showsTitle {
                 VStack(alignment: .leading, spacing: 4) {
@@ -116,7 +104,7 @@ struct EpisodeThumbCard: View {
                         .truncationMode(.tail)
                         .frame(width: cardWidth, alignment: .leading)
                         .clipped()
-                        .animation(.easeOut(duration: 0.15), value: isFocused)
+
 
                     if cardCaptions.presentation.caption.showsMetadata,
                        let subtitle = subtitleLine {
@@ -129,7 +117,9 @@ struct EpisodeThumbCard: View {
                             .clipped()
                     }
                 }
-                .frame(width: cardWidth, alignment: .leading)
+                .frame(width: cardWidth, height: stableHomeRows
+                    ? TVHomeRowGeometry.captionHeight(cardCaptions.presentation.caption) : nil,
+                    alignment: .topLeading)
             }
         }
         .frame(width: cardWidth)
@@ -436,9 +426,7 @@ struct EpisodeThumbCard: View {
     }
 
     private func tvResumeProgress(value: Double) -> some View {
-        // Keep progress live outside the native focused label snapshot. The
-        // artwork already has a scrim; a second fixed-size scrim looked like
-        // a separate rectangle when the native card lifted on focus.
+        // Progress is part of the native card label and moves with its artwork.
         ResumeProgressBar(value: value, duration: item.durationSeconds)
             .frame(width: cardWidth, height: cardHeight, alignment: .bottom)
             .allowsHitTesting(false)
@@ -448,10 +436,13 @@ struct EpisodeThumbCard: View {
     @ViewBuilder
     private var thumbnailButton: some View {
         let button = Button(action: action) {
-            thumbnail
-                .tvArtworkEdge(isFocused: isFocused, cornerRadius: VividTheme.cornerRadius)
+            thumbnail.overlay(alignment: .bottom) {
+                if showProgress, let progress = progressValue, progress > 0 {
+                    tvResumeProgress(value: progress)
+                }
+            }
         }
-        .buttonStyle(TVArtworkContentButtonStyle())
+        .buttonStyle(.card)
         .applyEpisodeFocus(
             focusedItemId,
             itemId: item.contentId,

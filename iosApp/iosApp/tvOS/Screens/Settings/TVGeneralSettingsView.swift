@@ -630,7 +630,6 @@ private struct TVMenuCustomizationSheet: View {
         in items: [PrimaryMenuItem],
         libraries: [Library]
     ) -> [PrimaryMenuItem] {
-        let availableIds = Set(libraries.map(\.id))
         func hasLibrary(_ type: TVLibraryTabType) -> Bool {
             libraries.contains(where: { type.matches($0) })
         }
@@ -638,9 +637,7 @@ private struct TVMenuCustomizationSheet: View {
             switch item {
             case .builtin(.movies): return hasLibrary(.movies)
             case .builtin(.series): return hasLibrary(.series)
-            case .builtin(.music): return hasLibrary(.music)
-            case .library(let id, _): return availableIds.contains(id)
-            case .section, .collection: return false
+            case .builtin(.music), .library, .section, .collection: return false
             case .builtin(.home), .builtin(.forYou): return true
             }
         }
@@ -666,7 +663,6 @@ private struct TVMenuCustomizationSheet: View {
             switch type {
             case .movies: builtin = .movies
             case .series: builtin = .series
-            case .music: builtin = .music
             }
             items.append(.builtin(builtin))
         }

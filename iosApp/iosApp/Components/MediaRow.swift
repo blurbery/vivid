@@ -107,6 +107,9 @@ struct MediaRow: View {
 
     @FocusState private var focusedItemId: String?
     #if os(tvOS)
+    @Environment(\.tvHomeStableRows) private var stableHomeRows
+    @Environment(\.homeCardPresentation) private var homePresentation
+
     /// Each focus token is applied once. Tracked so the claim works on a
     /// freshly-mounted row too (the Skyline section pager swaps the row's
     /// identity per page, so the kick has to land on `onAppear`, not only
@@ -422,6 +425,9 @@ struct MediaRow: View {
 
             Text(title)
                 .font(.vividHeadline)
+                #if os(tvOS)
+                .lineLimit(stableHomeRows ? 1 : nil)
+                #endif
                 .foregroundColor(.vividOnSurface)
 
             Spacer()
@@ -435,6 +441,9 @@ struct MediaRow: View {
             }
         }
         .padding(.horizontal, VividTheme.safePadding)
+        #if os(tvOS)
+        .frame(height: stableHomeRows ? TVHomeRowGeometry.headingHeight : nil, alignment: .leading)
+        #endif
     }
 
     // MARK: - Content
@@ -463,6 +472,7 @@ struct MediaRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         #if os(tvOS)
+        .frame(height: stableHomeStripHeight, alignment: .topLeading)
         // The leading gutter must be a content *margin*, not padding inside
         // the scroll content: programmatic `scrollTo(anchor: .leading)` and
         // the engine's scroll-to-focused both align to the margin-inset
@@ -536,11 +546,11 @@ struct MediaRow: View {
     @ViewBuilder
     private var cardStack: some View {
         if usesLazyCardLayout {
-            LazyHStack(alignment: HorizontalMediaRailLayout.cardAlignment, spacing: cardSpacing) {
+            LazyHStack(alignment: resolvedCardAlignment, spacing: cardSpacing) {
                 cards
             }
         } else {
-            HStack(alignment: HorizontalMediaRailLayout.cardAlignment, spacing: cardSpacing) {
+            HStack(alignment: resolvedCardAlignment, spacing: cardSpacing) {
                 cards
             }
         }
@@ -757,11 +767,27 @@ struct MediaRow: View {
         EpisodeCardCaption.accessibilityLabel(for: item)
     }
 
+    private var resolvedCardAlignment: VerticalAlignment {
+        #if os(tvOS)
+        if stableHomeRows { return .top }
+        #endif
+        return HorizontalMediaRailLayout.cardAlignment
+    }
+
+    #if os(tvOS)
+    private var stableHomeStripHeight: CGFloat? {
+        guard stableHomeRows, let presentation = homePresentation else { return nil }
+        return TVHomeRowGeometry.stripHeight(layout: layout,
+            posterWidth: cardWidth ?? VividTheme.posterCardWidth, presentation: presentation,
+            verticalPadding: verticalCardPadding)
+    }
+    #endif
+
     // MARK: - Metrics
 
     private var rowVerticalSpacing: CGFloat {
         #if os(tvOS)
-        return 20
+        return TVHomeRowGeometry.headingSpacing
         #else
         return VividTheme.smallPadding
         #endif

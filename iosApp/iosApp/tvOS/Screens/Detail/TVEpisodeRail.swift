@@ -1,11 +1,6 @@
 #if os(tvOS)
 import SwiftUI
 
-private enum EpisodeHomeHoverMetrics {
-    static let scale: CGFloat = TVMediaFocus.scale
-
-}
-
 /// Horizontal rail of episode cards for the tvOS series/season/episode
 /// detail screens. The caller owns Select semantics: legacy season/episode
 /// pages can still navigate, while the Series overview launches playback
@@ -89,9 +84,7 @@ struct TVEpisodeRail: View {
             },
             cardVerticalPadding: 12,
             horizontalContentMargin: 0,
-            trailingContentMargin: max(32,
-                baseCardWidth * uiCustomization.cardPresentation.posterSize.scale
-                    * (EpisodeHomeHoverMetrics.scale - 1) / 2 + 8),
+            trailingContentMargin: 32,
             onMoveDown: onMoveDown
         )
         // The enclosing season pager is deliberately scroll-disabled so its
@@ -264,67 +257,6 @@ private extension View {
             self
         }
     }
-
-    /// Reproduce Home's artwork-only lift for the anchored episode buttons.
-    /// Legacy rails retain their existing native `.card` appearance.
-    @ViewBuilder
-    func episodeHomeHoverEffect(
-        enabled: Bool,
-        isFocused: Bool,
-        reduceMotion: Bool,
-        cornerRadius: CGFloat
-    ) -> some View {
-        if enabled {
-            self
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.10),
-                                    Color.clear,
-                                    Color.black.opacity(0.04)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .opacity(isFocused ? 1 : 0)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(isFocused ? 0.45 : 0),
-                                    Color.white.opacity(isFocused ? 0.10 : 0)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: isFocused ? 1.5 : 0
-                        )
-                }
-                .scaleEffect(
-                    isFocused && !reduceMotion ? EpisodeHomeHoverMetrics.scale : 1,
-                    // Grow evenly around the artwork instead of adding all of
-                    // the focused width on its trailing side.
-                    anchor: .center
-                )
-                .brightness(isFocused ? 0.035 : 0)
-                .shadow(
-                    color: .black.opacity(isFocused ? 0.62 : 0.2),
-                    radius: isFocused ? 26 : 8,
-                    y: isFocused ? 14 : 4
-                )
-                .animation(
-                    reduceMotion ? nil : .smooth(duration: 0.30, extraBounce: 0),
-                    value: isFocused
-                )
-        } else {
-            self
-        }
-    }
 }
 
 struct TVEpisodeCard: View {
@@ -341,7 +273,6 @@ struct TVEpisodeCard: View {
     var onSetFavorite: ((_ contentId: String, _ isFavorite: Bool) async -> Bool)? = nil
 
     @FocusState private var isFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var playedOverride: Bool?
     @State private var favoriteOverride: Bool?
 
@@ -374,24 +305,45 @@ struct TVEpisodeCard: View {
     @ViewBuilder
     private var cardButton: some View {
         if usesNativeShelf {
-            Button(action: onSelect) {
-                CachedAsyncImage(url: episode.stillUrl ?? "", targetSize: CGSize(width: cardWidth, height: stillHeight), contentMode: .fill)
-                    .frame(width: cardWidth, height: stillHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .overlay(alignment: .bottomLeading) {
-                        HStack(spacing: 6) {
-                            if isPlayed { Image(systemName: "checkmark.circle.fill") }
-                            if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
+            VStack(alignment: .leading, spacing: 14) {
+                Button(action: onSelect) {
+                    CachedAsyncImage(url: episode.stillUrl ?? "", targetSize: CGSize(width: cardWidth, height: stillHeight), contentMode: .fill)
+                        .frame(width: cardWidth, height: stillHeight)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .overlay(alignment: .bottomLeading) {
+                                    HStack(spacing: 6) {
+                                        if isPlayed { Image(systemName: "checkmark.circle.fill") }
+                                        if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
+                                    }
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(.white)
+                                    .fixedSize(horizontal: true, vertical: true)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(.black.opacity(0.45), in: Capsule())
+                                    .padding(12)
+                                    .opacity(nativeResumeProgress == nil ? 1 : 0)
+                                }
+                        .overlay(alignment: .bottomLeading) {
+                            if let progress = nativeResumeProgress {
+                                HStack(spacing: 12) {
+                                    HStack(spacing: 6) {
+                                        if isPlayed { Image(systemName: "checkmark.circle.fill") }
+                                        if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
+                                    }
+                                    .font(.system(size: 18)).foregroundStyle(.white)
+                                    .fixedSize().padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(.black.opacity(0.45), in: Capsule())
+                                    ResumeProgressBar(value: progress.fraction,
+                                                      duration: episode.userData?.durationSeconds, height: 8, inset: 0)
+                                }
+                                    .padding(.horizontal, 12).padding(.bottom, 12)
+                                    .frame(width: cardWidth, height: stillHeight, alignment: .bottom)
+                                    .allowsHitTesting(false)
+                            }
                         }
-                        .font(.system(size: 18))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: true, vertical: true)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.black.opacity(0.45), in: Capsule())
-                        .padding(12)
-                        .opacity(nativeResumeProgress == nil ? 1 : 0)
-                    }
-                    .tvArtworkEdge(isFocused: isFocused, cornerRadius: 18)
+                }
+                .buttonStyle(.card)
+                .focused($isFocused)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("EPISODE \(episode.episodeNumber)").font(.system(size: 18)).foregroundStyle(.secondary)
                     Text(episode.title ?? "Episode \(episode.episodeNumber)").font(.system(size: 24, weight: .semibold)).lineLimit(1)
@@ -401,34 +353,12 @@ struct TVEpisodeCard: View {
                         .font(.system(size: 18)).foregroundStyle(.secondary)
                 }.frame(width: cardWidth, alignment: .leading)
             }
-            .buttonStyle(TVArtworkContentButtonStyle())
-            .focused($isFocused)
-            .overlay(alignment: .topLeading) {
-                if let progress = nativeResumeProgress {
-                    HStack(spacing: 12) {
-                        HStack(spacing: 6) {
-                            if isPlayed { Image(systemName: "checkmark.circle.fill") }
-                            if let runtime = episode.runtime, runtime > 0 { Text("\(runtime)m") }
-                        }
-                        .font(.system(size: 18)).foregroundStyle(.white)
-                        .fixedSize().padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.black.opacity(0.45), in: Capsule())
-                        ResumeProgressBar(value: progress.fraction,
-                                          duration: episode.userData?.durationSeconds, height: 8, inset: 0)
-                    }
-                        .padding(.horizontal, 12).padding(.bottom, 12)
-                        .frame(width: cardWidth, height: stillHeight, alignment: .bottom)
-                        .allowsHitTesting(false)
-                }
-            }
-            .scaleEffect(isFocused && !reduceMotion ? TVMediaFocus.scale : 1)
-            .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
         } else {
             Button(action: onSelect) {
                 EpisodeCardLabel(episode: episode, isPlayed: isPlayed, isCurrent: isCurrent,
                                  cardWidth: cardWidth, stillHeight: stillHeight,
                                  stillCornerRadius: stillCornerRadius, captionStyle: captionStyle)
-            }.buttonStyle(TVCardFocusButtonStyle())
+            }.buttonStyle(.card)
         }
     }
 
@@ -528,11 +458,9 @@ private struct EpisodeCardLabel: View {
     let captionStyle: CardCaptionStyle
     var focusOverride: Bool? = nil
     var hidesEpisodeTitle = false
-    var usesHomeHoverEffect = false
     var showsCurrentOutline = true
 
     @Environment(\.isFocused) private var environmentIsFocused
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isFocused: Bool {
         focusOverride ?? environmentIsFocused
@@ -577,7 +505,7 @@ private struct EpisodeCardLabel: View {
                         }
                     }
                 }
-                .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
+
             }
         }
         .frame(width: cardWidth, alignment: .leading)
@@ -653,7 +581,6 @@ private struct EpisodeCardLabel: View {
         }
         .frame(width: cardWidth, height: stillHeight)
         .clipShape(RoundedRectangle(cornerRadius: stillCornerRadius))
-        .tvArtworkEdge(isFocused: isFocused, cornerRadius: stillCornerRadius)
         .overlay(
             RoundedRectangle(cornerRadius: stillCornerRadius)
                 .stroke(
@@ -661,16 +588,7 @@ private struct EpisodeCardLabel: View {
                     lineWidth: showsCurrentOutline && isCurrent && !isFocused ? 2 : 0
                 )
         )
-        // Home lifts only the artwork button, not its caption. Doing the same
-        // here keeps caption geometry and carousel offsets perfectly stable.
-        // Match the rail's 0.30-second smooth curve so the hover transfers at
-        // exactly the same rate as the episode slide instead of snapping early.
-        .episodeHomeHoverEffect(
-            enabled: usesHomeHoverEffect,
-            isFocused: isFocused,
-            reduceMotion: reduceMotion,
-            cornerRadius: stillCornerRadius
-        )
+
     }
 
     private var watchedBadge: some View {
@@ -749,6 +667,7 @@ struct TVContinuousEpisodeShelf: View {
     let onPlay: (EpisodeListItem) -> Void
     let onWatched: (String, Bool) async -> Bool
     let onFavorite: (String, Bool) async -> Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focusedEpisode: String?
     @FocusState private var focusedSeason: String?
     @Namespace private var seasonFocusNamespace
@@ -757,7 +676,6 @@ struct TVContinuousEpisodeShelf: View {
     @State private var pendingJump: String?
     @State private var pendingEpisodeJump: String?
     @State private var seeded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func items(_ season: Season) -> [EpisodeListItem]? { pages[season.seasonNumber] }
     private var contentKey: [String] { seasons.flatMap { items($0)?.map(\.contentId) ?? [] } }
@@ -926,6 +844,7 @@ struct TVContinuousEpisodeShelf: View {
 private struct TVContinuousSeasonButtonStyle: ButtonStyle {
     let isFocused: Bool
     let isSelected: Bool
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {

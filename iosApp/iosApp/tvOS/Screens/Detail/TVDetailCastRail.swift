@@ -27,9 +27,9 @@ struct TVDetailCastRail: View {
                         TVCastCard(
                             member: member,
                             photoSize: CGSize(width: photoWidth, height: photoHeight),
+                            focusedCastId: $focusedCastId,
                             onTap: onTap
                         )
-                        .focused($focusedCastId, equals: member.id)
                         .id(member.id)
                     }
                 }
@@ -93,39 +93,22 @@ private extension View {
 private struct TVCastCard: View {
     let member: CastMember
     let photoSize: CGSize
+    let focusedCastId: FocusState<String?>.Binding
     let onTap: (String) -> Void
 
-    var body: some View {
-        Button {
-            if let personId = member.personId { onTap(personId) }
-        } label: {
-            CastCardLabel(member: member, photoSize: photoSize)
-        }
-        .buttonStyle(
-            TVCardFocusButtonStyle(
-                scale: TVMediaFocus.scale,
-                focusedShadowOpacity: 0.35,
-                focusedShadowRadius: 14,
-                focusedShadowY: 6,
-                unfocusedShadowOpacity: 0,
-                unfocusedShadowRadius: 0,
-                unfocusedShadowY: 0
-            )
-        )
-    }
-}
-
-/// Card body rendered per-focus-state via `@Environment(\.isFocused)`
-/// from the button style's makeBody context.
-private struct CastCardLabel: View {
-    let member: CastMember
-    let photoSize: CGSize
-
-    @Environment(\.isFocused) private var isFocused
+    private var isFocused: Bool { focusedCastId.wrappedValue == member.id }
 
     var body: some View {
         VStack(spacing: 12) {
-            photo
+            Button {
+                if let personId = member.personId { onTap(personId) }
+            } label: {
+                photo
+            }
+            .buttonStyle(.card)
+            .buttonBorderShape(.circle)
+            .focused(focusedCastId, equals: member.id)
+            .accessibilityLabel(member.name)
             VStack(spacing: 4) {
                 Text(member.name)
                     .font(.system(size: 20, weight: .semibold))
@@ -140,7 +123,7 @@ private struct CastCardLabel: View {
                         .multilineTextAlignment(.center)
                 }
             }
-            .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
+
         }
         .frame(width: photoSize.width)
     }
@@ -164,10 +147,6 @@ private struct CastCardLabel: View {
         }
         .frame(width: photoSize.width, height: photoSize.height)
         .clipShape(Circle())
-        .overlay(
-            Circle()
-                .stroke(Color.white.opacity(isFocused ? 0.85 : 0.08), lineWidth: isFocused ? 2 : 1)
-        )
     }
 }
 

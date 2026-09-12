@@ -4,9 +4,7 @@ extension Notification.Name {
     static let homeSectionsShouldRefresh = Notification.Name("homeSectionsShouldRefresh")
 }
 
-/// Main home screen. iOS/macOS render resume-first section rows on a flat
-/// background; tvOS uses the Skyline focus marquee (§5.4) — a passive
-/// billboard previewing whichever card holds focus.
+/// Home rows with an optional, independent spotlight on tvOS.
 struct HomeView: View {
     var homeFocusRequest: Int = 0
     /// tvOS-only: a pushed detail page has popped and Home should restore the
@@ -52,14 +50,7 @@ struct HomeView: View {
         @Bindable var viewModel = viewModel
 
         Group {
-            // On iOS the header floats over the scroll content, which extends
-            // behind the status bar with a semi-transparent fill. On tvOS the
-            // app-level top bar (owned by `TVMainTabView`) handles profile +
-            // utility actions; Home renders the focus marquee over rows, with
-            // the backdrop tracking whichever card holds focus (§5.4).
         #if os(tvOS)
-        // The shared Skyline feed uses the same layout component as the
-        // library Browse tabs; Home supplies only the server-resolved Home rows.
         Group {
             if !displayedSections.isEmpty || !spotlightPreferences.slides(from: viewModel.regularSections).isEmpty {
                 TVHomeDiscoveryFeed(
@@ -73,9 +64,7 @@ struct HomeView: View {
                     onRemoveFromContinueWatching: dismissContinueWatching,
                     onSetWatched: setWatched
                 )
-                // Preference edits replace the row band as one stable unit:
-                // the next visible row takes the vacated slot at the fixed
-                // first-row anchor, and no marquee from a hidden row lingers.
+                // Rebuild the feed when row visibility or ordering changes.
                 .id(homeSectionPreferences.layoutRevision)
             } else if let error = viewModel.error {
                 ErrorView(state: error, onRetry: { Task { await viewModel.loadSections() } })
@@ -100,19 +89,10 @@ struct HomeView: View {
         .task {
             homeSectionPreferences.refresh()
             spotlightPreferences.refresh()
-            await viewModel.loadSections()
             spotlightPreferences.initializeIfNeeded(from: viewModel.regularSections)
         }
         .onChange(of: viewModel.regularSections.map(\.id), initial: true) { _, _ in
             spotlightPreferences.initializeIfNeeded(from: viewModel.regularSections)
-        }
-        .onAppear {
-            // Refresh on return (e.g. after player dismiss) so
-            // Continue Watching reflects new progress. Skip the
-            // very first appear — `.task` handles the initial
-            // load and we don't want two concurrent fetches.
-            guard !viewModel.sections.isEmpty else { return }
-            Task { await viewModel.loadSections() }
         }
         #else
         ZStack(alignment: .top) {
@@ -349,9 +329,8 @@ struct HomeView: View {
     /// and featured sections. Recommendations stay in the For You tab.
     private var displayedSections: [ResolvedSection] {
         #if os(tvOS) || os(iOS)
-        // Filter before the Skyline feed performs layout. A hidden section
-        // therefore leaves no placeholder: the next visible section inherits
-        // the same fixed row slot and vertical anchor.
+        // Apply visibility and ordering before layout. Hidden sections occupy
+        // no space; each visible row keeps its own poster or landscape height.
         return homeSectionPreferences.arrangedSections(viewModel.regularSections)
         #else
         return viewModel.regularSections

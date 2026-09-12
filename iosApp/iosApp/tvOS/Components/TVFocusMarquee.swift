@@ -114,12 +114,7 @@ struct TVMarqueeContent: Equatable {
     /// root hero upgrades to the series backdrop from detail enrichment rather
     /// than blowing the still up full-width.
     let isEpisode: Bool
-    /// Series hierarchy to warm while this card is resting under focus. A
-    /// Series card points at itself; a Continue Watching episode points at its
-    /// parent Series and current season. Other episode rows deliberately leave
-    /// this nil so ordinary browsing does not fan out extra requests.
-    let seriesContextId: String?
-    let seriesContextSeasonNumber: Int?
+
 }
 
 extension TVMarqueeContent {
@@ -188,13 +183,7 @@ extension TVMarqueeContent {
             contentRatingBadge: contentRatingBadge,
             progressUpdatedAt: item.progressUpdatedAt,
             prefersLastUsedPlaybackMetadata: isContinueWatching,
-            isEpisode: isEpisode,
-            seriesContextId: isSeries
-                ? item.contentId
-                : (isEpisode && isContinueWatching ? item.seriesId : nil),
-            seriesContextSeasonNumber: isEpisode && isContinueWatching
-                ? item.seasonNumber
-                : nil
+            isEpisode: isEpisode
         )
     }
 
@@ -228,9 +217,7 @@ extension TVMarqueeContent {
             contentRatingBadge: nil,
             progressUpdatedAt: nil,
             prefersLastUsedPlaybackMetadata: false,
-            isEpisode: false,
-            seriesContextId: nil,
-            seriesContextSeasonNumber: nil
+            isEpisode: false
         )
     }
 
@@ -598,19 +585,13 @@ struct TVMarqueeEnrichment: Equatable {
     }
 }
 
-// MARK: - Debounce model
+// MARK: - Spotlight artwork
 
-/// Focused-card → marquee state shared by the tvOS Home and library
-/// Browse landings. Rows report card focus immediately; foreground text and
-/// cached metadata follow on the same frame. Uncached enrichment waits for
-/// the short rest debounce, while the large backdrop uses the longer stop
-/// gate so rolling never composites intermediate hero artwork. While focus
-/// is in chrome the last previewed item is retained — rows report focus gain,
-/// never focus loss.
+/// Resolves artwork and metadata for a fixed spotlight slide.
 @Observable
 @MainActor
-final class TVFocusMarqueeModel {
-    /// Foreground text and cached metadata follow focus immediately.
+final class TVSpotlightArtworkModel {
+    /// The fixed slide whose artwork is being prepared.
     private(set) var content: TVMarqueeContent?
     /// Detail backfill (§9: air date, cast) for the displayed content.
     /// Uses cached detail immediately; `nil` while an uncached fetch runs.
@@ -651,76 +632,29 @@ final class TVFocusMarqueeModel {
 
     var backdropThumbhash: String? { displayedArtwork?.thumbhash }
 
-    private var backdropTask: Task<Void, Never>?
     private var tintTask: Task<Void, Never>?
     private var enrichTask: Task<Void, Never>?
-    /// A second preview before the isolated gate expires establishes a roll.
-    /// The state remains sticky until the final long gate completes, so slower
-    /// focus delivery while a rail scrolls cannot be mistaken for a stop.
-    private var isBackdropRoll = false
-    /// The content whose backdrop may be shown. `nil` while a previewed
-    /// selection has not rested yet, so enrichment landing early cannot swap
-    /// the backdrop ahead of the stop gate.
-    private var backdropContentID: String?
     /// False while the feed is offscreen; every entry point is a no-op then.
     private var isActive = true
     private var enrichmentState: TVHeroEnrichmentState = .notStarted
     private var lastSampledTintURL: String?
-    /// Per-item enrichment cache so scrubbing back over a row never
-    /// refetches details.
+    /// Reuse slide metadata when its artwork reappears.
     private var enrichmentCache: [String: TVMarqueeEnrichment] = [:]
 
-    /// Cold-entry seed: display a candidate immediately, skipping the rest
-    /// debounce, so the page's first frame already carries a backdrop
-    /// instead of fading one in after focus settles. Only applies before
-    /// anything has displayed — later calls are no-ops and the focus-driven
-    /// `preview` path stays authoritative.
+    /// Load the fixed slide once when its artwork appears.
     func seed(_ candidate: TVMarqueeContent) {
         guard isActive, content == nil else { return }
         content = candidate
-        backdropContentID = candidate.id
         loadEnrichment(for: candidate)
         updateBackdropIfReady()
     }
 
-    /// Keep foreground information responsive while rapid focus movement
-    /// leaves the existing backdrop still. Only a genuinely rested selection
-    /// replaces the large composited image and starts its palette work.
-    func preview(_ candidate: TVMarqueeContent) {
-        guard isActive, candidate != content else { return }
-        if backdropTask != nil {
-            isBackdropRoll = true
-        }
-        let backdropRestMilliseconds = isBackdropRoll
-            ? VividTheme.Skyline.marqueeBackdropRollRestMilliseconds
-            : VividTheme.Skyline.marqueeBackdropIsolatedRestMilliseconds
-        backdropTask?.cancel()
-        tintTask?.cancel()
-        lastSampledTintURL = nil
-        backdropContentID = nil
-        content = candidate
-        loadEnrichment(for: candidate, deferNetwork: true)
-        backdropTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(backdropRestMilliseconds))
-            guard !Task.isCancelled, let self,
-                  self.isActive, self.content == candidate else { return }
-            self.backdropTask = nil
-            self.isBackdropRoll = false
-            self.backdropContentID = candidate.id
-            self.updateBackdropIfReady()
-        }
-    }
-
     func suspend() {
         isActive = false
-        backdropTask?.cancel()
         enrichTask?.cancel()
         tintTask?.cancel()
-        backdropTask = nil
         enrichTask = nil
         tintTask = nil
-        isBackdropRoll = false
-        backdropContentID = nil
         lastSampledTintURL = nil
     }
 
@@ -728,13 +662,12 @@ final class TVFocusMarqueeModel {
         guard !isActive else { return }
         isActive = true
         guard let content else { return }
-        backdropContentID = content.id
         loadEnrichment(for: content)
         updateBackdropIfReady()
     }
 
     private func updateBackdropIfReady() {
-        guard isActive, let content, backdropContentID == content.id else { return }
+        guard isActive, content != nil else { return }
         if let artwork = resolvedArtwork {
             displayedArtwork = artwork
             sampleTintIfNeeded(for: artwork.url)
@@ -746,20 +679,8 @@ final class TVFocusMarqueeModel {
         }
     }
 
-    private static func waitForEnrichmentRest(_ deferred: Bool) async -> Bool {
-        if deferred {
-            try? await Task.sleep(for: .milliseconds(VividTheme.Skyline.marqueeRestDebounceMilliseconds))
-        }
-        return !Task.isCancelled
-    }
-
-    /// The §9 backfill: fields the section payload doesn't carry (air
-    /// date, cast) come from the item-detail endpoint after the marquee
-    /// has already displayed — never blocking it and cached per item.
-    /// Cached detail applies synchronously; with `deferNetwork` any network
-    /// work waits out the rest debounce so a roll across a row requests
-    /// nothing.
-    private func loadEnrichment(for candidate: TVMarqueeContent, deferNetwork: Bool = false) {
+    /// Reuse cached detail or load the metadata needed by this spotlight slide.
+    private func loadEnrichment(for candidate: TVMarqueeContent) {
         enrichTask?.cancel()
         guard let contentId = candidate.contentId else {
             enrichment = nil
@@ -770,27 +691,10 @@ final class TVFocusMarqueeModel {
             enrichment = cached
             enrichmentState = .completed
             updateBackdropIfReady()
-            // The earlier hierarchy warmup may have been cancelled when focus
-            // moved away after detail enrichment completed. A cached marquee
-            // hit must therefore re-arm only the missing cache pieces.
-            enrichTask = Task {
-                guard await Self.waitForEnrichmentRest(deferNetwork) else { return }
-                async let seriesContextWarmup: Void = Self.warmSeriesContext(for: candidate)
-                if candidate.prefersLastUsedPlaybackMetadata {
-                    _ = await TVContinueWatchingPlaybackMetadataStore.shared.load(
-                        contentId: contentId,
-                        progressUpdatedAt: candidate.progressUpdatedAt,
-                        baseOverlayData: candidate.baseOverlayData
-                    )
-                }
-                await seriesContextWarmup
-            }
             return
         }
 
-        // For You prewarms the two visible rows. Consume that shared detail
-        // cache synchronously so rating/runtime/logo-adjacent metadata paints
-        // on the first focused frame instead of repeating the same request.
+        // Reuse the current Spotlight detail cache to resolve its artwork.
         if !candidate.prefersLastUsedPlaybackMetadata || TVHomeMetadataCache.shared.snapshot.details[contentId] != nil,
            let cachedDetail: ItemDetail = ResponseCache.shared.get(
                CacheKey.itemDetail(contentId)
@@ -800,30 +704,13 @@ final class TVFocusMarqueeModel {
             enrichment = cached
             enrichmentState = .completed
             updateBackdropIfReady()
-            enrichTask = Task {
-                guard await Self.waitForEnrichmentRest(deferNetwork) else { return }
-                async let seriesContextWarmup: Void = Self.warmSeriesContext(for: candidate)
-                if candidate.prefersLastUsedPlaybackMetadata {
-                    _ = await TVContinueWatchingPlaybackMetadataStore.shared.load(
-                        contentId: contentId,
-                        progressUpdatedAt: candidate.progressUpdatedAt,
-                        baseOverlayData: candidate.baseOverlayData
-                    )
-                }
-                await seriesContextWarmup
-            }
             return
         }
 
         enrichment = nil
         enrichmentState = .loading
         enrichTask = Task { [weak self] in
-            guard await Self.waitForEnrichmentRest(deferNetwork) else { return }
-            // Movie detail needs only the catalog request below. Series detail
-            // also needs seasons + one episode page, so warm that independent
-            // structure concurrently instead of starting it after navigation.
-            // Continue Watching episodes warm the same parent context.
-            async let seriesContextWarmup: Void = Self.warmSeriesContext(for: candidate)
+            guard !Task.isCancelled else { return }
             let fetchedDetail: ItemDetail?
             if candidate.prefersLastUsedPlaybackMetadata {
                 fetchedDetail = await TVContinueWatchingPlaybackMetadataStore.shared.load(
@@ -839,10 +726,7 @@ final class TVFocusMarqueeModel {
 
             if let detail = fetchedDetail {
                 guard !Task.isCancelled, let self else { return }
-                // The marquee already paid for the same catalog request the
-                // detail route needs. Keep the complete payload—not only the
-                // tiny marquee projection—so pressing Select after resting on
-                // a card opens the approved detail layout immediately.
+                // Retain the fetched detail for Spotlight and subsequent navigation.
                 ResponseCache.shared.set(detail, for: CacheKey.itemDetail(contentId))
                 let enrichment = TVMarqueeEnrichment(detail: detail)
                 self.enrichmentCache[contentId] = enrichment
@@ -859,100 +743,7 @@ final class TVFocusMarqueeModel {
                 self.updateBackdropIfReady()
             }
 
-            await seriesContextWarmup
         }
-    }
-
-    /// Warm only the hierarchy required to paint the first usable Series
-    /// frame. The selected season mirrors `ItemDetailViewModel` exactly; all
-    /// results land in its existing response cache and are still refreshed by
-    /// the detail screen after navigation.
-    private static func warmSeriesContext(for candidate: TVMarqueeContent) async {
-        guard let seriesId = candidate.seriesContextId, !seriesId.isEmpty else { return }
-
-        async let parentDetailWarmup: Void = warmParentSeriesDetail(
-            seriesId: seriesId,
-            itemContentId: candidate.contentId
-        )
-        async let hierarchyWarmup: Void = warmSeriesHierarchy(
-            seriesId: seriesId,
-            seasonNumber: candidate.seriesContextSeasonNumber
-        )
-        _ = await (parentDetailWarmup, hierarchyWarmup)
-    }
-
-    private static func warmParentSeriesDetail(
-        seriesId: String,
-        itemContentId: String?
-    ) async {
-        let cached: ItemDetail? = ResponseCache.shared.get(CacheKey.itemDetail(seriesId))
-        guard itemContentId != seriesId,
-              cached == nil,
-              let detail = try? await MetadataRequestPool.shared.itemDetail(contentId: seriesId),
-              !Task.isCancelled else { return }
-        ResponseCache.shared.set(detail, for: CacheKey.itemDetail(seriesId))
-    }
-
-    private static func warmSeriesHierarchy(
-        seriesId: String,
-        seasonNumber: Int?
-    ) async {
-        let seasonsResponse: SeasonsResponse
-        if let cached: SeasonsResponse = ResponseCache.shared.get(
-            CacheKey.itemSeasons(seriesId)
-        ) {
-            seasonsResponse = cached
-        } else {
-            guard let fetched = try? await MetadataRequestPool.shared.seasons(seriesId: seriesId),
-                  !Task.isCancelled else { return }
-            ResponseCache.shared.set(fetched, for: CacheKey.itemSeasons(seriesId))
-            seasonsResponse = fetched
-        }
-
-        let seasons = seasonsResponse.seasons.sortedForDisplay()
-        let targetSeason = seasonNumber.flatMap { number in
-            seasons.first(where: { $0.seasonNumber == number })
-        } ?? preferredInitialSeason(in: seasons)
-        guard let targetSeason else { return }
-
-        let episodesKey = CacheKey.itemEpisodes(
-            seriesId: seriesId,
-            seasonNumber: targetSeason.seasonNumber
-        )
-        // Episode stills belong to the detail screen's visible rows. Warming
-        // their image requests here lets work from previously focused series
-        // accumulate in the shared prefetcher while the user scrolls Home.
-        let cachedEpisodes: EpisodesResponse? = ResponseCache.shared.get(episodesKey)
-        guard cachedEpisodes == nil else { return }
-        guard let fetched = try? await MetadataRequestPool.shared.episodes(
-            seriesId: seriesId,
-            seasonNumber: targetSeason.seasonNumber
-        ), !Task.isCancelled else { return }
-        ResponseCache.shared.set(fetched, for: episodesKey)
-    }
-
-    private static func preferredInitialSeason(in seasons: [Season]) -> Season? {
-        if let inProgress = seasons.first(where: {
-            ($0.userData?.inProgressCount ?? 0) > 0
-        }) {
-            return inProgress
-        }
-        if let partial = seasons.first(where: {
-            guard let userData = $0.userData else { return false }
-            let watched = userData.watchedCount ?? 0
-            return watched > 0 && watched < $0.episodeCount
-        }) {
-            return partial
-        }
-        // Mirrors ItemDetailViewModel.preferredInitialSeason: specials lead
-        // the display order, but a fresh series opens on its first numbered
-        // season, and an unplayed Specials beats a fully watched numbered one.
-        let regular = seasons.filter { !($0.isSpecials == true || $0.seasonNumber == 0) }
-        let isUnplayed: (Season) -> Bool = { !($0.userData?.played ?? false) }
-        if let firstUnplayed = regular.first(where: isUnplayed) ?? seasons.first(where: isUnplayed) {
-            return firstUnplayed
-        }
-        return regular.first ?? seasons.first
     }
 
     private func sampleTintIfNeeded(for urlString: String?) {
@@ -985,372 +776,4 @@ final class TVFocusMarqueeModel {
     }
 }
 
-// MARK: - Marquee view
-
-/// Passive billboard anchored bottom-left on Home and the library Browse
-/// landings (§5.4/§5.5): always previews the card the user is focused on, never
-/// participates in focus and has no buttons. Foreground changes are immediate;
-/// the backdrop animates separately. VoiceOver exposes a polite, non-interrupting
-/// description of the focused item.
-struct TVFocusMarquee: View {
-    enum Scale {
-        /// Home — full-bleed scale (title 84), anchored bottom-left above
-        /// the row band.
-        case home
-        /// Library landing — compact spotlight scale (title 66) so the block
-        /// clears the pill row while sitting just above row 1.
-        case library
-
-        var bottomInset: CGFloat {
-            switch self {
-            case .home: VividTheme.Skyline.marqueeBottomInsetHome
-            case .library: VividTheme.Skyline.marqueeBottomInsetLibrary
-            }
-        }
-
-        var titleSize: CGFloat {
-            switch self {
-            case .home: VividTheme.Skyline.marqueeTitleSizeHome
-            case .library: VividTheme.Skyline.marqueeTitleSizeLibrary
-            }
-        }
-
-        var metaSize: CGFloat {
-            switch self {
-            case .home: VividTheme.Skyline.marqueeMetaSizeHome
-            case .library: VividTheme.Skyline.marqueeMetaSizeLibrary
-            }
-        }
-
-        /// Logo art height cap — the 2-line text-title equivalent for the
-        /// scale, so a logo never pushes the block past the row slot.
-        var logoMaxHeight: CGFloat {
-            switch self {
-            case .home: VividTheme.Skyline.marqueeLogoMaxHeightHome
-            case .library: VividTheme.Skyline.marqueeLogoMaxHeightLibrary
-            }
-        }
-    }
-
-    let content: TVMarqueeContent?
-    var enrichment: TVMarqueeEnrichment? = nil
-    let scale: Scale
-
-    @State private var continueWatchingMetadata = TVContinueWatchingPlaybackMetadataStore.shared
-
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            if let content {
-                TVMarqueeBlock(
-                    content: content,
-                    enrichment: enrichment,
-                    badgeOverride: playbackBadgeOverride(for: content),
-                    scale: scale
-                )
-                    .id(content.id)
-                    .transition(.identity)
-            }
-        }
-        .frame(
-            maxWidth: .infinity,
-            maxHeight: .infinity,
-            alignment: .bottomLeading
-        )
-        .padding(.leading, VividTheme.Skyline.safeAreaX)
-        .padding(.bottom, scale.bottomInset)
-        .ignoresSafeArea(edges: [.top, .horizontal])
-        .allowsHitTesting(false)
-        .focusEffectDisabled()
-        // Cached foreground content should replace the previous selection
-        // immediately; only the separate backdrop owns a crossfade.
-        .transaction { $0.animation = nil }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityDescription)
-        .accessibilityAddTraits(.updatesFrequently)
-        .task(id: content?.id) {
-            guard let content, UIAccessibility.isVoiceOverRunning else { return }
-            try? await Task.sleep(for: .milliseconds(VividTheme.Skyline.marqueeRestDebounceMilliseconds))
-            guard !Task.isCancelled else { return }
-            announce(content)
-        }
-    }
-
-    private var accessibilityDescription: String {
-        guard let content else { return "" }
-        let rating = content.contentRatingBadge ?? enrichment?.contentRatingBadge ?? ""
-        let fallbackRuntime = content.runtimeText == nil
-            ? (enrichment?.runtimeText ?? "")
-            : ""
-        let parts = [content.eyebrow, content.title, rating]
-            + content.metaParts
-            + [fallbackRuntime]
-            + [content.synopsis ?? "", enrichment?.detailLine ?? ""]
-        return parts
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
-    }
-
-    private func playbackBadgeOverride(for content: TVMarqueeContent) -> [String]? {
-        guard content.prefersLastUsedPlaybackMetadata,
-              let presentation = continueWatchingMetadata.presentation(
-                  for: content.contentId
-              ) else {
-            return nil
-        }
-        guard !presentation.badges.isEmpty else { return nil }
-        return presentation.badges
-    }
-
-    /// Polite live region: queue a low-priority announcement that never
-    /// interrupts in-progress speech while the user scrubs a row.
-    private func announce(_ content: TVMarqueeContent) {
-        var message = AttributedString(accessibilityDescription)
-        message.accessibilitySpeechAnnouncementPriority = .low
-        AccessibilityNotification.Announcement(message).post()
-    }
-}
-
-// MARK: - Content block
-
-/// One marquee "frame": title (text first, cached logo art may swap
-/// in), identity line, synopsis, enrichment, then technical badges. The
-/// §5.4 eyebrow (source-row title)
-/// was dropped by design revision — the row's own header already names
-/// the source, and the marquee leads with the title. Identity is keyed
-/// on the content id by the parent so each selection owns its logo task.
-private struct TVMarqueeBlock: View {
-    let content: TVMarqueeContent
-    var enrichment: TVMarqueeEnrichment? = nil
-    var badgeOverride: [String]? = nil
-    let scale: TVFocusMarquee.Scale
-
-    /// Server logo art, swapped in only once decoded — the text title
-    /// renders immediately while an uncached logo loads.
-    @State private var logoImage: UIImage?
-    @State private var logoTask: Task<Void, Never>?
-    /// When the text title wraps to two lines the synopsis drops to one
-    /// (§5.4) so the block never collides with row 1.
-    @State private var titleWrapsTwoLines = false
-
-    init(
-        content: TVMarqueeContent,
-        enrichment: TVMarqueeEnrichment? = nil,
-        badgeOverride: [String]? = nil,
-        scale: TVFocusMarquee.Scale
-    ) {
-        self.content = content
-        self.enrichment = enrichment
-        self.badgeOverride = badgeOverride
-        self.scale = scale
-        // A prefetched logo should be on the block's very first frame —
-        // waiting for onAppear paints one frame of text title first, which
-        // reads as a flash on cold entry. Synchronous memory-cache lookup.
-        if let logoUrl = content.logoUrl, !logoUrl.isEmpty,
-           let url = URL(string: logoUrl),
-           let cached = VividImagePipeline.shared.cache[VividImageRequest(url: url)] {
-            _logoImage = State(initialValue: cached.image)
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            titleSlot
-
-            metaLine
-
-            if let synopsis = content.synopsis, !synopsis.isEmpty {
-                Text(synopsis)
-                    .font(.system(size: VividTheme.Skyline.marqueeSynopsisSize, weight: .regular))
-                    .lineSpacing(6)
-                    .foregroundStyle(Color.vividSecondaryText)
-                    .lineLimit(synopsisLineLimit)
-                    .frame(maxWidth: VividTheme.Skyline.marqueeSynopsisMaxWidth, alignment: .leading)
-            }
-
-            detailLine
-
-            badgeLine
-        }
-        .frame(maxWidth: VividTheme.Skyline.marqueeContentWidth, alignment: .leading)
-        .onAppear { loadLogoIfCached() }
-        .onDisappear {
-            logoTask?.cancel()
-            logoTask = nil
-        }
-    }
-
-    /// Synopsis line budget. The library scale anchors a taller block lower,
-    /// so it caps at two lines to clear the Browse pill row; Home affords
-    /// three. A shown logo (or a wrapped title) fills part of the budget and
-    /// drops one line either way.
-    private var synopsisLineLimit: Int {
-        let cap: Int
-        switch scale {
-        case .home: cap = 3
-        case .library: cap = 2
-        }
-        return (titleWrapsTwoLines || logoImage != nil) ? min(cap, 2) : cap
-    }
-
-    /// Air date + top-billed cast (§9 backfill). For any item that can
-    /// enrich (has a contentId) an invisible one-line sizer always holds the
-    /// row's height, and the real line appears in an overlay on top of it.
-    /// Because the overlay never contributes to layout, the bottom-anchored
-    /// block can't reflow when the async detail lands — the text above stays
-    /// put. Collections never enrich, so they reserve nothing.
-    @ViewBuilder
-    private var detailLine: some View {
-        if content.contentId != nil {
-            Text(verbatim: "Ag")
-                .font(.system(size: scale.metaSize, weight: .medium))
-                .lineLimit(1)
-                .opacity(0)
-                .frame(maxWidth: VividTheme.Skyline.marqueeSynopsisMaxWidth, alignment: .leading)
-                .overlay(alignment: .leading) {
-                    if let line = enrichment?.detailLine, !line.isEmpty {
-                        Text(line)
-                            .font(.system(size: scale.metaSize, weight: .medium))
-                            .foregroundStyle(Color.vividOnSurface.opacity(0.5))
-                            .lineLimit(1)
-                            .frame(maxWidth: VividTheme.Skyline.marqueeSynopsisMaxWidth, alignment: .leading)
-                            .transition(.identity)
-                    }
-                }
-        }
-    }
-
-    @ViewBuilder
-    private var titleSlot: some View {
-        if let logoImage {
-            Image(uiImage: logoImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(
-                    maxWidth: VividTheme.Skyline.marqueeLogoMaxWidth,
-                    maxHeight: scale.logoMaxHeight,
-                    alignment: .leading
-                )
-                .transition(.identity)
-                .accessibilityHidden(true)
-        } else {
-            Text(content.title)
-                .font(.system(size: scale.titleSize, weight: .heavy).leading(.tight))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .shadow(color: .black.opacity(0.5), radius: 10, y: 4)
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.height
-                } action: { height in
-                    titleWrapsTwoLines = height > scale.titleSize * 1.4
-                }
-        }
-    }
-
-    @ViewBuilder
-    private var metaLine: some View {
-        if content.contentId != nil || !displayedMetaParts.isEmpty {
-            HStack(spacing: 10) {
-                if let contentRatingBadge = displayedContentRatingBadge {
-                    badgeChip(contentRatingBadge)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-
-                if !displayedMetaParts.isEmpty {
-                    Text(displayedMetaParts.joined(separator: " · "))
-                        .font(.system(size: scale.metaSize, weight: .medium))
-                        .foregroundStyle(Color.vividSecondaryText)
-                        .lineLimit(1)
-                }
-            }
-            // Keep the line's height stable when a rating arrives, while its
-            // natural width leaves only the stack spacing before the text.
-            .frame(height: 27, alignment: .leading)
-            .frame(
-                maxWidth: VividTheme.Skyline.marqueeSynopsisMaxWidth,
-                alignment: .leading
-            )
-        }
-    }
-
-    private var displayedMetaParts: [String] {
-        var parts = content.metaParts
-        if content.runtimeText == nil,
-           let fallbackRuntime = enrichment?.runtimeText {
-            parts.insert(
-                fallbackRuntime,
-                at: min(content.runtimeMetaIndex, parts.count)
-            )
-        }
-        return parts
-    }
-
-    /// Use the section value immediately when available, then fill omissions
-    /// from the same cached item-detail request that supplies cast/backdrop.
-    private var displayedContentRatingBadge: String? {
-        content.contentRatingBadge ?? enrichment?.contentRatingBadge
-    }
-
-    /// Technical capabilities sit below the async aired/cast line. Content
-    /// ratings consistently lead the identity line above, matching Continue
-    /// Watching across Home, Movies, and Series.
-    /// Every media item reserves the same slot, so saved-file enrichment can
-    /// update the labels without moving the Home marquee or its first row.
-    @ViewBuilder
-    private var badgeLine: some View {
-        if content.contentId != nil {
-            HStack(spacing: 10) {
-                ForEach(displayedBadges, id: \.self) { badge in
-                    badgeChip(badge)
-                }
-            }
-            .frame(height: 27, alignment: .leading)
-        }
-    }
-
-    private var displayedBadges: [String] {
-        badgeOverride ?? content.badges
-    }
-
-    private func badgeChip(_ label: String) -> some View {
-        Text(label)
-            .font(.system(size: VividTheme.Skyline.marqueeBadgeSize, weight: .semibold))
-            .tracking(VividTheme.Skyline.marqueeBadgeSize * 0.08)
-            .foregroundStyle(Color.white.opacity(0.92))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.vividChromeRestingFill)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
-            }
-    }
-
-    // MARK: Logo swap-in
-
-    /// Show cached logo art instantly; otherwise fetch at normal priority and
-    /// swap in whenever it lands. This is the currently focused title, so it
-    /// should not sit behind speculative poster/backdrop work in the pipeline.
-    /// The text title is never delayed.
-    private func loadLogoIfCached() {
-        guard let logoUrl = content.logoUrl, !logoUrl.isEmpty,
-              let url = URL(string: logoUrl) else {
-            return
-        }
-
-        let request = VividImageRequest(url: url, priority: .normal)
-        if let cached = VividImagePipeline.shared.cache[request] {
-            logoImage = cached.image
-            return
-        }
-
-        logoTask = Task { @MainActor in
-            guard let image = try? await VividImagePipeline.shared.image(for: request) else { return }
-            guard !Task.isCancelled else { return }
-            logoImage = image
-        }
-    }
-}
 #endif

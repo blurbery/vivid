@@ -134,10 +134,18 @@ final class TVHomeMetadataCache {
         let limited = Self.capped(response)
         HomeSectionPreferences.shared.refresh()
         TVHomeSpotlightPreferences.shared.initializeIfNeeded(from: limited.sections)
-        snapshot.rows = limited.sections
-            .filter { HomeSectionPreferences.shared.isVisible($0.id) }
-            .map { Row(section: $0, updatedAt: now) }
-        snapshot.spotlight = TVHomeSpotlightPreferences.shared.slides(from: limited.sections)
+        let rows = limited.sections.filter { HomeSectionPreferences.shared.isVisible($0.id) }
+        let slides = TVHomeSpotlightPreferences.shared.slides(from: limited.sections)
+        if snapshot.rows.map(\.section) == rows, snapshot.spotlight == slides,
+           snapshot.spotlightUpdatedAt != nil, storageError == nil {
+            // Keep failed or evicted artwork and missing details retryable,
+            // without rewriting an unchanged snapshot every refresh.
+            replaceArtwork(previous: oldURLs)
+            enrichSpotlight()
+            return
+        }
+        snapshot.rows = rows.map { Row(section: $0, updatedAt: now) }
+        snapshot.spotlight = slides
         snapshot.spotlightUpdatedAt = now
         let slideIDs = Set(snapshot.spotlight.map(\.id))
         snapshot.details = snapshot.details.filter { slideIDs.contains($0.key) }

@@ -5,6 +5,13 @@ extension ResolvedSection {
         let type = sectionType.lowercased()
         return type == "continue_watching" || type == "in_progress"
     }
+
+    #if os(tvOS)
+    var tvHomeUsesLandscapeArtwork: Bool {
+        isContinueWatchingSection || sectionType.lowercased().contains("next")
+            || items.contains { $0.type.lowercased() == "episode" }
+    }
+    #endif
 }
 
 /// A single section row on the home screen.
@@ -73,15 +80,12 @@ struct SectionRow: View {
     /// episode-discovery rows (e.g. "Recently Released Episodes") as ordinary
     /// series posters with an S·E badge.
     private var isEpisodeRow: Bool {
+        #if os(tvOS)
+        return section.tvHomeUsesLandscapeArtwork
+        #else
         if section.sectionType.lowercased().contains("next") {
             return true
         }
-        #if os(tvOS)
-        if isContinueWatching {
-            return true
-        }
-        return hasEpisodeItems
-        #else
         return isContinueWatching && hasEpisodeItems
         #endif
     }

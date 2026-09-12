@@ -1,5 +1,6 @@
 #if os(tvOS)
 import SwiftUI
+import Observation
 import UIKit
 
 struct TVHomeDiscoveryFeed: View {
@@ -10,33 +11,36 @@ struct TVHomeDiscoveryFeed: View {
     let isTopMenuFocused: Bool
     let onTopMenuFocusRequest: (() -> Void)?
     let onItemTap: (String, SectionItem) -> Void
-    let onRemoveFromContinueWatching: (SectionItem) -> Void
-    let onSetWatched: (SectionItem, Bool) async -> Bool
+    var onRemoveFromContinueWatching: ((SectionItem) -> Void)? = nil
+    var onSetWatched: ((SectionItem, Bool) async -> Bool)? = nil
 
     @State private var homeCards = TVHomeCardPreferences.shared
-    @FocusState private var spotlightFocused: Bool
-    @State private var rowOwner: String?
+    @FocusState private var spotlightFocusedPosition: Int?
+    @State private var rowFocusOwnership = TVHomeFocusOwnership()
     @State private var rowFocusMemory = TVHomeRowFocusMemory()
-    @State private var artworkWarmup = TVHomeArtworkWarmup()
-    @Environment(\.scenePhase) private var scenePhase
+    @State private var scrollDiagnostics = TVHomeScrollDiagnostics()
     @State private var firstRowFocusRequest = 0
     @State private var spotlightOpenedDetail = false
     @State private var appliedFocusRequest = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var spotlightFocused: Bool { spotlightFocusedPosition != nil }
     private static let spotlightAnchor = "vivid.home.discovery.spotlight"
 
     var body: some View {
+        let _ = scrollDiagnostics.event("feed.body")
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 30) {
                     if !slides.isEmpty {
                         TVHomeSpotlightCarousel(
                             slides: slides,
-                            focus: $spotlightFocused,
+                            focus: $spotlightFocusedPosition,
+                            initialPosition: rowFocusMemory.spotlightPosition,
+                            onPositionChange: { rowFocusMemory.spotlightPosition = $0 },
                             isTopMenuFocused: isTopMenuFocused,
                             onSelect: { slide in
                                 spotlightOpenedDetail = true
-                                rowOwner = nil
+                                rowFocusOwnership.rowID = nil
                                 onItemTap(slide.item.contentId, slide.item)
                             },
                             onMoveUp: { onTopMenuFocusRequest?() }
@@ -44,7 +48,7 @@ struct TVHomeDiscoveryFeed: View {
                         .id(Self.spotlightAnchor)
                     }
 
-                    LazyVStack(alignment: .leading, spacing: 30) {
+                    LazyVStack(alignment: .leading, spacing: TVHomeRowGeometry.rowSpacing) {
                         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                             SectionRow(
                                 section: section,
@@ -63,23 +67,30 @@ struct TVHomeDiscoveryFeed: View {
                                 detailReturnFocusRequest: spotlightOpenedDetail ? 0 : detailReturnFocusRequest,
                                 onMoveUp: index == 0 && slides.isEmpty ? { onTopMenuFocusRequest?() } : nil,
                                 onItemFocus: { item in
+                                    scrollDiagnostics.focus(row: index, card: section.items.firstIndex { $0.contentId == item.contentId } ?? -1)
                                     rowFocusMemory.items[section.id] = item.contentId
-                                    if rowOwner != section.id { rowOwner = section.id }
+                                    if rowFocusOwnership.rowID != section.id { rowFocusOwnership.rowID = section.id }
                                 },
                                 cardWidth: VividTheme.Skyline.densePosterCardWidth,
                                 focusRestorationOwner: Binding(
-                                    get: { rowOwner == section.id },
-                                    set: { if $0 { rowOwner = section.id } }
+                                    get: { rowFocusOwnership.rowID == section.id },
+                                    set: { if $0 { rowFocusOwnership.rowID = section.id } }
                                 )
                             )
                             .id(section.id)
+                            .modifier(TVHomeDiagnosticRow(diagnostics: scrollDiagnostics, index: index))
                         }
                     }
+                    // The row cells remain lazy, but the scroll range must not
+                    // change as the stack revises its off-screen size estimates.
+                    .frame(height: rowsHeight, alignment: .topLeading)
                 }
+                .environment(\.tvHomeStableRows, true)
                 .padding(.top, 152)
                 .padding(.bottom, 80)
             }
             .background(Color.black.ignoresSafeArea())
+            .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
             .onChange(of: focusRequest, initial: true) { _, request in
                 guard request > appliedFocusRequest, !isTopMenuFocused else { return }
                 appliedFocusRequest = request
@@ -93,37 +104,277 @@ struct TVHomeDiscoveryFeed: View {
                 if empty && spotlightFocused { enterFirstRow(using: proxy) }
             }
             .onChange(of: isTopMenuFocused) { _, focused in
-                if focused { rowOwner = nil }
+                if focused { rowFocusOwnership.rowID = nil }
             }
             .onChange(of: spotlightFocused) { _, focused in
-                if focused { rowOwner = nil }
+                if focused { rowFocusOwnership.rowID = nil }
             }
         }
-        .task(id: homeArtworkRequests) {
-            artworkWarmup.update(homeArtworkRequests)
-        }
-        .onDisappear { artworkWarmup.stop() }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-            artworkWarmup.stop()
-        }
+        .modifier(TVHomeArtworkWarmupModifier(sections: sections,
+            presentation: homeCards.presentation, focus: rowFocusOwnership))
         .environment(\.homeCardPresentation, homeCards.presentation)
         .ignoresSafeArea()
     }
 
+    private var rowsHeight: CGFloat {
+        sections.reduce(CGFloat.zero) { height, section in
+            height + TVHomeRowGeometry.rowHeight(
+                layout: section.tvHomeUsesLandscapeArtwork ? .thumbnail : .poster,
+                posterWidth: VividTheme.Skyline.densePosterCardWidth,
+                presentation: homeCards.presentation)
+        } + CGFloat(max(0, sections.count - 1)) * TVHomeRowGeometry.rowSpacing
+    }
+
+    private func enterSpotlight(using proxy: ScrollViewProxy) {
+        guard !slides.isEmpty else { onTopMenuFocusRequest?(); return }
+        // The spotlight is mounted eagerly. Let the focus engine perform its
+        // own scroll instead of racing a separate ScrollViewReader animation.
+        rowFocusOwnership.rowID = nil
+        spotlightFocusedPosition = rowFocusMemory.spotlightPosition
+    }
+
+    private func enterFirstRow(using proxy: ScrollViewProxy) {
+        guard let first = sections.first else { return }
+        spotlightFocusedPosition = nil
+        rowFocusOwnership.rowID = first.id
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+            proxy.scrollTo(first.id, anchor: .center)
+        }
+        firstRowFocusRequest += 1
+    }
+}
+
+// Temporary local diagnostics. Inert unless explicitly enabled at launch.
+// Records geometry and timing only, never titles, URLs or account information.
+private struct TVHomeDiagnosticRow: ViewModifier {
+    let diagnostics: TVHomeScrollDiagnostics
+    let index: Int
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if diagnostics.enabled {
+            content.onGeometryChange(for: CGRect.self) {
+                $0.frame(in: .named("vivid.home.diagnostics"))
+            } action: { frame in
+                diagnostics.row(index, frame: frame)
+            }
+            .onAppear { diagnostics.event("mount", index: index) }
+            .onDisappear { diagnostics.event("unmount", index: index) }
+        } else { content }
+    }
+}
+
+private struct TVHomeDiagnosticFeed: ViewModifier {
+    let diagnostics: TVHomeScrollDiagnostics
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if diagnostics.enabled {
+            content.coordinateSpace(name: "vivid.home.diagnostics")
+                .onScrollGeometryChange(for: TVHomeDiagnosticGeometry.self) { geometry in
+                    TVHomeDiagnosticGeometry(offset: geometry.contentOffset,
+                        content: geometry.contentSize, viewport: geometry.containerSize)
+                } action: { _, geometry in
+                    diagnostics.scroll(geometry)
+                }
+                .onScrollPhaseChange { _, phase in
+                    diagnostics.event("phase.\(phase)")
+                }
+                .onAppear { diagnostics.arm() }
+                .onDisappear { diagnostics.finish() }
+        } else { content }
+    }
+}
+
+private struct TVHomeDiagnosticGeometry: Equatable {
+    let offset: CGPoint
+    let content: CGSize
+    let viewport: CGSize
+    var values: [Double] {
+        [offset.x, offset.y, content.width, content.height, viewport.width, viewport.height]
+    }
+}
+
+@MainActor
+private final class TVHomeScrollDiagnostics: NSObject {
+    let enabled = ProcessInfo.processInfo.arguments.contains("--home-scroll-diagnostics")
+    private struct Sample: Codable, Sendable {
+        let time: Double
+        let event: String
+        let index: Int?
+        let values: [Double]
+    }
+    private struct Capture: Codable, Sendable {
+        let status: String
+        let duration: Double
+        let samples: [Sample]
+    }
+    private var samples: [Sample] = []
+    private var geometry: TVHomeDiagnosticGeometry?
+    private var rows: [Int: CGRect] = [:]
+    private var focusedRow = -1
+    private var focusedCard = -1
+    private var started: Double?
+    private var previousFrame: Double?
+    private var previousResources: (time: Double, cpu: Double)?
+    private var displayLink: CADisplayLink?
+    private var deadline: DispatchWorkItem?
+    private var armed = false
+    private var outputURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("vivid-home-navigation-diagnostics.json")
+    }
+
+    func arm() {
+        guard enabled, !armed else { return }
+        armed = true
+        let callback: CFNotificationCallback = { _, observer, name, _, _ in
+            guard let observer else { return }
+            let recorder = Unmanaged<TVHomeScrollDiagnostics>.fromOpaque(observer).takeUnretainedValue()
+            let isStart = name?.rawValue as String? == "com.blurbery.vivid.home-diagnostics.start"
+            Task { @MainActor [weak recorder] in
+                if isStart { recorder?.start() } else { recorder?.finish() }
+            }
+        }
+        for name in ["com.blurbery.vivid.home-diagnostics.start", "com.blurbery.vivid.home-diagnostics.stop"] {
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+                Unmanaged.passUnretained(self).toOpaque(), callback, name as CFString,
+                nil, .deliverImmediately)
+        }
+        write(Capture(status: "armed", duration: 0, samples: []))
+    }
+
+    private func start() {
+        guard started == nil else { return }
+        samples.removeAll(keepingCapacity: true)
+        samples.reserveCapacity(16000)
+        started = CACurrentMediaTime()
+        previousFrame = nil
+        previousResources = nil
+        if let geometry { event("scroll", values: geometry.values) }
+        for (index, frame) in rows { row(index, frame: frame) }
+        event("focus", index: focusedRow, values: [Double(focusedCard)])
+        resources()
+        write(Capture(status: "recording", duration: 0, samples: samples))
+        let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+        let stop = DispatchWorkItem { [weak self] in self?.finish() }
+        deadline = stop
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: stop)
+    }
+
+    func scroll(_ geometry: TVHomeDiagnosticGeometry) {
+        self.geometry = geometry
+        event("scroll", values: geometry.values)
+    }
+
+    func row(_ index: Int, frame: CGRect) {
+        rows[index] = frame
+        event("row", index: index, values: [frame.minX, frame.minY, frame.width, frame.height])
+    }
+
+    func focus(row: Int, card: Int) {
+        guard enabled else { return }
+        focusedRow = row
+        focusedCard = card
+        event("focus", index: row, values: [Double(card)])
+    }
+
+    func event(_ event: String, index: Int? = nil, values: [Double] = []) {
+        guard let started else { return }
+        samples.append(Sample(time: CACurrentMediaTime() - started,
+            event: event, index: index, values: values))
+    }
+
+    @objc private func frame(_ link: CADisplayLink) {
+        let now = CACurrentMediaTime()
+        if let previousFrame {
+            event("frame", values: [now - previousFrame, link.targetTimestamp - link.timestamp])
+        }
+        previousFrame = now
+        if now - (previousResources?.time ?? 0) >= 1 { resources() }
+    }
+
+    private func resources() {
+        let now = CACurrentMediaTime()
+        var usage = rusage()
+        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return }
+        let cpu = Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+            + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+        let percent = previousResources.map { (cpu - $0.cpu) / max(0.001, now - $0.time) * 100 } ?? 0
+        previousResources = (now, cpu)
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        event("resources", values: [percent, result == KERN_SUCCESS ? Double(info.phys_footprint) : -1])
+    }
+
+    func finish() {
+        guard let started else { return }
+        let duration = CACurrentMediaTime() - started
+        self.started = nil
+        displayLink?.invalidate()
+        displayLink = nil
+        deadline?.cancel()
+        deadline = nil
+        write(Capture(status: "finished", duration: duration, samples: samples))
+        samples.removeAll(keepingCapacity: true)
+    }
+
+    private func write(_ capture: Capture) {
+        let url = outputURL
+        Task.detached(priority: .utility) {
+            guard let data = try? JSONEncoder().encode(capture) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    deinit {
+        if armed {
+            CFNotificationCenterRemoveEveryObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+                Unmanaged.passUnretained(self).toOpaque())
+        }
+    }
+}
+
+/// Keep focus bookkeeping outside the feed's view dependencies. Only the
+/// affected rows and artwork worker need to observe a change of row owner.
+@Observable
+private final class TVHomeFocusOwnership {
+    var rowID: String?
+}
+
+private struct TVHomeArtworkWarmupModifier: ViewModifier {
+    let sections: [ResolvedSection]
+    let presentation: CardPresentationPreference
+    let focus: TVHomeFocusOwnership
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var artworkWarmup = TVHomeArtworkWarmup()
+
+    func body(content: Content) -> some View {
+        content
+            .task(id: homeArtworkRequests) { artworkWarmup.update(homeArtworkRequests) }
+            .onDisappear { artworkWarmup.stop() }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                artworkWarmup.stop()
+            }
+    }
+
     private var homeArtworkRequests: [VividImageRequest] {
         guard scenePhase == .active, !sections.isEmpty else { return [] }
-        let current = sections.firstIndex { $0.id == rowOwner } ?? 0
+        let current = sections.firstIndex { $0.id == focus.rowID } ?? 0
         let indices = [current] + Array((current + 1)..<min(sections.count, current + 4))
             + (current > 0 ? [current - 1] : [])
-        let scale = homeCards.presentation.posterSize.scale * PosterImageCache.displayScale
+        let scale = presentation.posterSize.scale * PosterImageCache.displayScale
         var requests: [VividImageRequest] = []
         var seen = Set<VividImageRequest>()
         for index in indices {
             let section = sections[index]
             // Match SectionRow's tvOS artwork layout, including mixed resume rows.
-            let wide = section.isContinueWatchingSection
-                || section.sectionType.lowercased().contains("next")
-                || section.items.contains { $0.type.lowercased() == "episode" }
+            let wide = section.tvHomeUsesLandscapeArtwork
             let width = wide ? VividTheme.thumbnailCardWidth : VividTheme.Skyline.densePosterCardWidth
             let ratio = wide ? VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth
                 : VividTheme.posterCardHeight / VividTheme.posterCardWidth
@@ -139,23 +390,6 @@ struct TVHomeDiscoveryFeed: View {
         return requests
     }
 
-    private func enterSpotlight(using proxy: ScrollViewProxy) {
-        guard !slides.isEmpty else { onTopMenuFocusRequest?(); return }
-        // The spotlight is mounted eagerly. Let the focus engine perform its
-        // own scroll instead of racing a separate ScrollViewReader animation.
-        rowOwner = nil
-        spotlightFocused = true
-    }
-
-    private func enterFirstRow(using proxy: ScrollViewProxy) {
-        guard let first = sections.first else { return }
-        spotlightFocused = false
-        rowOwner = first.id
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-            proxy.scrollTo(first.id, anchor: .center)
-        }
-        firstRowFocusRequest += 1
-    }
 }
 
 @MainActor
@@ -184,107 +418,102 @@ private final class TVHomeArtworkWarmup {
 /// horizontal focus move. Each row already observes its own focused card.
 private final class TVHomeRowFocusMemory {
     var items: [String: String] = [:]
+    var spotlightPosition = 0
 }
 
 private struct TVHomeSpotlightCarousel: View {
     let slides: [TVHomeSpotlightSlide]
-    let focus: FocusState<Bool>.Binding
+    let focus: FocusState<Int?>.Binding
+    let initialPosition: Int
+    let onPositionChange: (Int) -> Void
     let isTopMenuFocused: Bool
     let onSelect: (TVHomeSpotlightSlide) -> Void
     let onMoveUp: () -> Void
 
-    @State private var selectedID: String?
     @State private var visualPosition = 0
-    @State private var requestedPosition = 0
+    @State private var scrollPosition: Int? = 0
+    @State private var positions = -2...2
+    @State private var pendingPosition: Int?
     @State private var isVisible = true
+    @State private var scrollIsMoving = false
     @State private var manualStep = 0
     @State private var ambientTint = Color.black
-    @State private var visibleID: String?
-    @State private var retiringID: String?
     @State private var cycleStarted = Date()
     @State private var tints: [String: Color] = [:]
     @State private var readyIDs = Set<String>()
-    @State private var retirementTask: Task<Void, Never>?
     @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
-    private var requested: TVHomeSpotlightSlide? {
-        slides.first { $0.id == selectedID } ?? slides.first
+    private var index: Int {
+        guard !slides.isEmpty else { return 0 }
+        return ((visualPosition % slides.count) + slides.count) % slides.count
     }
-    private var index: Int { slides.firstIndex { $0.id == visibleID } ?? 0 }
-    private var current: TVHomeSpotlightSlide? { slides.first { $0.id == visibleID } ?? requested }
     private func slide(at position: Int) -> TVHomeSpotlightSlide {
         slides[((position % slides.count) + slides.count) % slides.count]
     }
-    private var layerPositions: [Int] {
-        guard !slides.isEmpty else { return [] }
-        guard slides.count > 1 else { return [visualPosition] }
-        return Array((min(visualPosition, requestedPosition) - 1)...(max(visualPosition, requestedPosition) + 1))
-    }
     private var canRotate: Bool {
-        slides.count > 1 && isVisible && scenePhase == .active
+        !slides.isEmpty && slides.count > 1 && isVisible && !scrollIsMoving && scenePhase == .active
             && router.path.isEmpty && !voiceOverEnabled
-            && visibleID == requested?.id
+            && readyIDs.contains(slide(at: visualPosition).id)
     }
     private var rotationKey: String {
-        "\(slides.map(\.id).joined(separator: "|"))#\(index)#\(manualStep)#\(canRotate)"
+        "\(slides.map(\.id).joined(separator: "|"))#\(visualPosition)#\(manualStep)#\(canRotate)"
+    }
+    private var maintenanceKey: String { "\(visualPosition)#\(scrollIsMoving)" }
+    private var renderedPositions: [Int] {
+        guard !slides.isEmpty else { return [] }
+        return slides.count == 1 ? [visualPosition] : Array(positions)
     }
 
     var body: some View {
         VStack(spacing: 22) {
-            Button {
-                if let current { onSelect(current) }
-            } label: {
-                GeometryReader { geometry in
-                    let cardWidth = max(1, geometry.size.width - 120)
-                    ZStack {
-                        ForEach(layerPositions, id: \.self) { position in
+            GeometryReader { geometry in
+                let cardWidth = max(1, geometry.size.width - 120)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 22) {
+                        ForEach(renderedPositions, id: \.self) { position in
                             let slide = slide(at: position)
-                            TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
-                                tints[slide.id] = tint
-                                if slide.id == visibleID { ambientTint = tint }
-                            }, onReady: {
-                                readyIDs.insert(slide.id)
-                                reveal(slide)
-                            })
-                            .id("\(position)-\(slide.id)")
-                            .frame(width: cardWidth, height: 580)
-                            .clipShape(RoundedRectangle(cornerRadius: 22))
-                            .tvArtworkEdge(isFocused: position == visualPosition && focus.wrappedValue, cornerRadius: 22)
-                            .shadow(color: .black.opacity(position == visualPosition && focus.wrappedValue ? 0.45 : 0.2),
-                                    radius: position == visualPosition && focus.wrappedValue ? 18 : 8, y: 8)
-                            .scaleEffect(position == visualPosition && focus.wrappedValue && !reduceMotion ? 1.015 : 1)
-                            .animation(reduceMotion ? nil : .easeOut(duration: VividTheme.fastDuration), value: focus.wrappedValue)
-                            .offset(x: CGFloat(position - visualPosition) * (cardWidth + 22))
-                            .accessibilityHidden(position != visualPosition)
+                            Button { onSelect(slide) } label: {
+                                TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
+                                    tints[slide.id] = tint
+                                    if position == visualPosition { ambientTint = tint }
+                                }, onReady: {
+                                    readyIDs.insert(slide.id)
+                                    revealPendingSlide()
+                                })
+                                .id(slide.id)
+                                .frame(width: cardWidth, height: 580)
+                                .clipShape(RoundedRectangle(cornerRadius: 22))
+                            }
+                            .buttonStyle(.card)
+                            .focused(focus, equals: position)
+                            .accessibilityLabel(slide.content.title)
+                            .accessibilityValue("Slide \(((position % slides.count) + slides.count) % slides.count + 1) of \(slides.count)")
+                            .accessibilityHint("Press to open. Swipe left or right to change the spotlight.")
+                            .id(position)
                         }
                     }
-                    .frame(width: geometry.size.width, height: 580)
+                    .scrollTargetLayout()
                 }
-                .frame(height: 580)
+                .contentMargins(.horizontal, 60, for: .scrollContent)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $scrollPosition, anchor: .center)
+                .scrollClipDisabled()
+                .onScrollPhaseChange { _, phase in scrollIsMoving = phase != .idle }
+                .focusSection()
+                .onMoveCommand { direction in
+                    if direction == .up { onMoveUp() }
+                }
             }
-            .buttonStyle(TVHomeSpotlightButtonStyle())
-            .focusEffectDisabled()
+            .frame(height: 580)
             .background {
                 TVSpotlightEdgeFade(tint: ambientTint)
-                    .opacity(focus.wrappedValue ? 1 : 0.75)
+                    .opacity(0.75)
                     .padding(-TVSpotlightEdgeFade.canvasInset)
-                .allowsHitTesting(false)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.55), value: ambientTint)
-            }
-            .focused(focus)
-            .accessibilityLabel(current?.content.title ?? "Discovery spotlight")
-            .accessibilityValue("Slide \(index + 1) of \(slides.count)")
-            .accessibilityHint("Press to open. Swipe left or right to change the spotlight.")
-            .onMoveCommand { direction in
-                switch direction {
-                case .left: advance(-1)
-                case .right: advance(1)
-                case .up: onMoveUp()
-                default: break
-                }
+                    .allowsHitTesting(false)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.55), value: ambientTint)
             }
 
             HStack(spacing: 10) {
@@ -312,65 +541,80 @@ private struct TVHomeSpotlightCarousel: View {
             .frame(height: 12)
             .accessibilityHidden(true)
         }
-        .onChange(of: requested?.id) { _, id in
-            if let id, readyIDs.contains(id), let slide = requested { reveal(slide) }
+        .onChange(of: focus.wrappedValue) { _, position in
+            guard let position else { return }
+            pendingPosition = nil
+            selectPosition(position)
+            manualStep &+= 1
         }
-        .onChange(of: layerPositions.map { slide(at: $0).id }) { _, ids in
-            readyIDs.formIntersection(ids)
-            tints = tints.filter { ids.contains($0.key) }
+        .onChange(of: scrollPosition) { _, position in
+            guard focus.wrappedValue == nil, let position else { return }
+            selectPosition(position)
         }
         .onScrollVisibilityChange(threshold: 0.5) { isVisible = $0 }
         .onAppear {
             isVisible = true
-            if let visibleID { selectedID = visibleID }
-            requestedPosition = visualPosition
+            if initialPosition != visualPosition {
+                selectPosition(initialPosition)
+                scrollPosition = initialPosition
+            }
             cycleStarted = Date()
-            manualStep += 1
+            manualStep &+= 1
         }
         .onDisappear {
             isVisible = false
-            retirementTask?.cancel()
-            retiringID = nil
+            pendingPosition = nil
         }
         .onChange(of: slides.map(\.id)) { _, ids in
-            retirementTask?.cancel()
-            retiringID = nil
-            visualPosition = ids.firstIndex(of: visibleID ?? "") ?? 0
-            requestedPosition = visualPosition
-            if !ids.contains(visibleID ?? "") { visibleID = nil }
-            selectedID = visibleID ?? ids.first
+            pendingPosition = nil
             readyIDs.formIntersection(ids)
+            tints = tints.filter { ids.contains($0.key) }
+        }
+        .task(id: maintenanceKey) {
+            // Retain the focused card's identity while trimming old loop copies
+            // after movement settles. ScrollPosition preserves its alignment.
+            guard !scrollIsMoving else { return }
+            let position = visualPosition
+            do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
+            guard !Task.isCancelled, visualPosition == position else { return }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { positions = (position - 2)...(position + 2) }
+            let retainedIDs = Set(renderedPositions.map { slide(at: $0).id })
+            readyIDs.formIntersection(retainedIDs)
+            tints = tints.filter { retainedIDs.contains($0.key) }
         }
         .task(id: rotationKey) {
             guard canRotate else { return }
             cycleStarted = Date()
             do { try await Task.sleep(for: .seconds(6)) } catch { return }
             guard !Task.isCancelled else { return }
-            advance(1)
+            pendingPosition = visualPosition + 1
+            revealPendingSlide()
         }
     }
 
-    private func advance(_ step: Int) {
-        guard slides.count > 1, retiringID == nil, requested?.id == visibleID else { return }
-        requestedPosition = visualPosition + step
-        selectedID = slide(at: requestedPosition).id
-        manualStep &+= 1
-    }
-
-    private func reveal(_ slide: TVHomeSpotlightSlide) {
-        guard requested?.id == slide.id, visibleID != slide.id else { return }
-        retirementTask?.cancel()
-        retiringID = visibleID
+    private func selectPosition(_ position: Int) {
+        guard !slides.isEmpty else { return }
+        positions = min(positions.lowerBound, position - 2)...max(positions.upperBound, position + 2)
+        visualPosition = position
+        onPositionChange(position)
         cycleStarted = Date()
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
-            visibleID = slide.id
-            visualPosition = requestedPosition
-            ambientTint = tints[slide.id] ?? .black
-        }
-        retirementTask = Task {
-            do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
-            guard !Task.isCancelled else { return }
-            retiringID = nil
+        let slide = slide(at: position)
+        ambientTint = tints[slide.id] ?? .black
+    }
+
+    private func revealPendingSlide() {
+        guard let position = pendingPosition, !slides.isEmpty,
+              readyIDs.contains(slide(at: position).id) else { return }
+        pendingPosition = nil
+        if focus.wrappedValue != nil {
+            // The focus engine scrolls the newly focused native card into view.
+            focus.wrappedValue = position
+        } else {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
+                scrollPosition = position
+            }
         }
     }
 }
@@ -442,12 +686,6 @@ private struct TVSpotlightEdgeFade: View {
     }
 }
 
-private struct TVHomeSpotlightButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-    }
-}
-
 private struct TVHomeSpotlightArtwork: View {
     let slide: TVHomeSpotlightSlide
     let onTint: (Color) -> Void
@@ -455,7 +693,7 @@ private struct TVHomeSpotlightArtwork: View {
     @State private var artworkReady = false
     @State private var logoReady = false
     @State private var reportedReady = false
-    @State private var model = TVFocusMarqueeModel()
+    @State private var model = TVSpotlightArtworkModel()
     @State private var logo: UIImage?
 
     private static let fadeStops: [Gradient.Stop] = {

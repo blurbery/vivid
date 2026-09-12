@@ -93,67 +93,6 @@ enum PosterImageCache {
         prefetcher.stopPrefetching(with: urls.map(cardWarmRequest(for:)))
     }
 
-    #if os(tvOS)
-    /// Low-priority exact-size working set for the focused Home row. Home rows
-    /// contain 20 cards, so warming the complete row removes the cold boundary
-    /// that otherwise appears after card 16. Cached results remain under
-    /// the pipeline’s normal memory LRU; only unfinished work from the prior row is
-    /// cancelled.
-    private static let homeRowCardPrefetchLimit = 20
-    private static let homeRowCardPrefetcher: VividImagePrefetcher = {
-        let prefetcher = VividImagePrefetcher(
-            pipeline: VividImagePipeline.shared,
-            destination: .memoryCache,
-            maxConcurrentRequestCount: 2
-        )
-        prefetcher.priority = .low
-        return prefetcher
-    }()
-    private struct HomeRowCardWarmKey: Equatable {
-        let url: URL
-        let pixelSize: CGSize
-    }
-    @MainActor private static var homeRowCardWarmKeys: [HomeRowCardWarmKey] = []
-
-    @MainActor
-    static func warmHomeRowCardArtwork(_ candidates: [URL], pointSize: CGSize) {
-        let pixelSize = CGSize(
-            width: pointSize.width * displayScale,
-            height: pointSize.height * displayScale
-        )
-        var seen = Set<URL>()
-        let keys = candidates
-            .filter { seen.insert($0).inserted }
-            .prefix(homeRowCardPrefetchLimit)
-            .map { HomeRowCardWarmKey(url: $0, pixelSize: pixelSize) }
-        guard keys != homeRowCardWarmKeys else { return }
-
-        let stale = homeRowCardWarmKeys.filter { !keys.contains($0) }
-        let fresh = keys.filter { !homeRowCardWarmKeys.contains($0) }
-        homeRowCardWarmKeys = keys
-
-        if !stale.isEmpty {
-            homeRowCardPrefetcher.stopPrefetching(with: stale.map(homeRowCardRequest(for:)))
-        }
-        if !fresh.isEmpty {
-            homeRowCardPrefetcher.startPrefetching(with: fresh.map(homeRowCardRequest(for:)))
-        }
-    }
-
-    @MainActor
-    static func cancelHomeRowCardWarmup() {
-        guard !homeRowCardWarmKeys.isEmpty else { return }
-        homeRowCardPrefetcher.stopPrefetching(
-            with: homeRowCardWarmKeys.map(homeRowCardRequest(for:))
-        )
-        homeRowCardWarmKeys.removeAll()
-    }
-
-    private static func homeRowCardRequest(for key: HomeRowCardWarmKey) -> VividImageRequest {
-        displayRequest(url: key.url, pixelSize: key.pixelSize, priority: .low)
-    }
-    #endif
-
     /// Warm full-size artwork under its bare-URL key. Only for art whose
     /// consumers read the unprocessed decode synchronously (marquee logos).
     static func prefetchOriginalArtwork(_ urls: [URL]) {
@@ -259,30 +198,6 @@ enum PosterImageCache {
         }
 
         prefetchCardArtwork(urls)
-    }
-
-    /// Warm the root hero backdrops the marquee will display, decoded at the
-    /// exact size `TVRootHeroBackdrop` requests so the first rested backdrop
-    /// is a straight memory-cache hit with no second decode.
-    static func prefetchHeroBackdrops(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
-        prefetcher.startPrefetching(with: urls.map { heroBackdropRequest(for: $0) })
-    }
-
-    /// The exact request `TVRootHeroBackdrop` issues for a hero backdrop, so
-    /// a warm decode and the display share one memory-cache key.
-    static func heroBackdropRequest(
-        for url: URL,
-        priority: VividImageRequest.Priority = .normal
-    ) -> VividImageRequest {
-        let pointSize = TVBackdropArtworkLayout.artworkSize(
-            forViewportWidth: TVBackdropArtworkLayout.viewportWidth
-        )
-        let pixelSize = CGSize(
-            width: pointSize.width * displayScale,
-            height: pointSize.height * displayScale
-        )
-        return displayRequest(url: url, pixelSize: pixelSize, priority: priority)
     }
 
     #endif

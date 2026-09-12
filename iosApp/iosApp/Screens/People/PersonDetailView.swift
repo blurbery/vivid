@@ -858,21 +858,31 @@ private func clean(_ value: String?) -> String? {
 }
 
 private func formattedPersonDate(_ value: String?) -> String? {
-    guard let date = parsePersonDate(value) else { return clean(value) }
+    guard let date = parsePersonDate(value) else { return nil }
     return SelfDateFormatter.personDisplay.string(from: date)
 }
 
 private func personAge(from birthValue: String?, to deathValue: String?) -> Int? {
     guard let birthDate = parsePersonDate(birthValue) else { return nil }
     let endDate = parsePersonDate(deathValue) ?? Date()
-    let years = Calendar.current.dateComponents([.year], from: birthDate, to: endDate).year
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let years = calendar.dateComponents([.year], from: birthDate, to: endDate).year
     guard let years, years >= 0 else { return nil }
     return years
 }
 
 private func parsePersonDate(_ value: String?) -> Date? {
     guard let value = clean(value) else { return nil }
-    return SelfDateFormatter.personISO.date(from: value)
+    // Birth and death dates are calendar dates. Emby supplies ISO timestamps,
+    // including seven fractional digits, while other providers supply dates.
+    // Keep the source day rather than shifting it through the local time zone.
+    guard value.range(of: #"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$"#,
+                      options: .regularExpression) != nil else { return nil }
+    let day = String(value.prefix(10))
+    guard let date = SelfDateFormatter.personISO.date(from: day),
+          SelfDateFormatter.personISO.string(from: date) == day else { return nil }
+    return date
 }
 
 private enum SelfDateFormatter {
@@ -880,6 +890,8 @@ private enum SelfDateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.isLenient = false
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
@@ -888,6 +900,7 @@ private enum SelfDateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = .current
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         return formatter

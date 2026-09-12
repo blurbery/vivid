@@ -465,8 +465,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
         // the item has neither remote videos nor local extras.
         TVTrailersRail(
             entries: trailerEntries,
-            onSelect: onSelectTrailer,
-            focusScale: TVMediaFocus.scale
+            onSelect: onSelectTrailer
         )
     }
 

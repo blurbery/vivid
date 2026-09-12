@@ -1,5 +1,5 @@
 import SwiftUI
-#if os(iOS)
+#if os(iOS) || os(tvOS)
 import UIKit
 #endif
 
@@ -105,6 +105,64 @@ final class PhoneMediaRailBoundsView: UIView {
             }
             ancestor = view.superview
         }
+    }
+}
+#endif
+
+#if os(tvOS)
+private struct TVHomeStableRowsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var tvHomeStableRows: Bool {
+        get { self[TVHomeStableRowsKey.self] }
+        set { self[TVHomeStableRowsKey.self] = newValue }
+    }
+}
+
+/// Match the fixed tvOS caption fonts without measuring lazily mounted cards.
+enum TVHomeRowGeometry {
+    static let headingHeight = ceil(UIFont.systemFont(ofSize: 36, weight: .semibold).lineHeight)
+    static let headingSpacing: CGFloat = 20
+    static let rowSpacing: CGFloat = 30
+    static let cardPadding: CGFloat = 24
+    static let titleHeight = ceil(UIFont.systemFont(ofSize: 20, weight: .medium).lineHeight)
+    static let metadataHeight = ceil(UIFont.systemFont(ofSize: 18, weight: .regular).lineHeight)
+
+    static func captionHeight(_ style: CardCaptionStyle) -> CGFloat {
+        guard style.showsTitle else { return 0 }
+        return titleHeight + (style.showsMetadata ? 4 + metadataHeight : 0)
+    }
+
+    static func stripHeight(artworkHeight: CGFloat, caption: CardCaptionStyle,
+                            captionGap: CGFloat, verticalPadding: CGFloat) -> CGFloat {
+        artworkHeight + (caption.showsTitle ? captionGap + captionHeight(caption) : 0)
+            + verticalPadding * 2
+    }
+
+    static func stripHeight(layout: MediaRowLayout, posterWidth: CGFloat,
+                            presentation: CardPresentationPreference,
+                            verticalPadding: CGFloat = cardPadding) -> CGFloat {
+        let artworkHeight: CGFloat
+        let captionGap: CGFloat
+        switch layout {
+        case .poster:
+            artworkHeight = posterWidth * presentation.posterSize.scale
+                * VividTheme.posterCardHeight / VividTheme.posterCardWidth
+            captionGap = 22
+        case .thumbnail:
+            artworkHeight = VividTheme.thumbnailCardHeight * presentation.posterSize.scale
+            captionGap = 14
+        }
+        return stripHeight(artworkHeight: artworkHeight, caption: presentation.caption,
+                           captionGap: captionGap, verticalPadding: verticalPadding)
+    }
+
+    static func rowHeight(layout: MediaRowLayout, posterWidth: CGFloat,
+                          presentation: CardPresentationPreference) -> CGFloat {
+        headingHeight + headingSpacing
+            + stripHeight(layout: layout, posterWidth: posterWidth, presentation: presentation)
     }
 }
 #endif
