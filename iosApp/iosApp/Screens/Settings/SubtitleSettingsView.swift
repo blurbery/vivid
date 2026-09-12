@@ -83,7 +83,7 @@ struct SubtitleSettingsView: View {
             .foregroundStyle(Color.vividSecondaryText)
         }
         .disabled(viewModel.subtitleMatchesSystemAppearance)
-        .listRowBackground(Color.vividSurfaceElevated)
+
     }
 
     // MARK: - Appearance (per-device override)
@@ -105,7 +105,7 @@ struct SubtitleSettingsView: View {
                     .foregroundStyle(Color.vividError)
             }
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
 
         Section {
             Toggle(
@@ -149,7 +149,7 @@ struct SubtitleSettingsView: View {
             }
             .foregroundStyle(Color.vividSecondaryText)
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
 
         Section {
             Picker("Font Size", selection: appearanceBinding(\.fontSize)) {
@@ -174,7 +174,7 @@ struct SubtitleSettingsView: View {
             Text("Text")
                 .foregroundStyle(Color.vividSecondaryText)
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
         .disabled(manualEditingDisabled)
         .opacity(manualEditingDisabled ? 0.45 : 1)
 
@@ -206,7 +206,7 @@ struct SubtitleSettingsView: View {
             Text("Background")
                 .foregroundStyle(Color.vividSecondaryText)
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
         .disabled(manualEditingDisabled)
         .opacity(manualEditingDisabled ? 0.45 : 1)
 
@@ -226,7 +226,7 @@ struct SubtitleSettingsView: View {
             Text("Layout")
                 .foregroundStyle(Color.vividSecondaryText)
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
         .disabled(manualEditingDisabled)
         .opacity(manualEditingDisabled ? 0.45 : 1)
     }

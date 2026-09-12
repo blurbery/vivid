@@ -195,7 +195,7 @@ struct ServerListView: View {
                 Text("Saved servers")
                     .foregroundColor(.vividSecondaryText)
             }
-            .listRowBackground(Color.vividSurfaceElevated)
+
 
             Section {
                 Button {
@@ -205,7 +205,7 @@ struct ServerListView: View {
                         .foregroundColor(.vividOnSurface)
                 }
             }
-            .listRowBackground(Color.vividSurfaceElevated)
+
         }
         .settingsListChrome()
     }

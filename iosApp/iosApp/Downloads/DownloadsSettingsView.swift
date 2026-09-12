@@ -49,7 +49,7 @@ struct DownloadsSettingsView: View {
                          : "Smaller downloads appear when your server allows download transcoding.")
                 }
             }
-            .listRowBackground(Color.vividSurfaceElevated.opacity(0.92))
+
 
             Section("Series Monitoring Defaults") {
                 Toggle("Delete watched episodes", isOn: $settings.defaultDeleteWatched)
@@ -63,7 +63,7 @@ struct DownloadsSettingsView: View {
                     step: 5
                 )
             }
-            .listRowBackground(Color.vividSurfaceElevated.opacity(0.92))
+
 
             Section {
                 Toggle("Keep watched downloads", isOn: $settings.keepWatchedDownloads)
@@ -73,7 +73,7 @@ struct DownloadsSettingsView: View {
             } footer: {
                 Text("When off, the Downloads tab suggests freeing up space by removing items you've finished watching.")
             }
-            .listRowBackground(Color.vividSurfaceElevated.opacity(0.92))
+
 
             Section("Storage") {
                 HStack {
@@ -90,7 +90,7 @@ struct DownloadsSettingsView: View {
                     }
                 }
             }
-            .listRowBackground(Color.vividSurfaceElevated.opacity(0.92))
+
         }
         .navigationTitle("")
         .task {

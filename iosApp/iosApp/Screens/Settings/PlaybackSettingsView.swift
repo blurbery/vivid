@@ -96,7 +96,7 @@ struct PlaybackSettingsView: View {
             PhoneSettingsSectionHeader("Streaming")
 
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
     }
 
     private var qualityChoices: some View {
@@ -128,7 +128,7 @@ struct PlaybackSettingsView: View {
             }
             .pickerStyle(.inline)
             .foregroundStyle(Color.vividOnSurface)
-            .listRowBackground(Color.vividSurfaceElevated)
+
         }
         .settingsListChrome()
         .navigationTitle("Quality")
@@ -219,7 +219,7 @@ struct PlaybackSettingsView: View {
         } header: {
             PhoneSettingsSectionHeader("Episodes")
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
     }
 
     // MARK: - Reset
@@ -236,7 +236,7 @@ struct PlaybackSettingsView: View {
             Text("Restores Vivid’s playback defaults for this device and profile.")
                 .foregroundStyle(Color.vividSecondaryText)
         }
-        .listRowBackground(Color.vividSurfaceElevated)
+
     }
 
     // MARK: - Options

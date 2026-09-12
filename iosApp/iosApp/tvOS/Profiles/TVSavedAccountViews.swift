@@ -214,6 +214,11 @@ struct TVSavedAccountCards: View {
             .overlay(Circle().strokeBorder(selected ? Color.white : .clear, lineWidth: 3))
     }
 
+    private func serverLabel(for account: TVSavedAccount) -> String {
+        if MediaServerProvider.forServerID(account.serverID) == .emby { return "Emby" }
+        return registry.entry(with: account.serverID)?.displayName ?? "Media server"
+    }
+
     private func tile(_ account: TVSavedAccount) -> some View {
         VStack(spacing: 14) {
             ProfileAvatarView(avatar: displayedProfile(account)?.avatarEmoji,
@@ -224,7 +229,7 @@ struct TVSavedAccountCards: View {
             VStack(spacing: 5) {
                 Text(account.username).font(.system(size: 20, weight: .medium)).lineLimit(1)
                 if isSettings {
-                    Text(registry.entry(with: account.serverID)?.displayName ?? "Media server")
+                    Text(serverLabel(for: account))
                         .font(.system(size: 17)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
                 if account.requiresLogin { Text("Signed out").font(.system(size: 15)).opacity(0.6) }
@@ -232,7 +237,7 @@ struct TVSavedAccountCards: View {
         }
         .frame(width: 142)
         .accessibilityLabel(account.username + (account.requiresLogin ? ", signed out" : "")
-            + (isSettings ? ", " + (registry.entry(with: account.serverID)?.displayName ?? "Media server") : "")
+            + (isSettings ? ", " + (serverLabel(for: account)) : "")
             + (isSettings && isCurrentAccount(account) ? ", current account" : ""))
     }
     private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {

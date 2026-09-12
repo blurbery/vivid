@@ -14,7 +14,7 @@ struct IOSSettingsOverview: View {
                 .settingsPageHeaderRow()
             Section {
                 PhoneSavedAccountCards(isSettings: true)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                    .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 12, trailing: 20))
                     destination("General", "App and navigation", "gearshape") { GeneralSettingsView() }
                     destination("Playback", "Quality and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
                     destination("Subtitles", "Language and appearance", "captions.bubble") { SubtitleSettingsView(viewModel: viewModel) }
@@ -129,52 +129,22 @@ struct PhoneSavedAccountCards: View {
                     .padding(.horizontal, 20).padding(.vertical, 10)
                     .vividGlass(in: Capsule(), interactive: true)
             }
-        GeometryReader { geometry in
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 22) {
-                ForEach(displayedAccounts) { account in
-                    if isEditingProfiles {
-                        VStack(spacing: 12) {
-                            tile(account)
-                                .modifier(ProfileArrangeWobble(active: true))
-                                .onDrag { movingID = account.id; return NSItemProvider(object: account.id as NSString) }
-                                .onDrop(of: [.text], delegate: ProfileArrangeDrop(target: account.id, order: $draftOrder, movingID: $movingID))
-                            Button(role: .destructive) { pendingDeletion = account } label: {
-                                Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
-                                    .frame(width: 38, height: 38).vividGlass(in: Circle(), interactive: true)
-                            }
-                            .accessibilityLabel("Delete \(account.username)")
+            if isSettings {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 88, maximum: 112), spacing: 12, alignment: .top)], alignment: .leading, spacing: 16) {
+                    profileCards
+                }
+            } else {
+                GeometryReader { geometry in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 22) {
+                            profileCards
                         }
-                    } else {
-                        Group {
-                            if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
-                                NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
-
-                            } else {
-                                Button {
-                                    if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
-                                    else { Task { await store.select(account, router: router) } }
-                                } label: { tile(account) }
-
-                            }
-                        }
-                        .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
-                        .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
+                        .padding(.vertical, 12)
+                        .frame(minWidth: geometry.size.width, alignment: .center)
                     }
                 }
-                if store.canAddAccount {
-                NavigationLink { PhoneSavedAccountEditor(accountID: nil) } label: {
-                    VStack(spacing: 12) {
-                        Image(systemName: "plus").font(.system(size: 32))
-                            .frame(width: 88, height: 88).background(.white.opacity(0.12), in: Circle())
-                        Text("Add Profile").font(.subheadline.weight(.medium))
-                    }.frame(width: 112)
-                }
-                }
-            }.padding(.vertical, 12)
-                .frame(minWidth: geometry.size.width, alignment: isSettings ? .leading : .center)
-        }
-        }.frame(height: isEditingProfiles ? (isSettings ? 240 : 210) : (isSettings ? 190 : 150))
+                .frame(height: isEditingProfiles ? 210 : 150)
+            }
         }.buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
         .task { await store.captureCurrent() }
         .task(id: scenePhase == .active && !isEditingProfiles) {
@@ -219,6 +189,57 @@ struct PhoneSavedAccountCards: View {
             }.presentationDetents([.medium])
         }
     }
+    private var avatarSize: CGFloat { isSettings ? 72 : 88 }
+
+    @ViewBuilder
+    private var profileCards: some View {
+        ForEach(displayedAccounts) { account in
+            if isEditingProfiles {
+                VStack(spacing: 12) {
+                    tile(account)
+                        .modifier(ProfileArrangeWobble(active: true))
+                        .onDrag { movingID = account.id; return NSItemProvider(object: account.id as NSString) }
+                        .onDrop(of: [.text], delegate: ProfileArrangeDrop(target: account.id, order: $draftOrder, movingID: $movingID))
+                    Button(role: .destructive) { pendingDeletion = account } label: {
+                        Image(systemName: "xmark").font(.system(size: 16, weight: .semibold))
+                            .frame(width: 38, height: 38).vividGlass(in: Circle(), interactive: true)
+                    }
+                    .accessibilityLabel("Delete \(account.username)")
+                }
+            } else {
+                Group {
+                    if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
+                        NavigationLink { PhoneSavedAccountEditor(accountID: account.id) } label: { tile(account) }
+
+                    } else {
+                        Button {
+                            if store.hasPIN(account.id) { selectedForPIN = account; pin = ""; pinError = nil }
+                            else { Task { await store.select(account, router: router) } }
+                        } label: { tile(account) }
+
+                    }
+                }
+                .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in beginArrangement(account.id) })
+                .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
+            }
+        }
+        if store.canAddAccount {
+            NavigationLink { PhoneSavedAccountEditor(accountID: nil) } label: {
+                VStack(spacing: isSettings ? 8 : 12) {
+                    Image(systemName: "plus").font(.system(size: 32))
+                        .frame(width: avatarSize, height: avatarSize).background(.white.opacity(0.12), in: Circle())
+                    Text("Add Profile").font(.subheadline.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
+                }.frame(width: isSettings ? nil : 112)
+                    .frame(maxWidth: isSettings ? .infinity : nil)
+            }
+        }
+    }
+
+    private func serverLabel(for account: TVSavedAccount) -> String {
+        if MediaServerProvider.forServerID(account.serverID) == .emby { return "Emby" }
+        return registry.entry(with: account.serverID)?.displayName ?? "Media server"
+    }
+
     private var displayedAccounts: [TVSavedAccount] {
         guard isEditingProfiles else { return store.accounts }
         let ids = VividCloudPreferencePolicy.ordered(store.accounts.map(\.id), preferred: draftOrder)
@@ -249,8 +270,8 @@ struct PhoneSavedAccountCards: View {
         return raw
     }
     private func tile(_ account: TVSavedAccount) -> some View {
-        VStack(spacing: 12) {
-            ProfileAvatarView(avatar: account.profile?.avatarEmoji, imageUrl: savedAvatarURL(account), name: account.username, size: 88)
+        VStack(spacing: isSettings ? 8 : 12) {
+            ProfileAvatarView(avatar: account.profile?.avatarEmoji, imageUrl: savedAvatarURL(account), name: account.username, size: avatarSize)
                 .overlay {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
@@ -258,12 +279,13 @@ struct PhoneSavedAccountCards: View {
             VStack(spacing: 4) {
                 Text(account.username).font(.subheadline.weight(.medium)).lineLimit(1)
                 if isSettings {
-                    Text(registry.entry(with: account.serverID)?.displayName ?? "Media server")
+                    Text(serverLabel(for: account))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
                 if store.needsLogin(account) { Text("Signed out").font(.caption).foregroundStyle(.secondary) }
             }
-        }.frame(width: 112)
+        }.frame(width: isSettings ? nil : 112)
+            .frame(maxWidth: isSettings ? .infinity : nil)
     }
 }
 

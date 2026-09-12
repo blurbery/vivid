@@ -88,7 +88,7 @@ struct AboutSettingsView: View {
                         Image(systemName: "arrow.up.right").foregroundStyle(.secondary)
                     }
                 }
-            }.listRowBackground(Color.vividSurfaceElevated)
+            }
             Text("© 2026 Vivid™").font(.footnote).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity).listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
@@ -148,18 +148,18 @@ private struct VividContactSettingsView: View {
                 LabeledContent("To", value: VividAbout.email)
                 TextField("Subject", text: $subject)
                     .accessibilityLabel("Subject")
-            }.listRowBackground(Color.vividSurfaceElevated)
+            }
             Section {
                 TextEditor(text: $message).frame(minHeight: 180)
                     .accessibilityLabel("Message")
             } header: { PhoneSettingsSectionHeader("Message") }
                 footer: { Text("Review and send your message in Mail. No logs or account details are attached.") }
-                .listRowBackground(Color.vividSurfaceElevated)
+
             Section {
                 Button("Continue in Mail", action: compose)
                     .disabled(subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                               || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }.listRowBackground(Color.vividSurfaceElevated)
+            }
         }
         .settingsListChrome().navigationTitle("")
         .alert("Mail unavailable", isPresented: $mailUnavailable) {

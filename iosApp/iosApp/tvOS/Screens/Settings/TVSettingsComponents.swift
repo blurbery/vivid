@@ -333,7 +333,7 @@ private struct TVSettingsPaneRowBody: View {
     private var backgroundFill: Color {
         if isFocused { return .vividOnSurface }
         if isSelected { return .vividChromeSelectedFill }
-        return .vividSurfaceElevated.opacity(0.84)
+        return joined ? .clear : .vividSurfaceElevated.opacity(0.84)
     }
 
     private var borderColor: Color {
@@ -445,7 +445,7 @@ struct TVSettingsInfoRow: View {
         .foregroundColor(.vividOnSurface)
         .background(
             RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
-                .fill(Color.vividSurfaceElevated.opacity(0.84))
+                .fill(joined ? Color.clear : Color.vividSurfaceElevated.opacity(0.84))
         )
         .overlay(
             RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
