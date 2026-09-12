@@ -41,6 +41,8 @@ struct DownloadOptionsSheet: View {
         return available.isEmpty ? [.original] : available
     }
 
+    private var isEmbyConversion: Bool { MediaServerProvider.active == .emby && quality != DownloadFormat.original.rawValue }
+
     private var editions: [PlaybackEditions.Edition] {
         PlaybackEditions.editions(from: versions)
     }
@@ -79,6 +81,7 @@ struct DownloadOptionsSheet: View {
 
                 if editions.count > 1 {
                     editionSection
+                        .disabled(isEmbyConversion)
                 }
 
                 if !versions.isEmpty {
@@ -104,12 +107,15 @@ struct DownloadOptionsSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Download") {
-                        onStart(DownloadRequestOptions(fileId: fileId, quality: quality))
+                        onStart(DownloadRequestOptions(fileId: isEmbyConversion ? nil : fileId, quality: quality))
                         dismiss()
                     }
                 }
             }
             .onAppear(perform: clampQuality)
+            .onChange(of: quality) { _, _ in
+                if isEmbyConversion { fileId = nil }
+            }
             .task {
                 // Permissions and server-side download settings can change at
                 // any time; re-fetch so the quality list reflects them now
@@ -154,7 +160,8 @@ struct DownloadOptionsSheet: View {
     /// Size expectation for what the current selection would download:
     /// candidate range for Auto, exact size for a chosen version.
     private var selectionEstimate: DownloadSizeEstimate? {
-        DownloadSizeEstimate.estimate(versions: versions, fileId: fileId)
+        guard quality == DownloadFormat.original.rawValue else { return nil }
+        return DownloadSizeEstimate.estimate(versions: versions, fileId: fileId)
     }
 
     /// Over-threshold / insufficient-space caveat for the current selection,
@@ -207,11 +214,14 @@ struct DownloadOptionsSheet: View {
         } header: {
             Text("Version")
         } footer: {
-            if let selectionSizeWarning {
+            if isEmbyConversion {
+                Text("Emby chooses the source version when preparing a smaller download.")
+            } else if let selectionSizeWarning {
                 Text(selectionSizeWarning)
                     .foregroundColor(.orange)
             }
         }
+        .disabled(isEmbyConversion)
     }
 
     /// Version rows with a disambiguator appended when two distinct files
@@ -287,20 +297,27 @@ struct DownloadOptionsSheet: View {
         } header: {
             Text("Quality")
         } footer: {
-            Text("This starts from your global Downloads default. Changing it here applies only to this download.")
+            if formats.count > 1 {
+                Text("Lower bitrates use less storage. The server prepares the file before download starts. This choice applies only to this download.")
+            } else {
+                Text(MediaServerProvider.active == .emby
+                     ? "Smaller downloads need Emby's conversion service and permission for this account. Original keeps the source quality."
+                     : "Smaller downloads appear when your server allows download transcoding.")
+            }
         }
     }
 
     private func qualityDetail(for format: DownloadFormat) -> String {
         switch format {
         case .original:
-            return "Source quality, with compatibility fallback if needed"
+            return MediaServerProvider.active == .emby ? "Keep the original file" : "Source quality, with compatibility fallback if needed"
         case .twentyMbps, .tenMbps, .fiveMbps, .twoMbps, .oneMbps:
-            return "Prepared on the server before download starts"
+            return "Reduce the bitrate for a smaller offline file"
         }
     }
 
     private func clampQuality() {
+        if isEmbyConversion { fileId = nil }
         guard !formats.contains(where: { $0.rawValue == quality }) else { return }
         quality = DownloadSettings.shared.resolvedFormat(
             allowedFormats: manager.capability?.qualityPresets ?? []
@@ -309,7 +326,10 @@ struct DownloadOptionsSheet: View {
 
     private var mediaSummarySection: some View {
         Section {
-            if let effectiveVersion {
+            if quality != DownloadFormat.original.rawValue {
+                readOnlyRow(title: "Audio", detail: "Prepared by the server")
+                readOnlyRow(title: "Subtitles", detail: "Available tracks")
+            } else if let effectiveVersion {
                 readOnlyRow(
                     title: "Audio",
                     detail: DetailPlaybackFormatting.audioValueLabel(

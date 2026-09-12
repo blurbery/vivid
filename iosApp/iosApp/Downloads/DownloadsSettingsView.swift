@@ -32,6 +32,8 @@ struct DownloadsSettingsView: View {
                             Text(format.displayName).tag(format.rawValue)
                         }
                     }
+                } else {
+                    LabeledContent("Quality", value: "Original")
                 }
             } header: {
                 Text("Downloads")
@@ -40,7 +42,11 @@ struct DownloadsSettingsView: View {
                 // quality picker, which is hidden when the server offers a
                 // single preset.
                 if formats.count > 1 {
-                    Text("Original prefers source quality and may prepare a compatibility file if this device needs one. Bitrate presets are prepared on the server before download starts.")
+                    Text("Original keeps source quality. Lower bitrates use less storage; the server prepares the file before download starts. You can choose a different quality for each download.")
+                } else {
+                    Text(MediaServerProvider.active == .emby
+                         ? "Smaller downloads need Emby's conversion service and permission for this account."
+                         : "Smaller downloads appear when your server allows download transcoding.")
                 }
             }
             .listRowBackground(Color.vividSurfaceElevated.opacity(0.92))

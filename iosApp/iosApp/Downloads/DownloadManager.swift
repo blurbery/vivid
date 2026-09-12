@@ -1297,12 +1297,14 @@ final class DownloadManager {
 
     func reconcileWithServer(triggerPipeline: Bool) async {
         guard !scopeServerId.isEmpty, downloadsEnabled else { return }
+        let generation = registrationScopeGeneration
         let rows: [ServerDownloadRow]
         do {
             rows = try await VividAPI.shared.listDownloads()
         } catch {
             return
         }
+        guard generation == registrationScopeGeneration else { return }
         let byId = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         for (id, original) in file.records {

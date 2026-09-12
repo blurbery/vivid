@@ -41,8 +41,8 @@ struct DownloadActionButton: View {
     private let displaySubtitle: String?
     private let year: Int?
     private let posterThumbhash: String?
-    /// Full version metadata for the options sheet; empty in compact style,
-    /// which never presents the sheet.
+    /// Full version metadata for the options sheet; compact episode controls
+    /// offer quality choices without a version picker.
     private let versions: [FileVersion]
     /// Candidate file sizes feeding the pre-download large-file guard.
     private let candidateFileSizes: [Int64]
@@ -50,9 +50,11 @@ struct DownloadActionButton: View {
     private let lastVersionFileId: Int?
     /// Owned by the detail screen so its overflow menu can open the same
     /// options sheet — one-tap made the sheet a secondary path, and it must
-    /// stay discoverable somewhere visible. Compact placements have no
-    /// options sheet, so they bind a constant that never presents.
+    /// stay discoverable somewhere visible. Compact placements use their own
+    /// presentation state when the server offers multiple download qualities.
     @Binding private var showOptions: Bool
+    @State private var showCompactOptions = false
+    private var optionsPresented: Binding<Bool> { style == .compact ? $showCompactOptions : $showOptions }
 
     private var manager: DownloadManager { DownloadManager.shared }
     private var record: DownloadRecord? { manager.record(forContentId: contentId) }
@@ -121,7 +123,7 @@ struct DownloadActionButton: View {
             .overlay(alignment: .top) { noticeCaption }
             .sensoryFeedback(.success, trigger: startFeedbackCount)
             .sensoryFeedback(.error, trigger: failFeedbackCount)
-            .sheet(isPresented: $showOptions) {
+            .sheet(isPresented: optionsPresented) {
                 DownloadOptionsSheet(
                     title: displayTitle,
                     versions: versions,
@@ -269,7 +271,10 @@ struct DownloadActionButton: View {
     /// selected version) warrants confirming first.
     private func handleDownloadTap() {
         guard !isRegistrationPending, record == nil else { return }
-        if style != .compact { showOptions = true; return }
+        if style != .compact || manager.availableFormats.count > 1 {
+            optionsPresented.wrappedValue = true
+            return
+        }
         let estimate = versions.isEmpty
             ? DownloadSizeEstimate.estimate(fileSizes: candidateFileSizes)
             : DownloadSizeEstimate.estimate(versions: versions, fileId: selectedVersionFileId)

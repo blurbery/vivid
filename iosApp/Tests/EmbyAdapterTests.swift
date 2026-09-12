@@ -23,6 +23,121 @@ final class EmbyAdapterTests: XCTestCase {
         ))
     }
 
+    func testDownloadConversionRequiresDownloadAndSyncPermissions() async throws {
+        for (downloads, conversion) in [(false, false), (false, true), (true, false)] {
+            let adapter = stubbedAdapter { request in
+                XCTAssertEqual(request.url?.path, "/emby/Users/user-1")
+                return (200, ["Policy": ["EnableContentDownloading": downloads, "EnableSyncTranscoding": conversion,
+                    "EnableVideoPlaybackTranscoding": true]])
+            }
+            let raw = try await adapter.route(method: "GET", path: "/api/v1/downloads/capability", query: [:], body: nil)
+            let capability: DownloadCapability = try EmbyAdapter.decode(raw)
+            XCTAssertEqual(capability.downloadAllowed, downloads)
+            XCTAssertEqual(capability.qualityPresets, ["original"])
+            XCTAssertFalse(capability.transcodeEnabled)
+            testSession?.invalidateAndCancel()
+        }
+    }
+
+    func testUnavailableEmbyConversionPreservesOriginalDownloads() async throws {
+        for failure in [500, 404] {
+            let adapter = stubbedAdapter { request in
+                if request.url?.path == "/emby/Users/user-1" {
+                    return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true]])
+                }
+                return (failure, [:])
+            }
+            let raw = try await adapter.route(method: "GET", path: "/api/v1/downloads/capability", query: [:], body: nil)
+            let capability: DownloadCapability = try EmbyAdapter.decode(raw)
+            XCTAssertTrue(capability.isUsable)
+            XCTAssertEqual(capability.qualityPresets, ["original"])
+            XCTAssertFalse(capability.transcodeEnabled)
+            testSession?.invalidateAndCancel()
+        }
+    }
+
+    func testDownloadConversionNegotiatesOnlyThisDeviceAndAccount() async throws {
+        var paths: [String] = []
+        let adapter = stubbedAdapter { request in
+            let url = try XCTUnwrap(request.url)
+            paths.append(url.path)
+            let query = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+            switch url.path {
+            case "/emby/Sessions":
+                XCTAssertEqual(query["DeviceId"], EmbyConnection.deviceID)
+                return (200, [
+                    ["Id": "other-account", "DeviceId": EmbyConnection.deviceID, "UserId": "user-2"],
+                    ["Id": "other-device", "DeviceId": "not-this-device", "UserId": "user-1"],
+                    ["Id": "current-session", "DeviceId": EmbyConnection.deviceID, "UserId": "user-1"]
+                ])
+            case "/emby/Sessions/Capabilities/Full":
+                XCTAssertEqual(request.httpMethod, "POST")
+                XCTAssertEqual(query["Id"], "current-session")
+                return (200, [:])
+            case "/emby/Sync/Options":
+                XCTAssertEqual(query["UserId"], "user-1")
+                XCTAssertEqual(query["TargetId"], EmbyConnection.deviceID)
+                return (200, [
+                    "ProfileOptions": [["Id": "original", "EnableQualityOptions": false], ["Id": "mobile", "EnableQualityOptions": true]],
+                    "QualityOptions": [["Id": "original", "IsOriginalQuality": true], ["Id": "high", "IsDefault": true, "IsOriginalQuality": false]]
+                ])
+            default: throw URLError(.badURL)
+            }
+        }
+        let options = try await EmbyDownloadConversion.availableOptions(connection: adapter.connection)
+        XCTAssertEqual(options.profile, "mobile")
+        XCTAssertEqual(options.quality, "high")
+        XCTAssertEqual(paths, ["/emby/Sessions", "/emby/Sessions/Capabilities/Full", "/emby/Sync/Options"])
+        let body = try EmbyDownloadConversion.request(itemID: "movie-1", userID: "user-1", format: .twoMbps, options: options)
+        XCTAssertEqual(body["Bitrate"] as? Int, 2_000_000)
+        XCTAssertEqual(body["ItemIds"] as? [String], ["movie-1"])
+        XCTAssertEqual(body["TargetId"] as? String, EmbyConnection.deviceID)
+        XCTAssertEqual(body["Profile"] as? String, "mobile")
+        XCTAssertEqual(body["Container"] as? String, "mp4")
+        XCTAssertEqual(body["VideoCodec"] as? String, "h264")
+        XCTAssertEqual(body["SyncNewContent"] as? Bool, false)
+        XCTAssertThrowsError(try EmbyDownloadConversion.request(itemID: "movie-1", userID: "user-1", format: .original, options: options))
+    }
+
+    func testConversionDoesNotRegisterAnotherAccountsSession() async throws {
+        let adapter = stubbedAdapter { request in
+            XCTAssertEqual(request.url?.path, "/emby/Sessions")
+            return (200, [["Id": "other-account", "DeviceId": EmbyConnection.deviceID, "UserId": "user-2"]])
+        }
+        do {
+            _ = try await EmbyDownloadConversion.availableOptions(connection: adapter.connection)
+            XCTFail("A different account's session must never be changed")
+        } catch EmbyError.unsupportedFeature { }
+    }
+
+    func testConversionCreationRejectsMismatchedJobsAndTargets() throws {
+        let valid: [String: Any] = ["Job": ["Id": 12], "JobItems": [["Id": 34, "JobId": 12, "TargetId": EmbyConnection.deviceID]]]
+        let result = try EmbyDownloadConversion.creation(valid)
+        XCTAssertEqual(result.jobID, "12")
+        XCTAssertEqual(result.itemID, "34")
+        for item in [["Id": 34, "JobId": 99, "TargetId": EmbyConnection.deviceID],
+                     ["Id": 34, "JobId": 12, "TargetId": "other-device"]] as [[String: Any]] {
+            XCTAssertThrowsError(try EmbyDownloadConversion.creation(["Job": ["Id": 12], "JobItems": [item]]))
+        }
+        for value: Any in [true, 1.5, -1, "../wrong", ""] {
+            XCTAssertThrowsError(try EmbyDownloadConversion.identifier(value))
+        }
+    }
+
+    func testConversionRequiresCompleteMetadataBeforeDownloadStarts() throws {
+        for status in ["Queued", "Converting"] {
+            XCTAssertEqual(try EmbyDownloadConversion.status(of: ["Status": status]), "preparing")
+            XCTAssertThrowsError(try EmbyDownloadConversion.readySource(from: ["Status": status], sourceID: "source-1"))
+        }
+        XCTAssertEqual(try EmbyDownloadConversion.status(of: ["Status": "Failed"]), "failed")
+        XCTAssertThrowsError(try EmbyDownloadConversion.status(of: ["Status": "Unknown"]))
+        XCTAssertThrowsError(try EmbyDownloadConversion.readySource(from: ["Status": "ReadyToTransfer"], sourceID: "source-1"))
+        let source = try EmbyDownloadConversion.readySource(from: ["Status": "ReadyToTransfer", "MediaSource": ["Container": "mp4", "Size": 1234]], sourceID: "source-1")
+        XCTAssertEqual(source["Container"] as? String, "mp4")
+        XCTAssertEqual(source["Id"] as? String, "source-1")
+        XCTAssertEqual(source["Size"] as? Int, 1234)
+    }
+
     func testFilterRoutePagesBothEndpointsAndPreservesLibraryScope() async throws {
         let adapter = stubbedAdapter { request in
             let url = try XCTUnwrap(request.url)

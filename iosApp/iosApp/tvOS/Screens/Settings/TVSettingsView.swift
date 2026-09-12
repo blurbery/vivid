@@ -134,29 +134,22 @@ struct TVSettingsView: View {
 
     private var rail: some View {
         VStack(alignment: .leading, spacing: 6) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Settings")
-                    .font(.system(size: 42, weight: .bold))
-                    .foregroundStyle(Color.vividOnSurface)
-
-                Text("Make Vivid work the way you like.")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.vividSecondaryText)
+            settingsHeader(title: "Settings", subtitle: "Make Vivid work the way you like.") {
+                Image(systemName: "gearshape")
             }
-            .padding(.horizontal, 20)
             .padding(.bottom, 20)
 
-            profileRow
-                .padding(.bottom, 10)
-
+            TVSettingsSectionHeader("PROFILES & SETTINGS")
             TVSettingsGroup {
+                profileRow
+                Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.horizontal, 24)
                 ForEach(visibleCategories) { category in categoryRow(category) }
             }
 
             Spacer(minLength: 12)
 
             VividCopyrightFooter()
-            .padding(.leading, 20)
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 10)
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -164,10 +157,10 @@ struct TVSettingsView: View {
     }
 
     private var profileRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Profiles").font(.system(size: 24, weight: .semibold)).padding(.leading, 20)
-            TVSavedAccountCards()
-        }
+        TVSavedAccountCards()
+            .padding(.horizontal, 8)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
     }
 
     @ViewBuilder private func categoryImage(_ category: TVSettingsCategory) -> some View {
@@ -321,8 +314,14 @@ struct TVSettingsView: View {
     }
 
     private var paneHeader: some View {
-        HStack(alignment: .center, spacing: 20) {
+        settingsHeader(title: selectedCategory.title, subtitle: selectedCategory.blurb) {
             categoryImage(selectedCategory)
+        }
+    }
+
+    private func settingsHeader<Icon: View>(title: String, subtitle: String, @ViewBuilder icon: () -> Icon) -> some View {
+        HStack(alignment: .center, spacing: 20) {
+            icon()
                 .font(.system(size: 27, weight: .medium))
                 .foregroundStyle(.white.opacity(0.85))
                 .frame(width: 62, height: 62)
@@ -333,11 +332,11 @@ struct TVSettingsView: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(selectedCategory.title)
+                Text(title)
                     .font(.system(size: 40, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
 
-                Text(selectedCategory.blurb)
+                Text(subtitle)
                     .font(.system(size: 20))
                     .foregroundStyle(Color.vividSecondaryText)
             }

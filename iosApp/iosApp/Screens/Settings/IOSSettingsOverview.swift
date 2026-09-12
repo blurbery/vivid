@@ -9,48 +9,37 @@ struct IOSSettingsOverview: View {
     @Environment(AppRouter.self) private var router
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Text("Settings")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text("Make Vivid work the way you like.").foregroundStyle(.secondary)
+        List {
+            SettingsPageHeader(title: "Settings", subtitle: "Make Vivid work the way you like.", systemImage: "gearshape")
+                .settingsPageHeaderRow()
+            Section {
                 PhoneSavedAccountCards(isSettings: true)
-                VStack(spacing: 0) {
+                    .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
                     destination("General", "App and navigation", "gearshape") { GeneralSettingsView() }
-                    SettingsOverviewDivider()
                     destination("Playback", "Quality and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
-                    SettingsOverviewDivider()
                     destination("Subtitles", "Language and appearance", "captions.bubble") { SubtitleSettingsView(viewModel: viewModel) }
-                    SettingsOverviewDivider()
                     destination("Servers", "Connection and version", "server.rack") {
                         PhoneServerSettingsView(viewModel: viewModel, showSignOutConfirm: $showSignOutConfirm)
                     }
-                    SettingsOverviewDivider()
                     destination("Plugins", "Trailers and watched history", "puzzlepiece.extension") { PluginsSettingsView() }
-                    SettingsOverviewDivider()
                     destination("Seerr", "Media requests", "SeerrSettingsIcon") { PhoneSeerrSettingsView() }
-                    SettingsOverviewDivider()
                     destination("Metadata", "Home cache and storage", "internaldrive") { PhoneHomeMetadataSettingsView() }
-                    SettingsOverviewDivider()
                     destination("About", "App details and contact", "AboutInfoIcon") { AboutSettingsView() }
-                }
-                .background(Color.vividSurfaceElevated.opacity(0.84), in: RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(.white.opacity(0.12), lineWidth: 1))
-                VividCopyrightFooter().frame(maxWidth: .infinity).padding(.top, 16)
+            } header: {
+                PhoneSettingsSectionHeader("Profiles & Settings")
             }
-            .padding(24)
-            .frame(maxWidth: 760, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            VividCopyrightFooter().frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
-        .background(Color.black.ignoresSafeArea())
+        .settingsListChrome()
         .navigationTitle("")
-        .settingsNavigationChrome()
     }
 
     private func destination<Content: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder content: () -> Content) -> some View {
         NavigationLink(destination: content()) {
-            SettingsOverviewRow(title: title, subtitle: subtitle, systemImage: icon, tint: .white)
+            SettingsOverviewRow(title: title, subtitle: subtitle, systemImage: icon, tint: .white, showsChevron: false)
         }.buttonStyle(.plain)
+            .listRowInsets(EdgeInsets(top: 0, leading: 5, bottom: 0, trailing: 16))
     }
 }
 
@@ -121,6 +110,7 @@ struct PhoneSavedProfilesScreen: View {
 struct PhoneSavedAccountCards: View {
     let isSettings: Bool
     @State private var store = TVSavedAccountStore.shared
+    @State private var registry = ServerRegistry.shared
     @Environment(AppRouter.self) private var router
     @State private var selectedForPIN: TVSavedAccount?
     @State private var pendingDeletion: TVSavedAccount?
@@ -184,7 +174,7 @@ struct PhoneSavedAccountCards: View {
             }.padding(.vertical, 12)
                 .frame(minWidth: geometry.size.width, alignment: isSettings ? .leading : .center)
         }
-        }.frame(height: isEditingProfiles ? 210 : 150)
+        }.frame(height: isEditingProfiles ? (isSettings ? 240 : 210) : (isSettings ? 190 : 150))
         }.buttonStyle(.plain).foregroundStyle(.white).disabled(store.busy)
         .task { await store.captureCurrent() }
         .task(id: scenePhase == .active && !isEditingProfiles) {
@@ -265,8 +255,14 @@ struct PhoneSavedAccountCards: View {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
                 .accessibilityLabel(isSettings && isCurrentAccount(account) ? "Current account" : account.username)
-            Text(account.username).font(.subheadline.weight(.medium)).lineLimit(1)
-            if store.needsLogin(account) { Text("Signed out").font(.caption).foregroundStyle(.secondary) }
+            VStack(spacing: 4) {
+                Text(account.username).font(.subheadline.weight(.medium)).lineLimit(1)
+                if isSettings {
+                    Text(registry.entry(with: account.serverID)?.displayName ?? "Media server")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                if store.needsLogin(account) { Text("Signed out").font(.caption).foregroundStyle(.secondary) }
+            }
         }.frame(width: 112)
     }
 }

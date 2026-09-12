@@ -92,6 +92,17 @@ enum DownloadFormat: String, Codable, CaseIterable, Sendable {
     case twoMbps = "2mbps"
     case oneMbps = "1mbps"
 
+    var targetBitrateKbps: Int? {
+        switch self {
+        case .original: return nil
+        case .twentyMbps: return 20_000
+        case .tenMbps: return 10_000
+        case .fiveMbps: return 5_000
+        case .twoMbps: return 2_000
+        case .oneMbps: return 1_000
+        }
+    }
+
     var displayName: String {
         switch self {
         case .original: return "Original"

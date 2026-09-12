@@ -47,6 +47,7 @@ struct TVSavedAccountCards: View {
     @Namespace private var profileFocusScope
     @FocusState private var focusedAccount: String?
     @State private var store = TVSavedAccountStore.shared
+    @State private var registry = ServerRegistry.shared
     @State private var pinAccount: TVSavedAccount?
     @State private var pendingDeletion: TVSavedAccount?
     @State private var isEditingProfiles = false
@@ -134,7 +135,7 @@ struct TVSavedAccountCards: View {
         }
         .scrollClipDisabled()
         }
-        .frame(height: isEditingProfiles ? 280 : 190)
+        .frame(height: isEditingProfiles ? (isSettings ? 304 : 280) : (isSettings ? 222 : 190))
         .disabled(store.busy || pinAccount != nil)
         .task {
             await profileStore.refresh(force: true)
@@ -220,11 +221,18 @@ struct TVSavedAccountCards: View {
                 .overlay {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
-            Text(account.username).font(.system(size: 20, weight: .medium)).lineLimit(1)
-            if account.requiresLogin { Text("Signed out").font(.system(size: 15)).opacity(0.6) }
+            VStack(spacing: 5) {
+                Text(account.username).font(.system(size: 20, weight: .medium)).lineLimit(1)
+                if isSettings {
+                    Text(registry.entry(with: account.serverID)?.displayName ?? "Media server")
+                        .font(.system(size: 17)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                if account.requiresLogin { Text("Signed out").font(.system(size: 15)).opacity(0.6) }
+            }
         }
         .frame(width: 142)
         .accessibilityLabel(account.username + (account.requiresLogin ? ", signed out" : "")
+            + (isSettings ? ", " + (registry.entry(with: account.serverID)?.displayName ?? "Media server") : "")
             + (isSettings && isCurrentAccount(account) ? ", current account" : ""))
     }
     private func isCurrentAccount(_ account: TVSavedAccount) -> Bool {
