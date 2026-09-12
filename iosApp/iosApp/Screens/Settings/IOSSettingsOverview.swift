@@ -446,7 +446,6 @@ struct PhoneSavedAccountEditor: View {
                             Text("Sign Out")
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
-                        .listRowInsets(EdgeInsets())
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                         .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
                     }
@@ -455,7 +454,6 @@ struct PhoneSavedAccountEditor: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .disabled(store.busy)
-                    .listRowInsets(EdgeInsets())
                     .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
                 }
