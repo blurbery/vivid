@@ -14,6 +14,7 @@ struct IOSSettingsOverview: View {
                 .settingsPageHeaderRow()
             Section {
                 PhoneSavedAccountCards(isSettings: true)
+                    .navigationLinkIndicatorVisibility(.hidden)
                     .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 12, trailing: 20))
                     destination("General", "App and navigation", "gearshape") { GeneralSettingsView() }
                     destination("Playback", "Quality and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
