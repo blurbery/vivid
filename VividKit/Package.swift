@@ -1,5 +1,6 @@
 // swift-tools-version: 6.0
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
 import PackageDescription
 
 let package = Package(

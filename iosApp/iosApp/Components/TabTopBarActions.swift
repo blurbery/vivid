@@ -87,8 +87,8 @@ private struct TopBarIconButton: View {
     }
 }
 
-/// Profile avatar rendered via `ProfileAvatarView` (which handles DiceBear
-/// presets, URLs, emojis, and initials uniformly). Wraps a Menu exposing
+/// Profile avatar rendered via `ProfileAvatarView` using server pictures,
+/// emojis or initials. Wraps a Menu exposing
 /// Settings / Switch Profile / Sign Out so the user can reach app settings
 /// and manage their account without leaving the current tab.
 private struct ProfileAvatarMenu: View {

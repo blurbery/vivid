@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/Swift-SwiftUI-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Built with Swift and SwiftUI">
   <a href="https://github.com/blurbery/vivid/releases/latest"><img src="https://img.shields.io/github/v/release/blurbery/vivid?style=flat-square&amp;label=releases&amp;color=3B82F6&amp;display_name=release" alt="Latest GitHub release"></a>
   <img src="https://img.shields.io/badge/status-in%20development-D29922?style=flat-square" alt="In development">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-555555?style=flat-square" alt="Licence: Apache-2.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-555555?style=flat-square" alt="Licence: GPLv3 with Apple distribution permission"></a>
 </p>
 <p align="center">
   <a href="CONTRIBUTING.md#local-setup">Build</a> ·
@@ -70,8 +70,8 @@ I'll add GitHub Sponsors once I've finished setting it up. For now, testing the 
 
 ## Licence
 
-Vivid and VividKit source use Apache-2.0. AetherEngine retains LGPL-3.0 with its Apple Store / DRM Exception; FFmpeg and other dependencies retain their own licences.
+Vivid and VividKit are licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Distributed covered derivatives must provide corresponding source under GPLv3. Earlier Apache-2.0 grants remain valid. AetherEngine retains LGPL-3.0 with its Apple Store / DRM Exception; FFmpeg and other dependencies retain their own licences.
 
-[Apache-2.0](LICENSE) · [Third-party libraries](THIRD_PARTY_NOTICES.md) · [Brand policy](TRADEMARK.md)
+[GPLv3](LICENSE) · [Apple distribution permission](LICENSE-APPLE-EXCEPTION) · [Third-party libraries](THIRD_PARTY_NOTICES.md) · [Brand policy](TRADEMARK.md)
 
 Vivid™ and the logo are my brand. Forks and other projects need my written permission to use them; otherwise, use your own name and logo. See the [brand policy](TRADEMARK.md).

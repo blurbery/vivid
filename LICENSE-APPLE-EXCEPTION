@@ -1,0 +1,91 @@
+Vivid: GPLv3 Apple Distribution Permission
+==========================================
+
+Copyright 2026 blurbery and the respective contributors.
+Effective for this licensing revision dated 12 September 2026.
+
+Scope
+-----
+Vivid and VividKit, as a whole, are licensed under the GNU General Public
+License, version 3 only (GPL-3.0-only), reproduced unchanged in LICENSE,
+with the additional permission below. This permission applies only to
+material whose copyright holders have authorised it. Contributions to
+Vivid's own code are accepted under GPL-3.0-only with this permission.
+Separately identified third-party material retains its own licence.
+
+Additional permission under GNU GPL version 3, section 7
+-------------------------------------------------------
+The copyright holders grant you permission to convey the covered work,
+including modified versions, in object-code form through the Apple App
+Store and Apple TestFlight, and to authorise Apple to reproduce, process,
+sign, host and deliver that object code for those distribution services.
+
+Solely for that distribution path, you may comply with Apple's applicable
+Developer Program agreement, Apple Media Services usage rules, and
+standard Licensed Application End User License Agreement, notwithstanding
+GPLv3 sections 3, 6 and 10 to the extent those terms or platform controls:
+
+* limit use of Apple's delivered binary to authorised Apple devices,
+  accounts, Family Sharing or volume-purchasing arrangements;
+* restrict transfer, redistribution or modification of that delivered
+  binary through Apple's service;
+* apply code signing, FairPlay or comparable platform integrity controls
+  that prevent recipients from modifying, re-signing, installing or
+  relinking that delivered binary through Apple's service.
+
+This permission also permits linking the covered work with Apple's
+proprietary platform libraries and frameworks supplied with its operating
+systems or official SDKs, and conveying the resulting executable under
+GPLv3 with this permission. It grants no rights in Apple's software and
+requires no disclosure of Apple's proprietary source code.
+
+Source-code rights are preserved
+--------------------------------
+This permission does not waive the obligation to provide the complete
+Corresponding Source for the covered work, including all modifications,
+under GPLv3. Each distributor must provide recipients a no-charge means
+of obtaining the source matching the binary, together with the licence,
+this permission where applicable, and the build and installation scripts
+and instructions required by GPLv3. Source must be available when the
+binary is conveyed and for the duration required by the applicable GPLv3
+source-delivery option. A link to a changing development branch alone is
+not sufficient to identify the source for a released binary.
+
+Recipients retain their GPLv3 rights to obtain, study, modify, build and
+redistribute the source and their own builds outside Apple's distribution
+path. Apple's binary usage rules must not be imposed on those source
+copies or independent builds. This permission does not authorise
+closed-source derivatives or additional restrictions imposed by a
+redistributor independently of Apple's distribution requirements.
+
+Any relaxation of Installation Information requirements is limited to
+Apple-controlled signing, distribution and device restrictions. It does
+not excuse withholding build instructions or imposing an independent
+technical lock on modified versions. This permission grants no access to
+another developer's accounts, credentials, service entitlements or data.
+
+As provided by GPLv3 section 7, a recipient may remove this additional
+permission from their copy or modifications. A distributor cannot rely
+on it for material whose copyright holders have not granted it.
+
+Third-party and earlier-version rights
+-------------------------------------
+This permission does not change the licences of AetherEngine, FFmpeg,
+FriBidi, other libraries, Apple sample code, or third-party artwork and
+services. AetherEngine's own Apple Store / DRM Exception remains separate.
+All applicable notices and third-party source, replacement and relinking
+rights must be preserved. See THIRD_PARTY_NOTICES.md and the bundled
+OpenSourceLicenses resources for the component inventory.
+
+Earlier Vivid code distributed under Apache-2.0 remains available under
+those existing grants. This change does not revoke or narrow them. The
+original Apache licence is retained in
+iosApp/Resources/OpenSourceLicenses/Vivid-Apache-2.0.txt.
+New GPL-covered contributions are not offered under Apache-2.0 by this
+notice. The GPL licence for the combined work does not remove independent
+reuse rights in its Apache-licensed or other permissive components.
+
+Vivid's name and logos are governed separately by TRADEMARK.md. This
+permission adds no ban on lawful forks or commercial use and grants no
+trademark rights. GPLv3's warranty and liability provisions apply, subject
+to rights that cannot be excluded under applicable law.

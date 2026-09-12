@@ -1,9 +1,6 @@
 import SwiftUI
 
 struct ProfileAvatarView: View {
-    private static let diceBearPresetPrefix = "preset:dicebear:"
-    private static let diceBearBaseURL = "https://api.dicebear.com/9.x"
-
     let avatar: String?
     /// Server-resolved avatar URL (`avatar_url`). When present it wins over
     /// the client-side resolution of ``avatar``, which cannot resolve opaque
@@ -64,6 +61,7 @@ struct ProfileAvatarView: View {
         guard let trimmedAvatar = avatar?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmedAvatar.isEmpty,
               !trimmedAvatar.lowercased().hasPrefix("upload:"),
+              !trimmedAvatar.lowercased().hasPrefix("preset:"),
               !isImageAvatar(trimmedAvatar) else {
             return nil
         }
@@ -81,10 +79,6 @@ struct ProfileAvatarView: View {
               !trimmedAvatar.isEmpty,
               isImageAvatar(trimmedAvatar) else {
             return nil
-        }
-
-        if let diceBearURL = resolveDiceBearPresetURL(trimmedAvatar) {
-            return diceBearURL
         }
 
         let lowercased = trimmedAvatar.lowercased()
@@ -116,8 +110,8 @@ struct ProfileAvatarView: View {
 
     private func isImageAvatar(_ value: String) -> Bool {
         let lowercased = value.lowercased()
-        return lowercased.hasPrefix(Self.diceBearPresetPrefix)
-            || lowercased.hasPrefix("http://")
+        guard !lowercased.hasPrefix("preset:") else { return false }
+        return lowercased.hasPrefix("http://")
             || lowercased.hasPrefix("https://")
             || lowercased.hasPrefix("data:image/")
             || lowercased.hasPrefix("content://")
@@ -131,24 +125,6 @@ struct ProfileAvatarView: View {
             || lowercased.contains(".gif")
             || lowercased.contains(".svg")
             || lowercased.contains(".avif")
-    }
-
-    private func resolveDiceBearPresetURL(_ value: String) -> String? {
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmedValue.lowercased().hasPrefix(Self.diceBearPresetPrefix) else {
-            return nil
-        }
-
-        let parts = trimmedValue.split(separator: ":", maxSplits: 3, omittingEmptySubsequences: false)
-        guard parts.count == 4 else { return nil }
-
-        let style = String(parts[2]).trimmingCharacters(in: .whitespacesAndNewlines)
-        let seed = String(parts[3]).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !style.isEmpty, !seed.isEmpty else { return nil }
-
-        let encodedStyle = style.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? style
-        let encodedSeed = seed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? seed
-        return "\(Self.diceBearBaseURL)/\(encodedStyle)/png?seed=\(encodedSeed)&size=256"
     }
 }
 
