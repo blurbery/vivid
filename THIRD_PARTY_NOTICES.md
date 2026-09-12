@@ -8,7 +8,7 @@
 
 ---
 
-Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Earlier Apache-2.0 grants remain valid, and their licence text is retained in the bundled notices. Third-party libraries retain their own licences.
+Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Third-party libraries retain their own licences.
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
