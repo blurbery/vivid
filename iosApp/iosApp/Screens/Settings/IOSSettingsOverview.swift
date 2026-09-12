@@ -129,6 +129,7 @@ struct PhoneSavedAccountCards: View {
     @State private var hoveredSlot: CGRect?
     @State private var dragOffset: CGSize = .zero
     @State private var movingID: String?
+    @State private var lastDragEndedAt: ContinuousClock.Instant?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -206,7 +207,10 @@ struct PhoneSavedAccountCards: View {
     @ViewBuilder
     private var profileCards: some View {
         ForEach(displayedAccounts) { account in
-            tile(account)
+            Button { activateProfile(account) } label: {
+                tile(account)
+            }
+            .buttonStyle(.plain)
             .opacity(movingID == account.id ? 0 : 1)
             .contentShape(Rectangle())
             .background {
@@ -215,10 +219,8 @@ struct PhoneSavedAccountCards: View {
                         value: [account.id: geometry.frame(in: .named("savedProfileCards"))])
                 }
             }
-            .highPriorityGesture(profileGesture(for: account))
+            .simultaneousGesture(reorderGesture(for: account))
             .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { activateProfile(account) }
             .accessibilityHint("Hold and drag onto another profile to reorder. Release to save.")
             .accessibilityAction(named: "Move earlier") { moveProfile(account.id, by: -1) }
             .accessibilityAction(named: "Move later") { moveProfile(account.id, by: 1) }
@@ -242,6 +244,9 @@ struct PhoneSavedAccountCards: View {
 
     private func activateProfile(_ account: TVSavedAccount) {
         guard movingID == nil, !store.busy else { return }
+        // A drag release can also finish the button's press. Ignore that release,
+        // while keeping ordinary profile taps on the native button path.
+        if let lastDragEndedAt, lastDragEndedAt.duration(to: .now) < .milliseconds(200) { return }
         if store.needsLogin(account) || (isSettings && account.id == store.activeID) {
             editorRoute = .account(account.id)
         } else if store.hasPIN(account.id) {
@@ -253,16 +258,15 @@ struct PhoneSavedAccountCards: View {
         }
     }
 
-    private func profileGesture(for account: TVSavedAccount) -> some Gesture {
+    private func reorderGesture(for account: TVSavedAccount) -> some Gesture {
         LongPressGesture(minimumDuration: 0.35)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("savedProfileCards")))
-            .exclusively(before: TapGesture().map { _ in true })
             .updating($reorderGestureActive) { value, active, _ in
-                if case .first(.second(true, _)) = value { active = true }
+                if case .second(true, _) = value { active = true }
             }
             .onChanged { value in
                 guard !store.busy, store.accounts.count > 1,
-                      case .first(.second(true, let drag)) = value else { return }
+                      case .second(true, let drag) = value else { return }
                 if movingID == nil {
                     dragStartFrame = cardFrames[account.id] ?? .zero
                     draftOrder = store.accounts.map(\.id)
@@ -273,16 +277,11 @@ struct PhoneSavedAccountCards: View {
                 previewReorder(at: drag.location, moving: account.id)
             }
             .onEnded { value in
-                switch value {
-                case .second:
-                    activateProfile(account)
-                case .first:
-                    defer { resetDrag() }
-                    guard movingID == account.id,
-                          case .first(.second(true, let drag?)) = value,
-                          cardFrames.values.contains(where: { $0.insetBy(dx: -6, dy: -6).contains(drag.location) }) else { return }
-                    _ = store.saveAccountOrder(draftOrder)
-                }
+                defer { resetDrag() }
+                guard movingID == account.id,
+                      case .second(true, let drag?) = value,
+                      cardFrames.values.contains(where: { $0.insetBy(dx: -6, dy: -6).contains(drag.location) }) else { return }
+                _ = store.saveAccountOrder(draftOrder)
             }
     }
 
@@ -309,6 +308,7 @@ struct PhoneSavedAccountCards: View {
     }
 
     private func resetDrag() {
+        if movingID != nil { lastDragEndedAt = .now }
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
             movingID = nil
             draftOrder = []
