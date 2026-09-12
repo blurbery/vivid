@@ -446,12 +446,18 @@ struct PhoneSavedAccountEditor: View {
                             Text("Sign Out")
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
+                        .listRowInsets(EdgeInsets())
+                        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                        .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
                     }
                     Button(role: .destructive) { showsDeleteConfirm = true } label: {
                         Text("Delete Profile")
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .disabled(store.busy)
+                    .listRowInsets(EdgeInsets())
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                    .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
                 }
             }
             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
