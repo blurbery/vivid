@@ -431,6 +431,8 @@ private struct TVHomeSpotlightCarousel: View {
 
     @State private var visualPosition = 0
     @State private var scrollPosition: Int? = 0
+    @State private var lowerPosition: Int
+    @State private var upperPosition: Int
     @State private var pendingPosition: Int?
     @State private var initialCardPresented = false
     @State private var initialCardCentred = false
@@ -466,6 +468,9 @@ private struct TVHomeSpotlightCarousel: View {
         self.onMoveUp = onMoveUp
         _visualPosition = State(initialValue: startPosition)
         _scrollPosition = State(initialValue: startPosition)
+        let span = max(1, slides.count * 3)
+        _lowerPosition = State(initialValue: startPosition - span)
+        _upperPosition = State(initialValue: startPosition + span + 1)
     }
 
     private var index: Int {
@@ -489,80 +494,86 @@ private struct TVHomeSpotlightCarousel: View {
     private var rotationKey: String {
         "\(slides.map(\.id).joined(separator: "|"))#\(index)#\(canRotate)"
     }
-    private var renderedPositions: [Int] {
-        guard !slides.isEmpty else { return [] }
-        return slides.count == 1 ? [0] : Array(-slides.count...slides.count)
+    private var renderedPositions: Range<Int> {
+        guard !slides.isEmpty else { return 0..<0 }
+        return slides.count == 1 ? 0..<1 : lowerPosition..<upperPosition
+    }
+
+    private func updatePositionWindow(around position: Int) {
+        guard slides.count > 1 else { return }
+        let margin = slides.count
+        let span = slides.count * 3
+        // Keep native button targets available ahead of a held direction.
+        // Recycle only distant positions; the focused card keeps its identity.
+        if position - lowerPosition < margin || upperPosition - position <= margin {
+            lowerPosition = position - span
+            upperPosition = position + span + 1
+        }
     }
 
     var body: some View {
         VStack(spacing: 22) {
             GeometryReader { geometry in
                 let cardWidth = max(1, geometry.size.width - 120)
-                ScrollViewReader { scrollProxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 22) {
-                            ForEach(renderedPositions, id: \.self) { position in
-                                let slide = slide(at: position)
-                                Button { onSelect(slide) } label: {
-                                    TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
-                                        tints[slide.id] = tint
-                                        if position == visualPosition { ambientTint = tint }
-                                    }, onReady: {
-                                        readyIDs.insert(slide.id)
-                                        revealPendingSlide()
-                                    })
-                                    .id(slide.id)
-                                    .frame(width: cardWidth, height: 580)
-                                    .clipShape(RoundedRectangle(cornerRadius: 22))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 22) {
+                        ForEach(renderedPositions, id: \.self) { position in
+                            let slide = slide(at: position)
+                            Button { onSelect(slide) } label: {
+                                Group {
+                                    if abs(position - visualPosition) <= 3 {
+                                        TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
+                                            tints[slide.id] = tint
+                                            if position == visualPosition { ambientTint = tint }
+                                        }, onReady: {
+                                            readyIDs.insert(slide.id)
+                                            revealPendingSlide()
+                                        })
+                                        .id(slide.id)
+                                    } else {
+                                        Color.clear
+                                    }
                                 }
-                                .buttonStyle(.card)
-                                .focused(focus, equals: position)
-                                .onGeometryChange(for: Bool.self) { proxy in
-                                    let frame = proxy.frame(in: .named(carouselSpace))
-                                    return abs(frame.midX - geometry.size.width / 2) < 1
-                                } action: { centred in
-                                    guard !initialCardPresented, position == initialPosition else { return }
-                                    initialCardCentred = centred
-                                    completeInitialPresentationIfReady()
-                                }
-                                .accessibilityLabel(slide.content.title)
-                                .accessibilityValue("Slide \(((position % slides.count) + slides.count) % slides.count + 1) of \(slides.count)")
-                                .accessibilityHint("Press to open. Swipe left or right to change the spotlight.")
-                                .id(position)
+                                .frame(width: cardWidth, height: 580)
+                                .clipShape(RoundedRectangle(cornerRadius: 22))
                             }
-                        }
-                        .scrollTargetLayout()
-                    }
-                    .contentMargins(.horizontal, 60, for: .scrollContent)
-                    .scrollTargetBehavior(.viewAligned)
-                    .defaultScrollAnchor(.center, for: .initialOffset)
-                    .scrollPosition(id: $scrollPosition, anchor: .center)
-                    .coordinateSpace(name: carouselSpace)
-                    .defaultFocus(focus, initialCardPresented ? visualPosition : initialPosition,
-                                  priority: initialCardPresented ? .automatic : .userInitiated)
-                    .transaction { transaction in
-                        // Initial placement is immediate; later native navigation
-                        // keeps its normal animation.
-                        if !initialCardPresented { transaction.disablesAnimations = true }
-                    }
-                    .scrollClipDisabled()
-                    .onScrollPhaseChange { _, phase in
-                        scrollIsMoving = phase != .idle
-                        guard phase == .idle, visualPosition != index else { return }
-                        let position = index
-                        var transaction = Transaction(animation: nil)
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            visualPosition = position
-                            scrollPosition = position
-                            scrollProxy.scrollTo(position, anchor: .center)
-                            if focus.wrappedValue != nil { focus.wrappedValue = position }
+                            .buttonStyle(.card)
+                            .focused(focus, equals: position)
+                            .onGeometryChange(for: Bool.self) { proxy in
+                                let frame = proxy.frame(in: .named(carouselSpace))
+                                return abs(frame.midX - geometry.size.width / 2) < 1
+                            } action: { centred in
+                                guard !initialCardPresented, position == initialPosition else { return }
+                                initialCardCentred = centred
+                                completeInitialPresentationIfReady()
+                            }
+                            .accessibilityLabel(slide.content.title)
+                            .accessibilityValue("Slide \(((position % slides.count) + slides.count) % slides.count + 1) of \(slides.count)")
+                            .accessibilityHint("Press to open. Swipe left or right to change the spotlight.")
+                            .id(position)
                         }
                     }
-                    .focusSection()
-                    .onMoveCommand { direction in
-                        if direction == .up { onMoveUp() }
-                    }
+                    .scrollTargetLayout()
+                }
+                .contentMargins(.horizontal, 60, for: .scrollContent)
+                .scrollTargetBehavior(.viewAligned)
+                .defaultScrollAnchor(.center, for: .initialOffset)
+                .scrollPosition(id: $scrollPosition, anchor: .center)
+                .coordinateSpace(name: carouselSpace)
+                .defaultFocus(focus, initialCardPresented ? visualPosition : initialPosition,
+                              priority: initialCardPresented ? .automatic : .userInitiated)
+                .transaction { transaction in
+                    // Initial placement is immediate; later native navigation
+                    // keeps its normal animation.
+                    if !initialCardPresented { transaction.disablesAnimations = true }
+                }
+                .scrollClipDisabled()
+                .onScrollPhaseChange { _, phase in
+                    scrollIsMoving = phase != .idle
+                }
+                .focusSection()
+                .onMoveCommand { direction in
+                    if direction == .up { onMoveUp() }
                 }
             }
             .frame(height: 580)
@@ -648,8 +659,10 @@ private struct TVHomeSpotlightCarousel: View {
     private func selectPosition(_ position: Int) {
         guard !slides.isEmpty, position != visualPosition else { return }
         let previousIndex = index
+        updatePositionWindow(around: position)
         visualPosition = position
-        onPositionChange(index)
+        // The parent restores this exact native card after leaving the spotlight.
+        onPositionChange(position)
         if index != previousIndex {
             cycleElapsed = 0
             cycleResumedAt = canRotate ? Date() : nil

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The shared signed-in page canvas. On iOS it is a fixed, fully opaque
 /// charcoal wash with static tonal depth; it never samples page artwork.
-/// tvOS leaves the page colour to its native presentation container.
+/// tvOS inherits the persistent slate canvas behind the app container.
 struct VividPageBackdrop: View {
     var body: some View {
         #if os(iOS)
@@ -56,7 +56,7 @@ enum VividNavigationTitleDisplayMode {
 }
 
 extension View {
-    /// Use the native page canvas on tvOS and the original black canvas elsewhere.
+    /// Inherit the shared app canvas on tvOS and use the original black canvas elsewhere.
     @ViewBuilder
     func vividBackground() -> some View {
         #if os(tvOS)

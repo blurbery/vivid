@@ -6,7 +6,7 @@ struct TVSavedProfilesScreen: View {
     @State private var store = TVSavedAccountStore.shared
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
             NavigationStack {
                 VStack(spacing: 28) {
                     VividLogoView(size: 280)
@@ -23,7 +23,6 @@ struct TVSavedProfilesScreen: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.ignoresSafeArea())
                 .overlay(alignment: .bottom) {
                     VividCopyrightFooter()
                         .padding(.bottom, 40)
@@ -419,7 +418,7 @@ struct TVSavedAccountEditor: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(SettingsBackdrop())
         .toolbar(.hidden, for: .navigationBar)
         .disabled(store.busy)
         .confirmationDialog("Delete Profile?", isPresented: $showsDeleteConfirm,
@@ -460,7 +459,7 @@ private struct TVSavedAccountPINPrompt: View {
             Button("Cancel") { dismiss() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background { TVAppBackdrop() }
         .onExitCommand { dismiss() }
         .onDisappear { pin = "" }
     }

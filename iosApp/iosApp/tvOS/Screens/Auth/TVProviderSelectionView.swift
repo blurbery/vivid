@@ -76,7 +76,6 @@ struct TVProviderSelectionView: View {
             )
         }
         .defaultFocus($focusedProvider, .silo)
-        .background(Color.black)
         .overlay(alignment: .bottom) {
             VividCopyrightFooter()
                 .padding(.bottom, 40)
@@ -156,7 +155,6 @@ struct TVCloudRestoreView: View {
         .padding(24)
         #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
         #if os(tvOS)
         .onExitCommand { dismiss() }
         #endif

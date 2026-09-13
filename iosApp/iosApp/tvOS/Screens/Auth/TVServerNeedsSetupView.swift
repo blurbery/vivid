@@ -19,7 +19,7 @@ struct TVServerNeedsSetupView: View {
 
     var body: some View {
         ZStack {
-            AuroraBackdrop(variant: .server, scrim: .soft)
+            Color.clear.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 HStack {

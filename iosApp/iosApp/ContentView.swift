@@ -48,6 +48,9 @@ struct ContentView: View {
         // to the same auth state. Re-key the routed subtree so profile, home,
         // library, focus, and modal state cannot survive from the old server.
         .id(serverRegistry.activeServerId)
+        #if os(tvOS)
+        .background { TVAppBackdrop() }
+        #endif
         #if os(iOS)
         .id(TVSavedAccountStore.shared.contentRevision)
         #endif
@@ -508,7 +511,7 @@ struct ContentView: View {
     private var authContent: some View {
         #if os(tvOS)
         if TVSavedAccountStore.shared.busy {
-            Color.black.ignoresSafeArea().overlay { ProgressView() }
+            Color.clear.ignoresSafeArea().overlay { ProgressView() }
         } else if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
         } else if didCompleteProviderSetup,
@@ -556,7 +559,6 @@ struct ContentView: View {
                         destinationView(for: route)
                     }
             }
-            .background(Color.black.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             #else
             if router.authState == .needsServerSetup {
@@ -583,7 +585,7 @@ struct ContentView: View {
         case .needsProfile:
             #if os(tvOS)
             if TVSavedAccountStore.shared.accounts.isEmpty {
-                Color.black.ignoresSafeArea()
+                Color.clear.ignoresSafeArea()
                     .onAppear { Task { await TVLoginPreparation.shared.begin(router: router) } }
             } else {
                 profileSelectionContent

@@ -59,11 +59,11 @@ struct AboutSettingsView: View {
         .tvSettingsPageSurface()
         .fullScreenCover(isPresented: $showsPrivacy) {
             TVPrivacyPolicyOverlay { showsPrivacy = false }
-                .presentationBackground { SettingsBackdrop() }
+                .presentationBackground { TVAppBackdrop() }
         }
         .fullScreenCover(isPresented: $showsLicenses) {
             TVOpenSourceAcknowledgementsOverlay { showsLicenses = false }
-                .presentationBackground { SettingsBackdrop() }
+                .presentationBackground { TVAppBackdrop() }
         }
         #else
         List {

@@ -1,18 +1,14 @@
 import SwiftUI
 
-/// A fixed Settings canvas. Its opaque base keeps underlying pages out of
-/// both ordinary navigation and modal presentations.
+/// Settings inherits the persistent app canvas on tvOS. Other platforms
+/// retain their existing page backgrounds.
 struct SettingsBackdrop: View {
     var body: some View {
         #if os(tvOS)
-        LinearGradient(
-            colors: [Color(hex: "#283840"), Color(hex: "#283239"), Color(hex: "#303238")],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Color.clear
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         #elseif os(iOS)
         Color.black.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
         #else
@@ -52,3 +48,20 @@ struct SettingsBackdrop: View {
         #endif
     }
 }
+
+#if os(tvOS)
+/// One static canvas behind the app's changing navigation content. Full-screen
+/// presentations reuse it because they are hosted outside the app container.
+struct TVAppBackdrop: View {
+    var body: some View {
+        LinearGradient(
+            colors: [Color(hex: "#283840"), Color(hex: "#283239"), Color(hex: "#303238")],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+#endif

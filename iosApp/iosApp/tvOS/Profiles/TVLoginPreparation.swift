@@ -117,7 +117,10 @@ struct TVLoginPreparationView: View {
                 Text(error).multilineTextAlignment(.center).frame(maxWidth: 850)
                 Button("Try again") { Task { await preparation.prepare() } }
                 Button("Back to sign in") { preparation.cancel() }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.black.ignoresSafeArea())
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            #if os(iOS)
+            .background(Color.black.ignoresSafeArea())
+            #endif
         } else {
             VividStartupView(isContentReady: preparation.ready,
                              statusText: preparation.showsWelcome ? preparation.status : nil) {
