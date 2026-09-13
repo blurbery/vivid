@@ -432,9 +432,6 @@ private struct TVHomeSpotlightCarousel: View {
 
     @State private var visualPosition = 0
     @State private var scrollPosition: Int? = 0
-    @State private var positions = 0...2
-    @State private var reverseLoopEnabled = false
-    @State private var reverseEntryPosition: Int?
     @State private var pendingPosition: Int?
     @State private var initialCardPresented = false
     @State private var initialCardCentred = false
@@ -470,10 +467,6 @@ private struct TVHomeSpotlightCarousel: View {
         self.onMoveUp = onMoveUp
         _visualPosition = State(initialValue: startPosition)
         _scrollPosition = State(initialValue: startPosition)
-        // Start at the physical beginning of the feed. Negative loop copies
-        // put cards 9/10 before card 1 and expose a scroll correction at launch.
-        _reverseLoopEnabled = State(initialValue: startPosition < 0)
-        _positions = State(initialValue: (startPosition < 0 ? startPosition - 2 : max(0, startPosition - 2))...(startPosition + 2))
     }
 
     private var index: Int {
@@ -491,84 +484,86 @@ private struct TVHomeSpotlightCarousel: View {
             && !TVLoginPreparation.shared.isPresented
     }
     private var canRotate: Bool {
-        initialCardPresented && homeIsOpen && slides.count > 1 && !scrollIsMoving && reverseEntryPosition == nil
+        initialCardPresented && homeIsOpen && slides.count > 1 && !scrollIsMoving
             && !voiceOverEnabled && readyIDs.contains(slide(at: visualPosition).id)
     }
     private var rotationKey: String {
-        "\(slides.map(\.id).joined(separator: "|"))#\(visualPosition)#\(canRotate)"
-    }
-    private var maintenanceKey: String { "\(visualPosition)#\(scrollIsMoving)#\(reverseEntryPosition != nil)" }
-    private func windowLowerBound(for position: Int) -> Int {
-        reverseLoopEnabled ? position - 2 : max(0, position - 2)
+        "\(slides.map(\.id).joined(separator: "|"))#\(index)#\(canRotate)"
     }
     private var renderedPositions: [Int] {
         guard !slides.isEmpty else { return [] }
-        return slides.count == 1 ? [visualPosition] : Array(positions)
+        return slides.count == 1 ? [0] : Array(-slides.count...slides.count)
     }
 
     var body: some View {
         VStack(spacing: 22) {
             GeometryReader { geometry in
                 let cardWidth = max(1, geometry.size.width - 120)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 22) {
-                        ForEach(renderedPositions, id: \.self) { position in
-                            let slide = slide(at: position)
-                            Button { onSelect(slide) } label: {
-                                TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
-                                    tints[slide.id] = tint
-                                    if position == visualPosition { ambientTint = tint }
-                                }, onReady: {
-                                    readyIDs.insert(slide.id)
-                                    revealPendingSlide()
-                                })
-                                .id(slide.id)
-                                .frame(width: cardWidth, height: 580)
-                                .clipShape(RoundedRectangle(cornerRadius: 22))
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 22) {
+                            ForEach(renderedPositions, id: \.self) { position in
+                                let slide = slide(at: position)
+                                Button { onSelect(slide) } label: {
+                                    TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
+                                        tints[slide.id] = tint
+                                        if position == visualPosition { ambientTint = tint }
+                                    }, onReady: {
+                                        readyIDs.insert(slide.id)
+                                        revealPendingSlide()
+                                    })
+                                    .id(slide.id)
+                                    .frame(width: cardWidth, height: 580)
+                                    .clipShape(RoundedRectangle(cornerRadius: 22))
+                                }
+                                .buttonStyle(.card)
+                                .focused(focus, equals: position)
+                                .onGeometryChange(for: Bool.self) { proxy in
+                                    let frame = proxy.frame(in: .named(carouselSpace))
+                                    return abs(frame.midX - geometry.size.width / 2) < 1
+                                } action: { centred in
+                                    guard !initialCardPresented, position == initialPosition else { return }
+                                    initialCardCentred = centred
+                                    completeInitialPresentationIfReady()
+                                }
+                                .accessibilityLabel(slide.content.title)
+                                .accessibilityValue("Slide \(((position % slides.count) + slides.count) % slides.count + 1) of \(slides.count)")
+                                .accessibilityHint("Press to open. Swipe left or right to change the spotlight.")
+                                .id(position)
                             }
-                            .buttonStyle(.card)
-                            .focused(focus, equals: position)
-                            .task(id: reverseEntryPosition == position) {
-                                // The initial left boundary creates this native
-                                // target before transferring the user's focus.
-                                guard reverseEntryPosition == position else { return }
-                                reverseEntryPosition = nil
-                                guard homeIsOpen, focus.wrappedValue == 0 else { return }
-                                focus.wrappedValue = position
-                            }
-                            .onGeometryChange(for: Bool.self) { proxy in
-                                let frame = proxy.frame(in: .named(carouselSpace))
-                                return abs(frame.midX - geometry.size.width / 2) < 1
-                            } action: { centred in
-                                guard !initialCardPresented, position == initialPosition else { return }
-                                initialCardCentred = centred
-                                completeInitialPresentationIfReady()
-                            }
-                            .accessibilityLabel(slide.content.title)
-                            .accessibilityValue("Slide \(((position % slides.count) + slides.count) % slides.count + 1) of \(slides.count)")
-                            .accessibilityHint("Press to open. Swipe left or right to change the spotlight.")
-                            .id(position)
+                        }
+                        .scrollTargetLayout()
+                    }
+                    .contentMargins(.horizontal, 60, for: .scrollContent)
+                    .scrollTargetBehavior(.viewAligned)
+                    .defaultScrollAnchor(.center, for: .initialOffset)
+                    .scrollPosition(id: $scrollPosition, anchor: .center)
+                    .coordinateSpace(name: carouselSpace)
+                    .defaultFocus(focus, initialCardPresented ? visualPosition : initialPosition,
+                                  priority: initialCardPresented ? .automatic : .userInitiated)
+                    .transaction { transaction in
+                        // Initial placement is immediate; later native navigation
+                        // keeps its normal animation.
+                        if !initialCardPresented { transaction.disablesAnimations = true }
+                    }
+                    .scrollClipDisabled()
+                    .onScrollPhaseChange { _, phase in
+                        scrollIsMoving = phase != .idle
+                        guard phase == .idle, visualPosition != index else { return }
+                        let position = index
+                        var transaction = Transaction(animation: nil)
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            visualPosition = position
+                            scrollPosition = position
+                            scrollProxy.scrollTo(position, anchor: .center)
+                            if focus.wrappedValue != nil { focus.wrappedValue = position }
                         }
                     }
-                    .scrollTargetLayout()
-                }
-                .contentMargins(.horizontal, 60, for: .scrollContent)
-                .scrollTargetBehavior(.viewAligned)
-                .scrollPosition(id: $scrollPosition, anchor: .center)
-                .coordinateSpace(name: carouselSpace)
-                .defaultFocus(focus, initialCardPresented ? visualPosition : initialPosition,
-                              priority: initialCardPresented ? .automatic : .userInitiated)
-                .transaction { transaction in
-                    // Initial placement is immediate; later native navigation
-                    // keeps its normal animation.
-                    if !initialCardPresented { transaction.disablesAnimations = true }
-                }
-                .scrollClipDisabled()
-                .onScrollPhaseChange { _, phase in scrollIsMoving = phase != .idle }
-                .focusSection()
-                .onMoveCommand { direction in
-                    if direction == .up { onMoveUp() }
-                    else if direction == .left { enterReverseLoopIfNeeded() }
+                    .focusSection()
+                    .onMoveCommand { direction in
+                        if direction == .up { onMoveUp() }
+                    }
                 }
             }
             .frame(height: 580)
@@ -625,7 +620,6 @@ private struct TVHomeSpotlightCarousel: View {
             pauseCycle()
             isVisible = false
             pendingPosition = nil
-            reverseEntryPosition = nil
         }
         .onChange(of: homeIsOpen, initial: true) { _, open in
             if open { completeInitialPresentationIfReady() }
@@ -639,23 +633,8 @@ private struct TVHomeSpotlightCarousel: View {
         }
         .onChange(of: slides.map(\.id)) { _, ids in
             pendingPosition = nil
-            reverseEntryPosition = nil
             readyIDs.formIntersection(ids)
             tints = tints.filter { ids.contains($0.key) }
-        }
-        .task(id: maintenanceKey) {
-            // Retain the focused card's identity while trimming old loop copies
-            // after movement settles. ScrollPosition preserves its alignment.
-            guard !scrollIsMoving, reverseEntryPosition == nil else { return }
-            let position = visualPosition
-            do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
-            guard !Task.isCancelled, visualPosition == position else { return }
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { positions = windowLowerBound(for: position)...(position + 2) }
-            let retainedIDs = Set(renderedPositions.map { slide(at: $0).id })
-            readyIDs.formIntersection(retainedIDs)
-            tints = tints.filter { retainedIDs.contains($0.key) }
         }
         .task(id: rotationKey) {
             guard canRotate else { return }
@@ -667,26 +646,15 @@ private struct TVHomeSpotlightCarousel: View {
         }
     }
 
-    private func enterReverseLoopIfNeeded() {
-        guard initialCardPresented, homeIsOpen, slides.count > 1,
-              focus.wrappedValue == 0, !reverseLoopEnabled else { return }
-        pendingPosition = nil
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            reverseLoopEnabled = true
-            reverseEntryPosition = -1
-            positions = -2...max(2, positions.upperBound)
-        }
-    }
-
     private func selectPosition(_ position: Int) {
-        guard !slides.isEmpty, reverseLoopEnabled || position >= 0, position != visualPosition else { return }
-        positions = min(positions.lowerBound, windowLowerBound(for: position))...max(positions.upperBound, position + 2)
+        guard !slides.isEmpty, position != visualPosition else { return }
+        let previousIndex = index
         visualPosition = position
-        onPositionChange(position)
-        cycleElapsed = 0
-        cycleResumedAt = canRotate ? Date() : nil
+        onPositionChange(index)
+        if index != previousIndex {
+            cycleElapsed = 0
+            cycleResumedAt = canRotate ? Date() : nil
+        }
         let slide = slide(at: position)
         ambientTint = tints[slide.id] ?? .black
     }
