@@ -140,11 +140,18 @@ struct TVSettingsView: View {
             }
             .padding(.bottom, 20)
 
-            TVSettingsSectionHeader("PROFILES & SETTINGS")
-            TVSettingsGroup {
-                profileRow
-                Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.horizontal, 24)
-                ForEach(visibleCategories) { category in categoryRow(category) }
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    TVSettingsSectionHeader("PROFILES")
+                    TVSettingsGroup { profileRow }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    TVSettingsSectionHeader("SETTINGS")
+                    VStack(spacing: 12) {
+                        ForEach(visibleCategories) { category in categoryRow(category) }
+                    }
+                }
             }
 
             Spacer(minLength: 12)

@@ -7,10 +7,10 @@ enum TVSettingsLayout {
 }
 
 enum TVSettingsPalette {
-    // Match the neutral dark grouped-list surfaces used by iOS Settings.
-    static let groupFill = Color(hex: "#1C1C1E")
-    static let selectedFill = Color(hex: "#2C2C2E")
-    static let iconFill = Color(red: 0.12, green: 0.13, blue: 0.15)
+    // Solid cool-grey panels keep the joined rows distinct from the page.
+    static let groupFill = Color(hex: "#41474B")
+    static let selectedFill = Color(hex: "#545B60")
+    static let iconFill = Color(hex: "#4D555B")
     static let separator = Color.white.opacity(0.12)
     static let sectionText = Color(white: 0.62)
 }
@@ -268,7 +268,7 @@ private struct TVSettingsRailRowBody: View {
         if isDestructive && isFocused { return .vividError }
         if isFocused { return .vividOnSurface }
         if isSelected { return TVSettingsPalette.selectedFill }
-        return .clear
+        return joined ? .clear : TVSettingsPalette.groupFill
     }
 }
 
@@ -674,7 +674,7 @@ struct TVSettingsPickerSheet: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.vividBackground.opacity(0.88)
+                Rectangle().fill(.background)
                     .ignoresSafeArea()
 
                 pickerCard(

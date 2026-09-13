@@ -92,15 +92,19 @@ struct TVGeneralSettingsPane: View {
         }
         .fullScreenCover(item: $activePicker) { picker in
             pickerSheet(for: picker)
+                .presentationBackground(.background)
         }
         .fullScreenCover(isPresented: $showsHomeScreenSettings) {
             TVHomeScreenSettingsView()
+                .presentationBackground(.background)
         }
         .fullScreenCover(isPresented: $showsHomeSectionsEditor) {
             TVHomeSectionsCustomizationSheet()
+                .presentationBackground(.background)
         }
         .fullScreenCover(isPresented: $showsMenuEditor) {
             TVMenuCustomizationSheet(libraries: libraries)
+                .presentationBackground(.background)
         }
         .onAppear { homeSections.refresh() }
         .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }

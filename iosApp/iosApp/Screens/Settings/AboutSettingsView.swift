@@ -62,9 +62,11 @@ struct AboutSettingsView: View {
         .navigationTitle("")
         .fullScreenCover(isPresented: $showsPrivacy) {
             TVPrivacyPolicyOverlay { showsPrivacy = false }
+                .presentationBackground(.background)
         }
         .fullScreenCover(isPresented: $showsLicenses) {
             TVOpenSourceAcknowledgementsOverlay { showsLicenses = false }
+                .presentationBackground(.background)
         }
         #else
         List {
