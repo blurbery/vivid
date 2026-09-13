@@ -503,7 +503,7 @@ private struct TVHomeSpotlightCarousel: View {
             GeometryReader { geometry in
                 let cardWidth = max(1, geometry.size.width - 120)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 22) {
+                    LazyHStack(spacing: 22) {
                         ForEach(renderedPositions, id: \.self) { position in
                             let slide = slide(at: position)
                             Button { onSelect(slide) } label: {
