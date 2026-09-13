@@ -577,7 +577,9 @@ private struct TVHomeSpotlightCarousel: View {
                                 .frame(width: cardWidth, height: 580)
                                 .clipShape(RoundedRectangle(cornerRadius: 22))
                             }
-                            .buttonStyle(TVSpotlightButtonStyle())
+                            .buttonStyle(TVSpotlightButtonStyle(
+                                artworkURL: slide.content.backdropUrl ?? slide.content.fallbackArtworkUrl
+                            ))
                             .focused(focus, equals: position)
                             .onGeometryChange(for: Bool.self) { proxy in
                                 let frame = proxy.frame(in: .named(carouselSpace))
@@ -743,18 +745,22 @@ private struct TVHomeSpotlightCarousel: View {
 
 /// A native button with a fixed-size focus outline for the large hero card.
 private struct TVSpotlightButtonStyle: ButtonStyle {
+    let artworkURL: String?
     @Environment(\.isFocused) private var isFocused
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        // Read only prepared colour; a missing tint keeps the white outline.
+        let tint = artworkURL.flatMap { URL(string: $0) }
+            .flatMap { TVHomeMetadataCache.shared.cachedSpotlightTint(for: $0) } ?? .white
+        return configuration.label
             .overlay {
                 RoundedRectangle(cornerRadius: 22)
                     .strokeBorder(
                         LinearGradient(stops: [
                             .init(color: .white.opacity(0.95), location: 0),
-                            .init(color: .white.opacity(0.45), location: 0.28),
+                            .init(color: tint.opacity(0.45), location: 0.28),
                             .init(color: .white.opacity(0.15), location: 0.52),
-                            .init(color: .white.opacity(0.4), location: 0.76),
+                            .init(color: tint.opacity(0.4), location: 0.76),
                             .init(color: .white.opacity(0.8), location: 1)
                         ], startPoint: .topLeading, endPoint: .bottomTrailing),
                         lineWidth: 1.5
