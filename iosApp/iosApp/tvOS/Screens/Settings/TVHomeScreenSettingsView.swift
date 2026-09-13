@@ -93,7 +93,7 @@ struct TVHomeScreenSettingsView: View {
     private func loadSections() async {
         preferences.refresh()
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
-            sections = cached.sections.filter { !$0.items.isEmpty }
+            sections = cached.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
             preferences.initializeIfNeeded(from: sections)
         }
         isLoading = sections.isEmpty
@@ -102,7 +102,7 @@ struct TVHomeScreenSettingsView: View {
         do {
             let response = try await StartupContentPrefetcher.fetchHomeSections()
             guard !Task.isCancelled else { return }
-            sections = response.sections.filter { !$0.items.isEmpty }
+            sections = response.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
             preferences.initializeIfNeeded(from: sections)
         } catch {
             guard !Task.isCancelled else { return }

@@ -34,9 +34,12 @@ class ItemDetailViewModel {
     /// chip taps and iPad page swipes instant when the user comes back to a
     /// season, while `ResponseCache` remains the longer-lived cold-start tier.
     var episodesBySeason: [Int: [EpisodeListItem]] = [:]
+    #if !os(iOS)
     var episodeFavoriteStates: [String: Bool] = [:]
+    #endif
     var isLoadingEpisodes = false
 
+    #if !os(iOS)
     /// Protects local context-menu updates from older favorite lookups that
     /// finish after the user has already changed an episode's state.
     private var episodeFavoriteMutationVersions: [String: Int] = [:]
@@ -47,6 +50,7 @@ class ItemDetailViewModel {
     /// when the user moves to another season.
     @ObservationIgnored
     private var episodeFavoriteRefreshTask: Task<Void, Never>?
+    #endif
     #endif
     /// Cancels publication from an older season request after the user has
     /// already moved to another page.
@@ -256,12 +260,11 @@ class ItemDetailViewModel {
                 }
                 if !Task.isCancelled, generation == detailGeneration,
                    let selectedSeason {
-                    // Secondary seasons/favorites stay outside the resume
+                    // Secondary seasons stay outside the resume
                     // page's initial metadata wave.
                     startEpisodePagePrefetch(
                         seriesId: contentId, seasons: seasons, selectedSeason: selectedSeason
                     )
-                    await refreshEpisodeFavoriteStates(for: episodes)
                 }
             } else {
                 await loadRelatedStructure(
@@ -1206,6 +1209,7 @@ class ItemDetailViewModel {
             }
         }
 
+        #if !os(iOS)
         if refreshFavoriteStates,
            generation == episodeLoadGeneration,
            (selectedSeason?.seasonNumber == seasonNumber || selectedSeason == nil) {
@@ -1219,6 +1223,7 @@ class ItemDetailViewModel {
             await refreshEpisodeFavoriteStates(for: loadedEpisodes)
             #endif
         }
+        #endif
     }
 
     #if os(tvOS)
@@ -1248,6 +1253,7 @@ class ItemDetailViewModel {
     }
     #endif
 
+    #if !os(iOS)
     private func refreshEpisodeFavoriteStates(
         for episodes: [EpisodeListItem],
         maxConcurrent: Int = 6
@@ -1299,6 +1305,8 @@ class ItemDetailViewModel {
         }
         episodeFavoriteStates = mergedStates
     }
+
+    #endif
 
     // MARK: - User Actions
 
@@ -1457,6 +1465,7 @@ class ItemDetailViewModel {
         }
     }
 
+    #if !os(iOS)
     func setEpisodeFavorite(contentId: String, isFavorite: Bool) async -> Bool {
         do {
             try await VividAPI.shared.toggleFavorite(contentId: contentId, isFavorite: isFavorite)
@@ -1478,6 +1487,8 @@ class ItemDetailViewModel {
             return false
         }
     }
+
+    #endif
 
     private func writeBackUserState(contentId: String) {
         ResponseCache.shared.set(

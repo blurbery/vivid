@@ -22,18 +22,26 @@ final class TVHomeSpotlightPreferences {
         }.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(3)) }
     }
 
+    static func savedRowIDs(server: String, profile: String) -> [String]? {
+        let key = "tvos.homeSpotlight.v1.\(server).\(profile)"
+        return SharedDefaults.shared.data(forKey: key).flatMap {
+            try? JSONDecoder().decode([String].self, from: $0)
+        }.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(3)) }
+    }
+
     func initializeIfNeeded(from sections: [ResolvedSection]) {
         refresh()
-        guard !sections.isEmpty, storageKey != nil else { return }
+        let candidates = sections.filter { !$0.items.isEmpty }
+        guard !candidates.isEmpty, storageKey != nil else { return }
         if let selectedRowIDs, !selectedRowIDs.isEmpty {
             let available = Set(sections.map(\.id))
             if selectedRowIDs.allSatisfy({ !available.contains($0) }) {
-                save(Array(sections.prefix(3).map(\.id)))
+                save(Array(candidates.prefix(3).map(\.id)))
                 return
             }
         }
         guard selectedRowIDs == nil else { return }
-        save(Array(sections.prefix(3).map(\.id)))
+        save(Array(candidates.prefix(3).map(\.id)))
     }
 
     func toggle(_ rowID: String) {

@@ -47,8 +47,6 @@ struct TVGeneralSettingsPane: View {
                     ) { homeSections.setCombineEmbyNextUp(!homeSections.combineEmbyNextUp) }
                 }
 
-
-
             }
             if preferences.capabilityState != .checking, let message = preferences.capabilityMessage {
                 TVSettingsSectionHeader("SERVER SUPPORT")
@@ -637,7 +635,7 @@ private struct TVMenuCustomizationSheet: View {
             switch item {
             case .builtin(.movies): return hasLibrary(.movies)
             case .builtin(.series): return hasLibrary(.series)
-            case .builtin(.music), .library, .section, .collection: return false
+            case .library, .section, .collection: return false
             case .builtin(.home), .builtin(.forYou): return true
             }
         }

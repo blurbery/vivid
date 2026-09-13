@@ -92,16 +92,15 @@ final class HomeSectionPreferences {
         persist()
     }
 
-    /// Hidden rows are removed before the Skyline feed receives this array.
-    /// Consequently the next visible row occupies the same fixed row slot;
-    /// no placeholder or vertical gap can enter the Home layout.
+    /// Home omits hidden and empty rows. Settings also retains hidden row
+    /// definitions whose item requests were skipped, so they can be enabled again.
     func arrangedSections(
         _ sections: [ResolvedSection],
         includingHidden: Bool = false
     ) -> [ResolvedSection] {
         let projected = Self.combinedSections(sections, enabled: combineEmbyNextUp, provider: MediaServerProvider.active)
         let nonEmpty = projected.filter {
-            !$0.items.isEmpty && (MediaServerProvider.active != .emby || !EmbyAdapter.excludesHomeRow(id:$0.id,type:$0.sectionType,title:$0.title))
+            (includingHidden || !$0.items.isEmpty) && (MediaServerProvider.active != .emby || !EmbyAdapter.excludesHomeRow(id:$0.id,type:$0.sectionType,title:$0.title))
         }
         let rank = Dictionary(
             uniqueKeysWithValues: orderedSectionIds.enumerated().map { ($0.element, $0.offset) }
@@ -134,6 +133,13 @@ final class HomeSectionPreferences {
         layoutRevision &+= 1
         persist()
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
+    }
+
+    static func hiddenSections(server: String, profile: String) -> Set<String> {
+        let key = "\(platformStoragePrefix).\(server).\(profile)"
+        guard let data = SharedDefaults.shared.data(forKey: key),
+              let stored = try? JSONDecoder().decode(StoredLayout.self, from: data) else { return [] }
+        return stored.hiddenSectionIds
     }
 
     static func combinesEmbyNextUp(server: String, profile: String) -> Bool {

@@ -53,9 +53,8 @@ private struct DetailScrollDismissalModifier: ViewModifier {
             } action: { _, atTop in
                 isAtTop = atTop
             }
-            // A new pull can move the sheet as soon as content reaches the
-            // top, including while its bounce/deceleration is still active.
-            .presentationContentInteraction(isAtTop ? .resizes : .scrolls)
+            // The sheet owns its native drag policy. Top tracking here is
+            // only for Back on nested detail pages.
             .gesture(DetailBackGesture(isAtTop: isAtTop, goBack: goBack))
     }
 }

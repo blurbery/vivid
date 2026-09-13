@@ -19,7 +19,6 @@ enum StartupContentPrefetcher {
     private static let maxBrowseArtworkURLs = 12
     private static let maxProfileArtworkURLs = 8
     private static let browsePageSize = 60
-    private static let selectedLibraryDefaultsKey = "librariesTabSelectedLibraryId"
     private static let episodeSectionTypes: Set<String> = [
         "continue_watching",
         "in_progress",
@@ -30,7 +29,6 @@ enum StartupContentPrefetcher {
     private static var homeSectionsTask: Task<SectionsResponse, Error>?
     private static var recommendationsTask: Task<SectionsResponse, Error>?
     private static var userLibrariesTask: Task<LibrariesResponse, Error>?
-    private static var librarySectionsTasks: [Int: Task<SectionsResponse, Error>] = [:]
     private static var browseFirstPageTasks: [String: Task<CatalogResponse, Error>] = [:]
     private static var profileScopedGeneration = 0
     private static var homeSectionsGeneration = 0
@@ -45,13 +43,11 @@ enum StartupContentPrefetcher {
         homeSectionsTask?.cancel()
         recommendationsTask?.cancel()
         userLibrariesTask?.cancel()
-        librarySectionsTasks.values.forEach { $0.cancel() }
         browseFirstPageTasks.values.forEach { $0.cancel() }
 
         homeSectionsTask = nil
         recommendationsTask = nil
         userLibrariesTask = nil
-        librarySectionsTasks.removeAll()
         browseFirstPageTasks.removeAll()
     }
 
@@ -356,11 +352,6 @@ enum StartupContentPrefetcher {
     }
     #endif
 
-    static func prefetchRecommendations() {
-        Task {
-            _ = try? await fetchRecommendations()
-        }
-    }
 
     static func fetchRecommendations() async throws -> SectionsResponse {
         let generation = profileScopedGeneration
@@ -450,64 +441,6 @@ enum StartupContentPrefetcher {
         }
     }
 
-    static func prefetchLibraryLanding(libraryId: Int) {
-        prefetchLibrarySections(libraryId: libraryId)
-        prefetchBrowseFirstPage(libraryId: libraryId)
-    }
-
-    static func prefetchLibrarySections(libraryId: Int) {
-        Task {
-            _ = try? await fetchLibrarySections(libraryId: libraryId)
-        }
-    }
-
-    static func fetchLibrarySections(libraryId: Int) async throws -> SectionsResponse {
-        let generation = profileScopedGeneration
-        // Verbose: these two run once per library on the landing prefetch and
-        // again on every browse navigation, so at essential tier a session's
-        // worth of them would crowd out the launch chain. The library id is
-        // deliberately not recorded — there is no registered key for it, and
-        // it identifies the user's own content.
-        #if os(iOS) || os(tvOS)
-        let probe = PrefetchProbe.begin(
-            "library_sections",
-            verbosity: .verbose,
-            isOriginator: librarySectionsTasks[libraryId] == nil
-        )
-        #endif
-        let task: Task<SectionsResponse, Error>
-        if let existing = librarySectionsTasks[libraryId] {
-            task = existing
-        } else {
-            task = Task {
-                try await VividAPI.shared.librarySections(libraryId: libraryId)
-            }
-            librarySectionsTasks[libraryId] = task
-        }
-
-        do {
-            let response = try await task.value
-            try validateProfileScopedGeneration(generation)
-            if profileScopedGeneration == generation {
-                librarySectionsTasks[libraryId] = nil
-            }
-            #if os(iOS) || os(tvOS)
-            probe.finish(error: nil)
-            #endif
-            ResponseCache.shared.set(response, for: CacheKey.librarySections(libraryId))
-            prefetchSectionArtwork(for: response, maxCount: maxSectionArtworkURLs)
-            return response
-        } catch {
-            if profileScopedGeneration == generation {
-                librarySectionsTasks[libraryId] = nil
-            }
-            #if os(iOS) || os(tvOS)
-            probe.finish(error: error)
-            #endif
-            throw error
-        }
-    }
-
     static func prefetchBrowseFirstPage(libraryId: Int?, state: CatalogFilterState = .none) {
         Task {
             _ = try? await fetchBrowseFirstPage(libraryId: libraryId, state: state)
@@ -520,7 +453,7 @@ enum StartupContentPrefetcher {
     ) async throws -> CatalogResponse {
         let generation = profileScopedGeneration
         let key = CacheKey.browse(libraryId: libraryId, filterKey: state.cacheKeyFragment)
-        // Verbose for the same reason as `library_sections`, and the cache key
+        // Keep browse request detail in verbose diagnostics; the cache key
         // (library id plus the user's filter selections) is never logged.
         #if os(iOS) || os(tvOS)
         let probe = PrefetchProbe.begin(
@@ -578,10 +511,6 @@ enum StartupContentPrefetcher {
         TVHomeMetadataCache.shared.hydrate()
         #endif
         prefetchHomeSections()
-        #if !os(tvOS)
-        prefetchRecommendations()
-        prefetchActiveLibraryLanding()
-        #endif
         Task {
             await OverlayPrefsStore.shared.hydrateIfNeeded()
         }
@@ -618,30 +547,6 @@ enum StartupContentPrefetcher {
             break
         }
     }
-
-    #if !os(tvOS)
-    private static func prefetchActiveLibraryLanding() {
-        Task {
-            guard let response = try? await fetchUserLibraries(),
-                  let library = preferredLibrary(from: response.libraries) else { return }
-            prefetchLibraryLanding(libraryId: library.id)
-        }
-    }
-
-    private static func preferredLibrary(from libraries: [Library]) -> Library? {
-        let visibleLibraries = libraries
-            .sorted {
-                ($0.sortOrder ?? Int.max, $0.id) < ($1.sortOrder ?? Int.max, $1.id)
-            }
-        let storedId = UserDefaults.standard.integer(forKey: selectedLibraryDefaultsKey)
-        if storedId != 0,
-           let stored = visibleLibraries.first(where: { $0.id == storedId }) {
-            return stored
-        }
-        return visibleLibraries.first
-    }
-
-    #endif
 
     private static func prefetchHomeArtwork(for response: SectionsResponse) {
         // Warm row artwork at card size. The removed focus marquee no longer

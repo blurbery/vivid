@@ -753,7 +753,7 @@ final class TVSpotlightArtworkModel {
         // A previously-sampled tint (startup prefetch, earlier focus visit)
         // applies synchronously, so a cold-entry seed paints the wash on the
         // same frame as the backdrop.
-        if let cached = HeroBackdropPalette.cachedTint(for: url) {
+        if let cached = TVHomeMetadataCache.shared.cachedSpotlightTint(for: url) ?? HeroBackdropPalette.cachedTint(for: url) {
             lastSampledTintURL = urlString
             tintTask?.cancel()
             tintColor = cached
@@ -763,7 +763,7 @@ final class TVSpotlightArtworkModel {
         lastSampledTintURL = urlString
         tintTask?.cancel()
         tintTask = Task { [weak self] in
-            let tint = await HeroBackdropPalette.tintColor(for: url)
+            let tint = await TVHomeMetadataCache.shared.preparedSpotlightTint(for: url)
             guard !Task.isCancelled, let self, self.backdropURL == urlString else { return }
             guard let tint else {
                 if self.lastSampledTintURL == urlString {

@@ -12,9 +12,6 @@ actor EmbyLocalPreferences {
   "downloads.keep_watched": false,
   "downloads.wifi_only": true,
   "nav.primary_menu": null,
-  "nav.shortcuts": {
-    "items": []
-  },
   "playback.audio_language": null,
   "playback.auto_play_next": true,
   "playback.auto_play_next_preview": false,
@@ -94,9 +91,14 @@ actor EmbyLocalPreferences {
 
     func apply(storageKey: String, user: String, method: String, path: [String], query: [String:String], body: [String:Any]) throws -> Any {
         var rows = defaults.data(forKey:storageKey).flatMap { try? JSONSerialization.jsonObject(with:$0) as? [String:[String:Any]] } ?? [:]
+        let retainedRows = rows.filter { !$0.key.hasPrefix("nav.shortcuts.") }
+        if retainedRows.count != rows.count {
+            rows = retainedRows
+            defaults.set(try JSONSerialization.data(withJSONObject: rows), forKey: storageKey)
+        }
         if path.last == "capabilities" {
-            return ["api_version":1,"revision":SettingKey.revision,"contract_etag":"vivid-local-emby","definition_count":SettingKey.allCases.count,
-                "scopes":["profile","profile_client","profile_device"],"supports_batched_effective":true,"supports_idempotent_writes":true,"supports_atomic_shortcuts":true]
+            return ["api_version":1,"revision":SettingKey.revision,"contract_etag":"vivid-local-emby","definition_count":Self.contractDefaults.count,
+                "scopes":["profile","profile_client","profile_device"],"supports_batched_effective":true,"supports_idempotent_writes":true,"supports_atomic_shortcuts":false]
         }
         if path.last == "effective" {
             let keys = (query["keys"] ?? "").split(separator:",").map(String.init)
@@ -110,6 +112,7 @@ actor EmbyLocalPreferences {
             return ["settings":values,"revision":SettingKey.revision]
         }
         guard path.count >= 5, let key = SettingKey(rawValue:path[4]) else { throw EmbyError.unsupportedFeature }
+        guard key != .navShortcuts else { throw EmbyError.unsupportedFeature }
         let scope = query["scope"] ?? "profile"
         guard ["profile","profile_client","profile_device"].contains(scope) else { throw EmbyError.unsupportedFeature }
         let id = key.rawValue + "." + scope
@@ -119,16 +122,7 @@ actor EmbyLocalPreferences {
             return [:]
         }
         guard method == "PUT" else { throw EmbyError.unsupportedFeature }
-        var value = body["value"] ?? NSNull()
-        if key == .navShortcuts, path.last == "item" {
-            guard let item = body["item"], let present = body["present"] as? Bool else { throw EmbyError.invalidResponse }
-            let selected: PrimaryMenuItem = try EmbyAdapter.decode(item)
-            guard selected.isContractValid else { throw EmbyError.invalidResponse }
-            var stored: NavigationShortcutsPreference = try EmbyAdapter.decode(rows[id]?["value"] ?? ["items":[]])
-            if !present { stored.items.removeAll { $0.id == selected.id } }
-            else if !stored.items.contains(where: { $0.id == selected.id }) { stored.items.append(selected) }
-            value = try JSONSerialization.jsonObject(with:JSONEncoder().encode(stored))
-        }
+        let value = body["value"] ?? NSNull()
         if key == .navPrimaryMenu, !(value is NSNull) {
             let preference: PrimaryMenuPreference = try EmbyAdapter.decode(value)
             guard preference.isValid else { throw EmbyError.invalidResponse }

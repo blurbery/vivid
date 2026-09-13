@@ -31,8 +31,12 @@ struct TVSpotlightBackdropImage: View {
                 pixelSize: CGSize(width: size.width * displayScale, height: size.height * displayScale)
             )
             guard let loaded = try? await VividImagePipeline.shared.image(for: request), !Task.isCancelled else { return }
+            #if os(tvOS)
+            let region = await TVHomeMetadataCache.shared.preparedSpotlightSubject(in: loaded, url: imageURL.absoluteString)
+            #else
             let task = Task.detached(priority: .utility) { TVSpotlightCrop.subject(in: loaded, key: imageURL.absoluteString) }
             let region = await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
+            #endif
             guard !Task.isCancelled else { return }
             subject = region
             image = loaded

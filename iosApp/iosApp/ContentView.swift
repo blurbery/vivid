@@ -904,7 +904,6 @@ struct ContentView: View {
         return CommandLine.arguments[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-
     /// Debug: sign in from launch arguments, with the password accepted from
     /// `VIVID_DEBUG_PASSWORD` so physical-device runs do not expose it in the
     /// process arguments. Simulator fixtures may still pass `-debugPassword`.
@@ -1553,7 +1552,6 @@ extension EnvironmentValues {
 enum MainTabDestinationID: Hashable {
     case app(AppTab)
     case libraryCategory(PrimaryMenuBuiltin)
-    case library(Int)
 }
 
 struct MainTabDestination: Identifiable, Equatable {
@@ -1566,19 +1564,6 @@ struct MainTabDestination: Identifiable, Equatable {
         .init(id: .app(tab), title: tab.rawValue, icon: tab.icon, selectedIcon: tab.selectedIcon)
     }
 
-    static func library(
-        id: Int,
-        label: String,
-        icon: String = "rectangle.stack",
-        selectedIcon: String = "rectangle.stack.fill"
-    ) -> MainTabDestination {
-        .init(
-            id: .library(id),
-            title: label,
-            icon: icon,
-            selectedIcon: selectedIcon
-        )
-    }
 
     static func libraryCategory(_ category: PrimaryMenuBuiltin) -> MainTabDestination {
         return .init(
@@ -1590,17 +1575,8 @@ struct MainTabDestination: Identifiable, Equatable {
     }
 }
 
-private struct MainTabSidebarDestination: Identifiable {
-    let destination: MainTabDestination
-    let isNestedLibrary: Bool
-
-    var id: MainTabDestinationID { destination.id }
-}
-
-/// Projects the cross-client menu into roots this Apple shell can navigate
-/// without discarding destination identity. Sections and collections remain
-/// stored in the synced document, but stay hidden until this shell has a
-/// destination-specific root for them.
+/// Projects the server menu onto the supported Apple tabs. Retired library,
+/// section and collection shortcuts never become navigation roots.
 func projectedMainTabDestinations(
     primaryMenu: PrimaryMenuPreference?,
     availableLibraries: [Library] = []
@@ -1625,17 +1601,8 @@ func projectedMainTabDestinations(
         case .builtin(.home): destination = .app(.home)
         case .builtin(.movies): destination = .libraryCategory(.movies)
         case .builtin(.series): destination = .libraryCategory(.series)
-        case .builtin(.music): destination = nil
         case .builtin(.forYou): destination = .app(.recommendations)
-        case .library(let libraryId, let label):
-            let library = availableLibraries.first(where: { $0.id == libraryId })
-            destination = .library(
-                id: libraryId,
-                label: library?.name ?? label,
-                icon: library?.navigationIcon ?? "rectangle.stack",
-                selectedIcon: library?.selectedNavigationIcon ?? "rectangle.stack.fill"
-            )
-        case .section, .collection:
+        case .library, .section, .collection:
             destination = nil
         }
         if let destination,
@@ -1682,13 +1649,9 @@ func mainTabSupportsDestination(
         return availableLibraries.contains {
             libraryMatchesPrimaryMenuCategory($0, category: .series)
         }
-    case .builtin(.music):
-        return false
     case .builtin(.home), .builtin(.forYou):
         return true
-    case .library(let libraryId, _):
-        return availableLibraries.contains { $0.id == libraryId }
-    case .section, .collection:
+    case .library, .section, .collection:
         return false
     }
 }
@@ -1710,7 +1673,7 @@ func resolvedRequestedMainTabDestination(
        !visibleDestinations.contains(where: { $0.id == .app(.libraries) }),
        let authoredLibraryRoot = visibleDestinations.first(where: {
            switch $0.id {
-           case .libraryCategory, .library:
+           case .libraryCategory:
                return true
            case .app:
                return false
@@ -1782,12 +1745,6 @@ struct MainTabView: View {
     /// detail destination resolve the same identity.
     @Namespace private var zoomNamespace
     @Environment(\.scenePhase) private var scenePhase
-    #if os(iOS)
-    /// For You is normally constructed lazily by TabView. Own its model at the
-    /// shell level so the existing startup single-flight can fill it before
-    /// the user taps the tab, making the destination paint immediately.
-    @State private var recommendationsViewModel = RecommendationsViewModel()
-    #endif
     #if !os(macOS)
     @Environment(\.horizontalSizeClass) private var hSize
     #endif
@@ -2136,8 +2093,7 @@ struct MainTabView: View {
     private var iPadSidebarLayout: some View {
         NavigationSplitView(columnVisibility: $iPadColumnVisibility) {
             sidebarList(
-                dismissAfterSelection: true,
-                nestsPinnedLibraries: true
+                dismissAfterSelection: true
             )
                 .background {
                     FixedPrimarySplitViewWidth(
@@ -2201,8 +2157,7 @@ struct MainTabView: View {
     private var macSidebarLayout: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarList(
-                dismissAfterSelection: false,
-                nestsPinnedLibraries: false
+                dismissAfterSelection: false
             )
                 .navigationTitle(sidebarTitle)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 280)
@@ -2232,8 +2187,7 @@ struct MainTabView: View {
     }
 
     private func sidebarList(
-        dismissAfterSelection: Bool,
-        nestsPinnedLibraries: Bool
+        dismissAfterSelection: Bool
     ) -> some View {
         List(selection: Binding<MainTabDestinationID?>(
             get: { selectedDestinationID },
@@ -2245,54 +2199,19 @@ struct MainTabView: View {
                 }
             }
         )) {
-            ForEach(sidebarDestinations(nestingPinnedLibraries: nestsPinnedLibraries)) { item in
-                let destination = item.destination
+            ForEach(visibleDestinations) { destination in
                 Label(
                     destination.title,
                     systemImage: selectedDestinationID == destination.id
                         ? destination.selectedIcon
                         : destination.icon
                 )
-                .padding(.leading, item.isNestedLibrary ? 24 : 0)
                 .tag(destination.id)
             }
         }
         // The sidebar's few rows rarely overflow; without this the list
         // still rubber-bands on drag, visually dragging the whole bar.
         .scrollBounceBehavior(.basedOnSize)
-    }
-
-    private func sidebarDestinations(
-        nestingPinnedLibraries: Bool
-    ) -> [MainTabSidebarDestination] {
-        guard nestingPinnedLibraries else {
-            return visibleDestinations.map {
-                MainTabSidebarDestination(destination: $0, isNestedLibrary: false)
-            }
-        }
-
-        let availableLibraries = librarySnapshot.availableLibraries(
-            for: currentLibraryAuthority
-        )
-        return groupPinnedLibrariesUnderMediaTypes(
-            visibleDestinations,
-            libraries: availableLibraries,
-            libraryID: { destination in
-                guard case .library(let libraryID) = destination.id else { return nil }
-                return libraryID
-            },
-            mediaTypeCategory: { destination in
-                guard case .libraryCategory(let category) = destination.id else {
-                    return nil
-                }
-                return category
-            }
-        ).map {
-            MainTabSidebarDestination(
-                destination: $0.element,
-                isNestedLibrary: $0.isNestedLibrary
-            )
-        }
     }
 
     /// Collapses or re-expands the sidebar without moving the detail content.
@@ -2344,12 +2263,6 @@ struct MainTabView: View {
                 libraryAuthority: currentLibraryAuthority,
                 onLibrariesLoaded: acceptLoadedLibraries
             )
-        case .library(let libraryId):
-            LibrariesTabView(
-                fixedLibraryId: libraryId,
-                libraryAuthority: currentLibraryAuthority,
-                onLibrariesLoaded: acceptLoadedLibraries
-            )
         }
     }
 
@@ -2377,11 +2290,7 @@ struct MainTabView: View {
             SearchView()
 
         case .recommendations:
-            #if os(iOS)
-            RecommendationsView(viewModel: recommendationsViewModel)
-            #else
             RecommendationsView()
-            #endif
 
         case .downloads:
             #if os(tvOS)
@@ -2403,7 +2312,7 @@ struct MainTabView: View {
     private func routeContent(for route: Route) -> some View {
         switch route {
         case .library(let libraryId, let title):
-            LibraryDetailView(libraryId: libraryId, initialTitle: title)
+            BrowseView(libraryId: libraryId, title: title)
         case .libraryCollection(let libraryId, let collectionId, let title, let kind):
             LibraryCollectionDetailView(
                 libraryId: libraryId,
@@ -2613,6 +2522,9 @@ private struct ItemDetailSheet: View {
         // Native pull-down dismissal still returns to the exact source page.
         .presentationSizing(.page)
         .presentationDetents([.large])
+        // Keep one native sheet/scroll policy throughout a continuous drag.
+        // Switching policies at the top can leave a reversing drag in content bounce.
+        .presentationContentInteraction(.resizes)
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(28)
         .presentationBackground(.ultraThickMaterial)

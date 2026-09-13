@@ -95,7 +95,6 @@ struct TVMainTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-
     var body: some View {
         ZStack(alignment: .top) {
             NavigationStack(path: $router.path) {
@@ -335,7 +334,7 @@ struct TVMainTabView: View {
             case .builtin(.movies): root = availableRoot(for: .movies)
             case .builtin(.series): root = availableRoot(for: .series)
             case .builtin(.forYou): root = .recommendations
-            case .builtin(.music), .library, .section, .collection:
+            case .library, .section, .collection:
                 root = nil
             }
             if let root, !roots.contains(root) { roots.append(root) }
@@ -543,7 +542,7 @@ struct TVMainTabView: View {
     private func routeContent(for route: Route) -> some View {
         switch route {
         case .library(let libraryId, let title):
-            LibraryDetailView(libraryId: libraryId, initialTitle: title)
+            BrowseView(libraryId: libraryId, title: title)
         case .libraryCollection(let libraryId, let collectionId, let title, let kind):
             LibraryCollectionDetailView(
                 libraryId: libraryId,
