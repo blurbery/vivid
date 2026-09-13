@@ -238,10 +238,21 @@ class HomeViewModel {
     private var needsSectionsRefresh = false
     private var sectionsRevision = 0
 
-    func refreshPlaybackSections() async {
+    private var hasEnteredHome = false
+
+    /// Keep the hydrated snapshot for immediate entry, then refresh existing
+    /// rows on first entry, a stale return, or a queued playback change.
+    func refreshForHomeEntry(sinceLastHidden hiddenAt: Date?, now: Date = Date()) async {
+        let isStaleReturn = hiddenAt.map { now.timeIntervalSince($0) >= 60 } ?? false
+        guard !hasEnteredHome || isStaleReturn || needsSectionsRefresh || error != nil else { return }
+        await loadSections()
+        if !Task.isCancelled, error == nil { hasEnteredHome = true }
+    }
+
+    func refreshPlaybackSections(refreshImmediately: Bool = true) async {
         sectionsRevision &+= 1
         needsSectionsRefresh = true
-        await loadSections()
+        if refreshImmediately { await loadSections() }
     }
 
     var isShowingActionError: Bool {

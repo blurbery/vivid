@@ -53,6 +53,9 @@ targetTemplates:
         VIVID_BUILD_CHANNEL: release
 
 packages:
+  CollectionHStack:
+    url: https://github.com/LePips/CollectionHStack
+    revision: 15baaaa759a0e252addae08431c79a49a25e4afc
   AetherEngine:
     path: ../AetherEngine
   VividKit:
@@ -149,6 +152,8 @@ targets:
         product: VividKit
       - package: AetherEngine
         product: AetherEngine
+      - package: CollectionHStack
+        product: CollectionHStack
       - target: VividTVTopShelf
         embed: true
 

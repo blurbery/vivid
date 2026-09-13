@@ -22,13 +22,12 @@ struct TVHomeDiscoveryFeed: View {
     @State private var firstRowFocusRequest = 0
     @State private var spotlightOpenedDetail = false
     @State private var appliedFocusRequest = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var spotlightFocused: Bool { spotlightFocusedPosition != nil }
     private static let spotlightAnchor = "vivid.home.discovery.spotlight"
 
     var body: some View {
         let _ = scrollDiagnostics.event("feed.body")
-        ScrollViewReader { proxy in
+        Group {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 30) {
                     if !slides.isEmpty {
@@ -82,7 +81,7 @@ struct TVHomeDiscoveryFeed: View {
                         }
                     }
                     // Stable row shells give native vertical focus exact positions.
-                    // Each horizontal card strip keeps its own lazy layout.
+                    // Horizontal UIKit collections retain native focus and reuse cells.
                 }
                 .environment(\.tvHomeStableRows, true)
                 .padding(.top, 152)
@@ -92,14 +91,14 @@ struct TVHomeDiscoveryFeed: View {
             .onChange(of: focusRequest, initial: true) { _, request in
                 guard request > appliedFocusRequest, !isTopMenuFocused else { return }
                 appliedFocusRequest = request
-                if slides.isEmpty { enterFirstRow(using: proxy) }
-                else { enterSpotlight(using: proxy) }
+                if slides.isEmpty { enterFirstRow() }
+                else { enterSpotlight() }
             }
             .onChange(of: detailReturnFocusRequest) { _, _ in
-                if spotlightOpenedDetail { enterSpotlight(using: proxy) }
+                if spotlightOpenedDetail { enterSpotlight() }
             }
             .onChange(of: slides.isEmpty) { _, empty in
-                if empty && spotlightFocused { enterFirstRow(using: proxy) }
+                if empty && spotlightFocused { enterFirstRow() }
             }
             .onChange(of: isTopMenuFocused) { _, focused in
                 if focused { rowFocusOwnership.rowID = nil }
@@ -117,7 +116,7 @@ struct TVHomeDiscoveryFeed: View {
         .ignoresSafeArea()
     }
 
-    private func enterSpotlight(using proxy: ScrollViewProxy) {
+    private func enterSpotlight() {
         guard !slides.isEmpty else { onTopMenuFocusRequest?(); return }
         // The spotlight is mounted eagerly. Let the focus engine perform its
         // own scroll instead of racing a separate ScrollViewReader animation.
@@ -125,13 +124,10 @@ struct TVHomeDiscoveryFeed: View {
         spotlightFocusedPosition = rowFocusMemory.spotlightPosition
     }
 
-    private func enterFirstRow(using proxy: ScrollViewProxy) {
+    private func enterFirstRow() {
         guard let first = sections.first else { return }
         spotlightFocusedPosition = nil
         rowFocusOwnership.rowID = first.id
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-            proxy.scrollTo(first.id, anchor: .center)
-        }
         firstRowFocusRequest += 1
     }
 }

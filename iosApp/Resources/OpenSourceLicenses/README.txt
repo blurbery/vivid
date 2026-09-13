@@ -134,3 +134,13 @@ LibDovi (tvOS playback)
   Version: 2.1.0, dolby_vision 3.4.0
   Source and rebuild script: https://github.com/superuser404notfound/LibDovi/tree/2.1.0
   Licence: MIT, bundled separately.
+
+CollectionHStack (tvOS Home rows)
+  Revision: 15baaaa759a0e252addae08431c79a49a25e4afc
+  Source: https://github.com/LePips/CollectionHStack/tree/15baaaa759a0e252addae08431c79a49a25e4afc
+  MIT, bundled in CollectionHStack-DifferenceKit-MIT.txt.
+
+DifferenceKit (CollectionHStack dependency)
+  Version: 1.3.0, revision 073b9671ce2b9b5b96398611427a1f929927e428
+  Source: https://github.com/ra1028/DifferenceKit/tree/073b9671ce2b9b5b96398611427a1f929927e428
+  MIT, bundled in CollectionHStack-DifferenceKit-MIT.txt.

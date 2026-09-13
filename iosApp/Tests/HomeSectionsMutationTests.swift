@@ -63,6 +63,56 @@ final class HomeSectionsMutationTests: XCTestCase {
         XCTAssertEqual(result[0].items.count, 1)
     }
 
+    @MainActor
+    func testHomeEntryRetainsCachedRowsAndSkipsShortReturns() async throws {
+        let rows = [makeSection(id: "latest", type: "latest", totalCount: 1,
+                                items: [try makeItem(contentId: "cached")])]
+        ResponseCache.shared.set(SectionsResponse(sections: rows), for: CacheKey.homeSections)
+        defer { ResponseCache.shared.remove(CacheKey.homeSections) }
+        var requests = 0
+        let model = HomeViewModel(fetchHomeSections: {
+            requests += 1
+            return SectionsResponse(sections: rows)
+        })
+        XCTAssertEqual(model.sections, rows)
+        XCTAssertFalse(model.isLoading)
+        let hiddenAt = Date(timeIntervalSince1970: 1_000)
+        await model.refreshForHomeEntry(sinceLastHidden: nil, now: hiddenAt)
+        XCTAssertEqual(requests, 1)
+        await model.refreshForHomeEntry(sinceLastHidden: hiddenAt,
+                                        now: hiddenAt.addingTimeInterval(59))
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(model.sections, rows)
+        await model.refreshForHomeEntry(sinceLastHidden: hiddenAt,
+                                        now: hiddenAt.addingTimeInterval(60))
+        XCTAssertEqual(requests, 2)
+    }
+
+    @MainActor
+    func testHiddenHomeChangesCoalesceUntilReturn() async throws {
+        let original = [makeSection(id: "latest", type: "latest", totalCount: 1,
+                                    items: [try makeItem(contentId: "original")])]
+        let updated = [makeSection(id: "latest", type: "latest", totalCount: 1,
+                                   items: [try makeItem(contentId: "updated")])]
+        ResponseCache.shared.set(SectionsResponse(sections: original), for: CacheKey.homeSections)
+        defer { ResponseCache.shared.remove(CacheKey.homeSections) }
+        var requests = 0
+        let model = HomeViewModel(fetchHomeSections: {
+            requests += 1
+            return SectionsResponse(sections: requests == 1 ? original : updated)
+        })
+        await model.refreshForHomeEntry(sinceLastHidden: nil)
+        await model.refreshPlaybackSections(refreshImmediately: false)
+        await model.refreshPlaybackSections(refreshImmediately: false)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(model.sections, original)
+        await model.refreshForHomeEntry(sinceLastHidden: Date())
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(model.sections, updated)
+        await model.refreshForHomeEntry(sinceLastHidden: Date())
+        XCTAssertEqual(requests, 2)
+    }
+
     private enum TestError: Error {
         case failed
     }
