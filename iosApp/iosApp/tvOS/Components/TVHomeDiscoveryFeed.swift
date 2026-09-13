@@ -451,7 +451,8 @@ private struct TVHomeSpotlightCarousel: View {
     let onSelect: (TVHomeSpotlightSlide) -> Void
 
     @State private var visualPosition = 0
-    @State private var scrollPosition: Int? = 0
+    @State private var scrollPosition = ScrollPosition(id: 0, anchor: .center)
+    @State private var scrollGeometry = TVSpotlightScrollGeometry()
     @State private var lowerPosition: Int
     @State private var upperPosition: Int
     @State private var pendingPosition: Int?
@@ -483,7 +484,7 @@ private struct TVHomeSpotlightCarousel: View {
         self.isTopMenuFocused = isTopMenuFocused
         self.onSelect = onSelect
         _visualPosition = State(initialValue: startPosition)
-        _scrollPosition = State(initialValue: startPosition)
+        _scrollPosition = State(initialValue: ScrollPosition(id: startPosition, anchor: .center))
         let span = max(1, slides.count * 3)
         _lowerPosition = State(initialValue: startPosition - span)
         _upperPosition = State(initialValue: startPosition + span + 1)
@@ -520,11 +521,31 @@ private struct TVHomeSpotlightCarousel: View {
         guard slides.count > 1 else { return }
         let margin = slides.count
         let span = slides.count * 3
-        // Keep native button targets available ahead of a held direction.
-        // Recycle only distant positions; the focused card keeps its identity.
+        // Keep a runway in both directions without changing card identities.
         if position - lowerPosition < margin || upperPosition - position <= margin {
-            lowerPosition = position - span
-            upperPosition = position + span + 1
+            if focus.wrappedValue == nil {
+                // Automatic movement recycles after its animation has finished.
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    lowerPosition = position - span
+                    upperPosition = position + span + 1
+                    scrollPosition.scrollTo(id: position, anchor: .center)
+                }
+            } else {
+                // Preserve the exact visible offset, including a partial slide,
+                // when removing copies changes the content coordinate origin.
+                let shift = CGFloat(position - span - lowerPosition) * scrollGeometry.cardStride
+                let offset = scrollGeometry.offset - shift
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                transaction.scrollPositionUpdatePreservesVelocity = true
+                withTransaction(transaction) {
+                    lowerPosition = position - span
+                    upperPosition = position + span + 1
+                    scrollPosition.scrollTo(x: offset)
+                }
+            }
         }
     }
 
@@ -577,12 +598,33 @@ private struct TVHomeSpotlightCarousel: View {
                 .contentMargins(.horizontal, 60, for: .scrollContent)
                 .scrollTargetBehavior(.viewAligned)
                 .defaultScrollAnchor(.center, for: .initialOffset)
-                .scrollPosition(id: $scrollPosition, anchor: .center)
+                .scrollPosition($scrollPosition)
+                .onScrollGeometryChange(for: CGFloat.self) {
+                    $0.contentOffset.x + $0.contentInsets.leading
+                } action: { _, offset in
+                    scrollGeometry.offset = offset
+                    scrollGeometry.cardStride = cardWidth + 22
+                    if focus.wrappedValue == visualPosition {
+                        updatePositionWindow(around: visualPosition)
+                    }
+                }
                 .coordinateSpace(name: carouselSpace)
                 .defaultFocus(focus, visualPosition)
                 .scrollClipDisabled()
                 .onScrollPhaseChange { _, phase in
                     scrollIsMoving = phase != .idle
+                    if phase == .idle, focus.wrappedValue == nil {
+                        updatePositionWindow(around: visualPosition)
+                    }
+                    // A recycled origin can leave a fractional offset after
+                    // native deceleration. Finish alignment without moving focus.
+                    let target = CGFloat(visualPosition - lowerPosition) * scrollGeometry.cardStride
+                    if phase == .idle, initialCardPresented, focus.wrappedValue == visualPosition,
+                       abs(scrollGeometry.offset - target) > 1 {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                            scrollPosition.scrollTo(id: visualPosition, anchor: .center)
+                        }
+                    }
                 }
                 .focusSection()
             }
@@ -652,7 +694,6 @@ private struct TVHomeSpotlightCarousel: View {
     private func selectPosition(_ position: Int) {
         guard !slides.isEmpty, position != visualPosition else { return }
         let previousIndex = index
-        updatePositionWindow(around: position)
         visualPosition = position
         // The parent restores this exact native card after leaving the spotlight.
         onPositionChange(position)
@@ -694,7 +735,7 @@ private struct TVHomeSpotlightCarousel: View {
             // from ScrollPosition must never advance the selected slide.
             selectPosition(position)
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
-                scrollPosition = position
+                scrollPosition.scrollTo(id: position, anchor: .center)
             }
         }
     }
@@ -708,10 +749,28 @@ private struct TVSpotlightButtonStyle: ButtonStyle {
         configuration.label
             .overlay {
                 RoundedRectangle(cornerRadius: 22)
-                    .strokeBorder(.white.opacity(isFocused ? 0.9 : 0), lineWidth: 1.5)
+                    .strokeBorder(
+                        LinearGradient(stops: [
+                            .init(color: .white.opacity(0.95), location: 0),
+                            .init(color: .white.opacity(0.45), location: 0.28),
+                            .init(color: .white.opacity(0.15), location: 0.52),
+                            .init(color: .white.opacity(0.4), location: 0.76),
+                            .init(color: .white.opacity(0.8), location: 1)
+                        ], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1.5
+                    )
+                    .opacity(isFocused ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
             .opacity(configuration.isPressed ? 0.85 : 1)
     }
+}
+
+/// Scroll measurements do not invalidate artwork or the Home view on each frame.
+private final class TVSpotlightScrollGeometry {
+    var offset: CGFloat = 0
+    var cardStride: CGFloat = 1
 }
 
 private struct TVHomeSpotlightArtwork: View {
