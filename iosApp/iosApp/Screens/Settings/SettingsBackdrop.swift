@@ -55,7 +55,7 @@ struct SettingsBackdrop: View {
 struct TVAppBackdrop: View {
     var body: some View {
         LinearGradient(
-            colors: [Color(hex: "#17191C"), Color(hex: "#0B0C0E")],
+            colors: [Color(hex: "#101114"), Color(hex: "#030405")],
             startPoint: .top,
             endPoint: .bottom
         )

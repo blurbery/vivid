@@ -94,6 +94,7 @@ struct TVTopMenuBar: View {
         .ignoresSafeArea(edges: [.top, .horizontal])
         .animation(reduceMotion ? nil : .easeInOut(duration: VividTheme.normalDuration), value: isMenuFocused)
         .focusSection()
+        .defaultFocus($focusedItem, .root(selectedRoot), priority: .userInitiated)
         .disabled(isFocusSuppressed)
         .background(
             TVTopMenuExitPressCatcher(isActive: shouldCaptureExitPress, onExit: handleExitPress)
