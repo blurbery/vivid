@@ -15,59 +15,47 @@ struct TVHomeScreenSettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    TVSettingsSectionHeader("HOME SCREEN")
-                    HStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Home Screen")
-                                .font(.system(size: 26, weight: .medium))
-                            Text("Choose up to 3 spotlight rows. \(selected.count) selected.")
-                                .font(.system(size: 18))
-                                .foregroundStyle(Color.vividSecondaryText)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                TVSettingsPageHeader(
+                    title: "Home Screen",
+                    subtitle: "Choose up to 3 spotlight rows. \(selected.count) selected."
+                ) {
+                    Button("Done") { dismiss() }
+                        .buttonStyle(TVHomeSectionsControlButtonStyle())
+                        .focused($doneFocused)
+                }
+
+                if isLoading && sections.isEmpty {
+                    ProgressView().frame(maxWidth: .infinity)
+                } else if loadFailed && sections.isEmpty {
+                    TVSettingsFooter("Couldn’t load your Home rows.")
+                    Button("Try Again") { Task { await loadSections() } }
+                } else {
+                    TVSettingsGroup {
+                        ForEach(sections) { section in
+                            row(id: section.id, title: section.title)
                         }
-                        Spacer(minLength: 24)
-                        Button("Done") { dismiss() }
-                            .buttonStyle(TVHomeSectionsControlButtonStyle())
-                            .focused($doneFocused)
+                        ForEach(missingRowIDs, id: \.self) { id in
+                            row(id: id, title: "Unavailable Home row — remove from spotlight")
+                        }
+
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    .background(TVSettingsPalette.groupFill)
-                    .overlay(Rectangle().strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1))
-
-                    if isLoading && sections.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity)
-                    } else if loadFailed && sections.isEmpty {
-                        TVSettingsFooter("Couldn’t load your Home rows.")
-                        Button("Try Again") { Task { await loadSections() } }
+                    if sections.isEmpty {
+                        TVSettingsFooter("Your Home rows will appear here when your server has media to show.")
                     } else {
-                        TVSettingsGroup {
-                            ForEach(sections) { section in
-                                row(id: section.id, title: section.title)
-                            }
-                            ForEach(missingRowIDs, id: \.self) { id in
-                                row(id: id, title: "Unavailable Home row — remove from spotlight")
-                            }
-
-                        }
-                        if sections.isEmpty {
-                            TVSettingsFooter("Your Home rows will appear here when your server has media to show.")
-                        } else {
-                            TVSettingsFooter(selected.count == 3
-                                ? "To choose a different row, turn off one of the selected rows first."
-                                : "Choose no rows to hide the spotlight. Changes save automatically.")
-                        }
+                        TVSettingsFooter(selected.count == 3
+                            ? "To choose a different row, turn off one of the selected rows first."
+                            : "Choose no rows to hide the spotlight. Changes save automatically.")
                     }
                 }
-                .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(.horizontal, 72)
-                .padding(.vertical, 36)
             }
-            .navigationTitle("Home Screen")
-            .task { await loadSections() }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, 72)
+            .padding(.vertical, 36)
         }
+        .tvSettingsPageSurface()
+        .task { await loadSections() }
         .defaultFocus($doneFocused, true)
         .onExitCommand { dismiss() }
     }

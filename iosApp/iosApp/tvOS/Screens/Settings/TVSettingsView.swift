@@ -5,10 +5,6 @@ struct TVSettingsView: View {
     @State private var viewModel = TVSettingsViewModel()
     @State private var selectedCategory: TVSettingsCategory = .general
     private let pageCategory: TVSettingsCategory?
-    @State private var activePicker: TVSettingsPickerRequest?
-    @State private var pendingPickerFocus: TVSettingsDetailFocus?
-    @State private var isRestoringDetailFocus = false
-    @State private var preferredFocusOwner: FocusOwner = .rail
     @State private var preferredDetailFocus: TVSettingsDetailFocus = .top
     @FocusState private var railFocus: RailItem?
     @FocusState private var detailFocus: TVSettingsDetailFocus?
@@ -29,45 +25,23 @@ struct TVSettingsView: View {
 
             settingsContent
 
-            if let activePicker {
-                TVSettingsPickerSheet(
-                    title: activePicker.title,
-                    options: activePicker.options,
-                    selection: activePicker.selection,
-                    onDismiss: dismissPicker
-                )
-                .onDisappear(perform: restorePickerFocus)
-                .zIndex(2)
-            }
-
-
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .tint(.white)
+        .preferredColorScheme(.dark)
         .task {
             await viewModel.load()
         }
-        .onChange(of: railFocus) { _, focus in
-            if focus != nil,
-               activePicker == nil,
-               !isRestoringDetailFocus {
-                preferredFocusOwner = .rail
-            }
-        }
         .onChange(of: detailFocus) { _, focus in
-            if let focus,
-               activePicker == nil,
-               !isRestoringDetailFocus {
+            if let focus {
                 preferredDetailFocus = focus
-                preferredFocusOwner = .detail
             }
         }
 
     }
 
     private func restoreMenuFocus() {
-        guard pageCategory == nil, activePicker == nil else { return }
-        preferredFocusOwner = .rail
+        guard pageCategory == nil else { return }
         detailFocus = nil
         railFocus = .category(selectedCategory)
         Task { @MainActor in
@@ -78,22 +52,16 @@ struct TVSettingsView: View {
         }
     }
 
-    private var hasSettingsOverlay: Bool {
-        activePicker != nil
-    }
-
     private var settingsContent: some View {
         Group {
             if pageCategory != nil {
                 settingsCategoryPage
             } else {
                 ZStack {
-                    SettingsBackdrop()
                     ScrollView(.vertical, showsIndicators: false) {
                         rail.padding(24)
                     }
                         .frame(maxWidth: TVSettingsLayout.pageWidth)
-                        .disabled(hasSettingsOverlay || isRestoringDetailFocus)
                         .defaultFocus($railFocus, .category(selectedCategory), priority: .userInitiated)
                         .focusSection()
                         .focusScope(railFocusScope)
@@ -109,10 +77,8 @@ struct TVSettingsView: View {
 
     private var settingsCategoryPage: some View {
         ZStack {
-            SettingsBackdrop()
             detailPane
                 .frame(maxWidth: TVSettingsLayout.pageWidth, maxHeight: .infinity, alignment: .topLeading)
-                .disabled(hasSettingsOverlay)
                 .defaultFocus($detailFocus, preferredDetailFocus, priority: .userInitiated)
                 .focusSection()
                 .focusScope(detailFocusScope)
@@ -121,7 +87,6 @@ struct TVSettingsView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
-            preferredFocusOwner = .detail
             railFocus = nil
             if preferredDetailFocus == .top {
                 preferredDetailFocus = initialDetailFocus(for: selectedCategory)
@@ -135,23 +100,10 @@ struct TVSettingsView: View {
 
     private var rail: some View {
         VStack(alignment: .leading, spacing: 6) {
-            settingsHeader(title: "Settings", subtitle: "Make Vivid work the way you like.") {
-                Image(systemName: "gearshape")
-            }
-            .padding(.bottom, 20)
-
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    TVSettingsSectionHeader("PROFILES")
-                    TVSettingsGroup { profileRow }
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    TVSettingsSectionHeader("SETTINGS")
-                    VStack(spacing: 12) {
-                        ForEach(visibleCategories) { category in categoryRow(category) }
-                    }
-                }
+            TVSettingsOverview {
+                profileRow
+            } categories: {
+                ForEach(visibleCategories) { category in categoryRow(category) }
             }
 
             Spacer(minLength: 12)
@@ -190,7 +142,6 @@ struct TVSettingsView: View {
             HStack(spacing: 16) {
                 categoryImage(category)
                     .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 48, height: 48)
                     .background(
                         TVSettingsPalette.iconFill,
@@ -225,7 +176,6 @@ struct TVSettingsView: View {
     private func enterDetailPane(for category: TVSettingsCategory) {
         guard pageCategory == nil else { return }
         selectedCategory = category
-        preferredFocusOwner = .detail
         preferredDetailFocus = initialDetailFocus(for: category)
         railFocus = nil
         router.path.append(category)
@@ -243,54 +193,8 @@ struct TVSettingsView: View {
     }
 
     private func returnFocusToRail() {
-        guard activePicker == nil,
-              !isRestoringDetailFocus else {
-            return
-        }
-        preferredFocusOwner = .rail
         detailFocus = nil
         router.goBack()
-    }
-
-    private func presentPicker(_ request: TVSettingsPickerRequest) {
-        // Remove every underlying focus candidate in the same update that
-        // mounts the modal. The picker then becomes the sole focus owner.
-        preferredFocusOwner = .detail
-        preferredDetailFocus = request.returnFocus
-        railFocus = nil
-        detailFocus = nil
-        activePicker = request
-    }
-
-    private func dismissPicker() {
-        guard let target = activePicker?.returnFocus else {
-            activePicker = nil
-            return
-        }
-
-        // Keep the rail out of the graph while SwiftUI removes the modal.
-        // The exact row is restored from the overlay's onDisappear callback,
-        // after its focus subtree has actually left the hierarchy.
-        preferredFocusOwner = .detail
-        preferredDetailFocus = target
-        pendingPickerFocus = target
-        isRestoringDetailFocus = true
-        activePicker = nil
-    }
-
-    private func restorePickerFocus() {
-        guard let target = pendingPickerFocus else { return }
-        Task { @MainActor in
-            await Task.yield()
-            guard pendingPickerFocus == target, activePicker == nil else { return }
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                detailFocus = target
-                pendingPickerFocus = nil
-                isRestoringDetailFocus = false
-            }
-        }
     }
 
     /// The tab request is the only action needed: TVMainTabView's
@@ -304,7 +208,15 @@ struct TVSettingsView: View {
 
     // MARK: - Detail pane
 
-    private var detailPane: some View {
+    @ViewBuilder private var detailPane: some View {
+        if selectedCategory == .about {
+            AboutSettingsView()
+        } else {
+            categoryControls
+        }
+    }
+
+    private var categoryControls: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 8) {
                 paneHeader
@@ -326,39 +238,7 @@ struct TVSettingsView: View {
     }
 
     private var paneHeader: some View {
-        settingsHeader(title: selectedCategory.title, subtitle: selectedCategory.blurb) {
-            categoryImage(selectedCategory)
-        }
-    }
-
-    private func settingsHeader<Icon: View>(title: String, subtitle: String, @ViewBuilder icon: () -> Icon) -> some View {
-        HStack(alignment: .center, spacing: 20) {
-            icon()
-                .font(.system(size: 27, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 62, height: 62)
-                .background(
-                    TVSettingsPalette.iconFill,
-                    in: RoundedRectangle(cornerRadius: 15.5, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 15.5)
-                        .strokeBorder(TVSettingsPalette.separator, lineWidth: 1)
-                }
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 7) {
-                Text(title)
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-
-                Text(subtitle)
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.vividSecondaryText)
-            }
-        }
-        .padding(.horizontal, 24)
-        .accessibilityElement(children: .combine)
+        TVSettingsPageHeader(title: selectedCategory.title, subtitle: selectedCategory.blurb)
     }
 
     @ViewBuilder
@@ -371,14 +251,12 @@ struct TVSettingsView: View {
         case .playback:
             TVPlaybackSettingsPane(
                 viewModel: viewModel,
-                detailFocus: $detailFocus,
-                presentPicker: presentPicker
+                detailFocus: $detailFocus
             )
         case .subtitles:
             TVSubtitleSettingsPane(
                 viewModel: viewModel,
-                detailFocus: $detailFocus,
-                presentPicker: presentPicker
+                detailFocus: $detailFocus
             )
         case .plugins:
             PluginsSettingsView()
@@ -437,13 +315,7 @@ struct TVSettingsView: View {
         case signOut
     }
 
-    private enum FocusOwner {
-        case rail
-        case detail
-    }
-
     private var visibleCategories: [TVSettingsCategory] { TVSettingsCategory.allCases }
-
 
 }
 
@@ -538,7 +410,6 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .about: return "App details and contact"
         }
     }
-
 
 }
 #endif

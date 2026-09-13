@@ -1,11 +1,18 @@
 import SwiftUI
 
-/// Settings page backdrop. tvOS retains the full-page layout while letting
-/// the native presentation container supply its colour.
+/// A fixed Settings canvas. Its opaque base keeps underlying pages out of
+/// both ordinary navigation and modal presentations.
 struct SettingsBackdrop: View {
     var body: some View {
         #if os(tvOS)
-        Color.clear.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+        LinearGradient(
+            colors: [Color(hex: "#283840"), Color(hex: "#283239"), Color(hex: "#303238")],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
         #elseif os(iOS)
         Color.black.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
         #else

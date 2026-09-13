@@ -44,7 +44,7 @@ enum OpenSourceAcknowledgements {
         let text: String
     }
 
-    // Cached once, and first accessed from a utility task by the TV popup.
+    // Cached once, and first accessed from a utility task by the TV page.
     static let blocks: [Block] = {
         var result: [Block] = []
         for resource in resources {
@@ -127,48 +127,39 @@ struct TVOpenSourceAcknowledgementsOverlay: View {
     @FocusState private var focusedBlock: Int?
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                Color.black.opacity(0.8).ignoresSafeArea()
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 24) {
-                        Text("Open Source Licences")
-                            .font(.system(size: 38, weight: .semibold))
-                        if blocks.isEmpty {
-                            ProgressView("Loading licences…")
-                        }
-                        ForEach(blocks) { block in
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text(block.title).font(.system(size: 27, weight: .semibold))
-                                Text(verbatim: block.text)
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 14)
-                                    .strokeBorder(.white.opacity(focusedBlock == block.id ? 0.85 : 0), lineWidth: 2)
-                            }
-                            .focusable()
-                            .focused($focusedBlock, equals: block.id)
-                            .focusEffectDisabled()
-                            .accessibilityElement(children: .combine)
-                        }
-                    }
-                    .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                    .padding(.horizontal, 24).padding(.vertical, 48)
-                    .frame(maxWidth: .infinity)
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                TVSettingsPageHeader(title: "Open Source Licences")
+                if blocks.isEmpty {
+                    ProgressView("Loading licences…")
                 }
-                .frame(width: min(TVSettingsLayout.pageWidth, geometry.size.width - 120), height: min(820, geometry.size.height - 100))
-                .background(Color(white: 0.045), in: RoundedRectangle(cornerRadius: 24))
-                .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.16), lineWidth: 1) }
-                .defaultFocus($focusedBlock, 0)
-                .onExitCommand(perform: dismiss)
+                ForEach(blocks) { block in
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(block.title).font(.system(size: 27, weight: .semibold))
+                        Text(verbatim: block.text)
+                            .font(.system(size: 22))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(.white.opacity(focusedBlock == block.id ? 0.85 : 0), lineWidth: 2)
+                    }
+                    .focusable()
+                    .focused($focusedBlock, equals: block.id)
+                    .focusEffectDisabled()
+                    .accessibilityElement(children: .combine)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, 24).padding(.vertical, 48)
+            .frame(maxWidth: .infinity)
         }
+        .tvSettingsPageSurface()
+        .defaultFocus($focusedBlock, 0)
+        .onExitCommand(perform: dismiss)
         .task {
             let loaded = await Task.detached(priority: .utility) { OpenSourceAcknowledgements.blocks }.value
             guard !Task.isCancelled else { return }

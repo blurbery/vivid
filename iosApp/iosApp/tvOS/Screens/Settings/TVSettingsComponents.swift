@@ -7,12 +7,77 @@ enum TVSettingsLayout {
 }
 
 enum TVSettingsPalette {
-    // Solid cool-grey panels keep the joined rows distinct from the page.
-    static let groupFill = Color(hex: "#41474B")
-    static let selectedFill = Color(hex: "#545B60")
-    static let iconFill = Color(hex: "#4D555B")
-    static let separator = Color.white.opacity(0.12)
-    static let sectionText = Color(white: 0.62)
+    static let groupFill = Color(hex: "#3B454C")
+    static let selectedFill = Color(hex: "#4B5963")
+    static let iconFill = Color.white.opacity(0.06)
+    static let separator = Color.white.opacity(0.08)
+    static let sectionText = Color(white: 0.68)
+}
+
+struct TVSettingsPageHeader<Actions: View>: View {
+    let title: String
+    let subtitle: String?
+    @ViewBuilder let actions: () -> Actions
+
+    init(title: String, subtitle: String? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+        self.title = title
+        self.subtitle = subtitle
+        self.actions = actions
+    }
+
+    var body: some View {
+        HStack(spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white.opacity(0.68))
+                }
+            }
+            Spacer(minLength: 0)
+            actions()
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+    }
+}
+
+extension TVSettingsPageHeader where Actions == EmptyView {
+    init(title: String, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
+    }
+}
+
+struct TVSettingsOverview<Profiles: View, Categories: View>: View {
+    @ViewBuilder let profiles: () -> Profiles
+    @ViewBuilder let categories: () -> Categories
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            TVSettingsPageHeader(title: "Settings")
+            VStack(alignment: .leading, spacing: 8) {
+                TVSettingsSectionHeader("PROFILES", topInset: 0)
+                profiles()
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                TVSettingsSectionHeader("SETTINGS", topInset: 0)
+                VStack(spacing: 10) { categories() }
+            }
+        }
+    }
+}
+
+extension View {
+    func tvSettingsPageSurface() -> some View {
+        self
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background { SettingsBackdrop() }
+            .preferredColorScheme(.dark)
+            .toolbar(.hidden, for: .navigationBar)
+    }
 }
 
 private struct TVSettingsJoinedRowsKey: EnvironmentKey {
@@ -102,7 +167,7 @@ struct TVSettingsRowLabel: View {
 
 // MARK: - Option model
 
-/// Option model shared by picker rows and their selection sheets.
+/// Option model shared by native Settings menus.
 struct TVSettingsOption: Identifiable, Hashable {
     let id: String
     let label: String
@@ -375,6 +440,45 @@ struct TVSettingsPickerRow: View {
     }
 }
 
+/// The system owns option presentation, selection and focus return.
+struct TVSettingsOptionMenu: View {
+    let title: String
+    let value: String
+    var detail: String? = nil
+    let options: [TVSettingsOption]
+    let selection: Binding<String>
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button { selection.wrappedValue = option.id } label: {
+                    let label = option.detail.map { "\(option.label)\n\($0)" } ?? option.label
+                    if selection.wrappedValue == option.id {
+                        Label(label, systemImage: "checkmark")
+                    } else {
+                        Text(label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 16) {
+                TVSettingsRowLabel(title: title, detail: detail)
+                Spacer(minLength: 16)
+                Text(value)
+                    .font(.system(size: 24))
+                    .opacity(0.68)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 16, weight: .semibold))
+                    .opacity(0.55)
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(TVSettingsPaneRowStyle())
+    }
+}
+
 /// One-press boolean row in the system-Settings idiom: click flips the
 /// value, the trailing text reads On / Off. (Same pattern as the player
 /// info HUD — no `Toggle`, whose system chrome fights the custom layout.)
@@ -467,8 +571,9 @@ struct TVSettingsInfoRow: View {
 /// filter-panel header grammar.
 struct TVSettingsSectionHeader: View {
     let title: String
+    var topInset: CGFloat = 26
 
-    init(_ title: String) { self.title = title }
+    init(_ title: String, topInset: CGFloat = 26) { self.title = title; self.topInset = topInset }
 
     var body: some View {
         Text(title)
@@ -476,7 +581,7 @@ struct TVSettingsSectionHeader: View {
             .tracking(1)
             .foregroundStyle(TVSettingsPalette.sectionText)
             .padding(.horizontal, 24)
-            .padding(.top, 26)
+            .padding(.top, topInset)
             .padding(.bottom, 6)
     }
 }
@@ -601,14 +706,9 @@ struct TVPrivacyPolicyOverlay: View {
     @FocusState private var focusedSection: String?
 
     var body: some View {
-        GeometryReader { geometry in
-        ZStack {
-        Color.black.opacity(0.8).ignoresSafeArea()
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Vivid Privacy Policy").font(.system(size: 38, weight: .semibold))
-                Text("App privacy information · Updated 11 September 2026")
-                    .font(.system(size: 19)).foregroundStyle(.secondary)
+                TVSettingsPageHeader(title: "Privacy Policy", subtitle: "App privacy information · Updated 11 September 2026")
                 policySection("Your accounts and media server", "Vivid connects to the media servers you choose. Your server receives the sign-in details and requests needed to provide your account, library, artwork and playback. The server operator controls that information and may keep its own logs and records. Vivid’s policy does not replace your server operator’s privacy policy.")
                 policySection("Information on this Apple TV", "Vivid saves preferences, Home metadata, artwork and playback buffers on this Apple TV. Saved account session tokens and optional Vivid PIN records use Keychain. The saved-account feature does not retain the media-server password you enter.")
                 policySection("Private iCloud account sync", "When iCloud is available, Vivid stores saved server addresses, account and viewing-profile details, login sessions, optional Vivid PIN records and profile order in encrypted fields in your private iCloud database. Shared browsing, navigation, metadata and download preferences, plus configured Trailers, MDBList, OpenSubtitles and Seerr connection details, also sync between your iPhone, iPad and Apple TV for the matching server account and viewing profile. Playback and subtitle preferences, downloaded media, artwork and metadata caches stay on the device. Playback history and resume positions stay with your media server. Optional MDBList imports add local watched indicators, described below.")
@@ -624,13 +724,9 @@ struct TVPrivacyPolicyOverlay: View {
             .padding(.horizontal, 24).padding(.vertical, 48)
             .frame(maxWidth: .infinity)
         }
-        .frame(width: min(TVSettingsLayout.pageWidth, geometry.size.width - 120), height: min(820, geometry.size.height - 100))
-        .background(Color(white: 0.045), in: RoundedRectangle(cornerRadius: 24))
-        .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.16), lineWidth: 1) }
+        .tvSettingsPageSurface()
         .defaultFocus($focusedSection, "Your accounts and media server")
         .onExitCommand(perform: dismiss)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
     }
 
     private func policySection(_ title: String, _ text: String) -> some View {
@@ -649,236 +745,6 @@ struct TVPrivacyPolicyOverlay: View {
         .focused($focusedSection, equals: title)
         .focusEffectDisabled()
         .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: - Picker sheet
-
-/// Compact modal option menu mounted by the root Settings view.
-/// The menu stays compact while a full-screen scrim cleanly separates it
-/// from the disabled two-pane settings focus graph beneath it.
-/// Selecting an option updates the binding and dismisses; Menu cancels.
-struct TVSettingsPickerSheet: View {
-    let title: String
-    let options: [TVSettingsOption]
-    @Binding var selection: String
-    var onDismiss: (() -> Void)? = nil
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.resetFocus) private var resetFocus
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var pickerFocusScope
-    @FocusState private var focusedOptionID: String?
-    @State private var isClosing = false
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                Rectangle().fill(.background)
-                    .ignoresSafeArea()
-
-                pickerCard(
-                    width: min(TVSettingsLayout.pageWidth, geometry.size.width - 240),
-                    height: min(
-                        max(preferredCardHeight, 390),
-                        min(760, geometry.size.height - 160)
-                    )
-                )
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .preferredColorScheme(.dark)
-        .focusScope(pickerFocusScope)
-        .focusSection()
-        .onExitCommand(perform: close)
-        .onDisappear { isClosing = true }
-        .onChange(of: focusedOptionID) { _, value in
-            if value == nil, !isClosing {
-                claimFocus()
-            }
-        }
-    }
-
-    private func pickerCard(width: CGFloat, height: CGFloat) -> some View {
-        let cardShape = RoundedRectangle(cornerRadius: 30, style: .continuous)
-
-        return VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(.system(size: 42, weight: .bold))
-                        .foregroundStyle(Color.vividOnSurface)
-                        .accessibilityAddTraits(.isHeader)
-
-                    Text("Choose an option")
-                        .font(.system(size: 19))
-                        .foregroundStyle(Color.vividSecondaryText)
-                }
-
-                Spacer(minLength: 12)
-
-                Label("Menu to close", systemImage: "arrow.uturn.backward")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(Color.vividSecondaryText)
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.055), in: Capsule())
-                    .overlay {
-                        Capsule()
-                            .strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1)
-                }
-            }
-
-            Rectangle()
-                .fill(Color.vividChromeRestingBorder)
-                .frame(height: 1)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    TVSettingsGroup {
-                        ForEach(options) { option in
-                            TVSettingsPickerOptionRow(
-                                option: option,
-                                isSelected: option.id == selection,
-                                focusedOptionID: $focusedOptionID
-                            ) {
-                                selection = option.id
-                                close()
-                            }
-                            .id(option.id)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 8)
-                }
-                .contentMargins(.vertical, 8, for: .scrollContent)
-                .scrollIndicators(options.count > 7 ? .automatic : .hidden)
-                // Picker rows scale and cast a small shadow on focus. Keep
-                // those layers inside the list viewport so scrolling cannot
-                // paint over the header or beyond the card.
-                .clipped()
-                .onAppear {
-                    claimFocus()
-                    scrollToFocusedOption(with: proxy, animated: false)
-                }
-                .onChange(of: focusedOptionID) { _, _ in
-                    scrollToFocusedOption(with: proxy)
-                }
-                .onChange(of: selection) { _, _ in
-                    scrollToFocusedOption(with: proxy)
-                }
-            }
-        }
-        .padding(30)
-        .frame(width: width, height: height, alignment: .top)
-        .background(cardShape.fill(TVSettingsPalette.groupFill))
-        // Clip child layers first, then add the border and outer card shadow.
-        // This preserves the floating dialog while containing scroll content.
-        .clipShape(cardShape)
-        .overlay {
-            cardShape.strokeBorder(
-                Color.vividChromeSelectedBorder.opacity(0.9),
-                lineWidth: 1
-            )
-        }
-        .shadow(color: .black.opacity(0.58), radius: 48, y: 22)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(title) options")
-    }
-
-    private var preferredCardHeight: CGFloat {
-        let chromeHeight: CGFloat = 158
-        let rowsHeight = options.reduce(CGFloat(0)) { $0 + estimatedRowHeight(for: $1) }
-        return chromeHeight + rowsHeight
-    }
-
-    /// Per-row height estimate including the list gap. Detail text wraps at
-    /// the card's fixed ~590pt text column, roughly 54 characters of 20pt
-    /// system text per line; rounding lines up leaves breathing room below
-    /// the last row instead of clipping a wrapped description.
-    private func estimatedRowHeight(for option: TVSettingsOption) -> CGFloat {
-        if let detail = option.detail {
-            let detailLines = max(1.0, (Double(detail.count) / 54).rounded(.up))
-            return 88 + CGFloat(detailLines) * 26
-        }
-        return 72
-    }
-
-    private func focusSelection() {
-        focusedOptionID = options.first { $0.id == selection }?.id ?? options.first?.id
-    }
-
-    private func claimFocus() {
-        guard !isClosing else { return }
-        focusSelection()
-        Task { @MainActor in
-            await Task.yield()
-            guard !isClosing else { return }
-            resetFocus(in: pickerFocusScope)
-            focusSelection()
-        }
-    }
-
-    private func close() {
-        guard !isClosing else { return }
-        isClosing = true
-        if let onDismiss {
-            onDismiss()
-        } else {
-            dismiss()
-        }
-    }
-
-    private func scrollToFocusedOption(with proxy: ScrollViewProxy, animated: Bool = true) {
-        guard !isClosing else { return }
-        let targetID = focusedOptionID ?? options.first { $0.id == selection }?.id ?? options.first?.id
-        guard let targetID else { return }
-        if animated, !reduceMotion {
-            withAnimation(.easeOut(duration: VividTheme.fastDuration)) {
-                proxy.scrollTo(targetID)
-            }
-        } else {
-            proxy.scrollTo(targetID)
-        }
-    }
-}
-
-private struct TVSettingsPickerOptionRow: View {
-    let option: TVSettingsOption
-    let isSelected: Bool
-    @FocusState.Binding var focusedOptionID: String?
-    let onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(option.label)
-                        .font(.system(size: 27, weight: isSelected ? .semibold : .medium))
-                        .lineLimit(1)
-
-                    if let detail = option.detail {
-                        Text(detail)
-                            .font(.system(size: 20))
-                            .opacity(0.72)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 24, weight: .semibold))
-                    .opacity(isSelected ? 1 : 0)
-            }
-        }
-        .buttonStyle(TVSettingsPaneRowStyle(isSelected: isSelected))
-        .focused($focusedOptionID, equals: option.id)
-        .accessibilityLabel(option.label)
-        .accessibilityHint(option.detail ?? "")
-        .accessibilityValue(isSelected ? "Selected" : "")
     }
 }
 

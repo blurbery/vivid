@@ -1,13 +1,10 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Playback pane of tvOS Settings, rendered inline in the right pane of
-/// the two-pane `TVSettingsView`. The root view owns modal picker
-/// presentation so only one focus graph is active at a time.
+/// Playback preferences with native option menus.
 struct TVPlaybackSettingsPane: View {
     @Bindable var viewModel: TVSettingsViewModel
     let detailFocus: FocusState<TVSettingsDetailFocus?>.Binding
-    let presentPicker: (TVSettingsPickerRequest) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -23,25 +20,31 @@ struct TVPlaybackSettingsPane: View {
         TVSettingsSectionHeader("PLAYBACK")
 
         TVSettingsGroup {
-            TVSettingsPickerRow(
+            TVSettingsOptionMenu(
                 title: "Quality",
-                value: viewModel.preferredQualityLabel
-            ) { showPicker(.quality) }
+                value: viewModel.preferredQualityLabel,
+                options: pickerRequest(for: .quality).options,
+                selection: pickerRequest(for: .quality).selection
+            )
             .focused(detailFocus, equals: .top)
 
-            TVSettingsPickerRow(
+            TVSettingsOptionMenu(
                 title: "Audio Language",
                 value: TVSettingsOptions.label(
                     for: viewModel.preferredAudioLanguage,
                     in: TVSettingsOptions.audioLanguage(viewModel.audioLanguageOptions)
-                )
-            ) { showPicker(.audioLanguage) }
+                ),
+                options: pickerRequest(for: .audioLanguage).options,
+                selection: pickerRequest(for: .audioLanguage).selection
+            )
             .focused(detailFocus, equals: .playbackAudioLanguage)
 
-            TVSettingsPickerRow(
+            TVSettingsOptionMenu(
                 title: "Buffer Ahead",
-                value: viewModel.bufferAhead.label
-            ) { showPicker(.bufferAhead) }
+                value: viewModel.bufferAhead.label,
+                options: pickerRequest(for: .bufferAhead).options,
+                selection: pickerRequest(for: .bufferAhead).selection
+            )
             .focused(detailFocus, equals: .playbackBufferAhead)
 
             TVSettingsToggleRow(
@@ -71,10 +74,12 @@ struct TVPlaybackSettingsPane: View {
                 Task { await viewModel.setAutoPlayNext(value) }
             }
 
-            TVSettingsPickerRow(
+            TVSettingsOptionMenu(
                 title: "Show Next Up",
-                value: TVSettingsOptions.label(for: String(viewModel.nextUpPromptSeconds), in: TVSettingsOptions.nextUpPrompt)
-            ) { showPicker(.nextUpPrompt) }
+                value: TVSettingsOptions.label(for: String(viewModel.nextUpPromptSeconds), in: TVSettingsOptions.nextUpPrompt),
+                options: pickerRequest(for: .nextUpPrompt).options,
+                selection: pickerRequest(for: .nextUpPrompt).selection
+            )
             .focused(detailFocus, equals: .playbackNextUpPrompt)
 
             TVSettingsToggleRow(
@@ -109,10 +114,6 @@ struct TVPlaybackSettingsPane: View {
 
     // MARK: - Pickers
 
-    private func showPicker(_ kind: PickerKind) {
-        presentPicker(pickerRequest(for: kind))
-    }
-
     private func pickerRequest(for kind: PickerKind) -> TVSettingsPickerRequest {
         switch kind {
         case .quality:
@@ -136,8 +137,7 @@ struct TVPlaybackSettingsPane: View {
                         guard value != TVSettingsOptions.customQualityId else { return }
                         Task { await viewModel.setQualityPreset(value) }
                     }
-                ),
-                returnFocus: .top
+                )
             )
         case .audioLanguage:
             TVSettingsPickerRequest(
@@ -150,8 +150,7 @@ struct TVPlaybackSettingsPane: View {
                         viewModel.preferredAudioLanguage = value
                         Task { await viewModel.setPreferredAudioLanguage(value) }
                     }
-                ),
-                returnFocus: .playbackAudioLanguage
+                )
             )
         case .bufferAhead:
             TVSettingsPickerRequest(
@@ -165,8 +164,7 @@ struct TVPlaybackSettingsPane: View {
                         viewModel.bufferAhead = mode
                         Task { await viewModel.setBufferAhead(mode) }
                     }
-                ),
-                returnFocus: .playbackBufferAhead
+                )
             )
         case .nextUpPrompt:
             TVSettingsPickerRequest(
@@ -180,8 +178,7 @@ struct TVPlaybackSettingsPane: View {
                         viewModel.nextUpPromptSeconds = seconds
                         Task { await viewModel.setNextUpPromptSeconds(seconds) }
                     }
-                ),
-                returnFocus: .playbackNextUpPrompt
+                )
             )
         }
     }

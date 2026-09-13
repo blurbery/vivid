@@ -9,7 +9,6 @@ struct TVGeneralSettingsPane: View {
     @State private var homeSections = HomeSectionPreferences.shared
     @State private var preferences = UICustomizationPreferences.shared
     @State private var homeCards = TVHomeCardPreferences.shared
-    @State private var activePicker: PickerKind?
     @State private var showsHomeSectionsEditor = false
     @State private var showsHomeScreenSettings = false
     @State private var showsMenuEditor = false
@@ -56,12 +55,22 @@ struct TVGeneralSettingsPane: View {
             TVSettingsSectionHeader("POSTER CONFIGURATION")
 
             TVSettingsGroup {
-                TVSettingsPickerRow(title: "Poster Size", value: homeCards.presentation.posterSize.title) {
-                    activePicker = .posterSize
-                }
-                TVSettingsPickerRow(title: "Captions", value: homeCards.presentation.caption.title) {
-                    activePicker = .caption
-                }
+                TVSettingsOptionMenu(
+                    title: "Poster Size", value: homeCards.presentation.posterSize.title,
+                    options: CardPosterSize.allCases.map { .init(id: $0.rawValue, label: $0.title) },
+                    selection: Binding(
+                        get: { homeCards.presentation.posterSize.rawValue },
+                        set: { if let value = CardPosterSize(rawValue: $0) { homeCards.setPosterSize(value) } }
+                    )
+                )
+                TVSettingsOptionMenu(
+                    title: "Captions", value: homeCards.presentation.caption.title,
+                    options: CardCaptionStyle.allCases.map { .init(id: $0.rawValue, label: $0.title) },
+                    selection: Binding(
+                        get: { homeCards.presentation.caption.rawValue },
+                        set: { if let value = CardCaptionStyle(rawValue: $0) { homeCards.setCaptionStyle(value) } }
+                    )
+                )
                 Button { homeCards.reset() } label: { TVSettingsRowLabel(title: "Use Profile Default") }
                     .buttonStyle(TVSettingsPaneRowStyle())
 
@@ -90,21 +99,14 @@ struct TVGeneralSettingsPane: View {
                 TVSettingsFooter(message)
             }
         }
-        .fullScreenCover(item: $activePicker) { picker in
-            pickerSheet(for: picker)
-                .presentationBackground(.background)
-        }
-        .fullScreenCover(isPresented: $showsHomeScreenSettings) {
+        .navigationDestination(isPresented: $showsHomeScreenSettings) {
             TVHomeScreenSettingsView()
-                .presentationBackground(.background)
         }
-        .fullScreenCover(isPresented: $showsHomeSectionsEditor) {
+        .navigationDestination(isPresented: $showsHomeSectionsEditor) {
             TVHomeSectionsCustomizationSheet()
-                .presentationBackground(.background)
         }
-        .fullScreenCover(isPresented: $showsMenuEditor) {
+        .navigationDestination(isPresented: $showsMenuEditor) {
             TVMenuCustomizationSheet(libraries: libraries)
-                .presentationBackground(.background)
         }
         .onAppear { homeSections.refresh() }
         .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
@@ -130,46 +132,6 @@ struct TVGeneralSettingsPane: View {
             in: preferences.resolvedPrimaryMenuItems(),
             libraries: libraries
         ).count
-    }
-
-    @ViewBuilder
-    private func pickerSheet(for picker: PickerKind) -> some View {
-        switch picker {
-        case .posterSize:
-            TVSettingsPickerSheet(
-                title: "Poster Size",
-                options: CardPosterSize.allCases.map {
-                    TVSettingsOption(id: $0.rawValue, label: $0.title)
-                },
-                selection: Binding(
-                    get: { homeCards.presentation.posterSize.rawValue },
-                    set: { value in
-                        guard let size = CardPosterSize(rawValue: value) else { return }
-                        homeCards.setPosterSize(size)
-                    }
-                )
-            )
-        case .caption:
-            TVSettingsPickerSheet(
-                title: "Card Captions",
-                options: CardCaptionStyle.allCases.map {
-                    TVSettingsOption(id: $0.rawValue, label: $0.title)
-                },
-                selection: Binding(
-                    get: { homeCards.presentation.caption.rawValue },
-                    set: { value in
-                        guard let style = CardCaptionStyle(rawValue: value) else { return }
-                        homeCards.setCaptionStyle(style)
-                    }
-                )
-            )
-        }
-    }
-
-    private enum PickerKind: String, Identifiable {
-        case posterSize
-        case caption
-        var id: String { rawValue }
     }
 
     private var currentLibraryAuthority: MainTabLibraryAuthority? {
@@ -224,50 +186,46 @@ private struct TVHomeSectionsCustomizationSheet: View {
     @Environment(\.resetFocus) private var resetFocus
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    sectionHeader("HOME SECTIONS")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                editorControlsCard
 
-                    editorControlsCard
-
-                    if arrangedSections.isEmpty, isLoading {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .tint(.vividOnSurface)
-                            Spacer()
-                        }
-                        .frame(height: 160)
-                    } else if arrangedSections.isEmpty {
-                        TVSettingsFooter(
-                            loadFailed
-                                ? "Vivid couldn’t refresh the Home rows. Try again when the server is reachable."
-                                : "Home has no populated rows to arrange yet."
-                        )
-                    } else {
-                        TVSettingsGroup {
-                            ForEach(arrangedSections) { section in
-                                sectionRow(section)
-                            }
-                        }
-                        .focusSection()
-
-                        TVSettingsFooter(
-                            isEditing
-                                ? "Use the arrow buttons to move rows. The new order saves immediately."
-                                : "Open eye: visible on Home. Closed eye: hidden. Hidden rows leave no gap—the next visible row takes the same Home position."
-                        )
+                if arrangedSections.isEmpty, isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(.vividOnSurface)
+                        Spacer()
                     }
+                    .frame(height: 160)
+                } else if arrangedSections.isEmpty {
+                    TVSettingsFooter(
+                        loadFailed
+                            ? "Vivid couldn’t refresh the Home rows. Try again when the server is reachable."
+                            : "Home has no populated rows to arrange yet."
+                    )
+                } else {
+                    TVSettingsGroup {
+                        ForEach(arrangedSections) { section in
+                            sectionRow(section)
+                        }
+                    }
+                    .focusSection()
+
+                    TVSettingsFooter(
+                        isEditing
+                            ? "Use the arrow buttons to move rows. The new order saves immediately."
+                            : "Open eye: visible on Home. Closed eye: hidden. Hidden rows leave no gap—the next visible row takes the same Home position."
+                    )
                 }
-                .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(.horizontal, 72)
-                .padding(.vertical, 36)
             }
-            .navigationTitle("Home Sections")
-            .task {
-                await loadSections()
-            }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, 72)
+            .padding(.vertical, 36)
+        }
+        .tvSettingsPageSurface()
+        .task {
+            await loadSections()
         }
         .focusScope(editorFocusScope)
         .focusSection()
@@ -287,18 +245,10 @@ private struct TVHomeSectionsCustomizationSheet: View {
     }
 
     private var editorControlsCard: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Home Sections")
-                    .font(.system(size: 26, weight: .medium))
-
-                Text(isEditing ? "Move rows into your preferred order." : "Choose which rows appear on Home.")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.vividSecondaryText)
-            }
-
-            Spacer(minLength: 24)
-
+        TVSettingsPageHeader(
+            title: "Home Sections",
+            subtitle: isEditing ? "Move rows into your preferred order." : "Choose which rows appear on Home."
+        ) {
             Button(isEditing ? "Done Editing" : "Edit") {
                 withAnimation(.easeOut(duration: VividTheme.fastDuration)) {
                     isEditing.toggle()
@@ -311,16 +261,6 @@ private struct TVHomeSectionsCustomizationSheet: View {
             Button("Done", action: close)
                 .buttonStyle(TVHomeSectionsControlButtonStyle())
                 .focused($focusedControl, equals: .done)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
-        .background(
-            Rectangle()
-                .fill(TVSettingsPalette.groupFill)
-        )
-        .overlay {
-            Rectangle()
-                .strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1)
         }
         .focusSection()
     }
@@ -495,7 +435,8 @@ private struct TVHomeSectionsControlButtonBody: View {
             .font(.system(size: compact ? 24 : 20, weight: .semibold))
             .foregroundStyle(foreground)
             .padding(.horizontal, compact ? 0 : 22)
-            .frame(minWidth: 64, minHeight: 64)
+            .frame(minWidth: compact ? 64 : 120, minHeight: 64, alignment: .center)
+            .multilineTextAlignment(.center)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(isFocused ? Color.vividOnSurface : TVSettingsPalette.groupFill)
@@ -529,67 +470,66 @@ private struct TVMenuCustomizationSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    menuPreview
-                    sectionHeader("SEARCH & PROFILE")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                TVSettingsPageHeader(title: "Tab Bar", subtitle: "Choose and arrange your navigation tabs.")
+                menuPreview
+                sectionHeader("SEARCH & PROFILE")
+                TVSettingsGroup {
+                    Button { utilitiesSwapped.toggle() } label: {
+                        TVSettingsRowLabel(title: "Swap Search and Profile",
+                            detail: utilitiesSwapped ? "Profile on the left · Search on the right" : "Search on the left · Profile on the right")
+                    }
+                    .buttonStyle(TVSettingsPaneRowStyle())
+                }
+                TVSettingsFooter("Search and Profile stay at opposite ends. Only the tabs below move within the centre.")
+
+                if preferences.capabilityState != .checking, let message = preferences.capabilityMessage {
+                    TVSettingsFooter(message)
+                }
+
+                if preferences.primaryMenuUsesDeviceOverride {
+                    TVSettingsFooter("This Apple TV has an older tab-bar override.")
+                }
+
+                sectionHeader("VISIBLE DESTINATIONS")
+
+                TVSettingsGroup {
+                    ForEach(visibleItems) { item in
+                        visibleRow(item)
+                    }
+                }
+                .focusSection()
+                .disabled(!familyMenuMutationsEnabled)
+
+                if !hiddenBuiltins.isEmpty {
+                    sectionHeader("HIDDEN DESTINATIONS")
                     TVSettingsGroup {
-                        Button { utilitiesSwapped.toggle() } label: {
-                            TVSettingsRowLabel(title: "Swap Search and Profile",
-                                detail: utilitiesSwapped ? "Profile on the left · Search on the right" : "Search on the left · Profile on the right")
-                        }
-                        .buttonStyle(TVSettingsPaneRowStyle())
-                    }
-                    TVSettingsFooter("Search and Profile stay at opposite ends. Only the tabs below move within the centre.")
-
-                    if preferences.capabilityState != .checking, let message = preferences.capabilityMessage {
-                        TVSettingsFooter(message)
-                    }
-
-                    if preferences.primaryMenuUsesDeviceOverride {
-                        TVSettingsFooter("This Apple TV has an older tab-bar override.")
-                    }
-
-                    sectionHeader("VISIBLE DESTINATIONS")
-
-                    TVSettingsGroup {
-                        ForEach(visibleItems) { item in
-                            visibleRow(item)
+                        ForEach(hiddenBuiltins) { item in
+                            Button {
+                                persistVisibleItems(visibleItems + [item])
+                            } label: {
+                                HStack(spacing: 18) {
+                                    Image(systemName: "eye.slash")
+                                    Text("Show \(item.title)")
+                                    Spacer()
+                                }
+                                .font(.system(size: 26, weight: .medium))
+                            }
+                            .buttonStyle(TVSettingsPaneRowStyle())
                         }
                     }
                     .focusSection()
                     .disabled(!familyMenuMutationsEnabled)
-
-                    if !hiddenBuiltins.isEmpty {
-                        sectionHeader("HIDDEN DESTINATIONS")
-                        TVSettingsGroup {
-                            ForEach(hiddenBuiltins) { item in
-                                Button {
-                                    persistVisibleItems(visibleItems + [item])
-                                } label: {
-                                    HStack(spacing: 18) {
-                                        Image(systemName: "eye.slash")
-                                        Text("Show \(item.title)")
-                                        Spacer()
-                                    }
-                                    .font(.system(size: 26, weight: .medium))
-                                }
-                                .buttonStyle(TVSettingsPaneRowStyle())
-                            }
-                        }
-                        .focusSection()
-                        .disabled(!familyMenuMutationsEnabled)
-                    }
-
-                    TVSettingsFooter("Changes save automatically. Home stays visible; press Back to return.")
                 }
-                .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(.horizontal, 72)
-                .padding(.vertical, 36)
+
+                TVSettingsFooter("Changes save automatically. Home stays visible; press Back to return.")
             }
-            .navigationTitle("Customise Tab Bar")
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, 72)
+            .padding(.vertical, 36)
         }
+        .tvSettingsPageSurface()
         .onExitCommand { dismiss() }
     }
 

@@ -68,7 +68,9 @@ struct ServiceAcknowledgementsView: View {
         }
         .vividBackground()
         .navigationTitle("")
-        #if os(iOS)
+        #if os(tvOS)
+        .tvSettingsPageSurface()
+        #elseif os(iOS)
         .settingsNavigationChrome()
         #endif
     }
