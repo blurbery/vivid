@@ -225,14 +225,8 @@ struct TVTopMenuBar: View {
         .modifier(TVTopMenuLeadingBoundaryHandler(isLeading: index == 0) {
             focusedItem = utilitiesSwapped ? .profile : .search
         })
-        .onMoveCommand { direction in
-            if direction == .down { selectRootFromMenu(root) }
-        }
-        // Debug-overlay hint: SwiftUI's content→menu section hop lands on
-        // the selected tab, but that rule is invisible to the focus
-        // engine — the selected tab publishes its frame so the overlay
-        // can mark it as the Up destination. Renders nothing when the
-        // overlay setting is off; debug builds only.
+        // Publish the active tab's frame for the optional debug overlay.
+        // This does not select the tab or redirect native focus.
         #if DEBUG
         .background(TVFocusDebugTabFramePublisher(isSelected: selectedRoot == root))
         #endif

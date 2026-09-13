@@ -158,11 +158,5 @@ enum TVHomeRowGeometry {
         return stripHeight(artworkHeight: artworkHeight, caption: presentation.caption,
                            captionGap: captionGap, verticalPadding: verticalPadding)
     }
-
-    static func rowHeight(layout: MediaRowLayout, posterWidth: CGFloat,
-                          presentation: CardPresentationPreference) -> CGFloat {
-        headingHeight + headingSpacing
-            + stripHeight(layout: layout, posterWidth: posterWidth, presentation: presentation)
-    }
 }
 #endif

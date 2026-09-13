@@ -42,13 +42,12 @@ struct TVHomeDiscoveryFeed: View {
                                 spotlightOpenedDetail = true
                                 rowFocusOwnership.rowID = nil
                                 onItemTap(slide.item.contentId, slide.item)
-                            },
-                            onMoveUp: { onTopMenuFocusRequest?() }
+                            }
                         )
                         .id(Self.spotlightAnchor)
                     }
 
-                    LazyVStack(alignment: .leading, spacing: TVHomeRowGeometry.rowSpacing) {
+                    VStack(alignment: .leading, spacing: TVHomeRowGeometry.rowSpacing) {
                         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                             SectionRow(
                                 section: section,
@@ -78,12 +77,12 @@ struct TVHomeDiscoveryFeed: View {
                                 )
                             )
                             .id(section.id)
+                            .modifier(TVHomeRowArtworkVisibility())
                             .modifier(TVHomeDiagnosticRow(diagnostics: scrollDiagnostics, index: index))
                         }
                     }
-                    // The row cells remain lazy, but the scroll range must not
-                    // change as the stack revises its off-screen size estimates.
-                    .frame(height: rowsHeight, alignment: .topLeading)
+                    // Stable row shells give native vertical focus exact positions.
+                    // Each horizontal card strip keeps its own lazy layout.
                 }
                 .environment(\.tvHomeStableRows, true)
                 .padding(.top, 152)
@@ -118,15 +117,6 @@ struct TVHomeDiscoveryFeed: View {
         .ignoresSafeArea()
     }
 
-    private var rowsHeight: CGFloat {
-        sections.reduce(CGFloat.zero) { height, section in
-            height + TVHomeRowGeometry.rowHeight(
-                layout: section.tvHomeUsesLandscapeArtwork ? .thumbnail : .poster,
-                posterWidth: VividTheme.Skyline.densePosterCardWidth,
-                presentation: homeCards.presentation)
-        } + CGFloat(max(0, sections.count - 1)) * TVHomeRowGeometry.rowSpacing
-    }
-
     private func enterSpotlight(using proxy: ScrollViewProxy) {
         guard !slides.isEmpty else { onTopMenuFocusRequest?(); return }
         // The spotlight is mounted eagerly. Let the focus engine perform its
@@ -143,6 +133,18 @@ struct TVHomeDiscoveryFeed: View {
             proxy.scrollTo(first.id, anchor: .center)
         }
         firstRowFocusRequest += 1
+    }
+}
+
+/// Row layout stays present without starting image work for the whole feed.
+private struct TVHomeRowArtworkVisibility: ViewModifier {
+    @State private var isVisible = false
+    @Environment(\.tvArtworkLoadingEnabled) private var parentLoadingEnabled
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.tvArtworkLoadingEnabled, parentLoadingEnabled && isVisible)
+            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
     }
 }
 
@@ -447,7 +449,6 @@ private struct TVHomeSpotlightCarousel: View {
     let onPositionChange: (Int) -> Void
     let isTopMenuFocused: Bool
     let onSelect: (TVHomeSpotlightSlide) -> Void
-    let onMoveUp: () -> Void
 
     @State private var visualPosition = 0
     @State private var scrollPosition: Int? = 0
@@ -473,8 +474,7 @@ private struct TVHomeSpotlightCarousel: View {
         initialPosition: Int,
         onPositionChange: @escaping (Int) -> Void,
         isTopMenuFocused: Bool,
-        onSelect: @escaping (TVHomeSpotlightSlide) -> Void,
-        onMoveUp: @escaping () -> Void
+        onSelect: @escaping (TVHomeSpotlightSlide) -> Void
     ) {
         self.slides = slides
         self.focus = focus
@@ -482,7 +482,6 @@ private struct TVHomeSpotlightCarousel: View {
         self.onPositionChange = onPositionChange
         self.isTopMenuFocused = isTopMenuFocused
         self.onSelect = onSelect
-        self.onMoveUp = onMoveUp
         _visualPosition = State(initialValue: startPosition)
         _scrollPosition = State(initialValue: startPosition)
         let span = max(1, slides.count * 3)
@@ -586,9 +585,6 @@ private struct TVHomeSpotlightCarousel: View {
                     scrollIsMoving = phase != .idle
                 }
                 .focusSection()
-                .onMoveCommand { direction in
-                    if direction == .up { onMoveUp() }
-                }
             }
             .frame(height: 580)
 
@@ -712,7 +708,7 @@ private struct TVSpotlightButtonStyle: ButtonStyle {
         configuration.label
             .overlay {
                 RoundedRectangle(cornerRadius: 22)
-                    .strokeBorder(.white.opacity(isFocused ? 0.9 : 0), lineWidth: 3)
+                    .strokeBorder(.white.opacity(isFocused ? 0.9 : 0), lineWidth: 1.5)
             }
             .opacity(configuration.isPressed ? 0.85 : 1)
     }
