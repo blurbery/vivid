@@ -171,6 +171,7 @@ struct PhoneDetailParallaxArtwork: View {
     var fadeEnd: CGFloat = 1
     var smoothFade = false
     var keepsTopAttached = false
+    var topShadeOpacity: Double = 0
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -199,6 +200,17 @@ struct PhoneDetailParallaxArtwork: View {
                     )
                 }
                 .allowsHitTesting(false)
+
+            if topShadeOpacity > 0 {
+                // Keep the shade inside the artwork's top-attachment transform
+                // so a scroll bounce cannot drag its hard top edge over the poster.
+                LinearGradient(
+                    colors: [Color.black.opacity(topShadeOpacity), .clear],
+                    startPoint: .top,
+                    endPoint: .center
+                )
+                .allowsHitTesting(false)
+            }
         }
         .frame(height: height)
         .clipped()
@@ -347,15 +359,9 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 thumbhash: resolvedArtworkThumbhash,
                 height: compactArtworkHeight,
                 isEnabled: enablesArtworkParallax,
-                keepsTopAttached: true
+                keepsTopAttached: true,
+                topShadeOpacity: 0.34
             )
-
-            LinearGradient(
-                colors: [Color.black.opacity(0.34), .clear],
-                startPoint: .top,
-                endPoint: .center
-            )
-            .allowsHitTesting(false)
 
             titleBlock(textAlignment: .center, logoHeight: compactLogoHeight)
                 .padding(.horizontal, 28)
