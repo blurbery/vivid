@@ -37,7 +37,6 @@ struct TVHomeDiscoveryFeed: View {
                             focus: $spotlightFocusedPosition,
                             initialPosition: rowFocusMemory.spotlightPosition,
                             onPositionChange: { rowFocusMemory.spotlightPosition = $0 },
-                            isTopMenuFocused: isTopMenuFocused,
                             onSelect: { slide in
                                 spotlightOpenedDetail = true
                                 rowFocusOwnership.rowID = nil
@@ -426,17 +425,13 @@ private struct TVHomeSpotlightCarousel: View {
     let focus: FocusState<Int?>.Binding
     let initialPosition: Int
     let onPositionChange: (Int) -> Void
-    let isTopMenuFocused: Bool
     let onSelect: (TVHomeSpotlightSlide) -> Void
     let onMoveUp: () -> Void
 
-    @State private var visualPosition = 0
-    @State private var scrollPosition: Int? = 0
-    @State private var positions = -2...2
-    @State private var pendingPosition: Int?
-    @State private var initialCardPresented = false
-    @State private var initialCardCentred = false
-    @Namespace private var carouselSpace
+    @State private var rememberedPosition: Int
+    @State private var scrollPosition: ScrollPosition
+    @State private var positions: Range<Int>
+    @State private var hasEntered = false
     @State private var isVisible = false
     @State private var scrollIsMoving = false
     @State private var ambientTint = Color.black
@@ -454,7 +449,6 @@ private struct TVHomeSpotlightCarousel: View {
         focus: FocusState<Int?>.Binding,
         initialPosition: Int,
         onPositionChange: @escaping (Int) -> Void,
-        isTopMenuFocused: Bool,
         onSelect: @escaping (TVHomeSpotlightSlide) -> Void,
         onMoveUp: @escaping () -> Void
     ) {
@@ -463,17 +457,18 @@ private struct TVHomeSpotlightCarousel: View {
         let startPosition = initialPosition
         self.initialPosition = startPosition
         self.onPositionChange = onPositionChange
-        self.isTopMenuFocused = isTopMenuFocused
         self.onSelect = onSelect
         self.onMoveUp = onMoveUp
-        _visualPosition = State(initialValue: startPosition)
-        _scrollPosition = State(initialValue: startPosition)
-        _positions = State(initialValue: (startPosition - 2)...(startPosition + 2))
+        _rememberedPosition = State(initialValue: startPosition)
+        _scrollPosition = State(initialValue: ScrollPosition(id: startPosition, anchor: .center))
+        let radius = max(1, slides.count) + 2
+        _positions = State(initialValue: (startPosition - radius)..<(startPosition + radius + 1))
     }
 
+    private var currentPosition: Int { focus.wrappedValue ?? rememberedPosition }
     private var index: Int {
         guard !slides.isEmpty else { return 0 }
-        return ((visualPosition % slides.count) + slides.count) % slides.count
+        return ((currentPosition % slides.count) + slides.count) % slides.count
     }
     private func slide(at position: Int) -> TVHomeSpotlightSlide {
         slides[((position % slides.count) + slides.count) % slides.count]
@@ -486,16 +481,18 @@ private struct TVHomeSpotlightCarousel: View {
             && !TVLoginPreparation.shared.isPresented
     }
     private var canRotate: Bool {
-        initialCardPresented && homeIsOpen && slides.count > 1 && !scrollIsMoving
-            && !voiceOverEnabled && readyIDs.contains(slide(at: visualPosition).id)
+        hasEntered && homeIsOpen && slides.count > 1 && !scrollIsMoving
+            && !voiceOverEnabled && readyIDs.contains(slide(at: currentPosition).id)
     }
     private var rotationKey: String {
-        "\(slides.map(\.id).joined(separator: "|"))#\(visualPosition)#\(canRotate)"
+        "\(slides.map(\.id).joined(separator: "|"))#\(currentPosition)#\(canRotate)#\(nextSlideReady)"
     }
-    private var maintenanceKey: String { "\(visualPosition)#\(scrollIsMoving)" }
-    private var renderedPositions: [Int] {
-        guard !slides.isEmpty else { return [] }
-        return slides.count == 1 ? [visualPosition] : Array(positions)
+    private var nextSlideReady: Bool {
+        !slides.isEmpty && readyIDs.contains(slide(at: currentPosition + 1).id)
+    }
+    private var renderedPositions: Range<Int> {
+        guard !slides.isEmpty else { return 0..<0 }
+        return slides.count == 1 ? currentPosition..<(currentPosition + 1) : positions
     }
 
     var body: some View {
@@ -509,10 +506,9 @@ private struct TVHomeSpotlightCarousel: View {
                             Button { onSelect(slide) } label: {
                                 TVHomeSpotlightArtwork(slide: slide, onTint: { tint in
                                     tints[slide.id] = tint
-                                    if position == visualPosition { ambientTint = tint }
+                                    if position == currentPosition { ambientTint = tint }
                                 }, onReady: {
                                     readyIDs.insert(slide.id)
-                                    revealPendingSlide()
                                 })
                                 .id(slide.id)
                                 .frame(width: cardWidth, height: 580)
@@ -520,14 +516,6 @@ private struct TVHomeSpotlightCarousel: View {
                             }
                             .buttonStyle(.card)
                             .focused(focus, equals: position)
-                            .onGeometryChange(for: Bool.self) { proxy in
-                                let frame = proxy.frame(in: .named(carouselSpace))
-                                return abs(frame.midX - geometry.size.width / 2) < 1
-                            } action: { centred in
-                                guard !initialCardPresented, position == initialPosition else { return }
-                                initialCardCentred = centred
-                                completeInitialPresentationIfReady()
-                            }
                             .accessibilityLabel(slide.content.title)
                             .accessibilityValue("Slide \(((position % slides.count) + slides.count) % slides.count + 1) of \(slides.count)")
                             .accessibilityHint("Press to open. Swipe left or right to change the spotlight.")
@@ -537,19 +525,14 @@ private struct TVHomeSpotlightCarousel: View {
                     .scrollTargetLayout()
                 }
                 .contentMargins(.horizontal, 60, for: .scrollContent)
-                .scrollTargetBehavior(.viewAligned)
                 .defaultScrollAnchor(.center, for: .initialOffset)
-                .scrollPosition(id: $scrollPosition, anchor: .center)
-                .coordinateSpace(name: carouselSpace)
-                .defaultFocus(focus, initialCardPresented ? visualPosition : initialPosition,
-                              priority: initialCardPresented ? .automatic : .userInitiated)
-                .transaction { transaction in
-                    // Initial placement is immediate; later native navigation
-                    // keeps its normal animation.
-                    if !initialCardPresented { transaction.disablesAnimations = true }
-                }
+                .scrollPosition($scrollPosition, anchor: .center)
+                .defaultFocus(focus, initialPosition)
                 .scrollClipDisabled()
-                .onScrollPhaseChange { _, phase in scrollIsMoving = phase != .idle }
+                .onScrollPhaseChange { _, phase in
+                    scrollIsMoving = phase != .idle
+                    if phase == .idle { extendLoopIfNeeded() }
+                }
                 .focusSection()
                 .onMoveCommand { direction in
                     if direction == .up { onMoveUp() }
@@ -589,29 +572,20 @@ private struct TVHomeSpotlightCarousel: View {
             .accessibilityHidden(true)
         }
         .onChange(of: focus.wrappedValue) { _, position in
-            completeInitialPresentationIfReady()
-            guard let position, position != visualPosition else { return }
-            guard initialCardPresented else {
-                // An initial focus proposal is not a user slide change.
-                var transaction = Transaction(animation: nil)
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    scrollPosition = initialPosition
-                    focus.wrappedValue = initialPosition
-                }
-                return
-            }
-            pendingPosition = nil
-            selectPosition(position)
+            guard let position else { return }
+            rememberedPosition = position
+            onPositionChange(position)
+            hasEntered = true
+        }
+        .onChange(of: currentPosition) { _, position in
+            cycleElapsed = 0
+            cycleResumedAt = canRotate ? Date() : nil
+            ambientTint = tints[slide(at: position).id] ?? .black
         }
         .onScrollVisibilityChange(threshold: 0.5) { isVisible = $0 }
         .onDisappear {
             pauseCycle()
             isVisible = false
-            pendingPosition = nil
-        }
-        .onChange(of: homeIsOpen, initial: true) { _, open in
-            if open { completeInitialPresentationIfReady() }
         }
         .onChange(of: canRotate, initial: true) { _, running in
             if running {
@@ -621,54 +595,42 @@ private struct TVHomeSpotlightCarousel: View {
             }
         }
         .onChange(of: slides.map(\.id)) { _, ids in
-            pendingPosition = nil
             readyIDs.formIntersection(ids)
             tints = tints.filter { ids.contains($0.key) }
         }
-        .task(id: maintenanceKey) {
-            // Retain the focused card's identity while trimming old loop copies
-            // after movement settles. ScrollPosition preserves its alignment.
-            guard !scrollIsMoving else { return }
-            let position = visualPosition
-            do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
-            guard !Task.isCancelled, visualPosition == position else { return }
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { positions = (position - 2)...(position + 2) }
-            let retainedIDs = Set(renderedPositions.map { slide(at: $0).id })
-            readyIDs.formIntersection(retainedIDs)
-            tints = tints.filter { retainedIDs.contains($0.key) }
-        }
         .task(id: rotationKey) {
             guard canRotate else { return }
+            let position = currentPosition
             let remaining = max(0, 6 - elapsedCycle(at: Date()))
             do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
-            guard !Task.isCancelled else { return }
-            pendingPosition = visualPosition + 1
-            revealPendingSlide()
+            guard !Task.isCancelled, canRotate, currentPosition == position,
+                  nextSlideReady else { return }
+            if focus.wrappedValue != nil {
+                focus.wrappedValue = position + 1
+            } else {
+                rememberedPosition = position + 1
+                onPositionChange(position + 1)
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
+                    scrollPosition.scrollTo(id: position + 1, anchor: .center)
+                }
+            }
         }
     }
 
-    private func selectPosition(_ position: Int) {
-        guard !slides.isEmpty, position != visualPosition else { return }
-        positions = min(positions.lowerBound, position - 2)...max(positions.upperBound, position + 2)
-        visualPosition = position
-        onPositionChange(position)
-        cycleElapsed = 0
-        cycleResumedAt = canRotate ? Date() : nil
-        let slide = slide(at: position)
-        ambientTint = tints[slide.id] ?? .black
-    }
-
-    private func completeInitialPresentationIfReady() {
-        guard homeIsOpen, !initialCardPresented, initialCardCentred,
-              focus.wrappedValue == initialPosition else { return }
-        // Artwork readiness can precede initial placement when Home is cached.
-        // It cannot consume any of the first card's six-second countdown.
-        pendingPosition = nil
-        cycleElapsed = 0
-        cycleResumedAt = nil
-        initialCardPresented = true
+    private func extendLoopIfNeeded() {
+        guard slides.count > 1 else { return }
+        let position = currentPosition
+        let lower = position - positions.lowerBound <= 2
+            ? positions.lowerBound - slides.count : positions.lowerBound
+        let upper = positions.upperBound - position <= 3
+            ? positions.upperBound + slides.count : positions.upperBound
+        guard lower != positions.lowerBound || upper != positions.upperBound else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            positions = lower..<upper
+            scrollPosition.scrollTo(id: position, anchor: .center)
+        }
     }
 
     private func elapsedCycle(at date: Date) -> TimeInterval {
@@ -680,22 +642,6 @@ private struct TVHomeSpotlightCarousel: View {
         cycleResumedAt = nil
     }
 
-    private func revealPendingSlide() {
-        guard canRotate, let position = pendingPosition, !slides.isEmpty,
-              readyIDs.contains(slide(at: position).id) else { return }
-        pendingPosition = nil
-        if focus.wrappedValue != nil {
-            // The focus engine scrolls the newly focused native card into view.
-            focus.wrappedValue = position
-        } else {
-            // Automatic rotation owns this selection. Initial layout reports
-            // from ScrollPosition must never advance the selected slide.
-            selectPosition(position)
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
-                scrollPosition = position
-            }
-        }
-    }
 }
 
 private struct TVSpotlightEdgeFade: View {
