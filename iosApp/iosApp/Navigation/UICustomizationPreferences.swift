@@ -737,7 +737,8 @@ final class UICustomizationPreferences {
 
     func resolvedPrimaryMenuItems(availableLibraries _: [Library] = []) -> [PrimaryMenuItem] {
         guard let primaryMenu, primaryMenu.isValid else { return appleDefaultPrimaryMenuItems() }
-        return Self.normalizedPrimaryMenuItems(primaryMenu.items)
+        let items = Self.normalizedPrimaryMenuItems(primaryMenu.items)
+        return items.count == 1 && items[0].isHome ? appleDefaultPrimaryMenuItems() : items
     }
 
     var hasExplicitPrimaryMenu: Bool { primaryMenu != nil }

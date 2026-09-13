@@ -97,7 +97,7 @@ actor EmbyLocalPreferences {
             defaults.set(try JSONSerialization.data(withJSONObject: rows), forKey: storageKey)
         }
         if path.last == "capabilities" {
-            return ["api_version":1,"revision":SettingKey.revision,"contract_etag":"vivid-local-emby","definition_count":SettingKey.allCases.count,
+            return ["api_version":1,"revision":SettingKey.revision,"contract_etag":"vivid-local-emby","definition_count":Self.contractDefaults.count,
                 "scopes":["profile","profile_client","profile_device"],"supports_batched_effective":true,"supports_idempotent_writes":true,"supports_atomic_shortcuts":false]
         }
         if path.last == "effective" {

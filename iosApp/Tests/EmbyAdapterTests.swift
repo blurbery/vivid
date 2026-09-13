@@ -475,6 +475,11 @@ final class EmbyAdapterTests: XCTestCase {
             "nav.shortcuts.profile": ["key": "nav.shortcuts", "value": ["items": []]]
         ]), forKey: "account-a")
         let store = EmbyLocalPreferences(defaults:defaults)
+        let capabilities = try await store.apply(storageKey: "account-a", user: "user", method: "GET",
+            path: ["capabilities"], query: [:], body: [:]) as? [String: Any]
+        XCTAssertEqual(capabilities?["definition_count"] as? Int, EmbyLocalPreferences.contractDefaults.count)
+        XCTAssertNil(EmbyLocalPreferences.contractDefaults["nav.shortcuts"])
+
         let path = ["api","v1","settings","values","playback.subtitle_language"]
         _ = try await store.apply(storageKey:"account-a",user:"user",method:"PUT",path:path,query:["scope":"profile"],body:["value":"eng"])
         _ = try await store.apply(storageKey:"account-a",user:"user",method:"PUT",path:path,query:["scope":"profile_device"],body:["value":"fra"])

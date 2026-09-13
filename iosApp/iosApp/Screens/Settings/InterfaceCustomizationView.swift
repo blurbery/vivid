@@ -192,6 +192,13 @@ struct InterfaceCustomizationView: View {
                         }
                     }
                 }
+                ForEach(hiddenDestinations, id: \.id) { item in
+                    Button {
+                        preferences.setPrimaryMenuItems(visibleDestinations + [item])
+                    } label: {
+                        Label("Show \(displayTitle(for: item))", systemImage: "eye")
+                    }
+                }
             } header: {
                 PhoneSettingsSectionHeader("Primary Menu")
             } footer: {
@@ -303,12 +310,20 @@ struct InterfaceCustomizationView: View {
         }
     }
 
+    private var hiddenDestinations: [PrimaryMenuItem] {
+        let visibleIDs = Set(visibleDestinations.map(\.id))
+        return appleDefaultPrimaryMenuItems().filter {
+            !visibleIDs.contains($0.id) && mainTabSupportsDestination($0, availableLibraries: libraries)
+        }
+    }
+
     private var visibleRows: [PrimaryMenuEditorRow] {
         visibleDestinations.map { PrimaryMenuEditorRow(item: $0) }
     }
 
     private var isDefaultMenuApplied: Bool {
-        visibleDestinations.count == 1 && visibleDestinations[0].isHome
+        guard let menu = preferences.primaryMenu else { return true }
+        return menu.items.count == 1 && menu.items[0].isHome
     }
 
     private func displayTitle(for item: PrimaryMenuItem) -> String {

@@ -31,16 +31,17 @@ final class TVHomeSpotlightPreferences {
 
     func initializeIfNeeded(from sections: [ResolvedSection]) {
         refresh()
-        guard !sections.isEmpty, storageKey != nil else { return }
+        let candidates = sections.filter { !$0.items.isEmpty }
+        guard !candidates.isEmpty, storageKey != nil else { return }
         if let selectedRowIDs, !selectedRowIDs.isEmpty {
             let available = Set(sections.map(\.id))
             if selectedRowIDs.allSatisfy({ !available.contains($0) }) {
-                save(Array(sections.prefix(3).map(\.id)))
+                save(Array(candidates.prefix(3).map(\.id)))
                 return
             }
         }
         guard selectedRowIDs == nil else { return }
-        save(Array(sections.prefix(3).map(\.id)))
+        save(Array(candidates.prefix(3).map(\.id)))
     }
 
     func toggle(_ rowID: String) {

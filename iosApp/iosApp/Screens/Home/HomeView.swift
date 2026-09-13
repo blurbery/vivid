@@ -91,7 +91,7 @@ struct HomeView: View {
             spotlightPreferences.refresh()
             spotlightPreferences.initializeIfNeeded(from: viewModel.sections)
         }
-        .onChange(of: viewModel.sections.map(\.id), initial: true) { _, _ in
+        .onChange(of: viewModel.regularSections.map(\.id), initial: true) { _, _ in
             spotlightPreferences.initializeIfNeeded(from: viewModel.sections)
         }
         #else

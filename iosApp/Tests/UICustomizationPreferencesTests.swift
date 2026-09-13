@@ -42,6 +42,26 @@ final class UICustomizationPreferencesTests: XCTestCase {
         XCTAssertTrue(preferences.allowsEditing, "tab/card settings no longer require atomic shortcut support")
     }
 
+    func testResolvedHomeOnlyMenuUsesTheSameDefaultsAsMainTabs() throws {
+        let suiteName = "ui-home-sentinel-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let defaults = SharedDefaults(suite: suite, standard: suite)
+        let cacheKey = "vivid.uiCustomization.server.profile.mobile"
+        let cached: [String: Any] = [
+            "primaryMenu": ["items": [["type": "builtin", "destination": "home"]]],
+            "cardPresentation": ["poster_size": "standard", "caption": "title_metadata"],
+            "supportProjection": "supported",
+        ]
+        defaults.set(try JSONSerialization.data(withJSONObject: cached), forKey: cacheKey)
+        let preferences = UICustomizationPreferences(
+            defaults: defaults, transport: RetiredNavigationProbe(),
+            cacheKey: { cacheKey }, requestIdentity: { testRequestIdentity(family: "mobile") }
+        )
+        XCTAssertEqual(preferences.primaryMenu?.items, [.builtin(.home)], "the sentinel must be loaded from cache")
+        XCTAssertEqual(preferences.resolvedPrimaryMenuItems(), appleDefaultPrimaryMenuItems())
+    }
+
     func testNamedPresetsMatchTheCrossClientRecipes() {
         XCTAssertEqual(
             CardPresentationPreset.balanced.presentation,
