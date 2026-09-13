@@ -47,8 +47,8 @@ permission preserves source disclosure; it does not allow closed-source
 covered derivatives. Apple system frameworks retain Apple's terms.
 
 FFmpegBuild and embedded media frameworks
-  Revision: 421e13be7061de67d91b85ac34a6b22a002b164f (release 3.0.0)
-  Source and rebuild script: https://github.com/superuser404notfound/FFmpegBuild/tree/421e13be7061de67d91b85ac34a6b22a002b164f
+  Revision: 4e58942403d37cceff3a3212e3e026f4205146a2 (release 3.3.0)
+  Source and rebuild script: https://github.com/superuser404notfound/FFmpegBuild/tree/4e58942403d37cceff3a3212e3e026f4205146a2
 
   Components built by that revision:
   - FFmpeg n8.1.2, currently 38b88335f99e76ed89ff3c93f877fdefce736c13:
@@ -120,9 +120,9 @@ They are this build's corresponding-source pointer; keep them matched to the
 revisions each release actually resolves.
 
 AetherEngine (tvOS playback)
-  Upstream 6.80.0: 89ef0c347a17180739d8ca7a1a1cfbb163135271
-  Source: https://github.com/superuser404notfound/AetherEngine/tree/89ef0c347a17180739d8ca7a1a1cfbb163135271
-  Local source and integration changes: https://github.com/blurbery/vivid/tree/59e59cb83d9fd0b4a86c0651d792e3c1cba69ce2/AetherEngine
+  Upstream 6.84.0: 565f5ec9cdc5033d085d6cb556faf16875efb4f0
+  Source: https://github.com/superuser404notfound/AetherEngine/tree/565f5ec9cdc5033d085d6cb556faf16875efb4f0
+  Local source and integration changes: AetherEngine/ in this Vivid source revision.
   LGPL-3.0 with the bundled Apple Store / DRM Exception.
   The local package retains Vivid's FFmpegBuild revision above. It adds audio
   ordinal selection inside the existing probe, integration type aliases, and

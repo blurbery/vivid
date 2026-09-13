@@ -678,6 +678,8 @@ extension AetherEngine {
         audioSourceStreamIndex: Int32? = nil,
         keepDvh1TagWithoutDV: Bool = false,
         forceDolbyVisionOnNonDVDisplay: Bool = false,
+        dolbyVisionHandling: DolbyVisionHandling = .automatic,
+        dolbyVisionRPUProfile: Int? = nil,
         matchContentEnabled: Bool = true,
         panelIsInHDRMode: Bool = false,
         audioBridgeMode: AudioBridgeMode = .surroundCompat,
@@ -743,6 +745,8 @@ extension AetherEngine {
             displaySupportsHDR: sessionDisplayCaps.supportsHDR,
             keepDvh1TagWithoutDV: keepDvh1TagWithoutDV,
             forceDolbyVisionOnNonDVDisplay: forceDolbyVisionOnNonDVDisplay,
+            dolbyVisionHandling: dolbyVisionHandling,
+            dolbyVisionRPUProfile: dolbyVisionRPUProfile,
             matchContentEnabled: matchContentEnabled,
             panelIsInHDRMode: panelIsInHDRMode,
             audioSourceStreamIndexOverride: audioSourceStreamIndex,
@@ -1419,7 +1423,7 @@ extension AetherEngine {
                         }
                     }
                     guard let self, let host,
-                          let player = self.currentAVPlayer else { return }
+                          self.currentAVPlayer != nil else { return }
                     // Stage 1: nudge seek. Device-proven to reach AVPlayer (rate re-asserts)
                     // but NOT always to revive its loader; stage 2 covers that.
                     // AE#422: same read the wedge path already takes from the mirror. This one was
@@ -2030,8 +2034,11 @@ extension AetherEngine {
 
         state = .loading
         // AE#464 round 2: this branch reaches `loadSoftware` / `loadNative` rather than `load`, so it
-        // parks its own rebuild position for anything that stacks behind it.
+        // parks its own rebuild position for anything that stacks behind it. Round 3 parks the
+        // transport beside it; this branch reads `loadedOptions` field by field, and the caller has
+        // already written the session's own transport into it.
         positionUnderReconstruction = resumeAt
+        transportIntentUnderReconstruction = loadedOptions.autoplay
         let previousAudioIndex = activeAudioTrackIndex
         // Snapshot before stopInternal wipes state. Must reload on the same backend: loadNative on a SW-routed AV1 source throws unsupportedCodec (HLSVideoEngine only accepts HEVC / H.264 / VP9 / probed-AV1).
         let wasOnSoftwarePath = (playbackBackend == .software)
@@ -2197,6 +2204,10 @@ extension AetherEngine {
                     audioSourceStreamIndex: audioStreamIndex,
                     keepDvh1TagWithoutDV: loadedOptions.keepDvh1TagWithoutDV,
                     forceDolbyVisionOnNonDVDisplay: loadedOptions.forceDolbyVisionOnNonDVDisplay,
+                    dolbyVisionHandling: loadedOptions.dolbyVisionHandling,
+                    // AE#532: the verdict the load reached, not a second audit: the source has not
+                    // changed and the probe that could answer it is gone.
+                    dolbyVisionRPUProfile: sourceDolbyVisionRPUProfile,
                     matchContentEnabled: loadedOptions.matchContentEnabled,
                     panelIsInHDRMode: loadedOptions.panelIsInHDRMode,
                     audioBridgeMode: loadedOptions.audioBridgeMode,

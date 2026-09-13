@@ -83,8 +83,16 @@ extension AetherEngine {
             routedSoftware: playbackBackend == .software,
             preferred: proposed.preferredDecodePath,
             codecID: lastDetectedVideoCodec,
-            dvProfile: sourceDVProfile,
+            // AE#532: what the source is, not what its record claimed. A Profile 5 record the RPU
+            // corrected is representable in software, so a flip to it is not refused.
+            dvProfile: DolbyVisionRecordAudit.correctedProfile(
+                record: sourceDVProfile, rpu: sourceDolbyVisionRPUProfile) ?? sourceDVProfile,
             dvBLCompatID: sourceDVBLCompatID,
+            // The proposal's handling against the loaded source's base layer: a correction that turns
+            // the base layer on and moves to software in one step is honoured, one that keeps the
+            // Dolby Vision on a Profile 5 record is refused as before.
+            presentsDolbyVisionBaseLayer: proposed.dolbyVisionHandling == .baseLayerOnly
+                && sourceDolbyVisionBaseLayerPresentable,
             isLive: loadedOptions.isLive,
             hasCompanionAudioReader: (customReader as? LiveIngestSourceInfo)?.companionAudioReader != nil
         ) {
@@ -100,12 +108,28 @@ extension AetherEngine {
         // that corrected an option and saw a plain reload cannot otherwise tell "the correction was
         // already in force" from "the correction did not arrive".
         let changed = SessionOptionCorrection.changedFields(from: loadedOptions, to: proposed)
-        EngineLog.emit(
-            changed.isEmpty
-                ? "[AetherEngine] #460: reload applying no option change (session already on these options)"
-                : "[AetherEngine] #460: reload applying \(changed.joined(separator: ", "))",
-            category: .engine
-        )
+        // Round 3: a field the rebuild decides for itself is not a field this reload applies, and
+        // naming it in the applied line was the last way left for a correction to read as done when
+        // it was not. The transport is the session's own unless a background teardown left it none
+        // to read, which is the condition `reloadAtCurrentPosition` makes the same call on.
+        let (applied, sessionOwned) = SessionOptionCorrection.partitionChanges(
+            changed, sessionOwnsTransport: backgroundTeardownSelection == nil)
+        if !applied.isEmpty || sessionOwned.isEmpty {
+            EngineLog.emit(
+                applied.isEmpty
+                    ? "[AetherEngine] #460: reload applying no option change (session already on these options)"
+                    : "[AetherEngine] #460: reload applying \(applied.joined(separator: ", "))",
+                category: .engine
+            )
+        }
+        if !sessionOwned.isEmpty {
+            EngineLog.emit(
+                "[AetherEngine] #460: \(sessionOwned.joined(separator: ", ")) not applied, the session "
+                + "owns it: the rebuild comes back in the transport state the session is in, not the one "
+                + "a mount was given (AE#464 round 2). Call play() / pause() to change it",
+                category: .engine
+            )
+        }
 
         // Install BEFORE the rebuild, not through it: the URL branch carries these options into
         // `load`, but the custom-source branch reaches `reloadWithAudioOverride`, which reads
@@ -175,6 +199,29 @@ enum SessionOptionCorrection {
         "heldSourceConnection",
     ]
 
+    /// The fields a running SESSION owns, which a correction may name and the rebuild then decides
+    /// for itself. Neither refused nor applied, which is the one shape a log line could not say.
+    ///
+    /// `autoplay` describes the first MOUNT, and a rebuild is not a mount: it comes back in the
+    /// transport state the session is in (AE#464 round 2), so a correction that sets it was
+    /// accepted, named inside `#460: reload applying ...` and then overwritten. The reporter read
+    /// that off the code and asked for a doc word; the docs already said it, and the log did not,
+    /// which is the half that a host actually reads while its correction is happening.
+    static let sessionOwnedFields: [String] = ["autoplay"]
+
+    /// Split what the correction changed into what the reload applies and what the session decides.
+    ///
+    /// The transport is the session's own only where the rebuild has one to read. A resume after a
+    /// background teardown (#357) has none, so there the mount flag still decides and the field is
+    /// applied like any other, which is the same condition `reloadAtCurrentPosition` replays on.
+    static func partitionChanges(
+        _ changed: [String], sessionOwnsTransport: Bool
+    ) -> (applied: [String], sessionOwned: [String]) {
+        guard sessionOwnsTransport else { return (changed, []) }
+        return (changed.filter { !sessionOwnedFields.contains($0) },
+                changed.filter { sessionOwnedFields.contains($0) })
+    }
+
     /// Identity fields the proposal changed, in `loadIdentityFields` order. Empty means the
     /// correction is honourable. Typed comparison on purpose: this decides whether a session is
     /// torn down, so it does not ride on reflection.
@@ -211,6 +258,7 @@ enum SessionOptionCorrection {
         codecID: AVCodecID,
         dvProfile: Int?,
         dvBLCompatID: Int?,
+        presentsDolbyVisionBaseLayer: Bool = false,
         isLive: Bool,
         hasCompanionAudioReader: Bool
     ) -> SessionReloadRefusal? {
@@ -219,7 +267,8 @@ enum SessionOptionCorrection {
         guard flipsToSoftware else { return nil }
 
         if VideoRoutingPolicy.softwarePathCannotRepresent(
-            codecID: codecID, dvProfile: dvProfile, dvBlCompatID: dvBLCompatID) {
+            codecID: codecID, dvProfile: dvProfile, dvBlCompatID: dvBLCompatID,
+            presentsDolbyVisionBaseLayer: presentsDolbyVisionBaseLayer) {
             return .softwarePathCannotRepresentSource
         }
         // The companion reader exists only for a video-only live variant (the resolver spins one up
@@ -262,8 +311,9 @@ enum SessionOptionCorrection {
     /// deliberately. Update this list and, if the field names the session, `loadIdentityFields`.
     static let knownFields: [String] = [
         "omitCriteriaColorExtensions", "suppressDisplayCriteria", "httpHeaders",
-        "keepDvh1TagWithoutDV", "forceDolbyVisionOnNonDVDisplay", "matchContentEnabled",
-        "panelIsInHDRMode", "panelPresentsDolbyVision", "audioBridgeMode", "isLive", "audioOnly",
+        "keepDvh1TagWithoutDV", "forceDolbyVisionOnNonDVDisplay", "dolbyVisionHandling", "matchContentEnabled",
+        "panelIsInHDRMode", "attemptsHDRMasterOnUnprovenPanel", "panelPresentsDolbyVision",
+        "audioBridgeMode", "isLive", "audioOnly",
         "dvrWindowSeconds",
         "liveBlockingReload", "liveJoinProfile", "liveJoinStartsImmediately",
         "clampsLiveResumeToWindow", "nativeRemoteHLS", "nativeRemoteHLSIngestFallback",

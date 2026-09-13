@@ -12,9 +12,9 @@ Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution perm
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
-| AetherEngine (tvOS playback) | 6.80.0, local integration changes | LGPL-3.0 with Apple Store / DRM Exception; see `AetherEngine/LICENSE` |
+| AetherEngine (tvOS playback) | 6.84.0, local integration changes | LGPL-3.0 with Apple Store / DRM Exception; see `AetherEngine/LICENSE` |
 | LibDovi (tvOS playback) | 2.1.0 | MIT |
-| FFmpegBuild | `421e13be7061de67d91b85ac34a6b22a002b164f` | LGPL-2.1; embedded FFmpeg and codec dependencies retain the licences recorded below |
+| FFmpegBuild | `4e58942403d37cceff3a3212e3e026f4205146a2` | LGPL-2.1; embedded FFmpeg and codec dependencies retain the licences recorded below |
 | libass | 0.17.1 | ISC |
 | FreeType | 2.13.2 | FreeType License |
 | FriBidi | 1.0.12 | LGPL-2.1-or-later |

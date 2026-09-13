@@ -124,6 +124,9 @@ extension AetherEngine {
                 "[AetherEngine] live resume clamp: behind=\(behind)s window=live-only -> edge snap",
                 category: .session
             )
+            // The whole distance is skipped, and the resume is at the edge.
+            liveResumeClamped.send(LiveResumeClamp(skippedSeconds: w.behindLiveSeconds,
+                                                   behindLiveSeconds: 0))
             Task { await self.seekToLiveEdge() }
         case .seek(let t):
             EngineLog.emit(
@@ -131,6 +134,9 @@ extension AetherEngine {
                 + "-> seek \(String(format: "%.1f", t))",
                 category: .session
             )
+            liveResumeClamped.send(LiveResumeClamp(
+                skippedSeconds: Swift.max(0, t - (w.edgeTime - w.behindLiveSeconds)),
+                behindLiveSeconds: Swift.max(0, w.edgeTime - t)))
             Task { await self.seek(to: t) }
         }
     }
@@ -432,6 +438,9 @@ extension AetherEngine {
         w.noteEdge(edgeSessionTime)
         w.notePlayhead(currentTime)
         w.noteResidentFloor(residentLiveFloorSessionSeconds())
+        // Sodalite#104 round 4: the cadence the playlist declares, which outranks how the source
+        // happened to deliver. nil on the paths that serve no playlist of ours.
+        w.noteTargetDuration(liveTargetDurationSeconds)
         auditLiveRejoinPlacement()
         liveWindow = w
         // AE#442: tick-to-tick advancement, not a running maximum: a backward DVR seek drops the
@@ -440,11 +449,68 @@ extension AetherEngine {
             liveBehindWhenLastAdvancing = w.behindLiveSeconds
         }
         lastPublishedLivePlayhead = currentTime
+        // Sodalite#104: one line per TRANSITION of the edge verdict, with every number that decided
+        // it. A host draws its LIVE badge and its DVR rail from this flag, so a report of "the bar
+        // jumped back to live" is otherwise unanswerable from a device: the distance alone does not
+        // say what it was judged against, and the tolerance follows the cadence now.
+        if clock.isAtLiveEdge != w.isAtEdge {
+            EngineLog.emit(
+                "[AetherEngine] #104 live edge verdict \(w.isAtEdge ? "AT EDGE" : "BEHIND"): "
+                + "behind=\(String(format: "%.2f", w.behindLiveSeconds))s "
+                + "playhead=\(String(format: "%.2f", currentTime))s "
+                + "edge=\(String(format: "%.2f", w.edgeTime))s "
+                + "lastEdgeStep=\(String(format: "%.2f", w.lastEdgeStepSeconds))s "
+                + "targetDuration=\(w.targetDurationSeconds.map { String(format: "%.2f", $0) + "s" } ?? "none") "
+                + "tolerance=\(String(format: "%.2f", w.edgeToleranceSeconds))s",
+                category: .session
+            )
+        }
         clock.liveEdgeTime = w.edgeTime
         clock.seekableLiveRange = w.seekableRange
         clock.isAtLiveEdge = w.isAtEdge
         clock.behindLiveSeconds = w.behindLiveSeconds
+        logLiveCushionIfDue(window: w)
     }
+
+    /// AE#524: one line when the client's own runway gets thin, which is what precedes a stall.
+    ///
+    /// This was a per-second probe while the defect was open, and that is what it was for: the
+    /// reconstruction it replaced produced two incompatible readings of the same minute. What it
+    /// measured is now understood, so only the part worth a line in a shipped session survives.
+    ///
+    /// The healthy shape, measured over 92 s on a 6 s-segment source with the fix in: the playhead
+    /// sits between 5 and 13 s behind the newest cut, sawtoothing by one delivery interval as each
+    /// batch lands, and what AVPlayer has FETCHED never drops under 3 s. So the fetched runway is the
+    /// number that says a stall is coming, and the two distances either side of it are context.
+    @MainActor
+    func logLiveCushionIfDue(window w: LiveWindow) {
+        let now = Date()
+        if let last = lastLiveCushionLogAt, now.timeIntervalSince(last) < 1.0 { return }
+        lastLiveCushionLogAt = now
+        let playhead = currentTime
+        let edge = w.edgeTime
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let ahead = await self.avPlayerBufferAheadSeconds()
+            guard ahead < Self.liveThinRunwaySeconds else {
+                self.liveThinRunwayNoted = false
+                return
+            }
+            guard !self.liveThinRunwayNoted else { return }
+            self.liveThinRunwayNoted = true
+            EngineLog.emit(
+                "[AetherEngine] #524 the client is running thin: it holds "
+                + "\(String(format: "%.2f", ahead))s of fetched runway, playhead "
+                + "\(String(format: "%.2f", playhead))s against a seekable edge of "
+                + "\(String(format: "%.2f", edge))s (which already carries the holdback)",
+                category: .session
+            )
+        }
+    }
+
+    /// AE#524: under this much fetched content a live client is one late delivery from a stall.
+    /// Measured on a healthy session: the sawtooth bottoms out around 3 s.
+    static let liveThinRunwaySeconds: Double = 2.0
 
     /// AE#446 round 4: who asked for a seek. The two differ in exactly two places, both about a live
     /// session that advertises no DVR window: whether the seek is refused outright, and whether its

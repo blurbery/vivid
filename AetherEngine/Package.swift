@@ -7,7 +7,7 @@ let package = Package(
     products: [.library(name: "AetherEngine", targets: ["AetherEngine"])],
     dependencies: [
         .package(url: "https://github.com/superuser404notfound/FFmpegBuild",
-                 revision: "421e13be7061de67d91b85ac34a6b22a002b164f"),
+                 revision: "4e58942403d37cceff3a3212e3e026f4205146a2"),
         .package(url: "https://github.com/superuser404notfound/LibDovi", exact: "2.1.0")
     ],
     targets: [

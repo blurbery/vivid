@@ -51,6 +51,16 @@ public final class HLSVideoEngine: @unchecked Sendable {
     /// route, and only while `effectiveDvMode` is false.
     let forceDolbyVisionOnNonDVDisplay: Bool
 
+    /// From `LoadOptions.dolbyVisionHandling`; default `.automatic`. `.baseLayerOnly` sends a Dolby
+    /// Vision source with a presentable base layer down the plain hvc1 / av01 route on every display
+    /// (`VideoRoutingPolicy.presentsDolbyVisionBaseLayer`), ahead of every DV branch including AE#455.
+    let dolbyVisionHandling: DolbyVisionHandling
+
+    /// AE#532: the profile this source's own RPU reports, when the container record was worth doubting
+    /// (`DolbyVisionRecordAudit`). nil when nothing was read, which is every source but a Profile 5
+    /// record over a BT.2020 YCbCr HDR VUI. The route believes it over the record.
+    let dolbyVisionRPUProfile: Int?
+
     /// Match Content master toggle at load time; one input to the master-vs-media-playlist routing decision.
     private let matchContentEnabled: Bool
 
@@ -825,6 +835,8 @@ public final class HLSVideoEngine: @unchecked Sendable {
         displaySupportsHDR: Bool = true,
         keepDvh1TagWithoutDV: Bool = false,
         forceDolbyVisionOnNonDVDisplay: Bool = false,
+        dolbyVisionHandling: DolbyVisionHandling = .automatic,
+        dolbyVisionRPUProfile: Int? = nil,
         matchContentEnabled: Bool = true,
         panelIsInHDRMode: Bool = false,
         audioSourceStreamIndexOverride: Int32? = nil,
@@ -867,6 +879,8 @@ public final class HLSVideoEngine: @unchecked Sendable {
         self.displaySupportsHDR = displaySupportsHDR
         self.keepDvh1TagWithoutDV = keepDvh1TagWithoutDV
         self.forceDolbyVisionOnNonDVDisplay = forceDolbyVisionOnNonDVDisplay
+        self.dolbyVisionHandling = dolbyVisionHandling
+        self.dolbyVisionRPUProfile = dolbyVisionRPUProfile
         self.matchContentEnabled = matchContentEnabled
         self.panelIsInHDRMode = panelIsInHDRMode
         self.audioSourceStreamIndexOverride = audioSourceStreamIndexOverride
@@ -1397,8 +1411,11 @@ public final class HLSVideoEngine: @unchecked Sendable {
         // already signaled (full-range P5 is legal, #20); unspecified defaults to limited.
         // The AE#455 P8.1-as-P5 route needs the same guarantee for the same reason, and lands on the
         // same tuple: an HDR10 base layer is BT.2020 / PQ / BT.2020-NCL by definition.
+        // Keyed on the sample entry the route chose, not on the variant: a Profile 5 record served as
+        // its base layer (`dolbyVisionHandling = .baseLayerOnly`) is plain hvc1 whose VUI the muxer
+        // stream-copies as it stands.
         let p5ColorOverride: MP4SegmentMuxer.ColorOverride?
-        if dvVariant == .profile5 || doviConfig == .rewriteToProfile5 {
+        if codecTagOverride == "dvh1" {
             let sourceRange = codecpar.pointee.color_range
             p5ColorOverride = MP4SegmentMuxer.ColorOverride(
                 primaries: AVCOL_PRI_BT2020,

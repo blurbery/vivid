@@ -1717,6 +1717,10 @@ final class HLSSegmentProducer: @unchecked Sendable {
         defer { sideReaderLinkGate?.videoFetchBegan() }
         var parked = 0
         var nextLogAt = Self.backpressureWedgeLogThresholdSeconds
+        // AE#528: the wait below returns on ANY cache broadcast (a consumer GET that moves the fetch
+        // target, a stored segment), not only at its timeout, so one iteration is a wakeup and not a
+        // second. Everything under it is expressed in seconds, so the seconds come from the clock.
+        var parkClock = ParkClock(nowNanos: DispatchTime.now().uptimeNanoseconds)
         // #65 Piece A: a genuine VOD wedge is the consumer fetch target frozen past the break threshold.
         // The detector resets whenever the target advances, so healthy backpressure (slow CDN, cold cache)
         // keeps the target climbing and never trips. Live keeps its own pump watchdogs.
@@ -1741,7 +1745,9 @@ final class HLSSegmentProducer: @unchecked Sendable {
                 }
                 return true
             }
-            parked += 1
+            guard let parkedSeconds = parkClock.advance(nowNanos: DispatchTime.now().uptimeNanoseconds)
+            else { continue }
+            parked = parkedSeconds
             let cacheTarget = cache.targetIndex
             // #65 pause false-positive: a paused/backgrounded VOD consumer issues no forward fetch, so its
             // frozen fetch target is not a wedge. Gate the detector on play intent (nil provider = assume
@@ -1749,22 +1755,30 @@ final class HLSSegmentProducer: @unchecked Sendable {
             let wantsToPlay = wantsToPlayProvider?() ?? true
             // #35/#93 cold-startup: before the first frame lands a flat clock is pre-roll, not a wedge.
             let hasStarted = hasStartedRenderingProvider?() ?? true
+            // AE#528: observed BEFORE the log line so `stuck=` names this poll and not the last one.
+            let tripped = !isLive && wedgeDetector.observe(currentTarget: cacheTarget,
+                                                           wantsToPlay: wantsToPlay,
+                                                           renderedPosition: playbackPositionProvider?(),
+                                                           hasStartedRendering: hasStarted)
             if !isLive, parked >= nextLogAt {
                 nextLogAt += 10
                 let suspendReason = !wantsToPlay ? "(consumer paused; wedge detection suspended)"
                     : !hasStarted ? "(pre-first-frame; wedge detection suspended)"
+                    // AE#528: a park is not a stall. What decides is whether the consumer is still
+                    // asking for segments, and stuck= is that number: 0 is a viewer scrubbing through
+                    // resident content, a climbing one is a consumer that went quiet.
+                    : wedgeDetector.secondsSinceTargetMoved == 0 ? "(consumer still fetching)"
                     : "(no playback progress)"
                 EngineLog.emit(
                     "[HLSSegmentProducer] #65 backpressure PARK (\(context)) head=\(head) "
                     + "target=\(target) cacheTarget=\(cacheTarget) "
                     + "highStored=\(cache.highestStoredIndex) cached=\(cache.count) parked=\(parked)s "
+                    + "stuck=\(wedgeDetector.secondsSinceTargetMoved)s "
                     + suspendReason,
                     category: .session
                 )
             }
-            if !isLive, wedgeDetector.observe(currentTarget: cacheTarget, wantsToPlay: wantsToPlay,
-                                              renderedPosition: playbackPositionProvider?(),
-                                              hasStartedRendering: hasStarted) {
+            if tripped {
                 markBackpressureWedgeBroken()
                 EngineLog.emit(
                     "[HLSSegmentProducer] #65 backpressure WEDGE BROKEN (\(context)) head=\(head) "
@@ -1867,6 +1881,9 @@ final class HLSSegmentProducer: @unchecked Sendable {
         defer { sideReaderLinkGate?.videoFetchBegan() }
         var parked = 0
         var nextLogAt = Self.prefetchDiskParkLogThresholdSeconds
+        // AE#528: same wakeup-is-not-a-second correction as the advance park; this loop's own doc
+        // above claims a one second cadence and the headroom wait returns on every cache broadcast.
+        var parkClock = ParkClock(nowNanos: DispatchTime.now().uptimeNanoseconds)
         var wedgeDetector = detectWedge && !isLive
             ? BackpressureWedgeDetector(
                 breakThresholdSeconds: Self.backpressureWedgeBreakThresholdSeconds,
@@ -1888,7 +1905,9 @@ final class HLSSegmentProducer: @unchecked Sendable {
                 }
                 return true
             }
-            parked += 1
+            guard let parkedSeconds = parkClock.advance(nowNanos: DispatchTime.now().uptimeNanoseconds)
+            else { continue }
+            parked = parkedSeconds
             if parked >= nextLogAt {
                 nextLogAt += 30
                 EngineLog.emit(
