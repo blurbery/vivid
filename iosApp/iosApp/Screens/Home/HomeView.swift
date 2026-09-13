@@ -85,7 +85,6 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
         .task {
             homeSectionPreferences.refresh()
             spotlightPreferences.refresh()

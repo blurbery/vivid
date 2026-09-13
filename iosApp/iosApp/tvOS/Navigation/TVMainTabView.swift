@@ -245,7 +245,7 @@ struct TVMainTabView: View {
 
     private var rootContent: some View {
         ZStack(alignment: .top) {
-            Color.vividBackground
+            Color.clear
                 .ignoresSafeArea()
 
             selectedRootContent
@@ -696,7 +696,6 @@ private struct TVForYouView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.black.ignoresSafeArea())
         .padding(.top, 176)
         .task(id: cacheKey) { await reload() }
         .onChange(of: focusRequest) { _, request in

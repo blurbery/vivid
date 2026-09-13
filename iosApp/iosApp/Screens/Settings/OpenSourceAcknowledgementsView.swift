@@ -108,7 +108,7 @@ struct OpenSourceAcknowledgementsView: View {
             .padding(24).frame(maxWidth: 760)
             #endif
             .frame(maxWidth: .infinity)
-        }.background(Color.black.ignoresSafeArea()).navigationTitle("")
+        }.vividBackground().navigationTitle("")
         #if !os(tvOS)
         .settingsNavigationChrome()
         #endif

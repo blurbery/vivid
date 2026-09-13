@@ -59,7 +59,7 @@ struct AboutSettingsView: View {
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth).padding(24).frame(maxWidth: .infinity)
         }
-        .background(Color.black.ignoresSafeArea()).navigationTitle("")
+        .navigationTitle("")
         .fullScreenCover(isPresented: $showsPrivacy) {
             TVPrivacyPolicyOverlay { showsPrivacy = false }
         }
@@ -130,7 +130,7 @@ private struct VividContactSettingsView: View {
             Text("Scan with your phone to open an email form.").foregroundStyle(.secondary)
             Text(VividAbout.email)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black.ignoresSafeArea()).navigationTitle("")
+            .navigationTitle("")
     }
     #else
     @Environment(\.openURL) private var openURL

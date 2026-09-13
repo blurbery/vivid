@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// Quiet atmospheric backdrop shared by the native Settings experiences.
-/// It mirrors the web app's dark canvas and restrained blue signal glow
-/// without competing with controls or reducing text contrast.
+/// Settings page backdrop. tvOS retains the full-page layout while letting
+/// the native presentation container supply its colour.
 struct SettingsBackdrop: View {
     var body: some View {
-        #if os(tvOS) || os(iOS)
+        #if os(tvOS)
+        Color.clear.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+        #elseif os(iOS)
         Color.black.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
         #else
         ZStack {

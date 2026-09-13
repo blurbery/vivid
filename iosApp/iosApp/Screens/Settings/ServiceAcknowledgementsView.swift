@@ -66,7 +66,7 @@ struct ServiceAcknowledgementsView: View {
             #endif
             .frame(maxWidth: .infinity)
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .navigationTitle("")
         #if os(iOS)
         .settingsNavigationChrome()

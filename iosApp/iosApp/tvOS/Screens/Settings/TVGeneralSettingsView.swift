@@ -261,7 +261,6 @@ private struct TVHomeSectionsCustomizationSheet: View {
                 .padding(.vertical, 36)
             }
             .navigationTitle("Home Sections")
-            .background(Color.vividBackground.ignoresSafeArea())
             .task {
                 await loadSections()
             }
@@ -586,9 +585,7 @@ private struct TVMenuCustomizationSheet: View {
                 .padding(.vertical, 36)
             }
             .navigationTitle("Customise Tab Bar")
-            .background(Color.vividBackground.ignoresSafeArea())
         }
-        .background(Color.black.ignoresSafeArea())
         .onExitCommand { dismiss() }
     }
 

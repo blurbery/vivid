@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The shared signed-in page canvas. On iOS it is a fixed, fully opaque
 /// charcoal wash with static tonal depth; it never samples page artwork.
-/// Other platforms retain their existing pure-black canvas.
+/// tvOS leaves the page colour to its native presentation container.
 struct VividPageBackdrop: View {
     var body: some View {
         #if os(iOS)
@@ -35,6 +35,11 @@ struct VividPageBackdrop: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        #elseif os(tvOS)
+        Color.clear
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         #else
         Color.vividBackground
             .ignoresSafeArea()
@@ -51,9 +56,14 @@ enum VividNavigationTitleDisplayMode {
 }
 
 extension View {
-    /// Apply the original pure-black Vivid canvas.
+    /// Use the native page canvas on tvOS and the original black canvas elsewhere.
+    @ViewBuilder
     func vividBackground() -> some View {
+        #if os(tvOS)
+        self
+        #else
         self.background(Color.vividBackground.ignoresSafeArea())
+        #endif
     }
 
     /// Apply the fixed charcoal page canvas without changing semantic black

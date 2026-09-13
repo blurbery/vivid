@@ -463,8 +463,7 @@ private struct TVCollectionCard: View {
         focusedId = collection.id
     }
 }
-/// For You owns its black canvas; system edge shading should not darken
-/// short personal lists differently from a screen full of posters.
+/// Keep For You's scroll geometry and edge shading consistent across list sizes.
 struct TVPersonalScrollAppearance: ViewModifier {
     var enabled = true
     @ViewBuilder func body(content: Content) -> some View {
@@ -472,10 +471,9 @@ struct TVPersonalScrollAppearance: ViewModifier {
             if #available(tvOS 26.0, *) {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black)
                     .scrollEdgeEffectHidden()
             } else {
-                content.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.black)
+                content.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else { content }
     }

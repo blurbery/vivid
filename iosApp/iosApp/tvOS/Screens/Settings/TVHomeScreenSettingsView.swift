@@ -65,7 +65,6 @@ struct TVHomeScreenSettingsView: View {
                 .padding(.horizontal, 72)
                 .padding(.vertical, 36)
             }
-            .background(Color.black.ignoresSafeArea())
             .navigationTitle("Home Screen")
             .task { await loadSections() }
         }

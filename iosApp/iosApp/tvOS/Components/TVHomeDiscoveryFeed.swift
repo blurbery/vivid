@@ -89,7 +89,6 @@ struct TVHomeDiscoveryFeed: View {
                 .padding(.top, 152)
                 .padding(.bottom, 80)
             }
-            .background(Color.black.ignoresSafeArea())
             .modifier(TVHomeDiagnosticFeed(diagnostics: scrollDiagnostics))
             .onChange(of: focusRequest, initial: true) { _, request in
                 guard request > appliedFocusRequest, !isTopMenuFocused else { return }
