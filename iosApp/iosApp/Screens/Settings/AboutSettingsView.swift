@@ -36,10 +36,7 @@ struct AboutSettingsView: View {
         #if os(tvOS)
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(spacing: 18) {
-                    Image("AboutInfoIcon").resizable().scaledToFit().frame(width: 42, height: 42)
-                    Text("About").font(.system(size: 42, weight: .bold, design: .rounded))
-                }
+                TVSettingsPageHeader(title: "About")
                 brand
                 TVSettingsGroup {
                     Button { showsLicenses = true } label: {
@@ -59,12 +56,14 @@ struct AboutSettingsView: View {
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth).padding(24).frame(maxWidth: .infinity)
         }
-        .background(Color.black.ignoresSafeArea()).navigationTitle("")
+        .tvSettingsPageSurface()
         .fullScreenCover(isPresented: $showsPrivacy) {
             TVPrivacyPolicyOverlay { showsPrivacy = false }
+                .presentationBackground { TVAppBackdrop() }
         }
         .fullScreenCover(isPresented: $showsLicenses) {
             TVOpenSourceAcknowledgementsOverlay { showsLicenses = false }
+                .presentationBackground { TVAppBackdrop() }
         }
         #else
         List {
@@ -130,7 +129,7 @@ private struct VividContactSettingsView: View {
             Text("Scan with your phone to open an email form.").foregroundStyle(.secondary)
             Text(VividAbout.email)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black.ignoresSafeArea()).navigationTitle("")
+            .tvSettingsPageSurface()
     }
     #else
     @Environment(\.openURL) private var openURL

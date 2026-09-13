@@ -14,6 +14,8 @@ Emby is available on iPhone, iPad and Apple TV. It connects to Emby and translat
 
 Emby uses its own server identity, native user ID, authentication headers, endpoints and playback reporting. Silo keeps its existing connection and Protocol V3 path. Shared networking and player code dispatch to Emby only for an Emby account; defaults for Silo remain unchanged. Address fallback, TMDb lookup, direct-play HDR options and download checks remain scoped to Emby.
 
+Apple TV More Like This uses Emby’s native similar-items endpoint and retains results in the existing account-scoped cache. Emby item artwork shares in-flight image bytes across display, crop and palette sizes, with one retry for a timeout or lost connection; HTTP failures and cancellation are not retried. Silo retains its existing recommendation and image-loading paths.
+
 Server addresses and account credentials are supplied at setup, not embedded in the build. Tokens remain in Keychain under Vivid's current storage identity and can be copied between the user’s devices through Vivid’s private iCloud account vault. The entered password is not retained. Account changes invalidate obsolete requests, and Emby credentials are not sent to TMDb or IntroDB.
 
 ## Setup and browsing
@@ -67,6 +69,8 @@ The app changes published through `v0.13.0` (`2ee9005c`) include the device-test
 Earlier automated checks covered Emby mapping, identity boundaries, local preferences, quality limits, Home-row filtering, collections, seasons and resolution labels. Separate TMDb and IntroDB checks covered request isolation and metadata mapping. Those checks passed on their recorded development revisions; they are not a new full-suite run against `v0.13.0`.
 
 On 8 September 2026, read-only inspection confirmed that Reacher’s fourth season was stored as Gone Tomorrow with season number 4 in the connected Emby library. The adapter now labels it Season 4 on both platforms without altering the server. Four source-derived mapping checks passed for numbered seasons, Specials, missing numbers and unchanged episode titles. The existing season regression test also includes the Reacher case. Both device builds passed, were installed, and device checks confirmed the completed update on iPhone and Apple TV. This does not expand the untested integration and format coverage below.
+
+On 13 September 2026, intermittent missing artwork was reproduced on Bedroom Apple TV and reported in other Emby clients. Read-only server checks confirmed that three affected cached item references matched the Emby database, while their local image endpoints timed out both with and without cache tags. Sampled source image files remained readable. The internal server cause is unconfirmed; the tvOS request coalescing and bounded retry changes do not establish that this server issue is fixed. No server configuration was changed.
 
 Physical iPad testing, all audio layouts, transcoding routes and live Emby IntroDB/trailer coverage remain outstanding. Historical full-suite CI results and optional live-fixture skips are recorded in [App Design](../app-design.md#responsive-layout-validation); automated mapping tests do not replace those live checks. Use these limits when planning further TestFlight checks.
 

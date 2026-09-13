@@ -79,9 +79,9 @@ struct SearchView: View {
             .padding(.top, VividTheme.smallPadding)
             #endif
         }
-        .background(Color.black.ignoresSafeArea())
         #if os(tvOS)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
         .background(Color.black.ignoresSafeArea())
         #endif
         .navigationTitle("Search")

@@ -5,7 +5,6 @@ import SwiftUI
 struct TVSubtitleSettingsPane: View {
     @Bindable var viewModel: TVSettingsViewModel
     let detailFocus: FocusState<TVSettingsDetailFocus?>.Binding
-    let presentPicker: (TVSettingsPickerRequest) -> Void
     @State private var showResetConfirmation = false
 
     var body: some View {
@@ -30,20 +29,24 @@ struct TVSubtitleSettingsPane: View {
         TVSettingsSectionHeader("EMBEDDED SUBTITLES")
 
         TVSettingsGroup {
-            TVSettingsPickerRow(
+            TVSettingsOptionMenu(
                 title: "Language",
                 value: TVSettingsOptions.label(
                     for: viewModel.editorSubtitleLanguage,
                     in: TVSettingsOptions.subtitleLanguage(viewModel.subtitleLanguageOptions)
-                )
-            ) { showPicker(.language) }
+                ),
+                options: pickerRequest(for: .language).options,
+                selection: pickerRequest(for: .language).selection
+            )
             .focused(detailFocus, equals: .top)
             .disabled(viewModel.subtitleMatchesSystemAppearance)
 
-            TVSettingsPickerRow(
+            TVSettingsOptionMenu(
                 title: "Behavior",
-                value: TVSettingsOptions.label(for: viewModel.editorSubtitleMode, in: TVSettingsOptions.subtitleMode)
-            ) { showPicker(.mode) }
+                value: TVSettingsOptions.label(for: viewModel.editorSubtitleMode, in: TVSettingsOptions.subtitleMode),
+                options: pickerRequest(for: .mode).options,
+                selection: pickerRequest(for: .mode).selection
+            )
             .focused(detailFocus, equals: .subtitleBehavior)
             .disabled(viewModel.subtitleMatchesSystemAppearance)
 
@@ -104,29 +107,29 @@ struct TVSubtitleSettingsPane: View {
                 pickerRow("Background Style", options: TVSettingsOptions.backgroundStyle,
                           selection: viewModel.subtitleAppearance.backgroundStyle.rawValue, kind: .backgroundStyle)
 
-                TVSettingsPickerRow(
+                TVSettingsOptionMenu(
                     title: "Background Opacity",
                     value: viewModel.subtitleAppearance.backgroundStyle == .box
                         ? "\(viewModel.subtitleAppearance.backgroundOpacity)%"
-                        : "—"
-                ) {
-                    guard viewModel.subtitleUsesDeviceAppearanceOverride, !viewModel.subtitleMatchesSystemAppearance else { return }
-                    showPicker(.backgroundOpacity)
-                }
+                        : "—",
+                    options: pickerRequest(for: .backgroundOpacity).options,
+                    selection: pickerRequest(for: .backgroundOpacity).selection
+                )
+                .disabled(!viewModel.subtitleUsesDeviceAppearanceOverride || viewModel.subtitleMatchesSystemAppearance)
                 .focused(detailFocus, equals: .subtitleBackgroundOpacity)
 
-                TVSettingsPickerRow(
+                TVSettingsOptionMenu(
                     title: "Background Color",
                     value: viewModel.subtitleAppearance.backgroundStyle == .box
                         ? TVSettingsOptions.label(
                             for: viewModel.subtitleAppearance.backgroundColor.lowercased(),
                             in: TVSettingsOptions.backgroundColor
                         )
-                        : "—"
-                ) {
-                    guard viewModel.subtitleUsesDeviceAppearanceOverride, !viewModel.subtitleMatchesSystemAppearance else { return }
-                    showPicker(.backgroundColor)
-                }
+                        : "—",
+                    options: pickerRequest(for: .backgroundColor).options,
+                    selection: pickerRequest(for: .backgroundColor).selection
+                )
+                .disabled(!viewModel.subtitleUsesDeviceAppearanceOverride || viewModel.subtitleMatchesSystemAppearance)
                 .focused(detailFocus, equals: .subtitleBackgroundColor)
 
                 pickerRow("Position", options: TVSettingsOptions.position,
@@ -168,21 +171,17 @@ struct TVSubtitleSettingsPane: View {
         selection: String,
         kind: PickerKind
     ) -> some View {
-        TVSettingsPickerRow(
+        TVSettingsOptionMenu(
             title: title,
-            value: TVSettingsOptions.label(for: selection, in: options)
-        ) {
-            guard viewModel.subtitleUsesDeviceAppearanceOverride, !viewModel.subtitleMatchesSystemAppearance else { return }
-            showPicker(kind)
-        }
+            value: TVSettingsOptions.label(for: selection, in: options),
+            options: pickerRequest(for: kind).options,
+            selection: pickerRequest(for: kind).selection
+        )
+        .disabled(!viewModel.subtitleUsesDeviceAppearanceOverride || viewModel.subtitleMatchesSystemAppearance)
         .focused(detailFocus, equals: kind.returnFocus)
     }
 
     // MARK: - Pickers
-
-    private func showPicker(_ kind: PickerKind) {
-        presentPicker(pickerRequest(for: kind))
-    }
 
     private func pickerRequest(for kind: PickerKind) -> TVSettingsPickerRequest {
         switch kind {
@@ -191,64 +190,56 @@ struct TVSubtitleSettingsPane: View {
                 id: kind.id,
                 title: "Language",
                 options: TVSettingsOptions.subtitleLanguage(viewModel.subtitleLanguageOptions),
-                selection: $viewModel.editorSubtitleLanguage,
-                returnFocus: kind.returnFocus
+                selection: $viewModel.editorSubtitleLanguage
             )
         case .mode:
             TVSettingsPickerRequest(
                 id: kind.id,
                 title: "Behavior",
                 options: TVSettingsOptions.subtitleMode,
-                selection: $viewModel.editorSubtitleMode,
-                returnFocus: kind.returnFocus
+                selection: $viewModel.editorSubtitleMode
             )
         case .fontSize:
             TVSettingsPickerRequest(
                 id: kind.id,
                 title: "Font Size",
                 options: TVSettingsOptions.subtitleSize,
-                selection: appearanceEnumBinding(\.fontSize, SubtitleFontSizePreset.self),
-                returnFocus: kind.returnFocus
+                selection: appearanceEnumBinding(\.fontSize, SubtitleFontSizePreset.self)
             )
         case .fontColor:
             TVSettingsPickerRequest(
                 id: kind.id,
                 title: "Font Color",
                 options: TVSettingsOptions.fontColor,
-                selection: appearanceStringBinding(\.fontColor),
-                returnFocus: kind.returnFocus
+                selection: appearanceStringBinding(\.fontColor)
             )
         case .backgroundStyle:
             TVSettingsPickerRequest(
                 id: kind.id,
                 title: "Background Style",
                 options: TVSettingsOptions.backgroundStyle,
-                selection: backgroundStyleBinding,
-                returnFocus: kind.returnFocus
+                selection: backgroundStyleBinding
             )
         case .backgroundOpacity:
             TVSettingsPickerRequest(
                 id: kind.id,
                 title: "Background Opacity",
                 options: TVSettingsOptions.backgroundOpacity,
-                selection: backgroundOpacityBinding,
-                returnFocus: kind.returnFocus
+                selection: backgroundOpacityBinding
             )
         case .backgroundColor:
             TVSettingsPickerRequest(
                 id: kind.id,
                 title: "Background Color",
                 options: TVSettingsOptions.backgroundColor,
-                selection: backgroundColorBinding,
-                returnFocus: kind.returnFocus
+                selection: backgroundColorBinding
             )
         case .position:
             TVSettingsPickerRequest(
                 id: kind.id,
                 title: "Position",
                 options: TVSettingsOptions.position,
-                selection: appearanceEnumBinding(\.position, SubtitlePositionPreset.self),
-                returnFocus: kind.returnFocus
+                selection: appearanceEnumBinding(\.position, SubtitlePositionPreset.self)
             )
         }
     }

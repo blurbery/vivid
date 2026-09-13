@@ -37,6 +37,24 @@ final class TVLibrarySimilarityStore {
             try checkContext(context)
         }
         guard source.type == "movie" || VividMediaType.isSeries(source.type) else { return [] }
+        #if os(tvOS)
+        if MediaServerProvider.active == .emby {
+            let connection = try await EmbyConnection.current()
+            let sourceID = try EmbyConnection.id(source.contentId)
+            let catalog = try await EmbyAdapter(connection: connection).items(
+                "/Items/\(sourceID)/Similar", query: ["Limit": "12"]
+            )
+            let response: CatalogResponse = try EmbyAdapter.decode(catalog)
+            try checkContext(context)
+            var seen = Set<String>()
+            let result = response.items.filter {
+                $0.contentId != source.contentId && seen.insert($0.contentId).inserted
+            }.prefix(10).map { SimilarPosterItem(item: $0) }
+            if cache.count >= 40 { cache.removeAll() }
+            cache[key] = (Date(), result)
+            return result
+        }
+        #endif
         Self.logger.notice("source metadata genres=\(source.genres?.count ?? 0) studios=\(source.studios?.count ?? 0) networks=\(source.networks?.count ?? 0)")
         var filters = CatalogFilterState()
         filters.genres = Set(source.genres ?? [])

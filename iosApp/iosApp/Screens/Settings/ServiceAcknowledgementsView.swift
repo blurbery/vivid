@@ -66,9 +66,11 @@ struct ServiceAcknowledgementsView: View {
             #endif
             .frame(maxWidth: .infinity)
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .navigationTitle("")
-        #if os(iOS)
+        #if os(tvOS)
+        .tvSettingsPageSurface()
+        #elseif os(iOS)
         .settingsNavigationChrome()
         #endif
     }

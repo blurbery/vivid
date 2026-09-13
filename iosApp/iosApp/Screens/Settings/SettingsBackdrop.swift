@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// Quiet atmospheric backdrop shared by the native Settings experiences.
-/// It mirrors the web app's dark canvas and restrained blue signal glow
-/// without competing with controls or reducing text contrast.
+/// Settings inherits the persistent app canvas on tvOS. Other platforms
+/// retain their existing page backgrounds.
 struct SettingsBackdrop: View {
     var body: some View {
-        #if os(tvOS) || os(iOS)
+        #if os(tvOS)
+        Color.clear
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        #elseif os(iOS)
         Color.black.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
         #else
         ZStack {
@@ -44,3 +48,20 @@ struct SettingsBackdrop: View {
         #endif
     }
 }
+
+#if os(tvOS)
+/// One static canvas behind the app's changing navigation content. Full-screen
+/// presentations reuse it because they are hosted outside the app container.
+struct TVAppBackdrop: View {
+    var body: some View {
+        LinearGradient(
+            colors: [Color(hex: "#101114"), Color(hex: "#030405")],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+#endif

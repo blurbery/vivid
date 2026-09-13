@@ -74,6 +74,9 @@ final class VividImagePipeline: @unchecked Sendable {
     private let session: URLSession
     private let decoding = OperationQueue()
     private let flights = VividImageFlights()
+    #if os(tvOS)
+    private let embyDataFlights = VividEmbyImageDataFlights()
+    #endif
     init(costLimit: Int = 96 * 1024 * 1024, countLimit: Int = 180, diskCapacity: Int = 1_024 * 1024 * 1024) {
         cache = VividImageCache(costLimit: costLimit, countLimit: countLimit, diskCapacity: diskCapacity)
         let configuration = URLSessionConfiguration.default
@@ -105,6 +108,19 @@ final class VividImagePipeline: @unchecked Sendable {
     }
     func data(for request: VividImageRequest) async throws -> Data {
         if request.url.isFileURL { return try Data(contentsOf: request.url, options: .mappedIfSafe) }
+        #if os(tvOS)
+        // Emby's generated artwork URLs are shared by display-size, crop and
+        // palette requests. Share their bytes before doing separate decodes.
+        if request.url.path.contains("/emby/Items/"), request.url.path.contains("/Images/") {
+            return try await embyDataFlights.load(request.url) { [self] in
+                try await fetchData(for: request)
+            }
+        }
+        #endif
+        return try await fetchData(for: request)
+    }
+
+    private func fetchData(for request: VividImageRequest) async throws -> Data {
         let (data, response) = try await session.data(from: request.url)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 32 * 1024 * 1024 else {
             throw URLError(.badServerResponse)
@@ -135,6 +151,31 @@ final class VividImagePipeline: @unchecked Sendable {
             throw URLError(.cannotDecodeContentData)
         }
         return UIImage(cgImage: image)
+    }
+}
+
+/// Coalesce Emby artwork independently of thumbnail size. Retry one transient
+/// transport failure; cancellations and HTTP failures are never retried here.
+private actor VividEmbyImageDataFlights {
+    private var tasks: [URL: (UUID, Task<Data, Error>)] = [:]
+
+    func load(_ url: URL, operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
+        if let (_, existing) = tasks[url] { return try await existing.value }
+        let id = UUID()
+        let task = Task {
+            do { return try await operation() }
+            catch {
+                let failure = error as NSError
+                guard failure.domain == NSURLErrorDomain,
+                      [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost].contains(failure.code) else { throw error }
+                try await Task.sleep(for: .milliseconds(500))
+                try Task.checkCancellation()
+                return try await operation()
+            }
+        }
+        tasks[url] = (id, task)
+        defer { if tasks[url]?.0 == id { tasks[url] = nil } }
+        return try await task.value
     }
 }
 
