@@ -8,7 +8,7 @@
 
 ---
 
-Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. As recorded on 12 September 2026, the latest accepted uploads are iPhone/iPad 0.14.3 (20) and tvOS 0.14.3 (19). Both have completed processing, have English (Australia) testing notes with exact-source links, and are Testing in the existing internal and external groups. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
+Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. As recorded on 13 September 2026, the latest accepted uploads are iPhone/iPad 0.14.3 (21) and tvOS 0.14.3 (20). Both have completed processing, have English (Australia) testing notes with exact-source links, and are Testing in the existing internal and external groups. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
 
 ## What is ready
 
