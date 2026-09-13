@@ -385,7 +385,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
         preferences.refresh()
 
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
-            sections = cached.sections.filter { !$0.items.isEmpty }
+            sections = cached.sections.filter { !$0.items.isEmpty || (MediaServerProvider.active == .emby && !preferences.isVisible($0.id)) }
         }
 
         isLoading = sections.isEmpty
@@ -395,7 +395,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
         do {
             let response = try await StartupContentPrefetcher.fetchHomeSections()
             guard !Task.isCancelled else { return }
-            sections = response.sections.filter { !$0.items.isEmpty }
+            sections = response.sections.filter { !$0.items.isEmpty || (MediaServerProvider.active == .emby && !preferences.isVisible($0.id)) }
         } catch {
             guard !Task.isCancelled else { return }
             loadFailed = sections.isEmpty

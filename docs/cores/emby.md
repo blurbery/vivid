@@ -14,6 +14,8 @@ Emby is available on iPhone, iPad and Apple TV. It connects to Emby and translat
 
 Emby uses its own server identity, native user ID, authentication headers, endpoints and playback reporting. Silo keeps its existing connection and Protocol V3 path. Shared networking and player code dispatch to Emby only for an Emby account; defaults for Silo remain unchanged. Address fallback, TMDb lookup, direct-play HDR options and download checks remain scoped to Emby.
 
+Apple TV More Like This uses Emby’s native similar-items endpoint and retains results in the existing account-scoped cache. Emby item artwork shares in-flight image bytes across display, crop and palette sizes, with one retry for a timeout or lost connection; HTTP failures and cancellation are not retried. Silo retains its existing recommendation and image-loading paths.
+
 Server addresses and account credentials are supplied at setup, not embedded in the build. Tokens remain in Keychain under Vivid's current storage identity and can be copied between the user’s devices through Vivid’s private iCloud account vault. The entered password is not retained. Account changes invalidate obsolete requests, and Emby credentials are not sent to TMDb or IntroDB.
 
 ## Setup and browsing
