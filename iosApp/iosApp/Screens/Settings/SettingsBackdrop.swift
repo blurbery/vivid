@@ -54,14 +54,10 @@ struct SettingsBackdrop: View {
 /// presentations reuse it because they are hosted outside the app container.
 struct TVAppBackdrop: View {
     var body: some View {
-        LinearGradient(
-            colors: [Color(hex: "#283840"), Color(hex: "#283239"), Color(hex: "#303238")],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Color(hex: "#1C1E21")
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 #endif
