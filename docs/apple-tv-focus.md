@@ -566,3 +566,29 @@ repeated layout seen in Time Profiler. Allocation churn has not been measured;
 the prior memory samples cannot substitute for an Allocations recording.
 No safe-area, cache, card, focus or navigation change was made. The temporary
 breakpoints were removed, Vivid was resumed, and LLDB detached successfully.
+
+
+### Apple TV Home row limit
+
+Apple TV Home supports six enabled media rails, with Spotlight separate. A row
+selected as a Spotlight source counts towards the rail limit only when its rail
+is enabled. Hiding that rail preserves its Spotlight selection and saved order.
+Home Sections shows the enabled count and prevents enabling a seventh rail until
+another is hidden. Empty enabled rows reserve their slot so returning content
+cannot exceed the limit.
+
+On cached restoration and refresh, layouts exceeding six enabled rows retain
+the first six in saved order and persist the remaining rows as hidden. The feed
+also caps its visible projection at six. Hidden definitions remain available in
+settings; metadata and image cache policies and Spotlight design are unchanged.
+iPhone and iPad row limits are unchanged.
+
+blurbery reported smooth cold launches and repeated fast horizontal/vertical
+traversal on Living Room after manually reducing Home to six media rails plus
+Spotlight. This supports the smaller Home configuration on that device, without
+proving that hosting-view count alone caused the earlier lag. The automatic
+limit and settings controls still require device verification.
+
+Validation: the incremental Release VividTV device build passed using the retained
+DerivedData and package cache with the existing signing team. `git diff --check`
+passed. No new UI tests were added and this revision has not been installed.

@@ -215,7 +215,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
                     TVSettingsFooter(
                         isEditing
                             ? "Use the arrow buttons to move rows. The new order saves immediately."
-                            : "Open eye: visible on Home. Closed eye: hidden. Hidden rows leave no gap—the next visible row takes the same Home position."
+                            : "\(preferences.visibleRowCount) of 6 rows enabled. Hide a row before showing another when all six are enabled. Hidden rows keep their settings and can still supply Spotlight."
                     )
                 }
             }
@@ -247,7 +247,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
     private var editorControlsCard: some View {
         TVSettingsPageHeader(
             title: "Home Sections",
-            subtitle: isEditing ? "Move rows into your preferred order." : "Choose which rows appear on Home."
+            subtitle: isEditing ? "Move rows into your preferred order." : "Choose up to 6 Home rows. Spotlight is separate."
         ) {
             Button(isEditing ? "Done Editing" : "Edit") {
                 withAnimation(.easeOut(duration: VividTheme.fastDuration)) {
@@ -317,6 +317,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
             }
             .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
             .focused($focusedControl, equals: .visibility(section.id))
+            .disabled(!isVisible && preferences.visibleRowCount >= HomeSectionPreferences.maximumVisibleRows)
             .accessibilityLabel(isVisible ? "Hide \(section.title)" : "Show \(section.title)")
         }
         .padding(.horizontal, 24)
@@ -385,7 +386,8 @@ private struct TVHomeSectionsCustomizationSheet: View {
         preferences.refresh()
 
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
-            sections = cached.sections.filter { !$0.items.isEmpty || (MediaServerProvider.active == .emby && !preferences.isVisible($0.id)) }
+            preferences.enforceVisibleRowLimit(in: cached.sections)
+            sections = cached.sections.filter { !$0.items.isEmpty || !preferences.isVisible($0.id) }
         }
 
         isLoading = sections.isEmpty
@@ -395,7 +397,8 @@ private struct TVHomeSectionsCustomizationSheet: View {
         do {
             let response = try await StartupContentPrefetcher.fetchHomeSections()
             guard !Task.isCancelled else { return }
-            sections = response.sections.filter { !$0.items.isEmpty || (MediaServerProvider.active == .emby && !preferences.isVisible($0.id)) }
+            preferences.enforceVisibleRowLimit(in: response.sections)
+            sections = response.sections.filter { !$0.items.isEmpty || !preferences.isVisible($0.id) }
         } catch {
             guard !Task.isCancelled else { return }
             loadFailed = sections.isEmpty
