@@ -22,7 +22,7 @@ final class PlaybackTrialTrace {
         started = Self.pendingPlay ?? CACurrentMediaTime()
         let origin = Self.pendingPlay == nil ? "engine_load" : "play_request"
         Self.pendingPlay = nil
-        event("start", fields: "origin=\(origin) engine=KSPlayerGPL")
+        event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=KSPlayerGPL")
     }
 
     func mark(_ name: String, at time: Double = CACurrentMediaTime()) {

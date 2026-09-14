@@ -8,10 +8,10 @@ import KSPlayer
 import MediaPlayer
 import SwiftUI
 
-/// Trial adapter for the public GPL player. Vivid owns controls and source credentials;
+/// Lucid is Vivid’s playback engine, built on the public GPL player. Vivid owns controls and source credentials;
 /// KSPlayer owns demuxing, decoding, its buffer, PCM output and the video surface.
 @MainActor
-final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
+final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
     static let externalSubtitleTrackIDBase = 1_000_000
     let clock = PlaybackClock()
     let diagnostics = VividDiagnostics()
@@ -52,8 +52,8 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
     private(set) var sourceDVProfile: Int?
     private(set) var sourceVideoFormat: VideoFormat = .sdr
     private(set) var videoFormat: VideoFormat = .sdr
-    var activeVideoDecoder: String? { sourceVideoWidth > 0 ? "KSPlayer (VideoToolbox preferred)" : nil }
-    var activeAudioDecoder: String? { audioTracks.isEmpty ? nil : "FFmpeg PCM → AVAudioEngine" }
+    var activeVideoDecoder: String? { sourceVideoWidth > 0 ? "LucidFF (VideoToolbox preferred)" : nil }
+    var activeAudioDecoder: String? { audioTracks.isEmpty ? nil : "LucidFF PCM → AVAudioEngine" }
     var softwareDisplaySize: CGSize? { player?.naturalSize }
     var readAheadAvailableSeconds: Double? { nil }
     var liveTelemetry: LiveTelemetry? { diagnostics.liveTelemetry }
@@ -68,7 +68,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
     var refreshSourceHeaders: (@Sendable () async -> [String: String]?)?
     var preferLosslessAudio = false
 
-    private var options: VividKSOptions?
+    private var options: LucidFFOptions?
     private var source: (url: URL, start: Double, options: LoadOptions, audio: Int32?)?
     private var trace: PlaybackTrialTrace?
     private var generation: UInt64 = 0
@@ -80,7 +80,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
     private var lastBytes: Int64 = 0
     private var sampleTime = 0.0
     private var stallCount = 0
-    private var audioProbe: VividKSAudioProbe?
+    private var audioProbe: LucidRenderProbe?
     private var routeObserver: NSObjectProtocol?
     private var externalTracks: [Int: ExternalSubtitleTrack] = [:]
     private var externalCues: [Int: [SubtitleCue]] = [:]
@@ -102,7 +102,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         source = (url, startPosition, loadOptions, audioSourceStreamIndex)
         trace = PlaybackTrialTrace()
         trace?.mark("engine_load")
-        let prepared = VividKSOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex) { [weak self, weak trace = trace] name, time in
+        let prepared = LucidFFOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex) { [weak self, weak trace = trace] name, time in
             Task { @MainActor in
                 guard self?.generation == token else { return }
                 trace?.mark(name, at: time)
@@ -121,7 +121,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         applyGravity()
         videoRoute = loadOptions.audioOnly ? .audio : .sampleBuffer
         if let renderSource = instance.audioOutput.renderSource, let trace {
-            let probe = VividKSAudioProbe(source: renderSource, available: { [weak self, weak trace] name, time in
+            let probe = LucidRenderProbe(source: renderSource, available: { [weak self, weak trace] name, time in
                 Task { @MainActor in
                     guard self?.generation == token else { return }
                     trace?.mark(name, at: time)
@@ -154,7 +154,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
                 guard generation == token else { throw CancellationError() }
                 if let errorInfo { throw errorInfo }
                 guard CACurrentMediaTime() < deadline else {
-                    throw PlaybackErrorInfo(kind: .noPlayableTrackWithinBudget, message: "KSPlayer did not open the source within 60 seconds.")
+                    throw PlaybackErrorInfo(kind: .noPlayableTrackWithinBudget, message: "Lucid did not open the source within 60 seconds.")
                 }
                 try await Task.sleep(for: .milliseconds(50))
             }
@@ -270,7 +270,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         seekPicturePending = false
         isSeeking = true; state = .seeking; playbackPhase = .seeking
         player.pause()
-        let result = VividKSSeekResult()
+        let result = LucidSeekResult()
         let deadline = CACurrentMediaTime() + 30
         player.seek(time: target) { result.complete($0) }
         while result.read() == nil, CACurrentMediaTime() < deadline, !Task.isCancelled,
@@ -348,7 +348,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
     private func fail(_ error: Error) {
         let native = error as NSError
         let failure = error as? PlaybackErrorInfo ?? PlaybackErrorInfo(kind: .softwarePipelineFailed,
-            message: "KSPlayer could not play this source.", underlyingDomain: native.domain, underlyingCode: native.code)
+            message: "Lucid could not play this source.", underlyingDomain: native.domain, underlyingCode: native.code)
         guard errorInfo == nil else { return }
         harvestTimings()
         trace?.event("failed", fields: "code=\(native.code)")
@@ -547,8 +547,11 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
     func makeFrameExtractor(url: URL, httpHeaders: [String: String]) -> FrameExtractor? { nil }
 }
 
+typealias VividEngine = LucidPlayer
+typealias VividPlayerSurface = LucidVideo
+
 /// Uses the same persistent SwiftUI surface slot without introducing another control layer.
-struct VividPlayerSurface: UIViewRepresentable {
+struct LucidVideo: UIViewRepresentable {
     @ObservedObject var engine: VividEngine
     func makeUIView(context: Context) -> UIView {
         let view = UIView(); view.backgroundColor = .black; view.isUserInteractionEnabled = false

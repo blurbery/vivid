@@ -29,9 +29,9 @@ The existing adapter implements Silo's Protocol V3. That is a provider contract,
 
 ## Apple TV pipeline
 
-`VividKSPlayerEngine` maps transport, resume, tracks, subtitles and the existing SwiftUI surface onto KSPlayer. `VividKSOptions` selects the initial audio stream and respects Match Content. `PlaybackTrialTrace` records source-free monotonic timing and one-second buffer samples. See the [trial baseline](../cores/player-engine.md) for measurement limits and pending device checks.
+`LucidPlayer` maps transport, resume, tracks, subtitles and the existing SwiftUI surface onto KSPlayer. `LucidFFOptions` selects the initial audio stream and respects Match Content. `PlaybackTrialTrace` records source-free monotonic timing and one-second buffer samples. See the [trial baseline](../cores/player-engine.md) for measurement limits and pending device checks.
 
-Automatic read-ahead is ten segments. AVPlayer’s short loaded-range buffer and Aether’s prepared frontier are separate measurements; timeline presentation does not change playback recovery thresholds. Credential updates use the existing generation-fenced reload because Aether cannot replace request headers in place.
+LucidFF uses KSPlayer’s own buffer defaults, with no additional read-ahead reservoir. Credential updates use Vivid’s existing reload boundary.
 
 ## VividKit pipeline (iPhone and iPad)
 
@@ -51,7 +51,7 @@ VividKit playback has been tested on iPhone 16 Pro Max and Apple TV 4K (3rd gene
 
 ## Direct-network recovery
 
-The reader-level recovery below belongs to VividKit. tvOS Aether uses its own transport and Vivid’s outer reload boundary.
+The reader-level recovery below belongs to VividKit. tvOS LucidFF uses KSPlayer’s transport and Vivid’s outer reload boundary.
 
 The demux boundary preserves the underlying network failure. Eligible transient failures include HTTP 500, 502, 503 and 504, timeouts, lost connections, connection failures, DNS failures and offline errors. A shared playback recovery budget permits two network retries and one same-route reload; reloading does not replenish that budget, and cancellation invalidates it. Normal compatibility fallback remains available when recovery cannot continue.
 
@@ -76,7 +76,7 @@ The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the ex
 
 The same Vivid surface remains mounted as playback moves between full screen and Next Up preview geometry. Next Up owns only the preview bounds and action layout; it must never create a second player or restart the current item. Its top-right preview and bottom-left actions are constrained to the actual viewport. The countdown and Play Now depend on an available next episode; absence of a next episode must show an explicit end/error state instead.
 
-Vivid’s custom timeline is shared by native and software engine routes. On Apple TV, a round subtitle shortcut immediately left of the sliders control opens a glass subtitle selection menu, with Off, Subtitle Settings and connected OpenSubtitles search. Subtitle Settings retains secondary tracks, delay and appearance controls. The sliders control opens the remaining tabs in a Home-style glass bar. Closing either presentation restores focus to its shortcut. The HUD panel is capped at 300 points high, with three-column information and stats layouts; long descriptions, chapters and track lists remain scrollable. Loading dots are decorative and non-focusable, use a bounded animation cadence, and respect Reduce Motion. AVPlayerViewController hosts the native route, with its transport UI hidden. The same persistent host survives episode handoff; software routes use AetherPlayerView.
+Vivid’s custom timeline is shared by native and software engine routes. On Apple TV, a round subtitle shortcut immediately left of the sliders control opens a glass subtitle selection menu, with Off, Subtitle Settings and connected OpenSubtitles search. Subtitle Settings retains secondary tracks, delay and appearance controls. The sliders control opens the remaining tabs in a Home-style glass bar. Closing either presentation restores focus to its shortcut. The HUD panel is capped at 300 points high, with three-column information and stats layouts; long descriptions, chapters and track lists remain scrollable. Loading dots are decorative and non-focusable, use a bounded animation cadence, and respect Reduce Motion. AVPlayerViewController hosts the native route, with its transport UI hidden. The same persistent host survives episode handoff; the tvOS trial uses LucidVideo.
 
 ## Mobile presentation
 

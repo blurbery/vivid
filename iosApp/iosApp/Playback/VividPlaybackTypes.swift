@@ -7,9 +7,17 @@ import Foundation
 import VividKit
 #endif
 
+#if os(tvOS)
+/// Vivid-owned branding; upstream package and licence identities remain intact.
+enum LucidCore {
+    static let name = "Lucid"
+    static let path = "LucidFF"
+}
+#endif
+
 enum VividPlaybackEngineIdentity {
     #if os(tvOS)
-    static let name = "KSPlayer GPL trial"
+    static let name = LucidCore.name
     #else
     static let name = "VividKit"
     #endif

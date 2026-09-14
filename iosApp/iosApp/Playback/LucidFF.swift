@@ -8,7 +8,7 @@ import UIKit
 import QuartzCore
 
 /// Only adapts Vivid's selection and Match Content policy. Buffer defaults stay upstream.
-final class VividKSOptions: KSOptions {
+final class LucidFFOptions: KSOptions {
     let matchContent: Bool
     private let audioIndex: Int32?
     private let audioOrdinal: Int?
@@ -53,7 +53,7 @@ final class VividKSOptions: KSOptions {
 }
 
 /// A bounded await must also finish when upstream cancels or replaces a seek.
-final class VividKSSeekResult: @unchecked Sendable {
+final class LucidSeekResult: @unchecked Sendable {
     private let lock = NSLock()
     private var result: Bool?
     func complete(_ result: Bool) { lock.lock(); self.result = result; lock.unlock() }
@@ -62,7 +62,7 @@ final class VividKSSeekResult: @unchecked Sendable {
 
 /// Observes the PCM render callback without changing samples, clocking or channel selection.
 /// This measures submission to Apple's audio engine, not sound at the receiver.
-final class VividKSAudioProbe: OutputRenderSourceDelegate {
+final class LucidRenderProbe: OutputRenderSourceDelegate {
     weak var source: OutputRenderSourceDelegate?
     private let lock = NSLock()
     private var first = true

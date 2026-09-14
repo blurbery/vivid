@@ -1,14 +1,16 @@
 # Vivid playback engine
 
-## KSPlayer GPL trial on Apple TV
+## Lucid playback engine on Apple TV
 
 `ksplayer-trial` is a temporary experiment. At the owner’s request, the former tvOS engine, its source, adapter, dependency and tests are removed from this branch. Compare against the unchanged baseline commit in Git history. iPhone/iPad retain VividKit. Nothing here establishes approval to merge or distribute an Apple binary.
+
+Lucid is Vivid’s playback-engine name. `LucidPlayer` owns the existing app-facing wrapper, `LucidCore` supplies its identity, `LucidVideo` hosts the video surface and `LucidFFOptions` configures the public KSPlayer/FFmpeg path (LucidFF). `VividEngine` and `VividPlayerSurface` remain compatibility aliases for the shared app. LucidAV is reserved for a future independent AVFoundation path, not an implemented alternative. Upstream KSPlayer identifiers, copyright and licence notices remain intact.
 
 Generate the tvOS trial with `xcodegen generate --spec iosApp/project.yml` and build scheme `VividTV`. For the retained iOS targets, generate `iosApp/project-ios.yml` instead. Shared settings stay in `project-common.yml`; the two generated projects deliberately resolve separate package graphs because VividKit and FFmpegKit contain identically named binary modules. Do not combine both specs in one generated project.
 
 The trial pins public [KSPlayer](https://github.com/kingslay/KSPlayer/tree/7862a2b175b50db71135e57fd144ea0e441d47d6) and its public FFmpegKit 6.1.4 dependency. No Premium/LGPL private code is used. The tvOS target links neither the old engine nor VividKit’s playback binaries; a Foundation-only retry-budget source is shared with the app.
 
-`VividKSPlayerEngine` keeps the existing `VividEngine` interface and controls. It uses `KSMEPlayer` directly for HTTP(S), local files, MKV/MP4/HLS, demuxing, decode, buffering, pause/play, rate, resume and seeking. The adapter projects audio/subtitle tracks and chapters into Vivid and renders subtitles in its existing overlay. These are implementation paths, not a claim of passed media/device tests. External ASS uses the basic text parser; complex typesetting, PiP and receiver-fetchable AirPlay video are outside this baseline. Normal audio uses KSPlayer’s decoded PCM path. No compressed Atmos output is added.
+`LucidPlayer` keeps the existing `VividEngine` interface and controls. It uses `KSMEPlayer` directly for HTTP(S), local files, MKV/MP4/HLS, demuxing, decode, buffering, pause/play, rate, resume and seeking. The adapter projects audio/subtitle tracks and chapters into Vivid and renders subtitles in its existing overlay. These are implementation paths, not a claim of passed media/device tests. External ASS uses the basic text parser; complex typesetting, PiP and receiver-fetchable AirPlay video are outside this baseline. Normal audio uses KSPlayer’s decoded PCM path. No compressed Atmos output is added.
 
 KSPlayer’s default 3-second preferred/30-second maximum buffer settings are retained. No second reservoir or loopback server is added. Saved buffer and lossless-bridge preferences are disabled for the experiment because they do not control KSPlayer. Match Content uses the public KSPlayer display-criteria implementation, with reset on stop. HDMI display mode still requires physical verification.
 
@@ -171,7 +173,7 @@ The Vivid core coordinates credential renewal with the active server core. Vivid
 
 ## Implementation
 
-- [tvOS adapter](../../iosApp/iosApp/Playback/VividKSPlayerEngine.swift): public KSPlayer session, track selection, PCM audio and measured startup.
+- [tvOS adapter](../../iosApp/iosApp/Playback/LucidPlayer.swift): public KSPlayer session, track selection, PCM audio and measured startup.
 - [VividPlayer](../../VividKit/Sources/VividKit/VividPlayer.swift): playback clock, transport and bounded audio recovery.
 - [VividMediaSession](../../VividKit/Sources/VividKit/VividMediaSession.swift): decoding, sample queues and audio replay.
 - [VividHDMIAudioCore](../../VividKit/Sources/VividKit/VividHDMIAudioCore.swift): route-gated HDMI audio-stall detection and recovery policy.

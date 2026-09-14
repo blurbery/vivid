@@ -76,7 +76,7 @@ enum BufferAheadMode: String, CaseIterable {
     }
 
     #if os(tvOS)
-    static let explanation = "The KSPlayer trial uses its own automatic buffer. Saved buffer presets are retained but do not alter trial playback."
+    static let explanation = "Lucid uses its own automatic buffer. Saved buffer presets are retained but do not alter trial playback."
     #else
     static let explanation = "Automatic buffers about 20 seconds ahead. Playback starts before the target fills, and memory limits can shorten the buffer. Changes apply to the next video; streaming playlists manage their own buffer."
     #endif
