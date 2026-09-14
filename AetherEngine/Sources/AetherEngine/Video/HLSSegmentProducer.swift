@@ -1132,7 +1132,7 @@ final class HLSSegmentProducer: @unchecked Sendable {
     /// `firstItemTfdtPts` is this producer's planned first tfdt, i.e. the item-axis position (same TB) from which
     /// its shift applies. Everything below it on the item axis was muxed by an earlier producer under an earlier
     /// shift and may still be in AVPlayer's buffer, so a consumer needs the pair, not the shift alone (#260).
-    var onVideoShiftKnown: (@Sendable (_ shiftPts: Int64, _ firstItemTfdtPts: Int64) -> Void)?
+    var onVideoShiftKnown: (@Sendable (_ shiftPts: Int64, _ firstItemTfdtPts: Int64, _ normalizationShiftPts: Int64) -> Void)?
 
     /// Fires at live program boundary with updated videoShiftPts and seamOutputSeconds (AVPlayer clock position of the seam).
     /// Distinct from onVideoShiftKnown: the new shift is at the producer edge, AVPlayer renders it buffer+holdback later.
@@ -3543,7 +3543,8 @@ final class HLSSegmentProducer: @unchecked Sendable {
                             Self.presentedShiftPts(
                                 actualFirstPts: firstActualVideoPts,
                                 desiredTfdtPts: desiredFirstVideoTfdtPts),
-                            desiredFirstVideoTfdtPts)
+                            desiredFirstVideoTfdtPts,
+                            videoShiftPts)
                         // #133 follow-up: the gating IDR's in-band SPS/PPS back this epoch's muxer avcC. Establish
                         // the baseline so a later same-PID parameter-set change (encoder restart / regional splice)
                         // is detected against it. joinConfig is non-nil only in the liveH264AnnexBJoin scope.

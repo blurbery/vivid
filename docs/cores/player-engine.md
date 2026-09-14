@@ -11,7 +11,7 @@ Vivid uses AetherEngine on tvOS and VividKit on iOS. Each engine handles media r
 
 Vivid uses one AetherEngine session on tvOS, behind Vivid's existing playback controller. Native playback prepares local HLS for AVPlayer; unsupported native video uses Aether's software path automatically. There is no player selector. iOS continues using VividKit.
 
-The local `AetherEngine` package derives from upstream 6.80.0 (`89ef0c347a17180739d8ca7a1a1cfbb163135271`). Its source retains the upstream LGPL-3.0 licence and Apple Store exception. Vivid's adapter uses GPL-3.0-only with the [Apple distribution permission](../../LICENSE-APPLE-EXCEPTION); earlier Apache grants remain valid. [Vivid attribution](../../ATTRIBUTION.md) applies to the covered material identified there. The package reuses Vivid's existing FFmpegBuild 3.0.0 revision, rather than introducing a second FFmpeg binary set. Upstream's later legacy Flash and Windows Media codec additions are therefore not promised by this integration.
+The local `AetherEngine` package derives from upstream 6.85.0 (`21ab499eb2c723634aa5b4e7fac8809025a24574`), with Vivid’s local integration changes retained. Its source retains the upstream LGPL-3.0 licence and Apple Store exception. Vivid's adapter uses GPL-3.0-only with the [Apple distribution permission](../../LICENSE-APPLE-EXCEPTION); earlier Apache grants remain valid. [Vivid attribution](../../ATTRIBUTION.md) applies to the covered material identified there. The package reuses Vivid's existing FFmpegBuild 3.3.0 revision, rather than introducing a second FFmpeg binary set. The 6.85.0 update corrects seek-axis mapping for sources whose timestamps start above zero; Vivid device playback validation remains pending.
 
 The integration resolves audio-list ordinals inside the initial probe. It uses Vivid's existing 2 MB probe and two-second media-analysis limits, with Aether's buffering and display-settling safeguards retained. Native subtitle readers prepare receiver-readable captions, matching Sodalite’s external-playback integration. Sidecars with a non-zero timeline offset stay on Vivid's overlay, with the offset applied before publication. `PlaybackStartup` logs record elapsed time at each checkpoint through the first displayed frame, without source URLs or credentials. The target is the reported 3–4 second opening on the same video; no improvement has yet been measured on a device.
 
@@ -35,7 +35,7 @@ The Info route, route diagnostics and Stats route use the platform engine name: 
 
 ## Aether capability reference
 
-This is a summary of AetherEngine 6.80.0 at `89ef0c347a17180739d8ca7a1a1cfbb163135271`, checked against its [format guide](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/docs/formats.md), [API reference](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/docs/api.md) and [feature overview](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/README.md). It records engine capabilities, not certification of every combination in Vivid. Upstream describes several hosts and newer FFmpeg packages; Vivid uses Aether only on tvOS and keeps FFmpegBuild 3.0.0. Changes to that pin need their own compatibility checks.
+This capability reference was checked against AetherEngine 6.80.0 at `89ef0c347a17180739d8ca7a1a1cfbb163135271`, checked against its [format guide](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/docs/formats.md), [API reference](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/docs/api.md) and [feature overview](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/README.md). It records engine capabilities, not certification of every combination in Vivid. Upstream describes several hosts and newer FFmpeg packages; Vivid now uses Aether 6.85.0 only on tvOS with FFmpegBuild 3.3.0. The newer baseline does not establish additional device-tested format coverage.
 
 ### Containers, video and HDR
 
@@ -54,7 +54,7 @@ This is a summary of AetherEngine 6.80.0 at `89ef0c347a17180739d8ca7a1a1cfbb1631
 | 3D | MVC can fall back to a 2D base view. Frame-packed pictures and MV-HEVC base-layer playback do not mean Vivid provides stereoscopic output or eye-selection controls. |
 | Damaged timing/configuration | The engine includes narrowly gated H.264 composition-timing repairs and HEVC parameter-set normalisation. These preserve ordinary media routing and do not establish support for arbitrary damaged files. |
 
-The upstream overview also lists ASF/WMV with WMA, and older Flash video/audio families. Its detailed guide attributes complete WMA/ASF support to FFmpegBuild 3.1.0 and the Flash additions to 3.2.0. Vivid’s 3.0.0 pin therefore does **not** promise those later combinations. Remote DASH manifests are not a supported input path.
+The upstream overview also lists ASF/WMV with WMA, and older Flash video/audio families. Its detailed guide attributes complete WMA/ASF support to FFmpegBuild 3.1.0 and the Flash additions to 3.2.0. Vivid now pins 3.3.0, but those combinations still need Vivid playback verification. Remote DASH manifests are not a supported input path.
 
 ### Audio formats and output
 

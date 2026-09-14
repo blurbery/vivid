@@ -720,7 +720,7 @@ extension HLSVideoEngine {
                 liveReopenOutputEndSeconds: outputEnd
             )
             newProd.firstSegmentDiscontinuous = true
-            newProd.onVideoShiftKnown = { [weak self] shiftPts, _ in
+            newProd.onVideoShiftKnown = { [weak self] shiftPts, _, _ in
                 self?.handleLiveTimelineRebase(shiftPts, seamOutputSeconds: outputEnd)
             }
             producer = newProd
@@ -1014,7 +1014,7 @@ extension HLSVideoEngine {
             )
             // Fresh connection joins the broadcast at "now"; source clock jumps, so the seam carries #EXT-X-DISCONTINUITY. Shift handoff deferred to seam to avoid jumping the host clock while pre-loss content is on screen.
             newProd.firstSegmentDiscontinuous = true
-            newProd.onVideoShiftKnown = { [weak self] shiftPts, _ in
+            newProd.onVideoShiftKnown = { [weak self] shiftPts, _, _ in
                 self?.handleLiveTimelineRebase(shiftPts, seamOutputSeconds: outputEnd)
             }
             producer = newProd
