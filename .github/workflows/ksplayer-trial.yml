@@ -1,0 +1,58 @@
+name: KSPlayer trial
+
+on:
+  push:
+    branches: [ksplayer-trial]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ksplayer-trial-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tvos:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
+        with:
+          xcode-version: '26.3'
+      - name: Generate project
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project.yml
+      - name: Build tvOS trial
+        run: |
+          set -o pipefail
+          xcodebuild build -project iosApp/Vivid.xcodeproj -scheme VividTV \
+            -destination 'generic/platform=tvOS Simulator' -derivedDataPath /tmp/vivid-trial \
+            -resultBundlePath /tmp/ksplayer-trial.xcresult CODE_SIGNING_ALLOWED=NO \
+            | tee /tmp/ksplayer-trial.log
+      - name: Verify no Aether or VividKit playback is linked
+        run: |
+          test ! -d AetherEngine
+          app=/tmp/vivid-trial/Build/Products/Debug-appletvsimulator/VividTV.app
+          test -d "$app"
+          if ls "$app/Frameworks" | grep -E 'Aether|VividKit|Dovi'; then
+            echo 'Unexpected former playback framework in trial app'
+            exit 1
+          fi
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ksplayer-trial-build
+          path: |
+            /tmp/ksplayer-trial.log
+            /tmp/ksplayer-trial.xcresult
+            iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          retention-days: 3

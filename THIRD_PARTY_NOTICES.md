@@ -12,10 +12,10 @@ Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution perm
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
-| AetherEngine (tvOS playback) | 6.85.0, local integration changes | LGPL-3.0 with Apple Store / DRM Exception; see `AetherEngine/LICENSE` |
+| KSPlayer (tvOS trial) | `7862a2b175b50db71135e57fd144ea0e441d47d6` | GPLv3; bundled upstream licence |
+| FFmpegKit (tvOS trial) | 6.1.4, `c32be9bfb628042737ad3ef622e930c5c7b15954` | Public KSPlayer dependency; component licences remain upstream |
 | CollectionHStack (tvOS Home rows) | `15baaaa759a0e252addae08431c79a49a25e4afc` | MIT |
 | DifferenceKit (collection updates) | 1.3.0, `073b9671ce2b9b5b96398611427a1f929927e428` | MIT |
-| LibDovi (tvOS playback) | 2.1.0 | MIT |
 | FFmpegBuild | `4e58942403d37cceff3a3212e3e026f4205146a2` | LGPL-2.1; embedded FFmpeg and codec dependencies retain the licences recorded below |
 | libass | 0.17.1 | ISC |
 | FreeType | 2.13.2 | FreeType License |
@@ -25,7 +25,7 @@ Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution perm
 
 The full version, source and rebuild inventory is maintained in the [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt), alongside the unchanged upstream licence texts. The app exposes these in Settings → About → Open Source Licences.
 
-FFmpeg remains a set of separate dynamic frameworks. Its binary packaging retains the `AetherLib` prefix, which identifies the packaged FFmpeg frameworks. The exact build excludes GPL and nonfree FFmpeg features. VividKit links only the four standalone subtitle/font frameworks from the pinned FFmpegKit source tree; it does not link FFmpegKit's playback code or mpv.
+For the retained iOS engine, FFmpeg remains a set of separate dynamic frameworks. Its binary packaging retains the `AetherLib` prefix, which identifies the packaged FFmpeg frameworks. The exact build excludes GPL and nonfree FFmpeg features. VividKit links only the four standalone subtitle/font frameworks from the pinned FFmpegKit source tree; it does not link FFmpegKit's playback code or mpv.
 
 The subtitle/font frameworks are vendored in [VividKit/Vendor](VividKit/Vendor), with their provenance and licence texts. Their simulator and device slices are available as separately replaceable SwiftPM binary targets. External distribution must preserve source and relinking rights for the LGPL components; Vivid's GPL licence and Apple permission do not relicense those dependencies or waive their obligations.
 
@@ -35,11 +35,12 @@ Vivid acknowledges [IntroDB](https://introdb.app) and [TheIntroDB](https://thein
 
 TMDB is also credited for metadata and artwork in Acknowledgements. Its logo and attribution appear in Acknowledgements on both platforms, without a duplicate block on About. This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-The separate Acknowledgements page also thanks AetherEngine. It contains logo cards and short credits, with licence texts confined to Open Source Licences. Bundled acknowledgement artwork comes from the projects’ official sources:
+The separate Acknowledgements page contains service credits, with library licence texts confined to Open Source Licences. Bundled acknowledgement artwork comes from the projects’ official sources:
 
-- AetherEngine: `https://raw.githubusercontent.com/superuser404notfound/AetherEngine/main/.github/aetherengine-logo.png`
 - IntroDB: `https://introdb.app/favicon.svg`
 - TheIntroDB: `https://theintrodb.org/logo-small.svg`
 - TMDB: the existing `TMDbAttributionLogo` asset.
 
 The logos identify their respective projects and are not presented as Vivid-owned artwork.
+
+The tvOS trial uses the public KSPlayer package and its unmodified public FFmpegKit dependency. This dependency already brings its own FFmpeg, codec, TLS and rendering components, including libplacebo; the trial adds no custom libplacebo integration or mpv player. No private paid KSPlayer source is used. Apple binary distribution is outside this baseline task; corresponding-source and complete transitive notices must be checked for the exact built artefact before distribution.

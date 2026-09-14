@@ -1,4 +1,6 @@
+#if !os(tvOS)
 import VividKit
+#endif
 import SwiftUI
 
 /// Sent as soon as the final position has reached the active server. Home can

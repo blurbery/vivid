@@ -1,113 +1,49 @@
-<p align="center"><img src="../branding/vivid-mark-silver.png" width="96" height="96" alt="Vivid silver logo"></p>
-<p align="center"><strong>Vivid</strong></p>
-<h1 align="center">Player engine core</h1>
-<p align="center"><a href="../README.md">Documentation</a> · <a href="vivid.md">Vivid core</a> · <a href="../playback/README.md">Playback</a></p>
+# Vivid playback engine
 
----
+## KSPlayer GPL trial on Apple TV
 
-Vivid uses AetherEngine on tvOS and VividKit on iOS. Each engine handles media reads, demuxing, decoding, rendering, buffering and seeking. The Vivid core owns the interface and playback coordination; server cores supply authenticated sources and session reporting.
+`ksplayer-trial` is a temporary experiment. At the owner’s request, the former tvOS engine, its source, adapter, dependency and tests are removed from this branch. Compare against the unchanged baseline commit in Git history. iPhone/iPad retain VividKit. Nothing here establishes approval to merge or distribute an Apple binary.
 
-## Apple TV playback
+The trial pins public [KSPlayer](https://github.com/kingslay/KSPlayer/tree/7862a2b175b50db71135e57fd144ea0e441d47d6) and its public FFmpegKit 6.1.4 dependency. No Premium/LGPL private code is used. The tvOS target links neither the old engine nor VividKit’s playback binaries; a Foundation-only retry-budget source is shared with the app.
 
-Vivid uses one AetherEngine session on tvOS, behind Vivid's existing playback controller. Native playback prepares local HLS for AVPlayer; unsupported native video uses Aether's software path automatically. There is no player selector. iOS continues using VividKit.
+`VividKSPlayerEngine` keeps the existing `VividEngine` interface and controls. It uses `KSMEPlayer` directly for HTTP(S), local files, MKV/MP4/HLS, demuxing, decode, buffering, pause/play, rate, resume and seeking. The adapter projects audio/subtitle tracks and chapters into Vivid and renders subtitles in its existing overlay. These are implementation paths, not a claim of passed media/device tests. External ASS uses the basic text parser; complex typesetting, PiP and receiver-fetchable AirPlay video are outside this baseline. Normal audio uses KSPlayer’s decoded PCM path. No compressed Atmos output is added.
 
-The local `AetherEngine` package derives from upstream 6.85.0 (`21ab499eb2c723634aa5b4e7fac8809025a24574`), with Vivid’s local integration changes retained. Its source retains the upstream LGPL-3.0 licence and Apple Store exception. Vivid's adapter uses GPL-3.0-only with the [Apple distribution permission](../../LICENSE-APPLE-EXCEPTION); earlier Apache grants remain valid. [Vivid attribution](../../ATTRIBUTION.md) applies to the covered material identified there. The package reuses Vivid's existing FFmpegBuild 3.3.0 revision, rather than introducing a second FFmpeg binary set. The 6.85.0 update corrects seek-axis mapping for sources whose timestamps start above zero; blurbery confirmed that the installed tvOS build works well. That confirmation does not establish coverage of every timestamp-offset seek case.
+KSPlayer’s default 3-second preferred/30-second maximum buffer settings are retained. No second reservoir or loopback server is added. Saved buffer and lossless-bridge preferences are disabled for the experiment because they do not control KSPlayer. Match Content uses the public KSPlayer display-criteria implementation, with reset on stop. HDMI display mode still requires physical verification.
 
-The integration resolves audio-list ordinals inside the initial probe. It uses Vivid's existing 2 MB probe and two-second media-analysis limits, with Aether's buffering and display-settling safeguards retained. Native subtitle readers prepare receiver-readable captions, matching Sodalite’s external-playback integration. Sidecars with a non-zero timeline offset stay on Vivid's overlay, with the offset applied before publication. `PlaybackStartup` logs record elapsed time at each checkpoint through the first displayed frame, without source URLs or credentials. The target is the reported 3–4 second opening on the same video; no improvement has yet been measured on a device.
+### Startup and seek measurements
 
-On tvOS, both native routes use a persistent AVPlayerViewController, which owns the native Now Playing session. Vivid forwards title and artwork as item metadata; the software route keeps its shared-session fallback. Local HLS permits Aether’s AirPlay host rewrite, while direct remote HLS with custom headers remains blocked for receiver fetching. The tvOS adapter follows Sodalite’s subtitle handoff: actual external video or PiP selects native renditions and hides the local overlays; returning to fullscreen restores the overlays. Item and track changes reapply the handoff, with duplicate notifications coalesced. Normal HDMI audio does not trigger it. Bitmap subtitles and secondary captions do not gain native rendition support from this change. Vivid retains its custom controls and countdown screen. Public AVKit flags hide the native transport and info panels, while Aether remains the sole display-criteria writer. UIKit activity indicators inside the native host are suppressed so Vivid owns the loading dots. This uses public view types, without matching private AVKit class names; the visible result still needs checking on the target tvOS version. PiP remains disabled in this tvOS host. The countdown preview and fullscreen reuse one controller. Next-episode loads retain Vivid’s in-place item replacement, matching Sodalite’s no-stop handoff. Native first-picture reporting comes from AVKit’s displayed-frame signal and rejects the outgoing item; software playback retains Aether’s readiness signal. These guards do not substitute for a device test of consecutive episodes. The reported startup pause still needs device verification.
+`PlaybackTrialTrace` emits source-free lines in the `PlaybackTrial` log category (`com.blurbery.vivid`). Each load gets a session UUID. T0 is Vivid’s fresh playback request before server preparation; automatic successors also begin a fresh trace. Reloads without a new app request explicitly report `origin=engine_load` and must not be mixed into Play-to-picture comparisons.
 
-On tvOS, Automatic buffering uses Aether’s ten-segment read-ahead target (roughly 40 seconds beyond the consumer’s requests). Stats distinguish AVPlayer’s loaded-range buffer from Read-ahead available, calculated from Aether’s contiguous buffered frontier minus the playhead on the same display timeline. The latter includes consumer-fetched media plus contiguous prepared segments, and is omitted during seeks, live streams and routes without that measurement. Both Apple TV timeline bars use this measured read-ahead when available, falling back to the consumer buffer on other routes. Playback recovery continues using the separate consumer-buffer value. The target is not substituted for measured availability. Presets offer 1, 5 and 10 minutes and a disk-limited whole-file window. The existing 80-second selection remains available so saved preferences keep their actual buffer depth. Producer and cache windows stay under Aether’s control. Prefer Lossless Audio appears directly below Buffer Ahead in the Apple TV playback settings and defaults off; enabling it selects Aether’s lossless bridge for the next load. Multichannel PCM requires a compatible output route and may become stereo through some TV/ARC connections. Fullscreen subtitle styling and language choices remain Vivid’s; shifted sidecars still use its overlay.
+Events include `prepare_requested`, `source_open_completed`, `probe_completed`, first audio/video packet and decode timestamps, `player_ready`, `playing`, `audio_render_callback` and `first_picture_ready`. Times use the same monotonic clock. The exact worker open-begins and decoder-created timestamps are not publicly exposed; they are unavailable, not replaced with guesses. The audio callback is PCM submission to Apple’s engine, not proof of audible receiver output.
 
-Credential changes use Vivid’s existing reload boundary because Aether does not expose in-place request-header replacement. blurbery accepted the local Apple TV build 11 for adoption after testing. That feedback does not establish coverage of every HDMI receiver, AirPlay route, HDR/Dolby Vision profile or subtitle format; those combinations still need device verification.
+`first_picture_ready` requires the current sample-buffer display layer to report ready for display while attached to a window. It is independent of ready/playing state. Sampling adds up to 50 ms; TV HDMI mode changes may add visible delay after that signal, so compare against a physical recording. Metal-only rendering does not currently produce this metric and must be marked unavailable rather than timed as ready. Seek completion and picture readiness are separate; seek-to-picture is accepted only after flushing the old image and observing a ready layer at the target (within one second). Superseded, failed and timed-out seeks are logged separately. One-second samples record source bytes, throughput, playable buffer and stall count. Buffer values are KSPlayer’s own playable-time measurement, not a second cache.
 
-## Audio ownership by platform
+Use the same file version, device, route, start/resume position, subtitles and network for both engines. Record three cold/warm runs separately and several seeks. Do not compare KSPlayer Pro on iPhone to this GPL Apple TV branch as if it were a controlled benchmark.
 
-| Platform/path | Audio handling | Playback owner |
-| --- | --- | --- |
-| Apple TV, native | Compatible compressed audio can be copied. Audio requiring conversion uses E-AC-3 up to 5.1 for multichannel sources by default; mono/stereo sources use FLAC. Prefer Lossless Audio selects FLAC up to 7.1. AVPlayer renders the prepared stream. | One AetherEngine session owns picture, sound and their timeline. |
-| Apple TV, software fallback | Aether decodes audio and sends it to its Apple audio output alongside software-path video. | The same AetherEngine session selects the fallback automatically. |
-| iPhone/iPad | VividKit uses supported compressed-audio rendering or FFmpeg-decoded PCM. | VividKit owns the synchronised audio/video session. |
+### First baseline, pending device tests
 
-Vivid owns the interface, server integration and IntroDB prompts. It does not run VividKit audio beside Aether video on Apple TV. The receiver’s final signal depends on Apple TV audio settings and the TV/receiver connection; the bridge codec is not proof of the receiver’s output format. TrueHD Atmos and DTS:X objects are not preserved by conversion to E-AC-3 or FLAC.
+The owner selected Dune 1 and Dune 2. Their exact media paths/versions are not supplied yet. A third identical file is still needed, preferably H.264 SDR with AAC. No startup, HDR10, AC3 or EAC3 result has been measured on this branch.
 
-The Info route, route diagnostics and Stats route use the platform engine name: AetherEngine on tvOS and VividKit on iPhone/iPad.
+| Case | KSPlayer Play → picture | Baseline Play → picture | Seek → picture | Display/audio/stalls |
+| --- | --- | --- | --- | --- |
+| Dune 1, exact version pending | Not measured | Not measured | Not measured | Not tested |
+| Dune 2, exact version pending | Not measured | Not measured | Not measured | Not tested |
+| Third file, not selected | Not measured | Not measured | Not measured | Not tested |
 
-## Aether capability reference
+For each run record source commit, app build, device/OS, stable file identifier, start position, decoded video/audio formats, DV profile/compatibility, actual television display mode, receiver output, fallback and rebuffer events. Extend this matrix to H.264/AAC, H.264/AC3 5.1, 4K SDR HEVC, HDR10, DV P5/P8/P7, EAC3 5.1, JOC, high-bitrate UHD, subtitle MKV and multiple-audio MKV. TV speakers, HDMI/eARC and HomePods remain separate audio checks. Builds do not prove these results.
 
-This capability reference records AetherEngine 6.80.0 at `89ef0c347a17180739d8ca7a1a1cfbb163135271`, checked against its [format guide](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/docs/formats.md), [API reference](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/docs/api.md) and [feature overview](https://github.com/superuser404notfound/AetherEngine/blob/89ef0c347a17180739d8ca7a1a1cfbb163135271/README.md). It records engine capabilities, not certification of every combination in Vivid. Upstream describes several hosts and newer FFmpeg packages; Vivid now uses Aether 6.85.0 only on tvOS with FFmpegBuild 3.3.0. The newer baseline does not establish additional device-tested format coverage.
+### Public Dolby behaviour and future extension points
 
-### Containers, video and HDR
+- **Profile 5:** the GPL source exposes DV configuration, but reserves native P5/P8 dynamic metadata for paid code. This adapter rejects P5 before starting output rather than displaying IPT-only video as ordinary PQ. Native DV and correct conversion remain unimplemented.
+- **Profile 8:** public `KSOptions.updateVideo` explicitly maps a DV dynamic range to HDR10. The trial permits metadata-declared compatible base layers only (compatibility IDs 1/2/4 with BL present). Correct HDR10/SDR/HLG output still requires verification; no TV Dolby Vision claim is made.
+- **Profile 7:** BL-present, HDR10-compatible metadata (compatibility ID 6) permits baseline playback. No FEL reconstruction or custom RPU path is attempted.
+- **EAC3 JOC:** the trial uses the same decoded PCM route as ordinary EAC3. The public track API does not expose an authoritative decoded EAC3 profile, so the adapter logs JOC as unconfirmed and never labels every EAC3 track Atmos. Object metadata is not preserved by this route.
 
-| Capability | Engine behaviour and Vivid boundary |
-| --- | --- |
-| Containers | MKV, MP4, WebM, MPEG-TS, MPEG-PS/VOB, AVI, OGG and FLV demuxing. Container support does not guarantee that its video/audio decoders are included. Vivid supplies authenticated provider URLs. |
-| Native video | H.264, HEVC and Main10 use the native Apple path when the hardware accepts the profile. Aether prepares compatible HLS/fMP4 and selects software fallback when necessary. |
-| Software video | AV1/dav1d, VP8/VP9, MPEG-4 Part 2, MPEG-2, VC-1 and other codecs with compiled decoders use the software path. Apple TV hardware without AV1 decoding uses software AV1, with higher CPU cost. Unsupported high-bit-depth/chroma profiles also depend on the hardware probe and bundled decoder. |
-| Interlaced video | Aether detects interlacing and has deinterlacing paths with CPU fallback. Progressive sources keep their ordinary route. Vivid has no separate deinterlacing preference; filter availability depends on its FFmpeg pin. |
-| SDR, HDR10 and HLG | Colour signalling reaches Apple’s rendering pipeline; the display and system settings determine presentation. Vivid passes its Match Content preferences to Aether, which owns display criteria. |
-| HDR10+ | HEVC stream-copy retains ST 2094-40 metadata. Displaying the dynamic grade needs a compatible Apple/display route; preserving metadata alone is not end-to-end verification. |
-| Dolby Vision P5 | Native Dolby Vision signalling handles the DV-only colour space. Upstream documents Apple-managed conversion for non-DV presentation; Vivid still needs device/source coverage for those combinations. |
-| Dolby Vision P8.1 / P8.4 | HDR10- and HLG-compatible bases respectively, with DV metadata/signalling for compatible presentation. P8.2 uses its SDR base, not Dolby Vision output. |
-| Dolby Vision P7 | Converted to single-layer P8.1 where eligible, using LibDovi. The enhancement layer is discarded, including FEL data; this is not full dual-layer Profile 7 reproduction. Non-DV routes can use the HDR10 base. |
-| AV1 Dolby Vision P10 | Native DV depends on hardware AV1 support. P10.0 has incorrect colours in software decoding; P10.1/P10.4 offer HDR10/HLG bases and P10.2 an SDR base. Do not advertise full P10 support on software-only Apple TV hardware. |
-| 3D | MVC can fall back to a 2D base view. Frame-packed pictures and MV-HEVC base-layer playback do not mean Vivid provides stereoscopic output or eye-selection controls. |
-| Damaged timing/configuration | The engine includes narrowly gated H.264 composition-timing repairs and HEVC parameter-set normalisation. These preserve ordinary media routing and do not establish support for arbitrary damaged files. |
-
-The upstream overview also lists ASF/WMV with WMA, and older Flash video/audio families. Its detailed guide attributes complete WMA/ASF support to FFmpegBuild 3.1.0 and the Flash additions to 3.2.0. Vivid now pins 3.3.0, but those combinations still need Vivid playback verification. Remote DASH manifests are not a supported input path.
-
-### Audio formats and output
-
-| Source or feature | Handling |
-| --- | --- |
-| AAC-LC, AC-3, E-AC-3, FLAC, ALAC | Eligible native-path stream-copy. HE-AAC/HE-AACv2 depend on usable codec configuration; transport-framed AAC may need bridging. |
-| TrueHD/MLP, DTS/DTS-HD MA, MP3/MP2, Opus, Vorbis and PCM/LPCM | Decoded and re-encoded where the native fMP4 route needs it, subject to decoder availability. Software playback uses its decoded audio output. |
-| Default compatibility bridge | More than two channels selects E-AC-3, capped at 5.1 by the bundled encoder. Mono/stereo selects lossless FLAC. Audio and video keep the same session timeline. |
-| Prefer Lossless Audio | Selects the FLAC bridge, carrying up to 7.1 to AVPlayer for PCM decoding. The output route must accept multichannel PCM. This setting does not recover information absent from a lossy source. |
-| E-AC-3/JOC Atmos | The engine preserves eligible JOC packets through stream-copy and lets Apple handle output. Atmos indication/rendering depends on the system route. Vivid has not certified every receiver or headphone combination. |
-| TrueHD Atmos / DTS:X | Conversion preserves supported channel-based audio, not the source’s object metadata. Neither bridge creates Atmos/JOC objects. |
-| Unsupported audio | Upstream identifies AC-4 and MPEG-H as lacking decoders. A named codec or container is not a guarantee that a decoder exists in this build. |
-| Track selection and delay | Vivid maps real engine track IDs, language preferences and audio delay. Additional upstream audio-delivery diagnostics and opt-in Atmos confirmation APIs are not automatically exposed by this adapter. |
-
-HDMI, AirPlay/HomePod and Bluetooth are output routes, not separate player choices. Aether’s bridge selection cannot force a television or receiver to accept a format. Keep source codec, bridge codec and actual receiver output distinct when diagnosing sound.
-
-### Subtitles and captions
-
-| Capability | Engine support | Vivid integration |
-| --- | --- | --- |
-| Text | SubRip/SRT, ASS/SSA, WebVTT and mov_text; plain and rich-text cues with placement. | Primary selection, off, language preferences, timing and appearance pass through Vivid’s overlay. Rich-text attributes and placement are mapped by the adapter. |
-| Bitmap | PGS/HDMV PGS, DVB and DVD subtitle images, including composition positioning. | Bitmap cues are mapped to the fullscreen overlay. Actual source/layout coverage still needs playback tests. |
-| Authored ASS | Optional raw markup and embedded-font access for a host renderer. | Vivid sets `preserveASSMarkup` false on this path. Basic styled cues are not full libass animation/typesetting parity. |
-| Two tracks | Simultaneous primary and secondary subtitle cues. | Vivid exposes secondary selection in its overlay. Native external presentation does not guarantee both tracks. |
-| External files | Register sidecars or subtitle containers as selectable tracks, with headers, language and stream identity. | The OpenSubtitles plugin registers user-selected temporary SRT downloads as primary tracks. Arbitrary external-file browsing and external secondary-track selection are not exposed. |
-| Native renditions | Generated WebVTT for native external playback/PiP; upstream can derive text from bitmap tracks using on-device OCR. | Vivid prepares native renditions and switches rendering during actual external playback. OCR is lossy, not pixel-equivalent PGS output; this route has not been verified for every bitmap track. Shifted sidecars remain overlay-only. |
-| Broadcast captions | CEA-608 CC1 from caption tracks or video side data; DVB teletext text/colour and selectable pages. | Compatible decoded cues can reach the overlay. A teletext page selector and broader broadcast workflow are not exposed. Upstream does not claim complete CEA-708/field-2 support here. |
-| Live HLS captions | Can discover and fetch selected HLS subtitle renditions. | Engine capability only; this integration does not establish a Vivid live-TV subtitle workflow. |
-
-### Other engine capabilities and app boundaries
-
-| Area | Upstream capability | Vivid status |
-| --- | --- | --- |
-| Seeking and buffering | Cached backward/forward seeks, bounded packet/segment storage, reconnect handling and configurable read-ahead. | Integrated through Vivid transport and Buffer Ahead. Stats distinguish prepared read-ahead from AVPlayer’s consumer buffer. |
-| Playback speed | Video up to 2× and audio-only up to 3×, bounded by the engine’s supported rate. | Vivid forwards its playback-rate control; upstream limits do not add new UI choices. |
-| Chapters and metadata | Container chapters and media tags/artwork. | Container chapters and Vivid/server metadata are integrated. Disc chapters are a separate upstream API. |
-| Thumbnails and stills | Independent keyframe thumbnails and frame-accurate snapshots, including HDR-to-SDR still conversion. | Apple TV thumbnail extraction and its scrub overlay are disabled. The timeline still previews the target time. Mobile thumbnails continue using VividKit. |
-| Native/system presentation | AVPlayer, Now Playing, external playback and host-built PiP. | Vivid’s persistent AVKit host owns native presentation/Now Playing; controls and episode countdown remain Vivid’s. tvOS PiP is disabled in this host. |
-| Software PiP | Sample-buffer PiP source and subtitle composition for supported platforms. | Apple TV does not gain software PiP from this API; mobile still uses VividKit. |
-| Audio-only/background | Lean audio-only playback and platform-specific background lifecycle. | Audio-only is forwarded when requested; upstream music/audiobook/background APIs do not imply a complete Vivid library feature or tvOS background guarantee. |
-| Live/DVR | Live HLS, timeshift, raw MPEG-TS, clear-key AES-128 and SSAI discontinuity handling, with source restrictions. | No complete live-TV/DVR control integration is claimed. Clear-key HLS is not FairPlay/Widevine DRM support. |
-| Decrypted discs | DVD-Video/Blu-ray ISO parsing, titles and chapters. | No disc-title/menu UI is wired. Upstream excludes CSS/AACS decryption, BD-J, menus and multi-angle navigation. |
-| Custom byte input | `IOReader` sources with seek/cancellation contracts. | The Vivid adapter loads provider URLs; it does not expose arbitrary custom sources. |
-| SMB | Optional upstream SMB product for read-only network sources. | Not included in Vivid’s local package products/dependencies. No direct SMB browser or share support is implied. |
-| Audio tap | Optional session-bound PCM output for transcription/fingerprinting integrations. | Not wired; no transcription or recognition feature is added. |
-| Certificate trust | A host-supplied evaluator can handle private/self-signed origins. | Vivid does not wire that evaluator here. Do not assume arbitrary certificates are accepted. |
-| Diagnostics | Playback phases, decoder/route information, timing, buffering, audio delivery and error reporting. | Vivid projects selected measurements into its Stats UI. Unmapped upstream fields are not automatically visible. |
-
-Aether does not supply Vivid’s server authentication, library, profiles, downloads, IntroDB lookups, controls or episode queue. Support for an engine API is separate from Vivid exposing it. These tables describe code and upstream documentation; the [release record](../release/versioning.md) describes actual build and device checks.
+The small future `VividDolbyRouter` should wrap public `Sources/KSPlayer/AVPlayer/MediaPlayerProtocol.swift` (`MediaPlayerTrack`, `DOVIDecoderConfigurationRecord`) and `Sources/KSPlayer/MEPlayer/FFmpegAssetTrack.swift`. Decoder/output investigation belongs at `MEPlayerItem.swift`, `VideoToolboxDecode.swift`, `DecompressionSession.swift`, `MetalPlayView.swift`, `FFmpegDecode.swift`, `AudioEnginePlayer.swift`, `AudioRendererPlayer.swift` and `AVPlayer/KSOptions.swift`. Some decoder classes are internal; exposing compressed samples or decoder-profile evidence would require an explicit, reviewed public-source patch. No large custom Dolby subsystem is implemented before baseline results.
 
 ## VividKit mini cores
 
-These sections describe VividKit, used on iPhone and iPad, and its retained earlier tvOS implementation. The HDMI and AirPlay recovery helpers below are not the active AetherEngine tvOS pipeline.
+These sections describe the retained iPhone/iPad VividKit engine. Its earlier HDMI helpers are not used by the KSPlayer tvOS trial.
 
 One engine, smaller areas of responsibility. The mini cores describe where work belongs so an audio-output fix does not become a rewrite of playback. Code can stay where it is; these names are a map of the engine, not separate copies of it.
 
@@ -193,7 +129,7 @@ Vivid supports the following audio formats. On Apple TV, audio playback is suppo
   </tbody>
 </table>
 
-On iOS, DTS-family and TrueHD playback uses local decoding to PCM. On tvOS, Aether’s native bridge defaults to compatible E-AC-3 up to 5.1 for audio requiring conversion; Prefer Lossless Audio selects FLAC up to 7.1 instead. Native-compatible audio can be copied without conversion. These are engine bridge formats, not a guarantee of the signal reaching the receiver. For these formats, source playback does not imply bitstream passthrough or preservation of DTS:X or TrueHD Atmos object metadata. Surround output depends on the audio route.
+On iOS, DTS-family and TrueHD playback uses local decoding to PCM. The tvOS trial uses KSPlayer’s decoded PCM audio path. These are engine bridge formats, not a guarantee of the signal reaching the receiver. For these formats, source playback does not imply bitstream passthrough or preservation of DTS:X or TrueHD Atmos object metadata. Surround output depends on the audio route.
 
 E-AC-3/JOC Atmos playback support does not imply independently verified end-to-end bitstream passthrough or Atmos-object preservation.
 
@@ -219,7 +155,7 @@ On Apple TV, frame-rate and dynamic-range matching follow the system’s Match C
   <thead><tr><th align="left" width="25%">Format</th><th align="left" width="75%">Playback</th></tr></thead>
   <tbody>
     <tr><td>PGS</td><td>Embedded image-based subtitles.</td></tr>
-    <tr><td>ASS</td><td>Embedded styled text subtitles. iPhone/iPad use libass; the tvOS Aether path maps basic styling and does not promise full libass animation/typesetting parity.</td></tr>
+    <tr><td>ASS</td><td>Embedded styled text subtitles. iPhone/iPad use libass; the tvOS trial currently projects text/image cues and does not promise full libass animation/typesetting parity.</td></tr>
   </tbody>
 </table>
 
@@ -231,8 +167,7 @@ The Vivid core coordinates credential renewal with the active server core. Vivid
 
 ## Implementation
 
-- [tvOS adapter](../../iosApp/iosApp/Playback/VividAetherEngine.swift): Aether session, AVKit host, track selection, native subtitle handoff and measured read-ahead.
-- [AetherEngine](../../AetherEngine): tvOS preparation, decoding and automatic native/software route selection.
+- [tvOS adapter](../../iosApp/iosApp/Playback/VividKSPlayerEngine.swift): public KSPlayer session, track selection, PCM audio and measured startup.
 - [VividPlayer](../../VividKit/Sources/VividKit/VividPlayer.swift): playback clock, transport and bounded audio recovery.
 - [VividMediaSession](../../VividKit/Sources/VividKit/VividMediaSession.swift): decoding, sample queues and audio replay.
 - [VividHDMIAudioCore](../../VividKit/Sources/VividKit/VividHDMIAudioCore.swift): route-gated HDMI audio-stall detection and recovery policy.

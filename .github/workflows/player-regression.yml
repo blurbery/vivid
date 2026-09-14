@@ -5,8 +5,6 @@ on:
     paths:
       - 'iosApp/iosApp/Screens/Player/**'
       - 'iosApp/iosApp/Playback/**'
-      - 'AetherEngine/**'
-      - 'scripts/test-aether-audio-selection.swift'
       - 'VividKit/Sources/**'
       - 'VividKit/Tests/**'
       - 'iosApp/Tests/**'
@@ -57,15 +55,6 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '26.3'
-      - name: Check initial audio selection
-        if: hashFiles('AetherEngine/Sources/AetherEngine/VividInitialAudioStream.swift') != ''
-        run: |
-          swiftc AetherEngine/Sources/AetherEngine/VividInitialAudioStream.swift scripts/test-aether-audio-selection.swift -o "$RUNNER_TEMP/aether-audio-selection"
-          "$RUNNER_TEMP/aether-audio-selection"
-      - name: Check HLS input and connection boundaries
-        run: |
-          swiftc AetherEngine/Sources/AetherEngine/IO/HLSIngest/HLSPlaylist.swift AetherEngine/Sources/AetherEngine/IO/HLSIngest/HLSPlaylistTracker.swift AetherEngine/Sources/AetherEngine/IO/HLSIngest/HLSIngestError.swift AetherEngine/Sources/AetherEngine/Network/HLSRequestReader.swift scripts/test-aether-security.swift -o "$RUNNER_TEMP/aether-security"
-          "$RUNNER_TEMP/aether-security"
       - name: Prepare iOS simulator
         if: matrix.action == 'test'
         timeout-minutes: 10

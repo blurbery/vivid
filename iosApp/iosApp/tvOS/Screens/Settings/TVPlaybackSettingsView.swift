@@ -41,20 +41,22 @@ struct TVPlaybackSettingsPane: View {
 
             TVSettingsOptionMenu(
                 title: "Buffer Ahead",
-                value: viewModel.bufferAhead.label,
+                value: "Automatic (trial)",
                 options: pickerRequest(for: .bufferAhead).options,
                 selection: pickerRequest(for: .bufferAhead).selection
             )
             .focused(detailFocus, equals: .playbackBufferAhead)
+            .disabled(true)
 
             TVSettingsToggleRow(
                 title: "Prefer Lossless Audio",
                 isOn: PlayerSettings.shared.preferLosslessAudio,
-                detail: "Requires multichannel PCM for surround; some TV or ARC connections output stereo. Applies to the next video."
+                detail: "The trial always decodes audio to PCM. This saved preference does not change trial playback."
             ) {
                 PlayerSettings.shared.preferLosslessAudio.toggle()
             }
             .accessibilityIdentifier("settings.playback.preferLosslessAudio")
+            .disabled(true)
 
         }
         TVSettingsFooter("Preferences are saved in Vivid for this profile on this Apple TV.")

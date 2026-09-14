@@ -2,10 +2,17 @@
 // Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
 import AVFoundation
 import Foundation
+#if !os(tvOS)
 import VividKit
+#endif
 
 enum VividSubtitleLoader {
-    enum Document { case cues([SubtitleCue]), ass(VividASSRenderer) }
+    enum Document {
+        case cues([SubtitleCue])
+        #if !os(tvOS)
+        case ass(VividASSRenderer)
+        #endif
+    }
     static func load(_ track: ExternalSubtitleTrack) async throws -> Document {
         let data: Data
         if track.url.isFileURL {
@@ -25,10 +32,12 @@ enum VividSubtitleLoader {
         }
         guard data.count <= 16 * 1024 * 1024,
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { throw URLError(.cannotDecodeContentData) }
+        #if !os(tvOS)
         if text.contains("[Script Info]") {
             guard let renderer = VividASSRenderer(data: Data(text.utf8)) else { throw URLError(.cannotDecodeContentData) }
             return .ass(renderer)
         }
+        #endif
         return .cues(parse(text))
     }
     static func parse(_ text: String) -> [SubtitleCue] {
@@ -65,6 +74,7 @@ enum VividSubtitleLoader {
         return result
     }
 }
+#if !os(tvOS)
 @MainActor final class FrameExtractor {
     private let source: VividSource
     private var extractor: VividFrameExtractor?
@@ -85,3 +95,10 @@ enum VividSubtitleLoader {
     }
     func shutdown() async { extractor?.cancel(); native?.cancelAllCGImageGeneration() }
 }
+
+#else
+@MainActor final class FrameExtractor {
+    func thumbnail(at seconds: Double, maxWidth: Int) async -> CGImage? { nil }
+    func shutdown() async {}
+}
+#endif

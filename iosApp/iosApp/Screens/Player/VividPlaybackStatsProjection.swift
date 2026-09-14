@@ -1,4 +1,6 @@
+#if !os(tvOS)
 import VividKit
+#endif
 import Foundation
 
 /// Immutable server-supplied context that the player cannot infer from a media source.

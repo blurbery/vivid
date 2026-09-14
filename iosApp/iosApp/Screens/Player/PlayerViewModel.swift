@@ -1,4 +1,6 @@
+#if !os(tvOS)
 import VividKit
+#endif
 import AVFoundation
 import CoreGraphics
 import Foundation
@@ -3808,6 +3810,9 @@ class PlayerViewModel {
         origin: LoadOrigin = .userInitiated
     ) {
         guard !isDisposed else { return }
+        #if os(tvOS)
+        PlaybackTrialTrace.requestPlay()
+        #endif
         #if os(iOS) || os(tvOS)
         if refreshHomeAfterPlaybackWrite == nil {
             refreshHomeAfterPlaybackWrite = StartupContentPrefetcher.homeRefreshAfterPlaybackWrite()

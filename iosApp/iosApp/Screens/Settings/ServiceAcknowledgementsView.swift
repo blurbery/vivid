@@ -10,9 +10,6 @@ struct ServiceAcknowledgementsView: View {
     }
 
     private let credits: [Credit] = [
-        Credit(name: "AetherEngine", image: "AcknowledgementAether",
-               thanks: "Thank you for powering playback on Apple TV.",
-               website: "aetherengine.superuser404.de"),
         Credit(name: "IntroDB", image: "AcknowledgementIntroDB",
                thanks: "Thank you for community intro and credits timestamps.",
                website: "introdb.app"),

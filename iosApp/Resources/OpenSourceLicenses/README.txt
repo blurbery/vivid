@@ -119,16 +119,14 @@ including each component's rebuild script and patches at the pinned revision.
 They are this build's corresponding-source pointer; keep them matched to the
 revisions each release actually resolves.
 
-AetherEngine (tvOS playback)
-  Upstream 6.84.0: 565f5ec9cdc5033d085d6cb556faf16875efb4f0
-  Source: https://github.com/superuser404notfound/AetherEngine/tree/565f5ec9cdc5033d085d6cb556faf16875efb4f0
-  Local source and integration changes: AetherEngine/ in this Vivid source revision.
-  LGPL-3.0 with the bundled Apple Store / DRM Exception.
-  The local package retains Vivid's FFmpegBuild revision above. It adds audio
-  ordinal selection inside the existing probe, integration type aliases, and
-  bounded HLS request and connection handling.
-  Build the tvOS app using iosApp/project.yml and XcodeGen; replacing this local
-  source package and rebuilding replaces the linked engine.
+KSPlayer GPL tvOS trial
+  Public source: https://github.com/kingslay/KSPlayer/tree/7862a2b175b50db71135e57fd144ea0e441d47d6
+  Licence: upstream GPLv3, bundled unchanged as KSPlayer-GPL-3.0.txt.
+  Public dependency: FFmpegKit 6.1.4 at c32be9bfb628042737ad3ef622e930c5c7b15954.
+  No private Premium/LGPL player source is included.
+  The FFmpegBuild and standalone subtitle/font inventory below describes iOS.
+  tvOS uses the full public FFmpegKit package; its component licences remain
+  with their upstream source. Native Dolby Vision and Atmos are not claimed.
 
 LibDovi (tvOS playback)
   Version: 2.1.0, dolby_vision 3.4.0

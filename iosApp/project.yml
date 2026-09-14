@@ -56,8 +56,9 @@ packages:
   CollectionHStack:
     url: https://github.com/LePips/CollectionHStack
     revision: 15baaaa759a0e252addae08431c79a49a25e4afc
-  AetherEngine:
-    path: ../AetherEngine
+  KSPlayer:
+    url: https://github.com/kingslay/KSPlayer.git
+    revision: 7862a2b175b50db71135e57fd144ea0e441d47d6
   VividKit:
     path: ../VividKit
 
@@ -119,6 +120,7 @@ targets:
           - "**/*.xcodeproj"
           - "**/*.xcworkspace"
           - "Info.plist"
+      - path: ../VividKit/Sources/VividKit/VividTransientRecoveryBudget.swift
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
@@ -148,10 +150,8 @@ targets:
         Release:
           APS_ENVIRONMENT: production
     dependencies:
-      - package: VividKit
-        product: VividKit
-      - package: AetherEngine
-        product: AetherEngine
+      - package: KSPlayer
+        product: KSPlayer
       - package: CollectionHStack
         product: CollectionHStack
       - target: VividTVTopShelf

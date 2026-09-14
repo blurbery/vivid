@@ -18,18 +18,18 @@ How the [Vivid player core](../cores/vivid.md), the platform engines and each se
   </thead>
   <tbody>
     <tr><td>Vivid</td><td>Controls, queues, resume/Next Up, selection preferences, downloads, server sessions, progress, local player stats and presentation</td></tr>
-    <tr><td>AetherEngine (tvOS) / VividKit (iOS)</td><td>Source reads, probing, demux/decode, media routing, buffers, track extraction, seek execution and media presentation</td></tr>
+    <tr><td>KSPlayer GPL trial (tvOS) / VividKit (iOS)</td><td>Source reads, probing, demux/decode, media routing, buffers, track extraction, seek execution and media presentation</td></tr>
     <tr><td>Server adapter</td><td>Provider authentication, playback-plan negotiation, source headers, renewal, realtime commands and progress reporting</td></tr>
   </tbody>
 </table>
 
-Library playback uses the platform adapter through Vivid’s playback controllers. Apple TV uses one AetherEngine session: direct media can be prepared into local HLS for AVPlayer, server HLS can use its native bypass, and unsupported native video uses the software route automatically. iPhone and iPad continue opening provider sources through VividKit. Its retained DTS-to-HLS experiment is not the active tvOS implementation.
+Library playback uses Vivid’s existing playback controller. The tvOS trial adapter opens sources directly with public `KSMEPlayer`, using its FFmpeg demuxing, buffering, decoded PCM audio and video output. No loopback HLS producer or second reservoir sits in front of it. iPhone/iPad retain VividKit.
 
 The existing adapter implements Silo's Protocol V3. That is a provider contract, not Vivid's universal server API. A new provider should map its own session and source information into the player inputs without pretending to speak Protocol V3.
 
 ## Apple TV pipeline
 
-`VividAetherEngine` preserves Vivid’s session and reporting boundaries while Aether owns preparation, decoding and buffering. It resolves the initial audio ordinal during the existing probe, avoiding a separate source open. The default native audio bridge favours E-AC-3 compatibility; Prefer Lossless Audio selects FLAC instead. The persistent AVKit host owns native video and Now Playing integration, while Aether’s sample-buffer view handles software output. Vivid retains controls, loading dots, IntroDB and the episode countdown. Item identity guards prevent outgoing-frame callbacks from completing the next episode’s loading state.
+`VividKSPlayerEngine` maps transport, resume, tracks, subtitles and the existing SwiftUI surface onto KSPlayer. `VividKSOptions` selects the initial audio stream and respects Match Content. `PlaybackTrialTrace` records source-free monotonic timing and one-second buffer samples. See the [trial baseline](../cores/player-engine.md) for measurement limits and pending device checks.
 
 Automatic read-ahead is ten segments. AVPlayer’s short loaded-range buffer and Aether’s prepared frontier are separate measurements; timeline presentation does not change playback recovery thresholds. Credential updates use the existing generation-fenced reload because Aether cannot replace request headers in place.
 
@@ -118,7 +118,7 @@ Reduced-quality downloads are a separate server operation from playback quality.
 
 Downloads retain the configured server's HTTP or HTTPS scheme; an HTTPS configuration cannot be downgraded by the initial destination. Background transfers are managed by Apple's networking service, which follows redirects without calling the app's redirect delegate. Initial-origin checks therefore do not enforce redirect isolation. Preventing that requires a different transfer design or server support for URLs that do not carry reusable credentials. Vivid currently retains background transfers with this limitation.
 
-AetherEngine's local HLS listener allows up to 32 simultaneous connections. Initial request headers must arrive within ten seconds of acceptance; authenticated keep-alive connections retain a sixty-second idle allowance, with ten seconds to complete each started header. Oversized headers and unsupported media-sequence ranges are rejected before routing or segment tracking.
+The tvOS trial has no local HLS listener. Remote HLS is read by KSPlayer’s FFmpeg path.
 
 Keep downloaded sources and their metadata independent of an online server's current response and out of the iCloud account vault. The detail action observes registration and transfer state directly from `DownloadManager`, while Downloads reads the same records for progress, transfer rate, storage totals and locally stored poster artwork. Series-scoped requests use the parent series artwork. Accept authenticated artwork only as a relative path or a same-origin absolute URL; normalise it before constructing the server request. Validate offline resume, seeking, tracks and teardown explicitly.
 

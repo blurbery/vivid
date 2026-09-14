@@ -1,4 +1,6 @@
+#if !os(tvOS)
 import VividKit
+#endif
 import CoreGraphics
 import Foundation
 

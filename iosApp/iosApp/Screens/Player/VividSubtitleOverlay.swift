@@ -1,4 +1,6 @@
+#if !os(tvOS)
 import VividKit
+#endif
 import SwiftUI
 
 /// Presentation-only overlay for Vivid's decoded public cue model.

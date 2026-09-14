@@ -3,11 +3,13 @@
 import AVFoundation
 import Combine
 import Foundation
+#if !os(tvOS)
 import VividKit
+#endif
 
 enum VividPlaybackEngineIdentity {
     #if os(tvOS)
-    static let name = "AetherEngine"
+    static let name = "KSPlayer GPL trial"
     #else
     static let name = "VividKit"
     #endif
@@ -76,7 +78,9 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
 
     static func isHTTPAuthenticationFailure(_ error: Error, depth: Int = 0) -> Bool {
         guard depth < 8 else { return false }
+        #if !os(tvOS)
         if let typed = error as? VividPlaybackError { return typed == .network(401) }
+        #endif
         if let typed = error as? PlaybackErrorInfo {
             return (typed.kind == .sourceRefused
                 && (typed.underlyingDomain == nil || typed.underlyingDomain == NSURLErrorDomain)
@@ -118,11 +122,13 @@ struct TrackInfo: Identifiable, Equatable {
         self.isHearingImpaired=isHearingImpaired; self.isCommentary=isCommentary; self.isAtmos=isAtmos
         self.assHeader=assHeader; self.isExternal=isExternal; self.isNativelyRenderedSubtitle=isNativelyRenderedSubtitle
     }
+    #if !os(tvOS)
     init(_ track: VividTrack) {
         self.init(id: track.id, name: track.name, codec: track.codec,
                   language: track.language.isEmpty ? nil : track.language, channels: track.channels, bitrate: track.bitrate,
                   isDefault: track.isDefault, isForced: track.isForced)
     }
+    #endif
 }
 struct ExternalSubtitleTrack: Equatable, Sendable {
     let url: URL
