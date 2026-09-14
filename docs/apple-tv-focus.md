@@ -249,3 +249,16 @@ on Living Room with build 34. This does not exclude a collection-specific
 override, so it does not yet validate or rule out the proposed subclass path.
 Ordinary horizontal alignment remains unchanged pending a verified native
 integration point; no competing focus-triggered scroll animation is added.
+
+Build 35 was reported to fix the Spotlight/Continue Watching boundary; cold
+first traversal still trails the warmed return pass. Home shelf artwork now
+publishes arriving images without individual fade animations, identified by
+the row-specific artwork gate so Spotlight and other surfaces retain their
+presentation. tvOS decode operations use per-request QoS: utility for speculative
+warming and user-initiated for display requests, with display work ahead of
+pending low-priority decodes. The two-decode limit, HTTP connection limit,
+rolling warm window and persistent caches remain unchanged. Existing Home
+warmers already use exact display-size keys; raw disk bytes and differently
+sized hero/detail decodes retain separate purposes. This is a bounded arrival-
+and scheduling-cost experiment, not proof that all remaining cold hitching is
+image work. Device performance of the change remains unverified.

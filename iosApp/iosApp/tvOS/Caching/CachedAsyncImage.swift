@@ -27,6 +27,7 @@ struct CachedAsyncImage: View {
     #if os(tvOS)
     @Environment(\.tvArtworkLoadingEnabled) private var artworkLoadingEnabled
     @Environment(\.tvHomeStableRows) private var stableHomeRows
+    @Environment(\.tvHomeRowArtworkGate) private var homeArtworkGate
     #else
     private let artworkLoadingEnabled = true
     #endif
@@ -51,6 +52,14 @@ struct CachedAsyncImage: View {
         GeometryReader { geometry in renderedImage(in: geometry.size) }
     }
 
+    private var isHomeShelf: Bool {
+        #if os(tvOS)
+        homeArtworkGate != nil
+        #else
+        false
+        #endif
+    }
+
     private func renderedImage(in size: CGSize) -> some View {
         let resolvedSize = targetSize ?? size
         let imageRequest = request(for: resolvedSize)
@@ -61,12 +70,14 @@ struct CachedAsyncImage: View {
             VividImagePipeline.shared.cache[$0]?.image
         }
         let warmedImage = retainedImage ?? prefetchedImage()
-        let loadAnimation: Animation? = reduceMotion || warmedImage != nil
+        let loadAnimation: Animation? = isHomeShelf || reduceMotion || warmedImage != nil
             ? nil
             : .easeOut(duration: VividTheme.slowDuration)
+        var transaction = Transaction(animation: loadAnimation)
+        transaction.disablesAnimations = isHomeShelf
         return VividLazyImage(
             request: artworkLoadingEnabled ? imageRequest : nil,
-            transaction: Transaction(animation: loadAnimation)
+            transaction: transaction
         ) { state in
             if let image = state.image {
                 image
@@ -161,6 +172,7 @@ struct TVEpisodeArtwork: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.tvArtworkLoadingEnabled) private var loadingEnabled
+    @Environment(\.tvHomeRowArtworkGate) private var homeArtworkGate
     @State private var retainedImage: PlatformImage?
     @State private var retainedKey: ImageKey?
 
@@ -219,7 +231,10 @@ struct TVEpisodeArtwork: View {
             do {
                 let loaded = try await VividImagePipeline.shared.image(for: request)
                 guard !Task.isCancelled else { return }
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                var transaction = Transaction(animation:
+                    homeArtworkGate != nil || reduceMotion ? nil : .easeOut(duration: 0.2))
+                transaction.disablesAnimations = homeArtworkGate != nil
+                withTransaction(transaction) {
                     retainedKey = key
                     retainedImage = loaded
                 }

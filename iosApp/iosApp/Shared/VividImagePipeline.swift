@@ -85,7 +85,11 @@ final class VividImagePipeline: @unchecked Sendable {
         configuration.timeoutIntervalForRequest = 20
         session = URLSession(configuration: configuration)
         decoding.maxConcurrentOperationCount = 2
+        #if os(tvOS)
+        decoding.qualityOfService = .utility
+        #else
         decoding.qualityOfService = .userInitiated
+        #endif
     }
     func image(for request: VividImageRequest) async throws -> UIImage {
         if let cached = cache[request] { return cached.image }
@@ -93,7 +97,7 @@ final class VividImagePipeline: @unchecked Sendable {
             let data = try await data(for: request)
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
-                decoding.addOperation { [self] in
+                let operation = BlockOperation { [self] in
                     do {
                         let image = try Self.decode(data, request: request)
                         let result = VividImageContainer(image)
@@ -101,6 +105,11 @@ final class VividImagePipeline: @unchecked Sendable {
                         continuation.resume(returning: result)
                     } catch { continuation.resume(throwing: error) }
                 }
+                #if os(tvOS)
+                operation.qualityOfService = request.priority == .low ? .utility : .userInitiated
+                operation.queuePriority = request.priority == .low ? .low : .normal
+                #endif
+                decoding.addOperation(operation)
             }
         }
         try Task.checkCancellation()
