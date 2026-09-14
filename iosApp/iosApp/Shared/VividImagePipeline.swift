@@ -40,6 +40,8 @@ final class VividImageCache: @unchecked Sendable {
     enum Caches { case memory }
     private let memory = NSCache<NSString, VividImageContainer>()
     let responses: URLCache
+    private let generationLock = NSLock()
+    private var generation = 0
     init(costLimit: Int, countLimit: Int, diskCapacity: Int) {
         memory.totalCostLimit = costLimit
         memory.countLimit = countLimit
@@ -62,7 +64,20 @@ final class VividImageCache: @unchecked Sendable {
         memory.countLimit = count
     }
     #endif
-    func removeAll(caches: Caches) { memory.removeAllObjects() }
+    var currentGeneration: Int {
+        generationLock.lock(); defer { generationLock.unlock() }
+        return generation
+    }
+    func store(_ image: VividImageContainer, for request: VividImageRequest, generation expected: Int) {
+        generationLock.lock(); defer { generationLock.unlock() }
+        guard generation == expected else { return }
+        self[request] = image
+    }
+    func removeAll(caches: Caches) {
+        generationLock.lock(); defer { generationLock.unlock() }
+        generation &+= 1
+        memory.removeAllObjects()
+    }
     func containsData(for request: VividImageRequest) -> Bool { responses.cachedResponse(for: URLRequest(url: request.url)) != nil }
     func removeCachedData(for request: VividImageRequest) { responses.removeCachedResponse(for: URLRequest(url: request.url)) }
     func removeCachedImage(for request: VividImageRequest, caches: Caches) { memory.removeObject(forKey: request.key) }
@@ -98,6 +113,7 @@ final class VividImagePipeline: @unchecked Sendable {
             return cached.image
         }
         diagnostics.count("memory.miss")
+        let cacheGeneration = cache.currentGeneration
         let result = try await flights.load(request) { [self] in
             let dataStart = diagnostics.timestamp
             let data = try await data(for: request)
@@ -113,7 +129,7 @@ final class VividImagePipeline: @unchecked Sendable {
                     do {
                         let image = try Self.decode(data, request: request)
                         let result = VividImageContainer(image)
-                        cache[request] = result
+                        cache.store(result, for: request, generation: cacheGeneration)
                         continuation.resume(returning: result)
                     } catch { continuation.resume(throwing: error) }
                 }
@@ -127,6 +143,15 @@ final class VividImagePipeline: @unchecked Sendable {
         try Task.checkCancellation()
         return result.image
     }
+    func removeCachedArtwork(for urls: Set<URL>) async {
+        cache.removeAll(caches: .memory)
+        await flights.cancel(urls: urls)
+        #if os(tvOS)
+        await embyDataFlights.cancel(urls: urls)
+        #endif
+        for url in urls { cache.removeCachedData(for: VividImageRequest(url: url)) }
+    }
+
     func data(for request: VividImageRequest) async throws -> Data {
         if request.url.isFileURL { return try Data(contentsOf: request.url, options: .mappedIfSafe) }
         #if os(tvOS)
@@ -189,6 +214,10 @@ final class VividImagePipeline: @unchecked Sendable {
 private actor VividEmbyImageDataFlights {
     private var tasks: [URL: (UUID, Task<Data, Error>)] = [:]
 
+    func cancel(urls: Set<URL>) {
+        for url in urls { tasks.removeValue(forKey: url)?.1.cancel() }
+    }
+
     func load(_ url: URL, operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
         let diagnostics = VividImageDiagnostics.shared
         if let (id, existing) = tasks[url] {
@@ -222,6 +251,12 @@ private actor VividEmbyImageDataFlights {
 
 private actor VividImageFlights {
     private var tasks: [VividImageRequest: (UUID, Task<VividImageContainer, Error>)] = [:]
+    func cancel(urls: Set<URL>) {
+        for request in Array(tasks.keys) where urls.contains(request.url) {
+            tasks.removeValue(forKey: request)?.1.cancel()
+        }
+    }
+
     func load(_ request: VividImageRequest, operation: @escaping @Sendable () async throws -> VividImageContainer) async throws -> VividImageContainer {
         let diagnostics = VividImageDiagnostics.shared
         let utility = request.priority == .low

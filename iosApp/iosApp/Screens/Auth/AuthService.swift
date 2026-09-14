@@ -138,6 +138,11 @@ final class AuthService: @unchecked Sendable {
         if MediaServerProvider.forServerID(expectedAccount.serverId) == .emby {
             let login = try await EmbyConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)
             try await installSession(accessToken: login.token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: login.userID)
+            #if os(tvOS) || os(iOS)
+            await VividCloudAccountSync.shared.noteExplicitAuthentication(
+                serverID: expectedAccount.serverId, userID: String(EmbyAdapter.numberID(login.userID))
+            )
+            #endif
             return
         }
         let response: LoginResponse = try await HTTPClient.shared.post(
@@ -149,6 +154,11 @@ final class AuthService: @unchecked Sendable {
             refreshToken: response.refreshToken,
             expectedAccount: expectedAccount
         )
+        #if os(tvOS) || os(iOS)
+        await VividCloudAccountSync.shared.noteExplicitAuthentication(
+            serverID: expectedAccount.serverId, userID: String(response.user.id)
+        )
+        #endif
     }
 
     /// A login response establishes a brand-new session. Wipe every piece of
