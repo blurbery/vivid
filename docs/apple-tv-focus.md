@@ -471,3 +471,50 @@ The captured mechanism changed as intended, but the remaining lag is unresolved:
 Gate timing remains a separate follow-up candidate, not a proven remaining
 cause. The successful build and reduced task churn do not establish that the
 user's persistent-lag reproduction is fixed. No new UI tests were added.
+
+### Build 41 Instruments follow-up
+
+The next review proposed releasing distant bitmaps at vertical idle and an
+Animation Hitches capture. The two-line release sketch is not a valid isolation
+test as written: clearing `loaded` still permits VividLazyImage's synchronous
+memory-cache image and CachedAsyncImage's warmed fallback to render. Also, the
+existing outer-feed phase callback is inside the diagnostics-only modifier;
+production scheduling cannot depend on that callback without moving it. No
+bitmap-release or gate-timing change was applied for this measurement.
+
+An unchanged Release build 41 (`27aab10`) ran on Living Room with in-app
+diagnostics disabled. After restoring Xcode/Instruments device discovery, a
+bounded 90-second `xctrace` recording used **Animation Hitches** plus **Time
+Profiler**. Process-specific attachment failed, so the capture used
+`--all-processes` on that Apple TV; the analysis below filters to VividTV only.
+blurbery reproduced the Down/Left/Right traversal and reported that lag remained.
+The recording finished successfully and the local trace is retained for review.
+
+- Instruments emitted 413 Vivid hitch records between 28.57 and 65.31 seconds,
+  totalling 9.38 seconds of reported hitch duration. System-level duplicates
+  were excluded. Of these, 364 were labelled only “Potentially expensive app
+  update(s)”, one combined app-update/render/GPU warnings, two had render-only
+  warnings, and 46 had no potential-issue label. These are Instruments' heuristic
+  warnings, not proof that every hitch has exactly one cause.
+- In the active 28–66 second interval, Time Profiler recorded 21.56 seconds of
+  sampled Vivid main-thread weight. `_UIHostingView.layoutSubviews()` appeared
+  in 14.40 seconds (66.8%), `CA::Transaction::commit()` in 15.69 seconds (72.8%),
+  and `AG::Graph::UpdateStack::update()` in 14.17 seconds (65.7%). These are
+  inclusive, overlapping stack weights; they must not be added together.
+- The hosting-layout path leads through `ViewGraph.updateOutputs(at:)`,
+  AttributeGraph updates and SwiftUI layout/display-list work. The samples also
+  contain focus-effect geometry and ForEach graph updates. This establishes
+  substantial SwiftUI hosting/graph work despite flat top-level body counters;
+  it does not identify which particular root or hosted card causes that work.
+- Main-thread sampled weight fell to 52 ms during 70–80 seconds and 45 ms during
+  80–90 seconds. This again supports work during interaction rather than a queue
+  continuously draining after input stops. Profiling overhead means these
+  absolute timings are not a clean performance benchmark against prior runs.
+
+The next investigation should isolate the hosting-layout invalidation path.
+This trace does not justify declaring GPU texture volume, distant bitmap
+retention, pill materials, or image concurrency the dominant cause. A correctly
+bounded distant-artwork experiment remains possible, but it must suppress both
+cache display paths and account separately for layout and rendering effects.
+No runtime source, card design, Spotlight behaviour or cache policy changed in
+this follow-up; no new build was needed, and the recorder is stopped.
