@@ -145,7 +145,11 @@ struct VividCollectionMediaRow: View, Equatable {
         // Only explicit restoration may need to mount an off-screen cell.
         // An existing cell receives the event; a newly mounted one reads it
         // on appearance. No delayed claims or normal-navigation retries.
-        proxy.scrollTo(id: target.contentId, animated: false)
+        // The collection already retains its last focused card and offset.
+        // A Spotlight handoff back to that card must not scroll it sideways.
+        if target.contentId != focus.lastItemID {
+            proxy.scrollTo(id: target.contentId, animated: false)
+        }
         focus.requests.send(target.contentId)
     }
 }

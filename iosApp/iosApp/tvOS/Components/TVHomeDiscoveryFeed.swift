@@ -15,7 +15,7 @@ struct TVHomeDiscoveryFeed: View {
     var onSetWatched: ((SectionItem, Bool) async -> Bool)? = nil
 
     @State private var homeCards = TVHomeCardPreferences.shared
-    @FocusState private var spotlightFocusedPosition: Int?
+    @State private var spotlightEnterRequest = 0
     @State private var rowFocusOwnership = TVHomeFocusOwnership()
     @State private var rowFocusMemory = TVHomeRowFocusMemory()
     @State private var rowArtworkWindow = TVHomeRowArtworkWindow()
@@ -23,7 +23,7 @@ struct TVHomeDiscoveryFeed: View {
     @State private var firstRowFocusRequest = 0
     @State private var spotlightOpenedDetail = false
     @State private var appliedFocusRequest = 0
-    private var spotlightFocused: Bool { spotlightFocusedPosition != nil }
+
     private static let spotlightAnchor = "vivid.home.discovery.spotlight"
 
     var body: some View {
@@ -34,10 +34,18 @@ struct TVHomeDiscoveryFeed: View {
                     if !slides.isEmpty {
                         TVHomeSpotlightCarousel(
                             slides: slides,
-                            focus: $spotlightFocusedPosition,
+                            enterRequest: spotlightEnterRequest,
                             initialPosition: rowFocusMemory.spotlightPosition,
                             onPositionChange: { rowFocusMemory.spotlightPosition = $0 },
                             isTopMenuFocused: isTopMenuFocused,
+                            onFocusChange: { focused in
+                                rowFocusMemory.spotlightFocused = focused
+                                if focused {
+                                    rowFocusOwnership.rowID = nil
+                                    rowArtworkWindow.focus(index: 0)
+                                }
+                            },
+                            onEnterFirstRow: enterFirstRow,
                             onSelect: { slide in
                                 spotlightOpenedDetail = true
                                 rowFocusOwnership.rowID = nil
@@ -108,12 +116,9 @@ struct TVHomeDiscoveryFeed: View {
                 if spotlightOpenedDetail { enterSpotlight() }
             }
             .onChange(of: slides.isEmpty) { _, empty in
-                if empty && spotlightFocused { enterFirstRow() }
+                if empty && rowFocusMemory.spotlightFocused { enterFirstRow() }
             }
             .onChange(of: isTopMenuFocused) { _, focused in
-                if focused { rowFocusOwnership.rowID = nil }
-            }
-            .onChange(of: spotlightFocused) { _, focused in
                 if focused { rowFocusOwnership.rowID = nil }
             }
         }
@@ -132,12 +137,11 @@ struct TVHomeDiscoveryFeed: View {
         // The spotlight is mounted eagerly. Let the focus engine perform its
         // own scroll instead of racing a separate ScrollViewReader animation.
         rowFocusOwnership.rowID = nil
-        spotlightFocusedPosition = rowFocusMemory.spotlightPosition
+        spotlightEnterRequest += 1
     }
 
     private func enterFirstRow() {
         guard let first = sections.first else { return }
-        spotlightFocusedPosition = nil
         rowFocusOwnership.rowID = first.id
         firstRowFocusRequest += 1
     }
@@ -561,11 +565,18 @@ private final class TVHomeArtworkWarmup {
 private final class TVHomeRowFocusMemory {
     var items: [String: String] = [:]
     var spotlightPosition = 0
+    var spotlightFocused = false
 }
 
 private struct TVHomeSpotlightCarousel: View {
     let slides: [TVHomeSpotlightSlide]
-    let focus: FocusState<Int?>.Binding
+    let enterRequest: Int
+    let onFocusChange: (Bool) -> Void
+    let onEnterFirstRow: () -> Void
+    @FocusState private var focusedPosition: Int?
+    @State private var appliedEnterRequest = 0
+    @State private var automaticAdvanceInFlight = false
+    private var focus: FocusState<Int?>.Binding { $focusedPosition }
     let onPositionChange: (Int) -> Void
     let isTopMenuFocused: Bool
     let onSelect: (TVHomeSpotlightSlide) -> Void
@@ -579,7 +590,6 @@ private struct TVHomeSpotlightCarousel: View {
     @State private var initialCardPresented = false
     @State private var centredPosition: Int?
     @Namespace private var carouselSpace
-    @State private var isVisible = false
     @State private var scrollIsMoving = false
     @State private var cycleElapsed: TimeInterval = 0
     @State private var cycleResumedAt: Date?
@@ -591,14 +601,18 @@ private struct TVHomeSpotlightCarousel: View {
 
     init(
         slides: [TVHomeSpotlightSlide],
-        focus: FocusState<Int?>.Binding,
+        enterRequest: Int,
         initialPosition: Int,
         onPositionChange: @escaping (Int) -> Void,
         isTopMenuFocused: Bool,
+        onFocusChange: @escaping (Bool) -> Void,
+        onEnterFirstRow: @escaping () -> Void,
         onSelect: @escaping (TVHomeSpotlightSlide) -> Void
     ) {
         self.slides = slides
-        self.focus = focus
+        self.enterRequest = enterRequest
+        self.onFocusChange = onFocusChange
+        self.onEnterFirstRow = onEnterFirstRow
         let startPosition = initialPosition
         self.onPositionChange = onPositionChange
         self.isTopMenuFocused = isTopMenuFocused
@@ -618,7 +632,7 @@ private struct TVHomeSpotlightCarousel: View {
         slides[((position % slides.count) + slides.count) % slides.count]
     }
     private var homeIsOpen: Bool {
-        isVisible && scenePhase == .active && router.authState == .authenticated
+        scenePhase == .active && router.authState == .authenticated
             && router.path.isEmpty && router.presentedPlayer == nil
             && !TVSavedAccountStore.shared.busy
             && !TVSavedAccountStore.shared.showsSelector
@@ -626,6 +640,7 @@ private struct TVHomeSpotlightCarousel: View {
     }
     private var canRotate: Bool {
         initialCardPresented && homeIsOpen && slides.count > 1 && !scrollIsMoving
+            && (focusedPosition != nil || isTopMenuFocused)
             && !voiceOverEnabled && centredPosition == visualPosition
             && readyPositions[visualPosition] == slide(at: visualPosition).id
     }
@@ -707,6 +722,7 @@ private struct TVHomeSpotlightCarousel: View {
                             } action: { centred in
                                 if centred { centredPosition = position }
                                 else if centredPosition == position { centredPosition = nil }
+                                finishAutomaticAdvanceIfReady()
                                 completeInitialPresentationIfReady()
                             }
                             .accessibilityLabel(slide.content.title)
@@ -735,8 +751,9 @@ private struct TVHomeSpotlightCarousel: View {
                 .scrollClipDisabled()
                 .onScrollPhaseChange { _, phase in
                     scrollIsMoving = phase != .idle
-                    if phase == .idle, focus.wrappedValue == nil {
-                        updatePositionWindow(around: visualPosition)
+                    if phase == .idle {
+                        finishAutomaticAdvanceIfReady()
+                        if focusedPosition == nil { updatePositionWindow(around: visualPosition) }
                     }
                     // A recycled origin can leave a fractional offset after
                     // native deceleration. Finish alignment without moving focus.
@@ -749,6 +766,13 @@ private struct TVHomeSpotlightCarousel: View {
                     }
                 }
                 .focusSection()
+                .onMoveCommand { direction in
+                    guard direction == .down, focusedPosition != nil else { return }
+                    pendingPosition = nil
+                    pauseCycle()
+                    focusedPosition = nil
+                    onEnterFirstRow()
+                }
             }
             .frame(height: 580)
 
@@ -776,17 +800,28 @@ private struct TVHomeSpotlightCarousel: View {
             .frame(height: 12)
             .accessibilityHidden(true)
         }
-        .onChange(of: focus.wrappedValue) { _, position in
+        .onChange(of: enterRequest, initial: true) { _, request in
+            guard request > appliedEnterRequest else { return }
+            appliedEnterRequest = request
+            focusedPosition = visualPosition
+        }
+        .onChange(of: focusedPosition) { previous, position in
+            if (previous != nil) != (position != nil) { onFocusChange(position != nil) }
+            if position == nil {
+                pendingPosition = nil
+                pauseCycle()
+            }
             if let position, position != visualPosition {
+                automaticAdvanceInFlight = false
                 pendingPosition = nil
                 selectPosition(position)
             }
             completeInitialPresentationIfReady()
         }
-        .onScrollVisibilityChange(threshold: 0.5) { isVisible = $0 }
         .onDisappear {
             pauseCycle()
-            isVisible = false
+            onFocusChange(false)
+            automaticAdvanceInFlight = false
             pendingPosition = nil
         }
         .onChange(of: homeIsOpen, initial: true) { _, open in
@@ -845,21 +880,26 @@ private struct TVHomeSpotlightCarousel: View {
         cycleResumedAt = nil
     }
 
+    private func finishAutomaticAdvanceIfReady() {
+        guard automaticAdvanceInFlight, !scrollIsMoving,
+              centredPosition == visualPosition else { return }
+        automaticAdvanceInFlight = false
+        // Never steal focus from a shelf after an interrupted auto-advance.
+        if focusedPosition != nil { focusedPosition = visualPosition }
+    }
+
     private func revealPendingSlide() {
         guard canRotate, let position = pendingPosition, !slides.isEmpty,
               readyPositions[position] == slide(at: position).id else { return }
         pendingPosition = nil
-        if focus.wrappedValue != nil {
-            // The focus engine scrolls the newly focused native card into view.
-            focus.wrappedValue = position
-        } else {
-            // Automatic rotation owns this selection. Initial layout reports
-            // from ScrollPosition must never advance the selected slide.
-            selectPosition(position)
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
-                scrollPosition.scrollTo(id: position, anchor: .center)
-            }
+        // Move the artwork first. Moving focus to an off-centre future
+        // slide gives native Down the wrong horizontal origin.
+        automaticAdvanceInFlight = true
+        selectPosition(position)
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) {
+            scrollPosition.scrollTo(id: position, anchor: .center)
         }
+
     }
 }
 
