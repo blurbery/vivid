@@ -586,9 +586,11 @@ iPhone and iPad row limits are unchanged.
 blurbery reported smooth cold launches and repeated fast horizontal/vertical
 traversal on Living Room after manually reducing Home to six media rails plus
 Spotlight. This supports the smaller Home configuration on that device, without
-proving that hosting-view count alone caused the earlier lag. The automatic
-limit and settings controls still require device verification.
+proving that hosting-view count alone caused the earlier lag. Build 43 includes
+the automatic limit and settings controls and was installed in place on Living
+Room. blurbery subsequently confirmed that tvOS works well.
 
-Validation: the incremental Release VividTV device build passed using the retained
-DerivedData and package cache with the existing signing team. `git diff --check`
-passed. No new UI tests were added and this revision has not been installed.
+Validation: the signed Release VividTV device build and the iOS/tvOS CI run for
+`a584044` passed. The later Add Profile loading presentation in `a584044` has not
+yet been installed on Living Room; the owner’s installed-build confirmation does
+not establish device coverage of that change.
