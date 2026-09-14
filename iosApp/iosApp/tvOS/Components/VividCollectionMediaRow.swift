@@ -3,7 +3,7 @@ import CollectionHStack
 import Combine
 import SwiftUI
 
-struct VividCollectionMediaRow: View {
+struct VividCollectionMediaRow: View, Equatable {
     let section: ResolvedSection
     let onSelect: (String) -> Void
     let onPlay: (SectionItem) -> Void
@@ -17,6 +17,25 @@ struct VividCollectionMediaRow: View {
     var rememberedItemID: String?
     var ownsReturnFocus: Binding<Bool>?
     var posterWidth = VividTheme.Skyline.densePosterCardWidth
+    var rowIndex: Int? = nil
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.section == rhs.section
+            && lhs.focusRequest == rhs.focusRequest
+            && lhs.detailReturnFocusRequest == rhs.detailReturnFocusRequest
+            && lhs.posterWidth == rhs.posterWidth
+            && lhs.rowIndex == rhs.rowIndex
+            && (lhs.onSeeAll == nil) == (rhs.onSeeAll == nil)
+            && (lhs.onRemove == nil) == (rhs.onRemove == nil)
+            && (lhs.onMoveUp == nil) == (rhs.onMoveUp == nil)
+            && (lhs.onItemFocus == nil) == (rhs.onItemFocus == nil)
+            && (lhs.ownsReturnFocus == nil) == (rhs.ownsReturnFocus == nil)
+    }
+
+    // Remembered IDs are consumed only by explicit entry/detail request tokens
+    // or section changes, all compared above. Comparing passive memory here
+    // would refresh every visited row when Spotlight re-renders the feed.
+
 
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
     @Environment(\.homeCardPresentation) private var presentation

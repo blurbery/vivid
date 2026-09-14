@@ -72,6 +72,7 @@ struct TVHomeDiscoveryFeed: View {
                                     if rowFocusOwnership.rowID != section.id { rowFocusOwnership.rowID = section.id }
                                 },
                                 cardWidth: VividTheme.Skyline.densePosterCardWidth,
+                                homeRowIndex: index,
                                 focusRestorationOwner: Binding(
                                     get: { rowFocusOwnership.rowID == section.id },
                                     set: { if $0 { rowFocusOwnership.rowID = section.id } }
@@ -122,6 +123,7 @@ struct TVHomeDiscoveryFeed: View {
             TVHomeTopMenuBoundary(focus: rowFocusOwnership, hasSpotlight: !slides.isEmpty)
         }
         .environment(\.homeCardPresentation, homeCards.presentation)
+        .onDisappear { rowArtworkWindow.stopPendingPreparation() }
         .ignoresSafeArea()
     }
 
@@ -164,6 +166,7 @@ extension EnvironmentValues {
 private final class TVHomeRowArtworkWindow {
     private var current = 0
     private var gates: [Int: TVHomeRowArtworkGate] = [:]
+    private var settle: DispatchWorkItem?
 
     func register(_ gate: TVHomeRowArtworkGate, index: Int) {
         gates[index] = gate
@@ -177,8 +180,26 @@ private final class TVHomeRowArtworkWindow {
     func focus(index: Int) {
         guard current != index else { return }
         current = index
-        for (index, gate) in gates { update(gate, index: index) }
+        // Only the immediate destinations are enabled in the focus callback.
+        for offset in -1...1 {
+            if let gate = gates[index + offset], !gate.enabled { gate.enabled = true }
+        }
+        settle?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            for (index, gate) in gates { update(gate, index: index) }
+            settle = nil
+        }
+        settle = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
+
+    func stopPendingPreparation() {
+        settle?.cancel()
+        settle = nil
+    }
+
+    deinit { settle?.cancel() }
 
     private func update(_ gate: TVHomeRowArtworkGate, index: Int) {
         if (current - 1 ... current + 2).contains(index) {
@@ -204,12 +225,8 @@ private struct TVHomeRowArtworkVisibility: ViewModifier {
                 window.unregister(gate, index: oldIndex)
                 window.register(gate, index: newIndex)
             }
-            .onScrollVisibilityChange(threshold: 0.01) { visible in
-                // Fling fallback only enables. Leaving the viewport must not
-                // tear down and recreate the artwork on the reverse movement.
-                if visible, !gate.enabled { gate.enabled = true }
-            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                window.stopPendingPreparation()
                 gate.enabled = false
             }
     }
@@ -436,6 +453,13 @@ private final class TVHomeFocusOwnership {
     var rowID: String?
 }
 
+private struct TVHomeArtworkWarmupKey: Equatable {
+    let sections: [ResolvedSection]
+    let presentation: CardPresentationPreference
+    let rowID: String?
+    let scenePhase: ScenePhase
+}
+
 private struct TVHomeArtworkWarmupModifier: ViewModifier {
     let sections: [ResolvedSection]
     let presentation: CardPresentationPreference
@@ -446,7 +470,17 @@ private struct TVHomeArtworkWarmupModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .task(id: homeArtworkRequests) { artworkWarmup.update(homeArtworkRequests) }
+            .task(id: TVHomeArtworkWarmupKey(sections: sections, presentation: presentation,
+                rowID: focus.rowID, scenePhase: scenePhase)) {
+                // Cached Home starts warming immediately. Repeated row changes
+                // defer request construction and reprioritisation until a pause.
+                if focus.rowID != nil {
+                    do { try await Task.sleep(for: .milliseconds(120)) }
+                    catch { return }
+                }
+                guard !Task.isCancelled else { return }
+                artworkWarmup.update(homeArtworkRequests)
+            }
             .onDisappear { artworkWarmup.stop() }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                 artworkWarmup.stop()

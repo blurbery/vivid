@@ -68,7 +68,7 @@ struct TVMainTabView: View {
     @State private var scopeSelections: [TVLibraryTabType: Int] = [:]
     @State private var isTopMenuFocused = false
     @State private var isTopMenuFocusSuppressed = true
-    @State private var homeAllowsTopMenuFocus = false
+    @State private var homeMenuAvailability = TVHomeMenuAvailability()
     /// True while Search or Settings is pushed from the bar. On return,
     /// focus returns to the bar — the explicit "next owner" choice
     /// (docs/apple-tv-focus.md); leaving it to the engine landed on an
@@ -121,7 +121,8 @@ struct TVMainTabView: View {
                     selectedRoot: selectedRoot,
                     currentProfile: currentProfile,
                     isMenuFocused: $isTopMenuFocused,
-                    isFocusSuppressed: isTopMenuFocusSuppressed && !(selectedRoot == .home && homeAllowsTopMenuFocus),
+                    suppressesContentFocus: isTopMenuFocusSuppressed,
+                    homeAvailability: homeMenuAvailability,
                     focusRequest: topMenuFocusRequest,
                     focusResetRequest: topMenuFocusResetRequest,
                     onSelectRoot: selectRoot(_:),
@@ -133,7 +134,7 @@ struct TVMainTabView: View {
             }
 
         }
-        .onPreferenceChange(TVHomeTopMenuAvailabilityKey.self) { homeAllowsTopMenuFocus = $0 }
+        .onPreferenceChange(TVHomeTopMenuAvailabilityKey.self) { homeMenuAvailability.allowsFocus = $0 }
         .ignoresSafeArea(edges: [.top, .horizontal])
         .tint(.vividOnSurface)
         .fullScreenCover(item: $router.presentedPlayer) { payload in

@@ -213,3 +213,19 @@ gates. This avoids leave/re-enter gate flips and collection updates caused by
 reading the gate in the rail body. No item-ID-only equality shortcut or package
 fork is used, so existing-item metadata and progress updates remain available.
 Physical-device performance of this change still requires verification.
+
+Build 33 was reported as a large improvement, with fast vertical traversal and
+Spotlight/Continue Watching crossings still laggy. Unchanged collection rows
+now skip parent-driven updates using full section data, restoration request
+tokens, row index, dimensions and action availability. Passive remembered IDs
+are consumed when a restoration token or section changes; they do not trigger
+updates across every previously visited row at the Spotlight boundary. Row
+index participates so reordered sections do not retain stale index callbacks.
+Top-menu availability is observed inside the bar instead of the tab shell.
+Rapid traversal enables only immediate row neighbours synchronously; ahead
+preparation and distant disabling wait for a 150 ms pause. The existing bounded
+window and memory-pressure behaviour remain. Warm request construction and queue
+reprioritisation wait 120 ms after row changes, while initial snapshot warming
+starts immediately. The scroll-visibility enable fallback is removed. These
+pauses apply only to artwork preparation, never focus or scroll movement.
+Device verification remains pending for the latest changes.

@@ -48,6 +48,7 @@ struct SectionRow: View {
     /// Optional poster/square card width forwarded to `MediaRow` —
     /// Skyline's dense landing rows (§5.6) pass a compact width.
     var cardWidth: CGFloat? = nil
+    var homeRowIndex: Int? = nil
     /// Optional tvOS card-strip padding override. Skyline uses this to keep
     /// the focused row short enough for the next row title preview.
     var cardVerticalPadding: CGFloat? = nil
@@ -117,8 +118,10 @@ struct SectionRow: View {
                 detailReturnFocusRequest: detailReturnFocusRequest,
                 rememberedItemID: focusRequestItemId ?? defaultFocusItemId,
                 ownsReturnFocus: focusRestorationOwner,
-                posterWidth: cardWidth ?? VividTheme.posterCardWidth
+                posterWidth: cardWidth ?? VividTheme.posterCardWidth,
+                rowIndex: homeRowIndex
             )
+            .equatable()
         } else {
             mediaRow
         }
