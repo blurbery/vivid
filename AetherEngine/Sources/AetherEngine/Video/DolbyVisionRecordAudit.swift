@@ -30,7 +30,7 @@ public enum DolbyVisionRecordAudit {
 
         var result: Int?
         A53SEIParser.forEachNAL(data, size, framing) { nal, len in
-            guard result == nil, (nal[0] >> 1) & 0x3F == nalTypeRPU else { return }
+            guard result == nil, len >= 2, (nal[0] >> 1) & 0x3F == nalTypeRPU else { return }
             guard let rpu = dovi_parse_unspec62_nalu(nal, len) else { return }
             defer { dovi_rpu_free(rpu) }
             guard let hdr = dovi_rpu_get_header(rpu) else { return }
@@ -72,8 +72,11 @@ public enum DolbyVisionRecordAudit {
     }
 
     /// How many video packets to walk before giving up. Every frame of a Dolby Vision source carries an
-    /// RPU, so the answer is in the first one; the slack is for a container whose head is audio.
+    /// RPU, so the answer is usually in the first one; allow a few unparseable video packets.
     private static let auditPacketBudget = 16
+    /// Bound packets from all streams, including an audio-only prefix. Exhaustion leaves the
+    /// container record unchanged; this is a packet ceiling, not a wall-clock deadline.
+    private static let auditReadBudget = 512
 
     /// Open the source a second time and read what its first RPU says. nil when the source cannot be
     /// opened, carries no video, or holds no parseable RPU in its first frames, which all mean the same
@@ -102,12 +105,14 @@ public enum DolbyVisionRecordAudit {
             size: Int(codecpar?.pointee.extradata_size ?? 0))
 
         var walked = 0
-        while walked < auditPacketBudget {
+        var read = 0
+        while walked < auditPacketBudget, read < auditReadBudget {
             guard let packet = (try? demuxer.readPacket()) ?? nil else { return nil }
             defer {
                 av_packet_unref(packet)
                 av_packet_free_safe(packet)
             }
+            read += 1
             guard packet.pointee.stream_index == videoIdx else { continue }
             walked += 1
             if let profile = rpuProfile(packet, framing: framing) { return profile }

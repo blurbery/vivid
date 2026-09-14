@@ -77,7 +77,7 @@ struct CachedAsyncImage: View {
         ) { state in
             // Cache fallback and exact-size results share one rendered branch.
             // Changing the source bitmap must not replace the Image subtree.
-            if let image = state.image ?? (state.error == nil ? warmedImage.map { Image(platformImage: $0) } : nil) {
+            if let image = state.image ?? warmedImage.map({ Image(platformImage: $0) }) {
                 image
                     .resizable()
                     .aspectRatio(contentMode: contentMode)

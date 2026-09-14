@@ -43,9 +43,10 @@ extension AetherEngine {
     /// rebuild, so the internal reopens that follow (audio switch, background reload) replay the
     /// correction rather than reverting to the load-time value.
     ///
-    /// Unlike `reloadAtCurrentPosition()`, which returns silently when there is nothing to rebuild,
-    /// this one throws `AetherEngineError.sessionNotReloadable`: a host correcting a session needs
-    /// to tell "corrected" from "did nothing" to decide whether to fall through to a fresh load.
+    /// This overload throws `AetherEngineError.sessionNotReloadable` for every refusal before
+    /// applying options. The no-argument overload also throws for unavailable custom-source
+    /// sessions, but returns silently when a URL-backed session has no URL to rebuild.
+    /// A host can distinguish a correction from refusal and choose whether to start a fresh load.
     ///
     /// - Throws: `AetherEngineError.loadIdentityNotCorrectable` when the closure changed a field
     ///   that names the session, `AetherEngineError.sessionNotReloadable` when this session cannot

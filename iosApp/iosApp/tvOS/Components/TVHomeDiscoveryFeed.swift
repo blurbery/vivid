@@ -640,7 +640,7 @@ private struct TVHomeSpotlightCarousel: View {
     let onFocusChange: (Bool) -> Void
     let onEnterFirstRow: () -> Void
     @FocusState private var focusedPosition: Int?
-    @State private var appliedEnterRequest = 0
+    @State private var appliedEnterRequest: Int
     @State private var automaticAdvanceInFlight = false
     @State private var alignmentAttempted = false
     private var focus: FocusState<Int?>.Binding { $focusedPosition }
@@ -678,6 +678,7 @@ private struct TVHomeSpotlightCarousel: View {
     ) {
         self.slides = slides
         self.enterRequest = enterRequest
+        _appliedEnterRequest = State(initialValue: enterRequest)
         self.onFocusChange = onFocusChange
         self.onEnterFirstRow = onEnterFirstRow
         let startPosition = initialPosition

@@ -169,7 +169,7 @@ enum DVDIFOParser {
 
         // audio_attr_t: byte 0 packs audio_format(3) multichannel_extension(1) lang_type(2)
         // application_mode(2); the ISO 639-1 code sits at bytes 2-3 and is only meaningful when
-        // lang_type == 1. audio_control: bit 15 = present, bits 14-8 = the substream number.
+        // lang_type == 1. audio_control: bit 15 = present, bits 10-8 = the substream number.
         if data.count > vtsAudioCountOffset {
             let count = min(Int(data[vtsAudioCountOffset]), vtsMaxAudioStreams)
             for n in 0..<count {
@@ -182,7 +182,7 @@ enum DVDIFOParser {
                 if let pgc, pgc + pgcAudioControlOffset + n * 2 + 2 <= data.count {
                     let control = be16(data, pgc + pgcAudioControlOffset + n * 2)
                     guard control & 0x8000 != 0 else { continue }
-                    number = (control >> 8) & 0x7F
+                    number = (control >> 8) & 0x07
                 }
                 claim(base + number, language)
             }

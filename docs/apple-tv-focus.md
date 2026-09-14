@@ -568,6 +568,8 @@ No safe-area, cache, card, focus or navigation change was made. The temporary
 breakpoints were removed, Vivid was resumed, and LLDB detached successfully.
 
 
+Cached Home artwork remains visible if an exact-size request fails. A Spotlight carousel remount consumes the existing entry token without taking focus; a new entry request still moves focus into Spotlight. These review fixes retain the visibility-based rotation and six-enabled-rail policy.
+
 ### Apple TV Home row limit
 
 Apple TV Home supports six enabled media rails, with Spotlight separate. A row
