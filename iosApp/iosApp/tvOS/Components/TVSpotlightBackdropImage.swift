@@ -25,12 +25,19 @@ struct TVSpotlightBackdropImage: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .clipped()
         .task(id: "\(url)#\(size)#\(displayScale)") {
-            guard let imageURL = URL(string: url) else { return }
+            guard let imageURL = URL(string: url) else { onReady(); return }
             let request = PosterImageCache.displayRequest(
                 url: imageURL,
                 pixelSize: CGSize(width: size.width * displayScale, height: size.height * displayScale)
             )
-            guard let loaded = try? await VividImagePipeline.shared.image(for: request), !Task.isCancelled else { return }
+            let loaded: UIImage
+            do { loaded = try await VividImagePipeline.shared.image(for: request) }
+            catch {
+                // The existing background and text are the terminal fallback.
+                if !Task.isCancelled { onReady() }
+                return
+            }
+            guard !Task.isCancelled else { return }
             #if os(tvOS)
             let region = await TVHomeMetadataCache.shared.preparedSpotlightSubject(in: loaded, url: imageURL.absoluteString)
             #else

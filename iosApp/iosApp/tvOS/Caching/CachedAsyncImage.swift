@@ -26,69 +26,79 @@ struct CachedAsyncImage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(tvOS)
     @Environment(\.tvArtworkLoadingEnabled) private var artworkLoadingEnabled
+    @Environment(\.tvHomeStableRows) private var stableHomeRows
+    @Environment(\.tvHomeRowArtworkGate) private var homeArtworkGate
     #else
     private let artworkLoadingEnabled = true
     #endif
 
+    @ViewBuilder
     var body: some View {
-        GeometryReader { geometry in
-            let resolvedSize = targetSize ?? geometry.size
-            let imageRequest = request(for: resolvedSize)
-            // A gated rail must not discard artwork that has already been
-            // decoded at its display size when VividLazyImage's request becomes nil.
-            // This is a memory-cache lookup only; it starts no image work.
-            let retainedImage = artworkLoadingEnabled ? nil : imageRequest.flatMap {
-                VividImagePipeline.shared.cache[$0]?.image
-            }
-            let warmedImage = retainedImage ?? prefetchedImage()
-            let loadAnimation: Animation? = reduceMotion || warmedImage != nil
-                ? nil
-                : .easeOut(duration: VividTheme.slowDuration)
-            VividLazyImage(
-                request: artworkLoadingEnabled ? imageRequest : nil,
-                transaction: Transaction(animation: loadAnimation)
-            ) { state in
-                if let image = state.image {
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: contentMode)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height,
-                            alignment: alignment
-                        )
-                        .clipped()
-                        .transition(.opacity)
-                        .onAppear(perform: notifyImageLoaded)
-                } else if state.error == nil, let warmedImage {
-                    // The startup/grid prefetchers warm the memory cache under
-                    // the shared card-size thumbnail key, while the request
-                    // above is keyed by the exact render size — a miss for
-                    // the pipeline’s synchronous first check. Painting the warmed
-                    // decode here makes a prefetched card render finished on
-                    // its first frame; it is at least as sharp as the card's
-                    // own decode, so the swap-in is invisible.
-                    Image(platformImage: warmedImage)
-                        .resizable()
-                        .aspectRatio(contentMode: contentMode)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height,
-                            alignment: alignment
-                        )
-                        .clipped()
-                        .onAppear(perform: notifyImageLoaded)
-                } else if state.error != nil && artworkLoadingEnabled {
-                    placeholder(in: geometry.size)
-                        .overlay {
-                            if placeholderStyle.showsErrorIcon {
-                                Image(systemName: "film")
-                                    .foregroundColor(.vividOnSurface.opacity(0.3))
-                            }
+        let _ = VividImageDiagnostics.shared.count("leaf.CachedAsyncImage.body")
+        #if os(tvOS)
+        if stableHomeRows, let targetSize {
+            // Home reserves this exact artwork frame. Avoid a separate
+            // geometry observation while first collection cells are measured.
+            renderedImage(in: targetSize)
+                .frame(width: targetSize.width, height: targetSize.height)
+        } else {
+            measuredImage
+        }
+        #else
+        measuredImage
+        #endif
+    }
+
+    private var measuredImage: some View {
+        GeometryReader { geometry in renderedImage(in: geometry.size) }
+    }
+
+    private var isHomeShelf: Bool {
+        #if os(tvOS)
+        homeArtworkGate != nil
+        #else
+        false
+        #endif
+    }
+
+    private func renderedImage(in size: CGSize) -> some View {
+        let resolvedSize = targetSize ?? size
+        let imageRequest = request(for: resolvedSize)
+        let warmedImage = prefetchedImage()
+        let loadAnimation: Animation? = isHomeShelf || reduceMotion || warmedImage != nil
+            ? nil
+            : .easeOut(duration: VividTheme.slowDuration)
+        var transaction = Transaction(animation: loadAnimation)
+        transaction.disablesAnimations = isHomeShelf
+        return VividLazyImage(
+            request: imageRequest,
+            transaction: transaction,
+            isLoadingEnabled: artworkLoadingEnabled
+        ) { state in
+            // Cache fallback and exact-size results share one rendered branch.
+            // Changing the source bitmap must not replace the Image subtree.
+            if let image = state.image ?? warmedImage.map({ Image(platformImage: $0) }) {
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .frame(
+                        width: size.width,
+                        height: size.height,
+                        alignment: alignment
+                    )
+                    .clipped()
+                    .transition(.opacity)
+                    .onAppear(perform: notifyImageLoaded)
+            } else if state.error != nil && artworkLoadingEnabled {
+                placeholder(in: size)
+                    .overlay {
+                        if placeholderStyle.showsErrorIcon {
+                            Image(systemName: "film")
+                                .foregroundColor(.vividOnSurface.opacity(0.3))
                         }
-                } else {
-                    placeholder(in: geometry.size)
-                }
+                    }
+            } else {
+                placeholder(in: size)
             }
         }
     }
@@ -142,6 +152,7 @@ struct TVEpisodeArtwork: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.tvArtworkLoadingEnabled) private var loadingEnabled
+    @Environment(\.tvHomeRowArtworkGate) private var homeArtworkGate
     @State private var retainedImage: PlatformImage?
     @State private var retainedKey: ImageKey?
 
@@ -158,6 +169,7 @@ struct TVEpisodeArtwork: View {
     }
 
     var body: some View {
+        let _ = VividImageDiagnostics.shared.count("leaf.TVEpisodeArtwork.body")
         let key = ImageKey(url: url, width: size.width * displayScale, height: size.height * displayScale)
         let request = URL(string: url).map {
             PosterImageCache.displayRequest(url: $0, pixelSize: CGSize(width: key.width, height: key.height))
@@ -198,9 +210,17 @@ struct TVEpisodeArtwork: View {
             }
             guard loadingEnabled, let request else { return }
             do {
-                let loaded = try await VividImagePipeline.shared.image(for: request)
+                VividImageDiagnostics.shared.count("episode.taskStarted")
+                let loaded = try await withTaskCancellationHandler {
+                    try await VividImagePipeline.shared.image(for: request)
+                } onCancel: {
+                    VividImageDiagnostics.shared.count("episode.taskCancelled")
+                }
                 guard !Task.isCancelled else { return }
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                var transaction = Transaction(animation:
+                    homeArtworkGate != nil || reduceMotion ? nil : .easeOut(duration: 0.2))
+                transaction.disablesAnimations = homeArtworkGate != nil
+                withTransaction(transaction) {
                     retainedKey = key
                     retainedImage = loaded
                 }

@@ -11,6 +11,7 @@ struct ThumbhashImage: View {
     @State private var decodedImage: DecodedThumbhashImage?
 
     var body: some View {
+        let _ = VividImageDiagnostics.shared.count("leaf.ThumbhashImage.body")
         Group {
             if let normalizedThumbhash,
                let decodedImage,

@@ -1,5 +1,6 @@
 #if os(tvOS)
 import SwiftUI
+import Observation
 import UIKit
 import os
 
@@ -56,13 +57,22 @@ enum TVRootDestination: Hashable {
 /// `TabView` sidebar steals leftward focus — and draws no background band;
 /// it floats over each page's own scrim and dims to 70% while focus is
 /// down in the content zone.
+@Observable
+final class TVHomeMenuAvailability {
+    var allowsFocus = false
+}
+
 struct TVTopMenuBar: View {
     @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.swapMenuUtilities")) private var utilitiesSwapped = false
     let roots: [TVRootDestination]
     let selectedRoot: TVRootDestination
     let currentProfile: UserProfile?
     @Binding var isMenuFocused: Bool
-    let isFocusSuppressed: Bool
+    let suppressesContentFocus: Bool
+    let homeAvailability: TVHomeMenuAvailability
+    private var isFocusSuppressed: Bool {
+        suppressesContentFocus && !(selectedRoot == .home && homeAvailability.allowsFocus)
+    }
     let focusRequest: Int
     /// Bumped when the shell has determined the bar's `@FocusState` is stale —
     /// the engine dropped focus without the bar observing it, so no suppression

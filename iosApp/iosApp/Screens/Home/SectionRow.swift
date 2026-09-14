@@ -48,6 +48,7 @@ struct SectionRow: View {
     /// Optional poster/square card width forwarded to `MediaRow` —
     /// Skyline's dense landing rows (§5.6) pass a compact width.
     var cardWidth: CGFloat? = nil
+    var homeRowIndex: Int? = nil
     /// Optional tvOS card-strip padding override. Skyline uses this to keep
     /// the focused row short enough for the next row title preview.
     var cardVerticalPadding: CGFloat? = nil
@@ -55,12 +56,14 @@ struct SectionRow: View {
     var onMoveDown: (() -> Void)? = nil
     /// Live tvOS ownership gate for context-menu focus restoration.
     var focusRestorationOwner: Binding<Bool>? = nil
+    var isSpotlightHandoffPending: (() -> Bool)? = nil
     #if !os(tvOS)
     @State private var detailBrowseOriginID = UUID().uuidString
     #endif
 
     #if os(tvOS)
     @Environment(AppRouter.self) private var router
+    @Environment(\.tvHomeStableRows) private var usesHomeCollection
     #endif
 
     private var isContinueWatching: Bool {
@@ -99,7 +102,37 @@ struct SectionRow: View {
         isContinueWatching || isEpisodeRow
     }
 
+    @ViewBuilder
     var body: some View {
+        #if os(tvOS)
+        if usesHomeCollection {
+            VividCollectionMediaRow(
+                section: section,
+                onSelect: selectItem,
+                onPlay: playItem,
+                onSetWatched: { item, played in await setWatched(item, played: played) },
+                onRemove: isContinueWatching ? onRemoveFromContinueWatching : nil,
+                onSeeAll: onSeeAll,
+                onItemFocus: onItemFocus,
+                onMoveUp: onMoveUp,
+                focusRequest: focusRequest,
+                detailReturnFocusRequest: detailReturnFocusRequest,
+                rememberedItemID: focusRequestItemId ?? defaultFocusItemId,
+                ownsReturnFocus: focusRestorationOwner,
+                posterWidth: cardWidth ?? VividTheme.posterCardWidth,
+                rowIndex: homeRowIndex,
+                isSpotlightHandoffPending: isSpotlightHandoffPending
+            )
+            .equatable()
+        } else {
+            mediaRow
+        }
+        #else
+        mediaRow
+        #endif
+    }
+
+    private var mediaRow: some View {
         MediaRow(
             title: section.title,
             items: section.items,

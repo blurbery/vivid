@@ -693,6 +693,48 @@ extension AetherEngine {
         hostAsserts || (criteriaReadout ?? false)
     }
 
+    /// AE#459: what the ROUTE may assume about the panel, which is deliberately more than what the LABEL
+    /// may claim.
+    ///
+    /// The label answers "what is this display presenting", and where nothing can answer it the honest
+    /// value is SDR. The route answers a different question, "will AVFoundation accept an HDR master
+    /// here", and there is exactly one component that knows: AVFoundation. Predicting its answer from
+    /// `UIScreen.currentEDRHeadroom` was never more than a proxy, and the proxy is measurably unreliable.
+    /// Measured on one Apple TV 4K 3rd gen on tvOS 26.6 against a panel whose own info display reported
+    /// HDR at the time: the property read a flat 1.00 across 46 samples of HDR content and the session
+    /// routed media-direct, and later the same day, same box, same output format, same title, it read
+    /// 1.20. The TV reporting HDR while the property read 1.00 is what rules out a silently dropped link,
+    /// so the panel was presenting HDR and the property was wrong about it. What moves it is NOT
+    /// established: the "4K HDR10+" output mode was blamed and then refuted by running the comparison back
+    /// the other way. The only pattern the data supports is a correlation, that every correct reading
+    /// follows a recent output-format change while every wrong one comes from a box parked in one mode.
+    ///
+    /// So on an unproven panel the engine serves the master and lets acceptance or refusal be the readout
+    /// the display will not give. What refusal costs was measured before this was built rather than
+    /// assumed: output locked to 4K SDR with Match Content off, master forced, a PQ title. AVPlayer failed
+    /// the item with `-11868` after 54 ms with zero `errorLog` events, `MasterFallbackDecision` swapped the
+    /// media playlist onto the live `AVPlayer` at the same position, and the item was playing 223 ms after
+    /// the master was served, with no visible black frame.
+    ///
+    /// Three terms, each earning its place. A panel that PROVED itself short-circuits, so a box on plain
+    /// "4K HDR" never attempts anything and pays nothing. Eligibility is required, so a display that
+    /// cannot do HDR at all is never offered a master it has no business receiving. And the refusal is
+    /// latched for the process, so the 223 ms is paid at most once by a genuinely SDR panel rather than on
+    /// every title.
+    ///
+    /// What this deliberately does NOT do is move the label. Acceptance is better evidence than the
+    /// headroom ever was, but publishing HDR because a master was SERVED would claim exactly what this
+    /// issue was opened about, one frame earlier.
+    nonisolated static func sessionRoutesAsHDRPanel(
+        panelPresentsHDR: Bool,
+        attemptWhenUnproven: Bool,
+        displayEligibleForHDR: Bool,
+        panelRefusedHDRMaster: Bool
+    ) -> Bool {
+        if panelPresentsHDR { return true }
+        return attemptWhenUnproven && displayEligibleForHDR && !panelRefusedHDRMaster
+    }
+
     private nonisolated static func streamHasDV(stream: UnsafeMutablePointer<AVStream>) -> Bool {
         let nb = Int(stream.pointee.codecpar.pointee.nb_coded_side_data)
         guard nb > 0, let sideData = stream.pointee.codecpar.pointee.coded_side_data else {

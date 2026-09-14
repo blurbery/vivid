@@ -22,6 +22,7 @@ struct HomeView: View {
     #if os(tvOS)
     @State private var homeSectionPreferences = HomeSectionPreferences.shared
     @State private var spotlightPreferences = TVHomeSpotlightPreferences.shared
+    @State private var homeHiddenAt: Date?
     #endif
     #if !os(tvOS)
     @State private var homeSectionPreferences = HomeSectionPreferences.shared
@@ -209,8 +210,21 @@ struct HomeView: View {
         }
         #if os(iOS) || os(tvOS)
         .onAppear { isHomeVisible = true }
-        .onDisappear { isHomeVisible = false }
+        .onDisappear {
+            isHomeVisible = false
+            #if os(tvOS)
+            if homeHiddenAt == nil { homeHiddenAt = Date() }
+            #endif
+        }
         .task(id: shouldSyncHome) {
+            #if os(tvOS)
+            guard shouldSyncHome else {
+                if homeHiddenAt == nil { homeHiddenAt = Date() }
+                return
+            }
+            await viewModel.refreshForHomeEntry(sinceLastHidden: homeHiddenAt)
+            if !Task.isCancelled { homeHiddenAt = nil }
+            #else
             guard shouldSyncHome else { return }
             await viewModel.loadSections()
             while !Task.isCancelled {
@@ -218,9 +232,16 @@ struct HomeView: View {
                 guard !Task.isCancelled, shouldSyncHome else { return }
                 await viewModel.loadSections()
             }
+            #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: .homeSectionsShouldRefresh)) { _ in
-            Task { await viewModel.refreshPlaybackSections() }
+            Task {
+                #if os(tvOS)
+                await viewModel.refreshPlaybackSections(refreshImmediately: shouldSyncHome)
+                #else
+                await viewModel.refreshPlaybackSections()
+                #endif
+            }
         }
         #endif
         .alert(

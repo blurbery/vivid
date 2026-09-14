@@ -13,6 +13,7 @@ struct ServerListView: View {
     @Environment(AppRouter.self) private var router
     @State private var registry = ServerRegistry.shared
     @State private var removeTarget: ServerEntry?
+    @State private var removalError: String?
     #if os(tvOS)
     @FocusState private var focusedRow: TVRow?
     #endif
@@ -26,7 +27,7 @@ struct ServerListView: View {
             if let entry = removeTarget {
                 TVSettingsConfirmationOverlay(
                     title: "Remove this server?",
-                    message: "Sign-in credentials for \(entry.displayName) will be forgotten on this device.",
+                    message: "The saved server \(entry.displayName) and all its profiles will be removed from your Vivid devices through iCloud. Accounts and media on the server are not deleted.",
                     confirmTitle: "Remove",
                     cancel: { dismissRemoveConfirmation(for: entry) },
                     confirm: { remove(entry) }
@@ -54,7 +55,7 @@ struct ServerListView: View {
                 }
                 Button("Cancel", role: .cancel) { removeTarget = nil }
             } message: { entry in
-                Text("Sign-in credentials for \(entry.displayName) will be forgotten on this device.")
+                Text("The saved server \(entry.displayName) and all its profiles will be removed from your Vivid devices through iCloud. Accounts and media on the server are not deleted.")
             }
         #endif
     }
@@ -113,7 +114,8 @@ struct ServerListView: View {
                 .focused($focusedRow, equals: .add)
 
                 }
-                TVSettingsFooter("Select the trash icon to remove a saved server.")
+                TVSettingsFooter("Select the trash icon to remove a saved server and its profiles from your Vivid devices.")
+                if let removalError { TVSettingsFooter(removalError) }
             }
             .frame(maxWidth: 1080, alignment: .leading)
             .padding(.bottom, 64)
@@ -194,6 +196,8 @@ struct ServerListView: View {
             } header: {
                 Text("Saved servers")
                     .foregroundColor(.vividSecondaryText)
+            } footer: {
+                if let removalError { Text(removalError) }
             }
 
 
@@ -263,16 +267,12 @@ struct ServerListView: View {
     }
 
     private func remove(_ entry: ServerEntry) {
-        let wasActive = entry.id == registry.activeServerId
+        removalError = nil
         Task {
-            guard await registry.remove(
-                serverId: entry.id,
-                resolveFallbackProfile: wasActive
-            ) else { return }
-            await MainActor.run {
-                removeTarget = nil
-                if wasActive { refreshAuthState() }
-            }
+            let store = TVSavedAccountStore.shared
+            let removed = await store.deleteServer(entry.id, router: router)
+            if !removed { removalError = store.error ?? "Couldn’t remove the saved server. Try again." }
+            removeTarget = nil
         }
     }
 

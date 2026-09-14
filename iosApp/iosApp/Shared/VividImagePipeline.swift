@@ -40,6 +40,8 @@ final class VividImageCache: @unchecked Sendable {
     enum Caches { case memory }
     private let memory = NSCache<NSString, VividImageContainer>()
     let responses: URLCache
+    private let generationLock = NSLock()
+    private var generation = 0
     init(costLimit: Int, countLimit: Int, diskCapacity: Int) {
         memory.totalCostLimit = costLimit
         memory.countLimit = countLimit
@@ -62,7 +64,20 @@ final class VividImageCache: @unchecked Sendable {
         memory.countLimit = count
     }
     #endif
-    func removeAll(caches: Caches) { memory.removeAllObjects() }
+    var currentGeneration: Int {
+        generationLock.lock(); defer { generationLock.unlock() }
+        return generation
+    }
+    func store(_ image: VividImageContainer, for request: VividImageRequest, generation expected: Int) {
+        generationLock.lock(); defer { generationLock.unlock() }
+        guard generation == expected else { return }
+        self[request] = image
+    }
+    func removeAll(caches: Caches) {
+        generationLock.lock(); defer { generationLock.unlock() }
+        generation &+= 1
+        memory.removeAllObjects()
+    }
     func containsData(for request: VividImageRequest) -> Bool { responses.cachedResponse(for: URLRequest(url: request.url)) != nil }
     func removeCachedData(for request: VividImageRequest) { responses.removeCachedResponse(for: URLRequest(url: request.url)) }
     func removeCachedImage(for request: VividImageRequest, caches: Caches) { memory.removeObject(forKey: request.key) }
@@ -85,27 +100,58 @@ final class VividImagePipeline: @unchecked Sendable {
         configuration.timeoutIntervalForRequest = 20
         session = URLSession(configuration: configuration)
         decoding.maxConcurrentOperationCount = 2
+        #if os(tvOS)
+        decoding.qualityOfService = .utility
+        #else
         decoding.qualityOfService = .userInitiated
+        #endif
     }
     func image(for request: VividImageRequest) async throws -> UIImage {
-        if let cached = cache[request] { return cached.image }
+        let diagnostics = VividImageDiagnostics.shared
+        if let cached = cache[request] {
+            diagnostics.count("memory.hit")
+            return cached.image
+        }
+        diagnostics.count("memory.miss")
+        let cacheGeneration = cache.currentGeneration
         let result = try await flights.load(request) { [self] in
+            let dataStart = diagnostics.timestamp
             let data = try await data(for: request)
+            diagnostics.duration("dataWait", since: dataStart)
             try Task.checkCancellation()
+            let queuedAt = diagnostics.timestamp
+            let qos = request.priority == .low ? "utility" : "demand"
             return try await withCheckedThrowingContinuation { continuation in
-                decoding.addOperation { [self] in
+                let operation = BlockOperation { [self] in
+                    diagnostics.duration("decodeQueue.\(qos)", since: queuedAt)
+                    let decodeStart = diagnostics.timestamp
+                    defer { diagnostics.duration("decode.\(qos)", since: decodeStart) }
                     do {
                         let image = try Self.decode(data, request: request)
                         let result = VividImageContainer(image)
-                        cache[request] = result
+                        cache.store(result, for: request, generation: cacheGeneration)
                         continuation.resume(returning: result)
                     } catch { continuation.resume(throwing: error) }
                 }
+                #if os(tvOS)
+                operation.qualityOfService = request.priority == .low ? .utility : .userInitiated
+                operation.queuePriority = request.priority == .low ? .low : .normal
+                #endif
+                decoding.addOperation(operation)
             }
         }
         try Task.checkCancellation()
         return result.image
     }
+    func removeCachedArtwork(for urls: Set<URL>) async {
+        cache.removeAll(caches: .memory)
+        await flights.cancel(urls: urls)
+        #if os(tvOS)
+        await embyDataFlights.cancel(urls: urls)
+        #endif
+        for url in urls { cache.removeCachedData(for: VividImageRequest(url: url)) }
+    }
+
     func data(for request: VividImageRequest) async throws -> Data {
         if request.url.isFileURL { return try Data(contentsOf: request.url, options: .mappedIfSafe) }
         #if os(tvOS)
@@ -121,11 +167,20 @@ final class VividImagePipeline: @unchecked Sendable {
     }
 
     private func fetchData(for request: VividImageRequest) async throws -> Data {
-        let (data, response) = try await session.data(from: request.url)
+        let delegate = VividImageDiagnostics.shared.enabled ? VividImageMetricsDelegate.shared : nil
+        let (data, response) = try await session.data(from: request.url, delegate: delegate)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 32 * 1024 * 1024 else {
             throw URLError(.badServerResponse)
         }
         return data
+    }
+    func diagnosticDecodeOperations() -> [Double] {
+        guard VividImageDiagnostics.shared.enabled else { return [] }
+        let operations = decoding.operations
+        return [Double(operations.count),
+                Double(operations.filter { $0.qualityOfService == .userInitiated }.count),
+                Double(operations.filter { $0.qualityOfService == .utility }.count),
+                Double(operations.filter(\.isExecuting).count)]
     }
     private static func decode(_ data: Data, request: VividImageRequest) throws -> UIImage {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else {
@@ -159,10 +214,22 @@ final class VividImagePipeline: @unchecked Sendable {
 private actor VividEmbyImageDataFlights {
     private var tasks: [URL: (UUID, Task<Data, Error>)] = [:]
 
+    func cancel(urls: Set<URL>) {
+        for url in urls { tasks.removeValue(forKey: url)?.1.cancel() }
+    }
+
     func load(_ url: URL, operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
-        if let (_, existing) = tasks[url] { return try await existing.value }
+        let diagnostics = VividImageDiagnostics.shared
+        if let (id, existing) = tasks[url] {
+            if diagnostics.enabled {
+                return try await diagnostics.value(of: existing, id: id, token: diagnostics.join(id, utility: false))
+            }
+            return try await existing.value
+        }
         let id = UUID()
+        diagnostics.created(id, kind: "dataFlight", utility: false)
         let task = Task {
+            defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
             do { return try await operation() }
             catch {
                 let failure = error as NSError
@@ -175,18 +242,43 @@ private actor VividEmbyImageDataFlights {
         }
         tasks[url] = (id, task)
         defer { if tasks[url]?.0 == id { tasks[url] = nil } }
+        if diagnostics.enabled {
+            return try await diagnostics.value(of: task, id: id, token: diagnostics.join(id, utility: false))
+        }
         return try await task.value
     }
 }
 
 private actor VividImageFlights {
     private var tasks: [VividImageRequest: (UUID, Task<VividImageContainer, Error>)] = [:]
+    func cancel(urls: Set<URL>) {
+        for request in Array(tasks.keys) where urls.contains(request.url) {
+            tasks.removeValue(forKey: request)?.1.cancel()
+        }
+    }
+
     func load(_ request: VividImageRequest, operation: @escaping @Sendable () async throws -> VividImageContainer) async throws -> VividImageContainer {
-        if let (_, existing) = tasks[request] { return try await existing.value }
+        let diagnostics = VividImageDiagnostics.shared
+        let utility = request.priority == .low
+        if let (id, existing) = tasks[request] {
+            if diagnostics.enabled {
+                return try await diagnostics.value(of: existing, id: id, token: diagnostics.join(id, utility: utility))
+            }
+            return try await existing.value
+        }
         let id = UUID()
-        let task = Task(priority: request.priority == .low ? .utility : .userInitiated) { try await operation() }
+        diagnostics.created(id, kind: "flight", utility: utility)
+        let createdAt = diagnostics.timestamp
+        let task = Task(priority: utility ? .utility : .userInitiated) {
+            diagnostics.duration("flightStartWait", since: createdAt)
+            defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
+            return try await operation()
+        }
         tasks[request] = (id, task)
         defer { if tasks[request]?.0 == id { tasks[request] = nil } }
+        if diagnostics.enabled {
+            return try await diagnostics.value(of: task, id: id, token: diagnostics.join(id, utility: utility))
+        }
         return try await task.value
     }
 }
@@ -260,20 +352,56 @@ struct VividImageState {
 struct VividLazyImage<Content: View>: View {
     let request: VividImageRequest?
     let transaction: Transaction
+    var isLoadingEnabled = true
     @ViewBuilder let content: (VividImageState) -> Content
-    @SwiftUI.State private var loaded: UIImage?
+    private struct LoadedImage {
+        let request: VividImageRequest
+        let image: UIImage
+    }
+    private struct LoadKey: Hashable {
+        let request: VividImageRequest?
+        let canPresentOrLoad: Bool
+    }
+    @SwiftUI.State private var loaded: LoadedImage?
     @SwiftUI.State private var failure: Error?
     var body: some View {
-        content(VividImageState(image: (loaded ?? request.flatMap { VividImagePipeline.shared.cache[$0]?.image }).map(Image.init(uiImage:)), error: failure))
-            .task(id: request) {
+        let _ = VividImageDiagnostics.shared.count("leaf.VividLazyImage.body")
+        let retained = loaded?.request == request ? loaded?.image : nil
+        let availableImage = retained ?? request.flatMap { VividImagePipeline.shared.cache[$0]?.image }
+        // A displayed bitmap keeps the task identity stable across gate changes.
+        // Missing images still restart when permission to load changes.
+        let key = LoadKey(request: request, canPresentOrLoad: isLoadingEnabled || availableImage != nil)
+        content(VividImageState(image: availableImage.map(Image.init(uiImage:)), error: failure))
+            .task(id: key) {
+                VividImageDiagnostics.shared.count(request == nil ? "lazy.nilTask" : "lazy.taskStarted")
                 failure = nil
-                loaded = request.flatMap { VividImagePipeline.shared.cache[$0]?.image }
-                guard let request, loaded == nil else { return }
+                guard let request else { loaded = nil; return }
+                if let availableImage {
+                    if loaded?.request != request {
+                        loaded = LoadedImage(request: request, image: availableImage)
+                    }
+                    return
+                }
+                loaded = nil
+                // Permission is checked here, not inferred from an earlier
+                // cache hit. A disabled row can never start a cache-miss load.
+                guard isLoadingEnabled else {
+                    VividImageDiagnostics.shared.count("lazy.gatedTask")
+                    return
+                }
                 do {
-                    let image = try await VividImagePipeline.shared.image(for: request)
+                    let image = try await withTaskCancellationHandler {
+                        try await VividImagePipeline.shared.image(for: request)
+                    } onCancel: {
+                        VividImageDiagnostics.shared.count("lazy.taskCancelled")
+                    }
                     try Task.checkCancellation()
-                    withTransaction(transaction) { loaded = image }
+                    withTransaction(transaction) { loaded = LoadedImage(request: request, image: image) }
                 } catch { if !Task.isCancelled { failure = error } }
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                if !isLoadingEnabled { loaded = nil }
+            }
+            .onDisappear { VividImageDiagnostics.shared.count("lazy.disappear") }
     }
 }

@@ -259,6 +259,39 @@ final class TVHomeMetadataCache {
         persist()
     }
 
+    func deleteAccountCache(_ account: TVSavedAccount) async throws {
+        guard let profileID = account.profile?.id else { return }
+        let data = try JSONEncoder().encode([account.serverID, profileID])
+        let scope = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        if loadedScope == scope { deactivate() }
+        let url = fileURL(for: scope)
+        let urls: Set<URL> = try await withCheckedThrowingContinuation { continuation in
+            writer.async {
+                do { continuation.resume(returning: try Self.deleteSnapshot(at: url)) }
+                catch { continuation.resume(throwing: error) }
+            }
+        }
+        PosterImageCache.stopPrefetchingCardArtwork(Array(urls))
+        await VividImagePipeline.shared.removeCachedArtwork(for: urls)
+    }
+
+    nonisolated static func deleteSnapshot(at url: URL) throws -> Set<URL> {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        func collect(_ value: Any) -> Set<URL> {
+            if let string = value as? String, let url = URL(string: string),
+               ["http", "https"].contains(url.scheme?.lowercased() ?? "") { return [url] }
+            if let values = value as? [Any] { return values.reduce(into: []) { $0.formUnion(collect($1)) } }
+            if let values = value as? [String: Any] { return values.values.reduce(into: []) { $0.formUnion(collect($1)) } }
+            return []
+        }
+        let data = try Data(contentsOf: url)
+        let json = try? JSONSerialization.jsonObject(with: data)
+        let urls = json.map(collect) ?? []
+        // A corrupt metadata file must still be deletable.
+        try FileManager.default.removeItem(at: url)
+        return urls
+    }
+
     private func artworkURLs(in value: Snapshot) -> Set<URL> {
         var strings: [String] = []
         for row in value.rows {

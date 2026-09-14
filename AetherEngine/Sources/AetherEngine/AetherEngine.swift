@@ -530,6 +530,19 @@ public final class AetherEngine: ObservableObject {
     /// label hosts read, this is the term only `softwarePathCannotRepresent` needs.
     var sourceDVBLCompatID: Int? = nil
 
+    /// AE#532: the profile the loaded source's own RPU reports, when the record was contradicted enough
+    /// to be worth checking (`DolbyVisionRecordAudit`). nil for every other source, including one whose
+    /// RPU could not be read. Held for the same reason as `sourceDVBLCompatID`: a reload has to judge the
+    /// source after the probe that measured it is gone.
+    var sourceDolbyVisionRPUProfile: Int? = nil
+
+    /// Whether the loaded source's Dolby Vision has a base layer `LoadOptions.dolbyVisionHandling =
+    /// .baseLayerOnly` can present (`VideoRoutingPolicy.dolbyVisionBaseLayerIsPresentable`), decided
+    /// on the probe stream for the same reason as `sourceDVBLCompatID`: a correction that turns the
+    /// base layer on and moves to software in one step is judged before the teardown, when the VUI it
+    /// rests on is gone.
+    var sourceDolbyVisionBaseLayerPresentable: Bool = false
+
     /// Nominal source frame rate (fps) from the container's `avg_frame_rate` (falling back to `r_frame_rate`),
     /// or nil when the source has no video or libavformat couldn't derive one. Companion to `sourceVideoFormat`
     /// for Stats-for-Nerds. `LiveTelemetry.observedFps` measures the live rate but is nil on the native AVPlayer
@@ -1182,6 +1195,18 @@ public final class AetherEngine: ObservableObject {
     /// parked the session; the host must negotiate a fresh transcode URL and call `load`. No replay; subscribe per session.
     public let liveSourceReset = PassthroughSubject<Void, Never>()
 
+    /// AE#444 follow-up (Sodalite#104): fires when a resume found the playhead outside the DVR window
+    /// and moved it forward.
+    ///
+    /// The clamp itself has been right since AE#444 and is the only sane thing to do: a session paused
+    /// for longer than its own buffer depth has had the position it was parked on evicted by the
+    /// sliding window, and there is nothing there to resume from. What it could not do is TELL anyone.
+    /// Measured on the harness with a 30 s window, a session paused for 70 s: the playhead sat at
+    /// 93881.2 while the window slid to 93890.0...93920.0 underneath it, and the resume landed at
+    /// 93895.0 without a word. A viewer who paused a match and came back saw it continue somewhere
+    /// else, and nothing on screen said why. No replay; subscribe per session.
+    public let liveResumeClamped = PassthroughSubject<LiveResumeClamp, Never>()
+
     /// Fires when the SYSTEM turned captions on by itself, i.e. selected a legible option in the item that
     /// neither the host nor the user asked for. On iOS 26 that is Settings > Accessibility > Subtitles &
     /// Captioning > Automatic Subtitles (show when muted, on skip back, on a language mismatch); those
@@ -1246,6 +1271,22 @@ public final class AetherEngine: ObservableObject {
     /// reached it for none of them: every live leg ran `useMaster=false`, so a question about how a
     /// client treats what the manifest says had only ever been asked of the manifest the device
     /// usually does not read (AE#454).
+    /// AE#459: this process has seen AVFoundation refuse an HDR master for the display.
+    ///
+    /// The one readout the platform will actually give. `UIScreen.currentEDRHeadroom` has been measured
+    /// reading 1.00 on a panel whose own info display reported HDR, so an unproven panel is offered the
+    /// master and refusal answers the question the display will not. Latched for the process because the
+    /// answer costs a fallback to obtain and does not change while the output configuration does not.
+    ///
+    /// Set ONLY by the two display-rejection codes. `-1002` also reaches the same fallback and means the
+    /// manifest was filtered at parse time (#130), which is a statement about the playlist and not about
+    /// the display; latching on it would teach the process a fact about the panel from an unrelated bug.
+    ///
+    /// Not cleared when the user changes the output format mid-process, because nothing reports that
+    /// either. A stale refusal costs the master route until the app restarts, which is the behaviour this
+    /// replaces rather than a regression from it.
+    nonisolated(unsafe) static var panelRefusedHDRMaster = false
+
     nonisolated(unsafe) static var forceMasterPlaylistForTesting = false
 
     /// TEST-ONLY. Flip the master-route override for the `aetherctl live --force-master` harness.
@@ -1299,11 +1340,15 @@ public final class AetherEngine: ObservableObject {
         #if os(tvOS) || os(iOS)
         let hdrEligible = AVPlayer.eligibleForHDRPlayback
         let modes = AVPlayer.availableHDRModes
-        return DisplayCapabilities(
-            supportsHDR: hdrEligible,
-            supportsDolbyVision: modes.contains(.dolbyVision),
-            supportsHDR10: modes.contains(.hdr10),
-            supportsHLG: modes.contains(.hlg)
+        // AE#459: the table may add a mode, it may no longer subtract one. It under-reports HLG over
+        // HDMI against a panel whose EDID advertises it, so HDR10 and HLG take eligibility as their
+        // floor and Dolby Vision stays on the table alone. Reasoning and the measurements behind it are
+        // on `observedPerModeTable`.
+        return DisplayCapabilities.observedPerModeTable(
+            hdrEligible: hdrEligible,
+            hdr10: modes.contains(.hdr10),
+            hlg: modes.contains(.hlg),
+            dolbyVision: modes.contains(.dolbyVision)
         )
         #elseif os(macOS)
         // AE#493: `availableHDRModes` is `API_UNAVAILABLE(macos)`, so there is no per-mode table to read
@@ -1533,6 +1578,11 @@ public final class AetherEngine: ObservableObject {
     /// still say whether the viewer was parked in the DVR window or sitting at the edge.
     var liveBehindWhenLastAdvancing: Double = 0
     var lastPublishedLivePlayhead: Double? = nil
+    /// AE#524: when the live runway was last checked, so the check stays at 1 Hz whatever rate the
+    /// clock publishes at, and whether it has already been reported as thin (one line per episode,
+    /// not one per second).
+    var lastLiveCushionLogAt: Date? = nil
+    var liveThinRunwayNoted = false
 
     /// Current session URL. Used by reloadAtCurrentPosition and AetherEngine+FrameExtractor.
     var loadedURL: URL?
@@ -2197,6 +2247,14 @@ public final class AetherEngine: ObservableObject {
             return
         }
         masterFallbackUsed = true
+        // AE#459: the display answered. Display-rejection codes only, never the -1002 parse failure.
+        if MasterFallbackDecision.isDisplayRejectionCode(rejection.code), !Self.panelRefusedHDRMaster {
+            Self.panelRefusedHDRMaster = true
+            EngineLog.emit(
+                "[DisplayCriteria] panel refused an HDR master (code=\(rejection.code)); this process "
+                + "routes HDR sources media-direct until it restarts",
+                category: .engine)
+        }
         session.markServingMediaAfterFallback()
         nativeSubtitleRenditionsServed = false
         // #227: while AirPlaying, the item under the rejection is the LAN-IP URL; `mediaPlaylistURL` is the
@@ -2255,7 +2313,20 @@ public final class AetherEngine: ObservableObject {
     /// mid-seek comes back playing instead of paused. nil where there is no native host to ask (the
     /// software and audio routes have no competing transport owner, so `state` is authoritative there,
     /// which is the same split `togglePlayPause` makes).
-    nonisolated static func rebuildResumesPlaying(state: PlaybackState, nativeTransportIntent: Bool?) -> Bool {
+    ///
+    /// Round 3: a rebuild STACKED behind one still in flight has no transport to read either, and
+    /// both readings above then say "paused" about a session that is playing: `state` is `.loading`
+    /// for the load in flight, and the native host whose intent would be asked is the one that load
+    /// is replacing. So the surviving generation mounted paused and nothing was left to call
+    /// `play()`, which is round 2's own defect re-entered through the door round 2 did not close.
+    /// Measured on the CLI: three stepper presses in one runloop turn left the session stopped at
+    /// 14.58 s for the rest of the run, and the harness still ended `VERDICT: OK`. The intent the
+    /// load in flight was handed is the honest answer for exactly that window, the same shape and
+    /// the same window as `rebuildPosition`.
+    nonisolated static func rebuildResumesPlaying(
+        state: PlaybackState, nativeTransportIntent: Bool?, underReconstruction: Bool?
+    ) -> Bool {
+        if state == .loading, let parked = underReconstruction { return parked }
         if let nativeTransportIntent { return nativeTransportIntent }
         switch state {
         case .playing, .seeking: return true
@@ -2938,6 +3009,17 @@ public final class AetherEngine: ObservableObject {
     /// the playhead instead of at the head.
     var positionUnderReconstruction: Double?
 
+    /// AE#464 round 3: the transport intent the load in flight was handed, parked across the same
+    /// window as `positionUnderReconstruction` and for the same reason. Read only through
+    /// `sessionRebuildResumesPlaying`. See `rebuildResumesPlaying`.
+    var transportIntentUnderReconstruction: Bool?
+
+    /// AE#464 round 3: true while a re-anchor raised by `setAudioDelay` is running, so the presses
+    /// that arrive during it are folded into it instead of stacking re-anchors of their own. The
+    /// value does not ride the call (every press writes `loadedOptions.audioDelaySeconds` first), so
+    /// the rebuild already in flight delivers the newest one. See `reanchorForAudioDelay`.
+    var audioDelayReanchorInFlight = false
+
     /// The playhead a rebuild of this session has to come back to (#464 round 2).
     var positionForSessionRebuild: Double {
         Self.rebuildPosition(state: state, clock: currentTime, underReconstruction: positionUnderReconstruction)
@@ -2950,7 +3032,8 @@ public final class AetherEngine: ObservableObject {
         let nativeIntent = (nativeHost != nil && !audioAVPlayerActive && audioHost == nil && softwareHost == nil)
             ? nativeHost?.transportIntentIsPlaying
             : nil
-        return Self.rebuildResumesPlaying(state: state, nativeTransportIntent: nativeIntent)
+        return Self.rebuildResumesPlaying(state: state, nativeTransportIntent: nativeIntent,
+                                          underReconstruction: transportIntentUnderReconstruction)
     }
     /// #357: selection parked by a background teardown for the foreground reload, because on that
     /// path the two are minutes apart and `stopInternal` has wiped the state the reload snapshots
@@ -3343,6 +3426,9 @@ public final class AetherEngine: ObservableObject {
         // it is cleared below, so a reload raised while this one is still in flight has something
         // truer than the zero to snapshot. See `rebuildPosition`.
         positionUnderReconstruction = startPosition ?? 0
+        // Round 3: and the transport it is rebuilding toward, for the same window and the same
+        // reason. The host this load replaces is the one a stacked rebuild would ask.
+        transportIntentUnderReconstruction = options.autoplay
         isBuffering = false
         residentPlaylistRanges = []
         residentRanges = []
@@ -3404,6 +3490,8 @@ public final class AetherEngine: ObservableObject {
         sourceVideoFormat = .sdr
         sourceDVProfile = nil
         sourceDVBLCompatID = nil
+        sourceDolbyVisionBaseLayerPresentable = false
+        sourceDolbyVisionRPUProfile = nil
         sourceVideoFrameRate = nil
         sourceVideoBitrate = 0
         sourceVideoCodecName = nil
@@ -3464,6 +3552,14 @@ public final class AetherEngine: ObservableObject {
         var detectedRate: Double? = nil
         var detectedVideoBitrate: Int64 = 0
         var detectedDVProfile: Bool = false
+        // `dolbyVisionHandling = .baseLayerOnly` resolved against this source: the two halves the
+        // format clamp, the criteria request and the software-path guard below all read.
+        var detectedDVBaseLayerPresentable = false
+        var presentsDolbyVisionBaseLayer = false
+        // AE#532: what this source's own RPU says, and the profile the route should believe instead of
+        // the record. Both stay nil for every source but a Profile 5 record over a BT.2020 YCbCr HDR VUI.
+        var detectedDVRPUProfile: Int? = nil
+        var correctedDVProfile: Int? = nil
         var detectedCodecID: AVCodecID = AV_CODEC_ID_NONE
         var detectedFieldOrder: AVFieldOrder = AV_FIELD_UNKNOWN
         var probedAudioTracks: [TrackInfo] = []
@@ -3530,18 +3626,70 @@ public final class AetherEngine: ObservableObject {
             let videoIdx = probe.videoStreamIndex
             if videoIdx >= 0, let stream = probe.stream(at: videoIdx) {
                 detectedFormat = Self.detectVideoFormat(stream: stream)
-                effectiveFormat = Self.effectiveVideoFormat(detected: detectedFormat, stream: stream,
-                                                           capabilities: sessionDisplayCaps)
+                let detectedDVConfig = Self.dvConfig(stream: stream)
+                detectedDVProfileNum = detectedDVConfig?.profile
+                detectedDVBLCompatIDNum = detectedDVConfig?.blCompatID
+                detectedCodecID = stream.pointee.codecpar.pointee.codec_id
+                // `.baseLayerOnly`: the clamp reads a table with Dolby Vision left unclaimed, so the
+                // source resolves to the HDR10 / HLG its base layer is, the criteria ask for hvc1, and
+                // the served route (same predicate, `CodecRoutePolicy`) agrees. A source with no base
+                // layer to present (a genuine Profile 5) keeps everything as it was.
+                detectedDVBaseLayerPresentable = VideoRoutingPolicy.dolbyVisionBaseLayerIsPresentable(
+                    codecID: detectedCodecID,
+                    dvProfile: detectedDVProfileNum,
+                    dvBlCompatID: detectedDVBLCompatIDNum,
+                    colorTransfer: stream.pointee.codecpar.pointee.color_trc,
+                    colorMatrix: stream.pointee.codecpar.pointee.color_space)
+                presentsDolbyVisionBaseLayer = options.dolbyVisionHandling == .baseLayerOnly
+                    && detectedDVBaseLayerPresentable
+                // AE#532: a Profile 5 record over a VUI that contradicts it is the one claim in a
+                // container worth checking against the bitstream, because a Profile 5 RPU cannot carry a
+                // residual or an NLQ and the RPU is therefore proof rather than a guess. Gated on that
+                // pairing, so no other source reads a packet here. `.url` only: a custom reader has no
+                // second open to give, and live is not a class this was reported on.
+                if case .url(let auditURL) = source, !options.isLive,
+                   DolbyVisionRecordAudit.recordIsContradicted(
+                       codecID: detectedCodecID, dvProfile: detectedDVProfileNum,
+                       colorTransfer: stream.pointee.codecpar.pointee.color_trc,
+                       colorMatrix: stream.pointee.codecpar.pointee.color_space) {
+                    let auditHeaders = options.httpHeaders
+                    detectedDVRPUProfile = await Task.detached(priority: .userInitiated) {
+                        DolbyVisionRecordAudit.rpuProfileOfSource(url: auditURL, extraHeaders: auditHeaders)
+                    }.value
+                    correctedDVProfile = DolbyVisionRecordAudit.correctedProfile(
+                        record: detectedDVProfileNum, rpu: detectedDVRPUProfile)
+                    EngineLog.emit(
+                        correctedDVProfile.map {
+                            "[AetherEngine] AE#532: DV Profile 5 record contradicted by its own RPU "
+                            + "(RPU reads profile \($0)); this session routes it as Profile \($0)"
+                        } ?? ("[AetherEngine] AE#532: DV Profile 5 record over a BT.2020 YCbCr VUI, but the "
+                              + "RPU "
+                              + (detectedDVRPUProfile.map { "reads profile \($0)" } ?? "could not be read")
+                              + "; the record stands"),
+                        category: .engine)
+                }
+                if options.dolbyVisionHandling == .baseLayerOnly, detectedFormat == .dolbyVision {
+                    EngineLog.emit(
+                        presentsDolbyVisionBaseLayer
+                            ? "[AetherEngine] dolbyVisionHandling=baseLayerOnly: DV Profile "
+                              + "\(detectedDVProfileNum ?? 0) presents its base layer; the format clamp and the "
+                              + "criteria request leave Dolby Vision unclaimed"
+                            : "[AetherEngine] dolbyVisionHandling=baseLayerOnly ignored: DV Profile "
+                              + "\(detectedDVProfileNum ?? 0) compat=\(detectedDVBLCompatIDNum ?? 0) has no base "
+                              + "layer to present (IPT-PQ-c2, VUI unspecified); keeping the Dolby Vision route",
+                        category: .engine)
+                }
+                effectiveFormat = Self.effectiveVideoFormat(
+                    detected: detectedFormat, stream: stream,
+                    capabilities: presentsDolbyVisionBaseLayer
+                        ? sessionDisplayCaps.withoutDolbyVision() : sessionDisplayCaps)
                 detectedRate = Self.detectFrameRate(stream: stream)
                 // DrHurt #4 (2026-05-26): use source-detected DV, not effective-format, so codecTag=dvh1
                 // asks AVDisplayManager for DV mode on every DV source. AVPlayer's HLS tone-mapper downgrades
                 // DV->HDR10 when the panel can't host it; we don't pre-strip engine-side. Pairs with
                 // always-emit-SUPPLEMENTAL + no-strip in HLSVideoEngine's profile81/profile84 emission.
-                detectedDVProfile = (detectedFormat == .dolbyVision)
-                let detectedDVConfig = Self.dvConfig(stream: stream)
-                detectedDVProfileNum = detectedDVConfig?.profile
-                detectedDVBLCompatIDNum = detectedDVConfig?.blCompatID
-                detectedCodecID = stream.pointee.codecpar.pointee.codec_id
+                // The base-layer route is the one exception: it serves hvc1 and asks for hvc1.
+                detectedDVProfile = (detectedFormat == .dolbyVision) && !presentsDolbyVisionBaseLayer
                 detectedFieldOrder = stream.pointee.codecpar.pointee.field_order
                 sourceVideoWidth = stream.pointee.codecpar.pointee.width
                 sourceVideoHeight = stream.pointee.codecpar.pointee.height
@@ -3669,6 +3817,8 @@ public final class AetherEngine: ObservableObject {
         sourceVideoFormat = detectedFormat
         sourceDVProfile = detectedDVProfileNum
         sourceDVBLCompatID = detectedDVBLCompatIDNum
+        sourceDolbyVisionBaseLayerPresentable = detectedDVBaseLayerPresentable
+        sourceDolbyVisionRPUProfile = detectedDVRPUProfile
         sourceVideoFrameRate = detectedRate
         sourceVideoBitrate = detectedVideoBitrate
         sourceVideoCodecName = detectedCodecID == AV_CODEC_ID_NONE
@@ -3880,6 +4030,23 @@ public final class AetherEngine: ObservableObject {
             options.suppressDisplayCriteria ? nil : displayCriteria.currentPanelIsHDR()
         let panelHDRAfterHandshake = Self.sessionPanelPresentsHDR(
             hostAsserts: options.panelIsInHDRMode, criteriaReadout: criteriaPanelReadout)
+        // AE#459: the ROUTE may assume more than the LABEL may claim. `panelHDRAfterHandshake` stays the
+        // label's answer, conservative by design; the route additionally offers an unproven but
+        // HDR-eligible display the master and lets AVFoundation's acceptance be the readout `UIScreen`
+        // has been measured getting wrong on a panel that was demonstrably presenting HDR. Live is excluded: its fallback is a rejoin at
+        // the edge rather than a restored position, and that cost has not been measured.
+        let routingPanelHDR = Self.sessionRoutesAsHDRPanel(
+            panelPresentsHDR: panelHDRAfterHandshake,
+            attemptWhenUnproven: options.attemptsHDRMasterOnUnprovenPanel && !options.isLive,
+            displayEligibleForHDR: observedDisplayCaps.supportsHDR,
+            panelRefusedHDRMaster: Self.panelRefusedHDRMaster)
+        if routingPanelHDR != panelHDRAfterHandshake {
+            EngineLog.emit(
+                "[DisplayCriteria] panel unproven but HDR-eligible: serving the master and letting "
+                + "AVPlayer answer (refusal costs one in-place media fallback)",
+                category: .session)
+        }
+
         // Only when an assertion actually claims something: a line that fires on every load stops being
         // read, and this one has to be legible next to the rejection a wrong claim can produce.
         if options.panelIsInHDRMode || options.panelPresentsDolbyVision {
@@ -4032,7 +4199,11 @@ public final class AetherEngine: ObservableObject {
             let dvProfile = Self.dvProfile(stream: vStream)
             if VideoRoutingPolicy.forcesSoftwareForUndecodableFormat(
                    codecID: detectedCodecID,
-                   dvProfile: dvProfile,
+                   // A Profile 5 record served as its base layer plays as plain HEVC, which is what
+                   // the raw-hvcC probe judges; the exemption is for the dvh1 route it is not on.
+                   // AE#532: a record the RPU corrected is not on that route either, and its base layer
+                   // is standard Main10, so the gate judges it the way it judges any Profile 7 / 8.
+                   dvProfile: presentsDolbyVisionBaseLayer ? nil : (correctedDVProfile ?? dvProfile),
                    canHardwareDecode: { VTCapabilityProbe.canHardwareDecode(codecpar: codecpar) }) {
                 useSoftwarePath = true
                 EngineLog.emit(
@@ -4118,8 +4289,11 @@ public final class AetherEngine: ObservableObject {
            let dvConfig = Self.dvConfig(stream: vStream),
            VideoRoutingPolicy.softwarePathCannotRepresent(
                codecID: detectedCodecID,
-               dvProfile: dvConfig.profile,
-               dvBlCompatID: dvConfig.blCompatID) {
+               // AE#532: the refusal is about IPT-PQ-c2, which a record the RPU contradicts does not
+               // carry. Its base layer is plain HEVC and decodes correctly.
+               dvProfile: correctedDVProfile ?? dvConfig.profile,
+               dvBlCompatID: dvConfig.blCompatID,
+               presentsDolbyVisionBaseLayer: presentsDolbyVisionBaseLayer) {
             probe.markClosed()
             Task.detached { [probe] in probe.close() }
             let profileLabel = detectedCodecID == AV_CODEC_ID_AV1 ? "10.0" : "5"
@@ -4203,8 +4377,10 @@ public final class AetherEngine: ObservableObject {
                     audioSourceStreamIndex: selectedAudio,
                     keepDvh1TagWithoutDV: options.keepDvh1TagWithoutDV,
                     forceDolbyVisionOnNonDVDisplay: options.forceDolbyVisionOnNonDVDisplay,
+                    dolbyVisionHandling: options.dolbyVisionHandling,
+                    dolbyVisionRPUProfile: detectedDVRPUProfile,
                     matchContentEnabled: options.matchContentEnabled,
-                    panelIsInHDRMode: panelHDRAfterHandshake,
+                    panelIsInHDRMode: routingPanelHDR,
                     audioBridgeMode: options.audioBridgeMode,
                     isLive: options.isLive,
                     dvrWindowSeconds: options.dvrWindowSeconds,
@@ -4425,7 +4601,24 @@ public final class AetherEngine: ObservableObject {
         if !resumesTornDownSession { setLoadedAutoplay(sessionRebuildResumesPlaying) }
         if isCustomSource {
             // Rebuild on retained reader (seekable only); no URL to reopen.
-            guard customSourceIsSeekable, let placeholderURL = loadedURL else { return }
+            //
+            // AE#526: a refusal, said out loud. This used to return silently, and a host cannot tell
+            // that from a reload that worked: measured on a device, a live session torn down by the
+            // paused-background window (#127) came back to a player that had called this, believed it
+            // had rebuilt, and sat on a spinner for twenty minutes. A forward-only origin cannot be
+            // reopened at a position, and the vocabulary for saying so already existed
+            // (`sessionReloadRefusal`); only this path did not use it.
+            guard customSourceIsSeekable, let placeholderURL = loadedURL else {
+                let refusal: SessionReloadRefusal =
+                    loadedURL == nil ? .noActiveSession : .customSourceNotSeekable
+                EngineLog.emit(
+                    "[AetherEngine] #526 reload at current position refused: \(refusal). A session "
+                    + "on a forward-only custom source has no position to reopen at; a live host's "
+                    + "answer to this is to tune again, not to wait for a rebuild that cannot come",
+                    category: .session
+                )
+                throw AetherEngineError.sessionNotReloadable(refusal)
+            }
             let failure = await reloadWithAudioOverride(
                 url: placeholderURL,
                 audioStreamIndex: selection.audioTrackIndex.map { Int32($0) },
@@ -5251,6 +5444,8 @@ public final class AetherEngine: ObservableObject {
         sourceVideoFormat = .sdr
         sourceDVProfile = nil
         sourceDVBLCompatID = nil
+        sourceDolbyVisionBaseLayerPresentable = false
+        sourceDolbyVisionRPUProfile = nil
         sourceVideoFrameRate = nil
         sourceVideoBitrate = 0
         sourceVideoCodecName = nil
@@ -5323,8 +5518,18 @@ public final class AetherEngine: ObservableObject {
     /// `AVPlayer.isExternalPlaybackActive` is unavailable on visionOS: video goes to the wearer's
     /// displays, there is no receiver to hand the stream to, so the whole #86 / #227 serve-the-loopback-
     /// over-the-LAN path is inert there.
+    ///
+    /// tvOS reads false for a different reason, and by decision rather than by platform accident
+    /// (AE#460 round 3, cmcpherson274). AVFoundation declares the property back to tvOS 9 and an
+    /// Apple TV is the RECEIVER, so nothing hands a stream anywhere; but the engine's two
+    /// discriminators for such an edge (`isWirelessAirPlayRoute`, `isWiredHDMIExternalDisplay`) are
+    /// both iOS-only, so a tvOS edge would be classified as a wireless receiver and buy a
+    /// session-preserving reload for a route the platform has not got. A host playing a custom live
+    /// source pays that rebuild out of its own spool, which is exactly the hole the reporter found
+    /// by reading the route rather than by hitting it. Compiled out here instead of asserted in a
+    /// comment: the reachability is now a property of the build, not of Apple's behaviour.
     private var isExternalPlaybackActiveNow: Bool {
-        #if os(visionOS)
+        #if os(visionOS) || os(tvOS)
         return false
         #else
         return currentAVPlayer?.isExternalPlaybackActive ?? false
@@ -5334,7 +5539,7 @@ public final class AetherEngine: ObservableObject {
     private func observeExternalPlayback() {
         externalPlaybackObservation?.invalidate()
         externalPlaybackObservation = nil
-        #if !os(visionOS)
+        #if !os(visionOS) && !os(tvOS)
         guard let player = currentAVPlayer else { return }
         externalPlaybackObservation = player.observe(\.isExternalPlaybackActive, options: [.new]) { [weak self] _, change in
             let active = change.newValue ?? false
@@ -5419,21 +5624,49 @@ public final class AetherEngine: ObservableObject {
             sessionIsPlaying: sessionIsPlaying) else { return }
         playbackPanelProbe = Task { @MainActor [weak self] in
             guard let self else { return }
+            // AE#459: ask the cheaper and better question first. A display that takes an HDR master is
+            // presenting HDR, and a display that is not refuses in well under a tenth of a second, so a
+            // master still being served after the settle window was accepted. That beats waiting twelve
+            // seconds for a headroom that has been measured staying at 1.00 through exactly this case.
+            try? await Task.sleep(
+                for: .milliseconds(DisplayCriteriaController.masterAcceptanceSettleMs))
+            guard !Task.isCancelled, self.loadGeneration == gen else { return }
+            if DisplayCriteriaController.masterAcceptanceProvesPanel(
+                servingHDRMaster: self.nativeVideoSession?.servingMasterPlaylist == true
+                    && self.nativeVideoSession?.servedSourceIsHDR == true,
+                fellBackToMedia: self.masterFallbackUsed,
+                sessionIsPlaying: self.state == .playing) {
+                self.republishPanelPresentsHDR(
+                    effectiveFormat: effectiveFormat,
+                    because: "AVFoundation accepted the HDR master, which a display presenting SDR "
+                        + "refuses with -11868/-11848")
+                return
+            }
             let presentsHDR = await self.displayCriteria.probePanelDuringPlayback()
             guard !Task.isCancelled, self.loadGeneration == gen, presentsHDR else { return }
-            let corrected = Self.presentedVideoFormat(
+            self.republishPanelPresentsHDR(
                 effectiveFormat: effectiveFormat,
-                panelPresentsHDR: true,
-                sourceVideoFormat: self.sourceVideoFormat)
-            guard corrected != self.videoFormat else { return }
-            EngineLog.emit(
-                "[AetherEngine] panel answered HDR during playback, republishing videoFormat "
-                + "\(self.videoFormat) -> \(corrected); the load-time read could not see it and this "
-                + "session was served without HDR signaling (#459)",
-                category: .engine)
-            self.videoFormat = corrected
+                because: "the panel answered HDR during playback and the load-time read could not see it")
         }
         #endif
+    }
+
+    /// AE#459: publish the label a late answer earned, from whichever of the two answers arrived.
+    ///
+    /// One funnel on purpose. The load-time read, the playback probe and now master acceptance all answer
+    /// the same question, and three call sites composing `presentedVideoFormat` themselves is how the
+    /// published format and the served stream drift apart.
+    @MainActor
+    private func republishPanelPresentsHDR(effectiveFormat: VideoFormat, because reason: String) {
+        let corrected = Self.presentedVideoFormat(
+            effectiveFormat: effectiveFormat,
+            panelPresentsHDR: true,
+            sourceVideoFormat: sourceVideoFormat)
+        guard corrected != videoFormat else { return }
+        EngineLog.emit(
+            "[AetherEngine] republishing videoFormat \(videoFormat) -> \(corrected): \(reason) (#459)",
+            category: .engine)
+        videoFormat = corrected
     }
 
     /// Receivers that failed to start on an HDR master this process, by route UID (#227). An Apple TV
@@ -5579,7 +5812,9 @@ public final class AetherEngine: ObservableObject {
     /// `usesExternalPlaybackWhileExternalScreenIsActive` flips `isExternalPlaybackActive` for both a wired screen
     /// and a wireless AirPlay receiver; the audio route tells them apart (`.HDMI` vs `.airPlay`). Wired keeps the
     /// loopback + master playlist (Sodalite#34); wireless takes the LAN-IP + MEDIA path (#86). Mirrors the port
-    /// inspection in NativeAVPlayerHost.dumpAudioRoute. iOS-only; external playback never engages on tvOS.
+    /// inspection in NativeAVPlayerHost.dumpAudioRoute. iOS-only, and since AE#460 round 3 tvOS does not
+    /// observe external playback at all, so this is no longer the line that keeps an Apple TV off the
+    /// wireless branch (see `isExternalPlaybackActiveNow`).
     nonisolated private static func isWiredHDMIExternalDisplay() -> Bool {
         #if os(iOS)
         return AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .HDMI }
@@ -6508,6 +6743,22 @@ public final class AetherEngine: ObservableObject {
     }
     #endif
     #endif
+}
+
+/// AE#444 follow-up (Sodalite#104): what a resume after a long pause had to do, for a host that wants
+/// to say so.
+public struct LiveResumeClamp: Sendable, Equatable {
+    /// Seconds the playhead was moved FORWARD: the content the sliding window took while the session
+    /// was paused, which is what the viewer does not get to see.
+    public let skippedSeconds: Double
+    /// How far behind the live edge the resumed position is. Zero when the clamp was an edge snap,
+    /// which is what a live-only session with no DVR window gets.
+    public let behindLiveSeconds: Double
+
+    public init(skippedSeconds: Double, behindLiveSeconds: Double) {
+        self.skippedSeconds = skippedSeconds
+        self.behindLiveSeconds = behindLiveSeconds
+    }
 }
 
 // MARK: - Errors
