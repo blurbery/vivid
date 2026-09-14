@@ -510,10 +510,10 @@ struct ContentView: View {
     @ViewBuilder
     private var authContent: some View {
         #if os(tvOS)
-        if TVSavedAccountStore.shared.busy {
-            Color.clear.ignoresSafeArea().overlay { ProgressView() }
-        } else if TVLoginPreparation.shared.isPresented {
+        if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
+        } else if TVSavedAccountStore.shared.busy {
+            Color.clear.ignoresSafeArea().overlay { ProgressView() }
         } else if didCompleteProviderSetup,
                   router.authState != .loading, router.authState != .needsServerSetup,
                   TVSavedAccountStore.shared.showsSelector {
@@ -522,10 +522,10 @@ struct ContentView: View {
             routedAuthContent
         }
         #elseif os(iOS)
-        if TVSavedAccountStore.shared.busy {
-            Color.black.ignoresSafeArea().overlay { ProgressView() }
-        } else if TVLoginPreparation.shared.isPresented {
+        if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
+        } else if TVSavedAccountStore.shared.busy {
+            Color.black.ignoresSafeArea().overlay { ProgressView() }
         } else if router.authState != .loading, router.authState != .needsServerSetup,
                   TVSavedAccountStore.shared.showsSelector {
             PhoneSavedProfilesScreen()

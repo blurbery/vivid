@@ -351,7 +351,7 @@ final class TVSavedAccountStore {
             markAccountChanged(accountID)
             persist()
             VividCloudAccountSync.shared.noteExplicitAuthentication(account)
-            await finishLogin(router: router)
+            await finishLogin(router: router, prepareHome: true)
             return true
         } catch {
             self.error = "Couldn’t sign in. Check the server address, username and password, then try again."
@@ -359,7 +359,7 @@ final class TVSavedAccountStore {
         }
     }
 
-    private func finishLogin(router: AppRouter) async {
+    private func finishLogin(router: AppRouter, prepareHome: Bool = false) async {
         showsSelector = false
         if !AuthService.shared.hasProfile {
             let profiles = try? await StartupContentPrefetcher.fetchProfiles()
@@ -380,8 +380,12 @@ final class TVSavedAccountStore {
             router.dismissItemDetail()
             contentRevision = UUID()
             #endif
-            StartupContentPrefetcher.prefetchAuthenticatedContent()
-            router.resetToHome()
+            if prepareHome {
+                await TVLoginPreparation.shared.begin(router: router)
+            } else {
+                StartupContentPrefetcher.prefetchAuthenticatedContent()
+                router.resetToHome()
+            }
         } else {
             router.showProfileSelection()
         }

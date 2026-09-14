@@ -50,7 +50,7 @@ Vivid uses server-provided account pictures with initials as a fallback. The leg
   </tbody>
 </table>
 
-First sign-in uses the Vivid startup animation while Home is prepared, with “Getting ready”, “Almost done” and “Welcome to Vivid” shown for at least three seconds each. Normal cached startup does not repeat those setup messages. The saved-account selector uses a black background, a centred silver V and “Who’s watching?”.
+First sign-in uses the Vivid startup animation while Home is prepared, with “Getting ready”, “Almost done” and “Welcome to Vivid” shown for at least three seconds each. Adding or re-authenticating a saved account from the selector or Settings also keeps the startup presentation visible until Home and libraries are ready, with a retry screen if preparation fails. Normal cached startup does not repeat those setup messages. The saved-account selector uses a black background, a centred silver V and “Who’s watching?”.
 
 Manage Servers and Add Profile share the registered server list. Selecting or adding a Silo connection through either flow keeps it available to the other. Silo and Emby can be added on mobile and Apple TV; Jellyfin remains planned. Setup and QR/manual sign-in use black backgrounds and the shared Vivid footer.
 

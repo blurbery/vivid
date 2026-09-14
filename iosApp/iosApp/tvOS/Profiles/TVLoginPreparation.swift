@@ -123,8 +123,13 @@ struct TVLoginPreparationView: View {
             #endif
         } else {
             VividStartupView(isContentReady: preparation.ready,
-                             statusText: preparation.showsWelcome ? preparation.status : nil) {
+                             statusText: preparation.showsWelcome ? preparation.status : "Loading your Home") {
                 preparation.finish()
+            }
+            .overlay(alignment: .bottom) {
+                if !preparation.ready {
+                    ProgressView().padding(.bottom, 80)
+                }
             }
         }
     }
