@@ -46,7 +46,7 @@ provide matching source and dependency rebuild materials. The Apple
 permission preserves source disclosure; it does not allow closed-source
 covered derivatives. Apple system frameworks retain Apple's terms.
 
-FFmpegBuild and embedded media frameworks
+FFmpegBuild and embedded media frameworks (iOS)
   Revision: 4e58942403d37cceff3a3212e3e026f4205146a2 (release 3.3.0)
   Source and rebuild script: https://github.com/superuser404notfound/FFmpegBuild/tree/4e58942403d37cceff3a3212e3e026f4205146a2
 
@@ -75,7 +75,7 @@ FFmpegBuild and embedded media frameworks
   commit IDs; the dereferenced commits recorded here pin the exact sources if
   those tags ever move.
 
-libass subtitle rendering and font dependencies
+libass subtitle rendering and font dependencies (iOS)
   Binary source: https://github.com/kingslay/FFmpegKit/tree/c32be9bfb628042737ad3ef622e930c5c7b15954/Sources
   Only libass, libfreetype, libfribidi and libharfbuzz frameworks are included.
   The FFmpegKit playback target, mpv, and GPL media libraries are not linked.
@@ -127,11 +127,6 @@ KSPlayer GPL tvOS trial
   The FFmpegBuild and standalone subtitle/font inventory below describes iOS.
   tvOS uses the full public FFmpegKit package; its component licences remain
   with their upstream source. Native Dolby Vision and Atmos are not claimed.
-
-LibDovi (tvOS playback)
-  Version: 2.1.0, dolby_vision 3.4.0
-  Source and rebuild script: https://github.com/superuser404notfound/LibDovi/tree/2.1.0
-  Licence: MIT, bundled separately.
 
 CollectionHStack (tvOS Home rows)
   Revision: 15baaaa759a0e252addae08431c79a49a25e4afc

@@ -88,10 +88,6 @@ targets:
     dependencies:
       - sdk: TVServices.framework
 
-  # iOS Notification Service extension: enriches generic APNs alerts by
-  # fetching compact display metadata directly from the user's Silo server.
-  # Shares active server/profile/token state via the App Group + shared
-  # Keychain access group, but does not link the main app's AuthService.
 
 schemes:
   VividTV:

@@ -321,6 +321,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         routeObserver = nil
         player?.delegate = nil
         player?.shutdown(); player = nil; audioProbe = nil
+        wantsPlay = false
         source = nil; options = nil; trace = nil
         state = .idle; playbackPhase = .idle; videoRoute = .none
         isBuffering = false; isSeeking = false; isLoadingSubtitles = false
@@ -355,6 +356,10 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         wantsPlay = false; player?.pause()
         isSeeking = false; isBuffering = false
         errorInfo = failure; state = .error(failure.message); playbackPhase = .error(failure.message)
+        player?.delegate = nil
+        player?.shutdown()
+        for task in subtitleTasks.values { task.cancel() }
+        subtitleTasks.removeAll(); isLoadingSubtitles = false
         ticker?.cancel(); ticker = nil
     }
 
@@ -419,8 +424,13 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
             hasFirstFrameReadyForDisplay = true
             trace?.mark("first_picture_ready")
         }
-        if seekPicturePending, abs(player.displayedVideoTime - seekTarget) <= 1 {
-            seekPicturePending = false; trace?.seekPicture()
+        if seekPicturePending, output.pixelBuffer != nil {
+            // flush() cleared this pointer after upstream completed the seek. A new
+            // ready image is therefore required. Report where upstream actually
+            // landed instead of hiding keyframe-based seeks behind an arbitrary tolerance.
+            seekPicturePending = false
+            trace?.event("seek_landed", fields: "requested=\(seekTarget) displayed=\(player.displayedVideoTime)")
+            trace?.seekPicture()
         }
     }
     private func harvestTimings() {

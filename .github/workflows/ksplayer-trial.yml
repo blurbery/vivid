@@ -23,6 +23,8 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
         with:
           xcode-version: '26.3'
+      - name: Check benchmark summaries
+        run: python3 scripts/summarise-ksplayer-trial.py --self-test
       - name: Generate project
         run: |
           set -euo pipefail
