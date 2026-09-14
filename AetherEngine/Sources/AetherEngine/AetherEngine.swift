@@ -4587,9 +4587,6 @@ public final class AetherEngine: ObservableObject {
 
     /// Tear down and reload from the current position. Call after background return; tvOS invalidates
     /// AVIO connections and VT sessions on suspension.
-    /// Returns without loading when a URL-backed session has no URL. Custom sources throw
-    /// `sessionNotReloadable(.noActiveSession)` or `.customSourceNotSeekable` when rebuilding
-    /// is unavailable. Load failures also propagate to the caller.
     public func reloadAtCurrentPosition() async throws {
         // #357: a background teardown already ran stopInternal and parked the selection, because on
         // that path the live state every snapshot below reads is wiped long before this call. When
