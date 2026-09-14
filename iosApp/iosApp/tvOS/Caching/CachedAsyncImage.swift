@@ -26,69 +26,88 @@ struct CachedAsyncImage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(tvOS)
     @Environment(\.tvArtworkLoadingEnabled) private var artworkLoadingEnabled
+    @Environment(\.tvHomeStableRows) private var stableHomeRows
     #else
     private let artworkLoadingEnabled = true
     #endif
 
+    @ViewBuilder
     var body: some View {
-        GeometryReader { geometry in
-            let resolvedSize = targetSize ?? geometry.size
-            let imageRequest = request(for: resolvedSize)
-            // A gated rail must not discard artwork that has already been
-            // decoded at its display size when VividLazyImage's request becomes nil.
-            // This is a memory-cache lookup only; it starts no image work.
-            let retainedImage = artworkLoadingEnabled ? nil : imageRequest.flatMap {
-                VividImagePipeline.shared.cache[$0]?.image
-            }
-            let warmedImage = retainedImage ?? prefetchedImage()
-            let loadAnimation: Animation? = reduceMotion || warmedImage != nil
-                ? nil
-                : .easeOut(duration: VividTheme.slowDuration)
-            VividLazyImage(
-                request: artworkLoadingEnabled ? imageRequest : nil,
-                transaction: Transaction(animation: loadAnimation)
-            ) { state in
-                if let image = state.image {
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: contentMode)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height,
-                            alignment: alignment
-                        )
-                        .clipped()
-                        .transition(.opacity)
-                        .onAppear(perform: notifyImageLoaded)
-                } else if state.error == nil, let warmedImage {
-                    // The startup/grid prefetchers warm the memory cache under
-                    // the shared card-size thumbnail key, while the request
-                    // above is keyed by the exact render size — a miss for
-                    // the pipeline’s synchronous first check. Painting the warmed
-                    // decode here makes a prefetched card render finished on
-                    // its first frame; it is at least as sharp as the card's
-                    // own decode, so the swap-in is invisible.
-                    Image(platformImage: warmedImage)
-                        .resizable()
-                        .aspectRatio(contentMode: contentMode)
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height,
-                            alignment: alignment
-                        )
-                        .clipped()
-                        .onAppear(perform: notifyImageLoaded)
-                } else if state.error != nil && artworkLoadingEnabled {
-                    placeholder(in: geometry.size)
-                        .overlay {
-                            if placeholderStyle.showsErrorIcon {
-                                Image(systemName: "film")
-                                    .foregroundColor(.vividOnSurface.opacity(0.3))
-                            }
+        #if os(tvOS)
+        if stableHomeRows, let targetSize {
+            // Home reserves this exact artwork frame. Avoid a separate
+            // geometry observation while first collection cells are measured.
+            renderedImage(in: targetSize)
+                .frame(width: targetSize.width, height: targetSize.height)
+        } else {
+            measuredImage
+        }
+        #else
+        measuredImage
+        #endif
+    }
+
+    private var measuredImage: some View {
+        GeometryReader { geometry in renderedImage(in: geometry.size) }
+    }
+
+    private func renderedImage(in size: CGSize) -> some View {
+        let resolvedSize = targetSize ?? size
+        let imageRequest = request(for: resolvedSize)
+        // A gated rail must not discard artwork that has already been
+        // decoded at its display size when VividLazyImage's request becomes nil.
+        // This is a memory-cache lookup only; it starts no image work.
+        let retainedImage = artworkLoadingEnabled ? nil : imageRequest.flatMap {
+            VividImagePipeline.shared.cache[$0]?.image
+        }
+        let warmedImage = retainedImage ?? prefetchedImage()
+        let loadAnimation: Animation? = reduceMotion || warmedImage != nil
+            ? nil
+            : .easeOut(duration: VividTheme.slowDuration)
+        return VividLazyImage(
+            request: artworkLoadingEnabled ? imageRequest : nil,
+            transaction: Transaction(animation: loadAnimation)
+        ) { state in
+            if let image = state.image {
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .frame(
+                        width: size.width,
+                        height: size.height,
+                        alignment: alignment
+                    )
+                    .clipped()
+                    .transition(.opacity)
+                    .onAppear(perform: notifyImageLoaded)
+            } else if state.error == nil, let warmedImage {
+                // The startup/grid prefetchers warm the memory cache under
+                // the shared card-size thumbnail key, while the request
+                // above is keyed by the exact render size — a miss for
+                // the pipeline’s synchronous first check. Painting the warmed
+                // decode here makes a prefetched card render finished on
+                // its first frame; it is at least as sharp as the card's
+                // own decode, so the swap-in is invisible.
+                Image(platformImage: warmedImage)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .frame(
+                        width: size.width,
+                        height: size.height,
+                        alignment: alignment
+                    )
+                    .clipped()
+                    .onAppear(perform: notifyImageLoaded)
+            } else if state.error != nil && artworkLoadingEnabled {
+                placeholder(in: size)
+                    .overlay {
+                        if placeholderStyle.showsErrorIcon {
+                            Image(systemName: "film")
+                                .foregroundColor(.vividOnSurface.opacity(0.3))
                         }
-                } else {
-                    placeholder(in: geometry.size)
-                }
+                    }
+            } else {
+                placeholder(in: size)
             }
         }
     }

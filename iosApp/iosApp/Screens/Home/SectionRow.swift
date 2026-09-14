@@ -61,6 +61,7 @@ struct SectionRow: View {
 
     #if os(tvOS)
     @Environment(AppRouter.self) private var router
+    @Environment(\.tvHomeStableRows) private var usesHomeCollection
     #endif
 
     private var isContinueWatching: Bool {
@@ -99,7 +100,34 @@ struct SectionRow: View {
         isContinueWatching || isEpisodeRow
     }
 
+    @ViewBuilder
     var body: some View {
+        #if os(tvOS)
+        if usesHomeCollection {
+            VividCollectionMediaRow(
+                section: section,
+                onSelect: selectItem,
+                onPlay: playItem,
+                onSetWatched: { item, played in await setWatched(item, played: played) },
+                onRemove: isContinueWatching ? onRemoveFromContinueWatching : nil,
+                onSeeAll: onSeeAll,
+                onItemFocus: onItemFocus,
+                onMoveUp: onMoveUp,
+                focusRequest: focusRequest,
+                detailReturnFocusRequest: detailReturnFocusRequest,
+                rememberedItemID: focusRequestItemId ?? defaultFocusItemId,
+                ownsReturnFocus: focusRestorationOwner,
+                posterWidth: cardWidth ?? VividTheme.posterCardWidth
+            )
+        } else {
+            mediaRow
+        }
+        #else
+        mediaRow
+        #endif
+    }
+
+    private var mediaRow: some View {
         MediaRow(
             title: section.title,
             items: section.items,

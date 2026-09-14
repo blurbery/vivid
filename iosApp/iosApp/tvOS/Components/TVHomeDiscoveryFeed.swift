@@ -18,6 +18,7 @@ struct TVHomeDiscoveryFeed: View {
     @FocusState private var spotlightFocusedPosition: Int?
     @State private var rowFocusOwnership = TVHomeFocusOwnership()
     @State private var rowFocusMemory = TVHomeRowFocusMemory()
+    @State private var rowArtworkWindow = TVHomeRowArtworkWindow()
     @State private var scrollDiagnostics = TVHomeScrollDiagnostics()
     @State private var firstRowFocusRequest = 0
     @State private var spotlightOpenedDetail = false
@@ -66,6 +67,7 @@ struct TVHomeDiscoveryFeed: View {
                                 onMoveUp: index == 0 && slides.isEmpty ? { onTopMenuFocusRequest?() } : nil,
                                 onItemFocus: { item in
                                     scrollDiagnostics.focus(row: index, card: section.items.firstIndex { $0.contentId == item.contentId } ?? -1)
+                                    rowArtworkWindow.focus(index: index)
                                     rowFocusMemory.items[section.id] = item.contentId
                                     if rowFocusOwnership.rowID != section.id { rowFocusOwnership.rowID = section.id }
                                 },
@@ -75,13 +77,20 @@ struct TVHomeDiscoveryFeed: View {
                                     set: { if $0 { rowFocusOwnership.rowID = section.id } }
                                 )
                             )
+                            .frame(height: TVHomeRowGeometry.headingHeight
+                                + TVHomeRowGeometry.headingSpacing
+                                + TVHomeRowGeometry.stripHeight(
+                                    layout: section.tvHomeUsesLandscapeArtwork ? .thumbnail : .poster,
+                                    posterWidth: VividTheme.Skyline.densePosterCardWidth,
+                                    presentation: homeCards.presentation
+                                ), alignment: .top)
                             .id(section.id)
-                            .modifier(TVHomeRowArtworkVisibility())
+                            .modifier(TVHomeRowArtworkVisibility(index: index, window: rowArtworkWindow))
                             .modifier(TVHomeDiagnosticRow(diagnostics: scrollDiagnostics, index: index))
                         }
                     }
-                    // Stable row shells give native vertical focus exact positions.
-                    // Horizontal UIKit collections retain native focus and reuse cells.
+                    // Controlled eager-row comparison: keep the reserved geometry
+                    // and artwork gates while mounting the real row containers.
                 }
                 .environment(\.tvHomeStableRows, true)
                 .padding(.top, 152)
@@ -108,7 +117,7 @@ struct TVHomeDiscoveryFeed: View {
             }
         }
         .modifier(TVHomeArtworkWarmupModifier(sections: sections,
-            presentation: homeCards.presentation, focus: rowFocusOwnership))
+            presentation: homeCards.presentation, focus: rowFocusOwnership, memory: rowFocusMemory))
         .background {
             TVHomeTopMenuBoundary(focus: rowFocusOwnership, hasSpotlight: !slides.isEmpty)
         }
@@ -132,15 +141,77 @@ struct TVHomeDiscoveryFeed: View {
     }
 }
 
-/// Row layout stays present without starting image work for the whole feed.
+/// The collection carries this reference without observing its value. Only
+/// hosted card leaves observe changes, so artwork gating cannot refresh a rail.
+@Observable
+final class TVHomeRowArtworkGate {
+    var enabled = false
+}
+
+private struct TVHomeRowArtworkGateKey: EnvironmentKey {
+    static let defaultValue: TVHomeRowArtworkGate? = nil
+}
+
+extension EnvironmentValues {
+    var tvHomeRowArtworkGate: TVHomeRowArtworkGate? {
+        get { self[TVHomeRowArtworkGateKey.self] }
+        set { self[TVHomeRowArtworkGateKey.self] = newValue }
+    }
+}
+
+/// Non-observable bookkeeping: a focus event updates only gates whose state
+/// changes. Nearby rows remain enabled across short Up/Down reversals.
+private final class TVHomeRowArtworkWindow {
+    private var current = 0
+    private var gates: [Int: TVHomeRowArtworkGate] = [:]
+
+    func register(_ gate: TVHomeRowArtworkGate, index: Int) {
+        gates[index] = gate
+        update(gate, index: index)
+    }
+
+    func unregister(_ gate: TVHomeRowArtworkGate, index: Int) {
+        if gates[index] === gate { gates.removeValue(forKey: index) }
+    }
+
+    func focus(index: Int) {
+        guard current != index else { return }
+        current = index
+        for (index, gate) in gates { update(gate, index: index) }
+    }
+
+    private func update(_ gate: TVHomeRowArtworkGate, index: Int) {
+        if (current - 1 ... current + 2).contains(index) {
+            if !gate.enabled { gate.enabled = true }
+        } else if abs(index - current) > 4, gate.enabled {
+            gate.enabled = false
+        }
+    }
+
+}
+
 private struct TVHomeRowArtworkVisibility: ViewModifier {
-    @State private var isVisible = false
-    @Environment(\.tvArtworkLoadingEnabled) private var parentLoadingEnabled
+    let index: Int
+    let window: TVHomeRowArtworkWindow
+    @State private var gate = TVHomeRowArtworkGate()
 
     func body(content: Content) -> some View {
         content
-            .environment(\.tvArtworkLoadingEnabled, parentLoadingEnabled && isVisible)
-            .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
+            .environment(\.tvHomeRowArtworkGate, gate)
+            .onAppear { window.register(gate, index: index) }
+            .onDisappear { window.unregister(gate, index: index) }
+            .onChange(of: index) { oldIndex, newIndex in
+                window.unregister(gate, index: oldIndex)
+                window.register(gate, index: newIndex)
+            }
+            .onScrollVisibilityChange(threshold: 0.01) { visible in
+                // Fling fallback only enables. Leaving the viewport must not
+                // tear down and recreate the artwork on the reverse movement.
+                if visible, !gate.enabled { gate.enabled = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                gate.enabled = false
+            }
     }
 }
 
@@ -369,6 +440,7 @@ private struct TVHomeArtworkWarmupModifier: ViewModifier {
     let sections: [ResolvedSection]
     let presentation: CardPresentationPreference
     let focus: TVHomeFocusOwnership
+    let memory: TVHomeRowFocusMemory
     @Environment(\.scenePhase) private var scenePhase
     @State private var artworkWarmup = TVHomeArtworkWarmup()
 
@@ -386,25 +458,43 @@ private struct TVHomeArtworkWarmupModifier: ViewModifier {
         let current = sections.firstIndex { $0.id == focus.rowID } ?? 0
         let indices = [current] + Array((current + 1)..<min(sections.count, current + 4))
             + (current > 0 ? [current - 1] : [])
-        let scale = presentation.posterSize.scale * PosterImageCache.displayScale
-        var requests: [VividImageRequest] = []
-        var seen = Set<VividImageRequest>()
+        let viewportWidth = max(1, UIScreen.main.bounds.width - VividTheme.safePadding * 2)
+        var priorityCards: [VividImageRequest] = []
+        var rows: [[VividImageRequest]] = []
         for index in indices {
             let section = sections[index]
-            // Match SectionRow's tvOS artwork layout, including mixed resume rows.
             let wide = section.tvHomeUsesLandscapeArtwork
-            let width = wide ? VividTheme.thumbnailCardWidth : VividTheme.Skyline.densePosterCardWidth
+            let baseWidth = wide ? VividTheme.thumbnailCardWidth : VividTheme.Skyline.densePosterCardWidth
             let ratio = wide ? VividTheme.thumbnailCardHeight / VividTheme.thumbnailCardWidth
                 : VividTheme.posterCardHeight / VividTheme.posterCardWidth
-            let size = CGSize(width: width * scale, height: width * ratio * scale)
-            for item in section.items.prefix(index == current ? 20 : 8) {
+            // Use the same arithmetic as the card before rounding to pixel keys.
+            let width = baseWidth * presentation.posterSize.scale
+            let height = width * ratio
+            let size = CGSize(width: width * PosterImageCache.displayScale,
+                              height: height * PosterImageCache.displayScale)
+            let visibleCount = max(1, Int(ceil((viewportWidth + 40) / (width + 40))))
+            let focusedIndex = section.items.firstIndex { $0.contentId == memory.items[section.id] } ?? 0
+            let start = index == current ? max(0, focusedIndex - 1) : 0
+            let end = min(section.items.count, start + visibleCount)
+            let rowRequests: [VividImageRequest] = section.items[start..<end].compactMap { item in
                 let value = wide ? (item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 } ?? item.posterUrl) : item.posterUrl
                 guard let value, let url = URL(string: value),
-                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
-                let request = PosterImageCache.displayRequest(url: url, pixelSize: size, priority: .low)
-                if seen.insert(request).inserted { requests.append(request) }
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+                return PosterImageCache.displayRequest(url: url, pixelSize: size, priority: .low)
             }
+            if index == current {
+                priorityCards = Array(rowRequests.prefix(3))
+            }
+            rows.append(rowRequests)
         }
+        // Keep the focused card's neighbours ready, then favour vertical
+        // travel before filling the remainder of the current screenful.
+        // Card memory is non-observable: horizontal moves do not requeue work.
+        let upcomingCount = min(3, sections.count - current - 1)
+        let upcoming = rows.dropFirst().prefix(upcomingCount).flatMap { $0 }
+        let remaining = (rows.first ?? []) + rows.dropFirst(1 + upcomingCount).flatMap { $0 }
+        var seen = Set<VividImageRequest>()
+        let requests = (priorityCards + upcoming + remaining).filter { seen.insert($0).inserted }
         return requests
     }
 

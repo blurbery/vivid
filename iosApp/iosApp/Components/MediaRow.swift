@@ -1,7 +1,6 @@
 import SwiftUI
 #if os(tvOS)
 import os
-import CollectionHStack
 #endif
 
 /// Layout mode for a horizontal media row.
@@ -108,8 +107,6 @@ struct MediaRow: View {
 
     @FocusState private var focusedItemId: String?
     #if os(tvOS)
-    @Environment(\.self) private var rowEnvironment
-    @StateObject private var homeCollectionProxy = CollectionHStackProxy()
     @Environment(\.tvHomeStableRows) private var stableHomeRows
     @Environment(\.homeCardPresentation) private var homePresentation
 
@@ -224,10 +221,6 @@ struct MediaRow: View {
                 // their native scroll animation. Only a burst pauses new work.
                 artworkScrollHasSettled = !rapid && !artworkScrollIsInteractive
             }
-            if stableHomeRows, newValue != lastFocusedItemId {
-                // A real remote move cancels any pending entry request.
-                focusRestorationGeneration += 1
-            }
             lastFocusedItemId = newValue
             Self.focusLogger.debug("mediaRow.focus changed")
             onItemFocus?(item)
@@ -316,16 +309,6 @@ struct MediaRow: View {
         focusRestorationGeneration += 1
         let generation = focusRestorationGeneration
         Self.focusLogger.debug("mediaRow.restoreFocus after removal")
-        if stableHomeRows {
-            homeCollectionProxy.scrollTo(id: replacementId, animated: false)
-            DispatchQueue.main.async {
-                guard generation == focusRestorationGeneration,
-                      focusRestorationOwner?.wrappedValue == true,
-                      focusedItemId == nil || focusedItemId == removedId else { return }
-                focusedItemId = replacementId
-            }
-            return
-        }
         claimReplacementFocus(
             replacementId,
             removedId: removedId,
@@ -465,75 +448,11 @@ struct MediaRow: View {
 
     // MARK: - Content
 
-    @ViewBuilder
     private var scrollContent: some View {
-        #if os(tvOS)
-        if stableHomeRows {
-            homeCollectionStrip
-        } else {
-            legacyScrollContent
-        }
-        #else
-        legacyScrollContent
-        #endif
-    }
-
-    private var legacyScrollContent: some View {
         ScrollViewReader { rowProxy in
             scrollStrip(rowProxy)
         }
     }
-
-    #if os(tvOS)
-    /// Swiftfin's Home rows use this same UIKit collection container. Cells
-    /// retain their content IDs while UIKit owns scrolling and directional focus.
-    private var homeCollectionStrip: some View {
-        CollectionHStack(uniqueElements: items, layout: .selfSizingSameSize(rows: 1)) { item in
-            mediaCard(for: item)
-                // Collection cells use separate hosting controllers. Carry the
-                // app's router, overlay preferences and cached artwork policy in.
-                .environment(\.self, rowEnvironment)
-        }
-        .proxy(homeCollectionProxy)
-        .clipsToBounds(false)
-        .insets(horizontal: horizontalContentMargin, vertical: verticalCardPadding)
-        .itemSpacing(cardSpacing)
-        .scrollBehavior(.continuousLeadingEdge)
-        .frame(height: stableHomeStripHeight, alignment: .topLeading)
-        .applyDefaultFirstItemFocus(
-            enabled: prefersDefaultFocusOnFirstItem,
-            binding: $focusedItemId,
-            firstItemId: items.first?.contentId,
-            priority: .automatic
-        )
-        .onAppear {
-            applyHomeCollectionEntry()
-        }
-        .onChange(of: focusRequest) { _, _ in applyHomeCollectionEntry() }
-        .onChange(of: detailReturnFocusRequest) { _, _ in applyHomeCollectionEntry() }
-    }
-
-    private func applyHomeCollectionEntry() {
-        guard focusRestorationOwner?.wrappedValue != false else { return }
-        let isEntry = focusRequest > lastAppliedFocusRequest
-        let isReturn = detailReturnFocusRequest > lastAppliedDetailReturnFocusRequest
-            && focusRestorationOwner?.wrappedValue == true
-        guard isEntry || isReturn else { return }
-        lastAppliedFocusRequest = focusRequest
-        lastAppliedDetailReturnFocusRequest = detailReturnFocusRequest
-        let remembered = isReturn ? (lastFocusedItemId ?? defaultFocusItemId) : focusRequestItemId
-        guard let target = remembered.flatMap({ id in items.first { $0.contentId == id } }) ?? items.first else { return }
-        focusRestorationGeneration += 1
-        let generation = focusRestorationGeneration
-        // Mount the remembered cell without racing the native vertical scroll.
-        homeCollectionProxy.scrollTo(id: target.contentId, animated: false)
-        DispatchQueue.main.async {
-            guard generation == focusRestorationGeneration,
-                  focusRestorationOwner?.wrappedValue != false else { return }
-            focusedItemId = target.contentId
-        }
-    }
-    #endif
 
     private func scrollStrip(_ rowProxy: ScrollViewProxy) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -794,9 +713,6 @@ struct MediaRow: View {
     /// `restoreFocusAfterItemRemoval` increments the shared generation and
     /// takes over with the neighboring card at the same visual index.
     private func preserveFocusForContextMutation(on item: SectionItem) {
-        // Native collection focus survives menu dismissal. Only removal needs
-        // a replacement; repeated delayed claims can override the next move.
-        guard !stableHomeRows else { return }
         guard focusRestorationOwner?.wrappedValue == true
                 || lastFocusedItemId == item.contentId else { return }
 
