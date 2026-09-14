@@ -414,3 +414,60 @@ retaining immediate destination enabling, bounded idle retention and memory
 pressure handling. That scheduling change is not part of this diagnostic commit.
 No cancellation, concurrency, focus, Spotlight design or card-rendering change
 has been made based on this investigation.
+
+The next isolated experiment separates VividLazyImage's request identity from
+permission to start a cache-miss load. A bitmap retained for the same request,
+or synchronously found in memory, keeps the task key stable across gate changes.
+A missing bitmap still changes eligibility when its gate changes, and the task
+checks loading permission before calling the pipeline. The captured bitmap is
+held through task setup, so a concurrent NSCache eviction cannot turn a gated
+cache hit into a new decode. Retained images are matched to their request key;
+a reused view cannot display a bitmap from its previous item. Disabled views
+release their retained bitmap on a memory warning; active views keep displaying
+available artwork while the existing global cache/gate handlers run.
+
+CachedAsyncImage renders exact-size and warmed fallback images through one
+Image branch. Home keeps its no-fade transaction, card dimensions and appearance.
+The 150 ms gate settle, distance window, warming schedule, concurrency limits,
+focus logic and Spotlight design are unchanged for this comparison. New
+`image.lazy.gatedTask` counts valid requests prevented from loading; `lazy.nilTask`
+continues to mean a nil request. The expected test is fewer task restarts and
+stable image presentation on warmed gate toggles, not a guaranteed numerical
+speed-up. Build 40's raw capture is retained locally for the matched comparison.
+
+Build 41 compiled successfully with the same Release tvOS build command and
+`CURRENT_PROJECT_VERSION=41`. The app and Top Shelf extension retained version
+0.14.3, their existing bundle identifiers, signing team and shared Keychain
+access. Signature verification passed before installation in place on Living
+Room. Its input-triggered image capture ran for 90.04 seconds. blurbery reported
+that lag still developed around the third-last row and remained afterwards.
+Diagnostics were then disabled for a separate normal-use check. blurbery
+confirmed that the lasting lag still developed without diagnostics, so it
+cannot be dismissed as capture overhead.
+
+The captured mechanism changed as intended, but the remaining lag is unresolved:
+
+- Across the complete runs, non-nil lazy task starts fell from 750 in build 40 to
+  164 in build 41; nil tasks fell from 646 to zero. Build 41 recorded 108 cell
+  appearances, 40 gate enables and 38 disables. VividLazyImage body evaluations
+  fell from 2,792 to 1,052. These totals are descriptive, not a controlled speed
+  ratio: focus events differed (262 versus 210), and build 41 included an early
+  vertical traversal before the across-row test started around 35 seconds.
+- During build 41's warmed 79–85 second descent, four enables and four disables
+  produced 116 CachedAsyncImage and 116 VividLazyImage body evaluations, but no
+  new lazy tasks, image flights or cell appearances. Stable request identity
+  removed the task restarts; gate-driven leaf invalidation still occurs.
+- That warmed interval's display-link callback median/p95/maximum was
+  21.25/39.96/48.80 ms. These are callback intervals, not GPU presentation times.
+  The 85–90 second tail returned to 20.00/20.05/20.78 ms. No repeated restoration,
+  Spotlight alignment or feed/collection-row body loop accompanied the later
+  lag. This does not exclude leaf layout or rendering costs during movement.
+- All 157 image flights completed, with no recorded abandoned completion,
+  waiter cancellation or memory warning. Sampled active flights peaked at two.
+  The worst one-second decode-queue p95 remained below 1 ms for both priorities.
+  Sampled memory peaked at 132.8 MiB. There is still no evidence here for changing
+  network/decode concurrency or adding cancellation to address warmed scrolling.
+
+Gate timing remains a separate follow-up candidate, not a proven remaining
+cause. The successful build and reduced task churn do not establish that the
+user's persistent-lag reproduction is fixed. No new UI tests were added.

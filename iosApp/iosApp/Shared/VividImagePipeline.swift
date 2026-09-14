@@ -317,17 +317,43 @@ struct VividImageState {
 struct VividLazyImage<Content: View>: View {
     let request: VividImageRequest?
     let transaction: Transaction
+    var isLoadingEnabled = true
     @ViewBuilder let content: (VividImageState) -> Content
-    @SwiftUI.State private var loaded: UIImage?
+    private struct LoadedImage {
+        let request: VividImageRequest
+        let image: UIImage
+    }
+    private struct LoadKey: Hashable {
+        let request: VividImageRequest?
+        let canPresentOrLoad: Bool
+    }
+    @SwiftUI.State private var loaded: LoadedImage?
     @SwiftUI.State private var failure: Error?
     var body: some View {
         let _ = VividImageDiagnostics.shared.count("leaf.VividLazyImage.body")
-        content(VividImageState(image: (loaded ?? request.flatMap { VividImagePipeline.shared.cache[$0]?.image }).map(Image.init(uiImage:)), error: failure))
-            .task(id: request) {
+        let retained = loaded?.request == request ? loaded?.image : nil
+        let availableImage = retained ?? request.flatMap { VividImagePipeline.shared.cache[$0]?.image }
+        // A displayed bitmap keeps the task identity stable across gate changes.
+        // Missing images still restart when permission to load changes.
+        let key = LoadKey(request: request, canPresentOrLoad: isLoadingEnabled || availableImage != nil)
+        content(VividImageState(image: availableImage.map(Image.init(uiImage:)), error: failure))
+            .task(id: key) {
                 VividImageDiagnostics.shared.count(request == nil ? "lazy.nilTask" : "lazy.taskStarted")
                 failure = nil
-                loaded = request.flatMap { VividImagePipeline.shared.cache[$0]?.image }
-                guard let request, loaded == nil else { return }
+                guard let request else { loaded = nil; return }
+                if let availableImage {
+                    if loaded?.request != request {
+                        loaded = LoadedImage(request: request, image: availableImage)
+                    }
+                    return
+                }
+                loaded = nil
+                // Permission is checked here, not inferred from an earlier
+                // cache hit. A disabled row can never start a cache-miss load.
+                guard isLoadingEnabled else {
+                    VividImageDiagnostics.shared.count("lazy.gatedTask")
+                    return
+                }
                 do {
                     let image = try await withTaskCancellationHandler {
                         try await VividImagePipeline.shared.image(for: request)
@@ -335,8 +361,11 @@ struct VividLazyImage<Content: View>: View {
                         VividImageDiagnostics.shared.count("lazy.taskCancelled")
                     }
                     try Task.checkCancellation()
-                    withTransaction(transaction) { loaded = image }
+                    withTransaction(transaction) { loaded = LoadedImage(request: request, image: image) }
                 } catch { if !Task.isCancelled { failure = error } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                if !isLoadingEnabled { loaded = nil }
             }
             .onDisappear { VividImageDiagnostics.shared.count("lazy.disappear") }
     }

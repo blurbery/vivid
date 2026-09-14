@@ -64,23 +64,20 @@ struct CachedAsyncImage: View {
     private func renderedImage(in size: CGSize) -> some View {
         let resolvedSize = targetSize ?? size
         let imageRequest = request(for: resolvedSize)
-        // A gated rail must not discard artwork that has already been
-        // decoded at its display size when VividLazyImage's request becomes nil.
-        // This is a memory-cache lookup only; it starts no image work.
-        let retainedImage = artworkLoadingEnabled ? nil : imageRequest.flatMap {
-            VividImagePipeline.shared.cache[$0]?.image
-        }
-        let warmedImage = retainedImage ?? prefetchedImage()
+        let warmedImage = prefetchedImage()
         let loadAnimation: Animation? = isHomeShelf || reduceMotion || warmedImage != nil
             ? nil
             : .easeOut(duration: VividTheme.slowDuration)
         var transaction = Transaction(animation: loadAnimation)
         transaction.disablesAnimations = isHomeShelf
         return VividLazyImage(
-            request: artworkLoadingEnabled ? imageRequest : nil,
-            transaction: transaction
+            request: imageRequest,
+            transaction: transaction,
+            isLoadingEnabled: artworkLoadingEnabled
         ) { state in
-            if let image = state.image {
+            // Cache fallback and exact-size results share one rendered branch.
+            // Changing the source bitmap must not replace the Image subtree.
+            if let image = state.image ?? (state.error == nil ? warmedImage.map { Image(platformImage: $0) } : nil) {
                 image
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
@@ -91,24 +88,6 @@ struct CachedAsyncImage: View {
                     )
                     .clipped()
                     .transition(.opacity)
-                    .onAppear(perform: notifyImageLoaded)
-            } else if state.error == nil, let warmedImage {
-                // The startup/grid prefetchers warm the memory cache under
-                // the shared card-size thumbnail key, while the request
-                // above is keyed by the exact render size — a miss for
-                // the pipeline’s synchronous first check. Painting the warmed
-                // decode here makes a prefetched card render finished on
-                // its first frame; it is at least as sharp as the card's
-                // own decode, so the swap-in is invisible.
-                Image(platformImage: warmedImage)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .frame(
-                        width: size.width,
-                        height: size.height,
-                        alignment: alignment
-                    )
-                    .clipped()
                     .onAppear(perform: notifyImageLoaded)
             } else if state.error != nil && artworkLoadingEnabled {
                 placeholder(in: size)
