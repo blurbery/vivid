@@ -518,3 +518,51 @@ bounded distant-artwork experiment remains possible, but it must suppress both
 cache display paths and account separately for layout and rendering effects.
 No runtime source, card design, Spotlight behaviour or cache policy changed in
 this follow-up; no new build was needed, and the recorder is stopped.
+
+### SwiftUI cause-graph and synchronous debugger follow-up
+
+Build 41 remained unchanged on Living Room (tvOS 26.6). Two 90-second SwiftUI
+template attempts, first all-process and then attached directly to Vivid,
+did not provide usable SwiftUI update/cause records. The first run's process
+index contained only the kernel. A five-second connection check subsequently
+contained Vivid, and direct attachment succeeded, but the later reproduction's
+SwiftUI update export still had zero rows and no cause records. blurbery
+reproduced severe vertical lag after traversing the horizontal rows. Empty
+exports are a tooling limitation, not evidence that no updates occurred.
+The runs are retained in one local SwiftUI trace bundle for troubleshooting.
+
+Xcode/Instruments discovery repeatedly failed when the Devices window was not
+visible; blurbery reported that association. Keeping it visible and using
+LLDB's `device select` / `device process attach` allowed direct attachment
+without rebuilding or installing. The following debugger observations are
+functional probes, not performance measurements:
+
+- A paused traversal of Vivid's connected-scene window view hierarchies counted
+  **155 `_UIHostingView` instances**, **154 beneath UICollectionViewCell
+  ancestors**, among 1,279 views. This is a warmed-state snapshot, not a cold/warm
+  comparison or a count of every allocated hosting controller. The earlier
+  estimate of roughly 90 hosts was not measured.
+- A selector breakpoint for `safeAreaInsetsDidChange` resolved 12 UIKit
+  implementations and had zero hits during a user-reported Down/Up check.
+  It did not cover SwiftUI's overrides. A separate SwiftUI-module breakpoint
+  resolved `_UIHostingView._safeAreaInsetsDidChange()`,
+  `_UIHostingView.safeAreaInsetsDidChange()` and its Objective-C entry point.
+  All three also had zero hits during the next two slow Down/Up movements.
+  This weakens that specific callback hypothesis for these movements; it does
+  not prove safe-area values never change anywhere in Home.
+- A one-shot breakpoint on `UIView.setNeedsLayout` stopped during the next
+  directional movement. Its class-name filter failed to evaluate because LLDB
+  could not resolve a `strstr` symbol, so the stop was not accepted as filtered
+  evidence. A separate runtime class-name expression confirmed the receiver was
+  `_UIHostingView<AnyView>`. The stack was
+  `UIKitFocusableViewResponderItem.didUpdateFocus(in:with:)` →
+  `updateFocusedState()` → `GraphHost.asyncTransaction(...)` →
+  `_UIHostingView.beginTransaction()` → `UIView.setNeedsLayout`.
+
+That last observation names one synchronous focus-driven invalidation path. It
+does not establish its per-frame frequency, identify the exact card/root
+instance, or prove that this normal focus transaction causes the expensive
+repeated layout seen in Time Profiler. Allocation churn has not been measured;
+the prior memory samples cannot substitute for an Allocations recording.
+No safe-area, cache, card, focus or navigation change was made. The temporary
+breakpoints were removed, Vivid was resumed, and LLDB detached successfully.
