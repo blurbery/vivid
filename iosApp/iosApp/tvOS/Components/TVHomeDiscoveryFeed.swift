@@ -353,6 +353,9 @@ final class TVHomeScrollDiagnostics: NSObject {
                 nil, .deliverImmediately)
         }
         write(Capture(status: "armed", duration: 0, samples: []))
+        if ProcessInfo.processInfo.arguments.contains("--home-scroll-diagnostics-autostart") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.start() }
+        }
     }
 
     private func start() {

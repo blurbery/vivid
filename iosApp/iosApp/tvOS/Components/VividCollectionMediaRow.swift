@@ -51,6 +51,7 @@ struct VividCollectionMediaRow: View, Equatable {
     @State private var appliedReturn = 0
 
     var body: some View {
+        let _ = diagnostics?.event("collectionRow.body", index: rowIndex)
         VStack(alignment: .leading, spacing: TVHomeRowGeometry.headingSpacing) {
             HStack {
                 Text(section.title)
