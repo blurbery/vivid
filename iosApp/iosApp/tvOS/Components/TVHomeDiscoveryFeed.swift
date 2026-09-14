@@ -154,7 +154,13 @@ struct TVHomeDiscoveryFeed: View {
 /// hosted card leaves observe changes, so artwork gating cannot refresh a rail.
 @Observable
 final class TVHomeRowArtworkGate {
-    var enabled = false
+    var enabled = false {
+        didSet {
+            if oldValue != enabled {
+                VividImageDiagnostics.shared.count(enabled ? "gate.enabled" : "gate.disabled")
+            }
+        }
+    }
 }
 
 private struct TVHomeRowArtworkGateKey: EnvironmentKey {
@@ -264,7 +270,7 @@ private struct TVHomeDiagnosticRow: ViewModifier {
     let index: Int
 
     @ViewBuilder func body(content: Content) -> some View {
-        if diagnostics.enabled {
+        if diagnostics.enabled && !VividImageDiagnostics.shared.enabled {
             content.onGeometryChange(for: CGRect.self) {
                 $0.frame(in: .named("vivid.home.diagnostics"))
             } action: { frame in
@@ -331,6 +337,7 @@ final class TVHomeScrollDiagnostics: NSObject {
     private var displayLink: CADisplayLink?
     private var deadline: DispatchWorkItem?
     private var armed = false
+    private var awaitingFirstRow = false
     private var outputURL: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("vivid-home-navigation-diagnostics.json")
@@ -354,7 +361,13 @@ final class TVHomeScrollDiagnostics: NSObject {
         }
         write(Capture(status: "armed", duration: 0, samples: []))
         if ProcessInfo.processInfo.arguments.contains("--home-scroll-diagnostics-autostart") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.start() }
+            if VividImageDiagnostics.shared.enabled {
+                awaitingFirstRow = true
+                write(Capture(status: "waitingForRowFocus", duration: 0, samples: []))
+                if focusedRow >= 0 { awaitingFirstRow = false; start() }
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.start() }
+            }
         }
     }
 
@@ -363,6 +376,7 @@ final class TVHomeScrollDiagnostics: NSObject {
         samples.removeAll(keepingCapacity: true)
         samples.reserveCapacity(16000)
         started = CACurrentMediaTime()
+        VividImageDiagnostics.shared.begin()
         previousFrame = nil
         previousResources = nil
         if let geometry { event("scroll", values: geometry.values) }
@@ -375,7 +389,7 @@ final class TVHomeScrollDiagnostics: NSObject {
         displayLink = link
         let stop = DispatchWorkItem { [weak self] in self?.finish() }
         deadline = stop
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: stop)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (VividImageDiagnostics.shared.enabled ? 90 : 60), execute: stop)
     }
 
     func scroll(_ geometry: TVHomeDiagnosticGeometry) {
@@ -392,6 +406,11 @@ final class TVHomeScrollDiagnostics: NSObject {
         guard enabled else { return }
         focusedRow = row
         focusedCard = card
+        if awaitingFirstRow {
+            awaitingFirstRow = false
+            start()
+            return
+        }
         event("focus", index: row, values: [Double(card)])
     }
 
@@ -412,6 +431,7 @@ final class TVHomeScrollDiagnostics: NSObject {
 
     private func resources() {
         let now = CACurrentMediaTime()
+        sampleImages()
         var usage = rusage()
         guard getrusage(RUSAGE_SELF, &usage) == 0 else { return }
         let cpu = Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
@@ -431,6 +451,8 @@ final class TVHomeScrollDiagnostics: NSObject {
     func finish() {
         guard let started else { return }
         let duration = CACurrentMediaTime() - started
+        sampleImages()
+        VividImageDiagnostics.shared.end()
         self.started = nil
         displayLink?.invalidate()
         displayLink = nil
@@ -438,6 +460,12 @@ final class TVHomeScrollDiagnostics: NSObject {
         deadline = nil
         write(Capture(status: "finished", duration: duration, samples: samples))
         samples.removeAll(keepingCapacity: true)
+    }
+
+    private func sampleImages() {
+        guard VividImageDiagnostics.shared.enabled else { return }
+        for (name, values) in VividImageDiagnostics.shared.drain() { event(name, values: values) }
+        event("image.decode.operations", values: VividImagePipeline.shared.diagnosticDecodeOperations())
     }
 
     private func write(_ capture: Capture) {

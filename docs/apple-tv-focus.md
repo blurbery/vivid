@@ -322,3 +322,95 @@ only slight cold-start downward jitter remained and overall navigation was
 reported as very good. The diagnostic run is therefore not treated as evidence
 of a new navigation regression. Further rendering and idle-scheduling changes
 are deferred; the working navigation and cache policy are retained.
+
+Adding `--home-image-diagnostics` to the two capture launch arguments enables
+aggregate image-pipeline accounting and omits per-row geometry observation.
+In this mode, automatic capture waits for the first Home row to gain focus
+and records for 90 seconds, instead of starting eight seconds after arming.
+It retains outer scrolling, focus, row-body events and frame/resource samples.
+No URLs, media identifiers, headers or account information enter the output.
+The diagnostic helper holds single-use waiter tokens only; it never cancels or
+reprioritises the actual task. Both decoded-image flights and Emby byte flights
+are observed. Byte-flight awaiters are image jobs or raw-data consumers, so
+an abandoned image job can still remain an active byte-flight waiter.
+
+`image.*` counters are deltas since the previous sample, normally one second;
+use event timestamps for rates if the main thread delays sampling. Absent delta
+counters mean zero. `image.flight.active` and `image.dataFlight.active` contain
+[flights, awaiters, flights with no awaiters]. Completed-abandoned means no
+uncancelled waiter remained when the shared task completed, not that its cached
+result can never be useful. Cancellation counters observe caller cancellation;
+underlying shared-task cancellation policy is unchanged. Active-flight thresholds
+are retained for crossings of multiples of 32 and emitted with the next summary.
+
+`image.decode.operations` contains [total, userInitiated, utility, executing].
+`image.timing.*` contains [sample count, p50 milliseconds, p95 milliseconds],
+with at most 512 durations per metric per interval and a dropped-sample counter.
+`flightStartWait` measures shared-task scheduling; `dataWait` includes byte-flight
+coalescing and data retrieval; `decodeQueue.demand/utility` and `decode.demand/utility`
+measure the operation's enqueue-to-start and decode durations separately.
+URLSession task metrics distinguish cache from network transactions and HTTP
+versions. `taskToRequest` includes connection setup as well as queueing, not pure
+connection-slot wait; DNS and connection durations are reported separately.
+`requestToResponseEnd` measures the request/response interval. These summaries
+are attributed when a stage or transport task completes, not a full per-request
+trace, and cannot establish which operation caused an individual frame delay.
+
+Leaf-body counts cover CollectionMediaCell, CachedAsyncImage, TVEpisodeArtwork,
+VividLazyImage and ThumbhashImage. Lazy/episode task starts and cancellations,
+cell appearance/disappearance, artwork-gate changes and actual memory-warning
+notifications are counted separately. Their correlation distinguishes possible
+causes without labelling every cancellation as recycling; it is not a guaranteed
+one-to-one classification of gate versus disappearance cancellation.
+A temporary executable enabled the same diagnostic accounting on macOS and
+passed cancellation-once, unchanged shared work, abandoned completion, demand
+joining utility, percentile and inactive-recording checks. Device results remain
+pending. Navigation, appearance, two-connection/two-decode limits, persistent
+caches and memory-pressure handling are unchanged.
+
+Build 39 passed the Release tvOS build and app/extension signature, version and
+shared Keychain checks. It was installed in place on Living Room, and the
+automatic capture was verified in recording state with image-flight and decode
+gauges present before requesting the remote-control workload. Memory hit/miss
+counters cover pipeline image calls; direct image-view cache lookups bypass
+those counters. Queue QoS gauges describe configured operation priorities, not
+measurements of CPU-core placement or effective scheduler priority.
+
+Build 39's initial timed capture contained only Spotlight activity and the initial
+focus marker, so it missed the user's reported progressively laggy row traversal.
+It is not used to accept or reject the image-contention hypothesis. The next
+diagnostic build starts on actual first-row focus and records for 90 seconds
+to align the capture with the user-controlled workload.
+
+Build 40 passed the Release tvOS build and app/extension signing, version and
+shared Keychain checks. The capture started on actual row-0 focus and recorded
+90.08 seconds with 262 focus events. blurbery reported increasing lag across
+rows and on the vertical return. Diagnostics were disabled by relaunching Vivid
+after retrieval. This run recorded 169 decoded-image flights created/completed,
+170 awaiter joins, no waiter cancellations, no abandoned completions and no
+memory-warning events. The Emby-specific byte-flight layer had no activity in
+this workload. There were 30 network transactions, all reported as HTTP/2, and
+169 cache transactions; these are transactions, not disjoint request counts.
+The largest one-second p95 decode queue waits were 0.09 ms for demand and
+0.45 ms for utility. The largest one-second p95 decode durations were 54.45 ms
+and 47.41 ms respectively. No concurrency change is justified by these waits.
+
+During the warmed 30–60-second portion, there were no new image flights and all
+sampled image-flight, byte-flight and decode-operation gauges were zero. Yet
+there were 28 gate enables, 28 gate disables, 845 CachedAsyncImage body evaluations,
+1690 VividLazyImage body evaluations, 425 non-nil lazy tasks and 420 nil tasks.
+Only 12 collection cells appeared and 11 disappeared in that interval. Whole-feed
+and whole-row updates remained rare over the entire run (two and one), with one
+consumed restoration and no expiry. Process footprint rose from about 99.5 MiB
+to a peak of 149.4 MiB, without a recorded memory warning. Callback timing was
+worse during rapid warmed vertical movement, reaching a 49.8 ms p95 and a
+105.2 ms maximum in the 30–45-second interval; these are not GPU presentation
+measurements. Counters are sampled and diagnostic overhead remains possible.
+
+The strongest next hypothesis is gate-driven leaf refresh and image replacement
+while vertical scrolling is active, rather than download/decode backlog. A
+controlled follow-up could defer distance-based disabling until vertical idle,
+retaining immediate destination enabling, bounded idle retention and memory
+pressure handling. That scheduling change is not part of this diagnostic commit.
+No cancellation, concurrency, focus, Spotlight design or card-rendering change
+has been made based on this investigation.

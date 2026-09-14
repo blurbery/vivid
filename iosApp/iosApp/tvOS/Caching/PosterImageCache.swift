@@ -167,6 +167,7 @@ enum PosterImageCache {
             object: nil,
             queue: .main
         ) { _ in
+            VividImageDiagnostics.shared.count("memory.warning")
             trimDecodedMemory()
         }
         #endif

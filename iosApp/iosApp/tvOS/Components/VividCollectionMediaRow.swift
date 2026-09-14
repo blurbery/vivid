@@ -249,6 +249,7 @@ private struct CollectionMediaCell<Content: View>: View {
     @Environment(\.tvHomeRowArtworkGate) private var artworkGate
 
     var body: some View {
+        let _ = VividImageDiagnostics.shared.count("leaf.CollectionMediaCell.body")
         content($focusedID)
             .environment(\.tvArtworkLoadingEnabled, parentArtworkEnabled && (artworkGate?.enabled ?? true))
             .onChange(of: focusedID) { _, id in
@@ -257,10 +258,12 @@ private struct CollectionMediaCell<Content: View>: View {
                 onFocus()
             }
             .onAppear {
+                VividImageDiagnostics.shared.count("cell.appear")
                 if coordinator.consumeRequest(for: itemID, ownsRestoration: ownsRestoration()) {
                     focusedID = itemID
                 }
             }
+            .onDisappear { VividImageDiagnostics.shared.count("cell.disappear") }
             .onReceive(coordinator.requests) { id in
                 guard id == itemID,
                       coordinator.consumeRequest(for: itemID, ownsRestoration: ownsRestoration()) else { return }

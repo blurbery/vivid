@@ -34,6 +34,7 @@ struct CachedAsyncImage: View {
 
     @ViewBuilder
     var body: some View {
+        let _ = VividImageDiagnostics.shared.count("leaf.CachedAsyncImage.body")
         #if os(tvOS)
         if stableHomeRows, let targetSize {
             // Home reserves this exact artwork frame. Avoid a separate
@@ -189,6 +190,7 @@ struct TVEpisodeArtwork: View {
     }
 
     var body: some View {
+        let _ = VividImageDiagnostics.shared.count("leaf.TVEpisodeArtwork.body")
         let key = ImageKey(url: url, width: size.width * displayScale, height: size.height * displayScale)
         let request = URL(string: url).map {
             PosterImageCache.displayRequest(url: $0, pixelSize: CGSize(width: key.width, height: key.height))
@@ -229,7 +231,12 @@ struct TVEpisodeArtwork: View {
             }
             guard loadingEnabled, let request else { return }
             do {
-                let loaded = try await VividImagePipeline.shared.image(for: request)
+                VividImageDiagnostics.shared.count("episode.taskStarted")
+                let loaded = try await withTaskCancellationHandler {
+                    try await VividImagePipeline.shared.image(for: request)
+                } onCancel: {
+                    VividImageDiagnostics.shared.count("episode.taskCancelled")
+                }
                 guard !Task.isCancelled else { return }
                 var transaction = Transaction(animation:
                     homeArtworkGate != nil || reduceMotion ? nil : .easeOut(duration: 0.2))
