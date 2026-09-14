@@ -18,7 +18,7 @@ xcodegen generate
 open Vivid.xcodeproj
 ```
 
-VividKit remains the iPhone/iPad playback package. This experimental branch uses pinned public GPL KSPlayer on Apple TV and does not link VividKit playback into that target. Keep package pins and third-party notices together. The trial does not authorise an Apple binary release.
+VividKit remains the iPhone/iPad playback package. This experimental branch uses pinned public GPL KSPlayer on Apple TV and does not link VividKit playback into that target. Keep package pins and third-party notices together. The trial does not authorise an Apple binary release. Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
 
 Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV. These are the current build identifiers. Choose an installed simulator in Xcode, or build the TV target without signing:
 

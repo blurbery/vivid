@@ -102,7 +102,12 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         source = (url, startPosition, loadOptions, audioSourceStreamIndex)
         trace = PlaybackTrialTrace()
         trace?.mark("engine_load")
-        let prepared = VividKSOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex)
+        let prepared = VividKSOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex) { [weak self, weak trace = trace] name, time in
+            Task { @MainActor in
+                guard self?.generation == token else { return }
+                trace?.mark(name, at: time)
+            }
+        }
         options = prepared
         wantsPlay = loadOptions.autoplay
         state = .loading
@@ -116,7 +121,12 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         applyGravity()
         videoRoute = loadOptions.audioOnly ? .audio : .sampleBuffer
         if let renderSource = instance.audioOutput.renderSource, let trace {
-            let probe = VividKSAudioProbe(source: renderSource) { [weak self, weak trace] time in
+            let probe = VividKSAudioProbe(source: renderSource, available: { [weak self, weak trace] name, time in
+                Task { @MainActor in
+                    guard self?.generation == token else { return }
+                    trace?.mark(name, at: time)
+                }
+            }) { [weak self, weak trace] time in
                 Task { @MainActor in
                     guard self?.generation == token else { return }
                     trace?.mark("audio_render_callback", at: time)
@@ -124,6 +134,7 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
             }
             audioProbe = probe
             instance.audioOutput.renderSource = probe
+            if instance.videoOutput?.renderSource === renderSource { instance.videoOutput?.renderSource = probe }
         }
         for track in loadOptions.externalSubtitles { addExternalSubtitleTrack(track) }
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification,
@@ -291,9 +302,12 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
     func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool { false }
     func reloadAtCurrentPosition() async throws {
         guard var source else { return }
+        let token = generation
+        let position = currentTime
         source.options.autoplay = wantsPlay
         if let headers = await refreshSourceHeaders?() { source.options.httpHeaders = headers }
-        try await load(url: source.url, startPosition: currentTime, options: source.options, audioSourceStreamIndex: source.audio)
+        guard token == generation, !Task.isCancelled else { throw CancellationError() }
+        try await load(url: source.url, startPosition: position, options: source.options, audioSourceStreamIndex: source.audio)
     }
     func prepareForItemReplacement() { pause(); hasFirstFrameReadyForDisplay = false }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
@@ -388,8 +402,19 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
     /// not proof that the television has completed its HDMI mode switch.
     func pictureReady() {
         guard let player, let output = player.videoOutput,
-              output.window != nil, !output.isHidden, output.alpha > 0,
-              output.displayLayer.isReadyForDisplay, errorInfo == nil else { return }
+              output.window != nil, !output.isHidden, output.alpha > 0, errorInfo == nil else { return }
+        if output.pixelBuffer != nil && output.pixelBuffer?.cvPixelBuffer == nil {
+            // Software frames can use KSPlayer's Metal surface. It has no public
+            // presentation completion hook. Let the UI show the submitted picture,
+            // but leave the benchmark's first_picture_ready measurement unavailable.
+            if !hasFirstFrameReadyForDisplay {
+                hasFirstFrameReadyForDisplay = true
+                trace?.mark("metal_frame_submitted")
+                trace?.event("first_picture_measurement_unavailable", fields: "renderer=metal")
+            }
+            return
+        }
+        guard output.displayLayer.isReadyForDisplay else { return }
         if !hasFirstFrameReadyForDisplay {
             hasFirstFrameReadyForDisplay = true
             trace?.mark("first_picture_ready")
@@ -402,11 +427,11 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
         guard let options else { return }
         for (name, time) in [("source_open_completed", options.openTime), ("probe_completed", options.findTime),
                              ("first_audio_packet", options.readAudioTime), ("first_video_packet", options.readVideoTime),
-                             ("first_audio_decoded", options.decodeAudioTime), ("first_video_decoded", options.decodeVideoTime)] where time > 0 {
+                             ("first_audio_decode_submitted", options.decodeAudioTime), ("first_video_decode_submitted", options.decodeVideoTime)] where time > 0 {
             trace?.mark(name, at: time)
         }
-        // Upstream exposes no exact open-begins or decoder-created timestamp.
-        // prepare_requested and player_ready are labelled separately, never substituted.
+        // Upstream exposes no exact decoder-created timestamp. player_ready is
+        // labelled separately and never substituted for decoder or frame completion.
     }
     private func sample(event: String) {
         guard let player else { return }
@@ -485,7 +510,26 @@ final class VividEngine: NSObject, ObservableObject, MediaPlayerDelegate {
                     body: .image(SubtitleImage(cgImage: image, position: CGRect(origin: part.origin, size: CGSize(width: image.width, height: image.height)), canvasSize: softwareDisplaySize ?? .zero)))
             }
             guard let text = part.text else { return nil }
-            return SubtitleCue(id: index, startTime: part.start, endTime: part.end, body: .text(text.string))
+            var runs: [SubtitleTextRun] = []
+            text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { attributes, range, _ in
+                var run = SubtitleTextRun(text: text.attributedSubstring(from: range).string)
+                if let font = attributes[.font] as? UIFont {
+                    run.isBold = font.fontDescriptor.symbolicTraits.contains(.traitBold)
+                    run.isItalic = font.fontDescriptor.symbolicTraits.contains(.traitItalic)
+                    run.fontName = font.familyName
+                    run.fontSize = Double(font.pointSize)
+                }
+                run.isUnderlined = (attributes[.underlineStyle] as? Int ?? 0) != 0
+                run.isStruckThrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
+                if let colour = attributes[.foregroundColor] as? UIColor {
+                    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                    if colour.getRed(&r, green: &g, blue: &b, alpha: &a) {
+                        run.color = SubtitleColor(r: UInt8(clamping: Int(r * 255)), g: UInt8(clamping: Int(g * 255)), b: UInt8(clamping: Int(b * 255)))
+                    }
+                }
+                runs.append(run)
+            }
+            return SubtitleCue(id: index, startTime: part.start, endTime: part.end, body: .richText(runs))
         }
     }
     func setNativeSubtitleRendering(_ active: Bool) {}
