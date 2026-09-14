@@ -18,6 +18,7 @@ struct VividCollectionMediaRow: View, Equatable {
     var ownsReturnFocus: Binding<Bool>?
     var posterWidth = VividTheme.Skyline.densePosterCardWidth
     var rowIndex: Int? = nil
+    var isSpotlightHandoffPending: (() -> Bool)? = nil
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.section == rhs.section
@@ -30,6 +31,7 @@ struct VividCollectionMediaRow: View, Equatable {
             && (lhs.onMoveUp == nil) == (rhs.onMoveUp == nil)
             && (lhs.onItemFocus == nil) == (rhs.onItemFocus == nil)
             && (lhs.ownsReturnFocus == nil) == (rhs.ownsReturnFocus == nil)
+            && (lhs.isSpotlightHandoffPending == nil) == (rhs.isSpotlightHandoffPending == nil)
     }
 
     // Remembered IDs are consumed only by explicit entry/detail request tokens
@@ -41,6 +43,8 @@ struct VividCollectionMediaRow: View, Equatable {
     @Environment(\.homeCardPresentation) private var presentation
     @Environment(\.tvArtworkLoadingEnabled) private var artworkLoadingEnabled
     @Environment(\.tvHomeRowArtworkGate) private var artworkGate
+    @Environment(\.tvHomeFocusOwnership) private var ownership
+    @Environment(\.tvHomeScrollDiagnostics) private var diagnostics
     @StateObject private var proxy = CollectionHStackProxy()
     @StateObject private var focus = CollectionRowFocus()
     @State private var appliedEntry = 0
@@ -60,6 +64,7 @@ struct VividCollectionMediaRow: View, Equatable {
 
             CollectionHStack(uniqueElements: section.items, layout: .selfSizingSameSize(rows: 1)) { item in
                 CollectionMediaCell(itemID: item.contentId, coordinator: focus,
+                                    ownsRestoration: { ownsReturnFocus?.wrappedValue == true },
                                     onFocus: { onItemFocus?(item) }) { binding in
                     card(item, focus: binding)
                 }
@@ -79,7 +84,7 @@ struct VividCollectionMediaRow: View, Equatable {
         .onChange(of: focusRequest, initial: true) { _, request in
             guard request > appliedEntry else { return }
             appliedEntry = request
-            restore(rememberedItemID)
+            restore(rememberedItemID, allowsHandoffFallback: true)
         }
         .onChange(of: detailReturnFocusRequest, initial: true) { _, request in
             guard request > appliedReturn else { return }
@@ -95,6 +100,10 @@ struct VividCollectionMediaRow: View, Equatable {
             restore(newIDs[min(index, newIDs.count - 1)])
         }
         .modifier(CollectionRowUpperBoundary(onMoveUp: onMoveUp))
+        .onDisappear {
+            focus.cancelRequest()
+            ownership?.unregisterCancellation(for: section.id)
+        }
     }
 
     @ViewBuilder
@@ -138,16 +147,27 @@ struct VividCollectionMediaRow: View, Equatable {
         }
     }
 
-    private func restore(_ itemID: String?) {
+    private func restore(_ itemID: String?, allowsHandoffFallback: Bool = false, forceScroll: Bool = false) {
         guard let target = itemID.flatMap({ id in section.items.first { $0.contentId == id } })
                 ?? section.items.first else { return }
-        focus.pendingItemID = target.contentId
+        ownership?.registerCancellation(for: section.id) { [weak focus] in focus?.cancelRequest() }
+        let diagnosticRowIndex = rowIndex
+        focus.onDiagnosticEvent = diagnostics.map { diagnostics in
+            { event in diagnostics.event(event, index: diagnosticRowIndex) }
+        }
+        focus.request(target.contentId, onExpiry: allowsHandoffFallback ? {
+            guard ownsReturnFocus?.wrappedValue == true,
+                  isSpotlightHandoffPending?() == true else { return }
+            // Only an unconsumed Spotlight entry can retry, once. Detail return
+            // and ordinary directional movement never enter this fallback.
+            restore(target.contentId, forceScroll: true)
+        } : nil)
         // Only explicit restoration may need to mount an off-screen cell.
         // An existing cell receives the event; a newly mounted one reads it
-        // on appearance. No delayed claims or normal-navigation retries.
+        // on appearance, once, while this row still owns restoration.
         // The collection already retains its last focused card and offset.
         // A Spotlight handoff back to that card must not scroll it sideways.
-        if target.contentId != focus.lastItemID {
+        if forceScroll || target.contentId != focus.lastItemID {
             proxy.scrollTo(id: target.contentId, animated: false)
         }
         focus.requests.send(target.contentId)
@@ -171,18 +191,56 @@ private struct CollectionRowUpperBoundary: ViewModifier {
 @MainActor
 private final class CollectionRowFocus: ObservableObject {
     let requests = PassthroughSubject<String, Never>()
-    var pendingItemID: String?
+    private final class Request {
+        let itemID: String
+        init(_ itemID: String) { self.itemID = itemID }
+    }
+    private var pending: Request?
     var lastItemID: String?
+    var onDiagnosticEvent: ((String) -> Void)?
+
+    func request(_ id: String, onExpiry: (() -> Void)?) {
+        let request = Request(id)
+        pending = request
+        onDiagnosticEvent?("restore.request")
+        // Ownership/focus events invalidate immediately. This is only a
+        // backstop for a target that never materialises, not a retry cadence.
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(750)) { [weak self, weak request] in
+            guard let self, let request, self.pending === request else { return }
+            self.onDiagnosticEvent?("restore.expire")
+            self.cancelRequest()
+            onExpiry?()
+        }
+    }
+
+    func cancelRequest() {
+        if pending != nil { onDiagnosticEvent?("restore.cancel") }
+        pending = nil
+    }
+
+    func consumeRequest(for id: String, ownsRestoration: Bool) -> Bool {
+        guard ownsRestoration else {
+            cancelRequest()
+            return false
+        }
+        guard pending?.itemID == id else { return false }
+        onDiagnosticEvent?("restore.consume")
+        // Consume before writing FocusState, even if UIKit cannot honour it.
+        // Reuse must never turn one restoration into repeated focus claims.
+        cancelRequest()
+        return true
+    }
 
     func didFocus(_ id: String) {
         lastItemID = id
-        pendingItemID = nil
+        cancelRequest()
     }
 }
 
 private struct CollectionMediaCell<Content: View>: View {
     let itemID: String
     let coordinator: CollectionRowFocus
+    let ownsRestoration: () -> Bool
     let onFocus: () -> Void
     @ViewBuilder let content: (FocusState<String?>.Binding) -> Content
     @FocusState private var focusedID: String?
@@ -198,12 +256,14 @@ private struct CollectionMediaCell<Content: View>: View {
                 onFocus()
             }
             .onAppear {
-                if coordinator.pendingItemID == itemID { focusedID = itemID }
+                if coordinator.consumeRequest(for: itemID, ownsRestoration: ownsRestoration()) {
+                    focusedID = itemID
+                }
             }
             .onReceive(coordinator.requests) { id in
-                guard id == itemID else { return }
-                if focusedID == itemID { coordinator.pendingItemID = nil }
-                else { focusedID = itemID }
+                guard id == itemID,
+                      coordinator.consumeRequest(for: itemID, ownsRestoration: ownsRestoration()) else { return }
+                focusedID = itemID
             }
     }
 }

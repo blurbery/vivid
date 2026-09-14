@@ -56,6 +56,7 @@ struct SectionRow: View {
     var onMoveDown: (() -> Void)? = nil
     /// Live tvOS ownership gate for context-menu focus restoration.
     var focusRestorationOwner: Binding<Bool>? = nil
+    var isSpotlightHandoffPending: (() -> Bool)? = nil
     #if !os(tvOS)
     @State private var detailBrowseOriginID = UUID().uuidString
     #endif
@@ -119,7 +120,8 @@ struct SectionRow: View {
                 rememberedItemID: focusRequestItemId ?? defaultFocusItemId,
                 ownsReturnFocus: focusRestorationOwner,
                 posterWidth: cardWidth ?? VividTheme.posterCardWidth,
-                rowIndex: homeRowIndex
+                rowIndex: homeRowIndex,
+                isSpotlightHandoffPending: isSpotlightHandoffPending
             )
             .equatable()
         } else {

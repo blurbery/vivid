@@ -84,7 +84,8 @@ struct TVHomeDiscoveryFeed: View {
                                 focusRestorationOwner: Binding(
                                     get: { rowFocusOwnership.rowID == section.id },
                                     set: { if $0 { rowFocusOwnership.rowID = section.id } }
-                                )
+                                ),
+                                isSpotlightHandoffPending: { index == 0 && rowFocusMemory.spotlightFocused }
                             )
                             .frame(height: TVHomeRowGeometry.headingHeight
                                 + TVHomeRowGeometry.headingSpacing
@@ -128,6 +129,8 @@ struct TVHomeDiscoveryFeed: View {
             TVHomeTopMenuBoundary(focus: rowFocusOwnership, hasSpotlight: !slides.isEmpty)
         }
         .environment(\.homeCardPresentation, homeCards.presentation)
+        .environment(\.tvHomeFocusOwnership, rowFocusOwnership)
+        .environment(\.tvHomeScrollDiagnostics, scrollDiagnostics.enabled ? scrollDiagnostics : nil)
         .onDisappear { rowArtworkWindow.stopPendingPreparation() }
         .ignoresSafeArea()
     }
@@ -294,7 +297,7 @@ private struct TVHomeDiagnosticFeed: ViewModifier {
     }
 }
 
-private struct TVHomeDiagnosticGeometry: Equatable {
+struct TVHomeDiagnosticGeometry: Equatable {
     let offset: CGPoint
     let content: CGSize
     let viewport: CGSize
@@ -304,7 +307,7 @@ private struct TVHomeDiagnosticGeometry: Equatable {
 }
 
 @MainActor
-private final class TVHomeScrollDiagnostics: NSObject {
+final class TVHomeScrollDiagnostics: NSObject {
     let enabled = ProcessInfo.processInfo.arguments.contains("--home-scroll-diagnostics")
     private struct Sample: Codable, Sendable {
         let time: Double
@@ -390,7 +393,7 @@ private final class TVHomeScrollDiagnostics: NSObject {
     }
 
     func event(_ event: String, index: Int? = nil, values: [Double] = []) {
-        guard let started else { return }
+        guard enabled, let started else { return }
         samples.append(Sample(time: CACurrentMediaTime() - started,
             event: event, index: index, values: values))
     }
@@ -453,8 +456,41 @@ private final class TVHomeScrollDiagnostics: NSObject {
 /// Keep focus bookkeeping outside the feed's view dependencies. Only the
 /// affected rows and artwork worker need to observe a change of row owner.
 @Observable
-private final class TVHomeFocusOwnership {
-    var rowID: String?
+final class TVHomeFocusOwnership {
+    var rowID: String? {
+        didSet {
+            guard oldValue != rowID, let oldValue else { return }
+            cancellations[oldValue]?()
+        }
+    }
+    @ObservationIgnored private var cancellations: [String: () -> Void] = [:]
+
+    func registerCancellation(for rowID: String, action: @escaping () -> Void) {
+        cancellations[rowID] = action
+    }
+
+    func unregisterCancellation(for rowID: String) {
+        cancellations.removeValue(forKey: rowID)
+    }
+}
+
+private struct TVHomeFocusOwnershipKey: EnvironmentKey {
+    static let defaultValue: TVHomeFocusOwnership? = nil
+}
+
+private struct TVHomeScrollDiagnosticsKey: EnvironmentKey {
+    static let defaultValue: TVHomeScrollDiagnostics? = nil
+}
+
+extension EnvironmentValues {
+    var tvHomeFocusOwnership: TVHomeFocusOwnership? {
+        get { self[TVHomeFocusOwnershipKey.self] }
+        set { self[TVHomeFocusOwnershipKey.self] = newValue }
+    }
+    var tvHomeScrollDiagnostics: TVHomeScrollDiagnostics? {
+        get { self[TVHomeScrollDiagnosticsKey.self] }
+        set { self[TVHomeScrollDiagnosticsKey.self] = newValue }
+    }
 }
 
 private struct TVHomeArtworkWarmupKey: Equatable {
@@ -576,6 +612,7 @@ private struct TVHomeSpotlightCarousel: View {
     @FocusState private var focusedPosition: Int?
     @State private var appliedEnterRequest = 0
     @State private var automaticAdvanceInFlight = false
+    @State private var alignmentAttempted = false
     private var focus: FocusState<Int?>.Binding { $focusedPosition }
     let onPositionChange: (Int) -> Void
     let isTopMenuFocused: Bool
@@ -598,6 +635,7 @@ private struct TVHomeSpotlightCarousel: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.tvHomeScrollDiagnostics) private var diagnostics
 
     init(
         slides: [TVHomeSpotlightSlide],
@@ -658,6 +696,7 @@ private struct TVHomeSpotlightCarousel: View {
         let span = slides.count * 3
         // Keep a runway in both directions without changing card identities.
         if position - lowerPosition < margin || upperPosition - position <= margin {
+            diagnostics?.event("spotlight.recycle", values: [Double(position), Double(lowerPosition)])
             if focus.wrappedValue == nil {
                 // Automatic movement recycles after its animation has finished.
                 var transaction = Transaction(animation: nil)
@@ -750,17 +789,25 @@ private struct TVHomeSpotlightCarousel: View {
                 .defaultFocus(focus, visualPosition)
                 .scrollClipDisabled()
                 .onScrollPhaseChange { _, phase in
+                    diagnostics?.event("spotlight.phase.\(phase)")
                     scrollIsMoving = phase != .idle
                     if phase == .idle {
                         finishAutomaticAdvanceIfReady()
                         if focusedPosition == nil { updatePositionWindow(around: visualPosition) }
                     }
                     // A recycled origin can leave a fractional offset after
-                    // native deceleration. Finish alignment without moving focus.
+                    // native deceleration. At most one correction per selection:
+                    // another idle callback must not start an animation loop.
                     let target = CGFloat(visualPosition - lowerPosition) * scrollGeometry.cardStride
                     if phase == .idle, initialCardPresented, focus.wrappedValue == visualPosition,
-                       abs(scrollGeometry.offset - target) > 1 {
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                       !alignmentAttempted, abs(scrollGeometry.offset - target) > 2 {
+                        alignmentAttempted = true
+                        diagnostics?.event("spotlight.align", values: [Double(scrollGeometry.offset), Double(target)])
+                        let residual = abs(scrollGeometry.offset - target)
+                        var transaction = Transaction(animation: reduceMotion || residual < scrollGeometry.cardStride - 22
+                            ? nil : .easeOut(duration: 0.12))
+                        transaction.disablesAnimations = transaction.animation == nil
+                        withTransaction(transaction) {
                             scrollPosition.scrollTo(id: visualPosition, anchor: .center)
                         }
                     }
@@ -770,7 +817,9 @@ private struct TVHomeSpotlightCarousel: View {
                     guard direction == .down, focusedPosition != nil else { return }
                     pendingPosition = nil
                     pauseCycle()
-                    focusedPosition = nil
+                    automaticAdvanceInFlight = false
+                    // The destination makes the single focus claim. Clearing
+                    // this binding first would invite an intermediate repair.
                     onEnterFirstRow()
                 }
             }
@@ -806,10 +855,12 @@ private struct TVHomeSpotlightCarousel: View {
             focusedPosition = visualPosition
         }
         .onChange(of: focusedPosition) { previous, position in
+            alignmentAttempted = false
             if (previous != nil) != (position != nil) { onFocusChange(position != nil) }
             if position == nil {
                 pendingPosition = nil
                 pauseCycle()
+                automaticAdvanceInFlight = false
             }
             if let position, position != visualPosition {
                 automaticAdvanceInFlight = false
@@ -851,6 +902,7 @@ private struct TVHomeSpotlightCarousel: View {
     private func selectPosition(_ position: Int) {
         guard !slides.isEmpty, position != visualPosition else { return }
         let previousIndex = index
+        alignmentAttempted = false
         visualPosition = position
         // The parent restores this exact native card after leaving the spotlight.
         onPositionChange(position)
