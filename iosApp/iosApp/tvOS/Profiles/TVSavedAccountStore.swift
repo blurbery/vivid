@@ -554,7 +554,7 @@ final class TVSavedAccountStore {
             var cacheCleanupFailed = false
             for account in matching {
                 do { try await TVHomeMetadataCache.shared.deleteAccountCache(account) }
-                catch { cacheCleanupFailed = true; error = "Couldn’t clear a deleted account’s cache. Vivid will retry on the next sync." }
+                catch { cacheCleanupFailed = true; self.error = "Couldn’t clear a deleted account’s cache. Vivid will retry on the next sync." }
             }
             for account in matching {
                 _ = keychain.delete(sessionKey(account.id))
