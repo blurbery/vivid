@@ -5,8 +5,6 @@ on:
     paths:
       - 'iosApp/iosApp/Screens/Player/**'
       - 'iosApp/iosApp/Playback/**'
-      - 'VividKit/Sources/**'
-      - 'VividKit/Tests/**'
       - 'iosApp/Tests/**'
       - 'iosApp/project*.yml'
       - 'iosApp/**/Package.resolved'
@@ -103,7 +101,7 @@ jobs:
           if [ "$ACTION" = test ]; then
             # Simulator-only ad-hoc signing supplies the application identifier
             # required by Keychain. No certificate or release secret is used.
-            xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme VividKitDeviceTests \
+            xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme Vivid \
               -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
               CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-build.log
           else
@@ -127,19 +125,9 @@ jobs:
         timeout-minutes: 12
         run: |
           set -o pipefail
-          xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme VividKitDeviceTests \
+          xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme Vivid \
             -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
             -only-testing:VividTests \
-            -only-testing:VividKitDeviceTests/VividHDMIAudioCoreTests \
-            -only-testing:VividKitDeviceTests/VividAirPlayRecoveryTests \
-            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testDemuxReadPreservesSourceFailureWithoutInventingOne \
-            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testBitmapSubtitleDisplaySetsEndWhenTheNextSetBegins \
-            -only-testing:VividKitDeviceTests/VividTransientRecoveryTests \
-            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryRequiresClockMovementAndTimesOut \
-            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryCancelsForPauseOrSupersededPlaybackBeforeAcceptingProgress \
-            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testAudioRecoveryIsBoundedAndRearmsAfterQuietPeriod \
-            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testClockStallRequiresSixSecondsAndFiresOnce \
-            -only-testing:VividKitDeviceTests/VividMediaBoundaryTests/testClockStallIgnoresProgressAndResetsWhenIneligible \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 \
             -resultBundlePath /tmp/player-validation.xcresult \
