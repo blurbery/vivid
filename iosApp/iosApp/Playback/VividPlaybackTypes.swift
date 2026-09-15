@@ -3,11 +3,9 @@
 import AVFoundation
 import Combine
 import Foundation
-#if !os(tvOS)
-import VividKit
-#endif
 
-#if os(tvOS)
+
+#if VIVID_MPV_EXPERIMENT
 /// Vivid-owned branding; upstream package and licence identities remain intact.
 enum LucidCore {
     static let name = "Lucid"
@@ -16,7 +14,7 @@ enum LucidCore {
 #endif
 
 enum VividPlaybackEngineIdentity {
-    #if os(tvOS)
+    #if VIVID_MPV_EXPERIMENT
     static let name = LucidCore.name
     #else
     static let name = "VividKit"
@@ -86,7 +84,7 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
 
     static func isHTTPAuthenticationFailure(_ error: Error, depth: Int = 0) -> Bool {
         guard depth < 8 else { return false }
-        #if !os(tvOS)
+        #if !VIVID_MPV_EXPERIMENT
         if let typed = error as? VividPlaybackError { return typed == .network(401) }
         #endif
         if let typed = error as? PlaybackErrorInfo {
@@ -132,7 +130,7 @@ struct TrackInfo: Identifiable, Equatable {
         self.assHeader=assHeader; self.isExternal=isExternal; self.isNativelyRenderedSubtitle=isNativelyRenderedSubtitle
         self.sourceStreamIndex = sourceStreamIndex
     }
-    #if !os(tvOS)
+    #if !VIVID_MPV_EXPERIMENT
     init(_ track: VividTrack) {
         self.init(id: track.id, name: track.name, codec: track.codec,
                   language: track.language.isEmpty ? nil : track.language, channels: track.channels, bitrate: track.bitrate,

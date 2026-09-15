@@ -1,7 +1,5 @@
 #if os(iOS)
-#if !os(tvOS)
-import VividKit
-#endif
+
 import AVFoundation
 import AVKit
 import Combine

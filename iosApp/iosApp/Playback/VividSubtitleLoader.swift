@@ -2,14 +2,12 @@
 // Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
 import AVFoundation
 import Foundation
-#if !os(tvOS)
-import VividKit
-#endif
+
 
 enum VividSubtitleLoader {
     enum Document {
         case cues([SubtitleCue])
-        #if !os(tvOS)
+        #if !VIVID_MPV_EXPERIMENT
         case ass(VividASSRenderer)
         #endif
     }
@@ -32,7 +30,7 @@ enum VividSubtitleLoader {
         }
         guard data.count <= 16 * 1024 * 1024,
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { throw URLError(.cannotDecodeContentData) }
-        #if !os(tvOS)
+        #if !VIVID_MPV_EXPERIMENT
         if text.contains("[Script Info]") {
             guard let renderer = VividASSRenderer(data: Data(text.utf8)) else { throw URLError(.cannotDecodeContentData) }
             return .ass(renderer)
@@ -74,7 +72,7 @@ enum VividSubtitleLoader {
         return result
     }
 }
-#if !os(tvOS)
+#if !VIVID_MPV_EXPERIMENT
 @MainActor final class FrameExtractor {
     private let source: VividSource
     private var extractor: VividFrameExtractor?

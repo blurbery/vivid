@@ -1,6 +1,4 @@
-#if !os(tvOS)
-import VividKit
-#endif
+
 import Foundation
 
 /// Immutable server-supplied context that the player cannot infer from a media source.
@@ -103,20 +101,20 @@ struct VividPlaybackStatsSnapshot: Equatable {
         route = engine.videoRoute
         phase = engine.playbackPhase
         telemetry = engine.liveTelemetry
-        #if os(tvOS)
+        #if VIVID_MPV_EXPERIMENT
         readAheadAvailableSeconds = engine.readAheadAvailableSeconds
         #else
         readAheadAvailableSeconds = nil
         #endif
         activeVideoDecoder = engine.activeVideoDecoder
         activeAudioDecoder = engine.activeAudioDecoder
-        #if os(tvOS)
+        #if VIVID_MPV_EXPERIMENT
         audioOutputFormat = engine.activeAudioOutputFormat
         #else
         audioOutputFormat = nil
         #endif
         sourceVideoFormat = engine.sourceVideoFormat
-        #if os(tvOS)
+        #if VIVID_MPV_EXPERIMENT
         // Report the configured rendering format, not an inferred HDMI display mode.
         outputDolbyProfileLabel = engine.activeDolbyProfileLabel
         outputVideoFormat = engine.activeVideoFormat

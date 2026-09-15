@@ -13,7 +13,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tvos:
+  playback:
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - platform: tvOS
+            scheme: VividTV
+            spec: project.yml
+          - platform: iOS
+            scheme: Vivid
+            spec: project-ios.yml
     runs-on: macos-15
     timeout-minutes: 35
     steps:
@@ -31,10 +42,10 @@ jobs:
           curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
           echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
-          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project.yml
+          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/${{ matrix.spec }}
       - name: Resolve pinned mpv binaries
         run: |
-          xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj -scheme VividTV -derivedDataPath /tmp/vivid-trial
+          xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj -scheme ${{ matrix.scheme }} -derivedDataPath /tmp/vivid-trial
           python3 - <<'PY'
           from pathlib import Path
           root = Path('/tmp/vivid-trial/SourcePackages/artifacts')
@@ -46,11 +57,11 @@ jobs:
               assert b'compressed-lead' in data, f'Missing compressed buffering patch: {path}'
           print('Verified patched AVPlayer audio output in resolved libmpv binaries')
           PY
-      - name: Build tvOS trial
+      - name: Build Lucid on ${{ matrix.platform }}
         run: |
           set -o pipefail
-          xcodebuild build -project iosApp/Vivid.xcodeproj -scheme VividTV \
-            -destination 'generic/platform=tvOS' -derivedDataPath /tmp/vivid-trial \
+          xcodebuild build -project iosApp/Vivid.xcodeproj -scheme ${{ matrix.scheme }} \
+            -destination 'generic/platform=${{ matrix.platform }}' -derivedDataPath /tmp/vivid-trial \
             -resultBundlePath /tmp/mpv-experiment.xcresult CODE_SIGNING_ALLOWED=NO \
             | tee /tmp/mpv-experiment.log
       - name: Verify isolated mpv dependency graph
@@ -61,13 +72,13 @@ jobs:
           pins = json.loads(Path('iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())['pins']
           revisions = {pin['identity']: pin['state']['revision'] for pin in pins}
           assert revisions['mpv-build'] == 'c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6'
-          assert 'ksplayer' not in revisions and 'ffmpegkit' not in revisions
+          assert not {'ksplayer', 'ffmpegkit', 'ffmpegbuild', 'vividkit'} & revisions.keys()
           PY
       - name: Upload build evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: mpv-experiment-build
+          name: lucid-${{ matrix.platform }}-build
           path: |
             /tmp/mpv-experiment.log
             /tmp/mpv-experiment.xcresult

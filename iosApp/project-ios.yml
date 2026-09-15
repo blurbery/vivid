@@ -1,8 +1,9 @@
 include: project-common.yml
 
 packages:
-  VividKit:
-    path: ../VividKit
+  MPVKit:
+    url: https://github.com/edde746/mpv-build
+    revision: c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
 
 targets:
   Vivid:
@@ -14,6 +15,7 @@ targets:
         excludes:
           - "**/*.xcodeproj"
           - "**/*.xcworkspace"
+      - path: ../VividKit/Sources/VividKit/VividTransientRecoveryBudget.swift
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
@@ -26,6 +28,7 @@ targets:
       Release: Signing/Vivid.xcconfig
     settings:
       base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VIVID_MPV_EXPERIMENT"
         PRODUCT_NAME: Vivid
         INFOPLIST_FILE: iosApp/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -42,8 +45,8 @@ targets:
         Release:
           APS_ENVIRONMENT: production
     dependencies:
-      - package: VividKit
-        product: VividKit
+      - package: MPVKit
+        product: MPVKit
       - target: VividNotificationService
         embed: true
       - target: VividDownloadsActivity
@@ -154,8 +157,8 @@ targets:
         buildPhase: none
     dependencies:
       - target: Vivid
-      - package: VividKit
-        product: VividKit
+      - package: MPVKit
+        product: MPVKit
     configFiles:
       Debug: Signing/Vivid.xcconfig
       Release: Signing/Vivid.xcconfig
@@ -180,8 +183,8 @@ targets:
       - path: ../VividKit/Tests/VividKitTests
     dependencies:
       - target: Vivid
-      - package: VividKit
-        product: VividKit
+      - package: MPVKit
+        product: MPVKit
     configFiles:
       Debug: Signing/Vivid.xcconfig
       Release: Signing/Vivid.xcconfig

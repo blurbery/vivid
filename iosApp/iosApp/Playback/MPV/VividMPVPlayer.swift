@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional permission applies to Vivid's adapter only: LICENSE-APPLE-EXCEPTION.
-#if os(tvOS) && VIVID_MPV_EXPERIMENT
+#if (os(tvOS) || os(iOS)) && VIVID_MPV_EXPERIMENT
 import AVFoundation
 import AVKit
 import Combine
@@ -83,7 +83,13 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     var readAheadAvailableSeconds: Double? { diagnostics.liveTelemetry?.forwardBufferSeconds }
     var liveTelemetry: LiveTelemetry? { diagnostics.liveTelemetry }
     var backgroundPlaybackEnabled = true
-    var pictureInPictureActive = false
+    var pictureInPictureActive = false {
+        didSet {
+            core?.isPipActive = pictureInPictureActive
+            core?.setPipSubtitleCompositing(pictureInPictureActive)
+            core?.updateFrame()
+        }
+    }
     var deactivatesAudioSessionOnStop = false
     var ownsVideoNowPlayingSession = false
     var videoNowPlayingSession: MPNowPlayingSession? { nil }
@@ -154,6 +160,11 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         surface.core = instance
         instance.sampleBufferDisplayLayer?.videoGravity = videoGravity
         instance.setVisible(true)
+        #if os(iOS)
+        if !options.audioOnly, let layer = instance.sampleBufferDisplayLayer {
+            softwarePiPSource = SampleBufferPiPSource(layer: layer, engine: self)
+        }
+        #endif
         #if VIVID_P8_TRIAL
         instance.setLogLevel("v")
         #else
