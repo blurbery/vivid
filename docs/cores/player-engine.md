@@ -30,11 +30,7 @@ The user confirmed Dune 1, Dune 2, seeking and synchronised playback; earlier
 Punisher testing confirmed Dolby Vision. These observations do not establish
 Atmos output.
 
-### Retained routes and provenance
-
-The previous player checkpoint remains on `ksplayer-trial` at `575e3c9`.
-The earlier PCM checkpoint is `d013ba2`. Those historical device observations
-do not validate the current Lucid Engine implementation.
+### Builds and diagnostics
 
 The iPhone/iPad target still uses VividKit. Generate `iosApp/project-ios.yml`
 for iOS; do not combine its FFmpeg packages with the tvOS package graph.
