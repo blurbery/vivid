@@ -62,14 +62,17 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         guard isSessionReady, !audioTracks.isEmpty else { return nil }
         // Output parameters distinguish the compressed carrier from decoded PCM.
         if outputAudioFormat?.contains("spdif") == true {
-            switch AVAudioSession.sharedInstance().renderingMode {
-            case .dolbyAtmos: return "Dolby Atmos"
-            case .dolbyAudio: return "Dolby Audio"
-            case .spatialAudio: return "Spatial Audio"
-            case .surround: return "Surround"
-            case .monoStereo: return "Mono/Stereo"
-            default: return "Not reported"
+            let codec: String
+            switch outputAudioFormat {
+            case "spdif-eac3": codec = "E-AC-3"
+            case "spdif-ac3": codec = "AC-3"
+            default: return "Compressed audio"
             }
+            // IEC carrier channels do not describe the compressed audio layout.
+            let track = audioTracks.first { $0.id == activeAudioTrackIndex }
+            let layout = track.flatMap { [1: "1.0", 2: "2.0", 6: "5.1", 8: "7.1"][$0.channels] }
+            let atmos = AVAudioSession.sharedInstance().renderingMode == .dolbyAtmos ? " Atmos" : ""
+            return codec + atmos + (layout.map { " " + $0 } ?? "")
         }
         guard let count = outputChannels else { return "Not reported" }
         return "PCM " + ([1: "1.0", 2: "2.0", 6: "5.1", 8: "7.1"][count] ?? "\(count) ch")

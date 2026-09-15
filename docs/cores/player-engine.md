@@ -67,7 +67,7 @@ the compressed output requested audio ahead of video. mpv 0.41.0 can mark an
 empty stream EOF when the shared packet limit prevents further reads. The larger
 budget gives the Apple driver's 16-second startup lead more room; it is a limit,
 not a requirement to fill the cache before playback. Device verification of
-this change is pending. Diagnostics capture the exact packet-overflow warning
+this change passed initial Dune playback and user-reported seek testing. Diagnostics capture the exact packet-overflow warning
 regardless of demuxer prefix and the native feed-resume marker. Generic EOF
 messages are labelled as messages, not proof that the media file ended.
 
@@ -75,3 +75,9 @@ Embedded subtitle rendering, first frame,
 resume, audio selection and speed changes need physical tvOS testing. At
 non-unit speed, the adapter follows Plezy by selecting PCM before applying
 the tempo change, then restores compressed audio after returning to 1x.
+
+Compressed audio stats use the active mpv output codec and selected track's
+channel count. The IEC carrier's two channels are not displayed as stereo.
+An unreported Apple rendering mode does not hide the known codec; the Atmos
+suffix is added only when Apple reports Dolby Atmos. This label change does
+not alter output routing, buffering or timing.
