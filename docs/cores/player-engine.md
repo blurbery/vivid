@@ -48,6 +48,18 @@ and fixed audio fault labels. Raw mpv messages and source URLs are excluded.
 Audio heartbeats include a matching numeric cache snapshot (input rate, packet
 bytes and available per-stream timestamps) to distinguish input starvation
 from an output stall. No automatic stall-triggered PCM switch or seek is applied.
+
+The native EOF restart trial is in
+`patches/mpv/0001-avfoundation-resume-after-audio-eof.patch`. Its dedicated
+`mpv-audio-driver.yml` workflow rebuilds only libmpv from the pinned source,
+restoring the remaining dependencies from upstream binaries. For the physical
+device trial, replace only the `tvos-arm64_arm64e/Libmpv.framework` slice in the
+task's resolved artifact cache with that workflow's verified artifact, then
+relink the app. The package lock still describes the upstream package; a normal
+fresh resolution does not include this trial patch. Verify the marker
+`resuming compressed feed after audio EOF` in the linked app binary before
+installing. Native driver build 34964055136 passed; playback validation is pending.
+
 Embedded subtitle rendering, first frame,
 resume, audio selection and speed changes need physical tvOS testing. At
 non-unit speed, the adapter follows Plezy by selecting PCM before applying
