@@ -34,9 +34,7 @@ jobs:
       - name: Install build tools
         run: |
           brew install autoconf automake libtool ninja
-          python3 -m venv /tmp/mpv-tools
-          /tmp/mpv-tools/bin/pip install meson==1.4.2
-          echo /tmp/mpv-tools/bin >> "$GITHUB_PATH"
+          python -m pip install meson==1.4.2
       - name: Rebuild only libmpv for physical tvOS
         working-directory: native-build
         run: make build use-prebuilt libs=libmpv platform=tvos-device

@@ -1,7 +1,6 @@
-diff --git a/audio/out/ao_avfoundation.m b/audio/out/ao_avfoundation.m
 --- a/audio/out/ao_avfoundation.m
 +++ b/audio/out/ao_avfoundation.m
-@@ -1,6 +1,12 @@
+@@ -818,6 +818,12 @@
      if (p->spdif) {
          void (^start_block)(void) = ^{
              p->avp_playing = true;
