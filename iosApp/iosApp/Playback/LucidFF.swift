@@ -15,9 +15,12 @@ final class LucidFFOptions: KSOptions {
     private let audioLanguages: [String]
     private let diagnostic: @Sendable (String, String) -> Void
     private let dolbyLock = NSLock()
-    private var dolbyAttempt: (base: CMFormatDescription, native: CMFormatDescription, rate: Float)?
+    private var dolbyAttempt: (base: CMFormatDescription, native: CMFormatDescription, rate: Float, profile: UInt8)?
     private var dolbyConfigured = false
     private var dolbyFailed = false
+    private var requiresNativeP5 = false
+    private var p5TrialEligible = false
+    private var p5VideoGateInstalled = false
     private let milestone: @Sendable (String, Double) -> Void
     @MainActor private var displayUpdatesActive = true
     @MainActor private var receivedDisplayUpdate = false
@@ -57,12 +60,26 @@ final class LucidFFOptions: KSOptions {
         if assetTrack.mediaType == .video {
             // Use KSPlayer's existing direct VideoToolbox decoder only for eligible P8.1.
             // Respect upstream software-decode requirements (rotation/deinterlacing/filters).
-            let candidate = VividDolbyVideo(track: assetTrack).isNativeProfile81Candidate
+            let metadata = VividDolbyVideo(track: assetTrack)
+            var candidate = metadata.isNativeProfile81Candidate
+            var prefix = "p8"
+            #if VIVID_P5_TRIAL
+            dolbyLock.lock()
+            requiresNativeP5 = metadata.profile == 5
+            p5TrialEligible = metadata.isNativeProfile5Candidate && hardwareDecode &&
+                videoFilters.isEmpty && p5VideoGateInstalled
+            let p5Eligible = p5TrialEligible
+            dolbyLock.unlock()
+            if metadata.profile == 5 {
+                candidate = p5Eligible
+                prefix = "p5"
+            }
+            #endif
             if #available(tvOS 17.0, *), candidate, hardwareDecode, videoFilters.isEmpty {
                 asynchronousDecompression = true
             }
             if candidate {
-                diagnostic("p8_decoder_selection", "hardware=\(hardwareDecode) direct_videotoolbox=\(asynchronousDecompression) filters=\(videoFilters.count)")
+                diagnostic("\(prefix)_decoder_selection", "hardware=\(hardwareDecode) direct_videotoolbox=\(asynchronousDecompression) filters=\(videoFilters.count)")
             }
         }
         #endif
@@ -93,6 +110,20 @@ final class LucidFFOptions: KSOptions {
         return super.wantedAudio(tracks: tracks)
     }
 
+    func installP5VideoGate() {
+        dolbyLock.lock(); p5VideoGateInstalled = true; dolbyLock.unlock()
+    }
+
+    var allowsNativeP5Trial: Bool {
+        dolbyLock.lock(); defer { dolbyLock.unlock() }
+        return p5TrialEligible && !dolbyFailed
+    }
+
+    var allowsVideoPresentation: Bool {
+        dolbyLock.lock(); defer { dolbyLock.unlock() }
+        return !requiresNativeP5 || (dolbyConfigured && !dolbyFailed && p5VideoGateInstalled)
+    }
+
     @MainActor
     func invalidateDisplayUpdates() {
         displayUpdatesActive = false
@@ -108,7 +139,10 @@ final class LucidFFOptions: KSOptions {
         receivedDisplayUpdate = true
         dolbyLock.lock()
         let native = dolbyConfigured ? dolbyAttempt?.native : nil
+        let profile = dolbyAttempt?.profile
+        let rejectBase = requiresNativeP5 && native == nil
         dolbyLock.unlock()
+        guard !rejectBase else { return }
         var range = formatDescription.dynamicRange
         // Match KSPlayer GPL's existing output policy, including its HDR10 DV fallback.
         if range == .dolbyVision { range = .hdr10 }
@@ -119,7 +153,7 @@ final class LucidFFOptions: KSOptions {
         milestone("display_criteria_begins", CACurrentMediaTime())
         if #available(tvOS 17.0, *), let native {
             manager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: refreshRate, formatDescription: native)
-            diagnostic("p8_display_requested", "source=p8_1 actual_display_mode=unverified")
+            diagnostic(profile == 5 ? "p5_display_requested" : "p8_display_requested", "source_profile=\(profile ?? 0) actual_display_mode=unverified")
         } else {
             super.updateVideo(refreshRate: refreshRate, isDovi: isDovi, formatDescription: formatDescription)
         }
@@ -135,18 +169,28 @@ extension LucidFFOptions: KSVideoFormatDescriptionProvider {
     func videoDecompressionFormat(for track: FFmpegAssetTrack) -> CMFormatDescription? {
         dolbyLock.lock(); let failed = dolbyFailed; dolbyLock.unlock()
         guard !failed else { return nil }
-        guard let native = VividDolbyVideo.profile81Format(track: track),
-              let base = track.formatDescription else {
-            if VividDolbyVideo(track: track).isNativeProfile81Candidate {
+        let metadata = VividDolbyVideo(track: track)
+        var proposed = VividDolbyVideo.profile81Format(track: track)
+        #if VIVID_P5_TRIAL
+        if metadata.profile == 5, allowsNativeP5Trial {
+            proposed = VividDolbyVideo.profile5Format(track: track)
+        }
+        #endif
+        guard let native = proposed, let base = track.formatDescription else {
+            if metadata.profile == 5 {
+                dolbyLock.lock(); dolbyFailed = true; dolbyLock.unlock()
+                diagnostic("p5_native_failed", "reason=format_adapter_rejected presentation=blocked")
+            } else if metadata.isNativeProfile81Candidate {
                 diagnostic("p8_format_unavailable", "fallback=hdr10 reason=format_adapter_rejected")
             }
             return nil
         }
         dolbyLock.lock()
-        dolbyAttempt = (base, native, track.nominalFrameRate)
+        dolbyAttempt = (base, native, track.nominalFrameRate, metadata.profile ?? 0)
         dolbyConfigured = false
         dolbyLock.unlock()
-        diagnostic("p8_decoder_attempt", "profile=8 compatibility=1 atom=dvvC codec=hvc1 native_dv_verified=false")
+        diagnostic(metadata.profile == 5 ? "p5_decoder_attempt" : "p8_decoder_attempt",
+                   "profile=\(metadata.profile ?? 0) compatibility=\(metadata.compatibility ?? 0) native_dv_verified=false")
         return native
     }
 
@@ -158,8 +202,14 @@ extension LucidFFOptions: KSVideoFormatDescriptionProvider {
         let attempt = dolbyAttempt
         let configured = dolbyConfigured
         dolbyLock.unlock()
-        diagnostic("p8_decoder_configuration", "status=\(status) accepted=\(configured) fallback=\(!configured) native_dv_verified=false")
         guard let attempt else { return }
+        let isP5 = attempt.profile == 5
+        diagnostic(isP5 ? "p5_decoder_configuration" : "p8_decoder_configuration",
+                   "status=\(status) accepted=\(configured) fallback=\(!configured && !isP5) native_dv_verified=false")
+        if isP5 && !configured {
+            diagnostic("p5_native_failed", "reason=decoder_rejected status=\(status) presentation=blocked")
+            return
+        }
         Task { @MainActor [weak self] in
             self?.updateVideo(refreshRate: attempt.rate, isDovi: true, formatDescription: attempt.base)
         }
@@ -183,18 +233,23 @@ final class LucidRenderProbe: OutputRenderSourceDelegate {
     private var first = true
     private var firstVideo = true
     private var firstAudio = true
+    private let allowsVideo: @Sendable () -> Bool
     private let rendered: @Sendable (Double) -> Void
     private let available: @Sendable (String, Double) -> Void
 
-    init(source: OutputRenderSourceDelegate, available: @escaping @Sendable (String, Double) -> Void,
+    init(source: OutputRenderSourceDelegate, allowsVideo: @escaping @Sendable () -> Bool,
+         available: @escaping @Sendable (String, Double) -> Void,
          rendered: @escaping @Sendable (Double) -> Void) {
         self.source = source
+        self.allowsVideo = allowsVideo
         self.available = available
         self.rendered = rendered
     }
 
     func getVideoOutputRender(force: Bool) -> VideoVTBFrame? {
+        guard allowsVideo() else { return nil }
         let frame = source?.getVideoOutputRender(force: force)
+        guard allowsVideo() else { return nil }
         if frame != nil {
             lock.lock(); let report = firstVideo; firstVideo = false; lock.unlock()
             if report { available("first_decoded_video_retrieved", CACurrentMediaTime()) }

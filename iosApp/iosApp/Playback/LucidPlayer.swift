@@ -111,6 +111,10 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             Task { @MainActor in
                 guard self?.generation == token else { return }
                 trace?.event(name, fields: fields)
+                if name == "p5_native_failed" {
+                    self?.fail(PlaybackErrorInfo(kind: .dolbyVisionRequiresHardware,
+                        message: "Native Dolby Vision playback could not be established. Playback stopped to avoid incorrect colours."))
+                }
             }
         })
         options = prepared
@@ -128,7 +132,9 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         applyGravity()
         videoRoute = loadOptions.audioOnly ? .audio : .sampleBuffer
         if let renderSource = instance.audioOutput.renderSource, let trace {
-            let probe = LucidRenderProbe(source: renderSource, available: { [weak self, weak trace] name, time in
+            let probe = LucidRenderProbe(source: renderSource, allowsVideo: { [weak prepared] in
+                prepared?.allowsVideoPresentation ?? false
+            }, available: { [weak self, weak trace] name, time in
                 Task { @MainActor in
                     guard self?.generation == token else { return }
                     trace?.mark(name, at: time)
@@ -141,7 +147,10 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             }
             audioProbe = probe
             instance.audioOutput.renderSource = probe
-            if instance.videoOutput?.renderSource === renderSource { instance.videoOutput?.renderSource = probe }
+            if instance.videoOutput?.renderSource === renderSource {
+                instance.videoOutput?.renderSource = probe
+                prepared.installP5VideoGate()
+            }
         }
         for track in loadOptions.externalSubtitles { addExternalSubtitleTrack(track) }
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification,
@@ -203,14 +212,17 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             trace?.event("video_classified", fields: dolby.diagnosticFields)
             if let dv = track.dovi {
                 trace?.event("dolby_metadata", fields: "profile=\(dv.dv_profile) level=\(dv.dv_level) compatibility=\(dv.dv_bl_signal_compatibility_id) bl=\(dv.bl_present_flag) el=\(dv.el_present_flag) native_dv_verified=false")
-                // No custom Dolby subsystem in the baseline. Never send IPT-only P5
-                // through the GPL player's ordinary HDR output and call it correct DV.
-                guard dolby.allowsBaselinePlayback else {
+                // P5 is permitted only behind the native-only presentation gate.
+                // It must never fall through to ordinary HDR output.
+                guard dolby.allowsBaselinePlayback ||
+                        (dolby.profile == 5 && options?.allowsNativeP5Trial == true) else {
                     fail(PlaybackErrorInfo(kind: .dolbyVisionRequiresHardware,
                         message: "This Dolby Vision profile needs the later Vivid Dolby experiment. Playback is stopped to avoid incorrect colours."))
                     return
                 }
-                trace?.event("dolby_base_layer_trial", fields: "profile=\(dv.dv_profile) output_verification=pending")
+                if dv.dv_profile != 5 {
+                    trace?.event("dolby_base_layer_trial", fields: "profile=\(dv.dv_profile) output_verification=pending")
+                }
             }
             options?.updateVideo(refreshRate: track.nominalFrameRate, isDovi: track.dovi != nil,
                                  formatDescription: track.formatDescription)

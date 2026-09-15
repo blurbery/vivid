@@ -2,7 +2,7 @@
 // Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
 import Foundation
 
-/// Stream classification and a narrow P8 format adapter. KSPlayer owns playback.
+/// Stream classification and narrow Dolby format adapters. KSPlayer owns playback.
 struct VividDolbyVideo {
     enum Format: String {
         case sdr, hdr10, hlg, unknown
@@ -65,6 +65,19 @@ struct VividDolbyVideo {
                      compatibility << 4] + Array(repeating: UInt8(0), count: 19))
     }
 
+    var isNativeProfile5Candidate: Bool {
+        profile == 5 && compatibility == 0 && baseLayerPresent && rpuPresent &&
+            !enhancementLayerPresent && (level.map { (1...63).contains($0) } ?? false)
+    }
+
+    func profile5Configuration(versionMajor: UInt8, versionMinor: UInt8) -> Data? {
+        guard isNativeProfile5Candidate, versionMajor == 1, versionMinor == 0,
+              let level else { return nil }
+        let fields = (UInt16(5) << 9) | (UInt16(level) << 3) | 0x05
+        return Data([versionMajor, versionMinor, UInt8(fields >> 8), UInt8(fields & 0xff), 0] +
+                    Array(repeating: UInt8(0), count: 19))
+    }
+
     var diagnosticFields: String {
         "format=\(format.rawValue) profile=\(profile.map(String.init) ?? "none") " +
         "level=\(level.map(String.init) ?? "none") compatibility=\(compatibility.map(String.init) ?? "none") " +
@@ -97,6 +110,35 @@ extension VividDolbyVideo {
         var result: CMFormatDescription?
         let status = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault,
             codecType: kCMVideoCodecType_HEVC, width: dimensions.width, height: dimensions.height,
+            extensions: extensions as CFDictionary, formatDescriptionOut: &result)
+        return status == noErr ? result : nil
+    }
+
+    /// P5 has no HDR-compatible colour base. Ask Apple's Dolby decoder to interpret it.
+    /// Apple's HDR metadata specification uses dvh1, dvcC and unspecified colour indices.
+    static func profile5Format(track: FFmpegAssetTrack) -> CMFormatDescription? {
+        let metadata = VividDolbyVideo(track: track)
+        guard #available(tvOS 17.0, *), let dv = track.dovi,
+              let payload = metadata.profile5Configuration(versionMajor: dv.dv_version_major,
+                                                            versionMinor: dv.dv_version_minor),
+              let base = track.formatDescription,
+              [kCMVideoCodecType_HEVC, kCMVideoCodecType_DolbyVisionHEVC].contains(CMFormatDescriptionGetMediaSubType(base)),
+              var extensions = CMFormatDescriptionGetExtensions(base) as? [String: Any],
+              var atoms = extensions[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms as String] as? [String: Any],
+              let hevc = atoms["hvcC"] as? Data, hevc.count >= 23 else { return nil }
+        atoms["dvcC"] = payload
+        // The source profile is P5. Do not leave an incompatible profile record or guessed PQ tags.
+        atoms.removeValue(forKey: "dvvC")
+        extensions[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms as String] = atoms
+        for key in [kCVImageBufferColorPrimariesKey, kCVImageBufferTransferFunctionKey,
+                    kCVImageBufferYCbCrMatrixKey, kCMFormatDescriptionExtension_ColorPrimaries,
+                    kCMFormatDescriptionExtension_TransferFunction, kCMFormatDescriptionExtension_YCbCrMatrix] {
+            extensions.removeValue(forKey: key as String)
+        }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(base)
+        var result: CMFormatDescription?
+        let status = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault,
+            codecType: kCMVideoCodecType_DolbyVisionHEVC, width: dimensions.width, height: dimensions.height,
             extensions: extensions as CFDictionary, formatDescriptionOut: &result)
         return status == noErr ? result : nil
     }

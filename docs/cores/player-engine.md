@@ -76,9 +76,25 @@ Second P8.1 file: A Boy Called Christmas (4K, Silo file 6, approximately 12.8 GB
 
 The owner accepted these functional P8.1 results and seek behaviour as the completed tvOS P8.1 milestone, and authorised proceeding to P5. Preserve this implementation in `VividDolbyVideo`; it is a Dolby extension, not a separate playback core. KSPlayer retains its normal pipeline. Broader P8 variants and HDR10/SDR regression testing remain separate validation items. Atmos has not been started.
 
+### Profile 5 prototype
+
+P8.1 is checkpointed locally at `09ff9af`. The next opt-in stage adds `VIVID_P5_TRIAL` alongside `VIVID_P8_TRIAL` to the same tvOS build. The first fixed P5 test file is **A Dog's Way Home**, 4K, Silo media file **5**, approximately 10.6 GB. Direct probing confirmed HEVC Main 10, 3840×1592, P5 level 6, compatibility 0, BL/RPU present and no enhancement layer. The first P5 hardware result is recorded below; wider compatibility remains unverified.
+
+`VividDolbyVideo.profile5Format` supplies the source P5 configuration as `dvcC` with the `dvh1` codec subtype. It keeps HEVC extradata and compressed RPU packets intact and removes guessed ordinary-HDR colour keys from the P5 decoder description. This follows the P5 sample-description approach in [Apple's HDR metadata specification](https://developer.apple.com/av-foundation/High-Dynamic-Range-Metadata-for-Apple-Devices.pdf); it does not implement a shader conversion or a new decoder. The validated P8.1 format builder is unchanged.
+
+P5 uses the same small KSPlayer hook and existing direct VideoToolbox decoder. An installed output gate is required before P5 can pass Vivid's admission check. Video presentation remains blocked until native configuration succeeds; rejection or a reported decode failure blocks further P5 pictures and terminates playback with a colour-protection error. Unlike P8.1, P5 never receives permission to display the ordinary HDR base fallback. Proper P5-to-HDR/SDR conversion is not implemented. KSPlayer continues to own buffering, timing, seeking, subtitles, rendering and normal audio.
+
+The same bounded trial trace records P5 selection, decoder configuration and display requests. Builds and configuration-packing checks do not prove colours, native TV output, pause/resume or seeking. Test those on the fixed P5 file, then recheck 80 for Brady to confirm P8.1 behaviour is retained. Do not install until the owner authorises the new build.
+
+### First P5 hardware result, 15 September 2026
+
+On Living Room, the owner confirmed A Dog's Way Home (4K, file 5) switched the TV to Dolby Vision, showed no unusual colours, and supported pause and seeking. The retrieved session independently recorded P5 level 6, compatibility 0, native configuration accepted with no fallback, ten-bit output with `DolbyVisionRPUData`, and 2,396 ms to layer readiness. Its 37 samples recorded no stalls. This captured session contains no seek events, so pause/seek success is owner-reported rather than independently timed in this trace. This is a successful first-file P5 result; validate another P5 file and recheck P8.1 on the same build before broadening the milestone. No Atmos work has begun.
+
+The owner also confirmed After Yang (4K, file 74) passed the same P5 playback checks, and rechecked 80 for Brady successfully on the P5 build. P5 is now functionally validated on two files on Living Room, with P8.1 retained. Those additional checks are owner-reported; no additional seek measurements are claimed. The owner authorised the Atmos stage, using HomePods.
+
 ### Public Dolby behaviour and future extension points
 
-- **Profile 5:** the GPL source exposes DV configuration, but reserves native P5/P8 dynamic metadata for paid code. This adapter rejects P5 before starting output rather than displaying IPT-only video as ordinary PQ. Native DV and correct conversion remain unimplemented.
+- **Profile 5:** default builds reject P5. The opt-in native-only prototype above has passed its first owner-confirmed hardware test; an ordinary PQ fallback is never permitted. Proper HDR/SDR conversion is not implemented.
 - **Profile 8:** default builds retain KSPlayer's HDR fallback. The opt-in P8.1 metadata experiment is described above. Correct output and actual TV Dolby Vision remain hardware checks.
 - **Profile 7:** BL-present, HDR10-compatible metadata (compatibility ID 6) permits baseline playback. No FEL reconstruction or custom RPU path is attempted.
 - **EAC3 JOC:** the trial uses the same decoded PCM route as ordinary EAC3. The public track API does not expose an authoritative decoded EAC3 profile, so the adapter logs JOC as unconfirmed and never labels every EAC3 track Atmos. Object metadata is not preserved by this route.
