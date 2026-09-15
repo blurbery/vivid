@@ -23,6 +23,8 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
         with:
           xcode-version: '26.3'
+      - name: Verify source and mpv track ID translation
+        run: python3 scripts/tests/mpv-track-tests.py
       - name: Generate project
         run: |
           set -euo pipefail

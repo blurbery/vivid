@@ -200,9 +200,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 MediaChapter(id: $0.offset, name: $0.element["title"] as? String ?? "Chapter \($0.offset + 1)",
                              startSeconds: $0.element["time"] as? Double ?? 0)
             }
-        case "aid": activeAudioTrackIndex = (value as? String).flatMap(Int.init)
-        case "sid": if externalTracks[activeSubtitleTrackIndex ?? -1] == nil { activeSubtitleTrackIndex = (value as? String).flatMap(Int.init) }
-        case "secondary-sid": if externalTracks[secondarySubtitleID ?? -1] == nil { secondarySubtitleID = (value as? String).flatMap(Int.init) }
+        case "aid": activeAudioTrackIndex = sourceTrackID(mpvID: (value as? String).flatMap(Int.init), type: "audio")
+        case "sid": if externalTracks[activeSubtitleTrackIndex ?? -1] == nil { activeSubtitleTrackIndex = sourceTrackID(mpvID: (value as? String).flatMap(Int.init), type: "sub") }
+        case "secondary-sid": if externalTracks[secondarySubtitleID ?? -1] == nil { secondarySubtitleID = sourceTrackID(mpvID: (value as? String).flatMap(Int.init), type: "sub") }
         case "video-params":
             let info = value as? [String: Any] ?? [:]
             sourceVideoWidth = Int32(clamping: info["w"] as? Int64 ?? 0)
@@ -257,7 +257,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
     private func readTracks() {
         func track(_ info: [String: Any]) -> TrackInfo {
-            TrackInfo(id: Int(info["id"] as? Int64 ?? 0), name: info["title"] as? String ?? "",
+            TrackInfo(id: Int(info["ff-index"] as? Int64 ?? info["id"] as? Int64 ?? 0), name: info["title"] as? String ?? "",
                       codec: info["codec"] as? String ?? "", language: info["lang"] as? String,
                       channels: Int(info["demux-channel-count"] as? Int64 ?? 0),
                       isDefault: info["default"] as? Bool ?? false, isForced: info["forced"] as? Bool ?? false,
@@ -273,14 +273,28 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         videoTrack = rawTracks.first { $0["type"] as? String == "video" } ?? [:]
         sourceDVProfile = (videoTrack["dolby-vision-profile"] as? Int64).flatMap { $0 > 0 ? Int($0) : nil }
         if sourceDVProfile != nil { sourceVideoFormat = .dolbyVision }
+        if let selected = rawTracks.first(where: { $0["type"] as? String == "audio" && $0["selected"] as? Bool == true }) {
+            activeAudioTrackIndex = sourceTrackID(mpvID: (selected["id"] as? Int64).map(Int.init), type: "audio")
+        }
         applyInitialAudioSelection()
+    }
+    private func sourceTrackID(mpvID: Int?, type: String) -> Int? {
+        guard let mpvID,
+              let track = rawTracks.first(where: { $0["type"] as? String == type && $0["id"] as? Int64 == Int64(mpvID) }) else { return nil }
+        return Int(track["ff-index"] as? Int64 ?? Int64(mpvID))
+    }
+    private func mpvTrackID(sourceID: Int, type: String) -> Int? {
+        guard let track = rawTracks.first(where: {
+            $0["type"] as? String == type && Int($0["ff-index"] as? Int64 ?? $0["id"] as? Int64 ?? -1) == sourceID
+        }) else { return nil }
+        return (track["id"] as? Int64).map(Int.init)
     }
     private func applyInitialAudioSelection() {
         guard isSessionReady, !initialAudioApplied, !audioTracks.isEmpty, let source else { return }
         if let streamIndex = source.2 {
             guard let track = rawTracks.first(where: { $0["type"] as? String == "audio" && $0["ff-index"] as? Int64 == Int64(streamIndex) }),
-                  let id = track["id"] as? Int64 else { return }
-            selectAudioTrack(index: Int(id))
+                  track["id"] as? Int64 != nil else { return }
+            selectAudioTrack(index: Int(streamIndex))
         } else if let ordinal = source.1.audioTrackOrdinal, audioTracks.indices.contains(ordinal) {
             selectAudioTrack(index: audioTracks[ordinal].id)
         }
@@ -325,15 +339,18 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         }
         fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "The mpv seek did not complete."))
     }
-    func selectAudioTrack(index: Int) { core?.setProperty("aid", value: String(index)) }
+    func selectAudioTrack(index: Int) {
+        guard let id = mpvTrackID(sourceID: index, type: "audio") else { return }
+        core?.setProperty("aid", value: String(id))
+    }
     func selectSubtitleTrack(index: Int) {
         activeSubtitleTrackIndex = index
-        core?.setProperty("sid", value: externalTracks[index] == nil ? String(index) : "no")
+        core?.setProperty("sid", value: externalTracks[index] == nil ? mpvTrackID(sourceID: index, type: "sub").map(String.init) ?? "no" : "no")
         updateExternalCues()
     }
     func selectSecondarySubtitleTrack(index: Int) {
         secondarySubtitleID = index
-        core?.setProperty("secondary-sid", value: externalTracks[index] == nil ? String(index) : "no")
+        core?.setProperty("secondary-sid", value: externalTracks[index] == nil ? mpvTrackID(sourceID: index, type: "sub").map(String.init) ?? "no" : "no")
         updateExternalCues()
     }
     func clearSubtitle() { activeSubtitleTrackIndex = nil; core?.setProperty("sid", value: "no"); subtitleCues = [] }
