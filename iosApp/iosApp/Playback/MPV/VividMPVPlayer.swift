@@ -278,10 +278,16 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         guard let prefix = data?["prefix"] as? String,
               let text = data?["text"] as? String else { return nil }
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if message.hasPrefix("Too many packets in the demuxer packet queues:") {
+            return "fault=packet_queue_limit"
+        }
+        if prefix == "ao/avfoundation", message == "resuming compressed feed after audio EOF" {
+            return "event=compressed_feed_resumed_after_eof"
+        }
         if ["demux", "demuxer", "cplayer", "ad", "ffmpeg"].contains(prefix)
             || prefix.hasPrefix("ffmpeg/") || prefix.hasPrefix("demux/") {
             let faults = [("Too many packets", "packet_queue_limit"), ("queue overflow", "packet_queue_limit"),
-                          ("EOF", "input_eof"), ("End of file", "input_eof"),
+                          ("EOF", "eof_message"), ("End of file", "eof_message"),
                           ("timed out", "input_timeout"), ("Connection reset", "connection_reset"),
                           ("Error decoding", "decode_error"), ("Invalid data", "invalid_data")]
             if let fault = faults.first(where: { message.contains($0.0) }) { return "fault=\(fault.1)" }
@@ -505,7 +511,7 @@ private final class VividMPVCore: MpvPlayerCore {
                         "osc": "no", "osd-level": "0", "pause": autoplay ? "no" : "yes",
                         "start": String(startPosition), "speed": String(initialRate),
                         "volume": String(initialVolume * 100), "sid": "no", "secondary-sid": "no",
-                        "cache": "yes", "demuxer-max-bytes": "67108864", "demuxer-max-back-bytes": "16777216",
+                        "cache": "yes", "demuxer-max-bytes": "268435456", "demuxer-max-back-bytes": "16777216",
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
         for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value)) }
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }

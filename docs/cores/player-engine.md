@@ -58,7 +58,18 @@ task's resolved artifact cache with that workflow's verified artifact, then
 relink the app. The package lock still describes the upstream package; a normal
 fresh resolution does not include this trial patch. Verify the marker
 `resuming compressed feed after audio EOF` in the linked app binary before
-installing. Native driver build 34964055136 passed; playback validation is pending.
+installing. Native driver build 34964055136 passed. Device testing showed
+compressed audio recovering after silence, but repeated interruptions remained.
+
+The next trial raises the forward demux packet limit from 64 MiB to 256 MiB,
+retaining the 16 MiB back buffer. Dune traces repeatedly hit the old limit while
+the compressed output requested audio ahead of video. mpv 0.41.0 can mark an
+empty stream EOF when the shared packet limit prevents further reads. The larger
+budget gives the Apple driver's 16-second startup lead more room; it is a limit,
+not a requirement to fill the cache before playback. Device verification of
+this change is pending. Diagnostics capture the exact packet-overflow warning
+regardless of demuxer prefix and the native feed-resume marker. Generic EOF
+messages are labelled as messages, not proof that the media file ended.
 
 Embedded subtitle rendering, first frame,
 resume, audio selection and speed changes need physical tvOS testing. At
