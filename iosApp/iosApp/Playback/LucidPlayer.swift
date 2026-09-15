@@ -69,6 +69,9 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
     var preferLosslessAudio = false
 
     private var options: LucidFFOptions?
+    private var nativeAudioAllowed = true
+    private var loadInProgress = false
+    private var audioRecoveryTask: Task<Void, Never>?
     private var source: (url: URL, start: Double, options: LoadOptions, audio: Int32?)?
     private var trace: PlaybackTrialTrace?
     private var generation: UInt64 = 0
@@ -91,18 +94,31 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
 
     override init() {
         super.init()
-        // Use the GPL player's ordinary decoded-PCM path, including E-AC-3 JOC.
+        // Ordinary audio uses the GPL player's decoded-PCM output.
         KSOptions.audioPlayerType = AudioEnginePlayer.self
     }
 
     func load(url: URL, startPosition: Double = 0, options loadOptions: LoadOptions = LoadOptions(),
-              audioSourceStreamIndex: Int32? = nil) async throws {
+              audioSourceStreamIndex: Int32? = nil, nativeAudioAllowed: Bool = true, preserveTrialTrace: Bool = false) async throws {
         stop(resetDisplayCriteria: false)
         let token = generation
+        #if DEBUG && VIVID_ATMOS_TRIAL
+        let useNativeAudio = nativeAudioAllowed && !ProcessInfo.processInfo.arguments.contains("-VividJOCPCMControl")
+        #else
+        let useNativeAudio = nativeAudioAllowed
+        #endif
+        self.nativeAudioAllowed = useNativeAudio
+        loadInProgress = true
+        defer { if generation == token { loadInProgress = false } }
         source = (url, startPosition, loadOptions, audioSourceStreamIndex)
-        trace = PlaybackTrialTrace()
+        trace = PlaybackTrialTrace(preserveRecording: preserveTrialTrace)
         trace?.mark("engine_load")
-        let prepared = LucidFFOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex, milestone: { [weak self, weak trace = trace] name, time in
+        #if DEBUG && VIVID_ATMOS_TRIAL
+        if ProcessInfo.processInfo.arguments.contains("-VividJOCPCMControl") {
+            trace?.event("audio_comparison_mode", fields: "mode=forced_pcm scope=process_launch")
+        }
+        #endif
+        let prepared = LucidFFOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex, nativeAudioAllowed: useNativeAudio, milestone: { [weak self, weak trace = trace] name, time in
             Task { @MainActor in
                 guard self?.generation == token else { return }
                 trace?.mark(name, at: time)
@@ -111,6 +127,7 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             Task { @MainActor in
                 guard self?.generation == token else { return }
                 trace?.event(name, fields: fields)
+                if name == "audio_native_failed" { self?.schedulePCMRecovery(reason: fields) }
                 if name == "p5_native_failed" {
                     self?.fail(PlaybackErrorInfo(kind: .dolbyVisionRequiresHardware,
                         message: "Native Dolby Vision playback could not be established. Playback stopped to avoid incorrect colours."))
@@ -142,7 +159,13 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             }) { [weak self, weak trace] time in
                 Task { @MainActor in
                     guard self?.generation == token else { return }
-                    trace?.mark("audio_render_callback", at: time)
+                    #if VIVID_ATMOS_TRIAL
+                    let event = self?.options?.dolbyAudio.isNative == true
+                        ? "audio_native_clock_callback" : "audio_render_callback"
+                    #else
+                    let event = "audio_render_callback"
+                    #endif
+                    trace?.mark(event, at: time)
                 }
             }
             audioProbe = probe
@@ -158,6 +181,10 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             Task { @MainActor [weak self] in
                 guard let self, self.generation == token else { return }
                 self.logAudioRoute(event: "audio_route_changed")
+                #if VIVID_ATMOS_TRIAL
+                (self.player?.audioOutput as? VividDolbyAudioOutput)?.refreshPCMRouteTiming()
+                self.options?.dolbyAudio.fallback(reason: "audio_route_changed")
+                #endif
             }
         }
         trace?.mark("prepare_requested")
@@ -315,6 +342,13 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
     }
     func selectAudioTrack(index: Int) {
         guard let player, let track = player.tracks(mediaType: .audio).first(where: { Int($0.trackID) == index }) else { return }
+        #if VIVID_ATMOS_TRIAL
+        if options?.dolbyAudio.isNative == true, !track.isEnabled {
+            if var source { source.audio = track.trackID; self.source = source }
+            options?.dolbyAudio.fallback(reason: "audio_track_changed")
+            return
+        }
+        #endif
         player.select(track: track)
         activeAudioTrackIndex = index
         if var source { source.audio = track.trackID; self.source = source }
@@ -328,11 +362,52 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         source.options.autoplay = wantsPlay
         if let headers = await refreshSourceHeaders?() { source.options.httpHeaders = headers }
         guard token == generation, !Task.isCancelled else { throw CancellationError() }
-        try await load(url: source.url, startPosition: position, options: source.options, audioSourceStreamIndex: source.audio)
+        try await load(url: source.url, startPosition: position, options: source.options, audioSourceStreamIndex: source.audio, nativeAudioAllowed: nativeAudioAllowed)
     }
+    /// Reuses the existing KSPlayer load/resume path to discard native queues safely.
+    private func schedulePCMRecovery(reason: String) {
+        guard audioRecoveryTask == nil, nativeAudioAllowed else { return }
+        let token = generation
+        audioRecoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Let the in-flight load/seek finish before replacing its player instance.
+            while self.generation == token && (self.loadInProgress || self.isSeeking) && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard self.generation == token, !Task.isCancelled, self.errorInfo == nil,
+                  var source = self.source else { return }
+            let playhead = self.player?.currentPlaybackTime ?? self.currentTime
+            let position = playhead.isFinite && playhead > 0 ? playhead : source.start
+            let primarySubtitle = self.activeSubtitleTrackIndex
+            let secondarySubtitle = self.secondarySubtitleID
+            source.options.autoplay = self.wantsPlay
+            self.trace?.event("audio_pcm_recovery", fields: "position=\(position) reason=native_output_unavailable")
+            // stop() cancels recovery tasks, so detach this task before its own reload.
+            self.audioRecoveryTask = nil
+            do {
+                try await self.load(url: source.url, startPosition: max(0, position),
+                    options: source.options, audioSourceStreamIndex: source.audio, nativeAudioAllowed: false, preserveTrialTrace: true)
+                self.activeSubtitleTrackIndex = primarySubtitle.flatMap { id in
+                    self.subtitleTracks.contains(where: { $0.id == id }) ? id : nil
+                }
+                self.secondarySubtitleID = secondarySubtitle.flatMap { id in
+                    self.subtitleTracks.contains(where: { $0.id == id }) ? id : nil
+                }
+                self.synchroniseSubtitleSelection()
+                self.trace?.event("audio_pcm_recovery_ready", fields: "\(reason) native_atmos=false")
+            } catch is CancellationError {
+                // A new user load/stop owns the player now.
+            } catch {
+                // load() already records the error for its current generation.
+            }
+        }
+    }
+
     func prepareForItemReplacement() { pause(); hasFirstFrameReadyForDisplay = false }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         generation &+= 1; seekGeneration &+= 1
+        audioRecoveryTask?.cancel(); audioRecoveryTask = nil
+        loadInProgress = false
         options?.invalidateDisplayUpdates()
         trace?.endSeek("seek_cancelled")
         trace?.event("stopped")
@@ -415,6 +490,9 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
     private func tick(token: UInt64) -> Int? {
         guard generation == token, let player else { return nil }
         harvestTimings()
+        #if VIVID_ATMOS_TRIAL
+        (player.audioOutput as? VividDolbyAudioOutput)?.poll()
+        #endif
         let now = player.currentPlaybackTime
         if now.isFinite { clock.currentTime = max(0, now) }
         pictureReady()
@@ -469,10 +547,16 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
 
     private func harvestTimings() {
         guard let options else { return }
+        #if VIVID_ATMOS_TRIAL
+        let audioDecodeEvent = options.dolbyAudio.isNative
+            ? "first_audio_packet_adapted" : "first_audio_decode_submitted"
+        #else
+        let audioDecodeEvent = "first_audio_decode_submitted"
+        #endif
         for (name, time) in [("source_open_completed", options.openTime), ("probe_completed", options.findTime),
                              ("upstream_ready", options.readyTime),
                              ("first_audio_packet", options.readAudioTime), ("first_video_packet", options.readVideoTime),
-                             ("first_audio_decode_submitted", options.decodeAudioTime), ("first_video_decode_submitted", options.decodeVideoTime)] where time > 0 {
+                             (audioDecodeEvent, options.decodeAudioTime), ("first_video_decode_submitted", options.decodeVideoTime)] where time > 0 {
             trace?.mark(name, at: time)
         }
         // Upstream exposes no exact decoder-created timestamp. player_ready is
@@ -490,12 +574,21 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: ahead, observedFps: info?.displayFPS,
             droppedFrameCount: info.map { Int($0.droppedVideoFrameCount) }, avSyncGapMs: info.map { $0.audioVideoSyncDiff * 1000 },
             instantBitrateMbps: mbps, networkThroughputMbps: mbps, networkTransferredBytes: bytes, demuxerBytesFetched: bytes)
-        trace?.event(event, fields: "playhead=\(currentTime) buffer_s=\(ahead) source_bytes=\(bytes) throughput_mbps=\(mbps ?? -1) stalls=\(stallCount) load=\(player.loadState.rawValue) rate=\(player.playbackRate)")
+        trace?.event(event, fields: "playhead=\(currentTime) buffer_s=\(ahead) source_bytes=\(bytes) throughput_mbps=\(mbps ?? -1) stalls=\(stallCount) load=\(player.loadState.rawValue) rate=\(player.playbackRate) video_time=\(player.displayedVideoTime) av_schedule_gap_ms=\((info?.audioVideoSyncDiff ?? 0) * 1000)")
     }
     private func logAudioRoute(event: String) {
         let session = AVAudioSession.sharedInstance()
         let selected = audioTracks.first { $0.id == activeAudioTrackIndex }
-        trace?.event(event, fields: "codec=\(selected?.codec ?? "unknown") source_channels=\(selected?.channels ?? 0) output_channels=\(session.outputNumberOfChannels) maximum_channels=\(session.maximumOutputNumberOfChannels) output=decoded_pcm joc=unconfirmed route=\(session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ","))")
+        let audioMetadata = selected.flatMap { options?.audioClassification(trackID: Int32(clamping: $0.id)) }
+        var audioFields = audioMetadata?.diagnosticFields ?? "joc=unconfirmed"
+        #if VIVID_ATMOS_TRIAL
+        audioFields += options?.dolbyAudio.isNative == true
+            ? " output=native_eac3_trial native_atmos=unverified"
+            : " output=decoded_pcm native_atmos=false"
+        #else
+        audioFields += " output=decoded_pcm native_atmos=false"
+        #endif
+        trace?.event(event, fields: "codec=\(selected?.codec ?? "unknown") source_channels=\(selected?.channels ?? 0) output_channels=\(session.outputNumberOfChannels) maximum_channels=\(session.maximumOutputNumberOfChannels) \(audioFields) route=\(session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ","))")
     }
 
     @discardableResult

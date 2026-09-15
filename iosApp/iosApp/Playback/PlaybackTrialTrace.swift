@@ -11,7 +11,7 @@ final class PlaybackTrialTrace {
     private static let log = Logger(subsystem: "com.blurbery.vivid", category: "PlaybackTrial")
     private static var pendingPlay: Double?
     #if VIVID_P8_TRIAL
-    private let recording = P8TrialRecording()
+    private let recording: P8TrialRecording
     #endif
     static func requestPlay() { pendingPlay = CACurrentMediaTime() }
 
@@ -21,7 +21,10 @@ final class PlaybackTrialTrace {
     private var seekStarted: Double?
     private var seekID = 0
 
-    init() {
+    init(preserveRecording: Bool = false) {
+        #if VIVID_P8_TRIAL
+        recording = P8TrialRecording(preserveExisting: preserveRecording)
+        #endif
         started = Self.pendingPlay ?? CACurrentMediaTime()
         let origin = Self.pendingPlay == nil ? "engine_load" : "play_request"
         Self.pendingPlay = nil
@@ -68,15 +71,21 @@ private final class P8TrialRecording: @unchecked Sendable {
     private var handle: FileHandle?
     private var byteCount = 0
 
-    init() {
+    init(preserveExisting: Bool) {
         Self.queue.async { [self] in
             guard let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
             let url = directory.appendingPathComponent("LucidP8Trial.log")
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                FileManager.default.createFile(atPath: url.path, contents: nil)
+                if !preserveExisting || !FileManager.default.fileExists(atPath: url.path) {
+                    FileManager.default.createFile(atPath: url.path, contents: nil)
+                }
                 handle = try FileHandle(forWritingTo: url)
-                try handle?.truncate(atOffset: 0)
+                if preserveExisting {
+                    byteCount = Int(try handle?.seekToEnd() ?? 0)
+                } else {
+                    try handle?.truncate(atOffset: 0)
+                }
             } catch { handle = nil }
         }
     }

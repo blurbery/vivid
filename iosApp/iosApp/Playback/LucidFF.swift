@@ -9,11 +9,17 @@ import QuartzCore
 
 /// Only adapts Vivid's selection and Match Content policy. Buffer defaults stay upstream.
 final class LucidFFOptions: KSOptions {
+    #if VIVID_ATMOS_TRIAL
+    let dolbyAudio: VividDolbyAudioBridge
+    private weak var dolbyAudioOutput: VividDolbyAudioOutput?
+    #endif
     let matchContent: Bool
     private let audioIndex: Int32?
     private let audioOrdinal: Int?
     private let audioLanguages: [String]
     private let diagnostic: @Sendable (String, String) -> Void
+    private let audioProfileLock = NSLock()
+    private var audioProfiles: [Int32: VividDolbyAudio] = [:]
     private let dolbyLock = NSLock()
     private var dolbyAttempt: (base: CMFormatDescription, native: CMFormatDescription, rate: Float, profile: UInt8)?
     private var dolbyConfigured = false
@@ -28,8 +34,11 @@ final class LucidFFOptions: KSOptions {
     @MainActor private var lastDisplayRate: Float?
     @MainActor private var lastDisplayRange: Int?
 
-    init(load: LoadOptions, start: Double, audioIndex: Int32?, milestone: @escaping @Sendable (String, Double) -> Void,
+    init(load: LoadOptions, start: Double, audioIndex: Int32?, nativeAudioAllowed: Bool = true, milestone: @escaping @Sendable (String, Double) -> Void,
          diagnostic: @escaping @Sendable (String, String) -> Void) {
+        #if VIVID_ATMOS_TRIAL
+        dolbyAudio = VividDolbyAudioBridge(allowed: nativeAudioAllowed, diagnostic: diagnostic)
+        #endif
         matchContent = load.matchContentEnabled
         self.audioIndex = audioIndex
         audioOrdinal = load.audioTrackOrdinal
@@ -45,6 +54,24 @@ final class LucidFFOptions: KSOptions {
         isSeekImageSubtitle = true
     }
 
+    override func videoClockSync(main: KSClock, nextVideoTime: TimeInterval, fps: Double,
+                                 frameCount: Int) -> (Double, ClockProcessType) {
+        let result = super.videoClockSync(main: main, nextVideoTime: nextVideoTime,
+                                         fps: fps, frameCount: frameCount)
+        #if VIVID_ATMOS_TRIAL
+        // Keep the upstream audio clock and correction actions. AirPlay PCM should not
+        // remain nearly four frames late when decoded frames are available to catch up.
+        if !dolbyAudio.isNative, fps.isFinite, fps > 0, result.0.isFinite,
+           result.0 < -2 / fps, frameCount > 1, case .next = result.1 {
+            let ports = AVAudioSession.sharedInstance().currentRoute.outputs
+            if !ports.isEmpty, ports.allSatisfy({ $0.portType == .airPlay }) {
+                return (result.0, .dropNextFrame)
+            }
+        }
+        #endif
+        return result
+    }
+
     override func process(url: URL) -> AbstractAVIOContext? {
         // Public hook on the demux worker, immediately before avformat_open_input.
         milestone("source_open_begins", CACurrentMediaTime())
@@ -56,6 +83,13 @@ final class LucidFFOptions: KSOptions {
         let kind = assetTrack.mediaType == .video ? "video" : assetTrack.mediaType == .audio ? "audio" : "subtitle"
         milestone("\(kind)_stream_selected", CACurrentMediaTime())
         super.process(assetTrack: assetTrack)
+        #if VIVID_ATMOS_TRIAL
+        if assetTrack.mediaType == .audio, let track = assetTrack as? FFmpegAssetTrack {
+            recordAudioProfile(trackID: track.trackID, codecName: track.codecIdentifier,
+                               profile: track.codecProfile, evidence: .streamProfile, reset: true)
+            dolbyAudio.select(track: track, filtersEmpty: audioFilters.isEmpty)
+        }
+        #endif
         #if VIVID_P8_TRIAL
         if assetTrack.mediaType == .video {
             // Use KSPlayer's existing direct VideoToolbox decoder only for eligible P8.1.
@@ -108,6 +142,21 @@ final class LucidFFOptions: KSOptions {
             if let index = tracks.firstIndex(where: { $0.languageCode?.lowercased() == language.lowercased() }) { return index }
         }
         return super.wantedAudio(tracks: tracks)
+    }
+
+    func audioClassification(trackID: Int32) -> VividDolbyAudio? {
+        audioProfileLock.lock(); defer { audioProfileLock.unlock() }
+        return audioProfiles[trackID]
+    }
+
+    private func recordAudioProfile(trackID: Int32, codecName: String, profile: Int32,
+                                    evidence: VividDolbyAudio.Evidence, reset: Bool = false) {
+        let detected = VividDolbyAudio(codec: codecName, profile: profile == -99 ? nil : profile, evidence: evidence)
+        audioProfileLock.lock()
+        let classification = detected.retainingJOC(from: reset ? nil : audioProfiles[trackID])
+        audioProfiles[trackID] = classification
+        audioProfileLock.unlock()
+        diagnostic("audio_classified", "track=\(trackID) " + classification.diagnosticFields)
     }
 
     func installP5VideoGate() {
@@ -217,6 +266,14 @@ extension LucidFFOptions: KSVideoFormatDescriptionProvider {
 }
 #endif
 
+#if VIVID_ATMOS_TRIAL
+extension LucidFFOptions: KSAudioProfileObserver {
+    func didDecodeAudioProfile(trackID: Int32, codecName: String, profile: Int32) {
+        recordAudioProfile(trackID: trackID, codecName: codecName, profile: profile, evidence: .decodedProfile)
+    }
+}
+#endif
+
 /// A bounded await must also finish when upstream cancels or replaces a seek.
 final class LucidSeekResult: @unchecked Sendable {
     private let lock = NSLock()
@@ -260,7 +317,15 @@ final class LucidRenderProbe: OutputRenderSourceDelegate {
         let frame = source?.getAudioOutputRender()
         if frame != nil {
             lock.lock(); let report = firstAudio; firstAudio = false; lock.unlock()
-            if report { available("first_decoded_audio_retrieved", CACurrentMediaTime()) }
+            if report {
+                #if VIVID_ATMOS_TRIAL
+                let event = frame?.compressedSampleBuffer == nil
+                    ? "first_decoded_audio_retrieved" : "first_compressed_audio_retrieved"
+                #else
+                let event = "first_decoded_audio_retrieved"
+                #endif
+                available(event, CACurrentMediaTime())
+            }
         }
         return frame
     }
@@ -272,6 +337,32 @@ final class LucidRenderProbe: OutputRenderSourceDelegate {
         first = false
         lock.unlock()
         if report { rendered(CACurrentMediaTime()) }
+    }
+}
+#endif
+
+#if os(tvOS) && VIVID_ATMOS_TRIAL
+extension LucidFFOptions: KSAudioPacketProvider {
+    func makeAudioOutput() -> AudioOutput {
+        let output = VividDolbyAudioOutput(bridge: dolbyAudio)
+        dolbyAudioOutput = output
+        return output
+    }
+    func audioSampleBuffer(for track: FFmpegAssetTrack, bytes: UnsafeRawBufferPointer,
+                           presentationTime: CMTime) -> CMSampleBuffer? {
+        dolbyAudio.sample(track: track, bytes: bytes, time: presentationTime)
+    }
+}
+#endif
+
+#if os(tvOS) && VIVID_ATMOS_TRIAL
+extension LucidFFOptions: KSVideoPresentationTimebaseProvider {
+    var usesSynchronizedVideoTiming: Bool { dolbyAudio.isNative }
+    @MainActor func prepareVideoPresentation(layer: AVSampleBufferDisplayLayer) -> Bool {
+        dolbyAudioOutput?.synchroniseVideo(layer: layer) ?? false
+    }
+    @MainActor func resetVideoPresentationTime(to time: CMTime) {
+        dolbyAudioOutput?.resetTimeline(to: time)
     }
 }
 #endif
