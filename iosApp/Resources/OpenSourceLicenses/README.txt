@@ -66,9 +66,8 @@ FFmpegBuild and embedded media frameworks (iOS)
   nonfree components. FFmpegBuild removes the three GPL libzvbi source files
   before compilation and publishes the replacement stubs and patches in its
   build.sh. The app embeds these nine libraries as separate dynamic
-  frameworks: AetherLibavcodec, AetherLibavformat, AetherLibavutil,
-  AetherLibswresample, AetherLibswscale, AetherLibavfilter, AetherLibdav1d,
-  AetherLibzimg, and AetherLibzvbi.
+  frameworks containing libavcodec, libavformat, libavutil, libswresample,
+  libswscale, libavfilter, dav1d, zimg, and libzvbi.
 
   "Currently" records the tags' dereferenced values observed on 2026-09-04.
   FFmpegBuild's script records tag names rather than immutable upstream

@@ -11,7 +11,7 @@ These cores describe responsibility boundaries. They are not a claim that the cu
 
 ## Player ownership
 
-Vivid owns playback controls and focus, play/pause and seeking, version/audio/subtitle selection, platform Info panels, loading presentation, resume, the episode countdown and playback reporting. Its capped quality modes can perform one lower-bitrate reload after sustained buffering; Auto and Original are not enrolled. AetherEngine owns media execution on Apple TV through one session with automatic native Apple and software paths. VividKit retains that role on iPhone and iPad. The tvOS AVPlayerViewController hosts native picture and system playback integration while Vivid keeps its own controls and persistent Next Up surface.
+Vivid owns playback controls and focus, play/pause and seeking, version/audio/subtitle selection, platform Info panels, loading presentation, resume, the episode countdown and playback reporting. Its capped quality modes can perform one lower-bitrate reload after sustained buffering; Auto and Original are not enrolled. Lucid Engine owns media execution on Apple TV. VividKit retains that role on iPhone and iPad. Lucid Engine presents video in Vivid’s persistent surface, with Vivid’s own controls and Next Up integration.
 
 Shared player fixes belong here so each server core uses the same behaviour. Server-specific authentication, requests, session negotiation and progress persistence belong behind the relevant server connection. A new server core should translate its data into the shared player rather than copy Vivid’s controls or implement a separate player.
 

@@ -70,9 +70,8 @@ on it for material whose copyright holders have not granted it.
 
 Third-party and earlier-version rights
 -------------------------------------
-This permission does not change the licences of AetherEngine, FFmpeg,
-FriBidi, other libraries, Apple sample code, or third-party artwork and
-services. AetherEngine's own Apple Store / DRM Exception remains separate.
+This permission does not change the licences of FFmpeg, FriBidi, other
+libraries, Apple sample code, or third-party artwork and services.
 All applicable notices and third-party source, replacement and relinking
 rights must be preserved. See THIRD_PARTY_NOTICES.md and the bundled
 OpenSourceLicenses resources for the component inventory.

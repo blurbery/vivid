@@ -12,7 +12,7 @@ on:
       - 'iosApp/**/Package.resolved'
       - '.github/workflows/player-regression.yml'
   push:
-    branches: [fix/next-up-persistent-surface, test/aether-playback]
+    branches: [fix/next-up-persistent-surface]
   workflow_dispatch:
     inputs:
       baseline_ref:
