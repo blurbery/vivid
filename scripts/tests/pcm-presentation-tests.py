@@ -11,6 +11,15 @@ parser.add_argument("module_cache", type=Path)
 args = parser.parse_args()
 source = args.audio_engine_source.read_text()
 clock = source.split("public enum KSAudioPresentationClock {", 1)[1].split("\npublic protocol AudioOutput:", 1)[0]
+options = (args.audio_engine_source.parent.parent / "AVPlayer/KSOptions.swift").read_text()
+start = options.index("public struct KSClock {")
+end = options.index("\n}", start) + 2
+ks_clock = options[start:end]
+clock_stubs = """
+var testHostTime = 100.0
+func CACurrentMediaTime() -> Double { testHostTime }
+public struct CMTime { public var seconds: Double; public static let zero = CMTime(seconds: 0) }
+"""
 checks = r'''
 var checks = 0
 func expect(_ value: Double?, _ expected: Double) {
@@ -43,12 +52,31 @@ precondition(map(100, 0, 1536, 0, 2) == nil)
 precondition(map(100, 0, 1536, -48000, 2) == nil)
 precondition(map(100, 0, 1536, 48000, -1) == nil)
 checks += 4
-print("Passed \(checks) render-presentation mapping checks. Hardware sync remains unverified.")
+// Exercise the actual KSClock with delayed delivery and a controlled host clock.
+var playbackClock = KSClock()
+for delay in [0.0, 0.005, 0.024, 0.100] {
+    let sampleHost = testHostTime + 1
+    testHostTime = sampleHost + delay
+    precondition(playbackClock.setAudioTime(CMTime(seconds: 10), sampledHostTime: sampleHost))
+    expect(playbackClock.getTime(), 10 + delay)
+}
+let oldHost = testHostTime - 0.010
+playbackClock.time = CMTime(seconds: 50) // Seek/reset invalidates an older queued update.
+precondition(!playbackClock.setAudioTime(CMTime(seconds: 10), sampledHostTime: oldHost))
+expect(playbackClock.getTime(), 50)
+precondition(!playbackClock.setAudioTime(CMTime(seconds: 10), sampledHostTime: testHostTime + 1))
+for invalid in [Double.nan, Double.infinity, -Double.infinity] {
+    precondition(!playbackClock.setAudioTime(CMTime(seconds: invalid), sampledHostTime: testHostTime))
+    precondition(!playbackClock.setAudioTime(CMTime(seconds: 10), sampledHostTime: invalid))
+    checks += 2
+}
+checks += 6
+print("Passed \(checks) render-presentation and clock-handoff checks. Hardware sync remains unverified.")
 '''
 with tempfile.TemporaryDirectory(prefix="vivid-pcm-clock-") as temporary:
     root = Path(temporary)
     swift = root / "main.swift"
-    swift.write_text("import Foundation\npublic enum KSAudioPresentationClock {" + clock + checks)
+    swift.write_text("import Foundation\npublic enum KSAudioPresentationClock {" + clock + clock_stubs + ks_clock + checks)
     executable = root / "checks"
     subprocess.run(["swiftc", "-module-cache-path", str(args.module_cache), str(swift), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

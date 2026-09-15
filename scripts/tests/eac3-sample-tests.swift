@@ -31,6 +31,19 @@ struct EAC3SampleTests {
         check(CMSampleBufferGetNumSamples(result) == 1)
         check(CMSampleBufferGetPresentationTimeStamp(result) == pts)
         check(abs(CMSampleBufferGetDuration(result).seconds - 0.032) < 0.000001)
+        var descriptions: UnsafePointer<AudioStreamPacketDescription>?
+        var descriptionBytes = 0
+        check(CMSampleBufferGetAudioStreamPacketDescriptionsPtr(result, packetDescriptionsPointerOut: &descriptions, sizeOut: &descriptionBytes) == noErr)
+        check(descriptionBytes == MemoryLayout<AudioStreamPacketDescription>.size)
+        check(descriptions?.pointee.mVariableFramesInPacket == 0)
+        // Constant packet duration must agree with successive source PTS, including long runs.
+        let frameDuration = CMTime(value: 1536, timescale: 48000)
+        for index: Int64 in [1, 3125, 18750] {
+            let time = pts + CMTime(value: 1536 * index, timescale: 48000)
+            let next = sample(bytes, time: time)!
+            check(CMSampleBufferGetPresentationTimeStamp(next) == time)
+            check(CMTimeCompare(CMSampleBufferGetDuration(next), frameDuration) == 0)
+        }
         let format = CMSampleBufferGetFormatDescription(result)!
         let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(format)!.pointee
         check(asbd.mFormatID == kAudioFormatEnhancedAC3)

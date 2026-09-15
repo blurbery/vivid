@@ -60,9 +60,9 @@ final class LucidFFOptions: KSOptions {
                                          fps: fps, frameCount: frameCount)
         #if VIVID_ATMOS_TRIAL
         // Keep the upstream audio clock and correction actions. AirPlay PCM should not
-        // remain nearly four frames late when decoded frames are available to catch up.
+        // retain a missed display frame when decoded frames are available to catch up.
         if !dolbyAudio.isNative, fps.isFinite, fps > 0, result.0.isFinite,
-           result.0 < -2 / fps, frameCount > 1, case .next = result.1 {
+           result.0 < -1 / fps, frameCount > 1, case .next = result.1 {
             let ports = AVAudioSession.sharedInstance().currentRoute.outputs
             if !ports.isEmpty, ports.allSatisfy({ $0.portType == .airPlay }) {
                 return (result.0, .dropNextFrame)

@@ -32,6 +32,22 @@
  open class KSOptions {
      /// 最低缓存视频时间
      @Published
+@@ -682,6 +707,15 @@
+         }
+     }
+ 
++    /// Preserve the host anchor across a queued clock update. Reject stale updates after reset.
++    mutating func setAudioTime(_ value: CMTime, sampledHostTime: CFTimeInterval) -> Bool {
++        guard value.seconds.isFinite, sampledHostTime.isFinite,
++              sampledHostTime >= lastMediaTime, sampledHostTime <= CACurrentMediaTime() else { return false }
++        time = value
++        lastMediaTime = sampledHostTime
++        return true
++    }
++
+     func getTime() -> TimeInterval {
+         time.seconds + CACurrentMediaTime() - lastMediaTime
+     }
 --- a/Sources/KSPlayer/MEPlayer/VideoToolboxDecode.swift
 +++ b/Sources/KSPlayer/MEPlayer/VideoToolboxDecode.swift
 @@ -52,6 +52,7 @@
@@ -186,7 +202,22 @@
                      if let controlTimebase = self.videoOutput?.displayLayer.controlTimebase {
 --- a/Sources/KSPlayer/MEPlayer/Model.swift
 +++ b/Sources/KSPlayer/MEPlayer/Model.swift
-@@ -242,6 +242,14 @@
+@@ -32,7 +32,14 @@
+     func getVideoOutputRender(force: Bool) -> VideoVTBFrame?
+     func getAudioOutputRender() -> AudioFrame?
+     func setAudio(time: CMTime, position: Int64)
++    func setAudio(time: CMTime, position: Int64, sampledHostTime: CFTimeInterval)
+     func setVideo(time: CMTime, position: Int64)
++}
++
++public extension OutputRenderSourceDelegate {
++    func setAudio(time: CMTime, position: Int64, sampledHostTime: CFTimeInterval) {
++        setAudio(time: time, position: position)
++    }
+ }
+ 
+ protocol CodecCapacityDelegate: AnyObject {
+@@ -242,6 +249,14 @@
  }
  
  public final class AudioFrame: MEFrame {
@@ -201,7 +232,7 @@
      public let dataSize: Int
      public let audioFormat: AVAudioFormat
      public internal(set) var timebase = Timebase.defaultValue
-@@ -331,6 +339,7 @@
+@@ -331,6 +346,7 @@
      }
  
      public func toPCMBuffer() -> AVAudioPCMBuffer? {
@@ -209,7 +240,7 @@
          guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: numberOfSamples) else {
              return nil
          }
-@@ -358,6 +367,7 @@
+@@ -358,6 +374,7 @@
      }
  
      public func toCMSampleBuffer() -> CMSampleBuffer? {
@@ -219,7 +250,22 @@
          guard let outBlockListBuffer else {
 --- a/Sources/KSPlayer/MEPlayer/MEPlayerItem.swift
 +++ b/Sources/KSPlayer/MEPlayer/MEPlayerItem.swift
-@@ -913,9 +913,11 @@
+@@ -859,6 +859,14 @@
+         }
+     }
+ 
++    public func setAudio(time: CMTime, position: Int64, sampledHostTime: CFTimeInterval) {
++        runOnMainThread {
++            if self.audioClock.setAudioTime(time, sampledHostTime: sampledHostTime) {
++                self.audioClock.position = position
++            }
++        }
++    }
++
+     public func getVideoOutputRender(force: Bool) -> VideoVTBFrame? {
+         guard let videoTrack else {
+             return nil
+@@ -913,9 +921,11 @@
  
      public func getAudioOutputRender() -> AudioFrame? {
          if let frame = audioTrack?.getOutputRender(where: nil) {
@@ -421,8 +467,8 @@
 +        if let latency = renderPresentationLatency, let end = lastCopiedMediaEnd,
 +           timestamp.mFlags.contains(.hostTimeValid),
 +           timestamp.mHostTime != 0, let sampleRate = sourceNodeAudioFormat?.sampleRate {
-+            let hostDelay = AVAudioTime.seconds(forHostTime: timestamp.mHostTime) -
-+                CMClockGetTime(CMClockGetHostTimeClock()).seconds
++            let sampledHostTime = CACurrentMediaTime()
++            let hostDelay = AVAudioTime.seconds(forHostTime: timestamp.mHostTime) - sampledHostTime
 +            let copied = numberOfFrames - numberOfSamples
 +            if let now = KSAudioPresentationClock.mediaTime(end: end.seconds, hostDelay: hostDelay,
 +                                                           frames: copied, sampleRate: sampleRate, latency: latency) {
@@ -432,7 +478,7 @@
 +                    presentationLatencyLock.unlock()
 +                }
 +                renderSource?.setAudio(time: CMTime(seconds: now, preferredTimescale: end.timescale),
-+                                      position: lastCopiedPosition)
++                                      position: lastCopiedPosition, sampledHostTime: sampledHostTime)
 +            }
          }
          let sizeCopied = (numberOfFrames - numberOfSamples) * sampleSize

@@ -56,7 +56,7 @@ final class VividEAC3Sample {
             CMBlockBufferReplaceDataBytes(with: base, blockBuffer: block,
                 offsetIntoDestination: 0, dataLength: bytes.count) == noErr else { return nil }
         var packet = AudioStreamPacketDescription(mStartOffset: 0,
-            mVariableFramesInPacket: 1536, mDataByteSize: UInt32(bytes.count))
+            mVariableFramesInPacket: 0, mDataByteSize: UInt32(bytes.count))
         var sample: CMSampleBuffer?
         guard CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: kCFAllocatorDefault,
             dataBuffer: block, formatDescription: format, sampleCount: 1,

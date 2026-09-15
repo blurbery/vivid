@@ -178,6 +178,18 @@ When this source mapping is used, the later output callback does not overwrite i
 
 `scripts/tests/pcm-presentation-tests.py` compiles the pure calculation extracted from the actual patched `AudioEnginePlayer.swift`. Its 25 checks passed for timestamp mapping, buffer-size and sample-rate invariance, late callbacks, long playback/seek anchors and invalid inputs. These are arithmetic checks, not hardware lip-sync measurements. Run with the patched source path and the retained Swift module-cache path. Retest the same **80 for Brady** scene in PCM control mode on default HomePods before claiming success or returning to native JOC.
 
+The latest HomePod PCM trace held about 4 ms of scheduling lag initially, then about 46 ms after a single-frame step. The AirPlay-only catch-up threshold now corrects lag exceeding one video frame when another decoded frame is available, retaining upstream hold and stronger recovery actions. The installed catch-up trial held approximately 24 ms scheduling lag for two minutes, but the owner still reported a slight audible mismatch.
+
+The next PCM trial preserves the source callback host timestamp through the asynchronous main-thread audio-clock update. Previously the sampled media time was anchored at delivery, leaving the clock behind by the handoff delay. Only the opt-in render-host path uses the timestamped update; ordinary output and native JOC retain their existing calls. KSClock rejects timestamps older than its last anchor, including updates queued before a seek/reset. Focused tests exercise delayed delivery and stale/invalid anchors. The signed tvOS build and 42 clock-mapping/handoff checks passed, alongside 26 scheduling checks. The installed build was owner-reported as nearly in sync, with a possible increase in mismatch after seeking. The seek trace showed a transient approximately two-second picture lead, then approximately 6 ms scheduling lag for over a minute. These values do not measure audible lip sync, and HomePod synchronisation remains unresolved. Video scheduling was unchanged for this handoff test.
+
+The current direction retains KSPlayer’s architecture. A shared Apple-output redesign is deferred, and further native Atmos work is paused until HomePod PCM synchronisation is reliable during normal playback, pause/resume and seek.
+
+### Packet-description review correction
+
+The external review correctly identified that constant-frame EC-3 packets should set `mVariableFramesInPacket` to zero; the ASBD continues to specify 1,536 frames per packet. This isolated native-adapter correction passed 32 construction/classification checks, including inspection of the packet description and exact 32 ms duration with source timestamps through ten minutes. The previous construction checks also reported 32 ms with the old field value, so this does not establish accumulated duration error as the cause of audible drift. The correction is included in the installed trial build; the current forced-PCM test does not exercise this compressed-audio adapter.
+
+Existing HomePod traces report 2.0 seconds session latency and 2.085333 seconds source-node presentation latency. They do not support the concern that the node omits the approximately two-second AirPlay delay. Observer diagnosis would require counts of active registrations/removals and anchor transitions; counting play entries alone does not distinguish a valid retry from an overlapping registration.
+
 ### Public Dolby behaviour and future extension points
 
 - **Profile 5:** default builds reject P5. The opt-in native-only prototype above has passed its first owner-confirmed hardware test; an ordinary PQ fallback is never permitted. Proper HDR/SDR conversion is not implemented.
