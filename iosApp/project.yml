@@ -47,6 +47,7 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
       configs:
         Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG VIVID_MPV_EXPERIMENT VIVID_P8_TRIAL"
           APS_ENVIRONMENT: development
         Release:
           APS_ENVIRONMENT: production

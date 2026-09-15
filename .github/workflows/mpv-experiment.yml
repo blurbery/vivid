@@ -30,6 +30,20 @@ jobs:
           echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
           /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project.yml
+      - name: Resolve pinned mpv binaries
+        run: |
+          xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj -scheme VividTV -derivedDataPath /tmp/vivid-trial
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/vivid-trial/SourcePackages/artifacts')
+          binaries = [p for p in root.rglob('Libmpv') if p.is_file() and '.framework' in str(p)]
+          assert binaries, 'Missing resolved libmpv binaries'
+          for path in binaries:
+              data = path.read_bytes()
+              assert b'elementary stream window overflow' in data, f'Missing custom AVPlayer output: {path}'
+              assert b'compressed-lead' in data, f'Missing compressed buffering patch: {path}'
+          print('Verified patched AVPlayer audio output in resolved libmpv binaries')
+          PY
       - name: Build tvOS trial
         run: |
           set -o pipefail

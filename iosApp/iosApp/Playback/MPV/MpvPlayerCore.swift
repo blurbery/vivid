@@ -304,7 +304,7 @@ class MpvPlayerCore: MpvPlayerCoreBase {
     primaries: String?,
     colorMatrix: String?
   ) -> Bool {
-    guard matchContentEnabled else { return }
+    guard matchContentEnabled else { return false }
     #if os(tvOS)
       guard let window = containerView?.window ?? self.window else { return false }
       let displayManager = window.avDisplayManager

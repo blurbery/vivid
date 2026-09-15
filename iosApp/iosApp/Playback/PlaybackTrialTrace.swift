@@ -75,7 +75,7 @@ private final class P8TrialRecording: @unchecked Sendable {
     init(preserveExisting: Bool) {
         Self.queue.async { [self] in
             guard let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
-            let url = directory.appendingPathComponent("LucidP8Trial.log")
+            let url = directory.appendingPathComponent("MPVTrial.log")
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 if !preserveExisting || !FileManager.default.fileExists(atPath: url.path) {

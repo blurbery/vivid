@@ -163,12 +163,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             guard generation == token else { throw CancellationError() }
             if let errorInfo { throw errorInfo }
             if isSessionReady {
-                if let index = audioSourceStreamIndex {
-                    // ff-index and mpv track id are distinct namespaces.
-                    selectAudioStream(index)
-                } else if let ordinal = options.audioTrackOrdinal, audioTracks.indices.contains(ordinal) {
-                    selectAudioTrack(index: audioTracks[ordinal].id)
-                }
+                applyInitialAudioSelection()
                 for track in options.externalSubtitles { _ = addExternalSubtitleTrack(track) }
                 return
             }
@@ -188,6 +183,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         ("avsync", "double"), ("frame-drop-count", "double")
     ]
     private var rawTracks: [[String: Any]] = []
+    private var initialAudioApplied = false
     fileprivate func property(_ name: String, value: Any?, token: UInt64) {
         guard token == generation else { return }
         switch name {
@@ -235,7 +231,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     fileprivate func event(_ name: String, data: [String: Any]?, token: UInt64) {
         guard token == generation else { return }
         switch name {
-        case "file-loaded": isSessionReady = true; startupProgress = nil; updatePhase(); trace?.mark("mpv_file_loaded")
+        case "file-loaded": isSessionReady = true; startupProgress = nil; applyInitialAudioSelection(); updatePhase(); trace?.mark("mpv_file_loaded")
         case "playback-restart":
             hasFirstFrameReadyForDisplay = true; isSeeking = false; isBuffering = false
             updatePhase(); trace?.mark("mpv_playback_restart")
@@ -275,10 +271,18 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         videoTrack = rawTracks.first { $0["type"] as? String == "video" } ?? [:]
         sourceDVProfile = (videoTrack["dolby-vision-profile"] as? Int64).flatMap { $0 > 0 ? Int($0) : nil }
         if sourceDVProfile != nil { sourceVideoFormat = .dolbyVision }
+        applyInitialAudioSelection()
     }
-    private func selectAudioStream(_ index: Int32) {
-        if let track = rawTracks.first(where: { $0["type"] as? String == "audio" && $0["ff-index"] as? Int64 == Int64(index) }),
-           let id = track["id"] as? Int64 { selectAudioTrack(index: Int(id)) }
+    private func applyInitialAudioSelection() {
+        guard isSessionReady, !initialAudioApplied, !audioTracks.isEmpty, let source else { return }
+        if let streamIndex = source.2 {
+            guard let track = rawTracks.first(where: { $0["type"] as? String == "audio" && $0["ff-index"] as? Int64 == Int64(streamIndex) }),
+                  let id = track["id"] as? Int64 else { return }
+            selectAudioTrack(index: Int(id))
+        } else if let ordinal = source.1.audioTrackOrdinal, audioTracks.indices.contains(ordinal) {
+            selectAudioTrack(index: audioTracks[ordinal].id)
+        }
+        initialAudioApplied = true
     }
     func play() { wantsPlay = true; core?.setProperty("pause", value: "no"); updatePhase() }
     func pause() { wantsPlay = false; core?.setProperty("pause", value: "yes"); updatePhase() }
@@ -289,7 +293,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func seek(to seconds: Double) async {
         guard let core, seconds.isFinite else { return }
         let token = generation
-        isSeeking = true; updatePhase()
+        isSeeking = true; state = .seeking; updatePhase()
         core.command(["seek", String(max(0, duration > 0 ? min(seconds, duration) : seconds)), "absolute+exact"])
         for _ in 0..<300 {
             try? await Task.sleep(for: .milliseconds(50))
@@ -353,6 +357,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         isSessionReady = false; isSeeking = false; isBuffering = false
         hasFirstFrameReadyForDisplay = false; errorInfo = nil; startupProgress = nil
         clock.currentTime = 0; duration = 0; audioTracks = []; subtitleTracks = []; mediaChapters = []
+        initialAudioApplied = false
         rawTracks = []; videoTrack = [:]; externalTracks = [:]; externalCues = [:]
         for task in subtitleTasks.values { task.cancel() }; subtitleTasks = [:]
         isLoadingSubtitles = false; subtitleCues = []; secondarySubtitleCues = []
@@ -383,6 +388,7 @@ private final class VividMPVCore: MpvPlayerCore {
     var audioLanguages: [String] = []
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": "ac3,eac3",
+                        "audio-exclusive": "yes", "audio-channels": "auto-safe",
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osc": "no", "osd-level": "0", "pause": autoplay ? "no" : "yes",
                         "start": String(startPosition), "speed": String(initialRate),
