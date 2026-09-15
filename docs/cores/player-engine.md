@@ -1,8 +1,10 @@
 # Vivid playback engine
 
-## Active tvOS experiment
+## Lucid on tvOS
 
-The `plezy-mpv-experiment` branch starts from KSPlayer checkpoint `575e3c9`;
+Lucid is Vivid’s player name in the app. This branch uses the Plezy/mpv
+implementation; upstream package names and licence acknowledgements remain
+intact. The `plezy-mpv-experiment` branch starts from KSPlayer checkpoint `575e3c9`;
 `ksplayer-trial` retains that checkpoint and the existing PCM/native trials.
 Generate `iosApp/project.yml` with XcodeGen to build the isolated mpv
 experiment. Restore the KSPlayer source and configuration by switching to
@@ -29,8 +31,10 @@ The initial revision passed a full arm64 tvOS simulator build and checks for
 the pinned dependency graph and custom AVPlayer output in the downloaded
 libmpv binaries. The code at `bb4bc1e` also passed an unsigned arm64 physical Apple TV target
 build, the pinned-binary checks and 15 production track-ID translation checks
-in GitHub Actions. This experiment has not been installed or verified on
-Living Room. Build success does not establish sync, Dolby Vision or Atmos.
+in GitHub Actions. The later buffer and native EOF fixes have been installed on Living Room.
+The user confirmed Dune 1, Dune 2, seeking and synchronised playback; earlier
+Punisher testing confirmed Dolby Vision. These observations do not establish
+Atmos output.
 
 ### Retained routes and provenance
 

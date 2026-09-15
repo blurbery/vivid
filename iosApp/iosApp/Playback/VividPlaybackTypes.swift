@@ -10,7 +10,7 @@ import VividKit
 #if os(tvOS)
 /// Vivid-owned branding; upstream package and licence identities remain intact.
 enum LucidCore {
-    static let name = "mpv experiment"
+    static let name = "Lucid"
     static let path = "Plezy/mpv"
 }
 #endif

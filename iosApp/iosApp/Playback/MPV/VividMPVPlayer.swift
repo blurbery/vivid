@@ -148,7 +148,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         delegateProxy = proxy; instance.delegate = proxy
         core = instance
         guard instance.initialize(in: window, hostView: surface) else {
-            let error = PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "The mpv experiment could not initialise.")
+            let error = PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Lucid could not initialise.")
             fail(error); throw error
         }
         surface.core = instance
@@ -228,7 +228,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             outputAudioFormat = info["format"] as? String
             trace?.event("mpv_audio_output", fields: "format=\(outputAudioFormat ?? "unknown") channels=\(outputChannels ?? 0) apple_mode=\(AVAudioSession.sharedInstance().renderingMode.rawValue)")
         case "audio-codec-name": audioDecoder = value as? String
-        case "hwdec-current": videoDecoder = (value as? String).map { "mpv (\($0))" }
+        case "hwdec-current": videoDecoder = (value as? String).map { "Lucid (\($0))" }
         case "container-fps": sourceVideoFrameRate = value as? Double
         case "demuxer-cache-duration", "avsync", "frame-drop-count":
             var stats = diagnostics.liveTelemetry ?? LiveTelemetry()
