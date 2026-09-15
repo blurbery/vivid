@@ -13,6 +13,17 @@ final class LucidFFOptions: KSOptions {
     let dolbyAudio: VividDolbyAudioBridge
     private weak var dolbyAudioOutput: VividDolbyAudioOutput?
     #endif
+    var activeDynamicRange: DynamicRange? {
+        dolbyLock.lock(); defer { dolbyLock.unlock() }
+        guard dolbyConfigured, !dolbyFailed, dolbyAttempt?.native != nil else { return nil }
+        return .dolbyVision
+    }
+    var activeDolbyProfileLabel: String? {
+        dolbyLock.lock(); defer { dolbyLock.unlock() }
+        guard dolbyConfigured, !dolbyFailed, let attempt = dolbyAttempt else { return nil }
+        // The profile-8 native adapter accepts compatibility 1 only.
+        return attempt.profile == 8 ? "DV Profile 8.1" : attempt.profile == 5 ? "DV Profile 5" : nil
+    }
     let matchContent: Bool
     private let audioIndex: Int32?
     private let audioOrdinal: Int?
@@ -58,6 +69,9 @@ final class LucidFFOptions: KSOptions {
                                  frameCount: Int) -> (Double, ClockProcessType) {
         #if VIVID_ATMOS_TRIAL
         if isUseDisplayLayer(), let admission = dolbyAudioOutput?.pcmVideoAdmission(nextTime: nextVideoTime, fps: fps) {
+            return (admission.gap, admission.enqueue ? .next : .remain)
+        }
+        if isUseDisplayLayer(), let admission = dolbyAudioOutput?.nativeVideoAdmission(nextTime: nextVideoTime, fps: fps) {
             return (admission.gap, admission.enqueue ? .next : .remain)
         }
         #endif

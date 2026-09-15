@@ -14,6 +14,7 @@ final class VividDolbyAudioBridge {
     private var eligible = false
     private var failed = false
     private var firstPacket = true
+    private var preparedChannelCount: Int?
     private var rate: Float = 1
     private let diagnostic: @Sendable (String, String) -> Void
 
@@ -25,6 +26,15 @@ final class VividDolbyAudioBridge {
     var isNative: Bool {
         lock.lock(); defer { lock.unlock() }
         return allowed && eligible
+    }
+
+    var outputChannelCount: Int? {
+        lock.lock(); defer { lock.unlock() }
+        return preparedChannelCount
+    }
+
+    func recordOutputFormat(_ format: AVAudioFormat) {
+        lock.lock(); preparedChannelCount = Int(format.channelCount); lock.unlock()
     }
 
     func select(track: FFmpegAssetTrack, filtersEmpty: Bool) {
@@ -74,13 +84,41 @@ final class VividDolbyAudioBridge {
 
 /// Selects timestamped PCM or the opt-in compressed sample-buffer output per load.
 /// Recovery creates a fresh PCM load, so the two outputs never share queued audio.
-final class VividDolbyAudioOutput: AudioOutput {
+final class VividDolbyAudioOutput: AudioOutput, KSAudioOutputChannelPolicy {
+    // Only the opt-in PCM trial installs this output type in KSOptions.
+    static func outputChannelCount(sourceChannels: AVAudioChannelCount) -> AVAudioChannelCount? {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-VividPCMMultichannelTrial"),
+              !arguments.contains("-VividJOCNativeTrial") || arguments.contains("-VividJOCPCMControl") else { return nil }
+        let session = AVAudioSession.sharedInstance()
+        if #available(tvOS 17.2, *) {
+            let ports = session.currentRoute.outputs
+            return preservedPCMChannelCount(source: sourceChannels,
+                supported: session.supportedOutputChannelLayouts.map { $0.channelCount },
+                airPlay: !ports.isEmpty && ports.allSatisfy { $0.portType == .airPlay })
+        }
+        #endif
+        return nil
+    }
+
+    static func preservedPCMChannelCount(source: UInt32, supported: [UInt32], airPlay: Bool) -> UInt32? {
+        guard airPlay, source == 6 || source == 8, supported.contains(source) else { return nil }
+        return source
+    }
+
+    private var previousMultichannelSupport: Bool?
+    private var preparedLayoutTag: UInt32?
+
     private let bridge: VividDolbyAudioBridge?
     private var output: AudioOutput?
     var maximumQueuedAudioDuration: Double = 3
     var usesPCMVideoTimeline: Bool { output is VividPCMSampleBufferOutput }
     func pcmVideoAdmission(nextTime: Double, fps: Double) -> (gap: Double, enqueue: Bool)? {
         (output as? VividPCMSampleBufferOutput)?.videoAdmission(nextTime: nextTime, fps: fps)
+    }
+    func nativeVideoAdmission(nextTime: Double, fps: Double) -> (gap: Double, enqueue: Bool)? {
+        (output as? VividNativeEAC3Output)?.videoAdmission(nextTime: nextTime, fps: fps)
     }
     private weak var videoLayer: AVSampleBufferDisplayLayer?
     private var notifications: [NSObjectProtocol] = []
@@ -102,7 +140,7 @@ final class VividDolbyAudioOutput: AudioOutput {
         didSet {
             bridge?.setRate(playbackRate)
             // Non-unit speed recovers to PCM before changing the native renderer's rate.
-            if !(output is AudioRendererPlayer) || playbackRate == 1 { output?.playbackRate = playbackRate }
+            if !(output is VividNativeEAC3Output) || playbackRate == 1 { output?.playbackRate = playbackRate }
             Task { @MainActor [weak self] in self?.refreshPCMRouteTiming() }
         }
     }
@@ -114,22 +152,28 @@ final class VividDolbyAudioOutput: AudioOutput {
 
     func prepare(audioFormat: AVAudioFormat) {
         guard output == nil else { return }
-        if bridge?.isNative == true {
-            let native = AudioRendererPlayer()
-            native.reanchorsAfterFlush = true
-            // Let Apple establish a ready presentation timeline for the native route.
-            // Ordinary KSPlayer PCM output keeps its existing start policy.
-            native.synchronizer.delaysRateChangeUntilHasSufficientMediaData = true
-            // Do not impose a PCM channel count on the compressed Apple audio route.
-            output = native
-            let centre = NotificationCenter.default
-            for name in [Notification.Name.AVSampleBufferAudioRendererOutputConfigurationDidChange,
-                         Notification.Name.AVSampleBufferAudioRendererWasFlushedAutomatically] {
-                notifications.append(centre.addObserver(forName: name, object: native.renderer, queue: .main) { [weak self] note in
-                    self?.bridge?.fallback(reason: note.name == Notification.Name.AVSampleBufferAudioRendererOutputConfigurationDidChange
-                        ? "renderer_configuration_changed" : "renderer_automatically_flushed")
-                })
+        bridge?.recordOutputFormat(audioFormat)
+        preparedLayoutTag = audioFormat.channelLayout?.layoutTag
+        if bridge?.isNative != true,
+           Self.outputChannelCount(sourceChannels: audioFormat.channelCount) != nil {
+            let session = AVAudioSession.sharedInstance()
+            let previous = session.supportsMultichannelContent
+            do {
+                try session.setSupportsMultichannelContent(true)
+                previousMultichannelSupport = previous
+                bridge?.event("audio_pcm_content", "multichannel=true channels=\(audioFormat.channelCount) layout_tag=\(preparedLayoutTag ?? 0) policy=advertised_airplay_layout")
+            } catch {
+                bridge?.event("audio_pcm_content", "declaration_failed=true")
             }
+        }
+        if bridge?.isNative == true {
+            let native = VividNativeEAC3Output { [weak bridge] name, fields in
+                bridge?.event(name, fields)
+                if name == "audio_native_output_failed" { bridge?.fallback(reason: fields) }
+            }
+            native.maximumQueuedAudioDuration = maximumQueuedAudioDuration
+            output = native
+            native.prepare(audioFormat: audioFormat)
         } else {
             let pcm = VividPCMSampleBufferOutput { [weak bridge] name, fields in
                 bridge?.event(name, fields)
@@ -147,18 +191,9 @@ final class VividDolbyAudioOutput: AudioOutput {
     @MainActor
     func synchroniseVideo(layer: AVSampleBufferDisplayLayer) -> Bool {
         if let pcm = output as? VividPCMSampleBufferOutput { return pcm.connectVideo(layer) }
-        guard let native = output as? AudioRendererPlayer else { return false }
-        if videoLayer !== layer {
-            if let previous = videoLayer {
-                previous.flushAndRemoveImage()
-                native.synchronizer.removeRenderer(previous, at: .invalid, completionHandler: nil)
-            }
-            layer.controlTimebase = nil
-            native.synchronizer.addRenderer(layer)
-            videoLayer = layer
-            bridge?.event("audio_video_timeline_connected", "video=existing_ksplayer_layer timing=source_pts display_immediately=false")
-        }
-        return true
+        guard let native = output as? VividNativeEAC3Output else { return false }
+        videoLayer = layer
+        return native.connectVideo(layer)
     }
 
     @MainActor
@@ -167,8 +202,8 @@ final class VividDolbyAudioOutput: AudioOutput {
             pcm.resetVideoTimeline(to: time)
             return
         }
-        guard let native = output as? AudioRendererPlayer else { return }
-        native.resetTimeline(to: time)
+        guard let native = output as? VividNativeEAC3Output else { return }
+        native.resetVideoTimeline(to: time)
         resetWatch()
         bridge?.event("audio_timeline_reset", "target=\(time.seconds) next_packet_anchor=true")
     }
@@ -179,7 +214,7 @@ final class VividDolbyAudioOutput: AudioOutput {
         resetWatch()
         output.play()
         Task { @MainActor [weak self] in self?.refreshPCMRouteTiming() }
-        if let native = output as? AudioRendererPlayer {
+        if let native = output as? VividNativeEAC3Output {
             bridge?.event("audio_timeline_play", "time=\(native.currentRenderTime.seconds) needs_anchor=\(native.needsAudioTimeAnchor)")
         }
     }
@@ -220,6 +255,10 @@ final class VividDolbyAudioOutput: AudioOutput {
             if now - lastReport >= 5 {
                 lastReport = now
                 pcm.reportStatus()
+                let session = AVAudioSession.sharedInstance()
+                if #available(tvOS 17.2, *) {
+                    bridge?.event("audio_pcm_rendering", "resolved_mode=\(session.renderingMode.rawValue) prepared_channels=\(bridge?.outputChannelCount ?? 0) layout_tag=\(preparedLayoutTag ?? 0) route_channels=\(session.outputNumberOfChannels) multichannel=\(session.supportsMultichannelContent)")
+                }
             }
             return
         }
@@ -233,7 +272,7 @@ final class VividDolbyAudioOutput: AudioOutput {
             }
             return
         }
-        guard let native = output as? AudioRendererPlayer else { return }
+        guard let native = output as? VividNativeEAC3Output else { return }
         if native.needsAudioTimeAnchor {
             // An empty post-seek queue must not start the renderer at zero or an old time.
             native.play()
@@ -261,6 +300,7 @@ final class VividDolbyAudioOutput: AudioOutput {
         let ready = renderer.hasSufficientMediaDataForReliablePlaybackStart
         if lastStatus != renderer.status.rawValue || (!reportedReady && ready) || now - lastReport >= 5 {
             lastReport = now
+            native.reportStatus()
             lastStatus = renderer.status.rawValue
             reportedReady = reportedReady || ready
             bridge?.event("audio_renderer_state", "status=\(renderer.status.rawValue) sufficient_data=\(ready) time=\(time) queued_until=\(native.enqueuedCompressedEndTime.seconds) video_connected=\(videoLayer.map { layer in native.synchronizer.renderers.contains { $0 === layer } } ?? false) synchronizer_rate=\(native.synchronizer.rate) effective_rate=\(effectiveRate) waits_for_readiness=\(native.synchronizer.delaysRateChangeUntilHasSufficientMediaData) route_latency_s=\(AVAudioSession.sharedInstance().outputLatency) io_buffer_s=\(AVAudioSession.sharedInstance().ioBufferDuration) native_atmos=unverified")
@@ -289,10 +329,11 @@ final class VividDolbyAudioOutput: AudioOutput {
     deinit {
         for notification in notifications { NotificationCenter.default.removeObserver(notification) }
         output?.pause()
-        if let native = output as? AudioRendererPlayer, let videoLayer {
-            native.synchronizer.removeRenderer(videoLayer, at: .invalid, completionHandler: nil)
-        }
+
         output?.flush()
+        if let previousMultichannelSupport {
+            try? AVAudioSession.sharedInstance().setSupportsMultichannelContent(previousMultichannelSupport)
+        }
     }
 }
 #endif

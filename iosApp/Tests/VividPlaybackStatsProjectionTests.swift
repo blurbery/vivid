@@ -4,6 +4,19 @@ import XCTest
 @testable import Vivid
 
 final class VividPlaybackStatsProjectionTests: XCTestCase {
+    func testConfiguredDolbyProfileLabelDoesNotOverrideHDRFallback() {
+        for (format, expected) in [(VideoFormat.dolbyVision, "DV Profile 8.1"), (.hdr10, "HDR10")] {
+            let snapshot = VividPlaybackStatsSnapshot(route: .sampleBuffer, phase: .playing,
+                audioOutputFormat: "PCM 5.1", outputVideoFormat: format,
+                outputDolbyProfileLabel: "DV Profile 8.1", sourceDVProfile: 8,
+                sourceVideoWidth: 3840, sourceVideoHeight: 2160)
+            let stats = VividPlaybackStatsProjection.make(snapshot: snapshot,
+                source: VividPlaybackStatsSourceMetadata(sourceURL: nil, delivery: nil, container: nil, playbackRate: 1))
+            XCTAssertEqual(stats.dynamicRange, expected)
+            XCTAssertEqual(stats.audio.codec, "PCM 5.1")
+        }
+    }
+
     func testProjectsPublicVividStateAndRedactsSignedSourceURL() throws {
         let audio = TrackInfo(
             id: 2,
@@ -94,7 +107,7 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
             stats.audio.detail,
             "English · eng · Atmos · Stream-copy (EAC3+JOC Atmos)"
         )
-        XCTAssertEqual(stats.dynamicRange, "Dolby Vision Profile 7 → HDR10")
+        XCTAssertEqual(stats.dynamicRange, "HDR10")
         XCTAssertEqual(stats.subtitles, "English SDH · eng · SUBRIP + Spanish")
         XCTAssertEqual(stats.playbackStatus, "Playing")
         XCTAssertEqual(stats.instantReadBitrateBps, 18_500_000)
@@ -153,7 +166,7 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
         XCTAssertFalse(stats.engineRows.contains { $0.0 == "Producer restarts" })
     }
 
-    func testServerToneMapPlanPreservesOriginalDynamicRangeInStats() {
+    func testServerToneMapStatsShowPlayingDynamicRange() {
         let stats = VividPlaybackStatsProjection.make(
             snapshot: VividPlaybackStatsSnapshot(
                 route: .remoteBypass,
@@ -173,7 +186,7 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(stats.dynamicRange, "HDR10 → SDR")
+        XCTAssertEqual(stats.dynamicRange, "SDR")
     }
 
     func testIdleSnapshotProducesNoSyntheticEngineRows() {

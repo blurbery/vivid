@@ -52,8 +52,53 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
     private(set) var sourceDVProfile: Int?
     private(set) var sourceVideoFormat: VideoFormat = .sdr
     private(set) var videoFormat: VideoFormat = .sdr
+    var activeDolbyProfileLabel: String? { options?.activeDolbyProfileLabel }
+    var activeVideoFormat: VideoFormat {
+        options?.activeDynamicRange == .dolbyVision ? .dolbyVision : videoFormat
+    }
     var activeVideoDecoder: String? { sourceVideoWidth > 0 ? "LucidFF (VideoToolbox preferred)" : nil }
-    var activeAudioDecoder: String? { audioTracks.isEmpty ? nil : "LucidFF PCM → AVAudioEngine" }
+    var activeAudioDecoder: String? {
+        guard !audioTracks.isEmpty else { return nil }
+        #if VIVID_ATMOS_TRIAL
+        return options?.dolbyAudio.isNative == true
+            ? "Apple audio renderer (E-AC-3 input)"
+            : "Apple audio renderer (PCM)"
+        #else
+        return "AVAudioEngine (PCM)"
+        #endif
+    }
+    var activeAudioOutputFormat: String? {
+        guard !audioTracks.isEmpty else { return nil }
+        #if VIVID_ATMOS_TRIAL
+        if options?.dolbyAudio.isNative == true {
+            if #available(tvOS 17.2, *) {
+                switch AVAudioSession.sharedInstance().renderingMode {
+                case .dolbyAtmos: return "Dolby Atmos"
+                case .dolbyAudio: return "Dolby Audio"
+                case .spatialAudio: return "Spatial Audio"
+                case .surround: return "Surround"
+                case .monoStereo: return "Mono/Stereo"
+                default: break
+                }
+            }
+            return "Not reported"
+        }
+        #endif
+        #if VIVID_ATMOS_TRIAL
+        if let channels = options?.dolbyAudio.outputChannelCount {
+            let layout: String
+            switch channels {
+            case 1: layout = "1.0"
+            case 2: layout = "2.0"
+            case 6: layout = "5.1"
+            case 8: layout = "7.1"
+            default: layout = "\(channels) ch"
+            }
+            return "PCM \(layout)"
+        }
+        #endif
+        return "PCM"
+    }
     var softwareDisplaySize: CGSize? { player?.naturalSize }
     var readAheadAvailableSeconds: Double? { nil }
     var liveTelemetry: LiveTelemetry? { diagnostics.liveTelemetry }
@@ -96,6 +141,11 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         super.init()
         // Ordinary audio uses the GPL player's decoded-PCM output.
         KSOptions.audioPlayerType = AudioEnginePlayer.self
+        #if DEBUG && VIVID_ATMOS_TRIAL
+        if ProcessInfo.processInfo.arguments.contains("-VividPCMMultichannelTrial") {
+            KSOptions.audioPlayerType = VividDolbyAudioOutput.self
+        }
+        #endif
     }
 
     func load(url: URL, startPosition: Double = 0, options loadOptions: LoadOptions = LoadOptions(),

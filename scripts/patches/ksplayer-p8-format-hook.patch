@@ -1,6 +1,6 @@
 --- a/Sources/KSPlayer/AVPlayer/KSOptions.swift
 +++ b/Sources/KSPlayer/AVPlayer/KSOptions.swift
-@@ -14,6 +14,31 @@
+@@ -14,6 +14,36 @@
  #if canImport(UIKit)
  import UIKit
  #endif
@@ -29,10 +29,29 @@
 +    @MainActor func resetVideoPresentationTime(to time: CMTime)
 +}
 +
++/// Optional channel policy for an output that accepts multichannel sample buffers.
++public protocol KSAudioOutputChannelPolicy {
++    static func outputChannelCount(sourceChannels: AVAudioChannelCount) -> AVAudioChannelCount?
++}
++
  open class KSOptions {
      /// 最低缓存视频时间
      @Published
-@@ -682,6 +707,15 @@
+@@ -525,7 +555,13 @@
+         }
+     }
+ 
++    // Consult custom sample-buffer outputs before applying hardware channel limits.
+     static func outputNumberOfChannels(channelCount: AVAudioChannelCount) -> AVAudioChannelCount {
++        if let policy = audioPlayerType as? KSAudioOutputChannelPolicy.Type,
++           let count = policy.outputChannelCount(sourceChannels: channelCount),
++           count > 0, count <= channelCount {
++            return count
++        }
+         let maximumOutputNumberOfChannels = AVAudioChannelCount(AVAudioSession.sharedInstance().maximumOutputNumberOfChannels)
+         let preferredOutputNumberOfChannels = AVAudioChannelCount(AVAudioSession.sharedInstance().preferredOutputNumberOfChannels)
+         let isSpatialAudioEnabled = isSpatialAudioEnabled(channelCount: channelCount)
+@@ -682,6 +718,15 @@
          }
      }
  

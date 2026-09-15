@@ -41,6 +41,8 @@ class LucidOptions: KSOptions {
  struct Dolby { var isNative = false }; var dolbyAudio = Dolby()
  class PCMOutput {
   var admission: (gap: Double, enqueue: Bool)?
+  var nativeAdmission: (gap: Double, enqueue: Bool)?
+  func nativeVideoAdmission(nextTime: Double, fps: Double) -> (gap: Double, enqueue: Bool)? { nativeAdmission }
   func pcmVideoAdmission(nextTime: Double, fps: Double) -> (gap: Double, enqueue: Bool)? { admission }
  }
  var dolbyAudioOutput: PCMOutput?
@@ -78,6 +80,11 @@ options.usesDisplayLayer = false
 pcm.admission = (0.05, true)
 expect(action(0.05) == .remain)
 options.usesDisplayLayer = true
+pcm.admission = nil
+pcm.nativeAdmission = (0.05, true)
+expect(action(0.2) == .next)
+pcm.nativeAdmission = (0.2, false)
+expect(action(-0.1) == .remain)
 options.dolbyAudioOutput = nil
 options.dolbyAudio.isNative = false
 AVAudioSession.instance.currentRoute.outputs = [Port(portType: .hdmi)]
