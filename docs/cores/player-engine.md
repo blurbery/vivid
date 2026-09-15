@@ -27,9 +27,10 @@ source channels or accepted E-AC-3 bytes alone do not establish Atmos output.
 
 The initial revision passed a full arm64 tvOS simulator build and checks for
 the pinned dependency graph and custom AVPlayer output in the downloaded
-libmpv binaries. The final revision is undergoing an unsigned physical-device
-build. This experiment has not been installed or verified on Living Room.
-Build success does not establish sync, Dolby Vision or Atmos.
+libmpv binaries. The code at `bb4bc1e` also passed an unsigned arm64 physical Apple TV target
+build, the pinned-binary checks and 15 production track-ID translation checks
+in GitHub Actions. This experiment has not been installed or verified on
+Living Room. Build success does not establish sync, Dolby Vision or Atmos.
 
 ### Retained routes and provenance
 
