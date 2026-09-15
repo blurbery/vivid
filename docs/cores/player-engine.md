@@ -52,9 +52,12 @@ The native EOF restart trial is in
 `patches/mpv/0001-avfoundation-resume-after-audio-eof.patch`. Its dedicated
 `mpv-audio-driver.yml` workflow rebuilds only libmpv from the pinned source,
 restoring the remaining dependencies from upstream binaries. For the physical
-device trial, replace only the `tvos-arm64_arm64e/Libmpv.framework` slice in the
-task's resolved artifact cache with that workflow's verified artifact, then
-relink the app. The package lock still describes the upstream package; a normal
+device trial, replace only the matching physical-device slice in the task’s
+resolved artifact cache with that workflow’s verified artifact, then relink
+the app: `tvos-arm64_arm64e/Libmpv.framework` for tvOS or
+`ios-arm64/Libmpv.framework` for iOS. Native workflow 35028421151 built and
+verified both slices. The iPhone build was signed, verified and installed;
+physical playback and PiP confirmation remain pending. The package lock still describes the upstream package; a normal
 fresh resolution does not include this trial patch. Verify the marker
 `resuming compressed feed after audio EOF` in the linked app binary before
 installing. Native driver build 34964055136 passed. Device testing showed
