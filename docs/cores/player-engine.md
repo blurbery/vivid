@@ -12,7 +12,11 @@ The trial pins public [KSPlayer](https://github.com/kingslay/KSPlayer/tree/7862a
 
 `LucidPlayer` keeps the existing `VividEngine` interface and controls. It uses `KSMEPlayer` directly for HTTP(S), local files, MKV/MP4/HLS, demuxing, decode, buffering, pause/play, rate, resume and seeking. The adapter projects audio/subtitle tracks and chapters into Vivid and renders subtitles in its existing overlay. These are implementation paths, not a claim of passed media/device tests. External ASS uses the basic text parser; complex typesetting, PiP and receiver-fetchable AirPlay video are outside this baseline. Normal audio uses KSPlayer’s decoded PCM path. No compressed Atmos output is added.
 
-KSPlayer’s default 3-second preferred/30-second maximum buffer settings are retained. No second reservoir or loopback server is added. Saved buffer and lossless-bridge preferences are disabled for the experiment because they do not control KSPlayer. Match Content uses the public KSPlayer display-criteria implementation, with reset on stop. HDMI display mode still requires physical verification.
+KSPlayer’s default 3-second preferred/30-second maximum buffer settings are retained. No second reservoir or loopback server is added. Saved buffer and lossless-bridge preferences are disabled for the experiment because they do not control KSPlayer. Match Content requests KSPlayer's existing display criteria as soon as the selected video's format description is available, while remaining preparation continues. Requests are dispatched to the main actor; cancelled loads cannot apply them, and later renderer metadata can correct the mode. Identical requests within the load are skipped while the same criteria remain installed. The existing Dolby admission policy and HDR10 fallback are retained. Display criteria still reset on stop. Earlier switching and HDMI behaviour require physical verification.
+
+### Ordered hybrid development
+
+Keep KSPlayer responsible for networking, demuxing, buffering, decoding, seeking, clocks and normal playback. Work on tvOS in this order: startup measurement and optimisation, Dolby Vision P8, P5, then EAC3/JOC Atmos. Report measurements and regressions before moving to the next stage. Keep P7 on a valid HDR base-layer fallback for now. Complete all tvOS stages before migrating iOS to the shared Lucid hybrid. Do not start future stages while startup work remains active.
 
 ### Startup and seek measurements
 
@@ -22,9 +26,11 @@ Events include `prepare_requested`, `source_open_begins`, `source_open_completed
 
 `first_picture_ready` requires the current sample-buffer display layer to report ready for display while attached to a window. It is independent of ready/playing state. Sampling adds up to 50 ms; TV HDMI mode changes may add visible delay after that signal, so compare against a physical recording. Metal-only rendering does not currently produce this metric and must be marked unavailable rather than timed as ready. Seek completion and picture readiness are separate; seek-to-picture is accepted only after flushing the old image and observing a new pixel buffer and a ready layer; requested and actual landed positions are logged separately because upstream can seek to a keyframe. Superseded, failed and timed-out seeks are logged separately. One-second samples record source bytes, throughput, playable buffer and stall count. Buffer values are KSPlayer’s own playable-time measurement, not a second cache.
 
-Summarise an exported log with `python3 scripts/summarise-ksplayer-trial.py playback.log`. JSON output keeps startup, seeks, reloads and missing picture measurements separate. Parser checks run with `--self-test`.
+Summarise an exported log with `python3 scripts/summarise-ksplayer-trial.py playback.log`. JSON output keeps startup, seeks, reloads and missing picture measurements separate. Add `--text` for a chronological trace and stage intervals. The report distinguishes app preparation, source opening, probing with adjacent setup, post-probe source setup, main-thread wait plus audio preparation, Vivid's ready callback and the remaining wait for picture readiness. Overlapping intervals must not be summed. Missing or reversed boundaries remain unavailable. Parser checks run with `--self-test`.
 
-Use the same file version, device, route, start/resume position, subtitles and network for both engines. Record three cold/warm runs separately and several seeks. Do not compare KSPlayer Pro on iPhone to this GPL Apple TV branch as if it were a controlled benchmark.
+Additional wrapper-only events record player construction, selected audio/video streams, option processing, app track enumeration and display-criteria call duration. `upstream_ready` is KSPlayer's existing timestamp before main-thread audio preparation, not decoder completion. Display-criteria return does not mean the physical display has switched. Exact probe entry, decoder opening and decode completion are not exposed by these public hooks; do not substitute approximate events for them. No KSPlayer source or buffer settings are changed for this instrumentation.
+
+Use the same file version, device, build configuration, route, start/resume position, subtitles and network for comparisons. Debug and optimised builds must be recorded separately. Record three cold/warm runs separately and several seeks. Do not compare KSPlayer Pro on iPhone to this GPL Apple TV branch as if it were a controlled benchmark.
 
 ### First baseline, pending device tests
 
@@ -38,10 +44,42 @@ The owner selected Dune 1 and Dune 2. Their exact media paths/versions are not s
 
 For each run record source commit, app build, device/OS, stable file identifier, start position, decoded video/audio formats, DV profile/compatibility, actual television display mode, receiver output, fallback and rebuffer events. Extend this matrix to H.264/AAC, H.264/AC3 5.1, 4K SDR HEVC, HDR10, DV P5/P8/P7, EAC3 5.1, JOC, high-bitrate UHD, subtitle MKV and multiple-audio MKV. TV speakers, HDMI/eARC and HomePods remain separate audio checks. Builds do not prove these results.
 
+### Profile 8 trial
+
+`VividDolbyVideo` classifies selected stream metadata as SDR, HDR10, HLG, DV P5/P7/P8 or unknown. It records Dolby profile, level, compatibility ID, base/enhancement-layer flags and RPU presence. HDR classification uses transfer characteristics rather than assuming every ten-bit stream is HDR. No filename detection is used.
+
+The native experiment is opt-in with the `VIVID_P8_TRIAL` Swift compilation condition. Normal builds keep the baseline HDR fallback. The first candidate is P8.1 with a PQ base layer, RPU present, no enhancement layer and version 1.0 configuration. The fixed hardware test is the 4K **80 for Brady**, Silo media file **4**, approximately 11 GB. Its actual stream was probed as P8, level 6, compatibility 1. Use the same file and start position for repeated comparisons. Dune and Dune: Part Two are P7 fallback tests, not substitutes.
+
+`FFmpegAssetTrack` exposes Dolby configuration, but its immutable HEVC format description does not include that record. The trial's two-file public-source patch adds an optional format-description provider at the existing VideoToolbox session boundary. Vivid adds the source `dvvC` configuration alongside the unchanged `hvcC` data, preserving HEVC subtype, colour properties and compressed packets. It does not generate per-frame metadata. KSPlayer already enables per-frame HDR metadata propagation and passes the decoded pixel buffers into its existing sample-buffer display layer.
+
+The first hardware run detected P8.1 but never entered the format hook: KSPlayer defaults `asynchronousDecompression` to false, selecting its FFmpeg decoder. The corrected trial selects KSPlayer's existing direct VideoToolbox decoder only for eligible P8.1 streams, with hardware decoding enabled and no video filters. This selection occurs after upstream stream processing and respects its software-decode requirements. A separate `p8_decoder_selection` event records this gate. The initial HDR10 run measured 3,284 ms to layer readiness, not confirmed HDMI visibility, and logged zero stalls during approximately 35 seconds; it is not a native-DV result.
+
+On tvOS 17 or later, an accepted P8 configuration requests display matching using Apple's format-description-based `AVDisplayCriteria` initializer. Decoder configuration rejection retries the original HDR format. A reported decode failure disables further native attempts for that load and returns display matching to the base format while KSPlayer retains its existing decode-error handling. This is an experimental fallback, not a guarantee that every runtime error can recover. Network, demuxing, buffering, clock, seeking, track selection, subtitles, normal audio and the renderer remain KSPlayer-owned.
+
+To reproduce using the existing dependency cache:
+
+```sh
+python3 scripts/prepare-p8-trial.py /path/to/retained/checkouts/KSPlayer
+```
+
+The script requires pinned revision `7862a2b175b50db71135e57fd144ea0e441d47d6`, refuses unrelated local changes and applies `scripts/patches/ksplayer-p8-format-hook.patch` idempotently. Add `OTHER_SWIFT_FLAGS='$(inherited) -D VIVID_P8_TRIAL'` to the normal tvOS build command. Do not clean or duplicate the cache. The app compiles against unmodified upstream without that flag. No fork or published dependency change is made for this local trial.
+
+Diagnostics distinguish the decoder attempt, accepted/rejected configuration, requested display criteria and output attachment keys. Trial builds retain only the latest session in `Library/Caches/LucidP8Trial.log`, capped at 256 KiB and written asynchronously. Metadata payloads and source URLs are not recorded. Read it from the app's data container after testing. Neither decoder acceptance, attachment presence nor a display-mode request proves native Dolby Vision. Verify the TV's Dolby Vision indicator, colour and brightness, pause/resume, seeking, stalls and startup against the same file. Native P8 support beyond the tested P8.1 file remains unverified. If this narrow path cannot work without replacing major KSPlayer components, stop and report before redesigning.
+
+### P8.1 hardware result, 15 September 2026
+
+Living Room Apple TV, 80 for Brady (4K, Silo file 4): the owner confirmed the TV reported Dolby Vision, colours looked correct, and pause/resume and forward/backward seeking worked while remaining in Dolby Vision. The trace independently recorded successful native decoder configuration, no Dolby fallback, and `DolbyVisionRPUData` in the output attachments initially and after all three seeks. This validates the narrow native P8.1 path for this file and setup, not every P8 variant or display.
+
+Layer-readiness times were 3,190 ms and 2,496 ms across two native runs, against 3,284 ms in the preceding HDR10 run. These are individual app-layer measurements, not physical HDMI visibility or controlled performance benchmarks. The latest three seeks recovered a picture in 6,673 ms, 2,753 ms and 1,859 ms. The four logged buffering transitions corresponded to initial loading and the three seeks; no additional transition was observed during normal playback in that captured session. The longest seek remains a performance item to investigate before claiming no seeking regression. No equivalent HDR baseline seek timings are available yet.
+
+Second P8.1 file: A Boy Called Christmas (4K, Silo file 6, approximately 12.8 GB) was independently probed as profile 8, level 6, compatibility 1, BL/RPU present and no enhancement layer. The owner confirmed playback, pause and seeking remained in TV-reported Dolby Vision. The subsequent trace showed accepted native configuration without fallback, Dolby RPU attachments initially and after both completed seek sequences, and 2,943 ms to layer readiness. The completed seek sequences took 5,952 ms and 3,253 ms; intervening scrub requests were superseded. These results extend functional confirmation to a second P8.1 file, while seek-performance comparison and ordinary HDR10/SDR regression checks remain outstanding.
+
+The owner accepted these functional P8.1 results and seek behaviour as the completed tvOS P8.1 milestone, and authorised proceeding to P5. Preserve this implementation in `VividDolbyVideo`; it is a Dolby extension, not a separate playback core. KSPlayer retains its normal pipeline. Broader P8 variants and HDR10/SDR regression testing remain separate validation items. Atmos has not been started.
+
 ### Public Dolby behaviour and future extension points
 
 - **Profile 5:** the GPL source exposes DV configuration, but reserves native P5/P8 dynamic metadata for paid code. This adapter rejects P5 before starting output rather than displaying IPT-only video as ordinary PQ. Native DV and correct conversion remain unimplemented.
-- **Profile 8:** public `KSOptions.updateVideo` explicitly maps a DV dynamic range to HDR10. The trial permits metadata-declared compatible base layers only (compatibility IDs 1/2/4 with BL present). Correct HDR10/SDR/HLG output still requires verification; no TV Dolby Vision claim is made.
+- **Profile 8:** default builds retain KSPlayer's HDR fallback. The opt-in P8.1 metadata experiment is described above. Correct output and actual TV Dolby Vision remain hardware checks.
 - **Profile 7:** BL-present, HDR10-compatible metadata (compatibility ID 6) permits baseline playback. No FEL reconstruction or custom RPU path is attempted.
 - **EAC3 JOC:** the trial uses the same decoded PCM route as ordinary EAC3. The public track API does not expose an authoritative decoded EAC3 profile, so the adapter logs JOC as unconfirmed and never labels every EAC3 track Atmos. Object metadata is not preserved by this route.
 

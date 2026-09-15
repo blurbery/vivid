@@ -1,0 +1,71 @@
+--- a/Sources/KSPlayer/AVPlayer/KSOptions.swift
++++ b/Sources/KSPlayer/AVPlayer/KSOptions.swift
+@@ -14,6 +14,12 @@
+ #if canImport(UIKit)
+ import UIKit
+ #endif
++/// Optional format metadata adapter. The player retains decoding and rendering ownership.
++public protocol KSVideoFormatDescriptionProvider: AnyObject {
++    func videoDecompressionFormat(for track: FFmpegAssetTrack) -> CMFormatDescription?
++    func videoDecompressionFormatConfigured(_ format: CMFormatDescription?, status: OSStatus)
++}
++
+ open class KSOptions {
+     /// 最低缓存视频时间
+     @Published
+--- a/Sources/KSPlayer/MEPlayer/VideoToolboxDecode.swift
++++ b/Sources/KSPlayer/MEPlayer/VideoToolboxDecode.swift
+@@ -52,6 +52,7 @@
+                     return
+                 }
+                 guard status == noErr else {
++                    (self.options as? KSVideoFormatDescriptionProvider)?.videoDecompressionFormatConfigured(nil, status: status)
+                     if status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr || status == kVTVideoDecoderBadDataErr {
+                         if packet.isKeyFrame {
+                             completionHandler(.failure(NSError(errorCode: .codecVideoReceiveFrame, avErrorCode: status)))
+@@ -89,6 +90,7 @@
+                 }
+             }
+         } catch {
++            (options as? KSVideoFormatDescriptionProvider)?.videoDecompressionFormatConfigured(nil, status: OSStatus((error as NSError).code))
+             completionHandler(.failure(error))
+         }
+     }
+@@ -114,10 +116,12 @@
+     fileprivate var assetTrack: FFmpegAssetTrack
+     init?(assetTrack: FFmpegAssetTrack, options: KSOptions) {
+         self.assetTrack = assetTrack
+-        guard let pixelFormatType = assetTrack.pixelFormatType, let formatDescription = assetTrack.formatDescription else {
++        guard let pixelFormatType = assetTrack.pixelFormatType, let baseFormatDescription = assetTrack.formatDescription else {
+             return nil
+         }
+-        self.formatDescription = formatDescription
++        let provider = options as? KSVideoFormatDescriptionProvider
++        let proposedFormat = provider?.videoDecompressionFormat(for: assetTrack)
++        var formatDescription = proposedFormat ?? baseFormatDescription
+         #if os(macOS)
+         VTRegisterProfessionalVideoWorkflowVideoDecoders()
+         if #available(macOS 11.0, *) {
+@@ -134,11 +138,21 @@
+         ]
+         var session: VTDecompressionSession?
+         // swiftlint:disable line_length
+-        let status = VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: formatDescription, decoderSpecification: CMFormatDescriptionGetExtensions(formatDescription), imageBufferAttributes: attributes, outputCallback: nil, decompressionSessionOut: &session)
++        var status = VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: formatDescription, decoderSpecification: CMFormatDescriptionGetExtensions(formatDescription), imageBufferAttributes: attributes, outputCallback: nil, decompressionSessionOut: &session)
+         // swiftlint:enable line_length
++        if status != noErr, proposedFormat != nil {
++            provider?.videoDecompressionFormatConfigured(nil, status: status)
++            if let session { VTDecompressionSessionInvalidate(session) }
++            session = nil
++            formatDescription = baseFormatDescription
++            status = VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: formatDescription, decoderSpecification: CMFormatDescriptionGetExtensions(formatDescription), imageBufferAttributes: attributes, outputCallback: nil, decompressionSessionOut: &session)
++        } else if proposedFormat != nil {
++            provider?.videoDecompressionFormatConfigured(status == noErr ? formatDescription : nil, status: status)
++        }
+         guard status == noErr, let decompressionSession = session else {
+             return nil
+         }
++        self.formatDescription = formatDescription
+         if #available(iOS 14.0, tvOS 14.0, macOS 11.0, *) {
+             VTSessionSetProperty(decompressionSession, key: kVTDecompressionPropertyKey_PropagatePerFrameHDRDisplayMetadata,
+                                  value: kCFBooleanTrue)

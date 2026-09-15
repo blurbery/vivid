@@ -10,6 +10,9 @@ import OSLog
 final class PlaybackTrialTrace {
     private static let log = Logger(subsystem: "com.blurbery.vivid", category: "PlaybackTrial")
     private static var pendingPlay: Double?
+    #if VIVID_P8_TRIAL
+    private let recording = P8TrialRecording()
+    #endif
     static func requestPlay() { pendingPlay = CACurrentMediaTime() }
 
     let id = UUID().uuidString
@@ -23,6 +26,7 @@ final class PlaybackTrialTrace {
         let origin = Self.pendingPlay == nil ? "engine_load" : "play_request"
         Self.pendingPlay = nil
         event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=KSPlayerGPL")
+        mark(origin, at: started)
     }
 
     func mark(_ name: String, at time: Double = CACurrentMediaTime()) {
@@ -51,6 +55,42 @@ final class PlaybackTrialTrace {
 
     func event(_ name: String, fields: String = "") {
         Self.log.info("trial session=\(self.id, privacy: .public) event=\(name, privacy: .public) \(fields, privacy: .public)")
+        #if VIVID_P8_TRIAL
+        recording.append("trial session=\(id) event=\(name) \(fields)\n")
+        #endif
     }
 }
+
+#if VIVID_P8_TRIAL
+/// One bounded, source-free device log for the current test. No work on the media queues.
+private final class P8TrialRecording: @unchecked Sendable {
+    private static let queue = DispatchQueue(label: "com.blurbery.vivid.p8-trace", qos: .utility)
+    private var handle: FileHandle?
+    private var byteCount = 0
+
+    init() {
+        Self.queue.async { [self] in
+            guard let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
+            let url = directory.appendingPathComponent("LucidP8Trial.log")
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                FileManager.default.createFile(atPath: url.path, contents: nil)
+                handle = try FileHandle(forWritingTo: url)
+                try handle?.truncate(atOffset: 0)
+            } catch { handle = nil }
+        }
+    }
+
+    func append(_ line: String) {
+        guard let data = line.data(using: .utf8) else { return }
+        Self.queue.async { [self] in
+            guard byteCount + data.count <= 256 * 1024 else { return }
+            do {
+                try handle?.write(contentsOf: data)
+                byteCount += data.count
+            } catch { handle = nil }
+        }
+    }
+}
+#endif
 #endif

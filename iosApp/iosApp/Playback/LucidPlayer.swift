@@ -102,18 +102,25 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         source = (url, startPosition, loadOptions, audioSourceStreamIndex)
         trace = PlaybackTrialTrace()
         trace?.mark("engine_load")
-        let prepared = LucidFFOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex) { [weak self, weak trace = trace] name, time in
+        let prepared = LucidFFOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex, milestone: { [weak self, weak trace = trace] name, time in
             Task { @MainActor in
                 guard self?.generation == token else { return }
                 trace?.mark(name, at: time)
             }
-        }
+        }, diagnostic: { [weak self, weak trace = trace] name, fields in
+            Task { @MainActor in
+                guard self?.generation == token else { return }
+                trace?.event(name, fields: fields)
+            }
+        })
         options = prepared
         wantsPlay = loadOptions.autoplay
         state = .loading
         playbackPhase = .loading
         startupProgress = StartupProgress(checkpoint: "opening")
+        trace?.mark("player_creation_begins")
         let instance = KSMEPlayer(url: url, options: prepared)
+        trace?.mark("player_creation_completed")
         instance.delegate = self
         instance.playbackVolume = volume
         instance.playbackRate = requestedRate
@@ -177,8 +184,10 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
 
     func readyToPlay(player incoming: some MediaPlayerProtocol) {
         guard let player, incoming === player else { return }
+        trace?.mark("ready_callback_begins")
         duration = player.duration.isFinite ? max(0, player.duration) : 0
         readTracks()
+        trace?.mark("app_tracks_read")
         harvestTimings()
         trace?.mark("player_ready")
         if let track = player.tracks(mediaType: .video).first(where: { $0.isEnabled }) {
@@ -190,14 +199,13 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             sourceDVProfile = track.dovi.map { Int($0.dv_profile) }
             sourceVideoFormat = Self.videoFormat(track.dynamicRange)
             videoFormat = Self.videoFormat(track.formatDescription?.dynamicRange)
+            let dolby = VividDolbyVideo(track: track)
+            trace?.event("video_classified", fields: dolby.diagnosticFields)
             if let dv = track.dovi {
                 trace?.event("dolby_metadata", fields: "profile=\(dv.dv_profile) level=\(dv.dv_level) compatibility=\(dv.dv_bl_signal_compatibility_id) bl=\(dv.bl_present_flag) el=\(dv.el_present_flag) native_dv_verified=false")
                 // No custom Dolby subsystem in the baseline. Never send IPT-only P5
                 // through the GPL player's ordinary HDR output and call it correct DV.
-                let validBase = dv.bl_present_flag != 0 &&
-                    ((dv.dv_profile == 7 && dv.dv_bl_signal_compatibility_id == 6) ||
-                     (dv.dv_profile == 8 && [UInt8(1), 2, 4].contains(dv.dv_bl_signal_compatibility_id)))
-                guard validBase else {
+                guard dolby.allowsBaselinePlayback else {
                     fail(PlaybackErrorInfo(kind: .dolbyVisionRequiresHardware,
                         message: "This Dolby Vision profile needs the later Vivid Dolby experiment. Playback is stopped to avoid incorrect colours."))
                     return
@@ -214,6 +222,7 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             selectSubtitleTrack(index: track.id)
         }
         logAudioRoute(event: "audio_ready")
+        trace?.mark("ready_callback_completed")
         if wantsPlay { play() } else { pause() }
     }
 
@@ -312,6 +321,7 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
     func prepareForItemReplacement() { pause(); hasFirstFrameReadyForDisplay = false }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         generation &+= 1; seekGeneration &+= 1
+        options?.invalidateDisplayUpdates()
         trace?.endSeek("seek_cancelled")
         trace?.event("stopped")
         ticker?.cancel(); ticker = nil
@@ -353,6 +363,7 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         harvestTimings()
         trace?.event("failed", fields: "code=\(native.code)")
         trace?.endSeek("seek_failed")
+        options?.invalidateDisplayUpdates()
         wantsPlay = false; player?.pause()
         isSeeking = false; isBuffering = false
         errorInfo = failure; state = .error(failure.message); playbackPhase = .error(failure.message)
@@ -423,6 +434,7 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         if !hasFirstFrameReadyForDisplay {
             hasFirstFrameReadyForDisplay = true
             trace?.mark("first_picture_ready")
+            logVideoOutputMetadata(output.pixelBuffer)
         }
         if seekPicturePending, output.pixelBuffer != nil {
             // flush() cleared this pointer after upstream completed the seek. A new
@@ -431,11 +443,22 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
             seekPicturePending = false
             trace?.event("seek_landed", fields: "requested=\(seekTarget) displayed=\(player.displayedVideoTime)")
             trace?.seekPicture()
+            logVideoOutputMetadata(output.pixelBuffer)
         }
     }
+    private func logVideoOutputMetadata(_ pixel: PixelBufferProtocol?) {
+        // Public observation only. Preserve all attachments; never log their payloads.
+        let attachments = pixel?.cvPixelBuffer.flatMap {
+            CVBufferCopyAttachments($0, .shouldPropagate) as? [String: Any]
+        }
+        let keys = attachments?.keys.sorted().joined(separator: ",") ?? "none"
+        trace?.event("video_output_metadata", fields: "bit_depth=\(pixel?.bitDepth ?? 0) attachment_keys=\(keys) native_dv_verified=false")
+    }
+
     private func harvestTimings() {
         guard let options else { return }
         for (name, time) in [("source_open_completed", options.openTime), ("probe_completed", options.findTime),
+                             ("upstream_ready", options.readyTime),
                              ("first_audio_packet", options.readAudioTime), ("first_video_packet", options.readVideoTime),
                              ("first_audio_decode_submitted", options.decodeAudioTime), ("first_video_decode_submitted", options.decodeVideoTime)] where time > 0 {
             trace?.mark(name, at: time)
