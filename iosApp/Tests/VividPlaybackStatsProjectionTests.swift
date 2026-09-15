@@ -1,4 +1,3 @@
-import VividKit
 import Foundation
 import XCTest
 @testable import Vivid

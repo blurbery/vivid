@@ -15,7 +15,6 @@ targets:
         excludes:
           - "**/*.xcodeproj"
           - "**/*.xcworkspace"
-      - path: ../VividKit/Sources/VividKit/VividTransientRecoveryBudget.swift
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in
@@ -176,40 +175,7 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Vivid.app/Vivid"
 
-  VividKitDeviceTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: ../VividKit/Tests/VividKitTests
-    dependencies:
-      - target: Vivid
-      - package: MPVKit
-        product: MPVKit
-    configFiles:
-      Debug: Signing/Vivid.xcconfig
-      Release: Signing/Vivid.xcconfig
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.iostest.PlaybackTests
-        CODE_SIGN_ENTITLEMENTS: ""
-        GENERATE_INFOPLIST_FILE: "YES"
-        SDKROOT: iphoneos
-        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Vivid.app/Vivid"
-        BUNDLE_LOADER: "$(TEST_HOST)"
-
 schemes:
-  VividKitDeviceTests:
-    build:
-      targets:
-        Vivid: all
-        VividKitDeviceTests: [test]
-        VividTests: [test]
-    test:
-      config: Debug
-      targets:
-        - VividKitDeviceTests
-        - VividTests
   Vivid:
     build:
       targets:

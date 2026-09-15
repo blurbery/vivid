@@ -15,6 +15,11 @@ concurrency:
 
 jobs:
   driver:
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        platform: [tvos-device, ios-device]
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -35,9 +40,9 @@ jobs:
         run: |
           brew install autoconf automake libtool ninja
           python -m pip install meson==1.4.2
-      - name: Rebuild only libmpv for physical tvOS
+      - name: Rebuild libmpv for ${{ matrix.platform }}
         working-directory: native-build
-        run: make build use-prebuilt libs=libmpv platform=tvos-device
+        run: make build use-prebuilt libs=libmpv platform=${{ matrix.platform }}
       - name: Verify restart gate and binary
         run: |
           python3 - <<'PY'
@@ -57,7 +62,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: mpv-tvos-audio-driver
+          name: mpv-${{ matrix.platform }}-audio-driver
           path: native-build/dist/release/Libmpv*.zip
           if-no-files-found: error
           retention-days: 3

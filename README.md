@@ -55,7 +55,7 @@ The mobile app uses a configurable glass tab bar, a looping Home spotlight and l
 
 ## Playback
 
-Apple TV playback is powered by **Lucid Engine**. iPhone and iPad use [VividKit](VividKit). Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
+Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
 
 > [!IMPORTANT]
 > Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.

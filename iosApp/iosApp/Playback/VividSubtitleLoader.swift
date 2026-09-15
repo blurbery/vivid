@@ -7,10 +7,7 @@ import Foundation
 enum VividSubtitleLoader {
     enum Document {
         case cues([SubtitleCue])
-        #if !VIVID_MPV_EXPERIMENT
-        case ass(VividASSRenderer)
-        #endif
-    }
+            }
     static func load(_ track: ExternalSubtitleTrack) async throws -> Document {
         let data: Data
         if track.url.isFileURL {
@@ -30,13 +27,7 @@ enum VividSubtitleLoader {
         }
         guard data.count <= 16 * 1024 * 1024,
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { throw URLError(.cannotDecodeContentData) }
-        #if !VIVID_MPV_EXPERIMENT
-        if text.contains("[Script Info]") {
-            guard let renderer = VividASSRenderer(data: Data(text.utf8)) else { throw URLError(.cannotDecodeContentData) }
-            return .ass(renderer)
-        }
-        #endif
-        return .cues(parse(text))
+                return .cues(parse(text))
     }
     static func parse(_ text: String) -> [SubtitleCue] {
         let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
@@ -72,31 +63,15 @@ enum VividSubtitleLoader {
         return result
     }
 }
-#if !VIVID_MPV_EXPERIMENT
 @MainActor final class FrameExtractor {
-    private let source: VividSource
-    private var extractor: VividFrameExtractor?
-    private var native: AVAssetImageGenerator?
+    private let generator: AVAssetImageGenerator
     init(url: URL, headers: [String: String]) {
-        source = VividSource(url: url, headers: headers)
-        if url.pathExtension.lowercased() == "m3u8" {
-            native = AVAssetImageGenerator(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers]))
-            native?.appliesPreferredTrackTransform = true
-        } else { extractor = VividFrameExtractor(source: source) }
+        generator = AVAssetImageGenerator(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers]))
+        generator.appliesPreferredTrackTransform = true
     }
     func thumbnail(at seconds: Double, maxWidth: Int) async -> CGImage? {
-        if let native {
-            native.maximumSize = CGSize(width: maxWidth, height: maxWidth)
-            return try? await native.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
-        }
-        return await extractor?.image(at: seconds, width: maxWidth)
+        generator.maximumSize = CGSize(width: maxWidth, height: maxWidth)
+        return try? await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
     }
-    func shutdown() async { extractor?.cancel(); native?.cancelAllCGImageGeneration() }
+    func shutdown() async { generator.cancelAllCGImageGeneration() }
 }
-
-#else
-@MainActor final class FrameExtractor {
-    func thumbnail(at seconds: Double, maxWidth: Int) async -> CGImage? { nil }
-    func shutdown() async {}
-}
-#endif

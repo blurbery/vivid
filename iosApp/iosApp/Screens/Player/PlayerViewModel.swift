@@ -10,7 +10,7 @@ import UIKit
 import AppKit
 #endif
 
-/// Chapters read from the media by VividKit.
+/// Chapters read from the media by Lucid Engine.
 struct PlayerChapterInfo: Equatable, Identifiable, Sendable {
     let index: Int
     let title: String?
@@ -676,7 +676,7 @@ class PlayerViewModel {
     /// across an Vivid reload without also opening the sidecar locally.
     private var pendingServerRenderedSubtitleTrackId: Int64?
     /// Local subtitle preferences captured for the current item. Applied
-    /// after VividKit publishes its embedded tracks and cleared on cleanup.
+    /// after Lucid Engine publishes its embedded tracks and cleared on cleanup.
     private var prefsForCurrentItem: PrefsSnapshot?
     private struct PrefsSnapshot {
         let preferredLanguage: String?
@@ -5290,7 +5290,7 @@ class PlayerViewModel {
 
     // MARK: - Track selection
     //
-    // VividKit owns embedded subtitle selection.
+    // Lucid Engine owns embedded subtitle selection.
 
     func selectAudio(_ track: PlayerTrack) {
         if activePreparedProtocolV3 != nil {

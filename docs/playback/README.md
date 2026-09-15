@@ -8,7 +8,7 @@
 
 ---
 
-Apple TV uses **Lucid Engine**, while iPhone and iPad use VividKit. Vivid provides the controls, queues and server integration. See the [Lucid Engine guide](../cores/player-engine.md) for output behaviour and device verification.
+Apple TV, iPhone and iPad use **Lucid Engine**. Vivid provides the controls, queues and server integration. See the [Lucid Engine guide](../cores/player-engine.md) for output behaviour and device verification.
 
 Read the [playback architecture](architecture.md) for current responsibilities and validation boundaries.
 
@@ -40,17 +40,13 @@ The captions are compact single lines inside the open controls, such as “If bu
 
 The three capped modes are opt-in and local to the device/profile. After eight continuous seconds of eligible buffering with less than one second buffered ahead, a mode can request its lower ceiling once. Playback must already have started, and the active quality must match that mode. Startup, pause, seeking, scrubbing, offline/audio-only playback, errors, an in-flight quality replan and the last ten seconds of a known-duration item are excluded. Recovery or an ineligible phase cancels the timer. Source, position and selected tracks use the existing session/recovery path; the lower temporary ceiling does not overwrite the saved maximum. Original, Auto and older saved presets are not silently enrolled, and failed or rejected changes cannot trigger an unrelated fallback.
 
-Playback preferences remain local per device/profile. iPhone and iPad retain Automatic (about 20 seconds), 30-second and 40-second packet read-ahead targets. On Apple TV, Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer. Saved Buffer Ahead and Prefer Lossless Audio preferences do not override these settings. AC-3 and E-AC-3 use compressed output at normal speed; other formats use decoded PCM. Receiver output requires device verification. The Intro & Credit Skipper toggle controls marker loading, with separate automatic intro/credit skip switches.
+Playback preferences remain local per device/profile. Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer. Saved Buffer Ahead and Prefer Lossless Audio preferences do not override these settings. AC-3 and E-AC-3 use compressed output at normal speed; other formats use decoded PCM. Receiver output requires device verification. The Intro & Credit Skipper toggle controls marker loading, with separate automatic intro/credit skip switches.
 
 ## Direct-stream recovery
 
-This reader-level recovery applies to VividKit on iPhone and iPad. Apple TV uses Lucid Engine’s transport and Vivid’s reload boundary; credentials cannot be replaced in place on that adapter.
-
-Eligible delivery interruptions first attempt bounded recovery on the same direct route. When playback is active, the reader needs more bytes and playable headroom shrinks during a sustained delivery stall, Vivid can reconnect while buffered media continues playing. Received, unread bytes are retained and the replacement request starts at the first missing byte, subject to HTTP range and content validation. Pauses and normal buffer backpressure do not qualify on their own. A longer outage can still interrupt playback.
-
-Refreshed credentials are passed to the existing direct network reader for subsequent requests without replacing the player or its buffers. An in-flight 401 uses coordinated, bounded authenticated resumption. Reconstruction remains a fallback where in-place recovery is unavailable, including native HLS. Temporary delivery failures retain their network error codes rather than being treated immediately as decoder incompatibility.
-
-These changes retain the existing buffer targets, startup thresholds and audio paths. The [architecture guide](architecture.md#direct-network-recovery) describes eligibility, retry limits and cancellation.
+Lucid Engine owns media transport on both platforms. Vivid handles credential
+renewal through its bounded reload boundary, preserving the current position.
+The retired VividKit reader’s in-place network recovery does not apply.
 
 ## Audio selection and startup
 
@@ -59,12 +55,6 @@ Before loading, Vivid uses track metadata already supplied by the provider to pr
 Silo original-file and offline audio ordinals resolve to actual stream IDs inside the normal demux open, before decoder creation. Emby maps the selected ordinal to its native stream index during PlaybackInfo negotiation. Selecting an alternate track adds no separate media probe and does not wait for the read-ahead target to fill. Direct-file switching uses discovered tracks; packaged server routes depend on their negotiated track inventory. Software/sample-buffer changes run serially and keep the most recent selection, so a second choice made while the first rebuild is settling can still switch back.
 
 Automatic compatible-audio selection and TrueHD 7.1 source playback have been verified in development builds. See the [player engine core](../cores/player-engine.md#audio-support) for supported formats and output limits. Ten focused physical-iPhone tests previously passed for the audio preference and embedded-media path, including a non-contiguous audio stream ID and exactly one source open. Physical iPad coverage and additional output routes remain separate checks.
-
-### VividKit PCM continuity (iPhone and iPad)
-
-VividKit keeps software-decoded PCM timestamps continuous across container rounding and reuses the PCM format description until the audio format changes. iPhone/iPad use normal route negotiation. DTS uses the FFmpeg-to-PCM path; this does not establish DTS:X object output.
-
-During development, 35 focused quality tests passed on iPhone 16 Pro Max (iOS 26.6.1), covering simulated buffering, one-time recovery, cancellation eligibility, rejected choices, local settings, legacy quality pairs, recovery requests and Emby negotiation. These are iPhone checks; Lucid Engine’s device results are recorded in the [engine guide](../cores/player-engine.md).
 
 ## Downloads and resume updates
 

@@ -1,12 +1,12 @@
 # Lucid Engine
 
-## Apple TV playback
+## Apple playback
 
-Lucid Engine powers Apple TV playback. Generate `iosApp/project.yml` with
-XcodeGen to build the tvOS target. Dependency revisions and attribution are
+Lucid Engine powers Apple TV, iPhone and iPad playback. Generate
+`iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS with XcodeGen. Dependency revisions and attribution are
 recorded in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
-The same app identity and controls are retained; iOS is unchanged. Do not link
-the two FFmpeg distributions into the same target.
+Both app targets use the same pinned media package and retain Vivid’s controls.
+VividKit is no longer linked by either app target.
 
 Lucid Engine pins a patched mpv Apple binary package and its Swift Apple bridge. Compressed AC-3/E-AC-3 uses its AVPlayer resource loader; PCM uses
 its sample-buffer output. mpv owns scheduling, including the compressed-clock
@@ -32,8 +32,13 @@ Atmos output.
 
 ### Builds and diagnostics
 
-The iPhone/iPad target still uses VividKit. Generate `iosApp/project-ios.yml`
-for iOS; do not combine its FFmpeg packages with the tvOS package graph.
+The iOS adapter exposes the sample-buffer layer to Vivid’s Picture in Picture
+coordinator and forwards PiP state to the media core. Background playback follows
+the saved preference. Native AVAsset frame extraction provides scrub previews
+for formats Apple can read; unsupported preview formats return no image.
+External ASS sidecars currently use the shared text parser, so styled ASS parity
+with the retired iOS renderer is not claimed. iOS device playback, PiP and route
+verification remain pending.
 
 See [third-party notices](../../THIRD_PARTY_NOTICES.md) for the exact Apple
 bridge and binary revisions. Debug builds record allowlisted events in

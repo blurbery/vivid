@@ -20,7 +20,6 @@ targets:
           - "**/*.xcworkspace"
           - "Info.plist"
 
-      - path: ../VividKit/Sources/VividKit/VividTransientRecoveryBudget.swift
       - path: Resources
         buildPhase: resources
     # PRODUCT_BUNDLE_IDENTIFIER and CODE_SIGN_ENTITLEMENTS live in

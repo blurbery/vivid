@@ -1,4 +1,3 @@
-import VividKit
 import AVFoundation
 import Foundation
 import Network
@@ -376,7 +375,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 
     func testAuthenticationFailureSurvivesKnownUnderlyingErrorChains() {
-        XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(VividPlaybackError.network(401)))
+        XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(PlaybackErrorInfo(kind: .sourceRefused, message: "Unauthorised", underlyingCode: 401)))
         XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(NSError(
             domain: AVFoundationErrorDomain, code: -11800,
             userInfo: [NSUnderlyingErrorKey: NSError(domain: NSURLErrorDomain,
@@ -426,7 +425,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     func testAuthenticationRecoverySurfacesReplacementFailureRatherThanOriginal401() {
         let final = PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Decoder failed",
             underlyingDomain: "Decoder", underlyingCode: -5)
-        let wrapped = VividPlaybackController.LoadFailure(failure: final, underlying: VividPlaybackError.media(-5))
+        let wrapped = VividPlaybackController.LoadFailure(failure: final, underlying: NSError(domain: "LucidTest", code: -5))
         XCTAssertEqual(VividAuthenticationRecoveryPolicy.finalFailure(wrapped), final)
         XCTAssertFalse(VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(final))
         let network = VividAuthenticationRecoveryPolicy.finalFailure(

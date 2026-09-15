@@ -18,7 +18,7 @@ xcodegen generate
 open Vivid.xcodeproj
 ```
 
-VividKit remains the iPhone/iPad playback package. Lucid Engine provides Apple TV playback with pinned media dependencies and does not link VividKit playback into that target. Keep package pins and third-party notices together. The trial does not authorise an Apple binary release. Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
+Lucid Engine provides iPhone, iPad and Apple TV playback with the same pinned media dependencies. Neither app target links VividKit. Keep package pins and third-party notices together. The trial does not authorise an Apple binary release. Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
 
 Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV. These are the current build identifiers. Choose an installed simulator in Xcode, or build the TV target without signing:
 

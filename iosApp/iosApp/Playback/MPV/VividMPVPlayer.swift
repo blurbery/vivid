@@ -71,11 +71,18 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             // IEC carrier channels do not describe the compressed audio layout.
             let track = audioTracks.first { $0.id == activeAudioTrackIndex }
             let layout = track.flatMap { [1: "1.0", 2: "2.0", 6: "5.1", 8: "7.1"][$0.channels] }
-            let atmos = AVAudioSession.sharedInstance().renderingMode == .dolbyAtmos ? " Atmos" : ""
+            var atmos = ""
+            if #available(iOS 26.0, tvOS 26.0, *), AVAudioSession.sharedInstance().renderingMode == .dolbyAtmos {
+                atmos = " Atmos"
+            }
             return codec + atmos + (layout.map { " " + $0 } ?? "")
         }
         guard let count = outputChannels else { return "Not reported" }
         return "PCM " + ([1: "1.0", 2: "2.0", 6: "5.1", 8: "7.1"][count] ?? "\(count) ch")
+    }
+    private static var appleRenderingMode: Int {
+        if #available(iOS 26.0, tvOS 26.0, *) { return AVAudioSession.sharedInstance().renderingMode.rawValue }
+        return 0
     }
     var softwareDisplaySize: CGSize? {
         sourceVideoWidth > 0 ? CGSize(width: Int(sourceVideoWidth), height: Int(sourceVideoHeight)) : nil
@@ -87,6 +94,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         didSet {
             core?.isPipActive = pictureInPictureActive
             core?.setPipSubtitleCompositing(pictureInPictureActive)
+            core?.externalDisplayDidChange()
             core?.updateFrame()
         }
     }
@@ -142,6 +150,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
         try session.setActive(true)
         let instance = VividMPVCore()
+        #if os(iOS)
+        instance.onEnterBackground = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, !self.backgroundPlaybackEnabled, !self.pictureInPictureActive else { return }
+                self.pause()
+            }
+        }
+        #endif
         instance.matchContentEnabled = options.matchContentEnabled
         instance.headers = options.httpHeaders
         instance.startPosition = max(0, startPosition)
@@ -237,7 +253,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             let info = value as? [String: Any] ?? [:]
             outputChannels = (info["channel-count"] as? Int64).map(Int.init)
             outputAudioFormat = info["format"] as? String
-            trace?.event("mpv_audio_output", fields: "format=\(outputAudioFormat ?? "unknown") channels=\(outputChannels ?? 0) apple_mode=\(AVAudioSession.sharedInstance().renderingMode.rawValue)")
+            trace?.event("mpv_audio_output", fields: "format=\(outputAudioFormat ?? "unknown") channels=\(outputChannels ?? 0) apple_mode=\(Self.appleRenderingMode)")
         case "audio-codec-name": audioDecoder = value as? String
         case "hwdec-current": videoDecoder = (value as? String).map { "Lucid (\($0))" }
         case "container-fps": sourceVideoFrameRate = value as? Double
@@ -481,6 +497,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         generation &+= 1
         rateTask?.cancel(); rateTask = nil
+        softwarePiPSource = nil
         core?.delegate = nil; core?.dispose(preserveDisplayCriteria: !resetDisplayCriteria)
         core = nil; delegateProxy = nil; surface.core = nil; source = nil
         trace?.event("mpv_stopped"); trace = nil
@@ -507,7 +524,13 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
     func setNativeSubtitleRendering(_ active: Bool) {}
     func updateNativeMetadata(title: String, artwork: MPMediaItemArtwork?) {}
-    func makeFrameExtractor(url: URL, httpHeaders: [String: String]) -> FrameExtractor? { nil }
+    func makeFrameExtractor(url: URL, httpHeaders: [String: String]) -> FrameExtractor? {
+        #if os(iOS)
+        return FrameExtractor(url: url, headers: httpHeaders)
+        #else
+        return nil
+        #endif
+    }
 }
 
 private final class VividMPVCore: MpvPlayerCore {

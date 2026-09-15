@@ -18,12 +18,12 @@ How the [Vivid player core](../cores/vivid.md), the platform engines and each se
   </thead>
   <tbody>
     <tr><td>Vivid</td><td>Controls, queues, resume/Next Up, selection preferences, downloads, server sessions, progress, local player stats and presentation</td></tr>
-    <tr><td>Lucid Engine (tvOS) / VividKit (iOS)</td><td>Source reads, probing, demux/decode, media routing, buffers, track extraction, seek execution and media presentation</td></tr>
+    <tr><td>Lucid Engine (iOS and tvOS)</td><td>Source reads, probing, demux/decode, media routing, buffers, track extraction, seek execution and media presentation</td></tr>
     <tr><td>Server adapter</td><td>Provider authentication, playback-plan negotiation, source headers, renewal, realtime commands and progress reporting</td></tr>
   </tbody>
 </table>
 
-Library playback uses Vivid’s existing playback controller. Lucid Engine opens sources through its media core, with compressed AC-3/E-AC-3 output through Apple’s resource loader and decoded PCM through sample-buffer audio. No loopback HLS producer or second reservoir sits in front of it. iPhone/iPad retain VividKit.
+Library playback uses Vivid’s existing playback controller. Lucid Engine opens sources through its media core, with compressed AC-3/E-AC-3 output through Apple’s resource loader and decoded PCM through sample-buffer audio. No loopback HLS producer or second reservoir sits in front of it. iPhone/iPad use the same Lucid Engine adapter.
 
 The existing adapter implements Silo's Protocol V3. That is a provider contract, not Vivid's universal server API. A new provider should map its own session and source information into the player inputs without pretending to speak Protocol V3.
 
@@ -33,27 +33,16 @@ Lucid Engine’s `VividMPVPlayer` adapter maps playback state, resume, tracks, s
 
 Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer. Credential updates use Vivid’s existing reload boundary.
 
-## VividKit pipeline (iPhone and iPad)
+## iPhone and iPad pipeline
 
-Files and direct HTTP media use VividNetwork → FFmpeg demux → bounded video/audio packet queues → VideoToolbox or FFmpeg decoding → Apple sample-buffer renderers. The shared render synchronizer owns presentation time. Automatic targets about 20 seconds of packet read-ahead; manual choices target 30 or 40 seconds, with independent byte caps and small decoded queues. Startup does not wait for the read-ahead target. Resume readiness also accounts for Apple's renderer queue capacity, avoiding a startup deadlock when that capacity is smaller than the preferred time buffer. These targets do not replace AVPlayer’s server-HLS buffering.
+The iOS target uses the same pinned media package and Lucid Engine adapter as
+tvOS. It exposes the sample-buffer layer through the existing PiP coordinator,
+forwards PiP compositing state and honours the background-playback preference.
+The iOS bridge retains its media-time presentation path; the tvOS host-clock
+presentation configuration remains platform-specific.
 
-Supported AAC, MP3, AC-3 and E-AC-3 audio can use Apple’s compressed-audio renderer. Other supported formats, including DTS, decode to PCM through FFmpeg. Software PCM buffers reuse their format description until sample rate, sample format or channel layout changes. Their presentation times follow the sample-accurate end of the previous frame when packet timestamps repeat, move backwards or contain tiny rounding differences; real forward gaps remain. This avoids repeated format allocation and tiny PCM gaps/overlaps behind the reported DTS crackle. iPhone/iPad retain default route negotiation. A native-audio renderer failure still permits one PCM rebuild. This does not establish DTS:X object preservation or every receiver/output layout.
-
-Seeking interrupts old queue work, reuses the demux session, seeks to a preceding keyframe and decodes forward to the requested timestamp. Generation checks prevent outgoing frames and cues from reaching a newer seek or media item.
-
-Server HLS uses AVPlayer. Direct container playback uses AVSampleBufferDisplayLayer, including VideoToolbox-decoded pixel buffers. External video playback is advertised only for receiver-fetchable native HLS. Subtitles use native text and bitmap cues, with libass for ASS/SSA styling. Each new embedded bitmap display set ends the preceding set on the same track, while every rectangle belonging to the new set remains visible together. Preview extraction is separate, bounded work.
-
-VividKit playback has been tested on iPhone 16 Pro Max and Apple TV 4K (3rd generation). Broad remux coverage, Dolby Vision output, Atmos object preservation, interlaced content, external playback, long network stalls and older Apple TV hardware require their own media/device verification; passing the focused synthetic tests does not establish that coverage.
-
-## Direct-network recovery
-
-The reader-level recovery below belongs to VividKit. tvOS uses Lucid Engine’s transport and Vivid’s outer reload boundary.
-
-The demux boundary preserves the underlying network failure. Eligible transient failures include HTTP 500, 502, 503 and 504, timeouts, lost connections, connection failures, DNS failures and offline errors. A shared playback recovery budget permits two network retries and one same-route reload; reloading does not replenish that budget, and cancellation invalidates it. Normal compatibility fallback remains available when recovery cannot continue.
-
-Proactive recovery requires active playback, a reader waiting for bytes, an unfinished request and no authentication recovery in progress. Delivery must remain stalled for at least three seconds while reported playable headroom drops by more than 0.1 seconds. Pausing or normal queue backpressure resets eligibility. Resumption retains unread bytes and requests the first missing byte, using a strong ETag or a conservative Last-Modified/Date validator. Range responses and content identity must validate; superseded request callbacks cannot modify the active reader.
-
-Credential changes update the reader and controller snapshot in place. An in-flight 401 coordinates authenticated resumption with a six-second deadline, using newer credentials already available before requesting another refresh. Cancellation and request identity guard against late completions. Native HLS and unsupported recovery cases retain the reconstruction fallback. Debug probe recovery messages report error domain/code, outcome and buffer observations without URLs or credentials.
+Credential changes use Vivid’s reload boundary on both platforms. The retired
+VividKit reader and renderer recovery mechanisms are not part of this pipeline.
 
 ## Loads and lifecycle
 
@@ -90,7 +79,7 @@ Fresh-install detection uses an app-container marker. A missing marker with no e
 
 Use the engine’s actual track identities. A dense server ordinal is not necessarily an engine stream ID; stream zero remains valid. Initial selection uses existing provider metadata to prefer a compatible same-language audio alternative while preserving explicit manual choices. For original-file and offline sources, the platform engine resolves the ordinal against the audio inventory from its first demux open. An explicit source stream ID takes precedence. This path must not introduce a preliminary probe or second source open. See [audio selection](README.md#audio-selection-and-startup) for the policy and its limits.
 
-Chapters and embedded subtitle tracks come from the engine’s media inventory. Selection and disabling happen locally without a Silo replan. The optional OpenSubtitles plugin downloads user-selected SRT files to temporary device storage and registers only those files as selectable external tracks. The API key is never forwarded to subtitle download hosts. Downloads are capped at 5 MiB, guarded by playback generation and connection scope, and retained with their selection across successful replacement loads for the same item, including quality changes. They are removed on final player disposal or when another item loads. These temporary track IDs are not persisted as server subtitle preferences. AI translation is not exposed. iOS retains VividKit’s text, libass and bitmap path. Lucid Engine uses the media core’s renderer for embedded subtitles and Vivid’s overlay for external text subtitles. Primary and secondary selection, delay and styling remain scoped to the active playback session. Preferences remain device/profile-local.
+Chapters and embedded subtitle tracks come from the engine’s media inventory. Selection and disabling happen locally without a Silo replan. The optional OpenSubtitles plugin downloads user-selected SRT files to temporary device storage and registers only those files as selectable external tracks. The API key is never forwarded to subtitle download hosts. Downloads are capped at 5 MiB, guarded by playback generation and connection scope, and retained with their selection across successful replacement loads for the same item, including quality changes. They are removed on final player disposal or when another item loads. These temporary track IDs are not persisted as server subtitle preferences. AI translation is not exposed. Lucid Engine uses the media core’s renderer for embedded subtitles and Vivid’s overlay for external text subtitles. Primary and secondary selection, delay and styling remain scoped to the active playback session. Preferences remain device/profile-local.
 
 Apple TV scrubbing shows the timeline and target time without a thumbnail overlay. Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker. Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
 
@@ -126,7 +115,7 @@ PiP, AirPlay, HDR and audio-format behaviour depend on the exact engine route, d
 
 - Keep development logs local, redacted and bounded. Vivid does not capture or upload in-app diagnostics reports. Do not expose credentials, source URLs, paths or subtitle contents in logs.
 - Classify typed failures using stable kinds, with an unknown fallback, rather than matching localized error text.
-- Read the local engine dependency from [project.yml](../../iosApp/project.yml), the FFmpeg pin from [VividKit/Package.swift](../../VividKit/Package.swift), and resolved package revisions from the tracked `Package.resolved` file. Subtitle/font binary provenance is recorded in `VividKit/Vendor/NOTICE`.
+- Read the shared media dependency from [project.yml](../../iosApp/project.yml) and [project-ios.yml](../../iosApp/project-ios.yml), with exact revisions and provenance in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
 - Keep the existing package graph and media-framework notices intact during documentation or branding work.
 - Follow [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) for dependency licensing, corresponding source and binary provenance. Inspect the actual archive and its source mapping before distributing a new binary.
 - Validate temporary media caches, data protection, cleanup and backup exclusions when changing storage or engine versions.

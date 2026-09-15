@@ -25,7 +25,7 @@ Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution perm
 
 The full version, source and rebuild inventory is maintained in the [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt), alongside the unchanged upstream licence texts. The app exposes these in Settings → About → Open Source Licences.
 
-For the retained iOS engine, FFmpeg remains a set of separate dynamic frameworks. The exact build excludes GPL and nonfree FFmpeg features. VividKit links only the four standalone subtitle/font frameworks from the pinned FFmpegKit source tree; it does not link FFmpegKit's playback code or mpv.
+For the historical VividKit source package, which neither app target links, FFmpeg remains a set of separate dynamic frameworks. The exact build excludes GPL and nonfree FFmpeg features. VividKit links only the four standalone subtitle/font frameworks from the pinned FFmpegKit source tree; it does not link FFmpegKit's playback code or mpv.
 
 The subtitle/font frameworks are vendored in [VividKit/Vendor](VividKit/Vendor), with their provenance and licence texts. Their simulator and device slices are available as separately replaceable SwiftPM binary targets. External distribution must preserve source and relinking rights for the LGPL components; Vivid's GPL licence and Apple permission do not relicense those dependencies or waive their obligations.
 
@@ -44,7 +44,7 @@ The separate Acknowledgements page contains service credits, with library licenc
 The logos identify their respective projects and are not presented as Vivid-owned artwork.
 
 
-## Lucid Engine dependencies
+## Lucid Engine dependencies (iOS and tvOS)
 
 `iosApp/project.yml` selects `edde746/mpv-build` at
 `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` (mpv 0.41.0 and FFmpeg 8.0.1,
@@ -52,10 +52,11 @@ with that repository's Apple patch series). The upstream package declares its
 bundled mpv/FFmpeg frameworks GPLv3. Its pinned Package.swift records binary
 checksums and the upstream repository contains the corresponding build sources.
 
-`Playback/MPV/MpvPlayerCoreBase.swift` and `MpvPlayerCore.swift` are adapted from
+`Playback/MPV/MpvPlayerCoreBase.swift`, `MpvPlayerCore.swift` and
+`ExternalDisplayManager.swift` are adapted from
 [edde746/plezy](https://github.com/edde746/plezy) at
 `8ad17ad38f2ba63576cd7b37b460a4362adb738e`, under its GPLv3 licence, bundled as
-`Plezy-GPL-3.0.txt`. Vivid's changes scope compilation to the tvOS experiment,
+`Plezy-GPL-3.0.txt`. Vivid's changes scope compilation to the Apple app targets,
 mount the video in Vivid's existing surface, honour its match-content setting
 and disable verbose default logging. Upstream clock, renderer and display-mode
 logic is retained. Vivid's Apple distribution permission does not extend to
@@ -63,5 +64,5 @@ this third-party code. The new VividMPVPlayer adapter is Vivid-owned code.
 
 This branch is an experiment, not an App Store or TestFlight release. Exact
 transitive binary notices and distribution requirements need verification before
-any public Apple binary distribution. Existing inventory entries above continue
-to describe the retained iOS configuration.
+any public Apple binary distribution. The FFmpegBuild and standalone subtitle-library entries above describe the
+historical VividKit source package, not the current iOS app target.

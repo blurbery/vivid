@@ -14,11 +14,7 @@ enum LucidCore {
 #endif
 
 enum VividPlaybackEngineIdentity {
-    #if VIVID_MPV_EXPERIMENT
     static let name = LucidCore.name
-    #else
-    static let name = "VividKit"
-    #endif
 }
 
 enum PlaybackState: Equatable { case idle, loading, playing, paused, seeking, ended, error(String) }
@@ -84,10 +80,7 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
 
     static func isHTTPAuthenticationFailure(_ error: Error, depth: Int = 0) -> Bool {
         guard depth < 8 else { return false }
-        #if !VIVID_MPV_EXPERIMENT
-        if let typed = error as? VividPlaybackError { return typed == .network(401) }
-        #endif
-        if let typed = error as? PlaybackErrorInfo {
+                if let typed = error as? PlaybackErrorInfo {
             return (typed.kind == .sourceRefused
                 && (typed.underlyingDomain == nil || typed.underlyingDomain == NSURLErrorDomain)
                 && typed.underlyingCode == 401)
@@ -130,14 +123,7 @@ struct TrackInfo: Identifiable, Equatable {
         self.assHeader=assHeader; self.isExternal=isExternal; self.isNativelyRenderedSubtitle=isNativelyRenderedSubtitle
         self.sourceStreamIndex = sourceStreamIndex
     }
-    #if !VIVID_MPV_EXPERIMENT
-    init(_ track: VividTrack) {
-        self.init(id: track.id, name: track.name, codec: track.codec,
-                  language: track.language.isEmpty ? nil : track.language, channels: track.channels, bitrate: track.bitrate,
-                  isDefault: track.isDefault, isForced: track.isForced)
     }
-    #endif
-}
 struct ExternalSubtitleTrack: Equatable, Sendable {
     let url: URL
     var name: String? = nil

@@ -32,6 +32,7 @@ class MpvPlayerCore: MpvPlayerCoreBase {
   #endif
 
   var isPipStarting = false
+  var onEnterBackground: (() -> Void)?
 
   private static func log(_ message: @autoclosure () -> String) {
     guard MpvLog.isDebugEnabled else { return }
@@ -889,6 +890,7 @@ class MpvPlayerCore: MpvPlayerCoreBase {
   }
 
   @objc private func enterBackground() {
+    onEnterBackground?()
     setBackgrounded(true)
     if isPipActive || isPipStarting {
       MpvLog.debug("[MpvPlayerCore] Entering background - PiP active/starting, keeping video")
