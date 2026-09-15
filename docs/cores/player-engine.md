@@ -1,20 +1,14 @@
-# Vivid playback engine
+# Lucid Engine
 
-## Lucid on tvOS
+## Apple TV playback
 
-Lucid is Vivid’s player name in the app. This branch uses the Plezy/mpv
-implementation; upstream package names and licence acknowledgements remain
-intact. The `plezy-mpv-experiment` branch starts from KSPlayer checkpoint `575e3c9`;
-`ksplayer-trial` retains that checkpoint and the existing PCM/native trials.
-Generate `iosApp/project.yml` with XcodeGen to build the isolated mpv
-experiment. Restore the KSPlayer source and configuration by switching to
-`ksplayer-trial`. KSPlayer sources, patches and its tvOS dependency have been
-removed from this experimental branch.
+Lucid Engine powers Apple TV playback. Generate `iosApp/project.yml` with
+XcodeGen to build the tvOS target. Dependency revisions and attribution are
+recorded in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
 The same app identity and controls are retained; iOS is unchanged. Do not link
 the two FFmpeg distributions into the same target.
 
-The experiment pins Plezy's patched mpv Apple binary package and its Swift
-Apple bridge. Compressed AC-3/E-AC-3 uses its AVPlayer resource loader; PCM uses
+Lucid Engine pins a patched mpv Apple binary package and its Swift Apple bridge. Compressed AC-3/E-AC-3 uses its AVPlayer resource loader; PCM uses
 its sample-buffer output. mpv owns scheduling, including the compressed-clock
 accounting and host-clock video presentation fixes. Vivid does not insert a
 second audio clock, fixed sync offset or HLS server. Source headers are passed
@@ -23,7 +17,7 @@ can contain authenticated source URLs. Structured trial events identify mpv.
 
 Vivid adapts playback state, seek, track selection and stats. Embedded subtitles
 use mpv's renderer; external text subtitles use Vivid's existing bounded loader
-and overlay. Frame extraction remains unavailable, as in the KSPlayer trial.
+and overlay. Frame extraction remains unavailable.
 Apple rendering mode remains the evidence for a Dolby audio output badge;
 source channels or accepted E-AC-3 bytes alone do not establish Atmos output.
 
@@ -38,9 +32,9 @@ Atmos output.
 
 ### Retained routes and provenance
 
-The KSPlayer implementation, its timing tests and its device observations remain
-on `ksplayer-trial` at `575e3c9`. The earlier PCM checkpoint is `d013ba2`.
-The KSPlayer device observations do not validate this mpv implementation.
+The previous player checkpoint remains on `ksplayer-trial` at `575e3c9`.
+The earlier PCM checkpoint is `d013ba2`. Those historical device observations
+do not validate the current Lucid Engine implementation.
 
 The iPhone/iPad target still uses VividKit. Generate `iosApp/project-ios.yml`
 for iOS; do not combine its FFmpeg packages with the tvOS package graph.
@@ -77,7 +71,7 @@ messages are labelled as messages, not proof that the media file ended.
 
 Embedded subtitle rendering, first frame,
 resume, audio selection and speed changes need physical tvOS testing. At
-non-unit speed, the adapter follows Plezy by selecting PCM before applying
+non-unit speed, the adapter selects PCM before applying
 the tempo change, then restores compressed audio after returning to 1x.
 
 Compressed audio stats use the active mpv output codec and selected track's

@@ -13,7 +13,7 @@ Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution perm
 | Component | Version / revision | Licence |
 | --- | --- | --- |
 | Plezy Apple bridge | `8ad17ad38f2ba63576cd7b37b460a4362adb738e` | GPLv3; bundled upstream licence |
-| Plezy mpv-build (tvOS experiment) | `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` | GPLv3 bundles; component licences remain upstream |
+| Patched mpv Apple build | `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` | GPLv3 bundles; component licences remain upstream |
 | CollectionHStack (tvOS Home rows) | `15baaaa759a0e252addae08431c79a49a25e4afc` | MIT |
 | DifferenceKit (collection updates) | 1.3.0, `073b9671ce2b9b5b96398611427a1f929927e428` | MIT |
 | FFmpegBuild | `4e58942403d37cceff3a3212e3e026f4205146a2` | LGPL-2.1; embedded FFmpeg and codec dependencies retain the licences recorded below |
@@ -44,14 +44,13 @@ The separate Acknowledgements page contains service credits, with library licenc
 The logos identify their respective projects and are not presented as Vivid-owned artwork.
 
 
-## Isolated Plezy/mpv experiment
+## Lucid Engine dependencies
 
 `iosApp/project.yml` selects `edde746/mpv-build` at
 `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` (mpv 0.41.0 and FFmpeg 8.0.1,
 with that repository's Apple patch series). The upstream package declares its
 bundled mpv/FFmpeg frameworks GPLv3. Its pinned Package.swift records binary
 checksums and the upstream repository contains the corresponding build sources.
-This configuration does not link KSPlayer or its FFmpegKit distribution.
 
 `Playback/MPV/MpvPlayerCoreBase.swift` and `MpvPlayerCore.swift` are adapted from
 [edde746/plezy](https://github.com/edde746/plezy) at

@@ -129,8 +129,8 @@ DifferenceKit (CollectionHStack dependency)
   Source: https://github.com/ra1028/DifferenceKit/tree/073b9671ce2b9b5b96398611427a1f929927e428
   MIT, bundled in CollectionHStack-DifferenceKit-MIT.txt.
 
-Plezy/mpv experiment (experimental branch only)
-------------------------------------------
+Lucid Engine dependencies
+-------------------------
 Apple bridge source: edde746/plezy, 8ad17ad38f2ba63576cd7b37b460a4362adb738e.
 Patched Apple binaries and build source: edde746/mpv-build,
 c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6.

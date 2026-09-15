@@ -20,7 +20,7 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
     <tr><td><a href="app-design.md">App design</a></td><td>Shared appearance, downloads, components and accessibility</td></tr>
     <tr><td><a href="apple-tv-browsing.md">Apple TV browsing</a></td><td>Discovery spotlight, native catalog menus, detail pages, trailers, similarity, Settings and startup</td></tr>
     <tr><td><a href="apple-tv-focus.md">Apple TV focus</a></td><td>Focus ownership and navigation rules</td></tr>
-    <tr><td><a href="playback/README.md">Playback</a></td><td>KSPlayer GPL trial on Apple TV, VividKit on iPhone/iPad, compatible audio, embedded and OpenSubtitles tracks, chapters, controls, downloads, resume updates and verification</td></tr>
+    <tr><td><a href="playback/README.md">Playback</a></td><td>Lucid Engine on Apple TV, VividKit on iPhone/iPad, compatible audio, embedded and OpenSubtitles tracks, chapters, controls, downloads, resume updates and verification</td></tr>
     <tr><td><a href="branding/README.md">Branding</a></td><td>Vivid&#x27;s silver logo, documentation headers and Apple app icons</td></tr>
     <tr><td><a href="release/versioning.md">Releases</a></td><td>GitHub version rules, independent Apple version/build numbers and dated build records</td></tr>
     <tr><td><a href="release/distribution.md">Device distribution</a></td><td>TestFlight distribution, signing checks and device coverage</td></tr>
@@ -32,7 +32,7 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
 
 ## Cores
 
-Vivid is the shared player core. Each server has a separate server core that supplies its connection, data and playback sources. VividKit is a local iOS package and KSPlayer is the pinned public GPL tvOS trial dependency; the server cores are responsibility boundaries within the app, not separate provider packages.
+Vivid is the shared player core. Each server has a separate server core that supplies its connection, data and playback sources. VividKit is the local iOS playback package and Lucid Engine provides tvOS playback; the server cores are responsibility boundaries within the app, not separate provider packages.
 
 | Core | Documentation |
 | --- | --- |

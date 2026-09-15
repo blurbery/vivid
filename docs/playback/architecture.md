@@ -18,7 +18,7 @@ How the [Vivid player core](../cores/vivid.md), the platform engines and each se
   </thead>
   <tbody>
     <tr><td>Vivid</td><td>Controls, queues, resume/Next Up, selection preferences, downloads, server sessions, progress, local player stats and presentation</td></tr>
-    <tr><td>KSPlayer GPL trial (tvOS) / VividKit (iOS)</td><td>Source reads, probing, demux/decode, media routing, buffers, track extraction, seek execution and media presentation</td></tr>
+    <tr><td>Lucid Engine (tvOS) / VividKit (iOS)</td><td>Source reads, probing, demux/decode, media routing, buffers, track extraction, seek execution and media presentation</td></tr>
     <tr><td>Server adapter</td><td>Provider authentication, playback-plan negotiation, source headers, renewal, realtime commands and progress reporting</td></tr>
   </tbody>
 </table>
@@ -29,9 +29,9 @@ The existing adapter implements Silo's Protocol V3. That is a provider contract,
 
 ## Apple TV pipeline
 
-`LucidPlayer` maps transport, resume, tracks, subtitles and the existing SwiftUI surface onto KSPlayer. `LucidFFOptions` selects the initial audio stream and respects Match Content. `PlaybackTrialTrace` records source-free monotonic timing and one-second buffer samples. See the [trial baseline](../cores/player-engine.md) for measurement limits and pending device checks.
+Lucid Engine’s `VividMPVPlayer` adapter maps playback state, resume, tracks, subtitles and the existing SwiftUI surface onto the media core. The Apple bridge respects Match Content. `PlaybackTrialTrace` records source-free timing events and numeric audio and buffer diagnostics. See the [Lucid Engine guide](../cores/player-engine.md) for the output architecture and device checks.
 
-LucidFF uses KSPlayer’s own buffer defaults, with no additional read-ahead reservoir. Credential updates use Vivid’s existing reload boundary.
+Lucid Engine uses a 256 MiB forward packet buffer limit and a 16 MiB back buffer. Credential updates use Vivid’s existing reload boundary.
 
 ## VividKit pipeline (iPhone and iPad)
 
@@ -51,7 +51,7 @@ VividKit playback has been tested on iPhone 16 Pro Max and Apple TV 4K (3rd gene
 
 ## Direct-network recovery
 
-The reader-level recovery below belongs to VividKit. tvOS LucidFF uses KSPlayer’s transport and Vivid’s outer reload boundary.
+The reader-level recovery below belongs to VividKit. tvOS uses Lucid Engine’s transport and Vivid’s outer reload boundary.
 
 The demux boundary preserves the underlying network failure. Eligible transient failures include HTTP 500, 502, 503 and 504, timeouts, lost connections, connection failures, DNS failures and offline errors. A shared playback recovery budget permits two network retries and one same-route reload; reloading does not replenish that budget, and cancellation invalidates it. Normal compatibility fallback remains available when recovery cannot continue.
 
@@ -76,7 +76,7 @@ The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the ex
 
 The same Vivid surface remains mounted as playback moves between full screen and Next Up preview geometry. Next Up owns only the preview bounds and action layout; it must never create a second player or restart the current item. Its top-right preview and bottom-left actions are constrained to the actual viewport. The countdown and Play Now depend on an available next episode; absence of a next episode must show an explicit end/error state instead.
 
-Vivid’s custom timeline is shared by native and software engine routes. On Apple TV, a round subtitle shortcut immediately left of the sliders control opens a glass subtitle selection menu, with Off, Subtitle Settings and connected OpenSubtitles search. Subtitle Settings retains secondary tracks, delay and appearance controls. The sliders control opens the remaining tabs in a Home-style glass bar. Closing either presentation restores focus to its shortcut. The HUD panel is capped at 300 points high, with three-column information and stats layouts; long descriptions, chapters and track lists remain scrollable. Loading dots are decorative and non-focusable, use a bounded animation cadence, and respect Reduce Motion. AVPlayerViewController hosts the native route, with its transport UI hidden. The same persistent host survives episode handoff; the tvOS trial uses LucidVideo.
+Vivid’s custom timeline is shared by native and software engine routes. On Apple TV, a round subtitle shortcut immediately left of the sliders control opens a glass subtitle selection menu, with Off, Subtitle Settings and connected OpenSubtitles search. Subtitle Settings retains secondary tracks, delay and appearance controls. The sliders control opens the remaining tabs in a Home-style glass bar. Closing either presentation restores focus to its shortcut. The HUD panel is capped at 300 points high, with three-column information and stats layouts; long descriptions, chapters and track lists remain scrollable. Loading dots are decorative and non-focusable, use a bounded animation cadence, and respect Reduce Motion. AVPlayerViewController hosts the native route, with its transport UI hidden. The same persistent host survives episode handoff; Lucid Engine uses `VividMPVHostView` on tvOS.
 
 ## Mobile presentation
 
@@ -118,7 +118,7 @@ Reduced-quality downloads are a separate server operation from playback quality.
 
 Downloads retain the configured server's HTTP or HTTPS scheme; an HTTPS configuration cannot be downgraded by the initial destination. Background transfers are managed by Apple's networking service, which follows redirects without calling the app's redirect delegate. Initial-origin checks therefore do not enforce redirect isolation. Preventing that requires a different transfer design or server support for URLs that do not carry reusable credentials. Vivid currently retains background transfers with this limitation.
 
-The tvOS trial has no local HLS listener. Remote HLS is read by KSPlayer’s FFmpeg path.
+Lucid Engine has no local HLS listener. Remote HLS is read by the media core’s FFmpeg transport.
 
 Keep downloaded sources and their metadata independent of an online server's current response and out of the iCloud account vault. The detail action observes registration and transfer state directly from `DownloadManager`, while Downloads reads the same records for progress, transfer rate, storage totals and locally stored poster artwork. Series-scoped requests use the parent series artwork. Accept authenticated artwork only as a relative path or a same-origin absolute URL; normalise it before constructing the server request. Validate offline resume, seeking, tracks and teardown explicitly.
 
