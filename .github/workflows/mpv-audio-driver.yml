@@ -1,0 +1,65 @@
+name: MPV audio driver trial
+
+on:
+  push:
+    branches: [plezy-mpv-experiment]
+    paths: ['patches/mpv/**', '.github/workflows/mpv-audio-driver.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpv-audio-driver-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  driver:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: edde746/mpv-build
+          ref: c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
+          path: native-build
+          persist-credentials: false
+      - name: Apply Vivid audio restart patch
+        run: |
+          cp patches/mpv/0001-avfoundation-resume-after-audio-eof.patch native-build/patches/mpv/pool/0901-vivid-audio-eof.patch
+          printf '\n0901-vivid-audio-eof.patch\n' >> native-build/patches/mpv/series.apple
+      - name: Install build tools
+        run: |
+          brew install autoconf automake libtool ninja
+          python3 -m venv /tmp/mpv-tools
+          /tmp/mpv-tools/bin/pip install meson==1.4.2
+          echo /tmp/mpv-tools/bin >> "$GITHUB_PATH"
+      - name: Rebuild only libmpv for physical tvOS
+        working-directory: native-build
+        run: make build use-prebuilt libs=libmpv platform=tvos-device
+      - name: Verify restart gate and binary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          sources = list(Path('native-build').glob('**/audio/out/ao_avfoundation.m'))
+          assert sources, 'Missing compiled driver source'
+          for path in sources:
+              text = path.read_text()
+              start = text[text.index('static void start('):]
+              block = start[:start.index('static void stop(')]
+              assert block.index('p->avp_eof = false;') < block.index('feed_avp(ao);')
+          binaries = list(Path('native-build/dist').glob('**/Libmpv.framework/Libmpv'))
+          assert binaries, 'Missing rebuilt libmpv'
+          for path in binaries:
+              assert b'resuming compressed feed after audio EOF' in path.read_bytes()
+          print('Verified compiled EOF restart patch')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mpv-tvos-audio-driver
+          path: native-build/dist/release/Libmpv*.zip
+          if-no-files-found: error
+          retention-days: 3

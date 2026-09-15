@@ -43,7 +43,12 @@ for iOS; do not combine its FFmpeg packages with the tvOS package graph.
 
 See [third-party notices](../../THIRD_PARTY_NOTICES.md) for the exact Apple
 bridge and binary revisions. Debug builds record allowlisted events in
-`Library/Caches/MPVTrial.log`. Embedded subtitle rendering, first frame,
+`Library/Caches/MPVTrial.log`, including numeric native audio heartbeat fields
+and fixed audio fault labels. Raw mpv messages and source URLs are excluded.
+Audio heartbeats include a matching numeric cache snapshot (input rate, packet
+bytes and available per-stream timestamps) to distinguish input starvation
+from an output stall. No automatic stall-triggered PCM switch or seek is applied.
+Embedded subtitle rendering, first frame,
 resume, audio selection and speed changes need physical tvOS testing. At
 non-unit speed, the adapter follows Plezy by selecting PCM before applying
 the tempo change, then restores compressed audio after returning to 1x.

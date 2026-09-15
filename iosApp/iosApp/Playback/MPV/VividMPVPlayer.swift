@@ -109,6 +109,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var externalCues: [Int: [SubtitleCue]] = [:]
     private var subtitleTasks: [Int: Task<Void, Never>] = [:]
     private var trace: PlaybackTrialTrace?
+    private var cacheSnapshot: [String: Any] = [:]
 
     func load(url: URL, startPosition: Double = 0, options: LoadOptions = LoadOptions(),
               audioSourceStreamIndex: Int32? = nil) async throws {
@@ -150,7 +151,11 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         surface.core = instance
         instance.sampleBufferDisplayLayer?.videoGravity = videoGravity
         instance.setVisible(true)
+        #if VIVID_P8_TRIAL
+        instance.setLogLevel("v")
+        #else
         instance.setLogLevel("warn")
+        #endif
         for (name, format) in Self.observations { instance.observeProperty(name, format: format) }
         videoRoute = options.audioOnly ? .audio : .sampleBuffer
         trace?.event("mpv_initialised", fields: "backend=plezy_mpv compressed_sink=avplayer pcm_sink=samplebuffer")
@@ -181,6 +186,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         ("secondary-sid", "string"), ("video-params", "node"), ("video-out-params", "node"),
         ("audio-out-params", "node"), ("audio-codec-name", "string"), ("hwdec-current", "string"),
         ("container-fps", "double"), ("demuxer-cache-duration", "double"),
+        ("demuxer-cache-state", "node"),
         ("avsync", "double"), ("frame-drop-count", "double")
     ]
     private var rawTracks: [[String: Any]] = []
@@ -190,6 +196,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         switch name {
         case "time-pos": if let value = value as? Double, value.isFinite { clock.currentTime = value; updateExternalCues() }
         case "duration": duration = (value as? Double) ?? 0
+        case "demuxer-cache-state": cacheSnapshot = value as? [String: Any] ?? [:]
         case "paused-for-cache": isBuffering = value as? Bool ?? false; updatePhase()
         case "seeking": isSeeking = value as? Bool ?? false; updatePhase()
         case "pause": wantsPlay = !(value as? Bool ?? true); updatePhase()
@@ -240,9 +247,71 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             if let code = data?["error"] as? Int {
                 fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "mpv playback failed (\(code))."))
             } else if data?["reason"] as? Int == 0 { state = .ended; playbackPhase = .ended; isBuffering = false }
-        // Raw mpv logs can contain authenticated URLs. Only structured, allowlisted diagnostics are persisted.
+        case "log-message":
+            if let fields = Self.audioDiagnostic(data) {
+                trace?.event("mpv_audio_diagnostic", fields: fields)
+                if fields.hasPrefix("raw_s=") { recordPipelineSnapshot() }
+            }
         default: break
         }
+    }
+    private func recordPipelineSnapshot() {
+        var fields = ["position_s=\(currentTime)", "playing=\(wantsPlay)", "buffering=\(isBuffering)", "seeking=\(isSeeking)"]
+        for key in ["fw-bytes", "total-bytes", "raw-input-rate", "reader-pts", "cache-end", "cache-duration", "eof", "underrun", "idle"] {
+            if let number = cacheSnapshot[key] as? NSNumber, number.doubleValue.isFinite {
+                fields.append("\(key)=\(number)")
+            }
+        }
+        for stream in cacheSnapshot["ts-per-stream"] as? [[String: Any]] ?? [] {
+            guard let type = stream["type"] as? String, ["audio", "video", "sub"].contains(type) else { continue }
+            for key in ["reader-pts", "cache-end", "cache-duration"] {
+                if let number = stream[key] as? NSNumber, number.doubleValue.isFinite {
+                    fields.append("\(type)_\(key)=\(number)")
+                }
+            }
+        }
+        trace?.event("mpv_pipeline", fields: fields.joined(separator: " "))
+    }
+    // Raw mpv messages can contain authenticated URLs. Only fixed fault labels
+    // and strictly numeric AVPlayer heartbeat fields may enter the device log.
+    private static func audioDiagnostic(_ data: [String: Any]?) -> String? {
+        guard let prefix = data?["prefix"] as? String,
+              let text = data?["text"] as? String else { return nil }
+        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if ["demux", "demuxer", "cplayer", "ad", "ffmpeg"].contains(prefix)
+            || prefix.hasPrefix("ffmpeg/") || prefix.hasPrefix("demux/") {
+            let faults = [("Too many packets", "packet_queue_limit"), ("queue overflow", "packet_queue_limit"),
+                          ("EOF", "input_eof"), ("End of file", "input_eof"),
+                          ("timed out", "input_timeout"), ("Connection reset", "connection_reset"),
+                          ("Error decoding", "decode_error"), ("Invalid data", "invalid_data")]
+            if let fault = faults.first(where: { message.contains($0.0) }) { return "fault=\(fault.1)" }
+            return nil
+        }
+        guard prefix == "ao/avfoundation" else { return nil }
+        let pattern = #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["raw_s", "clock_s", "fed_s", "status", "time_control", "reader_gap_bytes"]
+            return names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        let faults = [
+            ("elementary stream window overflow", "window_overflow"),
+            ("discarding burst with odd payload length", "odd_payload"),
+            ("discarding burst without syncframe", "missing_syncframe"),
+            ("skipping unexpected IEC 61937 data type", "unexpected_burst_type"),
+            ("skipping burst with invalid payload length", "invalid_payload"),
+            ("no IEC 61937 sync found", "missing_iec_sync"),
+            ("loader requested offset", "loader_offset"),
+            ("playback did not engage", "playback_not_engaged"),
+            ("native compressed playback did not start", "compressed_start_failed"),
+            ("player rejected the compressed stream", "apple_rejected_stream"),
+            ("falling back to PCM", "pcm_fallback")
+        ]
+        guard let fault = faults.first(where: { message.contains($0.0) }) else { return nil }
+        return "fault=\(fault.1)"
     }
     private func updatePhase() {
         guard isSessionReady, errorInfo == nil, state != .ended else { return }
@@ -408,6 +477,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         sourceVideoPixelAspectRatio = 1; sourceDVProfile = nil; sourceVideoFormat = .sdr; videoFormat = .sdr
         outputChannels = nil; outputAudioFormat = nil; videoDecoder = nil; audioDecoder = nil
         diagnostics.liveTelemetry = nil
+        cacheSnapshot = [:]
         if deactivatesAudioSessionOnStop { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
     private func fail(_ error: PlaybackErrorInfo) {

@@ -1,0 +1,16 @@
+diff --git a/audio/out/ao_avfoundation.m b/audio/out/ao_avfoundation.m
+--- a/audio/out/ao_avfoundation.m
++++ b/audio/out/ao_avfoundation.m
+@@ -1,6 +1,12 @@
+     if (p->spdif) {
+         void (^start_block)(void) = ^{
+             p->avp_playing = true;
++            // ao_stop_streaming() allows mpv to restart this AO when more
++            // audio arrives after an EOF marker. Keep the existing item and
++            // timeline, but reopen the feed gate before pulling new packets.
++            if (p->avp_eof)
++                MP_VERBOSE(ao, "resuming compressed feed after audio EOF\n");
++            p->avp_eof = false;
+             if (!p->item)
+                 avp_create_item(ao);
+             else if (p->avp_rate_applied)
