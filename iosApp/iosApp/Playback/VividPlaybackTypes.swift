@@ -121,14 +121,16 @@ struct TrackInfo: Identifiable, Equatable {
     var assHeader: String? = nil
     var isExternal = false
     var isNativelyRenderedSubtitle = false
+    var sourceStreamIndex: Int? = nil
     init(id: Int, name: String = "", codec: String = "", language: String? = nil, channels: Int = 0,
          bitrate: Int64 = 0, isDefault: Bool = false, isForced: Bool = false,
          isHearingImpaired: Bool = false, isCommentary: Bool = false, isAtmos: Bool = false,
-         assHeader: String? = nil, isExternal: Bool = false, isNativelyRenderedSubtitle: Bool = false) {
+         assHeader: String? = nil, isExternal: Bool = false, isNativelyRenderedSubtitle: Bool = false, sourceStreamIndex: Int? = nil) {
         self.id=id; self.name=name; self.codec=codec; self.language=language; self.channels=channels
         self.bitrate=bitrate; self.isDefault=isDefault; self.isForced=isForced
         self.isHearingImpaired=isHearingImpaired; self.isCommentary=isCommentary; self.isAtmos=isAtmos
         self.assHeader=assHeader; self.isExternal=isExternal; self.isNativelyRenderedSubtitle=isNativelyRenderedSubtitle
+        self.sourceStreamIndex = sourceStreamIndex
     }
     #if !os(tvOS)
     init(_ track: VividTrack) {

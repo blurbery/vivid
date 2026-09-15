@@ -119,15 +119,6 @@ including each component's rebuild script and patches at the pinned revision.
 They are this build's corresponding-source pointer; keep them matched to the
 revisions each release actually resolves.
 
-KSPlayer GPL tvOS trial
-  Public source: https://github.com/kingslay/KSPlayer/tree/7862a2b175b50db71135e57fd144ea0e441d47d6
-  Licence: upstream GPLv3, bundled unchanged as KSPlayer-GPL-3.0.txt.
-  Public dependency: FFmpegKit 6.1.4 at c32be9bfb628042737ad3ef622e930c5c7b15954.
-  No private Premium/LGPL player source is included.
-  The FFmpegBuild and standalone subtitle/font inventory below describes iOS.
-  tvOS uses the full public FFmpegKit package; its component licences remain
-  with their upstream source. Native Dolby Vision and Atmos are not claimed.
-
 CollectionHStack (tvOS Home rows)
   Revision: 15baaaa759a0e252addae08431c79a49a25e4afc
   Source: https://github.com/LePips/CollectionHStack/tree/15baaaa759a0e252addae08431c79a49a25e4afc

@@ -12,8 +12,8 @@ Vivid and VividKit as a whole use GPL-3.0-only with the [Apple distribution perm
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
-| KSPlayer (tvOS trial) | `7862a2b175b50db71135e57fd144ea0e441d47d6` | GPLv3; bundled upstream licence |
-| FFmpegKit (tvOS trial) | 6.1.4, `c32be9bfb628042737ad3ef622e930c5c7b15954` | Public KSPlayer dependency; component licences remain upstream |
+| Plezy Apple bridge | `8ad17ad38f2ba63576cd7b37b460a4362adb738e` | GPLv3; bundled upstream licence |
+| Plezy mpv-build (tvOS experiment) | `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` | GPLv3 bundles; component licences remain upstream |
 | CollectionHStack (tvOS Home rows) | `15baaaa759a0e252addae08431c79a49a25e4afc` | MIT |
 | DifferenceKit (collection updates) | 1.3.0, `073b9671ce2b9b5b96398611427a1f929927e428` | MIT |
 | FFmpegBuild | `4e58942403d37cceff3a3212e3e026f4205146a2` | LGPL-2.1; embedded FFmpeg and codec dependencies retain the licences recorded below |
@@ -43,7 +43,6 @@ The separate Acknowledgements page contains service credits, with library licenc
 
 The logos identify their respective projects and are not presented as Vivid-owned artwork.
 
-The tvOS trial uses the public KSPlayer package and its unmodified public FFmpegKit dependency. This dependency already brings its own FFmpeg, codec, TLS and rendering components, including libplacebo; the trial adds no custom libplacebo integration or mpv player. No private paid KSPlayer source is used. Apple binary distribution is outside this baseline task; corresponding-source and complete transitive notices must be checked for the exact built artefact before distribution.
 
 ## Isolated Plezy/mpv experiment
 
@@ -66,4 +65,4 @@ this third-party code. The new VividMPVPlayer adapter is Vivid-owned code.
 This branch is an experiment, not an App Store or TestFlight release. Exact
 transitive binary notices and distribution requirements need verification before
 any public Apple binary distribution. Existing inventory entries above continue
-to describe their respective KSPlayer and iOS configurations.
+to describe the retained iOS configuration.

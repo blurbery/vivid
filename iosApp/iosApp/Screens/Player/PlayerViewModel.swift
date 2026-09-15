@@ -3027,7 +3027,7 @@ class PlayerViewModel {
                 isHearingImpaired: track.isHearingImpaired,
                 isExternal: track.isExternal,
                 isSelected: engine.activeAudioTrackIndex == track.id,
-                ffIndex: track.id,
+                ffIndex: track.sourceStreamIndex ?? track.id,
                 srcId: ordinal
             )
         }
@@ -3057,7 +3057,7 @@ class PlayerViewModel {
                 isHearingImpaired: track.isHearingImpaired,
                 isExternal: track.isExternal,
                 isSelected: engine.activeSubtitleTrackIndex == track.id,
-                ffIndex: track.isExternal ? nil : track.id,
+                ffIndex: track.isExternal ? nil : (track.sourceStreamIndex ?? track.id),
                 srcId: track.isExternal
                     ? SubtitleTrackIdSpace.sidecarIndex(from: appTrackID)
                     : nil

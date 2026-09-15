@@ -48,7 +48,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild build -project iosApp/Vivid.xcodeproj -scheme VividTV \
-            -destination 'generic/platform=tvOS Simulator' -derivedDataPath /tmp/vivid-trial \
+            -destination 'generic/platform=tvOS' -derivedDataPath /tmp/vivid-trial \
             -resultBundlePath /tmp/mpv-experiment.xcresult CODE_SIGNING_ALLOWED=NO \
             | tee /tmp/mpv-experiment.log
       - name: Verify isolated mpv dependency graph

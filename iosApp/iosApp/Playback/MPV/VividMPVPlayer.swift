@@ -97,6 +97,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var generation: UInt64 = 0
     private var source: (URL, LoadOptions, Int32?)?
     private var requestedRate: Float = 1
+    private var rateTask: Task<Void, Never>?
     private var wantsPlay = false
     private var videoTrack: [String: Any] = [:]
     private var outputChannels: Int?
@@ -260,7 +261,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                       codec: info["codec"] as? String ?? "", language: info["lang"] as? String,
                       channels: Int(info["demux-channel-count"] as? Int64 ?? 0),
                       isDefault: info["default"] as? Bool ?? false, isForced: info["forced"] as? Bool ?? false,
-                      isExternal: info["external"] as? Bool ?? false, isNativelyRenderedSubtitle: true)
+                      isExternal: info["external"] as? Bool ?? false, isNativelyRenderedSubtitle: true,
+                      sourceStreamIndex: (info["ff-index"] as? Int64).map(Int.init))
         }
         audioTracks = rawTracks.filter { $0["type"] as? String == "audio" }.map(track)
         subtitleTracks = rawTracks.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }.map(track)
@@ -287,8 +289,30 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func play() { wantsPlay = true; core?.setProperty("pause", value: "no"); updatePhase() }
     func pause() { wantsPlay = false; core?.setProperty("pause", value: "yes"); updatePhase() }
     func setRate(_ rate: Float) {
+        guard rate.isFinite, rate > 0 else { return }
         requestedRate = rate
-        core?.setProperty("speed", value: String(rate))
+        guard let core else { return }
+        let token = generation
+        let previous = rateTask
+        rateTask = Task { @MainActor [weak self, weak core] in
+            await previous?.value
+            guard let self, let core, generation == token, !Task.isCancelled else { return }
+            // Match Plezy: compressed packets cannot pass through a tempo filter.
+            let changes = rate == 1
+                ? [("speed", String(rate)), ("audio-spdif", "ac3,eac3")]
+                : [("audio-spdif", ""), ("speed", String(rate))]
+            do {
+                for (name, value) in changes {
+                    guard generation == token, !Task.isCancelled else { return }
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        core.setPropertyAsync(name, value: value) { continuation.resume(with: $0) }
+                    }
+                }
+            } catch {
+                guard generation == token, !Task.isCancelled else { return }
+                fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "mpv could not change playback speed."))
+            }
+        }
     }
     func seek(to seconds: Double) async {
         guard let core, seconds.isFinite else { return }
@@ -350,6 +374,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func prepareForItemReplacement() { pause(); hasFirstFrameReadyForDisplay = false }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         generation &+= 1
+        rateTask?.cancel(); rateTask = nil
         core?.delegate = nil; core?.dispose(preserveDisplayCriteria: !resetDisplayCriteria)
         core = nil; delegateProxy = nil; surface.core = nil; source = nil
         trace?.event("mpv_stopped"); trace = nil
@@ -387,7 +412,7 @@ private final class VividMPVCore: MpvPlayerCore {
     var initialVolume: Float = 1
     var audioLanguages: [String] = []
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
-        let settings = ["ao": "avfoundation", "audio-spdif": "ac3,eac3",
+        let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
                         "audio-exclusive": "yes", "audio-channels": "auto-safe",
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osc": "no", "osd-level": "0", "pause": autoplay ? "no" : "yes",
