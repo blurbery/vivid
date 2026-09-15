@@ -33,10 +33,17 @@ class AVAudioSession {
  var currentRoute = Route()
 }
 class KSOptions { var videoDelay = 0.0; var videoClockDelayCount = 0
+ var usesDisplayLayer = true
+ func isUseDisplayLayer() -> Bool { usesDisplayLayer }
 ''' + upstream + '''
 }
 class LucidOptions: KSOptions {
  struct Dolby { var isNative = false }; var dolbyAudio = Dolby()
+ class PCMOutput {
+  var admission: (gap: Double, enqueue: Bool)?
+  func pcmVideoAdmission(nextTime: Double, fps: Double) -> (gap: Double, enqueue: Bool)? { admission }
+ }
+ var dolbyAudioOutput: PCMOutput?
 ''' + override + '''
 }
 var checks = 0
@@ -61,6 +68,17 @@ for fps in [23.976, 24, 25, 30, 50, 60] {
 }
 options.dolbyAudio.isNative = true
 expect(action(-0.046) == .next)
+let pcm = LucidOptions.PCMOutput()
+options.dolbyAudioOutput = pcm
+pcm.admission = (0.05, true)
+expect(action(0.05) == .next)
+pcm.admission = (0.2, false)
+expect(action(0.2) == .remain)
+options.usesDisplayLayer = false
+pcm.admission = (0.05, true)
+expect(action(0.05) == .remain)
+options.usesDisplayLayer = true
+options.dolbyAudioOutput = nil
 options.dolbyAudio.isNative = false
 AVAudioSession.instance.currentRoute.outputs = [Port(portType: .hdmi)]
 expect(action(-0.046) == .next)

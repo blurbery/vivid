@@ -72,11 +72,16 @@ final class VividDolbyAudioBridge {
     func event(_ name: String, _ fields: String) { diagnostic(name, fields) }
 }
 
-/// Delegates to KSPlayer's existing PCM or sample-buffer output for the entire load.
+/// Selects timestamped PCM or the opt-in compressed sample-buffer output per load.
 /// Recovery creates a fresh PCM load, so the two outputs never share queued audio.
 final class VividDolbyAudioOutput: AudioOutput {
     private let bridge: VividDolbyAudioBridge?
     private var output: AudioOutput?
+    var maximumQueuedAudioDuration: Double = 3
+    var usesPCMVideoTimeline: Bool { output is VividPCMSampleBufferOutput }
+    func pcmVideoAdmission(nextTime: Double, fps: Double) -> (gap: Double, enqueue: Bool)? {
+        (output as? VividPCMSampleBufferOutput)?.videoAdmission(nextTime: nextTime, fps: fps)
+    }
     private weak var videoLayer: AVSampleBufferDisplayLayer?
     private var notifications: [NSObjectProtocol] = []
     private var playing = false
@@ -126,7 +131,10 @@ final class VividDolbyAudioOutput: AudioOutput {
                 })
             }
         } else {
-            let pcm = AudioEnginePlayer()
+            let pcm = VividPCMSampleBufferOutput { [weak bridge] name, fields in
+                bridge?.event(name, fields)
+            }
+            pcm.maximumQueuedAudioDuration = maximumQueuedAudioDuration
             output = pcm
             pcm.prepare(audioFormat: audioFormat)
         }
@@ -138,6 +146,7 @@ final class VividDolbyAudioOutput: AudioOutput {
 
     @MainActor
     func synchroniseVideo(layer: AVSampleBufferDisplayLayer) -> Bool {
+        if let pcm = output as? VividPCMSampleBufferOutput { return pcm.connectVideo(layer) }
         guard let native = output as? AudioRendererPlayer else { return false }
         if videoLayer !== layer {
             if let previous = videoLayer {
@@ -154,6 +163,10 @@ final class VividDolbyAudioOutput: AudioOutput {
 
     @MainActor
     func resetTimeline(to time: CMTime) {
+        if let pcm = output as? VividPCMSampleBufferOutput {
+            pcm.resetVideoTimeline(to: time)
+            return
+        }
         guard let native = output as? AudioRendererPlayer else { return }
         native.resetTimeline(to: time)
         resetWatch()
@@ -203,6 +216,13 @@ final class VividDolbyAudioOutput: AudioOutput {
         let now = CACurrentMediaTime()
         guard now - lastPoll >= 1 else { return }
         lastPoll = now
+        if let pcm = output as? VividPCMSampleBufferOutput {
+            if now - lastReport >= 5 {
+                lastReport = now
+                pcm.reportStatus()
+            }
+            return
+        }
         if let pcm = output as? AudioEnginePlayer {
             refreshPCMRouteTiming()
             if now - lastReport >= 5 {

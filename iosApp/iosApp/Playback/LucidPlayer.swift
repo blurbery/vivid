@@ -103,9 +103,11 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         stop(resetDisplayCriteria: false)
         let token = generation
         #if DEBUG && VIVID_ATMOS_TRIAL
-        let useNativeAudio = nativeAudioAllowed && !ProcessInfo.processInfo.arguments.contains("-VividJOCPCMControl")
-        #else
         let useNativeAudio = nativeAudioAllowed
+            && ProcessInfo.processInfo.arguments.contains("-VividJOCNativeTrial")
+            && !ProcessInfo.processInfo.arguments.contains("-VividJOCPCMControl")
+        #else
+        let useNativeAudio = false
         #endif
         self.nativeAudioAllowed = useNativeAudio
         loadInProgress = true
@@ -114,9 +116,7 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
         trace = PlaybackTrialTrace(preserveRecording: preserveTrialTrace)
         trace?.mark("engine_load")
         #if DEBUG && VIVID_ATMOS_TRIAL
-        if ProcessInfo.processInfo.arguments.contains("-VividJOCPCMControl") {
-            trace?.event("audio_comparison_mode", fields: "mode=forced_pcm scope=process_launch")
-        }
+        trace?.event("audio_comparison_mode", fields: "mode=\(useNativeAudio ? "native_trial" : "forced_pcm") scope=\(useNativeAudio ? "explicit_process_opt_in" : "default_pcm")")
         #endif
         let prepared = LucidFFOptions(load: loadOptions, start: startPosition, audioIndex: audioSourceStreamIndex, nativeAudioAllowed: useNativeAudio, milestone: { [weak self, weak trace = trace] name, time in
             Task { @MainActor in
@@ -128,6 +128,10 @@ final class LucidPlayer: NSObject, ObservableObject, MediaPlayerDelegate {
                 guard self?.generation == token else { return }
                 trace?.event(name, fields: fields)
                 if name == "audio_native_failed" { self?.schedulePCMRecovery(reason: fields) }
+                if name == "audio_pcm_failed" {
+                    self?.fail(PlaybackErrorInfo(kind: .softwarePipelineFailed,
+                        message: "The audio output stopped. Please restart playback."))
+                }
                 if name == "p5_native_failed" {
                     self?.fail(PlaybackErrorInfo(kind: .dolbyVisionRequiresHardware,
                         message: "Native Dolby Vision playback could not be established. Playback stopped to avoid incorrect colours."))

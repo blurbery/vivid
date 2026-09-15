@@ -56,6 +56,11 @@ final class LucidFFOptions: KSOptions {
 
     override func videoClockSync(main: KSClock, nextVideoTime: TimeInterval, fps: Double,
                                  frameCount: Int) -> (Double, ClockProcessType) {
+        #if VIVID_ATMOS_TRIAL
+        if isUseDisplayLayer(), let admission = dolbyAudioOutput?.pcmVideoAdmission(nextTime: nextVideoTime, fps: fps) {
+            return (admission.gap, admission.enqueue ? .next : .remain)
+        }
+        #endif
         let result = super.videoClockSync(main: main, nextVideoTime: nextVideoTime,
                                          fps: fps, frameCount: frameCount)
         #if VIVID_ATMOS_TRIAL
@@ -345,6 +350,7 @@ final class LucidRenderProbe: OutputRenderSourceDelegate {
 extension LucidFFOptions: KSAudioPacketProvider {
     func makeAudioOutput() -> AudioOutput {
         let output = VividDolbyAudioOutput(bridge: dolbyAudio)
+        output.maximumQueuedAudioDuration = max(3, preferredForwardBufferDuration)
         dolbyAudioOutput = output
         return output
     }
@@ -357,7 +363,9 @@ extension LucidFFOptions: KSAudioPacketProvider {
 
 #if os(tvOS) && VIVID_ATMOS_TRIAL
 extension LucidFFOptions: KSVideoPresentationTimebaseProvider {
-    var usesSynchronizedVideoTiming: Bool { dolbyAudio.isNative }
+    var usesSynchronizedVideoTiming: Bool {
+        dolbyAudio.isNative || (isUseDisplayLayer() && dolbyAudioOutput?.usesPCMVideoTimeline == true)
+    }
     @MainActor func prepareVideoPresentation(layer: AVSampleBufferDisplayLayer) -> Bool {
         dolbyAudioOutput?.synchroniseVideo(layer: layer) ?? false
     }
