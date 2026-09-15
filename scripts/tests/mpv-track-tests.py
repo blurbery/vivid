@@ -56,5 +56,5 @@ with tempfile.TemporaryDirectory(prefix='vivid-mpv-tracks-') as temp:
     path = folder / 'main.swift'
     path.write_text(swift)
     binary = folder / 'checks'
-    subprocess.run(['xcrun', 'swiftc', str(path), '-o', str(binary)], check=True, timeout=60)
+    subprocess.run(['xcrun', 'swiftc', '-module-cache-path', str(folder / 'module-cache'), str(path), '-o', str(binary)], check=True, timeout=60)
     subprocess.run([str(binary)], check=True, timeout=10)
