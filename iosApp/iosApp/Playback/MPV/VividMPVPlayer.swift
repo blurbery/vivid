@@ -178,7 +178,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             }
             try await Task.sleep(for: .milliseconds(50))
         }
-        let error = PlaybackErrorInfo(kind: .noPlayableTrackWithinBudget, message: "mpv did not open the source within 60 seconds.")
+        let error = PlaybackErrorInfo(kind: .noPlayableTrackWithinBudget, message: "Lucid did not open the source within 60 seconds.")
         fail(error); throw error
     }
 
@@ -248,7 +248,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             updatePhase(); trace?.mark("mpv_playback_restart")
         case "end-file":
             if let code = data?["error"] as? Int {
-                fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "mpv playback failed (\(code))."))
+                fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Lucid playback failed (\(code))."))
             } else if data?["reason"] as? Int == 0 { state = .ended; playbackPhase = .ended; isBuffering = false }
         case "log-message":
             if let fields = Self.audioDiagnostic(data) {
@@ -402,7 +402,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 }
             } catch {
                 guard generation == token, !Task.isCancelled else { return }
-                fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "mpv could not change playback speed."))
+                fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Lucid could not change playback speed."))
             }
         }
     }
@@ -415,7 +415,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             try? await Task.sleep(for: .milliseconds(50))
             if Task.isCancelled || token != generation || !isSeeking || errorInfo != nil { return }
         }
-        fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "The mpv seek did not complete."))
+        fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "The Lucid seek did not complete."))
     }
     func selectAudioTrack(index: Int) {
         guard let id = mpvTrackID(sourceID: index, type: "audio") else { return }
