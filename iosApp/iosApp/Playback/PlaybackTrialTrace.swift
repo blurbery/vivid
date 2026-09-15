@@ -28,7 +28,8 @@ final class PlaybackTrialTrace {
         started = Self.pendingPlay ?? CACurrentMediaTime()
         let origin = Self.pendingPlay == nil ? "engine_load" : "play_request"
         Self.pendingPlay = nil
-        event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=KSPlayerGPL")
+        let backend = "PlezyMPV"
+        event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=\(backend)")
         mark(origin, at: started)
     }
 

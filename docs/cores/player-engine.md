@@ -368,3 +368,31 @@ The Vivid core coordinates credential renewal with the active server core. Vivid
 A follow-up traced the stereo PCM samples to KSPlayer's route-limited resampler channel selection. The HomePod route reports a two-channel hardware maximum while advertising a six-channel output layout. The debug-only `-VividPCMMultichannelTrial` launch option installs a narrow custom-output channel policy before resampling: preserve six or eight source channels only when the AirPlay route advertises that exact channel count. Unsupported layouts and other routes retain upstream selection. Native JOC selection remains separate, and normal launches retain the saved PCM behaviour.
 
 The trial declares multichannel content during PCM preparation and restores the prior declaration on output teardown. It records the prepared channel count, layout tag and Apple's rendering mode alongside existing actual-sample diagnostics. The PCM packing and synchroniser implementation remain identical to checkpoint `d013ba2`. Twelve channel-policy checks, 27 PCM lifecycle checks, 36 real CoreMedia packing checks, three real paused shared-clock checks and 31 scheduler checks passed. The signed tvOS build passed and was installed in place on Living Room. The owner reported audible but out-of-sync playback. The captured trial still submitted stereo PCM, with no multichannel-content event, so channel preservation did not engage. Apple returned rendering mode 1 (mono/stereo), establishing that this API can report a nonzero result on the HomePod route. The trial was disabled and Vivid relaunched with the previously working native E-AC-3 option. The reason the preservation policy returned no usable selection remains unresolved; startup capability availability is a hypothesis, not an observed cause. This trial is not verified for use.
+
+## Plezy/mpv experiment
+
+The `plezy-mpv-experiment` branch starts from KSPlayer checkpoint `575e3c9`;
+`ksplayer-trial` retains that checkpoint and the existing PCM/native trials.
+Generate `iosApp/project.yml` with XcodeGen to build the isolated mpv
+experiment. Restore the KSPlayer source and configuration by switching to
+`ksplayer-trial`. KSPlayer sources, patches and its tvOS dependency have been
+removed from this experimental branch.
+The same app identity and controls are retained; iOS is unchanged. Do not link
+the two FFmpeg distributions into the same target.
+
+The experiment pins Plezy's patched mpv Apple binary package and its Swift
+Apple bridge. Compressed AC-3/E-AC-3 uses its AVPlayer resource loader; PCM uses
+its sample-buffer output. mpv owns scheduling, including the compressed-clock
+accounting and host-clock video presentation fixes. Vivid does not insert a
+second audio clock, fixed sync offset or HLS server. Source headers are passed
+as a typed mpv string list; raw mpv messages are not persisted because they
+can contain authenticated source URLs. Structured trial events identify mpv.
+
+Vivid adapts playback state, seek, track selection and stats. Embedded subtitles
+use mpv's renderer; external text subtitles use Vivid's existing bounded loader
+and overlay. Frame extraction remains unavailable, as in the KSPlayer trial.
+Apple rendering mode remains the evidence for a Dolby audio output badge;
+source channels or accepted E-AC-3 bytes alone do not establish Atmos output.
+
+Validation is in progress. This experiment has not been installed or verified
+on Living Room. Build success does not establish sync, Dolby Vision or Atmos.

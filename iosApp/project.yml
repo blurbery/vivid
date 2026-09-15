@@ -4,9 +4,9 @@ packages:
   CollectionHStack:
     url: https://github.com/LePips/CollectionHStack
     revision: 15baaaa759a0e252addae08431c79a49a25e4afc
-  KSPlayer:
-    url: https://github.com/kingslay/KSPlayer.git
-    revision: 7862a2b175b50db71135e57fd144ea0e441d47d6
+  MPVKit:
+    url: https://github.com/edde746/mpv-build
+    revision: c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
 
 targets:
   VividTV:
@@ -19,6 +19,7 @@ targets:
           - "**/*.xcodeproj"
           - "**/*.xcworkspace"
           - "Info.plist"
+
       - path: ../VividKit/Sources/VividKit/VividTransientRecoveryBudget.swift
       - path: Resources
         buildPhase: resources
@@ -32,6 +33,7 @@ targets:
       Release: Signing/VividTV.xcconfig
     settings:
       base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VIVID_MPV_EXPERIMENT"
         PRODUCT_NAME: VividTV
         # AVKit supplies UIWindow.avDisplayManager as an Objective-C category.
         # Keep the framework loaded even when no AVKit class is instantiated.
@@ -49,8 +51,8 @@ targets:
         Release:
           APS_ENVIRONMENT: production
     dependencies:
-      - package: KSPlayer
-        product: KSPlayer
+      - package: MPVKit
+        product: MPVKit
       - package: CollectionHStack
         product: CollectionHStack
       - target: VividTVTopShelf

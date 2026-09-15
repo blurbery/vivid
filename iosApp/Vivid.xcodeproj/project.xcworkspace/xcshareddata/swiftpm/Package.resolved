@@ -18,20 +18,11 @@
       }
     },
     {
-      "identity": "ffmpegkit",
+      "identity": "mpv-build",
       "kind": "remoteSourceControl",
-      "location": "https://github.com/kingslay/FFmpegKit.git",
+      "location": "https://github.com/edde746/mpv-build",
       "state": {
-        "revision": "c32be9bfb628042737ad3ef622e930c5c7b15954",
-        "version": "6.1.4"
-      }
-    },
-    {
-      "identity": "ksplayer",
-      "kind": "remoteSourceControl",
-      "location": "https://github.com/kingslay/KSPlayer.git",
-      "state": {
-        "revision": "7862a2b175b50db71135e57fd144ea0e441d47d6"
+        "revision": "c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6"
       }
     }
   ],

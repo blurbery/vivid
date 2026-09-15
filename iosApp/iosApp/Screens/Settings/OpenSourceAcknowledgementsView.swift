@@ -12,7 +12,7 @@ enum OpenSourceAcknowledgements {
         Resource(title: "Vivid and VividKit: GPLv3", name: "Vivid-GPL-3.0"),
         Resource(title: "Vivid: Apple distribution permission", name: "Vivid-Apple-Distribution"),
         Resource(title: "Earlier Apache-licensed code", name: "Vivid-Apache-2.0"),
-        Resource(title: "KSPlayer: GPLv3", name: "KSPlayer-GPL-3.0"),
+        Resource(title: "Plezy Apple bridge and mpv experiment: GPLv3", name: "Plezy-GPL-3.0"),
         Resource(title: "CollectionHStack and DifferenceKit: MIT", name: "CollectionHStack-DifferenceKit-MIT"),
         Resource(title: "FFmpegBuild and FFmpeg: LGPL 2.1", name: "FFmpegBuild-LGPL-2.1"),
         Resource(title: "dav1d: BSD 2-Clause", name: "dav1d-BSD-2-Clause"),

@@ -44,3 +44,26 @@ The separate Acknowledgements page contains service credits, with library licenc
 The logos identify their respective projects and are not presented as Vivid-owned artwork.
 
 The tvOS trial uses the public KSPlayer package and its unmodified public FFmpegKit dependency. This dependency already brings its own FFmpeg, codec, TLS and rendering components, including libplacebo; the trial adds no custom libplacebo integration or mpv player. No private paid KSPlayer source is used. Apple binary distribution is outside this baseline task; corresponding-source and complete transitive notices must be checked for the exact built artefact before distribution.
+
+## Isolated Plezy/mpv experiment
+
+`iosApp/project.yml` selects `edde746/mpv-build` at
+`c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` (mpv 0.41.0 and FFmpeg 8.0.1,
+with that repository's Apple patch series). The upstream package declares its
+bundled mpv/FFmpeg frameworks GPLv3. Its pinned Package.swift records binary
+checksums and the upstream repository contains the corresponding build sources.
+This configuration does not link KSPlayer or its FFmpegKit distribution.
+
+`Playback/MPV/MpvPlayerCoreBase.swift` and `MpvPlayerCore.swift` are adapted from
+[edde746/plezy](https://github.com/edde746/plezy) at
+`8ad17ad38f2ba63576cd7b37b460a4362adb738e`, under its GPLv3 licence, bundled as
+`Plezy-GPL-3.0.txt`. Vivid's changes scope compilation to the tvOS experiment,
+mount the video in Vivid's existing surface, honour its match-content setting
+and disable verbose default logging. Upstream clock, renderer and display-mode
+logic is retained. Vivid's Apple distribution permission does not extend to
+this third-party code. The new VividMPVPlayer adapter is Vivid-owned code.
+
+This branch is an experiment, not an App Store or TestFlight release. Exact
+transitive binary notices and distribution requirements need verification before
+any public Apple binary distribution. Existing inventory entries above continue
+to describe their respective KSPlayer and iOS configurations.

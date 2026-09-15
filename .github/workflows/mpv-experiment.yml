@@ -1,15 +1,15 @@
-name: KSPlayer trial
+name: Playback experiments
 
 on:
   push:
-    branches: [ksplayer-trial]
+    branches: [plezy-mpv-experiment]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ksplayer-trial-${{ github.ref }}
+  group: mpv-experiment-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,8 +23,6 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
         with:
           xcode-version: '26.3'
-      - name: Check benchmark summaries
-        run: python3 scripts/summarise-ksplayer-trial.py --self-test
       - name: Generate project
         run: |
           set -euo pipefail
@@ -37,24 +35,25 @@ jobs:
           set -o pipefail
           xcodebuild build -project iosApp/Vivid.xcodeproj -scheme VividTV \
             -destination 'generic/platform=tvOS Simulator' -derivedDataPath /tmp/vivid-trial \
-            -resultBundlePath /tmp/ksplayer-trial.xcresult CODE_SIGNING_ALLOWED=NO \
-            | tee /tmp/ksplayer-trial.log
-      - name: Verify no Aether or VividKit playback is linked
+            -resultBundlePath /tmp/mpv-experiment.xcresult CODE_SIGNING_ALLOWED=NO \
+            | tee /tmp/mpv-experiment.log
+      - name: Verify isolated mpv dependency graph
         run: |
-          test ! -d AetherEngine
-          app=/tmp/vivid-trial/Build/Products/Debug-appletvsimulator/VividTV.app
-          test -d "$app"
-          if ls "$app/Frameworks" | grep -E 'Aether|VividKit|Dovi'; then
-            echo 'Unexpected former playback framework in trial app'
-            exit 1
-          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          pins = json.loads(Path('iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())['pins']
+          revisions = {pin['identity']: pin['state']['revision'] for pin in pins}
+          assert revisions['mpv-build'] == 'c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6'
+          assert 'ksplayer' not in revisions and 'ffmpegkit' not in revisions
+          PY
       - name: Upload build evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ksplayer-trial-build
+          name: mpv-experiment-build
           path: |
-            /tmp/ksplayer-trial.log
-            /tmp/ksplayer-trial.xcresult
+            /tmp/mpv-experiment.log
+            /tmp/mpv-experiment.xcresult
             iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
           retention-days: 3
