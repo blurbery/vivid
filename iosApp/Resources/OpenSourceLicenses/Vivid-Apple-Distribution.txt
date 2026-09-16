@@ -6,8 +6,8 @@ Effective for this licensing revision dated 12 September 2026.
 
 Scope
 -----
-Vivid and VividKit, as a whole, are licensed under the GNU General Public
-License, version 3 only (GPL-3.0-only), reproduced unchanged in LICENSE,
+Vivid, as a whole, is licensed under the GNU General Public License,
+version 3 only (GPL-3.0-only), reproduced unchanged in LICENSE,
 with the additional permission below. This permission applies only to
 material whose copyright holders have authorised it. Contributions to
 Vivid's own code are accepted under GPL-3.0-only with this permission.
