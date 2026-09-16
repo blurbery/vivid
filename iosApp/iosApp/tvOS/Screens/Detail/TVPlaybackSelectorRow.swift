@@ -11,8 +11,6 @@ struct TVPlaybackActionSelectors: View {
     let selectedAudioTrackIndex: Int?
     let selectedSubtitleTrackIndex: Int?
     var subtitleMode: String? = nil
-    var subtitleSignature: SubtitleTrackSignature? = nil
-    var showForcedSubtitles = false
     let onSelectVersion: (Int?) -> Void
     let onSelectAudioTrack: (Int?) -> Void
     let onSelectSubtitleTrack: (Int?) -> Void
@@ -24,16 +22,11 @@ struct TVPlaybackActionSelectors: View {
     @State private var subtitleError = false
     @State private var subtitleRetry = 0
     @State private var subtitleReadGeneration = 0
-    @State private var preferredSubtitleLanguage: String?
 
     var body: some View {
         HStack(spacing: 18) {
             audioMenu
             subtitleMenu
-        }
-        .task {
-            await ProfilePrefsStore.shared.hydrateIfNeeded()
-            preferredSubtitleLanguage = ProfilePrefsStore.shared.preferredSubtitleLanguage
         }
     }
 
@@ -214,9 +207,6 @@ struct TVPlaybackSelectionSummary: Equatable {
         selectedAudioTrackIndex: Int?,
         selectedSubtitleTrackIndex: Int?,
         subtitleMode: String?,
-        subtitleSignature: SubtitleTrackSignature?,
-        preferredSubtitleLanguage: String?,
-        showForcedSubtitles: Bool,
         subtitleContext: OpenSubtitlePlaybackContext? = nil
     ) -> TVPlaybackSelectionSummary {
         guard let currentVersion else {

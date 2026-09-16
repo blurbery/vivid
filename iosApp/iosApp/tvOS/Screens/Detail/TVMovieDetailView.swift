@@ -112,11 +112,6 @@ TVDetailHero(
                                 subtitleMode: subtitleOverrideCleared
                                     ? nil
                                     : detail.effectiveSubtitleMode,
-                                subtitleSignature: subtitleOverrideCleared
-                                    ? nil
-                                    : detail.effectiveSubtitleTrackSignature,
-                                preferredSubtitleLanguage: profilePrefsStore.preferredSubtitleLanguage,
-                                showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false,
                                 subtitleContext: Self.subtitleContext(for: detail)
                             ),
                             heroHeight: height,
@@ -172,11 +167,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                 subtitleMode: subtitleOverrideCleared
                                     ? nil
                                     : detail.effectiveSubtitleMode,
-                                subtitleSignature: subtitleOverrideCleared
-                                    ? nil
-                                    : detail.effectiveSubtitleTrackSignature,
-                                preferredSubtitleLanguage: profilePrefsStore.preferredSubtitleLanguage,
-                                showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false
+                                subtitleContext: Self.subtitleContext(for: detail)
                             ),
                             extendsBackdropFadeBelowHero: true,
                             actions: { actionColumn },
@@ -269,10 +260,6 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                     subtitleMode: subtitleOverrideCleared
                         ? nil
                         : detail.effectiveSubtitleMode,
-                    subtitleSignature: subtitleOverrideCleared
-                        ? nil
-                        : detail.effectiveSubtitleTrackSignature,
-                    showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false,
                     onSelectVersion: onSelectVersion,
                     onSelectAudioTrack: onSelectAudioTrack,
                     onSelectSubtitleTrack: onSelectSubtitleTrack,

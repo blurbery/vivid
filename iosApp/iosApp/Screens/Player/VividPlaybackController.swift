@@ -418,6 +418,9 @@ final class VividPlaybackController {
     @discardableResult
     func addExternalSubtitleTrack(_ track: ExternalSubtitleTrack, appTrackID: Int64) -> Int64 {
         if vividSubtitleIDByAppID[appTrackID] != nil { return appTrackID }
+        var track = track
+        // Sidecars use movie timestamps; native ASS renders on the stream clock.
+        track.nativeTimelineOffsetSeconds = activeSpec?.timeline.timelineOffsetSeconds ?? 0
         let registered = engine.addExternalSubtitleTrack(track)
         vividSubtitleIDByAppID[appTrackID] = registered.id
         appSubtitleIDByVividID[registered.id] = appTrackID

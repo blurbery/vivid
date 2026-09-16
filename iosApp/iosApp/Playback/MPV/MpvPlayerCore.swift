@@ -24,8 +24,8 @@ class MpvPlayerCore: MpvPlayerCoreBase {
     /// A `preferredDisplayCriteria` write (set or clear) not yet consumed by
     /// `awaitDisplayModeSwitch`. Sticky on purpose: the file's commit lands at
     /// PLAYBACK_RESTART, and the late observer deliveries that follow it run
-    /// dedup passes before Dart's wait arrives; "last pass wrote nothing" would
-    /// let that wait return before the switch has even started.
+    /// dedup passes before a waiter may arrive. Retain the pending write
+    /// until a wait consumes it.
     private var displayCriteriaWritePending = false
     private var displayModeSwitchWaiter: DisplayModeSwitchWaiter?
     private var displayModeSwitchWaiterGeneration = 0
@@ -136,9 +136,8 @@ class MpvPlayerCore: MpvPlayerCoreBase {
   /// The transform must sit on the display layer itself — a
   /// `sublayerTransform` on the container is ignored by the video plane.
   /// The layer's bounds never change, so the VO's bounds KVO stays quiet, and
-  /// the inline OSD sibling layer keeps its own geometry. PiP is unaffected:
-  /// the Dart side resets zoom before entry, and the system presents the
-  /// layer's buffers, not its on-screen transform.
+  /// the inline OSD sibling layer keeps its own geometry. Callers that use
+  /// zoom must restore the intended transform when presentation changes.
   func setVideoZoom(_ scale: Double) {
     let clamped = min(max(scale, 0.25), 4.0)
     Self.log("setVideoZoom(\(scale)) -> \(clamped)")
@@ -400,10 +399,9 @@ class MpvPlayerCore: MpvPlayerCoreBase {
   }
 
   /// Completes once any HDMI mode switch triggered by the decoded stream's
-  /// display criteria has ended, plus settle and `extraDelayMs`. Dart calls
-  /// this after the first video frame of a newly opened file, while paused,
-  /// so playback resumes on the matched mode rather than mid-switch. Main
-  /// thread only; completes exactly once, promptly when nothing is pending.
+  /// display criteria has ended, plus settle and `extraDelayMs`. Call only
+  /// on the main thread after the intended display criteria are committed.
+  /// Completes exactly once, promptly when nothing is pending.
   func awaitDisplayModeSwitch(extraDelayMs: Int, completion: @escaping () -> Void) {
     #if os(tvOS)
       waitForDisplayModeSwitchIfNeeded(extraDelayMs: extraDelayMs, completion: completion)
@@ -816,8 +814,8 @@ class MpvPlayerCore: MpvPlayerCoreBase {
       // Between files the hint is held, not cleared (a torn-down stream says
       // nothing about the next one), so leaving the player is what resets the
       // link. Done synchronously while self is still alive and on main: an
-      // async-to-main dispatch here would be drained after dealloc (the plugin
-      // sets playerCore = nil right after this call returns), leaving the link
+      // async-to-main dispatch could outlive the final reference released by
+      // VividMPVPlayer.stop after this call returns, leaving the link
       // stuck at the last clip's refresh rate. During video-to-video
       // replacement, keep the hint so tvOS doesn't renegotiate back to default
       // before the replacement route can set its next criteria.

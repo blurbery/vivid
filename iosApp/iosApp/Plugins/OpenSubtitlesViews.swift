@@ -214,6 +214,9 @@ private struct LucidDetailSubtitleMenu: View {
     @State private var message: String?
     @State private var selectedID: Int64?
     @State private var selectionIsAutomatic = true
+    private var hasStagedSelection: Bool {
+        context.flatMap { OpenSubtitlesStore.shared.stagedLabel(context: $0) } != nil
+    }
     @State private var retry = 0
 
     var body: some View {
@@ -225,6 +228,8 @@ private struct LucidDetailSubtitleMenu: View {
                             guard context == expected else { throw OpenSubtitlesError.context }
                             try OpenSubtitlesStore.shared.stage(result, data: data, context: expected)
                             LucidSubtitleInventory.shared.clearChoice(context: expected)
+                            selectedID = nil
+                            selectionIsAutomatic = false
                         }
                     }
                 }
@@ -234,19 +239,19 @@ private struct LucidDetailSubtitleMenu: View {
                         Text(message).foregroundStyle(.secondary)
                         Button("Retry") { retry += 1 }
                     } else {
-                        TrackSelectionRow(name: "Auto", attributes: nil, isSelected: selectionIsAutomatic) {
+                        TrackSelectionRow(name: "Auto", attributes: nil, isSelected: selectionIsAutomatic && !hasStagedSelection) {
                             guard let context else { return }
                             LucidSubtitleInventory.shared.clearChoice(context: context)
                             OpenSubtitlesStore.shared.clearStaged(context: context)
                             selectionIsAutomatic = true
                             dismiss()
                         }
-                        TrackSelectionRow(name: "Off", attributes: nil, isSelected: !selectionIsAutomatic && selectedID == nil) { select(nil) }
+                        TrackSelectionRow(name: "Off", attributes: nil, isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
                         ForEach(LucidSubtitleInventory.ordered(tracks)) { track in
                             TrackSelectionRow(name: track.languageFirstPrimaryLabel,
                                 detail: track.languageFirstDetailLabel,
                                 attributes: nil, pills: track.attributePillLabels(includeLanguage: track.normalizedLanguageCode == nil),
-                                isSelected: selectedID == track.trackId) { select(track.trackId) }
+                                isSelected: selectedID == track.trackId && !hasStagedSelection) { select(track.trackId) }
                         }
                         if tracks.isEmpty { Text("This media file has no embedded subtitles.").foregroundStyle(.secondary) }
                     }
@@ -319,7 +324,8 @@ struct OpenSubtitlesMenu: View {
         let preference = settings.subtitleMatchesSystemAppearance
             ? settings.subtitleSystemSelectionPreferences.preferredLanguages.first
             : settings.preferredSubtitleLanguage
-        guard let preference, !preference.isEmpty, preference != PlaybackPrefSentinel.none else { return "en" }
+        guard let preference, !preference.isEmpty, preference != PlaybackPrefSentinel.none,
+              preference != PlaybackPrefSentinel.originalLanguage else { return "en" }
         return preference
     }
 

@@ -10,6 +10,7 @@ targets:
     templates: [ShippableProduct]
     type: application
     platform: iOS
+    # tvOS files within iosApp are guarded by #if os(tvOS).
     sources:
       - path: iosApp
         excludes:
@@ -50,9 +51,6 @@ targets:
       - target: VividDownloadsActivity
         embed: true
 
-  # NOTE: tvOS-specific source files live under iosApp/tvOS/. They are guarded
-  # by #if os(tvOS) so they compile out on the iOS target even though the
-  # directory is included in both targets' source tree.
   VividNotificationService:
     templates: [ShippableProduct]
     type: app-extension
