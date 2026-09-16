@@ -11,6 +11,32 @@ final class OpenSubtitlesStore {
     private var loadedScope: String?
     private var key = ""
     private var downloads = OpenSubtitleDownloadCache()
+    private var pendingSelection: (context: OpenSubtitlePlaybackContext, result: OpenSubtitleResult, data: Data, revision: UUID, expires: Date)?
+
+    func stage(_ result: OpenSubtitleResult, data: Data, context: OpenSubtitlePlaybackContext) throws {
+        reload()
+        guard isConnected, context.fileID != nil else { throw OpenSubtitlesError.context }
+        guard OpenSubtitlesClient.isSubtitle(data), let text = String(data: data, encoding: .utf8),
+              !VividSubtitleLoader.parse(text).isEmpty else { throw OpenSubtitlesError.file }
+        pendingSelection = (context, result, data, revision, Date().addingTimeInterval(1800))
+    }
+
+    func clearStaged(context: OpenSubtitlePlaybackContext) {
+        if pendingSelection?.context.contentID == context.contentID,
+           pendingSelection?.context.fileID == context.fileID { pendingSelection = nil }
+    }
+
+    func takeStaged(contentID: String, fileID: Int?) -> (result: OpenSubtitleResult, data: Data)? {
+        reload()
+        guard let pending = pendingSelection else { return nil }
+        guard pending.revision == revision, pending.expires > Date() else {
+            pendingSelection = nil
+            return nil
+        }
+        guard pending.context.contentID == contentID, pending.context.fileID == fileID else { return nil }
+        pendingSelection = nil
+        return (pending.result, pending.data)
+    }
     private(set) var revision = UUID()
     private(set) var isConnected = false
     var scope: String? {
@@ -23,6 +49,7 @@ final class OpenSubtitlesStore {
         let storedKey = scope.flatMap { keychain.get(storageKey($0)) } ?? ""
         guard loadedScope != scope || key != storedKey else { return }
         downloads = OpenSubtitleDownloadCache()
+        pendingSelection = nil
         loadedScope = scope
         key = storedKey
         isConnected = !key.isEmpty
@@ -49,6 +76,7 @@ final class OpenSubtitlesStore {
         guard let scope else { throw MDBListFailure.storage }
         try VividCloudPreferences.shared.setPluginCredential(nil, for: storageKey(scope))
         downloads = OpenSubtitleDownloadCache()
+        pendingSelection = nil
         key = ""
         isConnected = false
         revision = UUID()

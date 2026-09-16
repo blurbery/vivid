@@ -70,7 +70,7 @@ I'll add GitHub Sponsors once I've finished setting it up. For now, testing the 
 
 ## Licence
 
-Vivid and VividKit are licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Distributed covered derivatives must provide corresponding source under GPLv3. Third-party components retain their respective licences, as listed in the [third-party notices](THIRD_PARTY_NOTICES.md).
+Vivid is licensed under GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-EXCEPTION). Distributed covered derivatives must provide corresponding source under GPLv3. Third-party components retain their respective licences, as listed in the [third-party notices](THIRD_PARTY_NOTICES.md).
 
 [Vivid attribution](ATTRIBUTION.md) contains additional terms under GPLv3 sections 7(b) and 7(c) for material blurbery has authority to license on those terms. Distributors must preserve the Vivid/blurbery attribution in source notices, accurately represent its origin and identify modified versions. Third-party rights remain unchanged.
 

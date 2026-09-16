@@ -39,27 +39,10 @@ struct TVPlaybackSettingsPane: View {
             )
             .focused(detailFocus, equals: .playbackAudioLanguage)
 
-            TVSettingsOptionMenu(
-                title: "Buffer Ahead",
-                value: "Automatic (trial)",
-                options: pickerRequest(for: .bufferAhead).options,
-                selection: pickerRequest(for: .bufferAhead).selection
-            )
-            .focused(detailFocus, equals: .playbackBufferAhead)
-            .disabled(true)
-
-            TVSettingsToggleRow(
-                title: "Prefer Lossless Audio",
-                isOn: PlayerSettings.shared.preferLosslessAudio,
-                detail: "The trial always decodes audio to PCM. This saved preference does not change trial playback."
-            ) {
-                PlayerSettings.shared.preferLosslessAudio.toggle()
-            }
-            .accessibilityIdentifier("settings.playback.preferLosslessAudio")
-            .disabled(true)
+            TVSettingsInfoRow(title: "Buffer Ahead", value: "Automatic")
 
         }
-        TVSettingsFooter("Preferences are saved in Vivid for this profile on this Apple TV.")
+        TVSettingsFooter("Lucid manages buffering automatically. Preferences are saved for this profile on this Apple TV.")
     }
 
     @ViewBuilder

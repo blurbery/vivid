@@ -101,27 +101,14 @@ struct VividPlaybackStatsSnapshot: Equatable {
         route = engine.videoRoute
         phase = engine.playbackPhase
         telemetry = engine.liveTelemetry
-        #if VIVID_MPV_EXPERIMENT
         readAheadAvailableSeconds = engine.readAheadAvailableSeconds
-        #else
-        readAheadAvailableSeconds = nil
-        #endif
         activeVideoDecoder = engine.activeVideoDecoder
         activeAudioDecoder = engine.activeAudioDecoder
-        #if VIVID_MPV_EXPERIMENT
         audioOutputFormat = engine.activeAudioOutputFormat
-        #else
-        audioOutputFormat = nil
-        #endif
         sourceVideoFormat = engine.sourceVideoFormat
-        #if VIVID_MPV_EXPERIMENT
         // Report the configured rendering format, not an inferred HDMI display mode.
         outputDolbyProfileLabel = engine.activeDolbyProfileLabel
         outputVideoFormat = engine.activeVideoFormat
-        #else
-        outputDolbyProfileLabel = nil
-        outputVideoFormat = engine.videoFormat
-        #endif
         outputVideoFormatIsKnown = true
         sourceDVProfile = engine.sourceDVProfile
         sourceVideoWidth = engine.sourceVideoWidth

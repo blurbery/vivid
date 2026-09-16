@@ -1,8 +1,8 @@
-name: MPV audio driver trial
+name: Lucid native audio driver
 
 on:
   push:
-    branches: [plezy-mpv-experiment]
+    branches: [experiment-2.0]
     paths: ['patches/mpv/**', '.github/workflows/mpv-audio-driver.yml']
   workflow_dispatch:
 

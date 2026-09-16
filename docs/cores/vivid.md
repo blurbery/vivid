@@ -31,7 +31,7 @@ See [marker timing](../playback/architecture.md#introdb-marker-timing) for order
 
 ## Implementation references
 
-- [Player engine core](player-engine.md): Platform engines, AirPlay/HDMI boundaries and audio/video support.
+- [Player engine core](player-engine.md): Lucid execution, output boundaries and audio/video support.
 - [Playback architecture](../playback/architecture.md): engine ownership, lifecycle and source/session boundaries.
 - [Playback guide](../playback/README.md): controls, IntroDB behaviour and validation.
 - [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): shared playback state and marker application.

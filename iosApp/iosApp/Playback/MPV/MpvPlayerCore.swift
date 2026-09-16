@@ -2,7 +2,7 @@
 // Adapted from edde746/plezy at 8ad17ad38f2ba63576cd7b37b460a4362adb738e.
 // Upstream: https://github.com/edde746/plezy/blob/8ad17ad38f2ba63576cd7b37b460a4362adb738e/ios/Runner/MpvPlayer/MpvPlayerCore.swift
 // See THIRD_PARTY_NOTICES.md for the scoped Vivid integration changes.
-#if (os(tvOS) || os(iOS)) && VIVID_MPV_EXPERIMENT
+#if (os(tvOS) || os(iOS))
 import AVFoundation
 #if os(tvOS)
   import AVKit

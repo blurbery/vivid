@@ -600,6 +600,12 @@ struct PlayerView: View {
                     appearance: viewModel.settings.effectiveSubtitleAppearance,
                     subtitleSyncMs: viewModel.settings.subtitleSyncMs
                 )
+                .onChange(of: viewModel.settings.effectiveSubtitleAppearance, initial: true) {
+                    viewModel.applySubtitleAppearanceToPlayer()
+                }
+                .onChange(of: viewModel.settings.subtitleSyncMs) {
+                    viewModel.applySubtitleAppearanceToPlayer()
+                }
             }
     }
 

@@ -557,6 +557,9 @@ final class VividPlaybackController {
             engine.$subtitleTracks.map { _ in () },
             engine.$mediaChapters.map { _ in () }
         )
+        // @Published emits before the property is stored. The inventory event
+        // reads the engine, so deliver it after all current assignments finish.
+        .receive(on: DispatchQueue.main)
         .sink { [weak self] in self?.publish(.inventoryChanged) }
         .store(in: &subscriptions)
 

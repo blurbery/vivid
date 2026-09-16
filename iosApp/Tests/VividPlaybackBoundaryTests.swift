@@ -22,7 +22,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertFalse(controller.hasActiveLoad)
     }
 
-    func testDirectCredentialUpdatePreservesPausedPlaybackAndRejectsStaleEpoch() async throws {
+    func testLucidRejectsInPlaceCredentialUpdateWithoutChangingPausedSession() async throws {
         let file = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: file) }
         let server = try CredentialPlaybackServer(media: Data(contentsOf: file))
@@ -36,25 +36,21 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let spec = try VividLoadSpec(directURL: url, headers: old, startPosition: 0, audioOnly: true)
         let epoch = controller.beginLoad(spec, shouldPlayWhenReady: false)
         try await controller.finishLoad(epoch)
-        let player = controller.engine.player
         let deadline = Date().addingTimeInterval(5)
-        while player.state != .paused && Date() < deadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
+        while controller.engine.state != .paused && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertEqual(player.state, .paused)
-        XCTAssertGreaterThan(player.bufferedAhead, 0)
-        let buffered = player.bufferedAhead
-        let time = player.currentTime
-        let track = player.selectedAudioTrack
-        XCTAssertTrue(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
+        XCTAssertEqual(controller.engine.state, .paused)
+        let time = controller.engine.currentTime
+        let track = controller.engine.activeAudioTrackIndex
+        // Lucid requires the existing reload boundary to install fresh headers.
+        XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
         XCTAssertEqual(controller.activeLoadEpoch, epoch)
-        XCTAssertEqual(controller.activeSpec?.options.httpHeaders, next)
-        XCTAssertEqual(player.state, .paused)
-        XCTAssertEqual(player.currentTime, time)
-        XCTAssertEqual(player.selectedAudioTrack, track)
-        XCTAssertGreaterThanOrEqual(player.bufferedAhead, buffered)
+        XCTAssertEqual(controller.activeSpec?.options.httpHeaders, old)
+        XCTAssertEqual(controller.engine.state, .paused)
+        XCTAssertEqual(controller.engine.currentTime, time)
+        XCTAssertEqual(controller.engine.activeAudioTrackIndex, track)
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        XCTAssertFalse(controller.updateSourceHeaders(old, for: epoch, expectedHeaders: old, sourceURL: url))
         _ = controller.beginLoad(spec, shouldPlayWhenReady: false)
         XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
     }
@@ -124,21 +120,18 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertFalse(controller.containsSubtitle(appTrackID: 99))
         XCTAssertFalse(controller.containsSubtitle(appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: 2)))
         controller.selectSubtitleTrack(id: 2)
-        let deadline = Date().addingTimeInterval(5)
-        while controller.engine.subtitleCues.isEmpty && Date() < deadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        XCTAssertTrue(controller.engine.subtitleCues.contains { if case .text("Second embedded caption") = $0.body { return true }; return false })
+        XCTAssertEqual(controller.engine.activeSubtitleTrackIndex, 2)
+        XCTAssertTrue(controller.engine.isSubtitleActive)
+        XCTAssertTrue(tracks.allSatisfy(\.isNativelyRenderedSubtitle))
         controller.selectSubtitleTrack(id: nil)
+        XCTAssertFalse(controller.engine.isSubtitleActive)
         XCTAssertTrue(controller.containsSubtitle(appTrackID: 2))
         XCTAssertEqual(controller.vividSubtitleID(forAppID: 2), 2)
         controller.selectSecondarySubtitleTrack(id: 2)
-        let secondaryDeadline = Date().addingTimeInterval(5)
-        while controller.engine.secondarySubtitleCues.isEmpty && Date() < secondaryDeadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        XCTAssertTrue(controller.engine.secondarySubtitleCues.contains { if case .text("Second embedded caption") = $0.body { return true }; return false })
-        XCTAssertNil(controller.engine.player.error)
+        XCTAssertTrue(controller.engine.isSecondarySubtitleActive)
+        controller.selectSecondarySubtitleTrack(id: nil)
+        XCTAssertFalse(controller.engine.isSecondarySubtitleActive)
+        XCTAssertNil(controller.engine.errorInfo)
         controller.stop()
         XCTAssertFalse(controller.containsSubtitle(appTrackID: 2))
     }
@@ -159,6 +152,13 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: 0, tracks: tracks, preferredLanguage: "ja"), 0)
         XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: tracks, preferredLanguage: "fr"), 0)
         XCTAssertNil(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: [], preferredLanguage: "ja"))
+    }
+
+    func testMissingPreferredAudioUsesEnglishBeforeNonEnglishDefault() {
+        let tracks = [makeAudioTrack(language: "jpn", isDefault: true), makeAudioTrack(language: "eng", isDefault: false)]
+        XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: tracks, preferredLanguage: "fr"), 1)
+        XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: 0, tracks: tracks, preferredLanguage: "fr"), 0)
+        XCTAssertEqual(VividInitialAudioPreference.languages(selectedOrdinal: nil, tracks: tracks, fallbackLanguage: "fr"), ["fr", "en"])
     }
 
     func testExplicitV3AudioSelectionOverridesProfileLanguageForInitialLoad() {
@@ -227,7 +227,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         defer { controller.stop() }
         var opens = 0
         let observation = controller.engine.$startupProgress.sink { progress in
-            if progress?.checkpoint == "Opening source" { opens += 1 }
+            if progress?.checkpoint == "opening" { opens += 1 }
         }
         defer { observation.cancel() }
         let spec = try VividLoadSpec(offlineURL: url, startPosition: 0, audioOnly: true, audioTrackOrdinal: 1)
@@ -235,7 +235,6 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         try await controller.finishLoad(epoch)
         XCTAssertEqual(controller.engine.audioTracks.map(\.id), [0, 3])
         XCTAssertEqual(controller.engine.activeAudioTrackIndex, 3)
-        XCTAssertEqual(controller.engine.player.selectedAudioTrack, 3)
         XCTAssertEqual(opens, 1)
         XCTAssertNil(controller.engine.errorInfo)
     }
@@ -1284,20 +1283,12 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         try controller.validateEmbeddedSubtitleSelection(3)
         controller.selectSubtitleTrack(id: 3)
         controller.play()
-        let deadline = Date().addingTimeInterval(15)
-        func containsText(_ text: String) -> Bool {
-            controller.engine.subtitleCues.contains { cue in
-                if case .text(let value) = cue.body { return value == text }
-                return false
-            }
-        }
-        while !containsText("Native track 2"),
-              Date() < deadline {
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
         XCTAssertEqual(controller.engine.activeSubtitleTrackIndex, 3)
-        XCTAssertTrue(containsText("Native track 2"))
-        XCTAssertFalse(containsText("Native track 1"))
+        let selected = try XCTUnwrap(controller.engine.subtitleTracks.first { $0.id == 3 })
+        XCTAssertFalse(selected.isExternal)
+        XCTAssertTrue(selected.isNativelyRenderedSubtitle)
+        XCTAssertTrue(controller.engine.isSubtitleActive)
+        XCTAssertNil(controller.engine.errorInfo)
     }
 
     func testMovieTimelineUsesExternalTrackStateWithoutRequiringAnAlias() throws {
@@ -1339,7 +1330,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         )
         XCTAssertTrue(controller.containsSubtitle(appTrackID: appTrackID))
         XCTAssertEqual(
-            controller.appSubtitleID(forVividID: VividEngine.externalSubtitleTrackIDBase),
+            controller.appSubtitleID(forVividID: try XCTUnwrap(controller.engine.subtitleTracks.first(where: \.isExternal)).id),
             appTrackID
         )
         controller.stop()
@@ -1594,20 +1585,22 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         controller.pause()
         controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        XCTAssertEqual(controller.engine.player.synchronizer.rate, 0)
+        XCTAssertEqual(controller.engine.state, .paused)
         controller.prepareForReplacement()
         XCTAssertFalse(controller.shouldPlayWhenReady)
         let replacement = controller.beginLoad(spec, shouldPlayWhenReady: controller.shouldPlayWhenReady)
         try await controller.finishLoad(replacement)
         controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        XCTAssertEqual(controller.engine.player.synchronizer.rate, 0)
+        XCTAssertEqual(controller.engine.state, .paused)
         controller.play()
         let deadline = Date().addingTimeInterval(5)
-        while controller.engine.player.synchronizer.rate != 1.5 && Date() < deadline {
+        while controller.engine.currentTime <= 0 && Date() < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertEqual(controller.engine.player.synchronizer.rate, 1.5)
+        XCTAssertGreaterThan(controller.engine.currentTime, 0)
+        XCTAssertTrue(controller.shouldPlayWhenReady)
+        XCTAssertNil(controller.engine.errorInfo)
     }
 
     func testTransportIntentCanChangeDuringAnUncommittedLoad() throws {

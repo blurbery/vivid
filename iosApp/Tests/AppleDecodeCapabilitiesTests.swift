@@ -253,6 +253,19 @@ final class AppleDecodeCapabilitiesTests: XCTestCase {
         XCTAssertFalse(caps.videoDecode.isEmpty)
     }
 
+    func testLucidPhonesAndTabletsDeclareTheirOriginalFilePipeline() {
+        for machine in ["iPhone19,1", "iPad16,6"] {
+            XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
+                isTVOS: false, isSimulator: false, machineIdentifier: machine, usesLucid: true), .vividDeclared)
+            XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
+                isTVOS: false, isSimulator: true, machineIdentifier: machine, usesLucid: true), .platformAttested)
+            XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
+                isTVOS: false, isSimulator: false, machineIdentifier: machine, usesLucid: false), .platformAttested)
+        }
+        XCTAssertEqual(AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
+            isTVOS: true, isSimulator: false, machineIdentifier: "AppleTV5,3", usesLucid: true), .platformAttested)
+    }
+
     func testStreamingPolicyTrustsAppleTV4KButNotAppleTVHDOrSimulators() {
         func mode(
             _ isTVOS: Bool,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional permission applies to Vivid's adapter only: LICENSE-APPLE-EXCEPTION.
-#if (os(tvOS) || os(iOS)) && VIVID_MPV_EXPERIMENT
+#if (os(tvOS) || os(iOS))
 import AVFoundation
 import AVKit
 import Combine
@@ -8,7 +8,7 @@ import Libmpv
 import MediaPlayer
 import SwiftUI
 
-/// Vivid's shell adapter; the pinned Plezy/mpv build owns output and A/V timing.
+/// Vivid's shell adapter; the pinned media core owns output and A/V timing.
 @MainActor
 final class VividMPVPlayer: NSObject, ObservableObject {
     let clock = PlaybackClock()
@@ -173,6 +173,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             let error = PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Lucid could not initialise.")
             fail(error); throw error
         }
+        applySubtitleSettings(appearance: PlayerSettings.shared.effectiveSubtitleAppearance,
+                              delayMilliseconds: PlayerSettings.shared.subtitleSyncMs)
         surface.core = instance
         instance.sampleBufferDisplayLayer?.videoGravity = videoGravity
         instance.setVisible(true)
@@ -188,7 +190,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         #endif
         for (name, format) in Self.observations { instance.observeProperty(name, format: format) }
         videoRoute = options.audioOnly ? .audio : .sampleBuffer
-        trace?.event("mpv_initialised", fields: "backend=plezy_mpv compressed_sink=avplayer pcm_sink=samplebuffer")
+        trace?.event("mpv_initialised", fields: "backend=mpv compressed_sink=avplayer pcm_sink=samplebuffer")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             instance.commandAsync(["loadfile", url.absoluteString, "replace"]) { result in
                 continuation.resume(with: result.map { _ in () })
@@ -360,17 +362,18 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         if dv { return .dolbyVision }
         switch info["gamma"] as? String { case "pq", "smpte2084": return .hdr10; case "hlg", "arib-std-b67": return .hlg; default: return .sdr }
     }
-    private func readTracks() {
-        func track(_ info: [String: Any]) -> TrackInfo {
+    nonisolated static func trackInfo(_ info: [String: Any]) -> TrackInfo {
             TrackInfo(id: Int(info["ff-index"] as? Int64 ?? info["id"] as? Int64 ?? 0), name: info["title"] as? String ?? "",
                       codec: info["codec"] as? String ?? "", language: info["lang"] as? String,
                       channels: Int(info["demux-channel-count"] as? Int64 ?? 0),
                       isDefault: info["default"] as? Bool ?? false, isForced: info["forced"] as? Bool ?? false,
+                      isHearingImpaired: info["hearing-impaired"] as? Bool ?? false,
                       isExternal: info["external"] as? Bool ?? false, isNativelyRenderedSubtitle: true,
                       sourceStreamIndex: (info["ff-index"] as? Int64).map(Int.init))
-        }
-        audioTracks = rawTracks.filter { $0["type"] as? String == "audio" }.map(track)
-        subtitleTracks = rawTracks.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }.map(track)
+    }
+    private func readTracks() {
+        audioTracks = rawTracks.filter { $0["type"] as? String == "audio" }.map(Self.trackInfo)
+        subtitleTracks = rawTracks.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }.map(Self.trackInfo)
         subtitleTracks += externalTracks.sorted { $0.key < $1.key }.map { id, t in
             TrackInfo(id: id, name: t.name ?? "External subtitles", language: t.language, isForced: t.isForced,
                       isExternal: true, isNativelyRenderedSubtitle: false)
@@ -416,7 +419,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         rateTask = Task { @MainActor [weak self, weak core] in
             await previous?.value
             guard let self, let core, generation == token, !Task.isCancelled else { return }
-            // Match Plezy: compressed packets cannot pass through a tempo filter.
+            // Compressed packets cannot pass through a tempo filter.
             let changes = rate == 1
                 ? [("speed", String(rate)), ("audio-spdif", "ac3,eac3")]
                 : [("audio-spdif", ""), ("speed", String(rate))]
@@ -448,6 +451,18 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         guard let id = mpvTrackID(sourceID: index, type: "audio") else { return }
         core?.setProperty("aid", value: String(id))
     }
+    private var subtitleDelaySeconds: Double = 0
+
+    func applySubtitleSettings(appearance: SubtitleAppearance, delayMilliseconds: Int) {
+        subtitleDelaySeconds = Double(delayMilliseconds) / 1000
+        for (name, value) in LucidSubtitleStyle.options(appearance) {
+            core?.setProperty(name, value: value)
+        }
+        core?.setProperty("sub-delay", value: String(subtitleDelaySeconds))
+        core?.setProperty("secondary-sub-delay", value: String(subtitleDelaySeconds))
+        updateExternalCues()
+    }
+
     func selectSubtitleTrack(index: Int) {
         activeSubtitleTrackIndex = index
         core?.setProperty("sid", value: externalTracks[index] == nil ? mpvTrackID(sourceID: index, type: "sub").map(String.init) ?? "no" : "no")
@@ -461,8 +476,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func clearSubtitle() { activeSubtitleTrackIndex = nil; core?.setProperty("sid", value: "no"); subtitleCues = [] }
     func clearSecondarySubtitle() { secondarySubtitleID = nil; core?.setProperty("secondary-sid", value: "no"); secondarySubtitleCues = [] }
     private func updateExternalCues() {
-        subtitleCues = (externalCues[activeSubtitleTrackIndex ?? -1] ?? []).filter { $0.startTime <= currentTime && currentTime < $0.endTime }
-        secondarySubtitleCues = (externalCues[secondarySubtitleID ?? -1] ?? []).filter { $0.startTime <= currentTime && currentTime < $0.endTime }
+        subtitleCues = (externalCues[activeSubtitleTrackIndex ?? -1] ?? []).filter { $0.startTime <= currentTime - subtitleDelaySeconds && currentTime - subtitleDelaySeconds < $0.endTime }
+        secondarySubtitleCues = (externalCues[secondarySubtitleID ?? -1] ?? []).filter { $0.startTime <= currentTime - subtitleDelaySeconds && currentTime - subtitleDelaySeconds < $0.endTime }
     }
     func addExternalSubtitleTrack(_ track: ExternalSubtitleTrack) -> TrackInfo {
         let id = externalTracks.first(where: { $0.value == track })?.key ?? nextExternalID
@@ -533,6 +548,38 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
 }
 
+/// Plain text styling only; authored ASS and bitmap layout stays with Lucid.
+enum LucidSubtitleStyle {
+    static func options(_ value: SubtitleAppearance) -> [String: String] {
+        let a = value.sanitized()
+        let boxed = a.backgroundStyle == .box || a.captionWindowOpacity > 0
+        let back = a.captionWindowOpacity > 0 ? a.captionWindowColor : a.backgroundColor
+        let opacity = a.captionWindowOpacity > 0 ? a.captionWindowOpacity : a.backgroundOpacity
+        let edge = a.systemTextEdgeStyle
+        let outline = a.textOutline || edge == .uniform
+        let shadow = a.backgroundStyle == .shadow || edge == .dropShadow || edge == .raised || edge == .depressed
+        return [
+            "sub-ass-override": "no", "secondary-sub-ass-override": "no",
+            "sub-font": a.fontFamily.assFontName,
+            "sub-font-size": String((a.systemRelativeFontScale.map { SubtitleAppearance.default.fontSize.pointSize * $0 } ?? a.fontSize.pointSize) * 720 / 1080),
+            "sub-color": colour(a.fontColor, opacity: a.fontOpacity),
+            "sub-border-style": boxed ? "background-box" : "outline-and-shadow",
+            "sub-back-color": colour(back, opacity: boxed || shadow ? opacity : 0),
+            "sub-outline-color": a.textOutlineColor,
+            "sub-outline-size": outline ? "1.33" : "0",
+            "sub-shadow-offset": boxed ? "4" : shadow ? "2" : "0",
+            "sub-align-y": a.position == .top ? "top" : "bottom",
+            "sub-pos": a.position == .lowerThird ? "70" : "100",
+            "sub-scale-with-window": "no", "sub-use-margins": "no"
+        ]
+    }
+
+    private static func colour(_ hex: String, opacity: Int) -> String {
+        let alpha = Int((Double(opacity) * 255 / 100).rounded())
+        return String(format: "#%02X", alpha) + hex.replacingOccurrences(of: "#", with: "")
+    }
+}
+
 private final class VividMPVCore: MpvPlayerCore {
     var headers: [String: String] = [:]
     var startPosition: Double = 0
@@ -552,6 +599,12 @@ private final class VividMPVCore: MpvPlayerCore {
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
         for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value)) }
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
+        VividMPVHeaders.apply(headers, to: mpv)
+    }
+}
+
+enum VividMPVHeaders {
+    static func apply(_ headers: [String: String], to mpv: OpaquePointer) {
         // Set a typed string list, so commas in header values are never interpreted as separators.
         var strings = headers.sorted { $0.key < $1.key }.map { strdup("\($0.key): \($0.value)") }
         defer { for string in strings { free(string) } }
@@ -564,7 +617,7 @@ private final class VividMPVCore: MpvPlayerCore {
                 list.values = values.baseAddress
                 withUnsafeMutablePointer(to: &list) { listPointer in
                     var node = mpv_node(); node.format = MPV_FORMAT_NODE_ARRAY; node.u.list = listPointer
-                    checkError(mpv_set_option(mpv, "http-header-fields", MPV_FORMAT_NODE, &node))
+                    _ = mpv_set_option(mpv, "http-header-fields", MPV_FORMAT_NODE, &node)
                 }
             }
         }

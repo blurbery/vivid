@@ -274,7 +274,8 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                     showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false,
                     onSelectVersion: onSelectVersion,
                     onSelectAudioTrack: onSelectAudioTrack,
-                    onSelectSubtitleTrack: onSelectSubtitleTrack
+                    onSelectSubtitleTrack: onSelectSubtitleTrack,
+                    subtitleContext: Self.subtitleContext(for: detail)
                 )
             },
             moreMenu: { moreMenu }
@@ -283,7 +284,12 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
 
     // MARK: - More menu
 
-    @ViewBuilder
+    private static func subtitleContext(for item: ItemDetail) -> OpenSubtitlePlaybackContext {
+        .init(contentID: item.contentId, generation: 0,
+              query: .init(title: item.type == "episode" ? (item.seriesTitle ?? item.title) : item.title,
+                           type: item.type, season: item.seasonNumber, episode: item.episodeNumber))
+    }
+
     private var moreMenu: some View {
         TVCircleMenuButton(
             title: "More",

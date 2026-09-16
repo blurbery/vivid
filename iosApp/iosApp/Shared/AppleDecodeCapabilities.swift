@@ -53,8 +53,13 @@ enum AppleDecodeCapabilities {
     static func streamingVideoCapabilityModeForDevice(
         isTVOS: Bool,
         isSimulator: Bool,
-        machineIdentifier: String
+        machineIdentifier: String,
+        usesLucid: Bool = false
     ) -> StreamingVideoCapabilityMode {
+        if usesLucid, !isTVOS, !isSimulator,
+           machineIdentifier.hasPrefix("iPhone") || machineIdentifier.hasPrefix("iPad") {
+            return .vividDeclared
+        }
         guard isTVOS,
               !isSimulator,
               machineIdentifier.hasPrefix("AppleTV"),
@@ -70,10 +75,12 @@ enum AppleDecodeCapabilities {
         #else
         let isTVOS = false
         #endif
+        let usesLucid = true
         return streamingVideoCapabilityModeForDevice(
             isTVOS: isTVOS,
             isSimulator: isSimulator,
-            machineIdentifier: machineIdentifier
+            machineIdentifier: machineIdentifier,
+            usesLucid: usesLucid
         )
     }
 
@@ -86,10 +93,8 @@ enum AppleDecodeCapabilities {
     /// detailed entry below because ordinary H.264 is also hardware-backed.
     static let softwareVideoCodecs = ["av1", "vp9", "mpeg2video", "vc1"]
 
-    /// The complete online video manifest of VividEngine 6.67.2 with
-    /// FFmpegBuild 3.0.0 (same FFmpeg n8.1.2 decoder set as 2.4.3). Vivid routes H.264, HEVC, and
-    /// hardware-decodable AV1 natively when the exact probed stream permits;
-    /// every other decoder present in the build goes through libavcodec.
+    /// Original-file codec vocabulary advertised by the Lucid adapter.
+    /// Decoder availability does not establish support for every profile or output route.
     static let vividOriginalHTTPVideoCodecs = [
         "h264", "hevc", "av1", "vp9", "vp8", "mpeg4", "mpeg2video", "vc1",
         "qtrle", "msmpeg4v1", "msmpeg4v2", "msmpeg4v3", "wmv1", "wmv2", "wmv3"
@@ -112,7 +117,7 @@ enum AppleDecodeCapabilities {
 
     /// Audio decoders present in the same Vivid/FFmpeg build. Aliases are
     /// intentional because scanners do not all spell DTS-HD or PCM alike.
-    /// `pcm_bluray` is the Blu-ray LPCM decoder FFmpegBuild ships for M2TS;
+    /// `pcm_bluray` is the Blu-ray LPCM decoder the media core ships for M2TS;
     /// `pcm_dvd` stays absent because the build does not enable it.
     static let vividOriginalHTTPAudioCodecs = [
         "aac", "ac3", "eac3", "mp3", "mp2", "flac", "opus", "vorbis", "alac",
@@ -139,9 +144,9 @@ enum AppleDecodeCapabilities {
 
     /// Demuxers used by the pinned Vivid build for online original HTTP.
     /// Silo's scanner records MPEG program streams (`.mpg`/`.vob`) as `mpeg`,
-    /// so that token is what carries FFmpegBuild's `mpegps` demuxer claim.
+    /// so that token is what carries the media core’s `mpegps` demuxer claim.
     /// ASF/WMV stays absent even though WMV elementary streams in Matroska are
-    /// supported; FFmpegBuild does not ship the corresponding container path.
+    /// supported; the declared capability set does not include the corresponding container path.
     private static let vividVideoContainers = [
         "mp4", "m4v", "mov", "mkv", "matroska", "avi", "mpegts", "ts", "m2ts",
         "mts", "3gp", "3g2", "mpeg", "vob", "ogg", "webm", "flv"

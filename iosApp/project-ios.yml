@@ -27,7 +27,6 @@ targets:
       Release: Signing/Vivid.xcconfig
     settings:
       base:
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VIVID_MPV_EXPERIMENT"
         PRODUCT_NAME: Vivid
         INFOPLIST_FILE: iosApp/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -156,8 +155,6 @@ targets:
         buildPhase: none
     dependencies:
       - target: Vivid
-      - package: MPVKit
-        product: MPVKit
     configFiles:
       Debug: Signing/Vivid.xcconfig
       Release: Signing/Vivid.xcconfig

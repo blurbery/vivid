@@ -2,8 +2,8 @@ import SwiftUI
 
 /// App settings screen.
 ///
-/// iOS: a searchable, card-based overview aligned with the web app's
-/// information hierarchy. macOS retains the compact native Settings list.
+/// iOS: separate profile and settings sections with native grouped rows.
+/// macOS retains the compact native Settings list.
 ///
 /// On tvOS this view delegates to ``TVSettingsView``, a root-menu Form
 /// with drill-in sub-screens tuned for the 10-foot experience.

@@ -32,7 +32,6 @@ targets:
       Release: Signing/VividTV.xcconfig
     settings:
       base:
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VIVID_MPV_EXPERIMENT"
         PRODUCT_NAME: VividTV
         # AVKit supplies UIWindow.avDisplayManager as an Objective-C category.
         # Keep the framework loaded even when no AVKit class is instantiated.
@@ -46,7 +45,7 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
       configs:
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG VIVID_MPV_EXPERIMENT VIVID_P8_TRIAL"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG VIVID_P8_TRIAL"
           APS_ENVIRONMENT: development
         Release:
           APS_ENVIRONMENT: production

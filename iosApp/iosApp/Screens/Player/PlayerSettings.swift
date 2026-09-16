@@ -75,11 +75,8 @@ enum BufferAheadMode: String, CaseIterable {
         #endif
     }
 
-    #if os(tvOS)
-    static let explanation = "Lucid uses its own automatic buffer. Saved buffer presets are retained but do not alter trial playback."
-    #else
-    static let explanation = "Automatic buffers about 20 seconds ahead. Playback starts before the target fills, and memory limits can shorten the buffer. Changes apply to the next video; streaming playlists manage their own buffer."
-    #endif
+    static let explanation = "Lucid buffers ahead automatically, with up to 256 MB ahead and 16 MB behind for seeking. Playback starts before the buffer fills."
+
 }
 
 @Observable

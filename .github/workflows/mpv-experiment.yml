@@ -1,8 +1,8 @@
-name: Playback experiments
+name: Lucid playback
 
 on:
   push:
-    branches: [plezy-mpv-experiment]
+    branches: [experiment-2.0]
   workflow_dispatch:
 
 permissions:

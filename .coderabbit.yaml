@@ -23,7 +23,6 @@ reviews:
       - main
 
   path_filters:
-    - "!VividKit/Vendor/**"
     - "!iosApp/Resources/OpenSourceLicenses/**"
     - "!docs/branding/**/*.png"
     - "!**/*.xcframework/**"
@@ -37,7 +36,7 @@ reviews:
         problem. Check state ownership, actor isolation, cancellation, retain cycles,
         error handling and preservation of existing navigation and UI behaviour.
 
-    - path: "VividKit/**"
+    - path: "iosApp/iosApp/Playback/**"
       instructions: |
         Review playback and media code conservatively. Check memory ownership,
         concurrency, cancellation, timestamp and stream identity handling, buffer

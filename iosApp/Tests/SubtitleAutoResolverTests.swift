@@ -298,4 +298,12 @@ final class SubtitleAutoResolverTests: XCTestCase {
         ))
         XCTAssertEqual(result, .noChange)
     }
+    func testStrictLanguagePolicyWithoutPreferenceDisablesSubtitles() {
+        XCTAssertEqual(SubtitleAutoResolver.resolve(.init(
+            preferredLanguage: nil, mode: .always, showForced: true,
+            disableWhenNoLanguageMatch: true, trackSignature: nil,
+            availableSubtitles: [track(id: 1, lang: "en")], currentAudioLanguage: "ja"
+        )), .disable)
+    }
+
 }

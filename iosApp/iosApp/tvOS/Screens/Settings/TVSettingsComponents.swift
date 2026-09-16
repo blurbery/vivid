@@ -136,7 +136,7 @@ struct TVSettingsRowLabel: View {
         "Customise Tab Bar": "Reorder or hide tabs. Changes save automatically.",
         "Quality": "Preferred playback resolution and bitrate.",
         "Audio Language": "Prefer a matching audio track when available.",
-        "Buffer Ahead": "Automatic prepares about 40 seconds ahead. Larger buffers use more storage. Applies to the next video.",
+        "Buffer Ahead": "Lucid manages buffering automatically.",
         "Auto-Play Next Episode": "Start the following episode automatically.",
         "Show Next Up": "Choose when the next-episode prompt appears.",
         "Auto-Skip Intros & Recaps": "Skip intros and recaps automatically when timestamps are available.",

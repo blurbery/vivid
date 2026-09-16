@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Central design token repository matching Plezy's mono theme.
+/// Central design token repository for Vivid’s monochrome theme.
 /// On tvOS, spacing/radius tokens are scaled up to match 10-foot viewing distance.
 struct VividTheme {
 
@@ -23,11 +23,11 @@ struct VividTheme {
     /// Card container radius
     static let cardCornerRadius: CGFloat = 18
     #else
-    /// Standard card/poster corner radius (8pt — Plezy radiusSm)
+    /// Standard card/poster corner radius (8pt)
     static let cornerRadius: CGFloat = 8
     /// Smaller elements like episode thumbnail corners (6pt)
     static let smallCornerRadius: CGFloat = 6
-    /// Card container radius (14pt — Plezy CardTheme)
+    /// Card container radius (14pt)
     static let cardCornerRadius: CGFloat = 14
     #endif
 
@@ -58,7 +58,7 @@ struct VividTheme {
     /// Screen safe-area padding — tvOS always wants overscan
     static let safePadding: CGFloat = 80
     #else
-    /// Base spacing unit (12pt — Plezy space token)
+    /// Base spacing unit (12pt)
     static let spacing: CGFloat = 12
     /// Standard content padding (16pt)
     static let padding: CGFloat = 16
@@ -72,12 +72,12 @@ struct VividTheme {
 
     // MARK: - Elevation
 
-    /// Card elevation — zero for Plezy-style flat cards
+    /// Card elevation — zero for flat cards
     static let cardElevation: CGFloat = 0
 
     // MARK: - Media Aspect Ratios
 
-    /// Movie/show poster (2:3.3 — Plezy uses slightly taller posters)
+    /// Movie/show poster (2:3.3)
     static let posterAspectRatio: CGFloat = 2.0 / 3.3
 
     /// Backdrop/banner image (16:9)
@@ -111,7 +111,7 @@ struct VividTheme {
     static let profileAvatarSize: CGFloat = 80
     #endif
 
-    // MARK: - Animation Durations (Plezy mono_tokens)
+    // MARK: - Animation Durations
 
     /// Fast — focus state changes, hover effects (120ms)
     static let fastDuration: Double = 0.12

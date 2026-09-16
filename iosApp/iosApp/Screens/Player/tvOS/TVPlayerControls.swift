@@ -95,11 +95,11 @@ struct TVPlayerControls: View {
                 idleOverlay
                     .transition(.opacity)
             }
-            if viewModel.showIntroSkip {
+            if viewModel.showIntroSkip && !isHUDPresented {
                 introSkipLayer
                     .transition(.opacity)
             }
-            if viewModel.showCreditsSkip {
+            if viewModel.showCreditsSkip && !isHUDPresented {
                 creditsSkipLayer
                     .transition(.opacity)
             }
@@ -164,7 +164,7 @@ struct TVPlayerControls: View {
                 // here while the HUD is up would yank the user out of it
                 // mid-navigation. The HUD-dismiss handler above re-seeds
                 // transport focus, and Skip stays reachable by direction.
-                if !isHUDPresented {
+                if !isHUDPresented && !viewModel.showControls {
                     focusedIntroAction = .skip
                 }
             } else {
@@ -179,7 +179,7 @@ struct TVPlayerControls: View {
         }
         .onChange(of: viewModel.showCreditsSkip) { _, visible in
             if visible {
-                if !isHUDPresented {
+                if !isHUDPresented && !viewModel.showControls {
                     isCreditsSkipFocused = true
                 }
             } else {
@@ -370,14 +370,29 @@ struct TVPlayerControls: View {
         }
     }
 
+    /// Up/Down is the boundary from the standalone skip prompt into transport.
+    /// Keep Left/Right available for moving between Skip and Cancel.
+    private func moveFromSkipPrompt(_ direction: MoveCommandDirection) {
+        guard direction == .up || direction == .down, !isHUDPresented else { return }
+        viewModel.revealControls()
+        trapsTransportFocus = false
+        focusedIntroAction = nil
+        isCreditsSkipFocused = false
+        DispatchQueue.main.async {
+            guard viewModel.showControls, !isHUDPresented else { return }
+            focusedTransportButton = .playPause
+        }
+    }
+
     private var introSkipLayer: some View {
         introSkipButton
             .padding(.horizontal, 80)
-            .padding(.bottom, viewModel.showControls && !isHUDPresented ? 156 : 96)
+            .padding(.bottom, 180)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             // Group Skip + Cancel as their own focus region so the engine can
             // move between them and the transport row below by direction.
             .focusSection()
+            .onMoveCommand(perform: moveFromSkipPrompt)
     }
 
     private var creditsSkipLayer: some View {
@@ -390,13 +405,14 @@ struct TVPlayerControls: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(width: 220)
         }
-        .buttonStyle(TVPillButtonStyle(kind: .primary, focusTreatment: .compact))
+        .buttonStyle(TVSkipGlassButtonStyle())
         .focused($isCreditsSkipFocused)
         .accessibilityLabel("Skip Credits")
         .padding(.horizontal, 80)
-        .padding(.bottom, viewModel.showControls && !isHUDPresented ? 156 : 96)
+        .padding(.bottom, 180)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .focusSection()
+            .onMoveCommand(perform: moveFromSkipPrompt)
     }
 
     private var introSkipButton: some View {
@@ -416,7 +432,7 @@ struct TVPlayerControls: View {
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 136)
                     }
-                    .buttonStyle(TVPillButtonStyle(kind: .secondary, focusTreatment: .compact))
+                    .buttonStyle(TVSkipGlassButtonStyle())
                     .focused($focusedIntroAction, equals: .cancel)
                     .accessibilityLabel("Cancel " + viewModel.introSkipLabel)
                 }
@@ -437,9 +453,9 @@ struct TVPlayerControls: View {
                 .font(.system(size: 26, weight: .semibold))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
-                .frame(width: 196)
+                .frame(width: 220)
         }
-        .buttonStyle(TVPillButtonStyle(kind: .primary, focusTreatment: .compact))
+        .buttonStyle(TVSkipGlassButtonStyle())
         .focused($focusedIntroAction, equals: .skip)
         .accessibilityLabel(
             viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipLabel + " Now"
@@ -726,4 +742,30 @@ struct TVPlayerControls: View {
         PlayerTimeFormatter.formatCountdown(seconds)
     }
 }
+private struct TVSkipGlassButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        TVSkipGlassButtonBody(configuration: configuration)
+    }
+}
+
+private struct TVSkipGlassButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .padding(.horizontal, 24)
+            .frame(height: 76)
+            .contentShape(Capsule())
+            .vividPlayerGlass(in: Capsule(), tint: isFocused ? .white.opacity(0.3) : nil, interactive: true)
+            .overlay(Capsule().stroke(.white.opacity(isFocused ? 1 : 0), lineWidth: 3))
+            .scaleEffect(isFocused ? 1.06 : 1)
+            .shadow(color: .black.opacity(isFocused ? 0.45 : 0), radius: 12, y: 6)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .focusEffectDisabled()
+            .animation(.easeOut(duration: 0.15), value: isFocused)
+    }
+}
+
 #endif

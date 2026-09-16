@@ -252,6 +252,18 @@ private struct ItemDetailPhoneContent: View {
     #endif
     @Environment(AppRouter.self) private var router
 
+    private var subtitleSearchContext: OpenSubtitlePlaybackContext? {
+        if let detail = nextUpWatchDetail, !isLoadingNextUpWatchDetail {
+            return .init(contentID: detail.contentId, generation: 0,
+                         query: .init(title: detail.seriesTitle ?? detail.title, type: detail.type,
+                                      season: detail.seasonNumber, episode: detail.episodeNumber))
+        }
+        guard let detail = viewModel.detail, detail.type == "movie" || detail.type == "episode" else { return nil }
+        return .init(contentID: detail.contentId, generation: 0,
+                     query: .init(title: detail.type == "episode" ? (detail.seriesTitle ?? detail.title) : detail.title,
+                                  type: detail.type, season: detail.seasonNumber, episode: detail.episodeNumber))
+    }
+
     var body: some View {
         Group {
             if let detail = viewModel.detail {
@@ -262,6 +274,7 @@ private struct ItemDetailPhoneContent: View {
                 Color.clear
             }
         }
+        .environment(\.openSubtitleDetailContext, subtitleSearchContext)
         .environment(\.seasonWatchedAction, { id, played in await viewModel.setSeasonWatched(contentId: id, played: played) })
         .environment(\.episodeWatchedAction, { id, played in await viewModel.setEpisodeWatched(contentId: id, played: played) })
         .vividBackground()

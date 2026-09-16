@@ -22,6 +22,7 @@ struct MobilePlayerControls: View {
     @State private var activeSheet: PlayerSheet?
     @State private var activePopover: PlayerPopover?
     @State private var viewportSize: CGSize = .zero
+    @State private var bottomControlsHeight: CGFloat = 112
     /// Trailing time label mode: remaining ("−12:34") when true, total
     /// duration otherwise. Tap the label to flip — the native player idiom.
     @State private var showsRemainingTime = true
@@ -39,7 +40,7 @@ struct MobilePlayerControls: View {
         // the sheet mid-interaction — then re-presents it when controls come
         // back, because @State activeSheet survives the rebuild.
         ZStack {
-            if (!viewModel.isLoading && viewModel.showControls) || activePopover != nil {
+            if viewModel.showControls || activePopover != nil {
                 // GeometryReader pins the control stack to the player's own
                 // bounds. The bars are siblings of the shared player notice in
                 // `PlayerView`'s ZStack; inside the player's `.fullScreenCover`
@@ -49,18 +50,22 @@ struct MobilePlayerControls: View {
                 // the visible frame regardless of how wide a bar wants to be.
                 GeometryReader { proxy in
                     ZStack {
-                        Color.black.opacity(viewModel.isScrubbing ? 0.55 : 0.4)
+                        Color.black.opacity(viewModel.isTimelineScrubbing ? 0.55 : 0.4)
                             .ignoresSafeArea()
                             .onTapGesture { viewModel.toggleControls() }
+
+                        centerCluster
+                            .opacity(recedingOpacity)
+                            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
 
                         VStack(spacing: 0) {
                             topStrip(compact: proxy.size.width < proxy.size.height)
                                 .opacity(recedingOpacity)
                             Spacer()
-                            centerCluster
-                                .opacity(recedingOpacity)
-                            Spacer()
                             bottomStack
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                    bottomControlsHeight = max(112, $0)
+                                }
                         }
                         .padding(.horizontal)
                         .padding(.top)
@@ -69,7 +74,7 @@ struct MobilePlayerControls: View {
                         // a hairline of extra breathing room is needed.
                         .padding(.bottom, 2)
                         .frame(width: proxy.size.width, height: proxy.size.height)
-                        .animation(.easeOut(duration: 0.18), value: viewModel.isScrubbing)
+                        .animation(.easeOut(duration: 0.18), value: viewModel.isTimelineScrubbing)
                     }
                 }
                 .transition(.opacity)
@@ -124,7 +129,7 @@ struct MobilePlayerControls: View {
     /// Top strip, center cluster and action row fade out of the way while
     /// the user is scrubbing so the preview bubble owns the screen.
     private var recedingOpacity: Double {
-        viewModel.isScrubbing ? 0.12 : 1
+        viewModel.isTimelineScrubbing ? 0.12 : 1
     }
 
     // MARK: - Top strip
@@ -692,25 +697,20 @@ struct MobilePlayerControls: View {
                             }
                         }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.black.opacity(0.85))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .frame(height: VividTheme.topBarIconHitSize)
                     }
-                    // White prominent glass with a dark glyph, matching the
-                    // play/pause disc — accent-tinted prominent reads as an
-                    // app-colored web button over video.
-                    .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9)))
+                    .buttonStyle(MobilePlayerGlassButtonStyle())
                     .accessibilityLabel(
                         viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipLabel + " Now"
                     )
                 }
             }
             .padding(.horizontal, 24)
-            // Clear the bottom stack while the controls are up; hug the
-            // bottom edge when the pill is floating alone.
-            .padding(.bottom, viewModel.showControls ? 88 : 24)
+            // Reserve the same control clearance whether chrome is visible or hidden.
+            .padding(.bottom, bottomControlsHeight + 24)
         }
-        .animation(.easeOut(duration: 0.2), value: viewModel.showControls)
         .transition(.opacity)
     }
 
@@ -724,17 +724,16 @@ struct MobilePlayerControls: View {
                 } label: {
                     Label("Skip Credits", systemImage: "forward.end.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.black.opacity(0.85))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .frame(height: VividTheme.topBarIconHitSize)
                 }
-                .buttonStyle(MobilePlayerGlassButtonStyle(tint: .white.opacity(0.9)))
+                .buttonStyle(MobilePlayerGlassButtonStyle())
                 .accessibilityLabel("Skip Credits")
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, viewModel.showControls ? 88 : 24)
+            .padding(.bottom, bottomControlsHeight + 24)
         }
-        .animation(.easeOut(duration: 0.2), value: viewModel.showControls)
         .transition(.opacity)
     }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Loads an image from a URL with placeholder and error states.
-/// Placeholder uses surfaceElevated (Plezy PlaceholderContainer style).
+/// Placeholder uses surfaceElevated.
 struct AsyncImageView: View {
     let url: String
     var thumbhash: String? = nil

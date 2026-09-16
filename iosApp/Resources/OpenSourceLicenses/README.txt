@@ -1,11 +1,12 @@
 Vivid: Source Licence and Third-Party Libraries
 ===============================================
 
-This Vivid build includes the components listed below. Their complete licence
-texts are bundled beside this file and are available from Settings > About >
-Open Source Licences.
+This overview records source provenance and dependency information for Vivid.
+Bundled licence texts, including retained historical notices, are available
+from Settings > About > Open Source Licences. The pinned package records
+identify the current native dependencies.
 
-Vivid and VividKit as a whole: GPL-3.0-only with the Apple distribution
+Vivid: GPL-3.0-only with the Apple distribution
 permission, copyright 2026 blurbery and the respective contributors.
 You may copy, modify and redistribute covered code under GPLv3. There is
 no warranty except as required by applicable law. The full GPLv3 text and
@@ -46,46 +47,21 @@ provide matching source and dependency rebuild materials. The Apple
 permission preserves source disclosure; it does not allow closed-source
 covered derivatives. Apple system frameworks retain Apple's terms.
 
-FFmpegBuild and embedded media frameworks (iOS)
-  Revision: 4e58942403d37cceff3a3212e3e026f4205146a2 (release 3.3.0)
-  Source and rebuild script: https://github.com/superuser404notfound/FFmpegBuild/tree/4e58942403d37cceff3a3212e3e026f4205146a2
+Lucid media dependencies (iOS and tvOS)
+  Package: https://github.com/edde746/mpv-build/tree/c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
+  mpv 0.41.0 and FFmpeg 8.0.1, with the pinned Apple patch series.
+  Package.swift records all binary URLs and checksums; versions.json records
+  native source revisions. The package includes the media, subtitle, font,
+  colour-management and rendering dependencies used by both Apple app targets.
+  Their individual licences remain upstream; the package declares GPLv3 bundles.
+  The older FFmpegBuild and standalone vendored subtitle package are not linked.
+  Historical component licence texts remain preserved; their presence alone
+  does not identify the version or linkage of a currently shipped component.
 
-  Components built by that revision:
-  - FFmpeg n8.1.2, currently 38b88335f99e76ed89ff3c93f877fdefce736c13:
-    LGPL-2.1-or-later
-  - dav1d 1.5.4, currently 54706fc6bc0cdecab7e9593974a4039cc038fca7:
-    BSD-2-Clause
-  - zimg release-3.0.6, currently
-    f819b14e8f39d1282400b0d9543e8ef73c1b2bbd: WTFPL-2.0
-  - libzvbi v0.2.45, currently
-    d3a5ee9f2b047bf16cd1ee5ccf6ec05ee75409d0: LGPL-2.0-or-later,
-    conveyed under LGPL-2.1;
-    src/ure.c retains its MIT notice
-
-  The exact build is configured without --enable-gpl, --enable-version3, or
-  nonfree components. FFmpegBuild removes the three GPL libzvbi source files
-  before compilation and publishes the replacement stubs and patches in its
-  build.sh. The app embeds these nine libraries as separate dynamic
-  frameworks containing libavcodec, libavformat, libavutil, libswresample,
-  libswscale, libavfilter, dav1d, zimg, and libzvbi.
-
-  "Currently" records the tags' dereferenced values observed on 2026-09-04.
-  FFmpegBuild's script records tag names rather than immutable upstream
-  commit IDs; the dereferenced commits recorded here pin the exact sources if
-  those tags ever move.
-
-libass subtitle rendering and font dependencies (iOS)
-  Binary source: https://github.com/kingslay/FFmpegKit/tree/c32be9bfb628042737ad3ef622e930c5c7b15954/Sources
-  Only libass, libfreetype, libfribidi and libharfbuzz frameworks are included.
-  The FFmpegKit playback target, mpv, and GPL media libraries are not linked.
-  libass 0.17.1: ISC; https://github.com/libass/libass/tree/0.17.1
-  FreeType 2.13.2: FreeType License; https://github.com/freetype/freetype/tree/VER-2-13-2
-  FriBidi 1.0.12: LGPL-2.1-or-later; https://github.com/fribidi/fribidi/tree/v1.0.12
-  HarfBuzz 5.3.1: MIT; https://github.com/harfbuzz/harfbuzz/tree/5.3.1
-  The font and subtitle frameworks are static, separately replaceable SwiftPM
-  binary targets. Their upstream licenses remain unchanged. FreeType notice:
-  Portions of this software are copyright © 2023 The FreeType Project
-  (www.freetype.org). All rights reserved.
+  Vivid's device-tested libmpv additionally applies
+  patches/mpv/0001-avfoundation-resume-after-audio-eof.patch. Rebuild using
+  .github/workflows/mpv-audio-driver.yml and verify the linked recovery marker.
+  A fresh resolution of the package alone does not include that patch.
 
 ThumbHash decoder
   Revision: a652ce6ed691242f459f468f0a8756cda3b90a82
@@ -97,7 +73,7 @@ ThumbHash decoder
 Apple tvOS media catalog sample
 ------------------------------
 
-The experimental tvOS movie and series detail presentation uses the fold-snapping
+The tvOS movie and series detail presentation uses the fold-snapping
 implementation and material-gradient pattern from Apple's 2024 media catalog sample.
 Source: https://developer.apple.com/documentation/swiftui/creating-a-tvos-media-catalog-app-in-swiftui
 
@@ -128,10 +104,15 @@ DifferenceKit (CollectionHStack dependency)
   Source: https://github.com/ra1028/DifferenceKit/tree/073b9671ce2b9b5b96398611427a1f929927e428
   MIT, bundled in CollectionHStack-DifferenceKit-MIT.txt.
 
-Lucid Engine dependencies
--------------------------
+Apple media bridge provenance
+-----------------------------
 Apple bridge source: edde746/plezy, 8ad17ad38f2ba63576cd7b37b460a4362adb738e.
 Patched Apple binaries and build source: edde746/mpv-build,
 c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6.
-GPLv3; see Plezy-GPL-3.0.txt and THIRD_PARTY_NOTICES.md for adaptations.
+GPLv3; see Plezy-GPL-3.0.txt. The adapted source files are
+Playback/MPV/MpvPlayerCoreBase.swift, MpvPlayerCore.swift and ExternalDisplayManager.swift.
+Vivid scopes compilation to its Apple targets, mounts video in its existing
+surface, honours Match Content and disables verbose default logging. The
+upstream clock, renderer and display-mode implementation retains its origin.
+VividMPVPlayer is Vivid-owned adapter code.
 Vivid's additional Apple distribution permission does not apply to this code.

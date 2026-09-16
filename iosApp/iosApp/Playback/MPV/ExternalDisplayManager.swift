@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Adapted from edde746/plezy at 8ad17ad38f2ba63576cd7b37b460a4362adb738e.
 // See THIRD_PARTY_NOTICES.md for upstream provenance.
-#if os(iOS) && VIVID_MPV_EXPERIMENT
+#if os(iOS)
 import UIKit
 
 final class ExternalDisplayManager {

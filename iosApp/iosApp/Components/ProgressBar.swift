@@ -38,7 +38,7 @@ struct ResumeProgressBar: View {
 }
 
 /// A thin progress bar (0-1) for showing watch progress.
-/// Uses white fill on translucent track (Plezy style — no accent color).
+/// Uses white fill on translucent track (no accent colour).
 struct ProgressBar: View {
     let value: Double
 

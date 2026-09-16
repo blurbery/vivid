@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
-#if VIVID_MPV_EXPERIMENT
 import Foundation
 import QuartzCore
 import OSLog
@@ -28,7 +27,7 @@ final class PlaybackTrialTrace {
         started = Self.pendingPlay ?? CACurrentMediaTime()
         let origin = Self.pendingPlay == nil ? "engine_load" : "play_request"
         Self.pendingPlay = nil
-        let backend = "PlezyMPV"
+        let backend = "mpv"
         event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=\(backend)")
         mark(origin, at: started)
     }
@@ -102,5 +101,4 @@ private final class P8TrialRecording: @unchecked Sendable {
         }
     }
 }
-#endif
 #endif

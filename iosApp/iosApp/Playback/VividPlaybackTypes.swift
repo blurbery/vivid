@@ -5,13 +5,11 @@ import Combine
 import Foundation
 
 
-#if VIVID_MPV_EXPERIMENT
 /// Vivid-owned branding; upstream package and licence identities remain intact.
 enum LucidCore {
     static let name = "Lucid"
-    static let path = "Plezy/mpv"
+    static let path = "Lucid/mpv"
 }
-#endif
 
 enum VividPlaybackEngineIdentity {
     static let name = LucidCore.name
