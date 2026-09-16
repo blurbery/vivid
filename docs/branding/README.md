@@ -43,11 +43,11 @@ Both app targets already include the silver V as their app icon. The source asse
   <thead><tr><th align="left">iPhone and iPad</th><th align="left" width="10000">Apple TV</th></tr></thead>
   <tbody><tr>
     <td><img src="../../iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="160" height="160" alt="Vivid iOS app icon: silver V on graphite"></td>
-    <td><img src="vivid-tv-app-icon.png" width="267" height="160" alt="Vivid Apple TV app icon: silver V on graphite"></td>
+    <td><img src="vivid-tv-app-icon.png" width="267" height="160" alt="Vivid Apple TV app icon: silver V on glossy black with an illuminated rim"></td>
   </tr></tbody>
 </table>
 
-The iOS icon is an opaque 1024 × 1024 resampling of the approved image, preserving the owner's selected mark position, black rounded tile and rim lighting within the square image. Apple TV keeps its separate opaque graphite background and transparent foreground layers. The foreground uses the enhanced mark, fitted proportionally within the existing artwork bounds. The Apple TV preview combines the 2× layers; tvOS supplies focus and parallax effects.
+The iOS icon is an opaque 1024 × 1024 resampling of the approved image, preserving the owner's selected mark position, black rounded tile and rim lighting within the square image. Apple TV uses the same glossy black finish and cool illuminated rim, adapted to its wider icon. The opaque background plate and transparent silver foreground remain separate for parallax. The foreground uses the enhanced mark, fitted proportionally within the existing artwork bounds. The Apple TV preview combines the 2× layers; tvOS supplies focus and parallax effects.
 
 <table width="100%">
   <thead><tr><th align="left">Use</th><th align="left" width="10000">Source assets</th><th align="left">Pixels</th></tr></thead>
@@ -67,7 +67,7 @@ Provider selection uses the Silo, Emby and Jellyfin logos to identify the suppor
 
 ## Asset provenance
 
-The owner supplied and approved `vividios.png` as the enhanced icon on 16 September 2026. The transparent version was extracted programmatically from that image with explicit owner approval, preserving original colour pixels. Image-generation cutout attempts were rejected and are not included in these assets.
+The owner supplied and approved `vividios.png` as the enhanced icon on 16 September 2026. The transparent version was extracted programmatically from that image with explicit owner approval, preserving original colour pixels. Image-generation cutout attempts were rejected and are not included in these assets. The Apple TV background plate was created with the built-in image-generation tool from the approved iOS reference, following the owner’s request for the same treatment. Its prompt specified a wide, glossy black tile with a cool illuminated rim and no symbol; the existing silver foreground is composited separately.
 
 Use Vivid's name and logo for the app. Server names identify supported connections. Preserve existing code licences, copyright and dependency notices when updating branding.
 
