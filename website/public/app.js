@@ -78,20 +78,13 @@
       vec4 original=texture2D(mark,logoUV);
       vec2 p=logoUV-vec2(.5,.51);
       float radius=length(p);
-      // Fixed studio lighting keeps the silver finish still once assembled.
-      float reflection=(p.x*.75+p.y)*7.+.4;
-      float shine=pow(max(0.,sin(reflection)),10.);
-      float soft=.5+.5*sin(reflection-1.);
-      float bevel=clamp((1.-alpha(logoUV+vec2(.004,.006)))+
-        (1.-alpha(logoUV-vec2(.004,.006))),0.,1.);
-      float material=dot(original.rgb,vec3(.333));
-      float metal=.13+material*.7+soft*.18+shine*.5+bevel*.48;
+      // Preserve the approved artwork throughout the assembly.
       float grain=fract(sin(dot(floor(logoUV*180.),vec2(12.9898,78.233)))*43758.5453);
       float arrival=radius*.3+grain*.14;
       float reveal=smoothstep(.40+arrival,.62+arrival,assembly);
       float wash=sin(clamp((assembly-.46)/.54,0.,1.)*3.14159)*.5;
       float opacity=alpha(logoUV)*reveal;
-      gl_FragColor=vec4(vec3(metal+wash)*vec3(.975,.985,1.)*opacity,opacity);
+      gl_FragColor=vec4((original.rgb+vec3(wash))*opacity,opacity);
     }`;
   const particleVertex = `attribute vec2 home; attribute vec3 scatter;
     uniform float assembly; uniform float pixels; uniform float pointLimit; uniform float travel;
