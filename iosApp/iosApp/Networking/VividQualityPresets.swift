@@ -58,14 +58,14 @@ enum VividQualityPresets {
         .init(
             id: "auto",
             label: "Auto",
-            description: "Direct when possible; transcodes if needed.",
+            description: "Direct or server transcoding.",
             resolution: resolutionAuto,
             bitrateKbps: nil
         ),
         .init(
             id: "original",
             label: "Original",
-            description: "No transcoding; compatibility required.",
+            description: "Source quality, no transcoding.",
             resolution: resolutionOriginal,
             bitrateKbps: nil
         ),

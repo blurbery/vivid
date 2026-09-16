@@ -53,6 +53,8 @@ struct PhonePlaybackSelectorSkeleton: View {
 }
 
 struct PhonePlaybackSelectorRow: View {
+    @Environment(\.openSubtitleDetailContext) private var detailContext
+    @State private var showOpenSubtitles = false
     let versions: [FileVersion]
     let currentVersion: FileVersion?
     let selectedVersionFileId: Int?
@@ -70,6 +72,7 @@ struct PhonePlaybackSelectorRow: View {
         if currentVersion != nil, !selectorKinds.isEmpty {
             selectorCard
                 .task { await ProfilePrefsStore.shared.hydrateIfNeeded() }
+                .openSubtitlesDetailSearch(fileID: currentVersion?.fileId, isPresented: $showOpenSubtitles)
         }
     }
 
@@ -127,7 +130,11 @@ struct PhonePlaybackSelectorRow: View {
         _ kind: PhonePlaybackSelectorKind,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        if isInteractive(kind) {
+        if kind == .subtitles {
+            Button { showOpenSubtitles = true } label: { content() }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Subtitles, \(value(for: .subtitles))")
+        } else if isInteractive(kind) {
             Menu { selectorPresentation(for: kind) } label: { content() }
                 .menuOrder(.fixed)
                 .buttonStyle(.plain)
@@ -180,7 +187,7 @@ struct PhonePlaybackSelectorRow: View {
     }
 
     private var shouldShowSubtitleValue: Bool {
-        DetailPlaybackFormatting.shouldShowSubtitleValue(version: currentVersion)
+        currentVersion != nil
     }
 
     private var shouldEnableSubtitleSelector: Bool {
@@ -212,11 +219,11 @@ struct PhonePlaybackSelectorRow: View {
         case .audio:
             return DetailPlaybackFormatting.audioTechnicalSummary(version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex) ?? "Auto"
         case .subtitles:
-            return DetailPlaybackFormatting.subtitleLanguageSummary(
-                version: currentVersion,
-                selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-                autoContext: .init()
-            )
+            var context = detailContext
+            context?.fileID = currentVersion?.fileId
+            let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && PlayerSettings.shared.preferredSubtitleMode == "off")
+                ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+            return LucidSubtitleInventory.shared.selectionLabel(context: context, fallback: fallback)
         }
     }
 }
@@ -258,7 +265,7 @@ private struct PhonePlaybackSelectorOptions: View {
             case .audio:
                 audioOptions
             case .subtitles:
-                subtitleOptions
+                EmptyView()
             }
         }
     }
@@ -359,44 +366,6 @@ private struct PhonePlaybackSelectorOptions: View {
             }
         } header: {
             sectionHeader(.audio)
-        }
-    }
-
-    @ViewBuilder
-    private var subtitleOptions: some View {
-        Section {
-            optionButton(
-                title: "Auto",
-                detail: "Use your subtitle preferences",
-                isSelected: selectedSubtitleTrackIndex == nil
-            ) {
-                onSelectSubtitleTrack(nil)
-            }
-            optionButton(
-                title: "Off",
-                detail: "Start without subtitles",
-                isSelected: selectedSubtitleTrackIndex == -1
-            ) {
-                onSelectSubtitleTrack(-1)
-            }
-            ForEach(DetailPlaybackFormatting.subtitleOptions(
-                version: currentVersion,
-                selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-                preferredLanguage: ProfilePrefsStore.shared.preferredSubtitleLanguage
-            )) { option in
-                optionButton(
-                    title: option.title,
-                    detail: option.detail,
-                    isSelected: option.isSelected,
-                    isEnabled: option.isSelectable
-                ) {
-                    if let selectionIndex = option.selectionIndex {
-                        onSelectSubtitleTrack(selectionIndex)
-                    }
-                }
-            }
-        } header: {
-            sectionHeader(.subtitles)
         }
     }
 

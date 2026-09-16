@@ -39,25 +39,10 @@ struct TVPlaybackSettingsPane: View {
             )
             .focused(detailFocus, equals: .playbackAudioLanguage)
 
-            TVSettingsOptionMenu(
-                title: "Buffer Ahead",
-                value: viewModel.bufferAhead.label,
-                options: pickerRequest(for: .bufferAhead).options,
-                selection: pickerRequest(for: .bufferAhead).selection
-            )
-            .focused(detailFocus, equals: .playbackBufferAhead)
-
-            TVSettingsToggleRow(
-                title: "Prefer Lossless Audio",
-                isOn: PlayerSettings.shared.preferLosslessAudio,
-                detail: "Requires multichannel PCM for surround; some TV or ARC connections output stereo. Applies to the next video."
-            ) {
-                PlayerSettings.shared.preferLosslessAudio.toggle()
-            }
-            .accessibilityIdentifier("settings.playback.preferLosslessAudio")
+            TVSettingsInfoRow(title: "Buffer Ahead", value: "Automatic")
 
         }
-        TVSettingsFooter("Preferences are saved in Vivid for this profile on this Apple TV.")
+        TVSettingsFooter("Lucid manages buffering automatically. Preferences are saved for this profile on this Apple TV.")
     }
 
     @ViewBuilder

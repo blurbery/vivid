@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Full-window search with debounced query and grid results — Plezy style.
+/// Full-window search with debounced query and grid results.
 struct SearchView: View {
     @State private var viewModel = SearchViewModel()
     @State private var requestsViewModel = RequestSearchSectionViewModel()

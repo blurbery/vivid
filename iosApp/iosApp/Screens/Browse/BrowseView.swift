@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Browse/catalog screen with grid display and filters — Plezy style.
+/// Browse/catalog screen with grid display and filters.
 struct BrowseView: View {
     let libraryId: Int?
     var title: String? = "Browse"

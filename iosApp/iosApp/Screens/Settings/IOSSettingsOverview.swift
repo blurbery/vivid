@@ -10,28 +10,43 @@ struct IOSSettingsOverview: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "Settings", subtitle: "Make Vivid work the way you like.", systemImage: "gearshape")
+            Text("Settings")
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
+                .accessibilityAddTraits(.isHeader)
                 .settingsPageHeaderRow()
+
             Section {
                 PhoneSavedAccountCards(isSettings: true, editorRoute: $profileEditorRoute)
-                    .listRowInsets(EdgeInsets(top: 16, leading: 20, bottom: 12, trailing: 20))
-                    destination("General", "App and navigation", "gearshape") { GeneralSettingsView() }
-                    destination("Playback", "Quality and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
-                    destination("Subtitles", "Language and appearance", "captions.bubble") { SubtitleSettingsView(viewModel: viewModel) }
-                    destination("Servers", "Connection and version", "server.rack") {
-                        PhoneServerSettingsView(viewModel: viewModel, showSignOutConfirm: $showSignOutConfirm)
-                    }
-                    destination("Plugins", "Trailers and watched history", "puzzlepiece.extension") { PluginsSettingsView() }
-                    destination("Seerr", "Media requests", "SeerrSettingsIcon") { PhoneSeerrSettingsView() }
-                    destination("Metadata", "Home cache and storage", "internaldrive") { PhoneHomeMetadataSettingsView() }
-                    destination("About", "App details and contact", "AboutInfoIcon") { AboutSettingsView() }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 8, trailing: 0))
             } header: {
-                PhoneSettingsSectionHeader("Profiles & Settings")
+                PhoneSettingsSectionHeader("Profiles")
             }
-            VividCopyrightFooter().frame(maxWidth: .infinity)
-                .listRowBackground(Color.clear).listRowSeparator(.hidden)
+
+            Section {
+                destination("General", "App and navigation", "gearshape") { GeneralSettingsView() }
+                destination("Playback", "Quality and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
+                destination("Subtitles", "Language and appearance", "captions.bubble") { SubtitleSettingsView(viewModel: viewModel) }
+                destination("Servers", "Connection and version", "server.rack") {
+                    PhoneServerSettingsView(viewModel: viewModel, showSignOutConfirm: $showSignOutConfirm)
+                }
+                destination("Plugins", "Trailers and watched history", "puzzlepiece.extension") { PluginsSettingsView() }
+                destination("Seerr", "Media requests", "SeerrSettingsIcon") { PhoneSeerrSettingsView() }
+                destination("Metadata", "Home cache and storage", "internaldrive") { PhoneHomeMetadataSettingsView() }
+                destination("About", "App details and contact", "AboutInfoIcon") { AboutSettingsView() }
+            } header: {
+                PhoneSettingsSectionHeader("Settings")
+            }
+
+            VividCopyrightFooter()
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
         .settingsListChrome()
+        .preferredColorScheme(.dark)
         .navigationTitle("")
         .navigationDestination(item: $profileEditorRoute) { route in
             PhoneSavedAccountEditor(accountID: route.accountID)
@@ -40,9 +55,37 @@ struct IOSSettingsOverview: View {
 
     private func destination<Content: View>(_ title: String, _ subtitle: String, _ icon: String, @ViewBuilder content: () -> Content) -> some View {
         NavigationLink(destination: content()) {
-            SettingsOverviewRow(title: title, subtitle: subtitle, systemImage: icon, tint: .white, showsChevron: false)
-        }.buttonStyle(.plain)
-            .listRowInsets(EdgeInsets(top: 0, leading: 5, bottom: 0, trailing: 16))
+            HStack(spacing: 14) {
+                Group {
+                    if icon == "SeerrSettingsIcon" || icon == "AboutInfoIcon" {
+                        Image(icon).renderingMode(.template).resizable().scaledToFit().padding(9)
+                    } else {
+                        Image(systemName: icon).font(.body.weight(.medium))
+                    }
+                }
+                .frame(width: 42, height: 42)
+                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                }
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.body.weight(.medium))
+                    Text(subtitle).font(.footnote).foregroundStyle(.white.opacity(0.7))
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 16))
     }
 }
 

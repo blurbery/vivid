@@ -59,23 +59,8 @@ struct PlaybackSettingsView: View {
             .pickerStyle(.navigationLink)
             #endif
 
-            Picker("Buffer Ahead", selection: Binding(
-                get: { viewModel.bufferAhead },
-                set: { newValue in
-                    viewModel.bufferAhead = newValue
-                    Task { await viewModel.setBufferAhead(newValue) }
-                }
-            )) {
-                ForEach(BufferAheadMode.allCases, id: \.self) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
-            .pickerStyle(.navigationLink)
-            #endif
+            LabeledContent("Buffer Ahead", value: "Automatic")
+                .foregroundStyle(Color.vividOnSurface)
 
             Text(BufferAheadMode.explanation)
                 .font(.footnote)

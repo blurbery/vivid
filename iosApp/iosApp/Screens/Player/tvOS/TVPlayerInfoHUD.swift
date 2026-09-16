@@ -1490,12 +1490,6 @@ private struct AudioPane: View {
 private struct TVPlayerSubtitleMenu: View {
     let viewModel: PlayerViewModel
     let onDismiss: () -> Void
-    @State private var destination: Destination?
-
-    private enum Destination: String, Identifiable {
-        case settings, search
-        var id: String { rawValue }
-    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -1512,10 +1506,9 @@ private struct TVPlayerSubtitleMenu: View {
                             onDismiss()
                         }
                     }
-                    if OpenSubtitlesStore.shared.isConnected, viewModel.openSubtitleContext != nil {
-                        Button("Find on OpenSubtitles") { destination = .search }
+                    if viewModel.openSubtitleContext != nil {
+                        OpenSubtitlesMenu(viewModel: viewModel)
                     }
-                    Button("Subtitle Settings") { destination = .settings }
                 }
                 .buttonStyle(SubtitleMenuButtonStyle())
                 .frame(maxWidth: .infinity)
@@ -1532,18 +1525,7 @@ private struct TVPlayerSubtitleMenu: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { OpenSubtitlesStore.shared.reload() }
         .onExitCommand(perform: onDismiss)
-            .sheet(item: $destination, onDismiss: onDismiss) { destination in
-                switch destination {
-                case .search:
-                    OpenSubtitlesSearchView(viewModel: viewModel)
-                case .settings:
-                    SubtitlesPane(viewModel: viewModel)
-                        .padding(28)
-                        .frame(width: 1080, height: 480)
-                        .vividPlayerGlass(in: RoundedRectangle(cornerRadius: 28))
-                        .onExitCommand { self.destination = nil }
-                }
-            }
+
     }
 
     private func trackLabel(_ track: PlayerTrack) -> String {
@@ -1584,7 +1566,6 @@ private struct SubtitleMenuButtonBody: View {
 
 private struct SubtitlesPane: View {
     let viewModel: PlayerViewModel
-    @State private var showOpenSubtitles = false
     @State private var showAppearanceDialog = false
     @State private var activePicker: HUDPickerPresentation?
     @State private var pickerReturnField: Option?
@@ -1695,8 +1676,8 @@ private struct SubtitlesPane: View {
                     viewModel.disableSubtitles()
                 }
                 .focused($entryTrackFocused)
-                if OpenSubtitlesStore.shared.isConnected, viewModel.openSubtitleContext != nil {
-                    Button("Find on OpenSubtitles") { showOpenSubtitles = true }.padding(.vertical, 12)
+                if viewModel.openSubtitleContext != nil {
+                    OpenSubtitlesMenu(viewModel: viewModel).padding(.vertical, 12)
                 }
                 ForEach(viewModel.orderedSubtitleTracks) { track in
                     HUDTrackRow(
@@ -1739,7 +1720,6 @@ private struct SubtitlesPane: View {
             }
         }
         .task { OpenSubtitlesStore.shared.reload() }
-        .sheet(isPresented: $showOpenSubtitles) { OpenSubtitlesSearchView(viewModel: viewModel) }
     }
 
     @ViewBuilder

@@ -181,6 +181,7 @@ struct OpenSubtitlePlaybackContext: Equatable, Sendable {
     let contentID: String
     let generation: UInt64
     let query: OpenSubtitleQuery
+    var fileID: Int? = nil
 }
 
 /// Owns downloaded subtitles for one playing item across replacement loads.

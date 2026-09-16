@@ -1,4 +1,4 @@
-import VividKit
+
 import AVFoundation
 import CoreGraphics
 import Foundation
@@ -10,7 +10,7 @@ import UIKit
 import AppKit
 #endif
 
-/// Chapters read from the media by VividKit.
+/// Chapters read from the media by Lucid Engine.
 struct PlayerChapterInfo: Equatable, Identifiable, Sendable {
     let index: Int
     let title: String?
@@ -170,7 +170,7 @@ struct PlayerBackendCapabilities: Equatable {
             supportsSecondarySubtitles: hasTextSubtitleTrack,
             supportsChapters: true,
             supportsVideoGravity: true,
-            supportsSubtitleDelay: subtitleOverlayControls,
+            supportsSubtitleDelay: true,
             supportsSubtitleStyling: subtitleOverlayControls
         )
     }
@@ -443,11 +443,14 @@ class PlayerViewModel {
     private var streamLoadGeneration: UInt64 = 0
     var backendCapabilities: PlayerBackendCapabilities {
         let engine = vividPlaybackController.engine
-        let nativeSubtitleIsSelected = engine.activeSubtitleTrackIndex.flatMap { selectedID in
+        let selected = engine.activeSubtitleTrackIndex.flatMap { selectedID in
             engine.subtitleTracks.first { $0.id == selectedID }
-        }?.isNativelyRenderedSubtitle == true
+        }
+        let codec = selected?.codec.lowercased() ?? ""
+        let authored = selected?.isNativelyRenderedSubtitle == true &&
+            (SubtitleCodecClassifier.isBitmap(codec) || codec == "ass" || codec == "ssa")
         return .vivid(
-            subtitleOverlayControls: !nativeSubtitleIsSelected,
+            subtitleOverlayControls: !authored,
             hasTextSubtitleTrack: subtitleTracks.contains {
                 !SubtitleCodecClassifier.isBitmap($0.codec)
             }
@@ -503,15 +506,7 @@ class PlayerViewModel {
         })
     }
     private func orderedSubtitles(_ tracks: [PlayerTrack]) -> [PlayerTrack] {
-        SubtitleDisplayOrder.order(tracks, preferredLanguage: subtitleOrderingLanguage) { track in
-            SubtitleDisplayOrder.Descriptor(
-                language: track.lang,
-                codec: track.codec,
-                isForced: track.isForced,
-                isHearingImpaired: track.isHearingImpaired,
-                isDefault: track.isDefault
-            )
-        }
+        LucidSubtitleInventory.ordered(tracks)
     }
     /// Set in `cleanup()` / `deinit`. All async callbacks into the VM gate
     /// on this so a late-landing handoff signal can't spin up a fresh
@@ -575,6 +570,9 @@ class PlayerViewModel {
     private var naturalEndProgressTask: Task<Void, Never>?
 
     private var hideControlsTask: Task<Void, Never>?
+    #if os(iOS)
+    private var touchControlsPinned = false
+    #endif
     private var noticeDismissTask: Task<Void, Never>?
     private var remoteDismissTask: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
@@ -614,6 +612,8 @@ class PlayerViewModel {
     /// briefly, and then jump again on the trailing commit. A single
     /// deferred seek is smooth at any burst length.
     private var skipDebounceTask: Task<Void, Never>?
+    /// Button skips share the seek preview, but must not fade touch controls.
+    var isTimelineScrubbing: Bool { isScrubbing && skipDebounceTask == nil }
     private let skipDebounceNanos: UInt64 = 200_000_000 // 200ms
 
     /// Drives the repeating preview advance while a seek session is
@@ -676,7 +676,7 @@ class PlayerViewModel {
     /// across an Vivid reload without also opening the sidecar locally.
     private var pendingServerRenderedSubtitleTrackId: Int64?
     /// Local subtitle preferences captured for the current item. Applied
-    /// after VividKit publishes its embedded tracks and cleared on cleanup.
+    /// after Lucid Engine publishes its embedded tracks and cleared on cleanup.
     private var prefsForCurrentItem: PrefsSnapshot?
     private struct PrefsSnapshot {
         let preferredLanguage: String?
@@ -1162,16 +1162,12 @@ class PlayerViewModel {
         let secondaryLabel = selectedSecondarySubtitleId.flatMap { selectedID in
             subtitleTracks.first { $0.trackId == selectedID }?.primaryLabel
         }
-        let playbackPlan = activePreparedProtocolV3?.plan
         let source = VividPlaybackStatsSourceMetadata(
             sourceURL: spec.sourceURL,
             delivery: spec.delivery,
             container: currentSelectedVersion?.container,
             playbackRate: isHoldFastForwarding ? 2 : settings.playbackSpeed,
-            secondarySubtitleLabel: secondaryLabel,
-            plannedSourceDynamicRange: playbackPlan?.source.dynamicRange,
-            plannedOutputDynamicRange: playbackPlan?.effectiveRecipe.dynamicRange,
-            plannedSourceDolbyVisionProfile: playbackPlan?.source.dolbyVisionProfile
+            secondarySubtitleLabel: secondaryLabel
         )
         let snapshot = VividPlaybackStatsSnapshot(
             engine: vividPlaybackController.engine
@@ -2943,8 +2939,19 @@ class PlayerViewModel {
         #endif
         adoptVividInventory()
         #if os(iOS) || os(tvOS)
+        if let context = openSubtitleContext,
+           let pending = OpenSubtitlesStore.shared.takeStaged(contentID: context.contentID, fileID: currentSelectedVersion?.fileId) {
+            do { try useOpenSubtitle(pending.result, data: pending.data, expected: context) }
+            catch { showNotice(title: "Subtitles", message: "Unable to load the downloaded subtitle", tone: .warning, duration: 5) }
+        }
         if let id = openSubtitleFiles.selectedID, let track = subtitleTracks.first(where: { $0.trackId == id }) {
             selectSubtitle(track)
+        }
+        if let context = openSubtitleContext,
+           let choice = LucidSubtitleInventory.shared.takeChoice(contentID: context.contentID, fileID: currentSelectedVersion?.fileId) {
+            if let id = choice.trackID, let track = subtitleTracks.first(where: { !$0.isExternal && $0.trackId == id }) {
+                selectSubtitle(track)
+            } else if choice.trackID == nil { disableSubtitles() }
         }
         #endif
         reapplyVividGain()
@@ -3025,7 +3032,7 @@ class PlayerViewModel {
                 isHearingImpaired: track.isHearingImpaired,
                 isExternal: track.isExternal,
                 isSelected: engine.activeAudioTrackIndex == track.id,
-                ffIndex: track.id,
+                ffIndex: track.sourceStreamIndex ?? track.id,
                 srcId: ordinal
             )
         }
@@ -3041,6 +3048,7 @@ class PlayerViewModel {
             return !track.isExternal
             #endif
         }.map { track in
+            if !track.isExternal { return LucidSubtitleInventory.playerTrack(track, selectedID: engine.activeSubtitleTrackIndex) }
             let appTrackID = vividPlaybackController.appSubtitleID(forVividID: track.id)
             return PlayerTrack(
                 trackId: appTrackID,
@@ -3055,7 +3063,7 @@ class PlayerViewModel {
                 isHearingImpaired: track.isHearingImpaired,
                 isExternal: track.isExternal,
                 isSelected: engine.activeSubtitleTrackIndex == track.id,
-                ffIndex: track.isExternal ? nil : track.id,
+                ffIndex: track.isExternal ? nil : (track.sourceStreamIndex ?? track.id),
                 srcId: track.isExternal
                     ? SubtitleTrackIdSpace.sidecarIndex(from: appTrackID)
                     : nil
@@ -3063,6 +3071,10 @@ class PlayerViewModel {
         }
         let publishedSubtitleTracks = vividSubtitleTracks
         subtitleTracks = publishedSubtitleTracks
+        if engine.isSessionReady, let context = openSubtitleContext {
+            LucidSubtitleInventory.shared.record(contentID: context.contentID,
+                fileID: currentSelectedVersion?.fileId, tracks: publishedSubtitleTracks)
+        }
         let mediaChapters = engine.mediaChapters.map { chapter in
             PlayerChapterInfo(
                 index: chapter.id,
@@ -3198,9 +3210,11 @@ class PlayerViewModel {
         vividPlaybackController.engine.videoGravity = settings.videoGravity.avGravity
     }
 
-    private func applySubtitleAppearanceToPlayer() {
-        // Vivid's subtitle overlay reads the published appearance
-        // settings directly; the media engine remains the sole cue source.
+    func applySubtitleAppearanceToPlayer() {
+        vividPlaybackController.engine.applySubtitleSettings(
+            appearance: settings.effectiveSubtitleAppearance,
+            delayMilliseconds: settings.subtitleSyncMs
+        )
     }
 
     @MainActor
@@ -3284,6 +3298,7 @@ class PlayerViewModel {
 
     func setSubtitleSyncMilliseconds(_ milliseconds: Int) {
         settings.setSubtitleSyncMs(milliseconds)
+        applySubtitleAppearanceToPlayer()
     }
 
     /// Pushes the current item's poster into the Now Playing artwork field
@@ -3617,6 +3632,9 @@ class PlayerViewModel {
         // it, both because its content is stale and because the tvOS controls
         // host stays mounted through `isLoading` whenever this flag is up.
         isHUDPresented = false
+        #if os(iOS)
+        touchControlsPinned = false
+        #endif
         showNextUpScreen = isNextUpTransitioning
         if !isNextUpTransitioning {
             nextUpEpisode = nil
@@ -3808,6 +3826,9 @@ class PlayerViewModel {
         origin: LoadOrigin = .userInitiated
     ) {
         guard !isDisposed else { return }
+        #if os(tvOS)
+        PlaybackTrialTrace.requestPlay()
+        #endif
         #if os(iOS) || os(tvOS)
         if refreshHomeAfterPlaybackWrite == nil {
             refreshHomeAfterPlaybackWrite = StartupContentPrefetcher.homeRefreshAfterPlaybackWrite()
@@ -5287,7 +5308,7 @@ class PlayerViewModel {
 
     // MARK: - Track selection
     //
-    // VividKit owns embedded subtitle selection.
+    // Lucid Engine owns embedded subtitle selection.
 
     func selectAudio(_ track: PlayerTrack) {
         if activePreparedProtocolV3 != nil {
@@ -5628,12 +5649,18 @@ class PlayerViewModel {
     /// Used while the HUD is presented — otherwise the auto-hide timer can
     /// tear the HUD's host out from under it.
     func pinControlsVisible() {
+        #if os(iOS)
+        touchControlsPinned = true
+        #endif
         hideControlsTask?.cancel()
         showControls = true
     }
 
     /// Resume the standard auto-hide behavior after a pin.
     func resumeAutoHide() {
+        #if os(iOS)
+        touchControlsPinned = false
+        #endif
         scheduleHideControls()
     }
 
@@ -6395,7 +6422,7 @@ class PlayerViewModel {
             mode: SubtitleMode(rawValue: settings.preferredSubtitleMode),
             showForced: settings.showForcedSubtitles,
             forcedOnly: false, preferAccessibilityTracks: false,
-            disableWhenNoLanguageMatch: false, trackSignature: nil
+            disableWhenNoLanguageMatch: true, trackSignature: nil
         )
     }
 
@@ -6476,13 +6503,11 @@ class PlayerViewModel {
 
     private func scheduleHideControls() {
         #if os(iOS)
-        // Touch controls stay together until the viewer explicitly taps the
-        // video to dismiss them. This also keeps every control pill visible
-        // while a native menu or sheet is being used.
-        hideControlsTask?.cancel()
-        hideControlsTask = nil
-        showControls = true
-        #else
+        if touchControlsPinned {
+            pinControlsVisible()
+            return
+        }
+        #endif
         // The HUD pins its host visible (`pinControlsVisible` in `openHUD`).
         // Actions taken from inside it — track selection, remote play/pause —
         // funnel through here and must not re-arm the auto-hide out from
@@ -6502,10 +6527,12 @@ class PlayerViewModel {
                 guard !Task.isCancelled else { return }
                 break
             }
-            guard let self, self.isPlaying else { return }
+            guard let self, !self.isScrubbing else { return }
+            #if os(tvOS)
+            guard self.isPlaying else { return }
+            #endif
             withAnimation { self.showControls = false }
         }
-        #endif
     }
 
 }

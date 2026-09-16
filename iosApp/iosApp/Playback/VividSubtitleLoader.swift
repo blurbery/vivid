@@ -2,10 +2,13 @@
 // Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
 import AVFoundation
 import Foundation
-import VividKit
+
 
 enum VividSubtitleLoader {
-    enum Document { case cues([SubtitleCue]), ass(VividASSRenderer) }
+    enum Document {
+        case cues([SubtitleCue])
+        case ass(String)
+    }
     static func load(_ track: ExternalSubtitleTrack) async throws -> Document {
         let data: Data
         if track.url.isFileURL {
@@ -25,9 +28,15 @@ enum VividSubtitleLoader {
         }
         guard data.count <= 16 * 1024 * 1024,
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { throw URLError(.cannotDecodeContentData) }
-        if text.contains("[Script Info]") {
-            guard let renderer = VividASSRenderer(data: Data(text.utf8)) else { throw URLError(.cannotDecodeContentData) }
-            return .ass(renderer)
+        let leadingWhitespace = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}"))
+        let firstLine = text.trimmingCharacters(in: leadingWhitespace)
+            .components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces)
+        let formatHint = track.formatHint?.lowercased() ?? ""
+        let fileExtension = track.url.pathExtension.lowercased()
+        let hasASSFormat = formatHint == "ass" || formatHint == "ssa"
+            || fileExtension == "ass" || fileExtension == "ssa"
+        if firstLine?.lowercased() == "[script info]" || hasASSFormat {
+            return .ass(text)
         }
         return .cues(parse(text))
     }
@@ -66,22 +75,19 @@ enum VividSubtitleLoader {
     }
 }
 @MainActor final class FrameExtractor {
-    private let source: VividSource
-    private var extractor: VividFrameExtractor?
-    private var native: AVAssetImageGenerator?
+    private let asset: AVURLAsset
+    private let generator: AVAssetImageGenerator
     init(url: URL, headers: [String: String]) {
-        source = VividSource(url: url, headers: headers)
-        if url.pathExtension.lowercased() == "m3u8" {
-            native = AVAssetImageGenerator(asset: AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers]))
-            native?.appliesPreferredTrackTransform = true
-        } else { extractor = VividFrameExtractor(source: source) }
+        asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
     }
     func thumbnail(at seconds: Double, maxWidth: Int) async -> CGImage? {
-        if let native {
-            native.maximumSize = CGSize(width: maxWidth, height: maxWidth)
-            return try? await native.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
-        }
-        return await extractor?.image(at: seconds, width: maxWidth)
+        // Lucid opens formats that AVFoundation cannot extract stills from.
+        // Keep timeline scrubbing available without attempting unsupported previews.
+        guard (try? await asset.load(.isPlayable)) == true else { return nil }
+        generator.maximumSize = CGSize(width: maxWidth, height: maxWidth)
+        return try? await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
     }
-    func shutdown() async { extractor?.cancel(); native?.cancelAllCGImageGeneration() }
+    func shutdown() async { generator.cancelAllCGImageGeneration() }
 }

@@ -23,7 +23,9 @@ reviews:
       - main
 
   path_filters:
-    - "!VividKit/Vendor/**"
+    # Retired engine: this directory is entirely deleted by the Lucid migration.
+    # Keep active app code and migration integration changes in review.
+    - "!AetherEngine/**"
     - "!iosApp/Resources/OpenSourceLicenses/**"
     - "!docs/branding/**/*.png"
     - "!**/*.xcframework/**"
@@ -37,7 +39,7 @@ reviews:
         problem. Check state ownership, actor isolation, cancellation, retain cycles,
         error handling and preservation of existing navigation and UI behaviour.
 
-    - path: "VividKit/**"
+    - path: "iosApp/iosApp/Playback/**"
       instructions: |
         Review playback and media code conservatively. Check memory ownership,
         concurrency, cancellation, timestamp and stream identity handling, buffer

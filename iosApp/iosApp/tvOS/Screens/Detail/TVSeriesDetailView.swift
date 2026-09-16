@@ -106,11 +106,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                 subtitleMode: nextUpSubtitleOverrideCleared
                     ? nil
                     : matchingPlaybackDetail?.effectiveSubtitleMode,
-                subtitleSignature: nextUpSubtitleOverrideCleared
-                    ? nil
-                    : matchingPlaybackDetail?.effectiveSubtitleTrackSignature,
-                preferredSubtitleLanguage: profilePrefsStore.preferredSubtitleLanguage,
-                showForcedSubtitles: matchingPlaybackDetail?.effectiveShowForcedSubtitles ?? false
+                subtitleContext: matchingPlaybackDetail.map(Self.subtitleContext(for:))
             ),
             backdropHeight: TVDetailLayout.heroHeight,
             heroHeight: height,
@@ -180,14 +176,10 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     subtitleMode: nextUpSubtitleOverrideCleared
                         ? nil
                         : matchingPlaybackDetail?.effectiveSubtitleMode,
-                    subtitleSignature: nextUpSubtitleOverrideCleared
-                        ? nil
-                        : matchingPlaybackDetail?.effectiveSubtitleTrackSignature,
-                    showForcedSubtitles: matchingPlaybackDetail?.effectiveShowForcedSubtitles
-                        ?? false,
                     onSelectVersion: onSelectNextUpVersion,
                     onSelectAudioTrack: onSelectNextUpAudioTrack,
-                    onSelectSubtitleTrack: onSelectNextUpSubtitleTrack
+                    onSelectSubtitleTrack: onSelectNextUpSubtitleTrack,
+                    subtitleContext: matchingPlaybackDetail.map(Self.subtitleContext(for:))
                 )
             },
             moreMenu: { moreMenu }
@@ -199,11 +191,17 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         return "\(verb) S\(episode.seasonNumber):E\(episode.episodeNumber)"
     }
 
+    private static func subtitleContext(for item: ItemDetail) -> OpenSubtitlePlaybackContext {
+        .init(contentID: item.contentId, generation: 0,
+              query: .init(title: item.type == "episode" ? (item.seriesTitle ?? item.title) : item.title,
+                           type: item.type, season: item.seasonNumber, episode: item.episodeNumber))
+    }
+
     private var moreMenu: some View {
         TVCircleMenuButton(
-            icon: "checkmark.circle",
-            title: "Watched",
-            accessibilityLabel: "Watched options",
+            icon: "ellipsis",
+            title: "More",
+            accessibilityLabel: "More options",
             stabilizesFocusMotion: true
         ) {
             TVDetailVersionMenu(versions: nextUpVersions, selectedFileId: selectedNextUpFileId, onSelect: onSelectNextUpVersion)

@@ -15,7 +15,7 @@ enum SubtitleSlot: Int, CaseIterable, Hashable {
     case secondary = 1
 }
 
-/// VividKit embedded tracks use their media-stream ids directly.
+/// Lucid embedded tracks use their media-stream ids directly.
 /// Server protocol ordinals occupy a separate, bounded id range.
 enum SubtitleTrackIdSpace {
     static let sidecarBase: Int64 = 0x4000_0000

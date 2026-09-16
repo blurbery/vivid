@@ -123,6 +123,7 @@ struct SubtitleAutoResolver {
         }
 
         guard let rawLang = inputs.preferredLanguage else {
+            if inputs.disableWhenNoLanguageMatch { return .disable }
             // No language preference recorded anywhere. Honour `always`
             // by choosing the best available track, but otherwise leave
             // alone — auto-enabling a random language would surprise.

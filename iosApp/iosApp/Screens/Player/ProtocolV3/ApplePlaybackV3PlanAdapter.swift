@@ -105,7 +105,7 @@ enum ApplePlaybackV3PlanAdapter {
             }
         }
         if let correction = plan.runtimeCorrections.first {
-            // VividKit handles recovery internally and does not apply
+            // Lucid handles media transport internally and does not apply
             // server-issued runtime correction tokens.
             throw ApplePlaybackV3PlanError.unsupportedRuntimeCorrection(correction)
         }

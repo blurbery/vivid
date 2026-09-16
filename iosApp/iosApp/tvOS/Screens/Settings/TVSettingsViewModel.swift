@@ -30,7 +30,7 @@ final class TVSettingsViewModel {
     var nextUpPromptSeconds: Int = PlayerSettings.shared.nextUpPromptSeconds
     var skipIntros: Bool = PlayerSettings.shared.autoSkipIntro
     var skipCredits: Bool = PlayerSettings.shared.autoSkipCredits
-    /// VividKit's asynchronous read-ahead target.
+    /// Retained preference for compatibility; Lucid manages buffering automatically.
     var bufferAhead: BufferAheadMode = PlayerSettings.shared.bufferAhead
 
     // Local text-subtitle appearance.

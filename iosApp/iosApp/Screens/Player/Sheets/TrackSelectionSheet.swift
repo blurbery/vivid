@@ -1,5 +1,6 @@
-#if os(iOS)
 import SwiftUI
+
+#if os(iOS)
 
 /// Scrollable audio, subtitle, and secondary-subtitle picker for iPhone and
 /// iPad, presented in an anchored system popover with a scrollable inventory.
@@ -29,7 +30,7 @@ struct TrackSelectionSheet: View {
                         audioRows
                     }
                     if scope != .audio {
-                        if OpenSubtitlesStore.shared.isConnected, viewModel.openSubtitleContext != nil {
+                        if viewModel.openSubtitleContext != nil {
                             Button("Find on OpenSubtitles") { showOpenSubtitles = true }.padding(.vertical, 12)
                         }
                         subtitleRows(isSecondary: false)
@@ -55,6 +56,7 @@ struct TrackSelectionSheet: View {
         }
         .task { OpenSubtitlesStore.shared.reload() }
         .sheet(isPresented: $showOpenSubtitles) { OpenSubtitlesSearchView(viewModel: viewModel) }
+
     }
 
     @ViewBuilder
@@ -125,7 +127,9 @@ struct TrackSelectionSheet: View {
 
 }
 
-private struct TrackSelectionRow: View {
+#endif
+
+struct TrackSelectionRow: View {
     let name: String
     var detail: String? = nil
     let attributes: String?
@@ -189,4 +193,3 @@ private struct TrackSelectionRow: View {
         }
     }
 }
-#endif

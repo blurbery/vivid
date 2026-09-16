@@ -55,7 +55,6 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
     /// True while focus sits anywhere in the hero's primary action row —
     /// drives the scroll back to the page-entry (hero at top) framing.
     @FocusState private var actionRowFocused: Bool
-    @ObservedObject private var profilePrefsStore = ProfilePrefsStore.shared
 
     // Plain constants (not `static`) — the generic BelowSynopsis parameter
     // forbids static stored properties on this type.
@@ -86,12 +85,7 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                             subtitleMode: nextUpSubtitleOverrideCleared
                                 ? nil
                                 : nextUpPlaybackDetail?.effectiveSubtitleMode,
-                            subtitleSignature: nextUpSubtitleOverrideCleared
-                                ? nil
-                                : nextUpPlaybackDetail?.effectiveSubtitleTrackSignature,
-                            preferredSubtitleLanguage: profilePrefsStore.preferredSubtitleLanguage,
-                            showForcedSubtitles: nextUpPlaybackDetail?.effectiveShowForcedSubtitles
-                                ?? false
+                            subtitleContext: nextUpPlaybackDetail.map(Self.subtitleContext(for:))
                         ),
                         actions: { actionColumn },
                         belowSynopsis: belowSynopsis
@@ -170,19 +164,21 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                         subtitleMode: nextUpSubtitleOverrideCleared
                             ? nil
                             : nextUpPlaybackDetail?.effectiveSubtitleMode,
-                        subtitleSignature: nextUpSubtitleOverrideCleared
-                            ? nil
-                            : nextUpPlaybackDetail?.effectiveSubtitleTrackSignature,
-                        showForcedSubtitles: nextUpPlaybackDetail?.effectiveShowForcedSubtitles
-                            ?? false,
                         onSelectVersion: onSelectNextUpVersion,
                         onSelectAudioTrack: onSelectNextUpAudioTrack,
-                        onSelectSubtitleTrack: onSelectNextUpSubtitleTrack
+                        onSelectSubtitleTrack: onSelectNextUpSubtitleTrack,
+                        subtitleContext: nextUpPlaybackDetail.map(Self.subtitleContext(for:))
                     )
                 }
             },
             moreMenu: { moreMenu }
         )
+    }
+
+    private static func subtitleContext(for item: ItemDetail) -> OpenSubtitlePlaybackContext {
+        .init(contentID: item.contentId, generation: 0,
+              query: .init(title: item.type == "episode" ? (item.seriesTitle ?? item.title) : item.title,
+                           type: item.type, season: item.seasonNumber, episode: item.episodeNumber))
     }
 
     @ViewBuilder

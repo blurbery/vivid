@@ -1,4 +1,4 @@
-import VividKit
+
 import AVFoundation
 import Combine
 import Foundation
@@ -418,6 +418,9 @@ final class VividPlaybackController {
     @discardableResult
     func addExternalSubtitleTrack(_ track: ExternalSubtitleTrack, appTrackID: Int64) -> Int64 {
         if vividSubtitleIDByAppID[appTrackID] != nil { return appTrackID }
+        var track = track
+        // Sidecars use movie timestamps; native ASS renders on the stream clock.
+        track.nativeTimelineOffsetSeconds = activeSpec?.timeline.timelineOffsetSeconds ?? 0
         let registered = engine.addExternalSubtitleTrack(track)
         vividSubtitleIDByAppID[appTrackID] = registered.id
         appSubtitleIDByVividID[registered.id] = appTrackID
@@ -557,7 +560,11 @@ final class VividPlaybackController {
             engine.$subtitleTracks.map { _ in () },
             engine.$mediaChapters.map { _ in () }
         )
-        .sink { [weak self] in self?.publish(.inventoryChanged) }
+        // @Published emits before the property is stored. The inventory event
+        // reads the engine, so deliver it after all current assignments finish.
+        .compactMap { [weak self] _ in self?.activeLoadEpoch }
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] epoch in self?.publish(.inventoryChanged, for: epoch) }
         .store(in: &subscriptions)
 
         engine.diagnostics.$liveTelemetry

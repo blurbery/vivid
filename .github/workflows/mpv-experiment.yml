@@ -1,0 +1,99 @@
+name: Lucid playback
+
+on:
+  push:
+    branches: [experiment-2.0]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpv-experiment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playback:
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - platform: tvOS
+            scheme: VividTV
+            spec: project.yml
+          - platform: iOS
+            scheme: Vivid
+            spec: project-ios.yml
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
+        with:
+          xcode-version: '26.3'
+      - name: Verify source and mpv track ID translation
+        run: python3 scripts/tests/mpv-track-tests.py
+      - name: Generate project
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/${{ matrix.spec }}
+      - name: Resolve pinned mpv binaries
+        run: |
+          xcodebuild -resolvePackageDependencies -project iosApp/Vivid.xcodeproj -scheme ${{ matrix.scheme }} -derivedDataPath /tmp/vivid-trial
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/vivid-trial/SourcePackages/artifacts')
+          binaries = [p for p in root.rglob('Libmpv') if p.is_file() and '.framework' in str(p)]
+          assert binaries, 'Missing resolved libmpv binaries'
+          for path in binaries:
+              data = path.read_bytes()
+              assert b'elementary stream window overflow' in data, f'Missing custom AVPlayer output: {path}'
+              assert b'compressed-lead' in data, f'Missing compressed buffering patch: {path}'
+          print('Verified patched AVPlayer audio output in resolved libmpv binaries')
+          PY
+      - name: Build Lucid on ${{ matrix.platform }}
+        run: |
+          set -o pipefail
+          xcodebuild build -project iosApp/Vivid.xcodeproj -scheme ${{ matrix.scheme }} \
+            -destination 'generic/platform=${{ matrix.platform }}' -derivedDataPath /tmp/vivid-trial \
+            -resultBundlePath /tmp/mpv-experiment.xcresult CODE_SIGNING_ALLOWED=NO \
+            | tee /tmp/mpv-experiment.log
+      - name: Test iOS playback boundary and surface
+        if: matrix.platform == 'iOS'
+        run: |
+          set -o pipefail
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(d["udid"] for devices in json.load(sys.stdin)["devices"].values() for d in devices if d["name"].startswith("iPhone")))')
+          xcodebuild test -project iosApp/Vivid.xcodeproj -scheme Vivid \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath /tmp/vivid-trial \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            -only-testing:VividTests/VividPlaybackBoundaryTests \
+            -only-testing:VividTests/VividPlaybackStatsProjectionTests \
+            -only-testing:VividTests/PlayerSurfaceLayoutTests \
+            | tee /tmp/lucid-ios-tests.log
+      - name: Verify isolated mpv dependency graph
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          pins = json.loads(Path('iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())['pins']
+          revisions = {pin['identity']: pin['state']['revision'] for pin in pins}
+          assert revisions['mpv-build'] == 'c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6'
+          assert not {'ksplayer', 'ffmpegkit', 'ffmpegbuild', 'vividkit'} & revisions.keys()
+          PY
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: lucid-${{ matrix.platform }}-build
+          path: |
+            /tmp/mpv-experiment.log
+            /tmp/lucid-ios-tests.log
+            /tmp/mpv-experiment.xcresult
+            iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          retention-days: 3

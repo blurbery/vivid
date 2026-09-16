@@ -1,4 +1,4 @@
-import VividKit
+
 import Foundation
 
 enum VividInitialAudioPreference {
@@ -7,9 +7,14 @@ enum VividInitialAudioPreference {
         if let manual { return manual }
         guard !tracks.isEmpty else { return nil }
         let language = preferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-        let matching = tracks.indices.filter { index in
+        var matching = tracks.indices.filter { index in
             guard !language.isEmpty, let candidate = tracks[index].language else { return false }
             return SubtitleAutoResolver.languagesMatch(candidate, language)
+        }
+        if matching.isEmpty && !language.isEmpty && language != PlaybackPrefSentinel.originalLanguage {
+            matching = tracks.indices.filter { index in
+                tracks[index].language.map { SubtitleAutoResolver.languagesMatch($0, "en") } == true
+            }
         }
         let defaultIndex = matching.first(where: { tracks[$0].isDefault == true }) ?? matching.first
             ?? tracks.firstIndex(where: { $0.isDefault == true }) ?? 0
@@ -42,7 +47,8 @@ enum VividInitialAudioPreference {
         }
 
         let fallback = fallbackLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-        return fallback.isEmpty ? [] : [fallback]
+        guard !fallback.isEmpty, fallback != PlaybackPrefSentinel.originalLanguage else { return [] }
+        return SubtitleAutoResolver.languagesMatch(fallback, "en") ? [fallback] : [fallback, "en"]
     }
 
 }
@@ -314,7 +320,7 @@ struct VividLoadSpec {
             }
         }
 
-        // VividKit reads embedded subtitles directly from the media source.
+        // Lucid reads embedded subtitles directly from the media source.
         let externalSubtitles: [ExternalSubtitleTrack] = []
 
         self.planID = plan.planId

@@ -13,7 +13,7 @@ enum MediaRowLayout {
 }
 
 /// A horizontal scrolling row of media cards with a title header.
-/// Plezy style: section title with optional icon, safe-area leading padding.
+/// section title with optional icon, safe-area leading padding.
 struct MediaRow: View {
     let title: String
     let items: [SectionItem]

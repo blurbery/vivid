@@ -3,14 +3,16 @@
 import AVFoundation
 import Combine
 import Foundation
-import VividKit
+
+
+/// Vivid-owned branding; upstream package and licence identities remain intact.
+enum LucidCore {
+    static let name = "Lucid"
+    static let path = "Lucid/mpv"
+}
 
 enum VividPlaybackEngineIdentity {
-    #if os(tvOS)
-    static let name = "AetherEngine"
-    #else
-    static let name = "VividKit"
-    #endif
+    static let name = LucidCore.name
 }
 
 enum PlaybackState: Equatable { case idle, loading, playing, paused, seeking, ended, error(String) }
@@ -76,8 +78,7 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
 
     static func isHTTPAuthenticationFailure(_ error: Error, depth: Int = 0) -> Bool {
         guard depth < 8 else { return false }
-        if let typed = error as? VividPlaybackError { return typed == .network(401) }
-        if let typed = error as? PlaybackErrorInfo {
+                if let typed = error as? PlaybackErrorInfo {
             return (typed.kind == .sourceRefused
                 && (typed.underlyingDomain == nil || typed.underlyingDomain == NSURLErrorDomain)
                 && typed.underlyingCode == 401)
@@ -109,21 +110,18 @@ struct TrackInfo: Identifiable, Equatable {
     var assHeader: String? = nil
     var isExternal = false
     var isNativelyRenderedSubtitle = false
+    var sourceStreamIndex: Int? = nil
     init(id: Int, name: String = "", codec: String = "", language: String? = nil, channels: Int = 0,
          bitrate: Int64 = 0, isDefault: Bool = false, isForced: Bool = false,
          isHearingImpaired: Bool = false, isCommentary: Bool = false, isAtmos: Bool = false,
-         assHeader: String? = nil, isExternal: Bool = false, isNativelyRenderedSubtitle: Bool = false) {
+         assHeader: String? = nil, isExternal: Bool = false, isNativelyRenderedSubtitle: Bool = false, sourceStreamIndex: Int? = nil) {
         self.id=id; self.name=name; self.codec=codec; self.language=language; self.channels=channels
         self.bitrate=bitrate; self.isDefault=isDefault; self.isForced=isForced
         self.isHearingImpaired=isHearingImpaired; self.isCommentary=isCommentary; self.isAtmos=isAtmos
         self.assHeader=assHeader; self.isExternal=isExternal; self.isNativelyRenderedSubtitle=isNativelyRenderedSubtitle
+        self.sourceStreamIndex = sourceStreamIndex
     }
-    init(_ track: VividTrack) {
-        self.init(id: track.id, name: track.name, codec: track.codec,
-                  language: track.language.isEmpty ? nil : track.language, channels: track.channels, bitrate: track.bitrate,
-                  isDefault: track.isDefault, isForced: track.isForced)
     }
-}
 struct ExternalSubtitleTrack: Equatable, Sendable {
     let url: URL
     var name: String? = nil

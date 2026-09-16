@@ -74,7 +74,7 @@ extension View {
         }
     }
 
-    /// Card-style surface with rounded corners — zero elevation (Plezy style).
+    /// Card-style surface with rounded corners — zero elevation.
     func vividCard() -> some View {
         self
             .background(Color.vividSurface)

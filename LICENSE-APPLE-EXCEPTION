@@ -6,8 +6,8 @@ Effective for this licensing revision dated 12 September 2026.
 
 Scope
 -----
-Vivid and VividKit, as a whole, are licensed under the GNU General Public
-License, version 3 only (GPL-3.0-only), reproduced unchanged in LICENSE,
+Vivid, as a whole, is licensed under the GNU General Public License,
+version 3 only (GPL-3.0-only), reproduced unchanged in LICENSE,
 with the additional permission below. This permission applies only to
 material whose copyright holders have authorised it. Contributions to
 Vivid's own code are accepted under GPL-3.0-only with this permission.
@@ -70,9 +70,8 @@ on it for material whose copyright holders have not granted it.
 
 Third-party and earlier-version rights
 -------------------------------------
-This permission does not change the licences of AetherEngine, FFmpeg,
-FriBidi, other libraries, Apple sample code, or third-party artwork and
-services. AetherEngine's own Apple Store / DRM Exception remains separate.
+This permission does not change the licences of FFmpeg, FriBidi, other
+libraries, Apple sample code, or third-party artwork and services.
 All applicable notices and third-party source, replacement and relinking
 rights must be preserved. See THIRD_PARTY_NOTICES.md and the bundled
 OpenSourceLicenses resources for the component inventory.

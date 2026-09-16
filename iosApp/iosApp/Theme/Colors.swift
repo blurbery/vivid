@@ -1,7 +1,7 @@
 import SwiftUI
 
 extension Color {
-    // MARK: - Core Palette (Plezy OLED Dark)
+    // MARK: - Core Palette
 
     /// Pure black background (#000000)
     static let vividBackground = Color(hex: "#000000")

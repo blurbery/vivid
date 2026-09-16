@@ -1,7 +1,7 @@
-import VividKit
 import AVFoundation
 import Foundation
 import Network
+import UIKit
 import XCTest
 @testable import Vivid
 
@@ -23,7 +23,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertFalse(controller.hasActiveLoad)
     }
 
-    func testDirectCredentialUpdatePreservesPausedPlaybackAndRejectsStaleEpoch() async throws {
+    func testLucidRejectsInPlaceCredentialUpdateWithoutChangingPausedSession() async throws {
         let file = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: file) }
         let server = try CredentialPlaybackServer(media: Data(contentsOf: file))
@@ -32,32 +32,131 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let old = ["Authorization": "Bearer fixture-old"]
         let next = ["Authorization": "Bearer fixture-new"]
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         let spec = try VividLoadSpec(directURL: url, headers: old, startPosition: 0, audioOnly: true)
         let epoch = controller.beginLoad(spec, shouldPlayWhenReady: false)
         try await controller.finishLoad(epoch)
-        let player = controller.engine.player
         let deadline = Date().addingTimeInterval(5)
-        while player.state != .paused && Date() < deadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
+        while controller.engine.state != .paused && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertEqual(player.state, .paused)
-        XCTAssertGreaterThan(player.bufferedAhead, 0)
-        let buffered = player.bufferedAhead
-        let time = player.currentTime
-        let track = player.selectedAudioTrack
-        XCTAssertTrue(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
+        XCTAssertEqual(controller.engine.state, .paused)
+        let time = controller.engine.currentTime
+        let track = controller.engine.activeAudioTrackIndex
+        // Lucid requires the existing reload boundary to install fresh headers.
+        XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
         XCTAssertEqual(controller.activeLoadEpoch, epoch)
-        XCTAssertEqual(controller.activeSpec?.options.httpHeaders, next)
-        XCTAssertEqual(player.state, .paused)
-        XCTAssertEqual(player.currentTime, time)
-        XCTAssertEqual(player.selectedAudioTrack, track)
-        XCTAssertGreaterThanOrEqual(player.bufferedAhead, buffered)
+        XCTAssertEqual(controller.activeSpec?.options.httpHeaders, old)
+        XCTAssertEqual(controller.engine.state, .paused)
+        XCTAssertEqual(controller.engine.currentTime, time)
+        XCTAssertEqual(controller.engine.activeAudioTrackIndex, track)
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        XCTAssertFalse(controller.updateSourceHeaders(old, for: epoch, expectedHeaders: old, sourceURL: url))
         _ = controller.beginLoad(spec, shouldPlayWhenReady: false)
         XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
+    }
+
+    func testCredentialFixtureServesFullAndOpenEndedRangeRequests() async throws {
+        let media = Data((0..<32).map(UInt8.init))
+        let server = try CredentialPlaybackServer(media: media)
+        let url = try await server.start()
+        defer { server.stop() }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let cases: [(String?, Int, Data, String?)] = [
+            (nil, 200, media, nil),
+            ("bytes=0-", 206, media, "bytes 0-31/32"),
+            ("bytes=4-", 206, media.subdata(in: 4..<32), "bytes 4-31/32"),
+            ("bytes=4-7", 206, media.subdata(in: 4..<8), "bytes 4-7/32"),
+            ("bytes=4-99", 206, media.subdata(in: 4..<32), "bytes 4-31/32"),
+            ("bytes=32-", 416, Data(), "bytes */32")
+        ]
+        for (range, status, expectedBody, expectedRange) in cases {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 5
+            request.setValue(range, forHTTPHeaderField: "Range")
+            let (body, response) = try await session.data(for: request)
+            let http = try XCTUnwrap(response as? HTTPURLResponse)
+            XCTAssertEqual(http.statusCode, status)
+            XCTAssertEqual(body, expectedBody)
+            XCTAssertEqual(http.value(forHTTPHeaderField: "Content-Range"), expectedRange)
+        }
+    }
+
+    func testASSSidecarRetainsAuthoredStylesAndDialogue() async throws {
+        let text = "[Script Info]\nScriptType: v4.00+\n[Events]\nDialogue: 0,0:00:00.00,0:00:03.00,Default,,0,0,0,,{\\pos(100,200)\\k20}Caption"
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("ass")
+        try text.write(to: file, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let document = try await VividSubtitleLoader.load(ExternalSubtitleTrack(url: file))
+        guard case .ass(let nativeText) = document else {
+            return XCTFail("Authored ASS must use native rendering, not plain cues")
+        }
+        XCTAssertEqual(nativeText, text)
+    }
+
+    func testPlainSubtitleCueContainingASSHeaderRemainsText() async throws {
+        for (extensionName, text) in [
+            ("srt", "1\n00:00:01,000 --> 00:00:03,000\n[Script Info]\n"),
+            ("vtt", "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n[Script Info]\n")
+        ] {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(extensionName)
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: file) }
+            let document = try await VividSubtitleLoader.load(ExternalSubtitleTrack(url: file, formatHint: extensionName))
+            guard case .cues(let cues) = document else {
+                return XCTFail("A caption mentioning an ASS header must remain a text cue")
+            }
+            XCTAssertEqual(cues.count, 1)
+            guard let cue = cues.first, case .text(let caption) = cue.body else {
+                return XCTFail("Expected the original caption")
+            }
+            XCTAssertEqual(caption, "[Script Info]")
+            XCTAssertEqual(cue.startTime, 1)
+            XCTAssertEqual(cue.endTime, 3)
+        }
+    }
+
+    func testASSDetectionAcceptsLeadingHeaderOrExplicitFormat() async throws {
+        let cases: [(String, String?, String)] = [
+            ("txt", nil, "\u{FEFF} \n  [sCrIpT InFo]\r\nScriptType: v4.00+"),
+            ("ASS", nil, "; Authored subtitle document\n[Script Info]"),
+            ("txt", "SSA", "; Authored subtitle document\n[Script Info]")
+        ]
+        for (extensionName, hint, text) in cases {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(extensionName)
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: file) }
+            let document = try await VividSubtitleLoader.load(ExternalSubtitleTrack(url: file, formatHint: hint))
+            guard case .ass(let original) = document else {
+                return XCTFail("An ASS header or explicit format must retain native rendering")
+            }
+            // Foundation versions differ in whether decoding preserves a leading BOM.
+            XCTAssertEqual(original.drop(while: { $0 == "\u{FEFF}" }),
+                           text.drop(while: { $0 == "\u{FEFF}" }))
+        }
+    }
+
+    private func playbackWindow(for engine: VividEngine) -> UIWindow {
+        let window: UIWindow
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            window = UIWindow(windowScene: scene)
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        }
+        let host = UIViewController()
+        window.rootViewController = host
+        host.view.addSubview(engine.surface)
+        engine.surface.frame = host.view.bounds
+        engine.surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        return window
     }
 
     private func embeddedMediaFixture(secondAudio: Bool = false) throws -> URL {
@@ -112,6 +211,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let url = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: url) }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         let epoch = controller.beginLoad(try VividLoadSpec(offlineURL: url, startPosition: 0, audioOnly: false))
@@ -125,21 +227,18 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertFalse(controller.containsSubtitle(appTrackID: 99))
         XCTAssertFalse(controller.containsSubtitle(appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: 2)))
         controller.selectSubtitleTrack(id: 2)
-        let deadline = Date().addingTimeInterval(5)
-        while controller.engine.subtitleCues.isEmpty && Date() < deadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        XCTAssertTrue(controller.engine.subtitleCues.contains { if case .text("Second embedded caption") = $0.body { return true }; return false })
+        XCTAssertEqual(controller.engine.activeSubtitleTrackIndex, 2)
+        XCTAssertTrue(controller.engine.isSubtitleActive)
+        XCTAssertTrue(tracks.allSatisfy(\.isNativelyRenderedSubtitle))
         controller.selectSubtitleTrack(id: nil)
+        XCTAssertFalse(controller.engine.isSubtitleActive)
         XCTAssertTrue(controller.containsSubtitle(appTrackID: 2))
         XCTAssertEqual(controller.vividSubtitleID(forAppID: 2), 2)
         controller.selectSecondarySubtitleTrack(id: 2)
-        let secondaryDeadline = Date().addingTimeInterval(5)
-        while controller.engine.secondarySubtitleCues.isEmpty && Date() < secondaryDeadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        XCTAssertTrue(controller.engine.secondarySubtitleCues.contains { if case .text("Second embedded caption") = $0.body { return true }; return false })
-        XCTAssertNil(controller.engine.player.error)
+        XCTAssertTrue(controller.engine.isSecondarySubtitleActive)
+        controller.selectSecondarySubtitleTrack(id: nil)
+        XCTAssertFalse(controller.engine.isSecondarySubtitleActive)
+        XCTAssertNil(controller.engine.errorInfo)
         controller.stop()
         XCTAssertFalse(controller.containsSubtitle(appTrackID: 2))
     }
@@ -160,6 +259,13 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: 0, tracks: tracks, preferredLanguage: "ja"), 0)
         XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: tracks, preferredLanguage: "fr"), 0)
         XCTAssertNil(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: [], preferredLanguage: "ja"))
+    }
+
+    func testMissingPreferredAudioUsesEnglishBeforeNonEnglishDefault() {
+        let tracks = [makeAudioTrack(language: "jpn", isDefault: true), makeAudioTrack(language: "eng", isDefault: false)]
+        XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: tracks, preferredLanguage: "fr"), 1)
+        XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: 0, tracks: tracks, preferredLanguage: "fr"), 0)
+        XCTAssertEqual(VividInitialAudioPreference.languages(selectedOrdinal: nil, tracks: tracks, fallbackLanguage: "fr"), ["fr", "en"])
     }
 
     func testExplicitV3AudioSelectionOverridesProfileLanguageForInitialLoad() {
@@ -224,19 +330,26 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let url = try embeddedMediaFixture(secondAudio: true)
         defer { try? FileManager.default.removeItem(at: url) }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         var opens = 0
         let observation = controller.engine.$startupProgress.sink { progress in
-            if progress?.checkpoint == "Opening source" { opens += 1 }
+            if progress?.checkpoint == "opening" { opens += 1 }
         }
         defer { observation.cancel() }
         let spec = try VividLoadSpec(offlineURL: url, startPosition: 0, audioOnly: true, audioTrackOrdinal: 1)
         let epoch = controller.beginLoad(spec)
         try await controller.finishLoad(epoch)
+        // Track selection is published by mpv after the file-loaded event.
+        let selectionDeadline = Date().addingTimeInterval(5)
+        while controller.engine.activeAudioTrackIndex != 3 && Date() < selectionDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertEqual(controller.engine.audioTracks.map(\.id), [0, 3])
         XCTAssertEqual(controller.engine.activeAudioTrackIndex, 3)
-        XCTAssertEqual(controller.engine.player.selectedAudioTrack, 3)
         XCTAssertEqual(opens, 1)
         XCTAssertNil(controller.engine.errorInfo)
     }
@@ -376,7 +489,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 
     func testAuthenticationFailureSurvivesKnownUnderlyingErrorChains() {
-        XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(VividPlaybackError.network(401)))
+        XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(PlaybackErrorInfo(kind: .sourceRefused, message: "Unauthorised", underlyingCode: 401)))
         XCTAssertTrue(PlaybackErrorInfo.isHTTPAuthenticationFailure(NSError(
             domain: AVFoundationErrorDomain, code: -11800,
             userInfo: [NSUnderlyingErrorKey: NSError(domain: NSURLErrorDomain,
@@ -426,7 +539,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     func testAuthenticationRecoverySurfacesReplacementFailureRatherThanOriginal401() {
         let final = PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Decoder failed",
             underlyingDomain: "Decoder", underlyingCode: -5)
-        let wrapped = VividPlaybackController.LoadFailure(failure: final, underlying: VividPlaybackError.media(-5))
+        let wrapped = VividPlaybackController.LoadFailure(failure: final, underlying: NSError(domain: "LucidTest", code: -5))
         XCTAssertEqual(VividAuthenticationRecoveryPolicy.finalFailure(wrapped), final)
         XCTAssertFalse(VividAuthenticationRecoveryPolicy.isExpiredBearerFailure(final))
         let network = VividAuthenticationRecoveryPolicy.finalFailure(
@@ -1277,6 +1390,8 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             throw XCTSkip("Set VIVID_EMBEDDED_FIXTURE_URL to the local two-track MKV fixture")
         }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
         defer { controller.stop() }
         let spec = try VividLoadSpec(directURL: url, headers: [:], startPosition: 0, audioOnly: false)
         XCTAssertTrue(spec.options.externalSubtitles.isEmpty)
@@ -1285,20 +1400,12 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         try controller.validateEmbeddedSubtitleSelection(3)
         controller.selectSubtitleTrack(id: 3)
         controller.play()
-        let deadline = Date().addingTimeInterval(15)
-        func containsText(_ text: String) -> Bool {
-            controller.engine.subtitleCues.contains { cue in
-                if case .text(let value) = cue.body { return value == text }
-                return false
-            }
-        }
-        while !containsText("Native track 2"),
-              Date() < deadline {
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
         XCTAssertEqual(controller.engine.activeSubtitleTrackIndex, 3)
-        XCTAssertTrue(containsText("Native track 2"))
-        XCTAssertFalse(containsText("Native track 1"))
+        let selected = try XCTUnwrap(controller.engine.subtitleTracks.first { $0.id == 3 })
+        XCTAssertFalse(selected.isExternal)
+        XCTAssertTrue(selected.isNativelyRenderedSubtitle)
+        XCTAssertTrue(controller.engine.isSubtitleActive)
+        XCTAssertNil(controller.engine.errorInfo)
     }
 
     func testMovieTimelineUsesExternalTrackStateWithoutRequiringAnAlias() throws {
@@ -1340,7 +1447,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         )
         XCTAssertTrue(controller.containsSubtitle(appTrackID: appTrackID))
         XCTAssertEqual(
-            controller.appSubtitleID(forVividID: VividEngine.externalSubtitleTrackIDBase),
+            controller.appSubtitleID(forVividID: try XCTUnwrap(controller.engine.subtitleTracks.first(where: \.isExternal)).id),
             appTrackID
         )
         controller.stop()
@@ -1484,6 +1591,8 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         )
 
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
         defer { controller.stop() }
         let spec = try VividLoadSpec(
             directURL: fixture.url,
@@ -1586,6 +1695,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let file = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: file) }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         let spec = try VividLoadSpec(
@@ -1595,20 +1707,22 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         controller.pause()
         controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        XCTAssertEqual(controller.engine.player.synchronizer.rate, 0)
+        XCTAssertEqual(controller.engine.state, .paused)
         controller.prepareForReplacement()
         XCTAssertFalse(controller.shouldPlayWhenReady)
         let replacement = controller.beginLoad(spec, shouldPlayWhenReady: controller.shouldPlayWhenReady)
         try await controller.finishLoad(replacement)
         controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
-        XCTAssertEqual(controller.engine.player.synchronizer.rate, 0)
+        XCTAssertEqual(controller.engine.state, .paused)
         controller.play()
         let deadline = Date().addingTimeInterval(5)
-        while controller.engine.player.synchronizer.rate != 1.5 && Date() < deadline {
+        while controller.engine.currentTime <= 0 && Date() < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertEqual(controller.engine.player.synchronizer.rate, 1.5)
+        XCTAssertGreaterThan(controller.engine.currentTime, 0)
+        XCTAssertTrue(controller.shouldPlayWhenReady)
+        XCTAssertNil(controller.engine.errorInfo)
     }
 
     func testTransportIntentCanChangeDuringAnUncommittedLoad() throws {
@@ -1654,8 +1768,8 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 }
 
-// A real loopback server exercises the production ephemeral URLSession. Global
-// URLProtocol registration is not reliably inherited by that session on iOS.
+// A real loopback server exercises Lucid's native HTTP transport, including
+// full requests and the bounded or open-ended ranges used by media readers.
 private final class CredentialPlaybackServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "VividTests.credentialPlayback")
@@ -1720,15 +1834,25 @@ private final class CredentialPlaybackServer: @unchecked Sendable {
     }
 
     private func respond(_ connection: NWConnection, request: String) {
-        let rangeLine = request.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("range: bytes=") }
-        let range = rangeLine?.dropFirst("Range: bytes=".count).split(separator: "-") ?? []
-        guard range.count == 2, let start = Int(range[0]), let requestedEnd = Int(range[1]),
-              start >= 0, start < media.count, requestedEnd >= start else {
-            connection.cancel()
-            return
+        let rangeLine = request.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("range:") }
+        var start = 0
+        var end = media.count - 1
+        if let rangeLine {
+            let value = rangeLine.dropFirst("range:".count).trimmingCharacters(in: .whitespaces)
+            let bounds = value.dropFirst("bytes=".count).split(separator: "-", omittingEmptySubsequences: false)
+            guard value.lowercased().hasPrefix("bytes="), bounds.count == 2,
+                  let lower = Int(bounds[0]), lower >= 0, lower < media.count,
+                  bounds[1].isEmpty || Int(bounds[1]).map({ $0 >= lower }) == true else {
+                let headers = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */\(media.count)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                connection.send(content: Data(headers.utf8), completion: .contentProcessed { _ in connection.cancel() })
+                return
+            }
+            start = lower
+            end = min(Int(bounds[1]) ?? end, end)
         }
-        let end = min(requestedEnd, media.count - 1)
-        let headers = "HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes \(start)-\(end)/\(media.count)\r\nContent-Length: \(end - start + 1)\r\nETag: \"playback-fixture\"\r\nConnection: close\r\n\r\n"
+        let status = rangeLine == nil ? "200 OK" : "206 Partial Content"
+        let contentRange = rangeLine == nil ? "" : "Content-Range: bytes \(start)-\(end)/\(media.count)\r\n"
+        let headers = "HTTP/1.1 \(status)\r\nContent-Type: application/octet-stream\r\nAccept-Ranges: bytes\r\n\(contentRange)Content-Length: \(end - start + 1)\r\nETag: \"playback-fixture\"\r\nConnection: close\r\n\r\n"
         let response = Data(headers.utf8) + media.subdata(in: start..<(end + 1))
         connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }

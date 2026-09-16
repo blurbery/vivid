@@ -11,22 +11,22 @@ struct TVPlaybackActionSelectors: View {
     let selectedAudioTrackIndex: Int?
     let selectedSubtitleTrackIndex: Int?
     var subtitleMode: String? = nil
-    var subtitleSignature: SubtitleTrackSignature? = nil
-    var showForcedSubtitles = false
     let onSelectVersion: (Int?) -> Void
     let onSelectAudioTrack: (Int?) -> Void
     let onSelectSubtitleTrack: (Int?) -> Void
 
-    @State private var preferredSubtitleLanguage: String?
+    var subtitleContext: OpenSubtitlePlaybackContext? = nil
+
+    @State private var subtitleTracks: [PlayerTrack] = []
+    @State private var subtitleLoading = false
+    @State private var subtitleError = false
+    @State private var subtitleRetry = 0
+    @State private var subtitleReadGeneration = 0
 
     var body: some View {
         HStack(spacing: 18) {
             audioMenu
             subtitleMenu
-        }
-        .task {
-            await ProfilePrefsStore.shared.hydrateIfNeeded()
-            preferredSubtitleLanguage = ProfilePrefsStore.shared.preferredSubtitleLanguage
         }
     }
 
@@ -57,49 +57,79 @@ struct TVPlaybackActionSelectors: View {
         .disabled(currentVersion == nil || audioOptions.isEmpty)
     }
 
+    private var fileSubtitleContext: OpenSubtitlePlaybackContext? {
+        guard var context = subtitleContext, let file = currentVersion?.fileId else { return nil }
+        context.fileID = file
+        return context
+    }
+
+    private var subtitleFallback: String {
+        selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
+            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+    }
+
     private var subtitleMenu: some View {
-        TVCircleMenuButton(
-            icon: "captions.bubble",
-            title: "Subtitles",
-            accessibilityLabel: "Subtitles, \(subtitleValue)",
-            stabilizesFocusMotion: true
-        ) {
-            Button { onSelectSubtitleTrack(nil) } label: {
-                menuItem(
-                    title: "Auto",
-                    detail: "Use your subtitle preferences",
-                    isSelected: selectedSubtitleTrackIndex == nil
-                )
-            }
-            Button { onSelectSubtitleTrack(-1) } label: {
-                menuItem(
-                    title: "Off",
-                    detail: "Start without subtitles",
-                    isSelected: selectedSubtitleTrackIndex == -1
-                )
-            }
-            ForEach(subtitleOptions) { option in
-                if option.isSelectable, let selectionIndex = option.selectionIndex {
-                    Button { onSelectSubtitleTrack(selectionIndex) } label: {
-                        menuItem(
-                            title: option.title,
-                            detail: option.detail,
-                            isSelected: option.isSelected
-                        )
-                    }
-                } else {
-                    Button { } label: {
-                        menuItem(
-                            title: option.title,
-                            detail: option.detail,
-                            isSelected: false
-                        )
-                    }
-                    .disabled(true)
+        TVCircleMenuButton(icon: "captions.bubble", title: "Subtitles",
+                           accessibilityLabel: "Subtitles, \(LucidSubtitleInventory.shared.selectionLabel(context: fileSubtitleContext, fallback: subtitleFallback))", stabilizesFocusMotion: true) {
+            Button {
+                if let context = fileSubtitleContext {
+                    LucidSubtitleInventory.shared.clearChoice(context: context)
+                    OpenSubtitlesStore.shared.clearStaged(context: context)
                 }
+                onSelectSubtitleTrack(nil)
+            } label: {
+                let label = LucidSubtitleInventory.shared.selectionLabel(context: fileSubtitleContext, fallback: subtitleFallback)
+                if label == "Auto" { Label("Auto", systemImage: "checkmark") }
+                else { Text("Auto") }
+            }
+            if subtitleLoading {
+                Text("Reading subtitles…")
+            } else if subtitleError {
+                Button("Retry Reading Subtitles") { subtitleRetry += 1 }
+            } else {
+                Button {
+                    if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(nil, context: context) }
+                } label: {
+                    let choice = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
+                    let isOff = choice.map { $0.trackID == nil } ?? (subtitleFallback == "Off")
+                    if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
+                    else { Text("Off") }
+                }
+                ForEach(LucidSubtitleInventory.ordered(subtitleTracks)) { track in
+                    Button {
+                        if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(track.trackId, context: context) }
+                    } label: {
+                        let chosen = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
+                        menuItem(title: track.languageFirstPrimaryLabel,
+                                 detail: ([track.languageFirstDetailLabel].compactMap { $0 } + track.attributePillLabels(includeLanguage: false)).joined(separator: " · "),
+                                 isSelected: chosen?.trackID == track.trackId)
+                    }
+                }
+                if subtitleTracks.isEmpty { Text("No embedded subtitles") }
+            }
+            Divider()
+            OpenSubtitlesMenu(context: { fileSubtitleContext }) { result, data, expected in
+                guard expected == fileSubtitleContext else { throw OpenSubtitlesError.context }
+                try OpenSubtitlesStore.shared.stage(result, data: data, context: expected)
+                LucidSubtitleInventory.shared.clearChoice(context: expected)
             }
         }
-        .disabled(currentVersion == nil)
+        .disabled(fileSubtitleContext == nil)
+        .task(id: "\(fileSubtitleContext?.contentID ?? ""):\(currentVersion?.fileId ?? -1):\(subtitleRetry)") {
+            subtitleReadGeneration += 1
+            let generation = subtitleReadGeneration
+            subtitleTracks = []; subtitleError = false
+            guard let context = fileSubtitleContext else { return }
+            subtitleLoading = true
+            defer { if subtitleReadGeneration == generation { subtitleLoading = false } }
+            do {
+                let tracks = try await LucidSubtitleInventory.shared.read(context: context)
+                try Task.checkCancellation()
+                subtitleTracks = tracks
+            } catch is CancellationError { }
+            catch { if subtitleReadGeneration == generation && !Task.isCancelled { subtitleError = true } }
+        }
+
     }
 
     private var versionValue: String {
@@ -115,39 +145,10 @@ struct TVPlaybackActionSelectors: View {
         )
     }
 
-    private var subtitleValue: String {
-        DetailPlaybackFormatting.subtitleValueLabel(
-            version: currentVersion,
-            selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-            autoContext: subtitleAutoContext
-        )
-    }
-
     private var audioOptions: [DetailPlaybackFormatting.AudioOption] {
         DetailPlaybackFormatting.audioOptions(
             version: currentVersion,
             selectedAudioTrackIndex: selectedAudioTrackIndex
-        )
-    }
-
-    private var subtitleOptions: [DetailPlaybackFormatting.SubtitleOption] {
-        DetailPlaybackFormatting.subtitleOptions(
-            version: currentVersion,
-            selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-            preferredLanguage: preferredSubtitleLanguage
-        )
-    }
-
-    private var subtitleAutoContext: DetailPlaybackFormatting.SubtitleAutoContext {
-        DetailPlaybackFormatting.SubtitleAutoContext(
-            preferredLanguage: preferredSubtitleLanguage,
-            mode: subtitleMode,
-            signature: subtitleSignature,
-            audioLanguage: DetailPlaybackFormatting.resolvedAudioLanguage(
-                version: currentVersion,
-                selectedAudioTrackIndex: selectedAudioTrackIndex
-            ),
-            showForced: showForcedSubtitles
         )
     }
 
@@ -200,15 +201,13 @@ struct TVPlaybackSelectionSummary: Equatable {
     let audio: String?
     let subtitles: String?
 
-    static func make(
+    @MainActor static func make(
         currentVersion: FileVersion?,
         selectedVersionFileId: Int?,
         selectedAudioTrackIndex: Int?,
         selectedSubtitleTrackIndex: Int?,
         subtitleMode: String?,
-        subtitleSignature: SubtitleTrackSignature?,
-        preferredSubtitleLanguage: String?,
-        showForcedSubtitles: Bool
+        subtitleContext: OpenSubtitlePlaybackContext? = nil
     ) -> TVPlaybackSelectionSummary {
         guard let currentVersion else {
             return TVPlaybackSelectionSummary(
@@ -238,21 +237,11 @@ struct TVPlaybackSelectionSummary: Equatable {
             version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex
         ) ?? "Auto"
 
-        let autoContext = DetailPlaybackFormatting.SubtitleAutoContext(
-            preferredLanguage: preferredSubtitleLanguage,
-            mode: subtitleMode,
-            signature: subtitleSignature,
-            audioLanguage: DetailPlaybackFormatting.resolvedAudioLanguage(
-                version: currentVersion,
-                selectedAudioTrackIndex: selectedAudioTrackIndex
-            ),
-            showForced: showForcedSubtitles
-        )
-        let subtitle = DetailPlaybackFormatting.subtitleLanguageSummary(
-            version: currentVersion,
-            selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-            autoContext: autoContext
-        )
+        var context = subtitleContext
+        context?.fileID = currentVersion.fileId
+        let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
+            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+        let subtitle = LucidSubtitleInventory.shared.selectionLabel(context: context, fallback: fallback)
 
         return TVPlaybackSelectionSummary(
             version: version,
