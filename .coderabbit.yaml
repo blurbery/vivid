@@ -23,6 +23,9 @@ reviews:
       - main
 
   path_filters:
+    # Retired engine: this directory is entirely deleted by the Lucid migration.
+    # Keep active app code and migration integration changes in review.
+    - "!AetherEngine/**"
     - "!iosApp/Resources/OpenSourceLicenses/**"
     - "!docs/branding/**/*.png"
     - "!**/*.xcframework/**"

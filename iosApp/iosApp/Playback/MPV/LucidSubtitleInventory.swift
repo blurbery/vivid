@@ -111,13 +111,13 @@ private enum LucidSubtitleProbe {
             }
             VividMPVHeaders.apply(request.headers, to: mpv)
             guard mpv_initialize(mpv) >= 0 else { throw OpenSubtitlesError.file }
-            let arguments = ["loadfile", request.url.absoluteString].map { strdup($0) }
-            defer { arguments.forEach { free($0) } }
-            var pointers: [UnsafePointer<CChar>?] = arguments.map { pointer in
-                pointer.map { UnsafePointer<CChar>($0) }
-            } + [nil]
-            let status = pointers.withUnsafeMutableBufferPointer {
-                mpv_command_async(mpv, 1, $0.baseAddress)
+            let status = "loadfile".withCString { command in
+                request.url.absoluteString.withCString { url in
+                    var arguments: [UnsafePointer<CChar>?] = [command, url, nil]
+                    return arguments.withUnsafeMutableBufferPointer {
+                        mpv_command_async(mpv, 1, $0.baseAddress)
+                    }
+                }
             }
             guard status >= 0 else { throw OpenSubtitlesError.file }
             let deadline = Date().addingTimeInterval(20)
