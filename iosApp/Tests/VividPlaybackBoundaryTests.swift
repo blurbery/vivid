@@ -98,6 +98,50 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertEqual(nativeText, text)
     }
 
+    func testPlainSubtitleCueContainingASSHeaderRemainsText() async throws {
+        for (extensionName, text) in [
+            ("srt", "1\n00:00:01,000 --> 00:00:03,000\n[Script Info]\n"),
+            ("vtt", "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n[Script Info]\n")
+        ] {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(extensionName)
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: file) }
+            let document = try await VividSubtitleLoader.load(ExternalSubtitleTrack(url: file, formatHint: extensionName))
+            guard case .cues(let cues) = document else {
+                return XCTFail("A caption mentioning an ASS header must remain a text cue")
+            }
+            XCTAssertEqual(cues.count, 1)
+            guard let cue = cues.first, case .text(let caption) = cue.body else {
+                return XCTFail("Expected the original caption")
+            }
+            XCTAssertEqual(caption, "[Script Info]")
+            XCTAssertEqual(cue.startTime, 1)
+            XCTAssertEqual(cue.endTime, 3)
+        }
+    }
+
+    func testASSDetectionAcceptsLeadingHeaderOrExplicitFormat() async throws {
+        let cases: [(String, String?, String)] = [
+            ("txt", nil, "\u{FEFF} \n  [sCrIpT InFo]\r\nScriptType: v4.00+"),
+            ("ASS", nil, "; Authored subtitle document\n[Script Info]"),
+            ("txt", "SSA", "; Authored subtitle document\n[Script Info]")
+        ]
+        for (extensionName, hint, text) in cases {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(extensionName)
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            defer { try? FileManager.default.removeItem(at: file) }
+            let document = try await VividSubtitleLoader.load(ExternalSubtitleTrack(url: file, formatHint: hint))
+            guard case .ass(let original) = document else {
+                return XCTFail("An ASS header or explicit format must retain native rendering")
+            }
+            // Foundation consumes the UTF-8 byte-order mark during decoding.
+            let decodedText = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
+            XCTAssertEqual(original, decodedText)
+        }
+    }
+
     private func playbackWindow(for engine: VividEngine) -> UIWindow {
         let window: UIWindow
         if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {

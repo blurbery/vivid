@@ -28,8 +28,14 @@ enum VividSubtitleLoader {
         }
         guard data.count <= 16 * 1024 * 1024,
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { throw URLError(.cannotDecodeContentData) }
-        if text.range(of: "[Script Info]", options: .caseInsensitive) != nil
-            || ["ass", "ssa"].contains(track.formatHint?.lowercased() ?? track.url.pathExtension.lowercased()) {
+        let leadingWhitespace = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}"))
+        let firstLine = text.trimmingCharacters(in: leadingWhitespace)
+            .components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces)
+        let formatHint = track.formatHint?.lowercased() ?? ""
+        let fileExtension = track.url.pathExtension.lowercased()
+        let hasASSFormat = formatHint == "ass" || formatHint == "ssa"
+            || fileExtension == "ass" || fileExtension == "ssa"
+        if firstLine?.lowercased() == "[script info]" || hasASSFormat {
             return .ass(text)
         }
         return .cues(parse(text))

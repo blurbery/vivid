@@ -377,7 +377,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         audioTracks = rawTracks.filter { $0["type"] as? String == "audio" }.map(Self.trackInfo)
         subtitleTracks = rawTracks.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }.map(Self.trackInfo)
         subtitleTracks += externalTracks.sorted { $0.key < $1.key }.map { id, t in
-            TrackInfo(id: id, name: t.name ?? "External subtitles", language: t.language, isForced: t.isForced,
+            TrackInfo(id: id, name: t.name ?? "External subtitles",
+                      codec: nativeExternalFiles[id] != nil ? "ass" : "",
+                      language: t.language, isForced: t.isForced,
                       isExternal: true, isNativelyRenderedSubtitle: nativeExternalFiles[id] != nil)
         }
         videoTrack = rawTracks.first { $0["type"] as? String == "video" } ?? [:]
