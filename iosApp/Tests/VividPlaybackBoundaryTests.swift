@@ -59,6 +59,33 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
     }
 
+    func testCredentialFixtureServesFullAndOpenEndedRangeRequests() async throws {
+        let media = Data((0..<32).map(UInt8.init))
+        let server = try CredentialPlaybackServer(media: media)
+        let url = try await server.start()
+        defer { server.stop() }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let cases: [(String?, Int, Data, String?)] = [
+            (nil, 200, media, nil),
+            ("bytes=0-", 206, media, "bytes 0-31/32"),
+            ("bytes=4-", 206, media.subdata(in: 4..<32), "bytes 4-31/32"),
+            ("bytes=4-7", 206, media.subdata(in: 4..<8), "bytes 4-7/32"),
+            ("bytes=4-99", 206, media.subdata(in: 4..<32), "bytes 4-31/32"),
+            ("bytes=32-", 416, Data(), "bytes */32")
+        ]
+        for (range, status, expectedBody, expectedRange) in cases {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 5
+            request.setValue(range, forHTTPHeaderField: "Range")
+            let (body, response) = try await session.data(for: request)
+            let http = try XCTUnwrap(response as? HTTPURLResponse)
+            XCTAssertEqual(http.statusCode, status)
+            XCTAssertEqual(body, expectedBody)
+            XCTAssertEqual(http.value(forHTTPHeaderField: "Content-Range"), expectedRange)
+        }
+    }
+
     func testASSSidecarRetainsAuthoredStylesAndDialogue() async throws {
         let text = "[Script Info]\nScriptType: v4.00+\n[Events]\nDialogue: 0,0:00:00.00,0:00:03.00,Default,,0,0,0,,{\\pos(100,200)\\k20}Caption"
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("ass")
@@ -272,6 +299,11 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let spec = try VividLoadSpec(offlineURL: url, startPosition: 0, audioOnly: true, audioTrackOrdinal: 1)
         let epoch = controller.beginLoad(spec)
         try await controller.finishLoad(epoch)
+        // Track selection is published by mpv after the file-loaded event.
+        let selectionDeadline = Date().addingTimeInterval(5)
+        while controller.engine.activeAudioTrackIndex != 3 && Date() < selectionDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertEqual(controller.engine.audioTracks.map(\.id), [0, 3])
         XCTAssertEqual(controller.engine.activeAudioTrackIndex, 3)
         XCTAssertEqual(opens, 1)
@@ -1688,8 +1720,8 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 }
 
-// A real loopback server exercises the production ephemeral URLSession. Global
-// URLProtocol registration is not reliably inherited by that session on iOS.
+// A real loopback server exercises Lucid's native HTTP transport, including
+// full requests and the bounded or open-ended ranges used by media readers.
 private final class CredentialPlaybackServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "VividTests.credentialPlayback")
@@ -1754,15 +1786,25 @@ private final class CredentialPlaybackServer: @unchecked Sendable {
     }
 
     private func respond(_ connection: NWConnection, request: String) {
-        let rangeLine = request.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("range: bytes=") }
-        let range = rangeLine?.dropFirst("Range: bytes=".count).split(separator: "-") ?? []
-        guard range.count == 2, let start = Int(range[0]), let requestedEnd = Int(range[1]),
-              start >= 0, start < media.count, requestedEnd >= start else {
-            connection.cancel()
-            return
+        let rangeLine = request.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("range:") }
+        var start = 0
+        var end = media.count - 1
+        if let rangeLine {
+            let value = rangeLine.dropFirst("range:".count).trimmingCharacters(in: .whitespaces)
+            let bounds = value.dropFirst("bytes=".count).split(separator: "-", omittingEmptySubsequences: false)
+            guard value.lowercased().hasPrefix("bytes="), bounds.count == 2,
+                  let lower = Int(bounds[0]), lower >= 0, lower < media.count,
+                  bounds[1].isEmpty || Int(bounds[1]).map({ $0 >= lower }) == true else {
+                let headers = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */\(media.count)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                connection.send(content: Data(headers.utf8), completion: .contentProcessed { _ in connection.cancel() })
+                return
+            }
+            start = lower
+            end = min(Int(bounds[1]) ?? end, end)
         }
-        let end = min(requestedEnd, media.count - 1)
-        let headers = "HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes \(start)-\(end)/\(media.count)\r\nContent-Length: \(end - start + 1)\r\nETag: \"playback-fixture\"\r\nConnection: close\r\n\r\n"
+        let status = rangeLine == nil ? "200 OK" : "206 Partial Content"
+        let contentRange = rangeLine == nil ? "" : "Content-Range: bytes \(start)-\(end)/\(media.count)\r\n"
+        let headers = "HTTP/1.1 \(status)\r\nContent-Type: application/octet-stream\r\nAccept-Ranges: bytes\r\n\(contentRange)Content-Length: \(end - start + 1)\r\nETag: \"playback-fixture\"\r\nConnection: close\r\n\r\n"
         let response = Data(headers.utf8) + media.subdata(in: start..<(end + 1))
         connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }
