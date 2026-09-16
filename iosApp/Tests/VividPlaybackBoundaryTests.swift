@@ -136,9 +136,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             guard case .ass(let original) = document else {
                 return XCTFail("An ASS header or explicit format must retain native rendering")
             }
-            // Foundation consumes the UTF-8 byte-order mark during decoding.
-            let decodedText = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
-            XCTAssertEqual(original, decodedText)
+            // Foundation versions differ in whether decoding preserves a leading BOM.
+            XCTAssertEqual(original.drop(while: { $0 == "\u{FEFF}" }),
+                           text.drop(while: { $0 == "\u{FEFF}" }))
         }
     }
 
@@ -1390,6 +1390,8 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             throw XCTSkip("Set VIVID_EMBEDDED_FIXTURE_URL to the local two-track MKV fixture")
         }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
         defer { controller.stop() }
         let spec = try VividLoadSpec(directURL: url, headers: [:], startPosition: 0, audioOnly: false)
         XCTAssertTrue(spec.options.externalSubtitles.isEmpty)
@@ -1589,6 +1591,8 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         )
 
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
         defer { controller.stop() }
         let spec = try VividLoadSpec(
             directURL: fixture.url,

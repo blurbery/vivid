@@ -505,6 +505,12 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             let token = generation
             isLoadingSubtitles = true
             subtitleTasks[id] = Task { @MainActor [weak self] in
+                var pendingNativeFile: URL?
+                defer {
+                    if let pendingNativeFile {
+                        try? FileManager.default.removeItem(at: pendingNativeFile)
+                    }
+                }
                 do {
                     let document = try await VividSubtitleLoader.load(track)
                     guard let self, generation == token, !Task.isCancelled else { return }
@@ -514,7 +520,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                         let file = FileManager.default.temporaryDirectory
                             .appendingPathComponent("vivid-subtitle-" + UUID().uuidString).appendingPathExtension("ass")
                         try text.write(to: file, atomically: true, encoding: .utf8)
-                        nativeExternalFiles[id] = file
+                        pendingNativeFile = file
                         guard let core else { throw CancellationError() }
                         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                             core.commandAsync(["sub-add", file.path, "auto"]) { result in
@@ -522,6 +528,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                             }
                         }
                         guard generation == token, !Task.isCancelled else { return }
+                        nativeExternalFiles[id] = file
+                        pendingNativeFile = nil
                         readTracks()
                     }
                     updateExternalCues()
