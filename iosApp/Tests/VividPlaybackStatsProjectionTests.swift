@@ -3,6 +3,20 @@ import XCTest
 @testable import Vivid
 
 final class VividPlaybackStatsProjectionTests: XCTestCase {
+    func testAudioOutputDetailPreservesSourceCodecAndBitrate() {
+        for output in ["PCM 5.1", "Not reported"] {
+            let track = TrackInfo(id: 2, name: "English", codec: "eac3", language: "eng", channels: 6, bitrate: 768_000, isAtmos: true)
+            let snapshot = VividPlaybackStatsSnapshot(route: .sampleBuffer, phase: .playing,
+                audioOutputFormat: output, audioTracks: [track], activeAudioTrackIndex: 2)
+            let stats = VividPlaybackStatsProjection.make(snapshot: snapshot,
+                source: VividPlaybackStatsSourceMetadata(sourceURL: nil, delivery: nil, container: nil, playbackRate: 1))
+            XCTAssertEqual(stats.audio.codec, "eac3")
+            XCTAssertEqual(stats.audio.bitrateBps, 768_000)
+            XCTAssertTrue(stats.audio.detail?.contains("Atmos") == true)
+            XCTAssertEqual(stats.audio.detail?.contains("Output: PCM 5.1"), output == "PCM 5.1")
+        }
+    }
+
     func testConfiguredDolbyProfileLabelDoesNotOverrideHDRFallback() {
         for (format, expected) in [(VideoFormat.dolbyVision, "DV Profile 8.1"), (.hdr10, "HDR10")] {
             let snapshot = VividPlaybackStatsSnapshot(route: .sampleBuffer, phase: .playing,
@@ -179,9 +193,7 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
                 sourceURL: URL(string: "https://media.example.test/transcode/master.m3u8"),
                 delivery: PlaybackProtocolV3.PlanDelivery.transcodeHLS,
                 container: "hls",
-                playbackRate: 1,
-                plannedSourceDynamicRange: "hdr10",
-                plannedOutputDynamicRange: "sdr"
+                playbackRate: 1
             )
         )
 

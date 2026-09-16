@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Network
+import UIKit
 import XCTest
 @testable import Vivid
 
@@ -31,6 +32,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let old = ["Authorization": "Bearer fixture-old"]
         let next = ["Authorization": "Bearer fixture-new"]
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         let spec = try VividLoadSpec(directURL: url, headers: old, startPosition: 0, audioOnly: true)
@@ -53,6 +57,35 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertFalse(controller.shouldPlayWhenReady)
         _ = controller.beginLoad(spec, shouldPlayWhenReady: false)
         XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
+    }
+
+    func testASSSidecarRetainsAuthoredStylesAndDialogue() async throws {
+        let text = "[Script Info]\nScriptType: v4.00+\n[Events]\nDialogue: 0,0:00:00.00,0:00:03.00,Default,,0,0,0,,{\\pos(100,200)\\k20}Caption"
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("ass")
+        try text.write(to: file, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let document = try await VividSubtitleLoader.load(ExternalSubtitleTrack(url: file))
+        guard case .ass(let nativeText) = document else {
+            return XCTFail("Authored ASS must use native rendering, not plain cues")
+        }
+        XCTAssertEqual(nativeText, text)
+    }
+
+    private func playbackWindow(for engine: VividEngine) -> UIWindow {
+        let window: UIWindow
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            window = UIWindow(windowScene: scene)
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        }
+        let host = UIViewController()
+        window.rootViewController = host
+        host.view.addSubview(engine.surface)
+        engine.surface.frame = host.view.bounds
+        engine.surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        return window
     }
 
     private func embeddedMediaFixture(secondAudio: Bool = false) throws -> URL {
@@ -107,6 +140,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let url = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: url) }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         let epoch = controller.beginLoad(try VividLoadSpec(offlineURL: url, startPosition: 0, audioOnly: false))
@@ -223,6 +259,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let url = try embeddedMediaFixture(secondAudio: true)
         defer { try? FileManager.default.removeItem(at: url) }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         var opens = 0
@@ -1576,6 +1615,9 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let file = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: file) }
         let controller = try VividPlaybackController()
+        let window = playbackWindow(for: controller.engine)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
         controller.setMuted(true)
         defer { controller.stop() }
         let spec = try VividLoadSpec(

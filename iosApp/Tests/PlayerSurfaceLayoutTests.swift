@@ -23,8 +23,7 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         var body: some View {
             Group {
                 if legacy {
-                    // Negative control: the two structural branches used by
-                    // PlayerView before this fix really do recreate the host.
+                    // Even structural replacement must reuse Lucid’s engine-owned host.
                     if presentation.preview {
                         VStack { VividPlayerSurface(engine: engine).frame(width: 240, height: 135) }
                     } else {
@@ -67,7 +66,6 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         try await settle(window)
         let surface = try XCTUnwrap(surfaces(in: window).first)
         let fullSize = surface.bounds.size
-        let player = engine
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "v3_h264_aac", withExtension: "mp4"))
         try await engine.load(url: url, options: LoadOptions(autoplay: false))
         let layer = try XCTUnwrap(engine.softwarePiPSource).layer
@@ -88,7 +86,7 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         XCTAssertEqual(surface.bounds.width, fullSize.width, accuracy: 1)
         XCTAssertEqual(surface.bounds.height, fullSize.height, accuracy: 1)
         XCTAssertTrue(surfaces(in: window).first === surface)
-        XCTAssertTrue(engine === player)
+        XCTAssertTrue(engine.softwarePiPSource?.layer === layer)
         XCTAssertTrue(layer.superlayer?.superlayer === surface.layer)
         XCTAssertEqual(engine.state, .paused)
         XCTAssertEqual(engine.clock.currentTime, pausedPosition, accuracy: 0.1)
@@ -361,7 +359,7 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         XCTAssertTrue(surfaces(in: window).first === original)
     }
 
-    func testLegacyNegativeControlRecreatesTheVideoView() async throws {
+    func testStructuralBranchChangeRetainsTheEngineOwnedSurface() async throws {
         let engine = try VividEngine()
         let presentation = Presentation()
         let window = makeWindow(Harness(presentation: presentation, engine: engine, legacy: true))
@@ -370,7 +368,7 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         let original = try XCTUnwrap(surfaces(in: window).first)
         presentation.preview = true
         try await settle(window)
-        XCTAssertFalse(surfaces(in: window).first === original)
+        XCTAssertTrue(surfaces(in: window).first === original)
     }
 
     func testPlayingPreviewRetainsVividSessionAndLayerThroughRotationAndNextEpisode() async throws {
@@ -387,7 +385,6 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         let options = LoadOptions()
         try await engine.load(url: url, options: options)
         engine.play()
-        let player = engine
         let layer = try XCTUnwrap(engine.softwarePiPSource).layer
         XCTAssertEqual(engine.videoRoute, .sampleBuffer)
         XCTAssertNil(engine.currentAVPlayer)
@@ -407,7 +404,7 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
             add(attachment)
         }
         attachFrame("Before expansion - playing synthetic preview")
-        let position = player.currentTime
+        let position = engine.currentTime
         var successorLoads = 0
         let observation = engine.$startupProgress.compactMap { $0?.checkpoint }
             .filter { $0 == "opening" }.sink { _ in successorLoads += 1 }
@@ -419,7 +416,7 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
             presentation.viewport = size
             try await settle(window)
             XCTAssertTrue(surfaces(in: window).first === surface)
-            XCTAssertTrue(engine === player)
+            XCTAssertTrue(engine.softwarePiPSource?.layer === layer)
             XCTAssertNil(engine.currentAVPlayer)
             XCTAssertTrue(layer.superlayer?.superlayer === surface.layer)
             XCTAssertTrue(layer.isReadyForDisplay)
@@ -431,11 +428,11 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         try await settle(window)
         try await Task.sleep(for: .milliseconds(350))
         XCTAssertTrue(surfaces(in: window).first === surface)
-        XCTAssertTrue(engine === player)
+        XCTAssertTrue(engine.softwarePiPSource?.layer === layer)
         XCTAssertNil(engine.currentAVPlayer)
         XCTAssertTrue(layer.superlayer?.superlayer === surface.layer)
         XCTAssertTrue(layer.isReadyForDisplay)
-        XCTAssertGreaterThanOrEqual(player.currentTime, position)
+        XCTAssertGreaterThanOrEqual(engine.currentTime, position)
         XCTAssertEqual(successorLoads, 0)
         attachFrame("After expansion - same synthetic video item")
 
@@ -443,11 +440,11 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         // both resulting viewport shapes on the live native video surface.
         // Actual UIKit rotation/button delivery is checked interactively.
         for size in [CGSize(width: 390, height: 844), CGSize(width: 844, height: 390)] {
-            let previousPosition = player.currentTime
+            let previousPosition = engine.currentTime
             presentation.viewport = size
             try await settle(window)
             XCTAssertTrue(surfaces(in: window).first === surface)
-            XCTAssertTrue(engine === player)
+            XCTAssertTrue(engine.softwarePiPSource?.layer === layer)
             XCTAssertNil(engine.currentAVPlayer)
             XCTAssertTrue(layer.superlayer?.superlayer === surface.layer)
             XCTAssertTrue(layer.isReadyForDisplay)
@@ -459,20 +456,20 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
             } else {
                 XCTAssertGreaterThan(surface.bounds.height, surface.bounds.width)
             }
-            XCTAssertGreaterThanOrEqual(player.currentTime, previousPosition)
+            XCTAssertGreaterThanOrEqual(engine.currentTime, previousPosition)
             XCTAssertEqual(successorLoads, 0)
         }
         presentation.viewport = nil
         try await settle(window)
 
         engine.pause()
-        let pausedPosition = player.currentTime
+        let pausedPosition = engine.currentTime
         presentation.preview = true
         try await settle(window)
         presentation.preview = false
         try await settle(window)
         XCTAssertEqual(engine.state, .paused, "Resizing must not resume a paused preview")
-        XCTAssertEqual(player.currentTime, pausedPosition, accuracy: 0.1)
+        XCTAssertEqual(engine.currentTime, pausedPosition, accuracy: 0.1)
         XCTAssertEqual(successorLoads, 0)
 
         // Next pressed before a preview can lay out: one actual successor
@@ -493,7 +490,7 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         presentation.preview = false
         try await settle(window)
         XCTAssertTrue(surfaces(in: window).first === surface)
-        XCTAssertTrue(engine === player)
+        XCTAssertTrue(engine.softwarePiPSource?.layer === successorLayer)
         XCTAssertTrue(successorLayer.superlayer?.superlayer === surface.layer)
         XCTAssertFalse(successorLayer === layer)
         XCTAssertNil(engine.currentAVPlayer)

@@ -112,6 +112,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var core: VividMPVCore?
     private var delegateProxy: VividMPVDelegate?
     private var generation: UInt64 = 0
+    private var seekGeneration: UInt64 = 0
     private var source: (URL, LoadOptions, Int32?)?
     private var requestedRate: Float = 1
     private var rateTask: Task<Void, Never>?
@@ -123,6 +124,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var audioDecoder: String?
     private var externalTracks: [Int: ExternalSubtitleTrack] = [:]
     private var nextExternalID = 1_000_000
+    private var nativeExternalFiles: [Int: URL] = [:]
     private var externalCues: [Int: [SubtitleCue]] = [:]
     private var subtitleTasks: [Int: Task<Void, Never>] = [:]
     private var trace: PlaybackTrialTrace?
@@ -376,7 +378,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         subtitleTracks = rawTracks.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }.map(Self.trackInfo)
         subtitleTracks += externalTracks.sorted { $0.key < $1.key }.map { id, t in
             TrackInfo(id: id, name: t.name ?? "External subtitles", language: t.language, isForced: t.isForced,
-                      isExternal: true, isNativelyRenderedSubtitle: false)
+                      isExternal: true, isNativelyRenderedSubtitle: nativeExternalFiles[id] != nil)
         }
         videoTrack = rawTracks.first { $0["type"] as? String == "video" } ?? [:]
         sourceDVProfile = (videoTrack["dolby-vision-profile"] as? Int64).flatMap { $0 > 0 ? Int($0) : nil }
@@ -385,6 +387,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             activeAudioTrackIndex = sourceTrackID(mpvID: (selected["id"] as? Int64).map(Int.init), type: "audio")
         }
         applyInitialAudioSelection()
+        if let id = activeSubtitleTrackIndex, nativeExternalFiles[id] != nil { selectSubtitleTrack(index: id) }
+        if let id = secondarySubtitleID, nativeExternalFiles[id] != nil { selectSecondarySubtitleTrack(index: id) }
     }
     private func sourceTrackID(mpvID: Int?, type: String) -> Int? {
         guard let mpvID,
@@ -439,11 +443,13 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func seek(to seconds: Double) async {
         guard let core, seconds.isFinite else { return }
         let token = generation
+        seekGeneration &+= 1
+        let seekToken = seekGeneration
         isSeeking = true; state = .seeking; updatePhase()
         core.command(["seek", String(max(0, duration > 0 ? min(seconds, duration) : seconds)), "absolute+exact"])
         for _ in 0..<300 {
             try? await Task.sleep(for: .milliseconds(50))
-            if Task.isCancelled || token != generation || !isSeeking || errorInfo != nil { return }
+            if Task.isCancelled || token != generation || seekToken != seekGeneration || !isSeeking || errorInfo != nil { return }
         }
         fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "The Lucid seek did not complete."))
     }
@@ -458,19 +464,30 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         for (name, value) in LucidSubtitleStyle.options(appearance) {
             core?.setProperty(name, value: value)
         }
-        core?.setProperty("sub-delay", value: String(subtitleDelaySeconds))
-        core?.setProperty("secondary-sub-delay", value: String(subtitleDelaySeconds))
+        core?.setProperty("sub-delay", value: String(subtitleDelaySeconds - (externalTracks[activeSubtitleTrackIndex ?? -1]?.nativeTimelineOffsetSeconds ?? 0)))
+        core?.setProperty("secondary-sub-delay", value: String(subtitleDelaySeconds - (externalTracks[secondarySubtitleID ?? -1]?.nativeTimelineOffsetSeconds ?? 0)))
         updateExternalCues()
+    }
+
+    private func subtitleMPVID(_ id: Int) -> Int? {
+        if let file = nativeExternalFiles[id] {
+            return rawTracks.first(where: {
+                $0["type"] as? String == "sub" && $0["external-filename"] as? String == file.path
+            }).flatMap { ($0["id"] as? Int64).map(Int.init) }
+        }
+        return externalTracks[id] == nil ? mpvTrackID(sourceID: id, type: "sub") : nil
     }
 
     func selectSubtitleTrack(index: Int) {
         activeSubtitleTrackIndex = index
-        core?.setProperty("sid", value: externalTracks[index] == nil ? mpvTrackID(sourceID: index, type: "sub").map(String.init) ?? "no" : "no")
+        core?.setProperty("sid", value: subtitleMPVID(index).map(String.init) ?? "no")
+        core?.setProperty("sub-delay", value: String(subtitleDelaySeconds - (externalTracks[index]?.nativeTimelineOffsetSeconds ?? 0)))
         updateExternalCues()
     }
     func selectSecondarySubtitleTrack(index: Int) {
         secondarySubtitleID = index
-        core?.setProperty("secondary-sid", value: externalTracks[index] == nil ? mpvTrackID(sourceID: index, type: "sub").map(String.init) ?? "no" : "no")
+        core?.setProperty("secondary-sid", value: subtitleMPVID(index).map(String.init) ?? "no")
+        core?.setProperty("secondary-sub-delay", value: String(subtitleDelaySeconds - (externalTracks[index]?.nativeTimelineOffsetSeconds ?? 0)))
         updateExternalCues()
     }
     func clearSubtitle() { activeSubtitleTrackIndex = nil; core?.setProperty("sid", value: "no"); subtitleCues = [] }
@@ -489,7 +506,22 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 do {
                     let document = try await VividSubtitleLoader.load(track)
                     guard let self, generation == token, !Task.isCancelled else { return }
-                    if case .cues(let cues) = document { externalCues[id] = cues }
+                    switch document {
+                    case .cues(let cues): externalCues[id] = cues
+                    case .ass(let text):
+                        let file = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("vivid-subtitle-" + UUID().uuidString).appendingPathExtension("ass")
+                        try text.write(to: file, atomically: true, encoding: .utf8)
+                        nativeExternalFiles[id] = file
+                        guard let core else { throw CancellationError() }
+                        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                            core.commandAsync(["sub-add", file.path, "auto"]) { result in
+                                continuation.resume(with: result.map { _ in () })
+                            }
+                        }
+                        guard generation == token, !Task.isCancelled else { return }
+                        readTracks()
+                    }
                     updateExternalCues()
                 } catch {
                     guard let self, generation == token else { return }
@@ -521,6 +553,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         hasFirstFrameReadyForDisplay = false; errorInfo = nil; startupProgress = nil
         clock.currentTime = 0; duration = 0; audioTracks = []; subtitleTracks = []; mediaChapters = []
         initialAudioApplied = false
+        for file in nativeExternalFiles.values { try? FileManager.default.removeItem(at: file) }
+        nativeExternalFiles = [:]
         rawTracks = []; videoTrack = [:]; externalTracks = [:]; externalCues = [:]
         for task in subtitleTasks.values { task.cancel() }; subtitleTasks = [:]
         isLoadingSubtitles = false; subtitleCues = []; secondarySubtitleCues = []

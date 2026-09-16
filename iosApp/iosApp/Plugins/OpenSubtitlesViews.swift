@@ -213,6 +213,7 @@ private struct LucidDetailSubtitleMenu: View {
     @State private var loading = true
     @State private var message: String?
     @State private var selectedID: Int64?
+    @State private var selectionIsAutomatic = true
     @State private var retry = 0
 
     var body: some View {
@@ -233,7 +234,14 @@ private struct LucidDetailSubtitleMenu: View {
                         Text(message).foregroundStyle(.secondary)
                         Button("Retry") { retry += 1 }
                     } else {
-                        TrackSelectionRow(name: "Off", attributes: nil, isSelected: selectedID == nil) { select(nil) }
+                        TrackSelectionRow(name: "Auto", attributes: nil, isSelected: selectionIsAutomatic) {
+                            guard let context else { return }
+                            LucidSubtitleInventory.shared.clearChoice(context: context)
+                            OpenSubtitlesStore.shared.clearStaged(context: context)
+                            selectionIsAutomatic = true
+                            dismiss()
+                        }
+                        TrackSelectionRow(name: "Off", attributes: nil, isSelected: !selectionIsAutomatic && selectedID == nil) { select(nil) }
                         ForEach(LucidSubtitleInventory.ordered(tracks)) { track in
                             TrackSelectionRow(name: track.languageFirstPrimaryLabel,
                                 detail: track.languageFirstDetailLabel,
@@ -254,7 +262,11 @@ private struct LucidDetailSubtitleMenu: View {
                 tracks = try await LucidSubtitleInventory.shared.read(context: context)
                 if let choice = LucidSubtitleInventory.shared.choice(context: context) {
                     selectedID = choice.trackID
-                } else { selectedID = tracks.first(where: \.isSelected)?.trackId }
+                    selectionIsAutomatic = false
+                } else {
+                    selectedID = nil
+                    selectionIsAutomatic = PlayerSettings.shared.preferredSubtitleMode != "off"
+                }
             } catch is CancellationError { return }
             catch { message = "Unable to read this file’s embedded subtitles. Try again." }
             loading = false
@@ -267,6 +279,7 @@ private struct LucidDetailSubtitleMenu: View {
         guard let context else { return }
         LucidSubtitleInventory.shared.choose(id, context: context)
         selectedID = id
+        selectionIsAutomatic = false
         dismiss()
     }
 }

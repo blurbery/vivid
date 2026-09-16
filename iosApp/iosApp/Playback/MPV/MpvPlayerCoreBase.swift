@@ -31,16 +31,11 @@ struct MpvLifecycleUnavailableError: LocalizedError {
 /// user's device. Debug traces go through `MpvLog.debug`, whose `@autoclosure`
 /// message is never evaluated while the gate is shut.
 ///
-/// The gate follows the app's "Debug Logging" setting: Dart pushes the mpv log
-/// level over `setLogLevel`, and a verbose level opens this too. DEBUG builds
-/// start open and release builds start silent, matching the `defaultLogLevel`
-/// that `createMpvContext` requests from mpv.
+/// VividMPVPlayer requests verbose native events only for its diagnostic build.
+/// Swift bridge traces stay disabled; native events pass through Vivid's
+/// restricted diagnostic formatter rather than enabling raw logging.
 enum MpvLog {
-  #if DEBUG
-    static var isDebugEnabled = false
-  #else
-    static var isDebugEnabled = false
-  #endif
+  static let isDebugEnabled = false
 
   /// Whether `level` - an mpv log level as delivered by `setLogLevel` - means
   /// the user asked for verbose diagnostics.
@@ -170,8 +165,6 @@ class MpvPlayerCoreBase: NSObject {
   private var cachedVideoGamma: String?
   private var cachedVideoPrimaries: String?
   private var cachedVideoColorMatrix: String?
-  private var cachedDvConversionMode = "auto"
-  private var cachedDvConversionLogEnabled = false
   var hdrEnabled: Bool {
     cacheLock.lock()
     defer { cacheLock.unlock() }
@@ -379,12 +372,9 @@ class MpvPlayerCoreBase: NSObject {
       // The track property reports the bitstream's profile 7, but the fork
       // converts P7 to 8.1 in `auto`/`dv81` and strips it to its HDR10 base
       // layer otherwise — ask the display for what the decoder emits.
-      if cachedDvConversionMode == "auto" || cachedDvConversionMode == "dv81" {
-        profile = 8
-      } else {
-        profile = 0
-        level = 0
-      }
+      // Vivid uses the pinned decoder's default automatic conversion.
+      // Do not mutate the process environment while native decoders run.
+      profile = 8
       compatibilityId = 1
       gamma = gamma ?? "smpte2084"
       primaries = primaries ?? "bt2020"
@@ -447,7 +437,6 @@ class MpvPlayerCoreBase: NSObject {
       guard let renderLayer = videoLayer else { return false }
     #endif
 
-    applyDvConversionModeEnvironment()
 
     let created = createMpvContext { [self] mpv in
       var layer = Int64(Int(bitPattern: Unmanaged.passUnretained(renderLayer).toOpaque()))
@@ -592,18 +581,6 @@ class MpvPlayerCoreBase: NSObject {
       return
     }
 
-    if name == "dv-conversion-mode" {
-      setDvConversionMode(value)
-      completeOnMain { completion(.success(())) }
-      return
-    }
-
-    if name == "dv-conversion-log" {
-      setDvConversionLogEnabled(parseBoolProperty(value))
-      completeOnMain { completion(.success(())) }
-      return
-    }
-
     setRawStringPropertyAsync(name, value: value, completion: completion)
   }
 
@@ -614,66 +591,6 @@ class MpvPlayerCoreBase: NSObject {
     default:
       return false
     }
-  }
-
-  private func normalizeDvConversionMode(_ value: String) -> String {
-    switch value.lowercased() {
-    case "disabled", "native":
-      return "disabled"
-    case "dv81", "p8", "p7_to_p8", "p7-to-p8":
-      return "dv81"
-    case "hevc", "hevc_strip", "p7_to_hevc", "p7-to-hevc":
-      return "hevc_strip"
-    default:
-      return "auto"
-    }
-  }
-
-  private func applyDvConversionModeEnvironment() {
-    cacheLock.lock()
-    let mode = cachedDvConversionMode
-    let logEnabled = cachedDvConversionLogEnabled
-    cacheLock.unlock()
-
-    setenv("PLEZY_DV_CONVERSION_MODE", mode, 1)
-    setenv("PLEZY_DV_CONVERSION_LOG", logEnabled ? "1" : "0", 1)
-  }
-
-  func setDvConversionMode(_ mode: String) {
-    cacheLock.lock()
-    cachedDvConversionMode = normalizeDvConversionMode(mode)
-    let normalized = cachedDvConversionMode
-    let logEnabled = cachedDvConversionLogEnabled
-    cacheLock.unlock()
-
-    applyDvConversionModeEnvironment()
-    if logEnabled {
-      MpvLog.debug("[MpvPlayerCore] DV conversion mode: \(normalized)")
-    }
-  }
-
-  func setDvConversionLogEnabled(_ enabled: Bool) {
-    cacheLock.lock()
-    cachedDvConversionLogEnabled = enabled
-    let mode = cachedDvConversionMode
-    cacheLock.unlock()
-
-    applyDvConversionModeEnvironment()
-    if enabled {
-      MpvLog.debug("[MpvPlayerCore] DV conversion logging enabled (mode: \(mode))")
-    }
-  }
-
-  func getDvConversionMode() -> String {
-    cacheLock.lock()
-    defer { cacheLock.unlock() }
-    return cachedDvConversionMode
-  }
-
-  func getDvConversionLogEnabled() -> Bool {
-    cacheLock.lock()
-    defer { cacheLock.unlock() }
-    return cachedDvConversionLogEnabled
   }
 
   func setInt64PropertyAsync(
@@ -736,16 +653,6 @@ class MpvPlayerCoreBase: NSObject {
       completeOnMain { completion(.failure(self.lifecycleUnavailableError())) }
       return
     }
-    if name == "dv-conversion-mode" {
-      completeOnMain { completion(.success(self.getDvConversionMode())) }
-      return
-    }
-
-    if name == "dv-conversion-log" {
-      completeOnMain { completion(.success(self.getDvConversionLogEnabled() ? "yes" : "no")) }
-      return
-    }
-
     submitAsyncRequest(.getProperty(completion)) { mpv, requestId in
       name.withCString { namePointer in
         mpv_get_property_async(mpv, requestId, namePointer, MPV_FORMAT_STRING)

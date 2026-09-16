@@ -116,7 +116,8 @@ TVDetailHero(
                                     ? nil
                                     : detail.effectiveSubtitleTrackSignature,
                                 preferredSubtitleLanguage: profilePrefsStore.preferredSubtitleLanguage,
-                                showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false
+                                showForcedSubtitles: detail.effectiveShowForcedSubtitles ?? false,
+                                subtitleContext: Self.subtitleContext(for: detail)
                             ),
                             heroHeight: height,
                             heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),

@@ -70,9 +70,25 @@ struct TVPlaybackActionSelectors: View {
         return context
     }
 
+    private var subtitleFallback: String {
+        selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
+            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+    }
+
     private var subtitleMenu: some View {
         TVCircleMenuButton(icon: "captions.bubble", title: "Subtitles",
-                           accessibilityLabel: "Subtitles", stabilizesFocusMotion: true) {
+                           accessibilityLabel: "Subtitles, \(LucidSubtitleInventory.shared.selectionLabel(context: fileSubtitleContext, fallback: subtitleFallback))", stabilizesFocusMotion: true) {
+            Button {
+                if let context = fileSubtitleContext {
+                    LucidSubtitleInventory.shared.clearChoice(context: context)
+                    OpenSubtitlesStore.shared.clearStaged(context: context)
+                }
+                onSelectSubtitleTrack(nil)
+            } label: {
+                let label = LucidSubtitleInventory.shared.selectionLabel(context: fileSubtitleContext, fallback: subtitleFallback)
+                if label == "Auto" { Label("Auto", systemImage: "checkmark") }
+                else { Text("Auto") }
+            }
             if subtitleLoading {
                 Text("Reading subtitles…")
             } else if subtitleError {
@@ -82,8 +98,8 @@ struct TVPlaybackActionSelectors: View {
                     if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(nil, context: context) }
                 } label: {
                     let choice = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
-                    let selected = choice != nil ? choice?.trackID : subtitleTracks.first(where: \.isSelected)?.trackId
-                    if selected == nil { Label("Off", systemImage: "checkmark") }
+                    let isOff = choice.map { $0.trackID == nil } ?? (subtitleFallback == "Off")
+                    if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
                     else { Text("Off") }
                 }
                 ForEach(LucidSubtitleInventory.ordered(subtitleTracks)) { track in
@@ -192,7 +208,7 @@ struct TVPlaybackSelectionSummary: Equatable {
     let audio: String?
     let subtitles: String?
 
-    static func make(
+    @MainActor static func make(
         currentVersion: FileVersion?,
         selectedVersionFileId: Int?,
         selectedAudioTrackIndex: Int?,
@@ -200,7 +216,8 @@ struct TVPlaybackSelectionSummary: Equatable {
         subtitleMode: String?,
         subtitleSignature: SubtitleTrackSignature?,
         preferredSubtitleLanguage: String?,
-        showForcedSubtitles: Bool
+        showForcedSubtitles: Bool,
+        subtitleContext: OpenSubtitlePlaybackContext? = nil
     ) -> TVPlaybackSelectionSummary {
         guard let currentVersion else {
             return TVPlaybackSelectionSummary(
@@ -230,7 +247,11 @@ struct TVPlaybackSelectionSummary: Equatable {
             version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex
         ) ?? "Auto"
 
-        let subtitle = "Subtitles"
+        var context = subtitleContext
+        context?.fileID = currentVersion.fileId
+        let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
+            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+        let subtitle = LucidSubtitleInventory.shared.selectionLabel(context: context, fallback: fallback)
 
         return TVPlaybackSelectionSummary(
             version: version,

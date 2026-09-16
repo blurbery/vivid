@@ -110,7 +110,8 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     ? nil
                     : matchingPlaybackDetail?.effectiveSubtitleTrackSignature,
                 preferredSubtitleLanguage: profilePrefsStore.preferredSubtitleLanguage,
-                showForcedSubtitles: matchingPlaybackDetail?.effectiveShowForcedSubtitles ?? false
+                showForcedSubtitles: matchingPlaybackDetail?.effectiveShowForcedSubtitles ?? false,
+                subtitleContext: matchingPlaybackDetail.map(Self.subtitleContext(for:))
             ),
             backdropHeight: TVDetailLayout.heroHeight,
             heroHeight: height,

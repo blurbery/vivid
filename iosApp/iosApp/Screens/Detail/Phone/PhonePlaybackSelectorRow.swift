@@ -53,6 +53,7 @@ struct PhonePlaybackSelectorSkeleton: View {
 }
 
 struct PhonePlaybackSelectorRow: View {
+    @Environment(\.openSubtitleDetailContext) private var detailContext
     @State private var showOpenSubtitles = false
     let versions: [FileVersion]
     let currentVersion: FileVersion?
@@ -132,7 +133,7 @@ struct PhonePlaybackSelectorRow: View {
         if kind == .subtitles {
             Button { showOpenSubtitles = true } label: { content() }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Subtitles")
+                .accessibilityLabel("Subtitles, \(value(for: .subtitles))")
         } else if isInteractive(kind) {
             Menu { selectorPresentation(for: kind) } label: { content() }
                 .menuOrder(.fixed)
@@ -218,7 +219,11 @@ struct PhonePlaybackSelectorRow: View {
         case .audio:
             return DetailPlaybackFormatting.audioTechnicalSummary(version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex) ?? "Auto"
         case .subtitles:
-            return "Subtitles"
+            var context = detailContext
+            context?.fileID = currentVersion?.fileId
+            let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && PlayerSettings.shared.preferredSubtitleMode == "off")
+                ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+            return LucidSubtitleInventory.shared.selectionLabel(context: context, fallback: fallback)
         }
     }
 }

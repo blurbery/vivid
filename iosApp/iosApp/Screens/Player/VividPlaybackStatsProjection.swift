@@ -8,28 +8,19 @@ struct VividPlaybackStatsSourceMetadata: Equatable {
     let container: String?
     let playbackRate: Double?
     let secondarySubtitleLabel: String?
-    let plannedSourceDynamicRange: String?
-    let plannedOutputDynamicRange: String?
-    let plannedSourceDolbyVisionProfile: Int?
 
     init(
         sourceURL: URL?,
         delivery: String?,
         container: String?,
         playbackRate: Double?,
-        secondarySubtitleLabel: String? = nil,
-        plannedSourceDynamicRange: String? = nil,
-        plannedOutputDynamicRange: String? = nil,
-        plannedSourceDolbyVisionProfile: Int? = nil
+        secondarySubtitleLabel: String? = nil
     ) {
         source = Self.sourceLabel(for: sourceURL)
         self.delivery = Self.deliveryLabel(delivery)
         self.container = Self.containerLabel(container)
         self.playbackRate = playbackRate
         self.secondarySubtitleLabel = secondarySubtitleLabel
-        self.plannedSourceDynamicRange = plannedSourceDynamicRange
-        self.plannedOutputDynamicRange = plannedOutputDynamicRange
-        self.plannedSourceDolbyVisionProfile = plannedSourceDolbyVisionProfile
     }
 
     private static func sourceLabel(for url: URL?) -> String? {
@@ -81,7 +72,6 @@ struct VividPlaybackStatsSnapshot: Equatable {
     let audioOutputFormat: String?
     let sourceVideoFormat: VideoFormat
     let outputVideoFormat: VideoFormat
-    let outputVideoFormatIsKnown: Bool
     let outputDolbyProfileLabel: String?
     let sourceDVProfile: Int?
     let sourceVideoWidth: Int32
@@ -109,7 +99,6 @@ struct VividPlaybackStatsSnapshot: Equatable {
         // Report the configured rendering format, not an inferred HDMI display mode.
         outputDolbyProfileLabel = engine.activeDolbyProfileLabel
         outputVideoFormat = engine.activeVideoFormat
-        outputVideoFormatIsKnown = true
         sourceDVProfile = engine.sourceDVProfile
         sourceVideoWidth = engine.sourceVideoWidth
         sourceVideoHeight = engine.sourceVideoHeight
@@ -134,7 +123,6 @@ struct VividPlaybackStatsSnapshot: Equatable {
         audioOutputFormat: String? = nil,
         sourceVideoFormat: VideoFormat = .sdr,
         outputVideoFormat: VideoFormat = .sdr,
-        outputVideoFormatIsKnown: Bool = true,
         outputDolbyProfileLabel: String? = nil,
         sourceDVProfile: Int? = nil,
         sourceVideoWidth: Int32 = 0,
@@ -158,7 +146,6 @@ struct VividPlaybackStatsSnapshot: Equatable {
         self.activeAudioDecoder = activeAudioDecoder
         self.sourceVideoFormat = sourceVideoFormat
         self.outputVideoFormat = outputVideoFormat
-        self.outputVideoFormatIsKnown = outputVideoFormatIsKnown
         self.outputDolbyProfileLabel = outputDolbyProfileLabel
         self.sourceDVProfile = sourceDVProfile
         self.sourceVideoWidth = sourceVideoWidth
@@ -197,7 +184,7 @@ enum VividPlaybackStatsProjection {
             container: source.container,
             video: videoStream(snapshot),
             audio: audioStream(track: activeAudio, decoder: snapshot.activeAudioDecoder, outputFormat: snapshot.audioOutputFormat),
-            dynamicRange: dynamicRangeLabel(snapshot, source: source),
+            dynamicRange: dynamicRangeLabel(snapshot),
             subtitles: subtitleLabel(
                 route: snapshot.route,
                 active: snapshot.isSubtitleActive,
@@ -249,13 +236,8 @@ enum VividPlaybackStatsProjection {
     }
 
     private static func audioStream(track: TrackInfo?, decoder: String?, outputFormat: String?) -> PlaybackStats.MediaStream {
-        if let outputFormat {
-            return PlaybackStats.MediaStream(codec: outputFormat,
-                detail: normalized(track?.language),
-                bitrateBps: nil)
-        }
         guard let track else {
-            return PlaybackStats.MediaStream(codec: decoder, detail: nil, bitrateBps: nil)
+            return PlaybackStats.MediaStream(codec: decoder ?? outputFormat, detail: decoder == nil ? nil : outputFormat, bitrateBps: nil)
         }
         var details: [String] = []
         if !track.name.isEmpty { details.append(track.name) }
@@ -271,6 +253,9 @@ enum VividPlaybackStatsProjection {
         if let decoder = normalized(decoder),
            !details.contains(where: { $0.caseInsensitiveCompare(decoder) == .orderedSame }) {
             details.append(decoder)
+        }
+        if let outputFormat = normalized(outputFormat), outputFormat != "Not reported" {
+            details.append("Output: \(outputFormat)")
         }
         return PlaybackStats.MediaStream(
             codec: track.codec,
@@ -322,11 +307,9 @@ enum VividPlaybackStatsProjection {
     }
 
     private static func dynamicRangeLabel(
-        _ snapshot: VividPlaybackStatsSnapshot,
-        source metadata: VividPlaybackStatsSourceMetadata
+        _ snapshot: VividPlaybackStatsSnapshot
     ) -> String? {
         guard snapshot.sourceVideoWidth > 0, snapshot.sourceVideoHeight > 0 else { return nil }
-        guard snapshot.outputVideoFormatIsKnown else { return "Not reported" }
         if snapshot.outputVideoFormat == .dolbyVision, let label = snapshot.outputDolbyProfileLabel {
             return label
         }

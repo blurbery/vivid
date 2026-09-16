@@ -10,7 +10,7 @@ Generate `iosApp/project-ios.yml` for iOS or `iosApp/project.yml` for tvOS with 
 
 Lucid renders into Vivid’s persistent player surface. Changing controls, opening menus or presenting Next Up does not create a second player. Apple TV requests frame rate and dynamic range through Apple’s display manager, respecting Match Content. The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation path remains platform-specific.
 
-The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences. Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read. Unsupported sources return no image. Apple TV scrubbing does not start thumbnail extraction.
+The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences. Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read. Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available. Apple TV scrubbing does not start thumbnail extraction.
 
 ## Audio support
 
@@ -18,7 +18,7 @@ At normal speed, AC-3 and E-AC-3 use compressed output through the Apple AVPlaye
 
 An explicit audio choice wins. Automatic selection prefers the requested language, then English, then the file default when English is unavailable. Provider ordinals and discovered source stream IDs remain distinct. Track switches use the media inventory; server-packaged streams depend on their negotiated inventory.
 
-Stats report the active codec and selected source channel count. The compressed carrier’s two channels are not labelled as stereo. An Atmos badge requires Apple’s reported Dolby Atmos rendering mode; an E-AC-3 source alone does not establish Atmos output.
+Stats retain the selected source codec, bitrate and channel description, with the output format shown separately. The compressed carrier’s two channels are not labelled as stereo. An Atmos badge requires Apple’s reported Dolby Atmos rendering mode; an E-AC-3 source alone does not establish Atmos output.
 
 ## Buffering and quality
 
@@ -30,7 +30,9 @@ Quality preferences remain device/profile-local. Vivid sends the selected resolu
 
 Chapters and embedded subtitles come from Lucid’s actual media inventory. The detail and in-player Subtitles menus share track labels, ordering and selection identities. The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
 
-General Settings owns subtitle language and appearance. Automatic selection turns subtitles off when the requested language is absent. Plain-text styling and delay apply to native text rendering and downloaded-text overlays. Authored ASS and bitmap styles remain intact. External ASS text parsing does not establish full authored-style parity.
+General Settings owns subtitle language and appearance. Automatic selection turns subtitles off when the requested language is absent. Plain-text styling and delay apply to native text rendering and downloaded-text overlays. Authored ASS and bitmap styles remain intact. Device checks of full external ASS styling remain outstanding.
+
+Downloaded ASS sidecars retain their authored text and render through Lucid using temporary local files, removed when the load ends. Plain-text sidecars continue to use the app overlay. Full external ASS visual verification on devices remains outstanding. Detail selectors distinguish automatic preference, explicit Off, embedded choices and staged downloads.
 
 OpenSubtitles is optional. On tvOS, search is a native submenu beside embedded tracks. User-selected downloads are temporary, context-checked and retained across replacement loads of the same item. See [track and subtitle ownership](../playback/architecture.md#tracks-subtitles-and-previews) for limits and cleanup.
 

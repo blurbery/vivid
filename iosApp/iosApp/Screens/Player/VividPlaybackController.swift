@@ -559,8 +559,9 @@ final class VividPlaybackController {
         )
         // @Published emits before the property is stored. The inventory event
         // reads the engine, so deliver it after all current assignments finish.
+        .compactMap { [weak self] _ in self?.activeLoadEpoch }
         .receive(on: DispatchQueue.main)
-        .sink { [weak self] in self?.publish(.inventoryChanged) }
+        .sink { [weak self] epoch in self?.publish(.inventoryChanged, for: epoch) }
         .store(in: &subscriptions)
 
         engine.diagnostics.$liveTelemetry

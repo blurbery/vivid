@@ -26,6 +26,14 @@ final class OpenSubtitlesStore {
            pendingSelection?.context.fileID == context.fileID { pendingSelection = nil }
     }
 
+    func stagedLabel(context: OpenSubtitlePlaybackContext) -> String? {
+        guard loadedScope == scope, let pending = pendingSelection,
+              pending.revision == revision, pending.expires > Date(),
+              pending.context.contentID == context.contentID,
+              pending.context.fileID == context.fileID else { return nil }
+        return pending.result.name
+    }
+
     func takeStaged(contentID: String, fileID: Int?) -> (result: OpenSubtitleResult, data: Data)? {
         reload()
         guard let pending = pendingSelection else { return nil }

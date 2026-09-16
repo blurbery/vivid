@@ -1162,16 +1162,12 @@ class PlayerViewModel {
         let secondaryLabel = selectedSecondarySubtitleId.flatMap { selectedID in
             subtitleTracks.first { $0.trackId == selectedID }?.primaryLabel
         }
-        let playbackPlan = activePreparedProtocolV3?.plan
         let source = VividPlaybackStatsSourceMetadata(
             sourceURL: spec.sourceURL,
             delivery: spec.delivery,
             container: currentSelectedVersion?.container,
             playbackRate: isHoldFastForwarding ? 2 : settings.playbackSpeed,
-            secondarySubtitleLabel: secondaryLabel,
-            plannedSourceDynamicRange: playbackPlan?.source.dynamicRange,
-            plannedOutputDynamicRange: playbackPlan?.effectiveRecipe.dynamicRange,
-            plannedSourceDolbyVisionProfile: playbackPlan?.source.dolbyVisionProfile
+            secondarySubtitleLabel: secondaryLabel
         )
         let snapshot = VividPlaybackStatsSnapshot(
             engine: vividPlaybackController.engine
@@ -3636,6 +3632,9 @@ class PlayerViewModel {
         // it, both because its content is stale and because the tvOS controls
         // host stays mounted through `isLoading` whenever this flag is up.
         isHUDPresented = false
+        #if os(iOS)
+        touchControlsPinned = false
+        #endif
         showNextUpScreen = isNextUpTransitioning
         if !isNextUpTransitioning {
             nextUpEpisode = nil
