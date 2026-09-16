@@ -82,9 +82,8 @@
       float grain=fract(sin(dot(floor(logoUV*180.),vec2(12.9898,78.233)))*43758.5453);
       float arrival=radius*.3+grain*.14;
       float reveal=smoothstep(.40+arrival,.62+arrival,assembly);
-      float wash=sin(clamp((assembly-.46)/.54,0.,1.)*3.14159)*.5;
       float opacity=alpha(logoUV)*reveal;
-      gl_FragColor=vec4((original.rgb+vec3(wash))*opacity,opacity);
+      gl_FragColor=vec4(original.rgb*opacity,opacity);
     }`;
   const particleVertex = `attribute vec2 home; attribute vec3 scatter;
     uniform float assembly; uniform float pixels; uniform float pointLimit; uniform float travel;
@@ -170,7 +169,7 @@
         if(openingLogo && elapsed>=1.65) revealHero(true);
         const rect=stage.getBoundingClientRect();
         const entering=smooth((innerHeight-rect.top)/(rect.height*.9));
-        const leaving=1.-smooth((64-rect.top)/(rect.height*.72));
+        const leaving=openingLogo ? 1.-smooth((64-rect.top)/(rect.height*.72)) : 1;
         // Only the first page entrance is timed. After that, both directions
         // follow the same scroll position, including the lower logo's entrance.
         const entrance=openingLogo ? smooth(elapsed/2.35) : 1;
