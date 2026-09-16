@@ -47,7 +47,7 @@ Both app targets already include the silver V as their app icon. The source asse
   </tr></tbody>
 </table>
 
-The iOS icon is an opaque 1024 × 1024 resampling of the approved image, preserving the owner's selected mark position, black rounded tile and rim lighting within the square image. Apple TV uses the same glossy black finish and cool illuminated rim, adapted to its wider icon. The opaque background plate and transparent silver foreground remain separate for parallax. The foreground uses the enhanced mark, fitted proportionally within the existing artwork bounds. The Apple TV preview combines the 2× layers; tvOS supplies focus and parallax effects.
+The iOS icon is an opaque 1024 × 1024 export from the original 1254 × 1254 artwork. The owner-approved crop removes the extra outer padding while retaining the illuminated rim and ribbon placement. Apple TV uses the same glossy black finish and cool illuminated rim, adapted to its wider icon. Its background fills the tile, and the silver ribbon is enlarged proportionally by 12% from the previous placement. The opaque background and transparent foreground remain separate for parallax. Each size is resampled directly from the original background and transparent ribbon masters with Lanczos filtering, preserving smooth edges. The Apple TV preview combines the 2× layers; Apple supplies the final corner masks, focus and parallax effects.
 
 <table width="100%">
   <thead><tr><th align="left">Use</th><th align="left" width="10000">Source assets</th><th align="left">Pixels</th></tr></thead>
