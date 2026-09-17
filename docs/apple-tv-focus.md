@@ -596,3 +596,5 @@ Validation: the signed Release VividTV device build and the iOS/tvOS CI run for
 `a584044` passed. The later Add Profile loading presentation in `a584044` has not
 yet been installed on Living Room; the owner’s installed-build confirmation does
 not establish device coverage of that change.
+
+Spotlight retains its existing crop-before-display sequence, readiness gate, six-second rotation timing and native navigation. Shared image transport retries a temporary connection, DNS or timeout failure once, including Silo, and caps each resource transfer at 45 seconds. HTTP, decoding and cancellation failures are not retried. Regression checks cover recovery, persistent failure and cancellation; the intermittent all-poster cold-launch failure still needs physical-device confirmation.

@@ -98,6 +98,7 @@ final class VividImagePipeline: @unchecked Sendable {
         configuration.urlCache = cache.responses
         configuration.httpMaximumConnectionsPerHost = 2
         configuration.timeoutIntervalForRequest = 20
+        configuration.timeoutIntervalForResource = 45
         session = URLSession(configuration: configuration)
         decoding.maxConcurrentOperationCount = 2
         #if os(tvOS)
@@ -168,7 +169,9 @@ final class VividImagePipeline: @unchecked Sendable {
 
     private func fetchData(for request: VividImageRequest) async throws -> Data {
         let delegate = VividImageDiagnostics.shared.enabled ? VividImageMetricsDelegate.shared : nil
-        let (data, response) = try await session.data(from: request.url, delegate: delegate)
+        let (data, response) = try await VividImageRetry.load {
+            try await session.data(from: request.url, delegate: delegate)
+        }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 32 * 1024 * 1024 else {
             throw URLError(.badServerResponse)
         }
@@ -209,8 +212,8 @@ final class VividImagePipeline: @unchecked Sendable {
     }
 }
 
-/// Coalesce Emby artwork independently of thumbnail size. Retry one transient
-/// transport failure; cancellations and HTTP failures are never retried here.
+/// Coalesce Emby artwork independently of thumbnail size. Transport recovery
+/// is shared with Silo in fetchData, so retries are not multiplied here.
 private actor VividEmbyImageDataFlights {
     private var tasks: [URL: (UUID, Task<Data, Error>)] = [:]
 
@@ -230,15 +233,7 @@ private actor VividEmbyImageDataFlights {
         diagnostics.created(id, kind: "dataFlight", utility: false)
         let task = Task {
             defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
-            do { return try await operation() }
-            catch {
-                let failure = error as NSError
-                guard failure.domain == NSURLErrorDomain,
-                      [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost].contains(failure.code) else { throw error }
-                try await Task.sleep(for: .milliseconds(500))
-                try Task.checkCancellation()
-                return try await operation()
-            }
+            return try await operation()
         }
         tasks[url] = (id, task)
         defer { if tasks[url]?.0 == id { tasks[url] = nil } }
