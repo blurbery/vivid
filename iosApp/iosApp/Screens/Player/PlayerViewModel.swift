@@ -5033,16 +5033,18 @@ class PlayerViewModel {
         let fileID = currentSelectedVersion?.fileId
         introDBLookupTask = Task { @MainActor [weak self] in
             do {
-                // The connector supplies series metadata; the external lookup
-                // accepts only the common IMDb/season/episode identity.
+                // Use the series identity, never an episode-level TMDB ID.
                 let series = try await MetadataRequestPool.shared.itemDetail(contentId: seriesID)
                 try Task.checkCancellation()
-                guard let imdb = series.imdbId, VividSkipSource.isEnabled else { return }
-                let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode)
+                guard VividSkipSource.isEnabled else { return }
+                let imdb = series.imdbId ?? ""
+                let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode,
+                    tmdbID: series.tmdbId.flatMap(Int.init))
+                guard identity.fallbackIdentifier != nil else { return }
                 let fetched = try? await VividIntroDBClient.shared.segments(for: identity)
                 let markers = VividIntroDBClient.Segments(
                     imdb_id: imdb, season: season, episode: episode,
-                    intro: fileMarkers.intro, outro: fileMarkers.outro
+                    intro: fileMarkers.intro, outro: fileMarkers.outro, tmdb_id: identity.tmdbID
                 ).fillingMissing(from: fetched)
                 guard let self, !Task.isCancelled, VividSkipSource.isEnabled,
                       self.activePlaybackSessionId == sessionID,
