@@ -256,6 +256,7 @@ final class TVSavedAccountStore {
         guard !busy, identity == (await TokenStore.shared.refreshAccountIdentity()),
               server == ServerRegistry.shared.activeServerId else { return }
         guard let user, let userID = user.id else { return }
+        VividCacheScope.recordAccount(userID, serverID: server)
         capturedUser = (identity, user)
         var profile = CurrentProfileStore.shared.profile
         if profile == nil, refreshMetadata {
@@ -295,7 +296,7 @@ final class TVSavedAccountStore {
         defer { busy = false; Task { await captureCurrent() } }
         do {
             if activeID != account.id || ServerRegistry.shared.activeServerId != account.serverID || !AuthService.shared.isLoggedIn {
-                try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID)
+                try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             }
             activeID = account.id
             persist()
@@ -351,7 +352,7 @@ final class TVSavedAccountStore {
             let entry = ServerEntry(id: serverID, url: normalized,
                                     fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName, lastUsedAt: Date())
             guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
-            try await AuthService.shared.restoreTVAccount(saved, serverID: serverID)
+            try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
             if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index] = account }
             else { accounts.append(account) }
             activeID = accountID
@@ -661,7 +662,7 @@ final class TVSavedAccountStore {
             return true
         }
         do {
-            try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID)
+            try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             return true
         } catch {
             return false

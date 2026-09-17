@@ -2,6 +2,45 @@ import XCTest
 @testable import Vivid
 
 final class VividImageRetryTests: XCTestCase {
+    func testCacheOwnershipSeparatesServerAccountAndProfile() {
+        let owner = VividCacheScope.key(serverID: "s", accountID: "a", profileID: "p")
+        XCTAssertEqual(owner, VividCacheScope.key(serverID: "s", accountID: "a", profileID: "p"))
+        for other in [
+            VividCacheScope.key(serverID: "other", accountID: "a", profileID: "p"),
+            VividCacheScope.key(serverID: "s", accountID: "other", profileID: "p"),
+            VividCacheScope.key(serverID: "s", accountID: "a", profileID: "other")
+        ] { XCTAssertNotEqual(owner, other) }
+        let url = URL(string: "https://artwork.example/avatar")!
+        let first = VividImageRequest(url: url, cacheScope: owner)
+        let second = VividImageRequest(url: url, cacheScope: "another-account")
+        XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(first.key, second.key)
+        let cache = VividImageCache(costLimit: 1024, countLimit: 2, diskCapacity: 0)
+        XCTAssertFalse(cache.responses(for: owner) === cache.responses(for: second.cacheScope))
+    }
+
+    func testSameURLDoesNotShareInFlightBytesAcrossAccounts() async throws {
+        let flights = VividEmbyImageDataFlights()
+        let url = URL(string: "https://artwork.example/avatar")!
+        let started = expectation(description: "First account request started")
+        let outgoing = Task {
+            try await flights.load(url, scope: "first") {
+                started.fulfill()
+                try await Task.sleep(for: .seconds(30))
+                return Data([1])
+            }
+        }
+        await fulfillment(of: [started], timeout: 2)
+        defer { outgoing.cancel() }
+        let other = try await flights.load(url, scope: "second") { Data([2]) }
+        XCTAssertEqual(other, Data([2]))
+        await flights.cancelAll()
+        do {
+            _ = try await outgoing.value
+            XCTFail("Expected cancellation of the original request")
+        } catch { XCTAssertTrue(error is CancellationError) }
+    }
+
     func testAccountSwitchCancelsSharedArtworkAndAllowsFreshRequest() async throws {
         let flights = VividEmbyImageDataFlights()
         let url = URL(string: "https://artwork.example/emby/Items/1/Images/Primary")!

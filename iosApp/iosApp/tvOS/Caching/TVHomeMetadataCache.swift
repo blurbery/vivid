@@ -60,16 +60,11 @@ final class TVHomeMetadataCache {
     nonisolated private static let maximumSnapshotBytes = 8 * 1024 * 1024
     static let spotlightID = "vivid.cache.spotlight"
 
-    private var activeScope: String? {
-        guard let server = ServerRegistry.shared.activeServerId,
-              let profile = AuthService.shared.profileId, !profile.isEmpty else { return nil }
-        let data = (try? JSONEncoder().encode([server, profile])) ?? Data()
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
+    private var activeScope: String? { VividCacheScope.current }
 
     private func fileURL(for scope: String) -> URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Vivid/HomeMetadata/v1", isDirectory: true)
+            .appendingPathComponent("Vivid/HomeMetadata/v2", isDirectory: true)
             .appendingPathComponent(scope + ".json")
     }
 
@@ -261,8 +256,7 @@ final class TVHomeMetadataCache {
 
     func deleteAccountCache(_ account: TVSavedAccount) async throws {
         guard let profileID = account.profile?.id else { return }
-        let data = try JSONEncoder().encode([account.serverID, profileID])
-        let scope = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let scope = VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: profileID)
         if loadedScope == scope { deactivate() }
         let url = fileURL(for: scope)
         let urls: Set<URL> = try await withCheckedThrowingContinuation { continuation in
@@ -272,7 +266,7 @@ final class TVHomeMetadataCache {
             }
         }
         PosterImageCache.stopPrefetchingCardArtwork(Array(urls))
-        await VividImagePipeline.shared.removeCachedArtwork(for: urls)
+        await VividImagePipeline.shared.removeCachedArtwork(for: urls, scope: scope)
     }
 
     nonisolated static func deleteSnapshot(at url: URL) throws -> Set<URL> {
@@ -410,11 +404,12 @@ final class TVHomeMetadataCache {
         }
         let expectedGeneration = generation
         let scope = loadedScope
+        let cropKey = (scope ?? VividCacheScope.artwork) + "|" + url
         let task: Task<CGRect?, Never>
         if let existing = cropTasks[url] {
             task = existing
         } else {
-            task = Task.detached(priority: .utility) { TVSpotlightCrop.subject(in: image, key: url) }
+            task = Task.detached(priority: .utility) { await TVSpotlightCrop.prepareSubject(in: image, key: cropKey) }
             cropTasks[url] = task
         }
         // A disappearing slide must not cancel preparation another slide or

@@ -26,7 +26,7 @@ enum HeroBackdropPalette {
     /// Synchronous lookup of a previously-sampled tint. `nil` when the
     /// URL hasn't been sampled this session — fall back to `tintColor(for:)`.
     @MainActor static func cachedTint(for url: URL) -> Color? {
-        tintCache[url.absoluteString]
+        tintCache[VividCacheScope.artwork + "|" + url.absoluteString]
     }
 
     /// Fetch and sample a tint color for the given URL. Returns `nil`
@@ -45,7 +45,7 @@ enum HeroBackdropPalette {
                 sampleTint(from: image)
             }.value
             if let tint {
-                await MainActor.run { tintCache[url.absoluteString] = tint }
+                await MainActor.run { tintCache[request.cacheScope + "|" + url.absoluteString] = tint }
             }
             return tint
         } catch {
