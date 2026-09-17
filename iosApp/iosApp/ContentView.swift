@@ -558,7 +558,7 @@ struct ContentView: View {
         if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
         } else if TVSavedAccountStore.shared.busy {
-            Color.clear.ignoresSafeArea().overlay { ProgressView() }
+            Color.clear.ignoresSafeArea().overlay { VividLoadingDots() }
         } else if didCompleteProviderSetup,
                   router.authState != .loading, router.authState != .needsServerSetup,
                   TVSavedAccountStore.shared.showsSelector {
@@ -570,7 +570,7 @@ struct ContentView: View {
         if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
         } else if TVSavedAccountStore.shared.busy {
-            Color.black.ignoresSafeArea().overlay { ProgressView() }
+            Color.black.ignoresSafeArea().overlay { VividLoadingDots() }
         } else if router.authState != .loading, router.authState != .needsServerSetup,
                   TVSavedAccountStore.shared.showsSelector {
             PhoneSavedProfilesScreen()

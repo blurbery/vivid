@@ -591,6 +591,14 @@ final class UICustomizationPreferences {
         loadCache(for: cacheKey())
     }
 
+    /// Restore the destination's local presentation before routing Home.
+    /// ContentView performs the identity-guarded server refresh afterwards.
+    func restoreCachedPreferences() {
+        refreshSequence += 1
+        isRefreshing = false
+        loadCache(for: cacheKey())
+    }
+
     /// Repaint from the active identity's cache, then reconcile from the
     /// server. Transiently unknown servers retain the last compatible cache;
     /// explicitly older servers project the legacy/default presentation.
