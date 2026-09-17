@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="vivid-mark-silver.svg" width="96" height="96" alt="Vivid silver logo">
+  <img src="vivid-mark-silver.png" width="96" height="96" alt="Vivid silver logo">
 </p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Branding</h1>
@@ -21,13 +21,13 @@ The transparent silver mark is Vivid’s main logo. It uses the owner-approved r
     <tr><th align="left">Appearance</th><th align="left" width="10000">Asset</th><th align="left">Colour</th></tr>
   </thead>
   <tbody>
-    <tr><td>Main logo, either theme</td><td><a href="vivid-mark-silver.svg">Transparent silver SVG</a> · <a href="vivid-mark-silver.png">PNG export</a></td><td>Silver</td></tr>
+    <tr><td>Main logo, either theme</td><td><a href="vivid-mark-silver.png">Transparent silver PNG</a></td><td>Silver</td></tr>
     <tr><td>Website favicon</td><td><a href="../../website/public/favicon.png">512 × 512 PNG</a> and <a href="../../website/public/favicon.ico">16–64 px ICO fallback</a></td><td>Refined silver icon on black</td></tr>
     <tr><td>Safari favourites</td><td><a href="../../website/public/apple-touch-icon.png">Opaque 512 × 512 PNG</a></td><td>Refined silver icon on black</td></tr>
   </tbody>
 </table>
 
-The transparent PNG is exported from [the SVG master](vivid-mark-silver.svg) on the existing 1254 × 1254 canvas. A [transparent PDF master](vivid-mark-silver.pdf) is also available. All documentation headers use the same transparent SVG master. The animation source and website logo use PNG exports of that artwork; separate light- and dark-theme logo files are not needed. The SVG contains Bézier curves and vector shading, with no embedded bitmap.
+The transparent PNG is exported from [the SVG master](vivid-mark-silver.svg) on the existing 1254 × 1254 canvas. A [transparent PDF master](vivid-mark-silver.pdf) is also available. All documentation headers use the clean transparent PNG export. The current SVG shading is assembled from adjacent vector patches; some browser and GitHub rendering paths expose their boundaries as a triangular grid. Do not embed this SVG in documentation or web pages. It remains an editable source, not a cross-renderer-approved display asset. The animation source and website logo use PNG exports of that artwork; separate light- and dark-theme logo files are not needed. The SVG contains Bézier curves and vector shading, with no embedded bitmap.
 
 The [iOS app master](vivid-app-icon.svg), [optional small-size master](vivid-app-icon-small.svg), and Apple TV [foreground](vivid-tv-foreground.svg) and [background](vivid-tv-background.svg) are the sources for runtime icons. The rounded [presentation SVG](vivid-presentation.svg) and [presentation PDF](vivid-presentation.pdf) are design previews only. Never place the presentation tile inside an app icon or an in-app logo: that creates an extra inset border and recessed appearance.
 
