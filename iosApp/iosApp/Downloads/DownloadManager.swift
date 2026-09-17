@@ -647,7 +647,7 @@ final class DownloadManager {
             ? DownloadFormat.original.rawValue
             : resolvedDownloadQuality(requestedQuality)
 
-        let request = CreateDownloadRequest(
+        var request = CreateDownloadRequest(
             contentId: contentId,
             episodeId: episodeId,
             fileId: fileId,
@@ -656,6 +656,13 @@ final class DownloadManager {
             seasonNumber: seasonNumber,
             caps: DownloadCaps.current()
         )
+        if isBatch {
+            request.batchId = registrationToken.uuidString
+        } else {
+            let existing = file.records.values.first { ($0.episodeId ?? $0.contentId) == registrationContentId }
+            request.expectedRevision = existing?.revision ?? 0
+            if (request.expectedRevision ?? 0) > 0 { request.expectedDownloadId = existing?.id }
+        }
         let rows = try await VividAPI.shared.createDownload(request)
         guard capturedScopeGeneration == registrationScopeGeneration,
               capturedServerId == scopeServerId,
@@ -916,7 +923,7 @@ final class DownloadManager {
         record.localStatus = .downloading
         file.records[recordId] = record
         persist()
-        Task { try? await VividAPI.shared.patchDownloadStatus(id: recordId, status: "downloading", auth: auth) }
+        Task { try? await VividAPI.shared.patchDownloadStatus(id: recordId, status: "downloading", revision: record.revision, updatedAt: Date(), auth: auth) }
     }
 
     private func persistManifest(_ manifest: OfflineManifest, recordId: String, generation: UInt64) async {
@@ -1172,7 +1179,7 @@ final class DownloadManager {
         DownloadNotifier.downloadCompleted(record)
         #endif
         let id = record.id
-        Task { try? await VividAPI.shared.patchDownloadStatus(id: id, status: "completed") }
+        Task { try? await VividAPI.shared.patchDownloadStatus(id: id, status: "completed", revision: record.revision, updatedAt: record.downloadedAt ?? Date()) }
         processQueue()
         refreshStorageUsage()
         Task { await self.enforceRetention() }
@@ -1529,6 +1536,7 @@ final class DownloadManager {
 
     func flushProgressQueue() async {
         guard !file.progressQueue.isEmpty else { return }
+        let scopeGeneration = registrationScopeGeneration
         let batch = file.progressQueue
         let completedIds = Set(batch.filter { file.localProgress[$0.mediaItemId]?.completed == true }.map { $0.mediaItemId })
         let items = batch.map {
@@ -1542,6 +1550,7 @@ final class DownloadManager {
         }
         do {
             let results = try await VividAPI.shared.syncProgressBatch(items: items)
+            guard scopeGeneration == registrationScopeGeneration else { return }
             var okItemIds = Set(results.filter { $0.isOK }.map { $0.mediaItemId })
             // Position sync alone cannot express credits-based completion.
             // Keep the queued event if the separate watched write fails.
@@ -1553,6 +1562,7 @@ final class DownloadManager {
             // appended while the POST was in flight carries a newer position
             // the server never saw, so it must survive this batch with its
             // full retry budget.
+            guard scopeGeneration == registrationScopeGeneration else { return }
             let sentEntryIds = Set(batch.map { $0.id })
             let okEntryIds = Set(batch.filter { okItemIds.contains($0.mediaItemId) }.map { $0.id })
             file.progressQueue.removeAll {
@@ -1570,8 +1580,21 @@ final class DownloadManager {
         }
     }
 
+    private var progressBootstrapInFlight = false
+
     func pullProgressDeltas() async {
+        guard !progressBootstrapInFlight else { return }
+        progressBootstrapInFlight = true
+        defer { progressBootstrapInFlight = false }
         do {
+            if let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+               MediaServerProvider.forServerID(auth.account.serverId) == .silo,
+               let url = URL(string: auth.account.serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/api/v1/progress"),
+               try await SiloAPIDiscovery.shared.usesV2(for: url, session: .shared) {
+                try await replaceSiloProgress(auth: auth)
+                return
+            }
+
             let response = try await VividAPI.shared.pullProgressDeltas(since: file.progressCursor)
             for item in response.progress {
                 let serverTime = item.updatedAt ?? Date()
@@ -1596,6 +1619,107 @@ final class DownloadManager {
             persist()
         } catch {
             // Non-fatal; retry next foreground.
+        }
+    }
+
+    private func persistBootstrap(_ stagedFile: DownloadStoreFile? = nil) async throws {
+        let snapshot = stagedFile ?? file
+        let serverId = scopeServerId
+        let profileId = scopeProfileId
+        let previous = saveChain
+        let write = Task { @MainActor in
+            await previous?.value
+            try await DownloadStore.shared.saveChecked(snapshot, serverId: serverId, profileId: profileId)
+        }
+        saveChain = Task { _ = try? await write.value }
+        try await write.value
+    }
+
+    private func replaceSiloProgress(auth: CapturedOrdinaryRequestAuth) async throws {
+        let scopeGeneration = registrationScopeGeneration
+        func scopeIsCurrent() async -> Bool {
+            guard scopeGeneration == registrationScopeGeneration,
+                  auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return false }
+            return await TokenStore.shared.currentOrdinaryRequestAuth(matchingIdentityOf: auth) != nil
+        }
+        let http = HTTPClient.shared
+        let capability: SiloProgressBootstrapCapability = try await http.get("/api/v2/sync/progress/capabilities", expectedAuth: auth)
+        guard await scopeIsCurrent(), capability.state == "available", capability.allowed,
+              capability.mode == "full_replace", !capability.incremental,
+              let installation = capability.installationId, let generation = capability.generation else { return }
+        let account: AuthUser = try await http.get("/api/v1/auth/me", expectedAuth: auth)
+        guard await scopeIsCurrent() else { throw HTTPError.requestIdentityChanged }
+        if let stage = file.progressBootstrap,
+           stage.installationId != installation || stage.generation != generation || stage.accountId != String(account.id) || stage.profileId != auth.profileId || Date().timeIntervalSince(stage.createdAt) > 900 {
+            file.progressBootstrap = nil
+        }
+        if file.progressBootstrap == nil {
+            file.progressBootstrap = SiloProgressBootstrapStage(requestId: UUID().uuidString, createdAt: Date(),
+                installationId: installation, accountId: String(account.id), profileId: scopeProfileId, generation: generation)
+        }
+        try await persistBootstrap()
+        guard await scopeIsCurrent(), var stage = file.progressBootstrap else { throw HTTPError.requestIdentityChanged }
+        do {
+            while stage.page?.complete != true {
+                try Task.checkCancellation()
+                let page: SiloProgressBootstrapPage
+                if let previous = stage.page {
+                    guard previous.expiresAt > Date(), let cursor = previous.page.nextCursor, !cursor.isEmpty else { throw HTTPError.invalidResponse }
+                    page = try await http.get("/api/v2/sync/progress/snapshots/\(previous.snapshotId)", query: ["cursor": cursor], expectedAuth: auth)
+                    guard page.snapshotId == previous.snapshotId, page.itemCount == previous.itemCount,
+                          page.capturedAt == previous.capturedAt else { throw HTTPError.invalidResponse }
+                } else {
+                    struct Admission: Encodable { let requestId: String; let limit: Int }
+                    page = try await http.post("/api/v2/sync/progress/snapshots", body: Admission(requestId: stage.requestId, limit: 200), timeout: .extended, expectedAuth: auth)
+                }
+                guard await scopeIsCurrent(), page.installationId == installation, page.generation == generation,
+                      page.accountId == stage.accountId, page.profileId == stage.profileId,
+                      page.mode == "full_replace", page.expiresAt > Date(), page.itemCount <= 100_000,
+                      page.complete != page.page.hasMore else { throw HTTPError.invalidResponse }
+                for item in page.items {
+                    guard stage.items[item.mediaItemId] == nil else { throw HTTPError.invalidResponse }
+                    stage.items[item.mediaItemId] = item
+                }
+                guard stage.items.count <= page.itemCount else { throw HTTPError.invalidResponse }
+                stage.page = page
+                file.progressBootstrap = stage
+                try await persistBootstrap()
+                guard await scopeIsCurrent() else { throw HTTPError.requestIdentityChanged }
+            }
+            guard let terminal = stage.page, terminal.complete, !terminal.page.hasMore,
+                  terminal.completionToken?.isEmpty == false, stage.items.count == terminal.itemCount else { throw HTTPError.invalidResponse }
+            let current: SiloProgressBootstrapCapability = try await http.get("/api/v2/sync/progress/capabilities", expectedAuth: auth)
+            guard await scopeIsCurrent(), current.state == "available", current.allowed,
+                  current.installationId == installation, current.generation == generation else { throw HTTPError.requestIdentityChanged }
+            var replacement = stage.items.mapValues { item in
+                LocalProgressEntry(position: item.positionSeconds, duration: item.durationSeconds,
+                    completed: item.completed, updatedAt: item.updatedAt ?? terminal.capturedAt)
+            }
+            // Unsynchronised local events remain authoritative until their
+            // exact queue entries are acknowledged. Downloads are untouched.
+            for queued in file.progressQueue {
+                if let local = file.localProgress[queued.mediaItemId] { replacement[queued.mediaItemId] = local }
+            }
+            guard terminal.expiresAt > Date() else { throw HTTPError.invalidResponse }
+            var committed = file
+            committed.localProgress = replacement
+            committed.progressCursor = nil
+            committed.progressBootstrap = nil
+            try await persistBootstrap(committed)
+            guard await scopeIsCurrent() else { throw HTTPError.requestIdentityChanged }
+            for queued in file.progressQueue {
+                if let local = file.localProgress[queued.mediaItemId] { replacement[queued.mediaItemId] = local }
+            }
+            file.localProgress = replacement
+            file.progressCursor = nil
+            file.progressBootstrap = nil
+            persist()
+        } catch {
+            if await scopeIsCurrent(), let error = error as? HTTPError, [404, 409, 413].contains(error.statusCode ?? 0) {
+                file.progressBootstrap = nil
+                try await persistBootstrap()
+            }
+            throw error
         }
     }
 

@@ -85,6 +85,7 @@ actor HTTPClient {
     )
 
     private let session: URLSession
+    private let apiDiscovery: SiloAPIDiscovery
     /// Session for endpoints that legitimately hold the connection open well
     /// past the fail-fast window (see ``HTTPTimeout/extended``). A separate
     /// session (rather than per-request `timeoutInterval`) keeps the
@@ -147,6 +148,7 @@ actor HTTPClient {
     }
 
     init(
+        apiDiscovery: SiloAPIDiscovery = SiloAPIDiscovery(),
         session: URLSession? = nil,
         tokenStore: TokenStore = .shared,
         refreshFlightJoinObserver: (@Sendable (RefreshFlightJoinKind) -> Void)? = nil,
@@ -158,6 +160,7 @@ actor HTTPClient {
     ) {
         // An injected session (tests) serves both timeout classes so mocks
         // observe every request regardless of the caller's timeout choice.
+        self.apiDiscovery = apiDiscovery
         self.session = session ?? Self.makeSession(requestTimeout: 15)
         self.longWaitSession = session ?? Self.makeSession(requestTimeout: 90)
         self.tokenStore = tokenStore
@@ -294,9 +297,10 @@ actor HTTPClient {
         _ path: String,
         body: (any Encodable)? = nil,
         query: [String: String] = [:],
-        timeout: HTTPTimeout = .standard
+        timeout: HTTPTimeout = .standard,
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil
     ) async throws -> T {
-        try await send(method: "POST", path: path, query: query, body: body, timeout: timeout)
+        try await send(method: "POST", path: path, query: query, body: body, timeout: timeout, expectedAuth: expectedAuth)
     }
 
     func postVoid(
@@ -701,6 +705,9 @@ actor HTTPClient {
     }
 
     private func performCancellationPass() async {
+        siloCatalogWindows.removeAll()
+        siloPlaybackInstallations.removeAll()
+        siloPlaybackSessions.removeAll()
         if let cancellationPassBarrier {
             await cancellationPassBarrier()
         }
@@ -1204,7 +1211,188 @@ actor HTTPClient {
     /// ``performRefreshTransport(request:session:)``. Those two functions are
     /// the only places in this file that may call `session.data(for:)`; adding a
     /// third would reintroduce an unclassified path.
+    private var siloCatalogWindows: [String: String] = [:]
+    private var siloPlaybackInstallations: [URL: String] = [:]
+    private var siloPlaybackSessions: [String: (installation: String, sequence: Int)] = [:]
+
     private func perform(
+        request: URLRequest,
+        timeout: HTTPTimeout = .standard,
+        dispatchRevision: UInt64,
+        reportReachability: Bool = true
+    ) async throws -> (Data, HTTPURLResponse) {
+        try ensureRequestDispatchAllowed(expectedRevision: dispatchRevision)
+        guard let url = request.url, let legacyPath = SiloAPICompatibility.legacyPath(url),
+              try await apiDiscovery.usesV2(for: url, session: session) else {
+            return try await performTransport(request: request, timeout: timeout,
+                dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+        }
+        try ensureRequestDispatchAllowed(expectedRevision: dispatchRevision)
+        var mapped = try SiloAPICompatibility.request(request)
+        let authority = SiloAPICompatibility.discoveryURL(for: url)!
+        if legacyPath.hasPrefix("/api/v1/playback/"), legacyPath != "/api/v1/playback/capability" {
+            var body = mapped.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let parts = legacyPath.split(separator: "/")
+            let sessionID = body["session_id"] as? String ?? (parts.count >= 5 && parts[3] == "sessions" ? String(parts[4]) : nil) ?? (parts.count >= 4 && !["start", "route-events", "sessions"].contains(String(parts[3])) ? String(parts[3]) : nil)
+            let sessionKey = sessionID.map { authority.absoluteString + "|" + $0 }
+            var installation = sessionKey.flatMap { siloPlaybackSessions[$0]?.installation } ?? siloPlaybackInstallations[authority]
+            if installation == nil {
+                var capability = mapped
+                capability.httpMethod = "GET"
+                capability.httpBody = nil
+                capability.url = URL(string: authority.absoluteString.replacingOccurrences(of: "/system/info", with: "/playback/capabilities"))
+                let (capData, capResponse) = try await performTransport(request: capability, timeout: timeout,
+                    dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+                guard (200..<300).contains(capResponse.statusCode) else { return (capData, capResponse) }
+                installation = (try JSONSerialization.jsonObject(with: capData) as? [String: Any])?["installation_id"] as? String
+                siloPlaybackInstallations[authority] = installation
+            }
+            guard let installation, !installation.isEmpty else { throw HTTPError.invalidResponse }
+            if mapped.httpMethod != "GET" {
+                body["installation_id"] = installation
+                if legacyPath.hasSuffix("/progress"), let sessionKey {
+                    let sequence = (siloPlaybackSessions[sessionKey]?.sequence ?? 0) + 1
+                    siloPlaybackSessions[sessionKey] = (installation, sequence)
+                    body["sequence"] = sequence
+                }
+                if legacyPath.hasSuffix("/route-events") { body["event_id"] = UUID().uuidString }
+                if mapped.httpMethod == "DELETE" { body["stop_id"] = UUID().uuidString }
+                mapped.httpBody = try JSONSerialization.data(withJSONObject: body)
+                mapped.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+        }
+        var windowKey: String?
+        if var components = mapped.url.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }),
+           components.path.hasSuffix("/api/v2/catalog") {
+            var query = components.queryItems ?? []
+            let seek = query.first(where: { $0.name == "seek" })?.value
+            let keyQuery = query.filter { !["seek", "cursor", "skip_total"].contains($0.name) }
+            components.queryItems = keyQuery
+            // Credentials remain only in actor memory and are never logged. A
+            // refreshed token starts a new window rather than crossing identities.
+            let key = (components.url?.absoluteString ?? "") + "|" +
+                (request.value(forHTTPHeaderField: "Authorization") ?? "") + "|" +
+                (request.value(forHTTPHeaderField: "X-Profile-Id") ?? "") + "|" +
+                (request.value(forHTTPHeaderField: "X-Profile-Token") ?? "")
+            windowKey = key
+            if seek != nil, !query.contains(where: { $0.name == "cursor" }) {
+                var cursor = siloCatalogWindows[key]
+                if cursor == nil {
+                    var first = mapped
+                    first.url = components.url
+                    let (data, response) = try await performTransport(request: first, timeout: timeout,
+                        dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+                    guard (200..<300).contains(response.statusCode) else { return (data, response) }
+                    cursor = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["window_cursor"] as? String
+                }
+                guard let cursor, !cursor.isEmpty else { throw SiloAPICompatibility.Failure.missingWindow }
+                query.append(URLQueryItem(name: "cursor", value: cursor))
+            }
+            components.queryItems = query
+            mapped.url = components.url
+        }
+        if legacyPath == "/api/v1/downloads/subscriptions/sync", mapped.httpMethod == "POST" {
+            var list = request
+            list.httpMethod = "GET"
+            list.httpBody = nil
+            list.url = URL(string: String(url.absoluteString.dropLast(5)))
+            let (listData, listResponse) = try await perform(request: list, timeout: timeout,
+                dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+            guard (200..<300).contains(listResponse.statusCode) else { return (listData, listResponse) }
+            guard let document = try JSONSerialization.jsonObject(with: listData) as? [String: Any],
+                  let monitors = document["subscriptions"] as? [[String: Any]] else { throw HTTPError.invalidResponse }
+            var total = 0
+            for monitor in monitors where monitor["active"] as? Bool == true {
+                guard let id = monitor["id"] as? String, let etag = monitor["etag"] as? String else { throw HTTPError.invalidResponse }
+                var sync = mapped
+                sync.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                sync.httpBody = try JSONSerialization.data(withJSONObject: ["subscription_id": id, "etag": etag])
+                var seen = Set<String>()
+                while true {
+                    let (pageData, pageResponse) = try await performTransport(request: sync, timeout: timeout,
+                        dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+                    guard (200..<300).contains(pageResponse.statusCode) else { return (pageData, pageResponse) }
+                    guard let pageDocument = try JSONSerialization.jsonObject(with: pageData) as? [String: Any],
+                          let count = pageDocument["registered"] as? Int else { throw HTTPError.invalidResponse }
+                    total += count
+                    guard let page = pageDocument["page"] as? [String: Any], page["has_more"] as? Bool == true else { break }
+                    guard let cursor = page["next_cursor"] as? String, seen.insert(cursor).inserted, seen.count <= 2000,
+                          var c = sync.url.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }) else { throw HTTPError.invalidResponse }
+                    c.queryItems = [URLQueryItem(name: "cursor", value: cursor)]
+                    sync.url = c.url
+                }
+            }
+            return (try JSONSerialization.data(withJSONObject: ["registered": total]), listResponse)
+        }
+        // Conditional monitor edits use the validator returned for this exact
+        // account/profile. A concurrent edit is surfaced as a precondition failure.
+        let conditionalCollection = legacyPath.hasPrefix("/api/v1/collections/") && ["PATCH", "DELETE"].contains(mapped.httpMethod ?? "")
+        let conditionalMonitor = legacyPath.hasPrefix("/api/v1/downloads/subscriptions/") && ["PATCH", "DELETE"].contains(mapped.httpMethod ?? "")
+        let conditionalOnboarding = legacyPath == "/api/v1/onboarding/progress" && mapped.httpMethod == "PUT"
+        if conditionalCollection || conditionalMonitor || conditionalOnboarding {
+            var read = mapped
+            read.httpMethod = "GET"
+            read.httpBody = nil
+            if conditionalOnboarding { read.url = URL(string: mapped.url!.absoluteString.replacingOccurrences(of: "/onboarding/progress", with: "/onboarding/state")) }
+            let (readData, readResponse) = try await performTransport(request: read, timeout: timeout,
+                dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+            guard (200..<300).contains(readResponse.statusCode) else { return (readData, readResponse) }
+            guard let etag = readResponse.value(forHTTPHeaderField: "ETag"), !etag.isEmpty else {
+                throw SiloAPICompatibility.Failure.invalidDiscovery
+            }
+            mapped.setValue(etag, forHTTPHeaderField: "If-Match")
+        }
+        var (data, response) = try await performTransport(request: mapped, timeout: timeout,
+            dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+        guard (200..<300).contains(response.statusCode) else { return (data, response) }
+        if (legacyPath == "/api/v1/downloads" || legacyPath == "/api/v1/downloads/subscriptions" || legacyPath.hasSuffix("/manifests")),
+           var document = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           var items = document["items"] as? [Any] {
+            var seen = Set<String>()
+            while let page = document["page"] as? [String: Any], page["has_more"] as? Bool == true {
+                try Task.checkCancellation()
+                guard let cursor = page["next_cursor"] as? String, !cursor.isEmpty,
+                      seen.insert(cursor).inserted, seen.count <= 2000,
+                      var components = mapped.url.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }) else {
+                    throw SiloAPICompatibility.Failure.missingWindow
+                }
+                var query = (components.queryItems ?? []).filter { $0.name != "cursor" }
+                query.append(URLQueryItem(name: "cursor", value: cursor))
+                components.queryItems = query
+                var next = mapped
+                next.url = components.url
+                let (nextData, nextResponse) = try await performTransport(request: next, timeout: timeout,
+                    dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+                guard (200..<300).contains(nextResponse.statusCode) else { return (nextData, nextResponse) }
+                guard let nextDocument = try JSONSerialization.jsonObject(with: nextData) as? [String: Any],
+                      let nextItems = nextDocument["items"] as? [Any] else { throw HTTPError.invalidResponse }
+                items.append(contentsOf: nextItems)
+                document = nextDocument
+            }
+            document["items"] = items
+            data = try JSONSerialization.data(withJSONObject: document)
+        }
+        if legacyPath.hasPrefix("/api/v1/playback/"), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if legacyPath == "/api/v1/playback/capability", let installation = object["installation_id"] as? String {
+                siloPlaybackInstallations[authority] = installation
+            }
+            if let sessionID = object["session_id"] as? String,
+               let body = mapped.httpBody.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }),
+               let installation = body["installation_id"] as? String {
+                let key = authority.absoluteString + "|" + sessionID
+                if siloPlaybackSessions[key] == nil { siloPlaybackSessions[key] = (installation, 0) }
+            }
+        }
+        if let windowKey,
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let cursor = object["window_cursor"] as? String {
+            if siloCatalogWindows.count >= 64 { siloCatalogWindows.removeAll() }
+            siloCatalogWindows[windowKey] = cursor
+        }
+        return (try SiloAPICompatibility.response(data, path: legacyPath), response)
+    }
+
+    private func performTransport(
         request: URLRequest,
         timeout: HTTPTimeout = .standard,
         dispatchRevision: UInt64,
@@ -1424,8 +1612,13 @@ actor HTTPClient {
     /// rather than a structural guarantee — keep the attribute list literal.
     private static func performRefreshTransport(
         request: URLRequest,
-        session: URLSession
+        session: URLSession,
+        apiDiscovery: SiloAPIDiscovery
     ) async throws -> (Data, URLResponse) {
+        var request = request
+        if let url = request.url, try await apiDiscovery.usesV2(for: url, session: session) {
+            request = try SiloAPICompatibility.request(request)
+        }
         #if os(iOS) || os(tvOS)
         // Templated once, at capture, exactly as in `perform`: `request.url` is
         // the absolute refresh URL and carries the server's host, which may
@@ -1664,13 +1857,14 @@ actor HTTPClient {
             return await scopedCredentialsChanged(since: auth, expected: expected)
         }
 
-        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder] in
+        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder, apiDiscovery] in
             await Self.performScopedRefresh(
                 auth: auth,
                 tokenStore: tokenStore,
                 session: session,
                 decoder: decoder,
-                encoder: encoder
+                encoder: encoder,
+                apiDiscovery: apiDiscovery
             )
         }
         let flightId = UUID()
@@ -1699,7 +1893,8 @@ actor HTTPClient {
         tokenStore: TokenStore,
         session: URLSession,
         decoder: JSONDecoder,
-        encoder: JSONEncoder
+        encoder: JSONEncoder,
+        apiDiscovery: SiloAPIDiscovery
     ) async -> Bool {
         guard let refreshValue = auth.refreshToken,
               let url = URL(string: auth.serverURL + "/api/v1/auth/refresh") else {
@@ -1721,7 +1916,8 @@ actor HTTPClient {
             request.httpBody = try encoder.encode(RefreshRequest(refreshValue))
             let (data, response) = try await performRefreshTransport(
                 request: request,
-                session: session
+                session: session,
+                apiDiscovery: apiDiscovery
             )
             guard !Task.isCancelled else { return false }
             guard let http = response as? HTTPURLResponse else {
@@ -1820,13 +2016,14 @@ actor HTTPClient {
             return nil
         }
 
-        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder] in
+        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder, apiDiscovery] in
             await Self.performRefresh(
                 expected: key,
                 tokenStore: tokenStore,
                 session: session,
                 decoder: decoder,
-                encoder: encoder
+                encoder: encoder,
+                apiDiscovery: apiDiscovery
             )
         }
         let flightId = UUID()
@@ -1849,7 +2046,8 @@ actor HTTPClient {
         tokenStore: TokenStore,
         session: URLSession,
         decoder: JSONDecoder,
-        encoder: JSONEncoder
+        encoder: JSONEncoder,
+        apiDiscovery: SiloAPIDiscovery
     ) async -> Bool {
         guard let captured = await tokenStore.captureRefreshCredential(expected: expected) else {
             Self.logger.error("Refresh skipped: no refresh token stored")
@@ -1875,7 +2073,8 @@ actor HTTPClient {
         do {
             let (data, response) = try await performRefreshTransport(
                 request: request,
-                session: session
+                session: session,
+                apiDiscovery: apiDiscovery
             )
             // If the surrounding registry switch cancelled us while the
             // network call was in flight, drop the response on the floor
@@ -2049,7 +2248,7 @@ enum HTTPError: LocalizedError, CustomStringConvertible {
     /// can match on this without re-parsing the body.
     var serverErrorCode: String? {
         if case .http(_, let body) = self {
-            return Self.parseServerError(body)?.error
+            return Self.parseServerError(body).flatMap { $0.error ?? $0.code }
         }
         return nil
     }
@@ -2061,6 +2260,8 @@ enum HTTPError: LocalizedError, CustomStringConvertible {
     private struct ServerError: Decodable {
         let error: String?
         let message: String?
+        let code: String?
+        let detail: String?
     }
 
     private static func parseServerError(_ body: String?) -> ServerError? {
@@ -2073,7 +2274,7 @@ enum HTTPError: LocalizedError, CustomStringConvertible {
 
     private static func parseServerMessage(_ body: String?) -> String? {
         guard let parsed = parseServerError(body) else { return nil }
-        if let message = parsed.message, !message.isEmpty { return message }
+        if let message = parsed.message ?? parsed.detail, !message.isEmpty { return message }
         return nil
     }
 }

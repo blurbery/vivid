@@ -203,6 +203,10 @@ struct CreateDownloadRequest: Encodable, Sendable {
     let series: Bool?
     let seasonNumber: Int?
     let caps: DownloadCaps?
+    var expectedRevision: Int? = nil
+    var expectedDownloadId: String? = nil
+    var batchId: String? = nil
+
 }
 
 /// Device decode capability used to decide whether `original` can be served
@@ -774,6 +778,7 @@ struct DownloadStoreFile: Codable, Sendable {
     var progressQueue: [QueuedProgress]
     var progressCursor: String?
     var localProgress: [String: LocalProgressEntry]
+    var progressBootstrap: SiloProgressBootstrapStage? = nil
 
     static let currentVersion = 1
 
@@ -787,4 +792,41 @@ struct DownloadStoreFile: Codable, Sendable {
         progressCursor: nil,
         localProgress: [:]
     )
+}
+
+struct SiloProgressBootstrapCapability: Decodable {
+    let state: String
+    let allowed: Bool
+    let mode: String
+    let incremental: Bool
+    let installationId: String?
+    let generation: String?
+}
+
+struct SiloProgressBootstrapPage: Codable, Sendable {
+    struct Page: Codable, Sendable { let hasMore: Bool; let nextCursor: String? }
+    let snapshotId: String
+    let installationId: String
+    let accountId: String
+    let profileId: String
+    let generation: String
+    let mode: String
+    let capturedAt: Date
+    let expiresAt: Date
+    let itemCount: Int
+    let items: [ProgressPullItem]
+    let page: Page
+    let complete: Bool
+    let completionToken: String?
+}
+
+struct SiloProgressBootstrapStage: Codable, Sendable {
+    let requestId: String
+    let createdAt: Date
+    let installationId: String
+    let accountId: String
+    let profileId: String
+    let generation: String
+    var page: SiloProgressBootstrapPage?
+    var items: [String: ProgressPullItem] = [:]
 }

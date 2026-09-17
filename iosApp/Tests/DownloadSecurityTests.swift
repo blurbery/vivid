@@ -22,7 +22,7 @@ final class DownloadSecurityTests: XCTestCase {
                 let session = URLSession(configuration: config)
                 defer { session.invalidateAndCancel() }
                 DownloadPreparationStub.reset()
-                let http = HTTPClient(session: session, tokenStore: store, requestCaptureBarrier: {
+                let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: session, tokenStore: store, requestCaptureBarrier: {
                     // Deterministically interleave a scope change after the
                     // API receives the old download identity, before dispatch.
                     switch mutation {
@@ -70,7 +70,7 @@ final class DownloadSecurityTests: XCTestCase {
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
         DownloadPreparationStub.reset()
-        let http = HTTPClient(session: session, tokenStore: store, requestCaptureBarrier: {
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: session, tokenStore: store, requestCaptureBarrier: {
             guard let refresh = await store.captureRefreshCredential(expected: auth.account) else {
                 return XCTFail("Expected the original account")
             }

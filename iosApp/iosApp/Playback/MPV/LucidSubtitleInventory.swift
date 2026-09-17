@@ -85,7 +85,8 @@ final class LucidSubtitleInventory {
                     additionalHeaders: prepared.protocolV3?.plan.stream.headers ?? [:],
                     accessToken: VividAPI.shared.currentAccessToken(),
                     requiresHeaderAuthenticatedMedia: prepared.protocolV3?.serverFeatures.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature) == true,
-                    authorizedMediaOriginSessionId: prepared.protocolV3?.negotiatedAuthorizedMediaOrigins == true ? prepared.session.sessionId : nil)
+                    authorizedMediaOriginSessionId: prepared.protocolV3?.negotiatedAuthorizedMediaOrigins == true ? prepared.session.sessionId : nil,
+                    nativeApiMajor: prepared.protocolV3?.plan.nativeApiMajor)
             }
             guard let request else { throw OpenSubtitlesError.context }
             let tracks = try await LucidSubtitleProbe.read(request)

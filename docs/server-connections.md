@@ -129,7 +129,13 @@ These shared files retain Silo behaviour and dispatch to Emby when its provider 
   </tbody>
 </table>
 
-The Silo adapter currently probes `/api/v1/auth/setup`, signs in through `/api/v1/auth/login`, and resolves the server name through `/api/v1/theme/branding` with a legacy health fallback. Keep these wire paths intact while changing Vivid's branding.
+Vivid supports Silo as a third-party media provider. Its transport probes the public `/api/v2/system/info` document for each server base URL. A supported v2 response selects the native v2 API; a missing discovery endpoint or the older HTML fallback retains v1. Authentication, service and network failures do not trigger a downgrade. Discovery sends no saved account or profile credentials.
+
+The adapter preserves Vivid's existing screens and translates renamed endpoints, collection envelopes, decimal identifiers, catalogue cursors and settings capabilities at the networking boundary. New-server catalogue windows retain the server's opaque cursor while Vivid keeps its current scrolling behaviour. Older Silo requests retain their v1 routes, including `/api/v1/auth/setup`, `/api/v1/auth/login` and `/api/v1/theme/branding`. Emby continues through its separate adapter.
+
+Native v2 playback uses the server's installation identity and sequenced progress contract. Its session-scoped stream references are retained, while account credentials remain request headers. Download registries and monitors consume every cursor page before reconciliation; file status reports retain the downloaded revision. Native v2 progress bootstrap stages a complete account/profile replacement before publishing it, preserving pending offline events and downloaded files. The older progress flow remains available for v1 servers.
+
+The compatibility work follows the upstream Silo contract at `fa770b7f9f521ab81389350939eb57db9ef5db46`. This source-contract comparison and automated checks do not establish live playback, downloads or server-upgrade verification. Vivid does not deploy, administer or modify Silo as part of connecting to it.
 
 The server's display name labels that connection. It must not replace Vivid's app identity. Manual and QR sign-in and profile flows are provider-specific unless verified otherwise.
 

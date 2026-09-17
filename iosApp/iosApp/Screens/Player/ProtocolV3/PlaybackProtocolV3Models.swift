@@ -509,6 +509,7 @@ struct PlaybackV3AvailableQuality: Codable, Equatable {
 }
 
 struct PlaybackV3Plan: Codable, Equatable {
+    var nativeApiMajor: Int? = nil
     let protocolVersion: Int
     let planId: String
     let sessionId: String?
@@ -581,6 +582,7 @@ struct PlaybackV3Terminal: Codable, Equatable {
 }
 
 struct PlaybackV3DecisionResponse: Codable, Equatable {
+    var nativeApiMajor: Int? = nil
     let protocolVersion: Int?
     let serverFeatures: [String]
     let outcome: String?
@@ -590,6 +592,7 @@ struct PlaybackV3DecisionResponse: Codable, Equatable {
 }
 
 struct PlaybackV3CapabilityResponse: Codable, Equatable {
+    var nativeApiMajor: Int? = nil
     let enabled: Bool
     let protocolVersions: [Int]
     let features: [String]

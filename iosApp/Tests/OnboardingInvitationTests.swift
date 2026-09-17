@@ -241,7 +241,7 @@ final class OnboardingInvitationTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OnboardingRequestStubProtocol.self]
         return (
-            HTTPClient(session: URLSession(configuration: configuration), tokenStore: tokenStore),
+            HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: configuration), tokenStore: tokenStore),
             tokenStore
         )
     }

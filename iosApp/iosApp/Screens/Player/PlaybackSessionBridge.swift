@@ -1116,7 +1116,7 @@ actor PlaybackSessionBridge {
                 retryable: false
             )
         case .playable(let plan, let resolvedSessionId):
-            guard response.serverFeatures.contains(
+            guard response.nativeApiMajor == 2 || response.serverFeatures.contains(
                 PlaybackProtocolV3.headerAuthenticatedMediaFeature
             ) else {
                 await retireAbandonedSession(
@@ -1283,7 +1283,7 @@ actor PlaybackSessionBridge {
             && capability.protocolVersions.contains(PlaybackProtocolV3.version)
             && capability.features.contains(PlaybackProtocolV3.planFeature)
             && capability.features.contains(PlaybackProtocolV3.neutralContractFeature)
-            && capability.features.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature)
+            && (capability.nativeApiMajor == 2 || capability.features.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature))
     }
 
     static func isMissingProtocolV3Capability(_ error: Error) -> Bool {
@@ -1573,7 +1573,7 @@ actor PlaybackSessionBridge {
                 retryable: false
             )
         case .playable(let nextPlan, let nextSessionId):
-            guard response.serverFeatures.contains(
+            guard response.nativeApiMajor == 2 || response.serverFeatures.contains(
                 PlaybackProtocolV3.headerAuthenticatedMediaFeature
             ) else {
                 if nextSessionId != currentSessionId {

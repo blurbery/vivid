@@ -55,6 +55,13 @@ actor DownloadStore {
         }
     }
 
+    /// Bootstrap admission must not run until its retry identity is durable.
+    func saveChecked(_ file: DownloadStoreFile, serverId: String, profileId: String) throws {
+        guard !serverId.isEmpty, !profileId.isEmpty else { throw HTTPError.requestIdentityChanged }
+        let url = DownloadFilePaths.storeFileURL(serverId: serverId, profileId: profileId)
+        try encoder.encode(file).write(to: url, options: .atomic)
+    }
+
     /// Persist an offline manifest beside its media file. Uses the same bare
     /// coder pair as `loadManifest` so the on-disk round-trip is consistent.
     func saveManifest(_ manifest: OfflineManifest, to url: URL) {
