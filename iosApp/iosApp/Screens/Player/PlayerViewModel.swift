@@ -572,6 +572,7 @@ class PlayerViewModel {
     private var hideControlsTask: Task<Void, Never>?
     #if os(iOS)
     private var touchControlsPinned = false
+    private var touchControlPressed = false
     #endif
     private var noticeDismissTask: Task<Void, Never>?
     private var remoteDismissTask: Task<Void, Never>?
@@ -3639,6 +3640,7 @@ class PlayerViewModel {
         isHUDPresented = false
         #if os(iOS)
         touchControlsPinned = false
+        touchControlPressed = false
         #endif
         showNextUpScreen = isNextUpTransitioning
         if !isNextUpTransitioning {
@@ -5639,6 +5641,15 @@ class PlayerViewModel {
         scheduleHideControls()
     }
 
+    #if os(iOS)
+    func touchControlPressChanged(_ pressed: Bool) {
+        guard showControls else { touchControlPressed = false; return }
+        touchControlPressed = pressed
+        if pressed { hideControlsTask?.cancel() }
+        else { scheduleHideControls() }
+    }
+    #endif
+
     /// Hide the controls overlay immediately, cancelling any pending
     /// auto-hide. Wired to the Siri Remote Menu button on tvOS so the user
     /// can dismiss the overlay without waiting out the 5s timer; tapping
@@ -6514,11 +6525,15 @@ class PlayerViewModel {
     }
 
     /// Duration the transport overlay stays on-screen after the last user
-    /// interaction before auto-hiding while playing. Matches Infuse/Apple TV.
+    /// interaction before auto-hiding while playing.
     private static let autoHideSeconds: UInt64 = 5
 
     private func scheduleHideControls() {
         #if os(iOS)
+        if touchControlPressed {
+            hideControlsTask?.cancel()
+            return
+        }
         if touchControlsPinned {
             pinControlsVisible()
             return
@@ -6544,9 +6559,7 @@ class PlayerViewModel {
                 break
             }
             guard let self, !self.isScrubbing else { return }
-            #if os(tvOS)
             guard self.isPlaying else { return }
-            #endif
             withAnimation { self.showControls = false }
         }
     }

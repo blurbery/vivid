@@ -10,8 +10,9 @@ import SwiftUI
 ///   preview bubble, with separate round Quality, Audio, Subtitles and
 ///   Chapters controls. Subtitle and chapter lists scroll in native popovers.
 ///
-/// The whole thing is wrapped in a tap-to-toggle gesture and remains visible
-/// until the viewer taps the video again. The view is stateful only for sheet presentation and the
+/// Tapping the video toggles the overlay. While playing, controls dismiss five
+/// seconds after interaction; button presses and open menus suspend dismissal.
+/// The view is stateful only for sheet presentation and the
 /// trailing-time display mode; the rest of the state lives on
 /// `PlayerViewModel`. Invisible gestures (double-tap skip, hold-2×, edge
 /// swipes) live in `MobilePlayerGestureLayer` underneath this overlay.
@@ -89,6 +90,9 @@ struct MobilePlayerControls: View {
                 MobilePlaybackStatsOverlay(stats: viewModel.playbackStats)
                     .transition(.opacity)
             }
+        }
+        .environment(\.mobilePlayerControlPressChanged) { pressed in
+            viewModel.touchControlPressChanged(pressed)
         }
         .animation(.easeOut(duration: 0.18), value: showsStats)
         .sheet(item: $activeSheet) { sheet in
@@ -749,8 +753,20 @@ struct MobilePlayerControls: View {
 
 /// Match detail chrome without the extra padding added by native glass
 /// button styles. A 44pt square is circular; longer labels form a 44pt pill.
+private struct MobilePlayerControlPressKey: EnvironmentKey {
+    static let defaultValue: (Bool) -> Void = { _ in }
+}
+
+private extension EnvironmentValues {
+    var mobilePlayerControlPressChanged: (Bool) -> Void {
+        get { self[MobilePlayerControlPressKey.self] }
+        set { self[MobilePlayerControlPressKey.self] = newValue }
+    }
+}
+
 struct MobilePlayerGlassButtonStyle: ButtonStyle {
     var tint: Color? = nil
+    @Environment(\.mobilePlayerControlPressChanged) private var controlPressChanged
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -759,6 +775,8 @@ struct MobilePlayerGlassButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.75 : 1)
             .contentShape(Capsule())
             .vividPlayerGlass(in: Capsule(), tint: tint, interactive: true)
+            .onChange(of: configuration.isPressed) { _, pressed in controlPressChanged(pressed) }
+            .onDisappear { if configuration.isPressed { controlPressChanged(false) } }
     }
 }
 
