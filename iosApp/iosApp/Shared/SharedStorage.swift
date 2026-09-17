@@ -246,6 +246,28 @@ struct SharedDefaults: @unchecked Sendable {
     }
 }
 
+struct KeychainReadFailure: Error, Equatable {
+    let status: OSStatus
+
+    static func retryTemporaryRead<Value>(
+        wait: () async throws -> Void = { try await Task.sleep(for: .milliseconds(250)) },
+        operation: () async throws -> Value
+    ) async throws -> Value {
+        for attempt in 0...2 {
+            try Task.checkCancellation()
+            do { return try await operation() }
+            catch let failure as KeychainReadFailure {
+                guard attempt < 2,
+                      failure.status == errSecInteractionNotAllowed || failure.status == errSecNotAvailable else {
+                    throw failure
+                }
+                try await wait()
+            }
+        }
+        preconditionFailure("Bounded retry must return or throw")
+    }
+}
+
 /// Minimal Keychain reader/writer targeted at the shared access group.
 /// Used by both the main app (via `TokenStore`) and the Top Shelf
 /// extension. Items are stored as generic passwords with accessibility
@@ -257,6 +279,7 @@ struct SharedKeychain {
         category: "SharedKeychain"
     )
 
+    private let readItem: (([String: Any]) -> (OSStatus, Data?))?
     let service: String
     let accessGroup: String?
     let audience: KeychainAudience
@@ -267,7 +290,9 @@ struct SharedKeychain {
          accessGroup: String? = SharedStorage.keychainAccessGroup,
          audience: KeychainAudience = .currentUser,
          usesUserIndependentKeychain: Bool = RuntimeConfiguration.usesUserIndependentKeychain,
-         allowsAppLocalFallback: Bool = RuntimeConfiguration.allowsAppLocalKeychainFallback) {
+         allowsAppLocalFallback: Bool = RuntimeConfiguration.allowsAppLocalKeychainFallback,
+         readItem: (([String: Any]) -> (OSStatus, Data?))? = nil) {
+        self.readItem = readItem
         self.service = service
         self.accessGroup = accessGroup
         self.audience = audience
@@ -281,7 +306,8 @@ struct SharedKeychain {
             accessGroup: accessGroup,
             audience: audience,
             usesUserIndependentKeychain: usesUserIndependentKeychain,
-            allowsAppLocalFallback: allowsAppLocalFallback
+            allowsAppLocalFallback: allowsAppLocalFallback,
+            readItem: readItem
         )
     }
 
@@ -310,6 +336,11 @@ struct SharedKeychain {
     }
 
     func get(_ account: String) -> String? {
+        try? getChecked(account)
+    }
+
+    /// Missing items are nil; unavailable or unreadable storage is an error.
+    func getChecked(_ account: String) throws -> String? {
         let configuredRead = readResult(account: account, accessGroup: accessGroup)
         if let found = configuredRead.value {
             return found
@@ -323,7 +354,13 @@ struct SharedKeychain {
             // The app-local group is the active store for this build. Return
             // directly instead of passing through legacy migration, which
             // would otherwise delete the same value it just found.
+            guard fallbackRead.status == errSecSuccess || fallbackRead.status == errSecItemNotFound else {
+                throw KeychainReadFailure(status: fallbackRead.status)
+            }
             return fallbackRead.value
+        }
+        guard configuredRead.status == errSecItemNotFound else {
+            throw KeychainReadFailure(status: configuredRead.status)
         }
         #if os(tvOS)
         // Account credentials written before Runs-as-Current-User were stored
@@ -333,7 +370,7 @@ struct SharedKeychain {
         // intentionally current-user scoped.
         if audience == .userIndependent {
             let legacyKeychain = withAudience(.currentUser)
-            if let legacy = legacyKeychain.get(account) {
+            if let legacy = try legacyKeychain.getChecked(account) {
                 if set(legacy, for: account) {
                     legacyKeychain.delete(account)
                 }
@@ -349,7 +386,11 @@ struct SharedKeychain {
         // have to try each candidate access group explicitly.
         guard accessGroup != nil else { return nil }
         for candidate in Self.legacyFallbackAccessGroups() {
-            guard let legacy = read(account: account, accessGroup: candidate) else { continue }
+            let candidateRead = readResult(account: account, accessGroup: candidate)
+            guard candidateRead.status == errSecSuccess || candidateRead.status == errSecItemNotFound else {
+                throw KeychainReadFailure(status: candidateRead.status)
+            }
+            guard let legacy = candidateRead.value else { continue }
             // Only retire the legacy entry once the shared-access-group
             // write confirms. If the write fails, leave legacy in place.
             if set(legacy, for: account) {
@@ -447,11 +488,19 @@ struct SharedKeychain {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else {
-            return (status, nil)
+        let status: OSStatus
+        let data: Data?
+        if let readItem {
+            (status, data) = readItem(query)
+        } else {
+            status = SecItemCopyMatching(query as CFDictionary, &result)
+            data = result as? Data
         }
-        return (status, String(data: data, encoding: .utf8))
+        guard status == errSecSuccess else { return (status, nil) }
+        guard let data, let value = String(data: data, encoding: .utf8) else {
+            return (errSecDecode, nil)
+        }
+        return (status, value)
     }
 
     private func write(_ data: Data, for account: String, accessGroup: String?) -> OSStatus {

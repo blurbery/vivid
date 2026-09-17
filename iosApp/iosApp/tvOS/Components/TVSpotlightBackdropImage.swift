@@ -41,7 +41,7 @@ struct TVSpotlightBackdropImage: View {
             #if os(tvOS)
             let region = await TVHomeMetadataCache.shared.preparedSpotlightSubject(in: loaded, url: imageURL.absoluteString)
             #else
-            let task = Task.detached(priority: .utility) { TVSpotlightCrop.subject(in: loaded, key: imageURL.absoluteString) }
+            let task = Task.detached(priority: .utility) { await TVSpotlightCrop.prepareSubject(in: loaded, key: request.cacheScope + "|" + imageURL.absoluteString) }
             let region = await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
             #endif
             guard !Task.isCancelled else { return }
@@ -53,6 +53,18 @@ struct TVSpotlightBackdropImage: View {
 }
 
 enum TVSpotlightCrop {
+    private actor SubjectPreparation {
+        func prepare(_ image: UIImage, key: String) -> CGRect? {
+            guard !Task.isCancelled else { return nil }
+            return TVSpotlightCrop.subject(in: image, key: key)
+        }
+    }
+    private static let preparation = SubjectPreparation()
+
+    static func prepareSubject(in image: UIImage, key: String) async -> CGRect? {
+        await preparation.prepare(image, key: key)
+    }
+
     private static let subjects: NSCache<NSString, NSValue> = {
         let cache = NSCache<NSString, NSValue>()
         cache.countLimit = 40
@@ -62,10 +74,23 @@ enum TVSpotlightCrop {
     static func subject(in image: UIImage, key: String) -> CGRect? {
         let cached = subjects.object(forKey: key as NSString)
         if let cached { return cached.cgRectValue.isNull ? nil : cached.cgRectValue }
-        guard !Task.isCancelled,
-              let thumbnail = image.preparingThumbnail(of: CGSize(width: 768, height: 768))?.cgImage else { return nil }
+        guard !Task.isCancelled, let source = image.cgImage else { return nil }
+        // Avoid UIImage's synchronous preparation service here. Home is
+        // already decoding images concurrently, and crop work must not join
+        // that service or contend with playback's GPU work.
+        let scale = min(1, 768 / CGFloat(max(source.width, source.height)))
+        let width = max(1, Int(CGFloat(source.width) * scale))
+        let height = max(1, Int(CGFloat(source.height) * scale))
+        guard let context = CGContext(data: nil, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let thumbnail = context.makeImage() else { return nil }
         let handler = VNImageRequestHandler(cgImage: thumbnail)
         let faces = VNDetectFaceRectanglesRequest()
+        faces.usesCPUOnly = true
         try? handler.perform([faces])
         guard !Task.isCancelled else { return nil }
         var bounds = (faces.results ?? []).filter { $0.confidence >= 0.35 }
@@ -76,6 +101,7 @@ enum TVSpotlightCrop {
             .reduce(CGRect.null) { $0.union($1) }
         if bounds.isNull {
             let people = VNDetectHumanRectanglesRequest()
+            people.usesCPUOnly = true
             people.upperBodyOnly = true
             try? handler.perform([people])
             guard !Task.isCancelled else { return nil }
@@ -89,6 +115,7 @@ enum TVSpotlightCrop {
         }
         if bounds.isNull {
             let attention = VNGenerateAttentionBasedSaliencyImageRequest()
+            attention.usesCPUOnly = true
             try? handler.perform([attention])
             bounds = (attention.results?.first?.salientObjects ?? [])
                 .map(\.boundingBox).reduce(CGRect.null) { $0.union($1) }

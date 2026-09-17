@@ -1,69 +1,32 @@
 #if os(tvOS)
 import SwiftUI
-import UIKit
 
-/// Phone-first sign-in for tvOS. The screen leads with the QR
-/// device-login pairing so the viewer never types on the remote: a bold
-/// hero + numbered steps on the left, a glass panel with the live QR and
-/// match code on the right. An on-screen username/password form is one
-/// focus-step away as the fallback. A device-login session is started
-/// eagerly on appear so the QR is scannable the moment the screen shows.
+/// Username and password sign-in shared by the supported tvOS providers.
 struct TVLoginView: View {
     var router: AppRouter
-    var isPasswordPage = false
-    private var usesPasswordLogin: Bool { isPasswordPage || MediaServerProvider.active == .emby }
-    @Environment(\.dismiss) private var dismiss
 
     @State private var loginVM = LoginViewModel()
-    @State private var qrVM = QRLoginViewModel()
     @State private var showPassword: Bool = false
-    @State private var showPasswordForm: Bool = false
 
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
-        case usePassword
-        case retryPhone
         case changeServer
         case username
         case password
         case togglePassword
         case signIn
-        case backToPhone
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            Group {
-                if usesPasswordLogin {
-                    passwordContent
-                } else {
-                    phoneFirstContent
-                }
-            }
-            .padding(.horizontal, 108)
-            .padding(.top, 64)
-            .padding(.bottom, 64)
+            passwordContent
+                .padding(.horizontal, 108)
+                .padding(.top, 64)
+                .padding(.bottom, 64)
         }
-        .task {
-            if usesPasswordLogin {
-                focusedField = .username
-            } else {
-                await qrVM.begin(deviceName: Self.deviceName, devicePlatform: "tvOS")
-            }
-        }
-        .navigationDestination(isPresented: $showPasswordForm) {
-            TVLoginView(router: router, isPasswordPage: true)
-        }
-        .onChange(of: qrVM.state) { _, newValue in
-            if case .approved = newValue {
-                Task { await TVLoginPreparation.shared.begin(router: router) }
-            } else if case .error = newValue {
-                focusedField = .retryPhone
-            }
-        }
-        .onDisappear { qrVM.cancel() }
+        .task { focusedField = .username }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -87,213 +50,7 @@ struct TVLoginView: View {
         }
     }
 
-    // MARK: - Phone-first layout
-
-    private var phoneFirstContent: some View {
-        VStack(spacing: 0) {
-            topBar
-            Spacer(minLength: 32)
-            HStack(alignment: .center, spacing: 88) {
-                heroColumn
-                    .frame(width: 860, alignment: .leading)
-                qrPanel
-                    .focusSection()
-            }
-            .frame(maxWidth: 1680)
-            Spacer(minLength: 0)
-        }
-        .defaultFocus($focusedField, .usePassword, priority: .userInitiated)
-    }
-
-    private var heroColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Scan. Confirm.\nStart watching.")
-                .font(.vividHeroTitle)
-                .foregroundStyle(Color.auroraInk)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Open your phone’s Camera and point it at the code. You won’t need to type a password on your TV.")
-                .font(.vividBody)
-                .foregroundStyle(Color.auroraInkSecondary)
-                .lineSpacing(4)
-                .frame(maxWidth: 720, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 22)
-
-            VStack(alignment: .leading, spacing: 22) {
-                AuroraStepRow(number: 1, text: "Scan the QR code")
-                AuroraStepRow(number: 2, text: "Confirm the code matches")
-                AuroraStepRow(number: 3, text: "Approve this Apple TV")
-            }
-            .padding(.top, 42)
-
-            waitingStatus
-                .padding(.top, 40)
-        }
-    }
-
-    @ViewBuilder
-    private var waitingStatus: some View {
-        if case .awaiting = qrVM.state {
-            HStack(spacing: 14) {
-                ProgressView()
-                    .progressViewStyle(VividLoadingProgressStyle())
-                    .scaleEffect(0.95)
-                Text(statusText)
-                    .font(.vividCaption)
-                    .foregroundStyle(Color.auroraInkSecondary)
-                    .monospacedDigit()
-            }
-        }
-    }
-
-    // MARK: - QR glass panel (right)
-
-    private var qrPanel: some View {
-        VStack(spacing: 28) {
-            Label("Scan with Camera", systemImage: "camera")
-                .font(.vividSubheadline)
-                .foregroundStyle(Color.auroraInk)
-
-            qrCodeArea
-
-            if case .awaiting(let session) = qrVM.state {
-                VStack(spacing: 14) {
-                    Text("CONFIRM THIS CODE")
-                        .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                        .tracking(3)
-                        .foregroundStyle(Color.auroraInkTertiary)
-                    matchCodeTiles(session.matchCode)
-                }
-            }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.10))
-                .frame(width: 300, height: 1)
-
-            VStack(spacing: 14) {
-                if case .error = qrVM.state {
-                    Button(action: restartPhoneSignIn) {
-                        Label("Try again", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(AuroraPrimaryButtonStyle())
-                    .focused($focusedField, equals: .retryPhone)
-                }
-
-                Button {
-                    showPasswordForm = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "lock.fill").font(.system(size: 20, weight: .medium))
-                    Text("Sign in with a password")
-                    }
-                }
-                .buttonStyle(AuroraGhostButtonStyle())
-                .focused($focusedField, equals: .usePassword)
-
-                Button {
-                    router.resetToServerSetup()
-                } label: {
-                    Text("Use another server")
-                }
-                .buttonStyle(AuroraGhostButtonStyle())
-                .focused($focusedField, equals: .changeServer)
-            }
-        }
-        .padding(44)
-        .auroraGlass(cornerRadius: 30)
-    }
-
-    @ViewBuilder
-    private var qrCodeArea: some View {
-        switch qrVM.state {
-        case .idle, .starting:
-            qrCard {
-                ZStack {
-                    Color.white
-                    ProgressView()
-                        .progressViewStyle(VividLoadingProgressStyle())
-                        .scaleEffect(1.3)
-                }
-            }
-        case .awaiting(let session):
-            qrCard {
-                QRCodeView(content: session.verificationUriComplete, size: Self.qrSize)
-            }
-        case .approved:
-            qrCard {
-                ZStack {
-                    Color.white
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 92, weight: .semibold))
-                        .foregroundStyle(Color.green)
-                }
-            }
-        case .error(let message):
-            VStack(spacing: 18) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 40, weight: .semibold))
-                    .foregroundStyle(Color.requestRose)
-                Text("Pairing code unavailable")
-                    .font(.vividSubheadline)
-                    .foregroundStyle(Color.auroraInk)
-                Text(message)
-                    .font(.vividCaption)
-                    .foregroundStyle(Color.auroraInkSecondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(width: Self.qrSize, height: Self.qrSize)
-        }
-    }
-
-    private func qrCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .frame(width: Self.qrSize, height: Self.qrSize)
-            .padding(18)
-            .background(RoundedRectangle(cornerRadius: 18).fill(Color.white))
-            .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
-    }
-
-    private func matchCodeTiles(_ code: String) -> some View {
-        let chars = Array(code.uppercased())
-        let gap: CGFloat = 10
-        // Match codes are server-generated word pairs of unbounded length.
-        // Cap the row width and scale the tiles down for longer codes so the
-        // row never becomes the widest element in the panel — otherwise the
-        // split layout overflows its maxWidth and shoves the hero column off
-        // the left edge.
-        let maxRowWidth: CGFloat = 560
-        let totalGaps = gap * CGFloat(max(chars.count - 1, 0))
-        let tileWidth = min(60, (maxRowWidth - totalGaps) / CGFloat(max(chars.count, 1)))
-        let sepWidth = tileWidth * 0.46
-        let tileHeight = tileWidth * 1.23
-        let fontSize = tileWidth * 0.63
-
-        return HStack(spacing: gap) {
-            ForEach(Array(chars.enumerated()), id: \.offset) { _, ch in
-                let isSep = (ch == "-" || ch == " ")
-                Text(isSep ? "–" : String(ch))
-                    .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                    .foregroundStyle(isSep ? Color.auroraInkTertiary : Color.auroraInk)
-                    .frame(width: isSep ? sepWidth : tileWidth, height: tileHeight)
-                    .background {
-                        if !isSep {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.white.opacity(0.06))
-                        }
-                    }
-                    .overlay {
-                        if !isSep {
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(Color.white.opacity(0.16), lineWidth: 1)
-                        }
-                    }
-            }
-        }
-    }
-
-    // MARK: - Password fallback form
+    // MARK: - Sign-in form
 
     private var passwordContent: some View {
         VStack(spacing: 0) {
@@ -373,19 +130,6 @@ struct TVLoginView: View {
                 .padding(.top, 4)
 
                 HStack(spacing: 18) {
-                    if MediaServerProvider.active != .emby {
-                        Button {
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "qrcode").font(.system(size: 20, weight: .medium))
-                                Text("Use phone sign-in")
-                            }
-                        }
-                        .buttonStyle(AuroraGhostButtonStyle())
-                        .focused($focusedField, equals: .backToPhone)
-                    }
-
                     Button {
                         router.resetToServerSetup()
                     } label: {
@@ -430,21 +174,6 @@ struct TVLoginView: View {
             .replacingOccurrences(of: "http://", with: "")
     }
 
-    private var statusText: String {
-        let remaining = qrVM.secondsRemaining
-        guard remaining > 0 else { return "Waiting for approval…" }
-        let minutes = remaining / 60
-        let seconds = remaining % 60
-        return String(format: "Waiting for approval · %d:%02d", minutes, seconds)
-    }
-
-    private func restartPhoneSignIn() {
-        qrVM.cancel()
-        Task {
-            await qrVM.begin(deviceName: Self.deviceName, devicePlatform: "tvOS")
-        }
-    }
-
     private var canFocusPasswordToggle: Bool {
         focusedField == .password || focusedField == .togglePassword
     }
@@ -456,16 +185,6 @@ struct TVLoginView: View {
         }
     }
 
-    // MARK: - Constants
-
-    /// Large enough to scan comfortably while keeping the screen inside the
-    /// visible tvOS safe area.
-    private static let qrSize: CGFloat = 300
-
-    private static var deviceName: String {
-        let name = UIDevice.current.name
-        return name.isEmpty ? "Apple TV" : name
-    }
 }
 
 // MARK: - Local button styles

@@ -21,6 +21,7 @@ struct CachedAsyncImage: View {
     var alignment: Alignment = .center
     var placeholderStyle: ImagePlaceholderStyle = .surface
     var onImageLoaded: (() -> Void)? = nil
+    var cacheScope: String? = nil
 
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -107,7 +108,7 @@ struct CachedAsyncImage: View {
     /// prefetchers warm. Cheap dictionary access — safe to call from `body`.
     private func prefetchedImage() -> PlatformImage? {
         guard let url = URL(string: url) else { return nil }
-        return PosterImageCache.warmedCardImage(for: url)
+        return PosterImageCache.warmedCardImage(for: url, cacheScope: cacheScope ?? VividCacheScope.artwork)
     }
 
     private func notifyImageLoaded() {
@@ -124,7 +125,7 @@ struct CachedAsyncImage: View {
             width: size.width * displayScale,
             height: size.height * displayScale
         )
-        return PosterImageCache.displayRequest(url: url, pixelSize: pixelSize)
+        return PosterImageCache.displayRequest(url: url, pixelSize: pixelSize, cacheScope: cacheScope ?? VividCacheScope.artwork)
     }
 
     private func placeholder(in size: CGSize) -> some View {

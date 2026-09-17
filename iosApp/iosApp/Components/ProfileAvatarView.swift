@@ -11,6 +11,7 @@ struct ProfileAvatarView: View {
     var size: CGFloat
     var backgroundColor: Color = .vividSurfaceVariant
     var textColor: Color = .vividOnSurface
+    var cacheScope: String? = nil
     @State private var loadedImageURL: String?
 
     var body: some View {
@@ -31,11 +32,12 @@ struct ProfileAvatarView: View {
                     url: imageURL,
                     contentMode: .fill,
                     placeholderStyle: .clear,
-                    onImageLoaded: { loadedImageURL = imageURL }
+                    onImageLoaded: { loadedImageURL = imageURL },
+                    cacheScope: cacheScope
                 )
                     .frame(width: size, height: size)
                     .clipShape(Circle())
-                    .id(imageURL)
+                    .id((cacheScope ?? VividCacheScope.artwork) + imageURL)
             }
         }
         .frame(width: size, height: size)

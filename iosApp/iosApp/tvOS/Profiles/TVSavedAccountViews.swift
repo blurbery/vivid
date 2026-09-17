@@ -202,7 +202,10 @@ struct TVSavedAccountCards: View {
     private func tile(_ account: TVSavedAccount) -> some View {
         VStack(spacing: 14) {
             ProfileAvatarView(avatar: displayedProfile(account)?.avatarEmoji,
-                              imageUrl: avatarURL(account), name: account.username, size: 108)
+                              imageUrl: avatarURL(account), name: account.username, size: 108,
+                              cacheScope: displayedProfile(account).map {
+                                  VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: String($0.id))
+                              })
                 .overlay {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }

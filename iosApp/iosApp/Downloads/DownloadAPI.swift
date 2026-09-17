@@ -97,10 +97,10 @@ extension VividAPI {
 
     /// Report local progression so the server row reflects reality. Only
     /// `downloading` / `completed` are accepted.
-    func patchDownloadStatus(id: String, status: String, auth: CapturedOrdinaryRequestAuth? = nil) async throws {
+    func patchDownloadStatus(id: String, status: String, revision: Int? = nil, updatedAt: Date = Date(), auth: CapturedOrdinaryRequestAuth? = nil) async throws {
         try await http.patchVoid(
             "/api/v1/downloads/\(id)",
-            body: DownloadStatusUpdate(status: status),
+            body: DownloadStatusUpdate(status: status, revision: revision, updatedAt: updatedAt),
             expectedAuth: auth
         )
     }
@@ -144,7 +144,9 @@ extension VividAPI {
         let base = auth.account.serverURL
         guard !base.isEmpty else { return nil }
         let trimmed = base.hasSuffix("/") ? String(base.dropLast()) : base
-        return URL(string: "\(trimmed)/api/v1/downloads/\(downloadId)/file")
+        guard let legacy = URL(string: "\(trimmed)/api/v1/downloads/\(downloadId)/file") else { return nil }
+        guard let usesV2 = try? await SiloAPIDiscovery.shared.usesV2(for: legacy, session: .shared) else { return nil }
+        return usesV2 ? try? SiloAPICompatibility.request(URLRequest(url: legacy)).url : legacy
     }
 
     // MARK: - Subscriptions
@@ -187,11 +189,15 @@ extension VividAPI {
     /// results so the caller can drop acked items from its queue.
     func syncProgressBatch(items: [SyncProgressItem]) async throws -> [SyncProgressResult] {
         guard !items.isEmpty else { return [] }
-        let response: SyncProgressResultsResponse = try await http.post(
-            "/api/v1/sync/progress",
-            body: SyncProgressRequest(items: items)
-        )
-        return response.results
+        let auth = await TokenStore.shared.captureOrdinaryRequestAuth()
+        var results: [SyncProgressResult] = []
+        for start in stride(from: 0, to: items.count, by: 100) {
+            let response: SyncProgressResultsResponse = try await http.post(
+                "/api/v1/sync/progress",
+                body: SyncProgressRequest(items: Array(items[start..<min(start + 100, items.count)])), expectedAuth: auth)
+            results.append(contentsOf: response.results)
+        }
+        return results
     }
 
     /// Pull watch-state changes made on any device after `cursor`,
@@ -207,6 +213,8 @@ extension VividAPI {
 
 private struct DownloadStatusUpdate: Encodable {
     let status: String
+    let revision: Int?
+    let updatedAt: Date
 }
 
 /// `POST /api/v1/downloads` returns either a bare row (single item) or a

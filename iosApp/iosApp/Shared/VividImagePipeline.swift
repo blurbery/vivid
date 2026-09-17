@@ -21,13 +21,14 @@ struct VividImageRequest: Hashable, Sendable {
         }
     }
     let url: URL
+    let cacheScope: String
     var priority: Priority
     var thumbnail: ThumbnailOptions?
-    init(url: URL, priority: Priority = .normal) { self.url = url; self.priority = priority }
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.url == rhs.url && lhs.thumbnail == rhs.thumbnail }
-    func hash(into hasher: inout Hasher) { hasher.combine(url); hasher.combine(thumbnail) }
+    init(url: URL, priority: Priority = .normal, cacheScope: String = VividCacheScope.artwork) { self.url = url; self.priority = priority; self.cacheScope = cacheScope }
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.url == rhs.url && lhs.cacheScope == rhs.cacheScope && lhs.thumbnail == rhs.thumbnail }
+    func hash(into hasher: inout Hasher) { hasher.combine(url); hasher.combine(cacheScope); hasher.combine(thumbnail) }
     var key: NSString {
-        "\(url.absoluteString)|\(thumbnail?.width ?? 0)x\(thumbnail?.height ?? 0)|\(thumbnail?.fill ?? false)" as NSString
+        "\(cacheScope)|\(url.absoluteString)|\(thumbnail?.width ?? 0)x\(thumbnail?.height ?? 0)|\(thumbnail?.fill ?? false)" as NSString
     }
 }
 
@@ -39,16 +40,27 @@ final class VividImageContainer: @unchecked Sendable {
 final class VividImageCache: @unchecked Sendable {
     enum Caches { case memory }
     private let memory = NSCache<NSString, VividImageContainer>()
-    let responses: URLCache
+    private let responseLock = NSLock()
+    private var responseCaches: [String: URLCache] = [:]
+    private let diskCapacity: Int
     private let generationLock = NSLock()
     private var generation = 0
     init(costLimit: Int, countLimit: Int, diskCapacity: Int) {
         memory.totalCostLimit = costLimit
         memory.countLimit = countLimit
-        responses = URLCache(memoryCapacity: 0, diskCapacity: diskCapacity,
-            directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-                .appendingPathComponent("com.vivid.app.artwork", isDirectory: true))
+        self.diskCapacity = diskCapacity
     }
+    func responses(for scope: String) -> URLCache {
+        responseLock.lock(); defer { responseLock.unlock() }
+        if let cached = responseCaches[scope] { return cached }
+        let result = URLCache(memoryCapacity: 0,
+            diskCapacity: scope.hasPrefix("unowned-") ? 0 : min(diskCapacity, 256 * 1024 * 1024),
+            directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("com.vivid.app.artwork/v2/" + scope, isDirectory: true))
+        responseCaches[scope] = result
+        return result
+    }
+
     subscript(request: VividImageRequest) -> VividImageContainer? {
         get { memory.object(forKey: request.key) }
         set {
@@ -78,15 +90,16 @@ final class VividImageCache: @unchecked Sendable {
         generation &+= 1
         memory.removeAllObjects()
     }
-    func containsData(for request: VividImageRequest) -> Bool { responses.cachedResponse(for: URLRequest(url: request.url)) != nil }
-    func removeCachedData(for request: VividImageRequest) { responses.removeCachedResponse(for: URLRequest(url: request.url)) }
+    func containsData(for request: VividImageRequest) -> Bool { responses(for: request.cacheScope).cachedResponse(for: URLRequest(url: request.url)) != nil }
+    func removeCachedData(for request: VividImageRequest) { responses(for: request.cacheScope).removeCachedResponse(for: URLRequest(url: request.url)) }
     func removeCachedImage(for request: VividImageRequest, caches: Caches) { memory.removeObject(forKey: request.key) }
 }
 
 final class VividImagePipeline: @unchecked Sendable {
     static var shared = VividImagePipeline()
     let cache: VividImageCache
-    private let session: URLSession
+    private let sessionLock = NSLock()
+    private var sessions: [String: URLSession] = [:]
     private let decoding = OperationQueue()
     private let flights = VividImageFlights()
     #if os(tvOS)
@@ -94,18 +107,30 @@ final class VividImagePipeline: @unchecked Sendable {
     #endif
     init(costLimit: Int = 96 * 1024 * 1024, countLimit: Int = 180, diskCapacity: Int = 1_024 * 1024 * 1024) {
         cache = VividImageCache(costLimit: costLimit, countLimit: countLimit, diskCapacity: diskCapacity)
-        let configuration = URLSessionConfiguration.default
-        configuration.urlCache = cache.responses
-        configuration.httpMaximumConnectionsPerHost = 2
-        configuration.timeoutIntervalForRequest = 20
-        configuration.timeoutIntervalForResource = 45
-        session = URLSession(configuration: configuration)
         decoding.maxConcurrentOperationCount = 2
         #if os(tvOS)
         decoding.qualityOfService = .utility
         #else
         decoding.qualityOfService = .userInitiated
         #endif
+    }
+    private func session(for scope: String) -> URLSession {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        if let session = sessions[scope] { return session }
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = cache.responses(for: scope)
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.httpMaximumConnectionsPerHost = 2
+        configuration.timeoutIntervalForRequest = 20
+        configuration.timeoutIntervalForResource = 45
+        let session = URLSession(configuration: configuration)
+        sessions[scope] = session
+        return session
+    }
+    private func sessionSnapshot() -> [URLSession] {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        return Array(sessions.values)
     }
     func image(for request: VividImageRequest) async throws -> UIImage {
         let diagnostics = VividImageDiagnostics.shared
@@ -144,13 +169,27 @@ final class VividImagePipeline: @unchecked Sendable {
         try Task.checkCancellation()
         return result.image
     }
-    func removeCachedArtwork(for urls: Set<URL>) async {
+    func removeCachedArtwork(for urls: Set<URL>, scope: String = VividCacheScope.artwork) async {
         cache.removeAll(caches: .memory)
-        await flights.cancel(urls: urls)
+        await flights.cancel(urls: urls, scope: scope)
         #if os(tvOS)
-        await embyDataFlights.cancel(urls: urls)
+        await embyDataFlights.cancel(urls: urls, scope: scope)
         #endif
-        for url in urls { cache.removeCachedData(for: VividImageRequest(url: url)) }
+        for url in urls { cache.removeCachedData(for: VividImageRequest(url: url, cacheScope: scope)) }
+    }
+
+    /// Called before publishing the destination account. Cancel shared work,
+    /// not just its view waiters, and prevent old decodes refilling memory.
+    func cancelForAccountSwitch() async {
+        cache.removeAll(caches: .memory)
+        await flights.cancelAll()
+        #if os(tvOS)
+        await embyDataFlights.cancelAll()
+        #endif
+        for session in sessionSnapshot() {
+            let tasks = await session.allTasks
+            tasks.forEach { $0.cancel() }
+        }
     }
 
     func data(for request: VividImageRequest) async throws -> Data {
@@ -159,7 +198,7 @@ final class VividImagePipeline: @unchecked Sendable {
         // Emby's generated artwork URLs are shared by display-size, crop and
         // palette requests. Share their bytes before doing separate decodes.
         if request.url.path.contains("/emby/Items/"), request.url.path.contains("/Images/") {
-            return try await embyDataFlights.load(request.url) { [self] in
+            return try await embyDataFlights.load(request.url, scope: request.cacheScope) { [self] in
                 try await fetchData(for: request)
             }
         }
@@ -170,7 +209,7 @@ final class VividImagePipeline: @unchecked Sendable {
     private func fetchData(for request: VividImageRequest) async throws -> Data {
         let delegate = VividImageDiagnostics.shared.enabled ? VividImageMetricsDelegate.shared : nil
         let (data, response) = try await VividImageRetry.load {
-            try await session.data(from: request.url, delegate: delegate)
+            try await session(for: request.cacheScope).data(from: request.url, delegate: delegate)
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 32 * 1024 * 1024 else {
             throw URLError(.badServerResponse)
@@ -214,16 +253,26 @@ final class VividImagePipeline: @unchecked Sendable {
 
 /// Coalesce Emby artwork independently of thumbnail size. Transport recovery
 /// is shared with Silo in fetchData, so retries are not multiplied here.
-private actor VividEmbyImageDataFlights {
-    private var tasks: [URL: (UUID, Task<Data, Error>)] = [:]
+actor VividEmbyImageDataFlights {
+    private struct Key: Hashable { let url: URL; let scope: String }
+    private var tasks: [Key: (UUID, Task<Data, Error>)] = [:]
 
-    func cancel(urls: Set<URL>) {
-        for url in urls { tasks.removeValue(forKey: url)?.1.cancel() }
+    func cancelAll() {
+        let outgoing = tasks.values
+        tasks.removeAll()
+        for (_, task) in outgoing { task.cancel() }
     }
 
-    func load(_ url: URL, operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
+    func cancel(urls: Set<URL>, scope: String) {
+        for key in Array(tasks.keys) where key.scope == scope && urls.contains(key.url) {
+            tasks.removeValue(forKey: key)?.1.cancel()
+        }
+    }
+
+    func load(_ url: URL, scope: String = "", operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
+        let key = Key(url: url, scope: scope)
         let diagnostics = VividImageDiagnostics.shared
-        if let (id, existing) = tasks[url] {
+        if let (id, existing) = tasks[key] {
             if diagnostics.enabled {
                 return try await diagnostics.value(of: existing, id: id, token: diagnostics.join(id, utility: false))
             }
@@ -235,8 +284,8 @@ private actor VividEmbyImageDataFlights {
             defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
             return try await operation()
         }
-        tasks[url] = (id, task)
-        defer { if tasks[url]?.0 == id { tasks[url] = nil } }
+        tasks[key] = (id, task)
+        defer { if tasks[key]?.0 == id { tasks[key] = nil } }
         if diagnostics.enabled {
             return try await diagnostics.value(of: task, id: id, token: diagnostics.join(id, utility: false))
         }
@@ -246,8 +295,13 @@ private actor VividEmbyImageDataFlights {
 
 private actor VividImageFlights {
     private var tasks: [VividImageRequest: (UUID, Task<VividImageContainer, Error>)] = [:]
-    func cancel(urls: Set<URL>) {
-        for request in Array(tasks.keys) where urls.contains(request.url) {
+    func cancelAll() {
+        let outgoing = tasks.values
+        tasks.removeAll()
+        for (_, task) in outgoing { task.cancel() }
+    }
+    func cancel(urls: Set<URL>, scope: String) {
+        for request in Array(tasks.keys) where request.cacheScope == scope && urls.contains(request.url) {
             tasks.removeValue(forKey: request)?.1.cancel()
         }
     }

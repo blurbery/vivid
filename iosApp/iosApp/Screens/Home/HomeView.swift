@@ -70,7 +70,8 @@ struct HomeView: View {
             } else if let error = viewModel.error {
                 ErrorView(state: error, onRetry: { Task { await viewModel.loadSections() } })
             } else if viewModel.isLoading {
-                Color.clear
+                VividLoadingDots()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !viewModel.regularSections.isEmpty {
                 EmptyStateView(
                     icon: "eye.slash",
@@ -108,7 +109,8 @@ struct HomeView: View {
                 } else if let error = viewModel.error {
                     ErrorView(state: error, onRetry: { Task { await viewModel.loadSections() } })
                 } else if viewModel.isLoading {
-                    Color.clear
+                    VividLoadingDots()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if !viewModel.regularSections.isEmpty {
                     EmptyStateView(
                         icon: "eye.slash",

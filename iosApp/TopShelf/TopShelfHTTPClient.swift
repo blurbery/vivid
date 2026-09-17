@@ -130,7 +130,9 @@ struct TopShelfHTTPClient {
             request.setValue(profileToken, forHTTPHeaderField: "X-Profile-Token")
         }
 
-        let (data, response) = try await session.data(for: request)
+        let usesV2 = try await SiloAPIDiscovery.shared.usesV2(for: url, session: session)
+        if usesV2 { request = try SiloAPICompatibility.request(request) }
+        let (rawData, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw Error.unexpectedStatus(0)
         }
@@ -138,6 +140,7 @@ struct TopShelfHTTPClient {
             throw Error.unexpectedStatus(http.statusCode)
         }
 
+        let data = usesV2 ? try SiloAPICompatibility.response(rawData, path: path) : rawData
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(T.self, from: data)

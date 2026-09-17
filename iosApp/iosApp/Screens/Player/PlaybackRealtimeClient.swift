@@ -277,6 +277,7 @@ actor PlaybackRealtimeClient {
     }
 
     private func makeRequest(sessionId: String) async throws -> URLRequest {
+        let capturedAuth = await TokenStore.shared.captureOrdinaryRequestAuth()
         let serverUrl = await VividAPI.shared.currentServerUrl()
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !serverUrl.isEmpty else {
@@ -287,7 +288,12 @@ actor PlaybackRealtimeClient {
             throw PlaybackRealtimeTransportError.invalidServerURL(serverUrl)
         }
 
-        let normalizedPath = "/api/v1/playback/sessions/\(sessionId)/control/ws"
+        let legacyPath = "/api/v1/playback/sessions/\(sessionId)/control/ws"
+        guard let probeURL = URL(string: serverUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + legacyPath) else {
+            throw PlaybackRealtimeTransportError.invalidServerURL(serverUrl)
+        }
+        let usesV2 = try await SiloAPIDiscovery.shared.usesV2(for: probeURL, session: .shared)
+        let normalizedPath = usesV2 ? SiloAPICompatibility.route(legacyPath, method: "GET").0 : legacyPath
         let basePath = components.percentEncodedPath
         let trimmedBase = basePath.hasSuffix("/") ? String(basePath.dropLast()) : basePath
         components.percentEncodedPath = trimmedBase + normalizedPath
@@ -306,6 +312,20 @@ actor PlaybackRealtimeClient {
         }
 
         var request = URLRequest(url: url)
+        if usesV2 {
+            struct Ticket: Decodable { let ticket: String; let `protocol`: String }
+            struct Body: Encodable {}
+            guard let capturedAuth, capturedAuth.account.serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == serverUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")) else {
+                throw PlaybackRealtimeTransportError.missingAccessToken
+            }
+            let ticket: Ticket = try await HTTPClient.shared.post(
+                "/api/v1/playback/sessions/\(sessionId)/control/ws-ticket", body: Body(), expectedAuth: capturedAuth)
+            guard await TokenStore.shared.currentOrdinaryRequestAuth(matchingIdentityOf: capturedAuth) == capturedAuth else {
+                throw HTTPError.requestIdentityChanged
+            }
+            request.setValue(ticket.protocol + ", silo.ticket." + ticket.ticket, forHTTPHeaderField: "Sec-WebSocket-Protocol")
+            return request
+        }
         if let token = await VividAPI.shared.currentAccessToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         } else {

@@ -62,12 +62,9 @@ struct SessionExpiryEvent: Equatable, Sendable {
 /// retargets the slot by flushing the cache — the next read re-populates
 /// from the new server's Keychain accounts.
 ///
-/// Top Shelf extension note: whenever the active server's access token
-/// or profile token changes, we mirror the current value into two stable
-/// server-independent Keychain accounts
-/// (`SharedStorage.mirroredAccessTokenAccount`, `mirroredProfileTokenAccount`).
-/// The extension reads those slots directly — it doesn't need to know
-/// which server is active.
+/// Extension mirror note: successful loads and token changes update the
+/// fixed-name slots used by notification display and diagnostics. Top Shelf
+/// reads the active server's scoped credentials directly.
 ///
 /// Auth refresh semantics follow `AuthInterceptorImpl.kt` in the shared
 /// module: a single `TokenStore` is the source of truth, and `HTTPClient`
@@ -178,9 +175,9 @@ actor TokenStore {
         cachedRefreshToken = nil
         cachedProfileToken = nil
         loadedForServerId = nil
-        // Re-mirror after the cache is repopulated by the next read.
+        // A successful load mirrors the complete cache. Failed reads leave
+        // existing mirror slots intact and retry on the next access.
         ensureLoaded()
-        mirrorActiveTokensForExtension()
     }
 
     /// Retarget the actor to the active registry server without touching
@@ -598,12 +595,12 @@ actor TokenStore {
     /// Minimal launch-time check for whether the active server has a stored
     /// access token. This reads only the access-token slot; the full token
     /// cache is still loaded lazily by the first authenticated request.
-    func hasAccessTokenForActiveServer(serverId: String) -> Bool {
+    func hasAccessTokenForActiveServer(serverId: String) throws -> Bool {
         retargetActiveServer(serverId: serverId)
         if loadedForServerId == activeServerId {
             return cachedAccessToken != nil
         }
-        cachedAccessToken = accountKeychain.get(Self.accessTokenKey(for: serverId))
+        cachedAccessToken = try accountKeychain.getChecked(Self.accessTokenKey(for: serverId))
         return cachedAccessToken != nil
     }
 
@@ -855,25 +852,36 @@ actor TokenStore {
         keychain.withAudience(Self.profileCredentialAudience)
     }
 
-    private func ensureLoaded() {
-        guard loadedForServerId != activeServerId else { return }
+    @discardableResult
+    private func ensureLoaded() -> Bool {
+        guard loadedForServerId != activeServerId else { return true }
         if activeServerId.isEmpty {
             cachedAccessToken = nil
             cachedRefreshToken = nil
             cachedProfileToken = nil
         } else {
-            cachedAccessToken = accountKeychain.get(accessTokenKey)
-            cachedRefreshToken = accountKeychain.get(refreshTokenKey)
-            cachedProfileToken = profileKeychain.get(profileTokenKey)
+            do {
+                let access = try accountKeychain.getChecked(accessTokenKey)
+                let refresh = try accountKeychain.getChecked(refreshTokenKey)
+                let profile = try profileKeychain.getChecked(profileTokenKey)
+                cachedAccessToken = access
+                cachedRefreshToken = refresh
+                cachedProfileToken = profile
+            } catch {
+                // Leave the cache invalid so a temporary read failure can recover.
+                return false
+            }
         }
         loadedForServerId = activeServerId
+        mirrorActiveTokensForExtension()
+        return true
     }
 
     /// Mirror the current active access + profile tokens to fixed-name
-    /// Keychain slots the Top Shelf extension reads. The extension
-    /// doesn't know which server is active, so it looks for these
-    /// server-independent accounts instead.
+    /// Keychain slots used by notification display and diagnostics.
+    /// Top Shelf reads the server-scoped accounts instead.
     private func mirrorActiveTokensForExtension() {
+        guard loadedForServerId == activeServerId else { return }
         if cachedAccessToken != lastMirroredAccessToken {
             if let accessToken = cachedAccessToken {
                 accountKeychain.set(accessToken, for: SharedStorage.mirroredAccessTokenAccount)

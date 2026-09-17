@@ -29,7 +29,8 @@ struct StreamRequest {
         additionalHeaders: [String: String],
         accessToken: String?,
         requiresHeaderAuthenticatedMedia: Bool,
-        authorizedMediaOriginSessionId: String? = nil
+        authorizedMediaOriginSessionId: String? = nil,
+        nativeApiMajor: Int? = nil
     ) -> StreamRequest? {
         let raw = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return nil }
@@ -60,7 +61,17 @@ struct StreamRequest {
         var isAuthorizedMediaOrigin = false
         let trimmedSessionId = authorizedMediaOriginSessionId?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if requiresHeaderAuthenticatedMedia,
+        if nativeApiMajor == 2 {
+            // Native v2 carries a session-scoped signed stream reference. The
+            // account bearer remains a header and is never sent off-origin.
+            guard !raw.contains("://"), !raw.hasPrefix("//"),
+                  let c = URLComponents(string: raw), c.fragment == nil,
+                  c.percentEncodedPath.hasPrefix("/api/v2/"),
+                  Self.isAllowedHeaderAuthenticatedMediaPath(String(c.percentEncodedPath.dropFirst(7))),
+                  Self.hasAllowedNativeV2Query(c.queryItems ?? []) else { return nil }
+            guard let resolved = URL(string: normalizedServer + raw) else { return nil }
+            resolvedURL = resolved
+        } else if requiresHeaderAuthenticatedMedia,
            let sid = trimmedSessionId,
            !sid.isEmpty,
            raw.hasPrefix("http://") || raw.hasPrefix("https://") {
@@ -196,6 +207,20 @@ struct StreamRequest {
                   seconds.isFinite,
                   seconds >= 0 else {
                 return false
+            }
+        }
+        return true
+    }
+
+    private static func hasAllowedNativeV2Query(_ items: [URLQueryItem]) -> Bool {
+        var seen = Set<String>()
+        for item in items {
+            guard seen.insert(item.name).inserted, let value = item.value, !value.isEmpty else { return false }
+            switch item.name {
+            case "st": break
+            case "seek": guard let seconds = Double(value), seconds.isFinite, seconds >= 0 else { return false }
+            case "file_id", "downloaded_subtitle_id": guard value.allSatisfy({ $0.isNumber }) else { return false }
+            default: return false
             }
         }
         return true

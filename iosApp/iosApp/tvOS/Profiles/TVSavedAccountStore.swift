@@ -102,6 +102,7 @@ final class TVSavedAccountStore {
     var showsAnimation = false
     private(set) var busy = false
     private(set) var contentRevision = UUID()
+    private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
     var canAddAccount: Bool {
         #if os(iOS)
         accounts.count < 3
@@ -240,25 +241,32 @@ final class TVSavedAccountStore {
         showsAnimation = true
     }
 
-    func captureCurrent() async {
+    func captureCurrent(refreshMetadata: Bool = true) async {
         guard !busy, AuthService.shared.isLoggedIn,
               let server = ServerRegistry.shared.activeServerId,
               let identity = await TokenStore.shared.refreshAccountIdentity() else { return }
-        let user = try? await VividAPI.shared.currentUser()
+        // Leaving an account must not wait for its server. Reuse only user
+        // metadata verified for this exact credential generation.
+        let user: UserInfo?
+        if refreshMetadata {
+            user = try? await VividAPI.shared.currentUser()
+        } else {
+            user = capturedUser?.identity == identity ? capturedUser?.user : nil
+        }
         guard !busy, identity == (await TokenStore.shared.refreshAccountIdentity()),
               server == ServerRegistry.shared.activeServerId else { return }
         guard let user, let userID = user.id else { return }
+        VividCacheScope.recordAccount(userID, serverID: server)
+        capturedUser = (identity, user)
         var profile = CurrentProfileStore.shared.profile
-        if profile == nil {
+        if profile == nil, refreshMetadata {
             profile = (try? await AuthService.shared.getProfiles())?.first { $0.id == AuthService.shared.profileId }
         }
-        #if os(tvOS)
         if profile == nil,
            let previous = accounts.first(where: { $0.serverID == server && $0.userID == userID })?.profile,
            previous.id == AuthService.shared.profileId {
             profile = previous
         }
-        #endif
         guard let stored = await TokenStore.shared.savedTVSession(expected: identity, profile: profile),
               !busy, identity == (await TokenStore.shared.refreshAccountIdentity()),
               server == ServerRegistry.shared.activeServerId else { return }
@@ -282,13 +290,13 @@ final class TVSavedAccountStore {
         guard !busy, !account.requiresLogin, let saved = session(account.id) else { return }
         guard !hasPIN(account.id) || unlockedID == account.id else { return }
         unlockedID = nil
-        await captureCurrent()
+        await captureCurrent(refreshMetadata: false)
         guard !busy else { return }
         busy = true; error = nil
         defer { busy = false; Task { await captureCurrent() } }
         do {
             if activeID != account.id || ServerRegistry.shared.activeServerId != account.serverID || !AuthService.shared.isLoggedIn {
-                try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID)
+                try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             }
             activeID = account.id
             persist()
@@ -302,7 +310,7 @@ final class TVSavedAccountStore {
     func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter, provider requestedProvider: MediaServerProvider? = nil) async -> Bool {
         guard !busy else { return false }
         guard id != nil || canAddAccount else { error = "You can save up to three profiles. Delete a saved profile to add another."; return false }
-        await captureCurrent()
+        await captureCurrent(refreshMetadata: false)
         guard !busy else { return false }
         busy = true; error = nil
         defer { busy = false; Task { await captureCurrent() } }
@@ -344,7 +352,7 @@ final class TVSavedAccountStore {
             let entry = ServerEntry(id: serverID, url: normalized,
                                     fetchedName: ServerRegistry.shared.entry(with: serverID)?.fetchedName, lastUsedAt: Date())
             guard ServerRegistry.shared.addOrUpdate(entry) != nil else { throw ServerRegistryError.persistenceFailed }
-            try await AuthService.shared.restoreTVAccount(saved, serverID: serverID)
+            try await AuthService.shared.restoreTVAccount(saved, serverID: serverID, accountID: userID)
             if let index = accounts.firstIndex(where: { $0.id == accountID }) { accounts[index] = account }
             else { accounts.append(account) }
             activeID = accountID
@@ -373,13 +381,14 @@ final class TVSavedAccountStore {
             TVHomeSpotlightPreferences.shared.refresh()
             DownloadSettings.shared.reloadForCurrentProfile()
                 TVTMDbStore.shared.reloadForCurrentProfile()
-            await CurrentProfileStore.shared.refresh(force: true)
-            _ = await OverlayPrefsStore.shared.hydrateIfNeeded()
-            await UICustomizationPreferences.shared.refresh()
+            UICustomizationPreferences.shared.restoreCachedPreferences()
             await PlayerSettings.shared.reloadForCurrentProfile()
             router.dismissItemDetail()
-            contentRevision = UUID()
             #endif
+            // Server publication precedes the token/profile commit. Rebuild
+            // only after restoration so both platforms discard early loads
+            // and same-server account state from the outgoing session.
+            contentRevision = UUID()
             if prepareHome {
                 await TVLoginPreparation.shared.begin(router: router)
             } else {
@@ -653,7 +662,7 @@ final class TVSavedAccountStore {
             return true
         }
         do {
-            try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID)
+            try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
             return true
         } catch {
             return false

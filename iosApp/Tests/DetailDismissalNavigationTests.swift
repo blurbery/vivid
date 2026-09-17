@@ -100,6 +100,34 @@ final class DetailDismissalNavigationTests: XCTestCase {
         XCTAssertTrue(router.path.isEmpty)
     }
 
+    func testTouchPressSuspendsDismissalAndReleaseRestartsFiveSeconds() async throws {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.isPlaying = true
+        model.revealControls()
+        model.touchControlPressChanged(true)
+        try await Task.sleep(for: .milliseconds(5300))
+        XCTAssertTrue(model.showControls, "A held button must not disappear before release")
+        model.touchControlPressChanged(false)
+        try await Task.sleep(for: .seconds(4))
+        XCTAssertTrue(model.showControls, "Release grants a fresh five seconds")
+        try await Task.sleep(for: .milliseconds(1300))
+        XCTAssertFalse(model.showControls)
+        model.touchControlPressChanged(false)
+        XCTAssertFalse(model.showControls, "A late release must not reopen dismissed controls")
+    }
+
+    func testPausedTouchControlsRemainVisibleUntilDismissed() async throws {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.isPlaying = false
+        model.revealControls()
+        try await Task.sleep(for: .milliseconds(5300))
+        XCTAssertTrue(model.showControls)
+        model.dismissControls()
+        XCTAssertFalse(model.showControls)
+    }
+
     func testCloseAndRotationControlsWaitForTapInEveryPhase() async throws {
         let model = PlayerViewModel()
         defer { model.cleanup() }

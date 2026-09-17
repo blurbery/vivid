@@ -3,6 +3,36 @@ import XCTest
 
 @MainActor
 final class UICustomizationPreferencesTests: XCTestCase {
+    func testCachedAccountHandoffUsesDestinationPreferencesWithoutFetching() async throws {
+        let suiteName = "ui-account-handoff-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let defaults = SharedDefaults(suite: suite, standard: suite)
+        var key = "vivid.uiCustomization.first.profile.mobile"
+        let cached: [String: Any] = [
+            "cardPresentation": ["poster_size": "large", "caption": "artwork"],
+            "supportProjection": "supported",
+        ]
+        defaults.set(try JSONSerialization.data(withJSONObject: cached), forKey: key)
+        let transport = RetiredNavigationProbe()
+        let preferences = UICustomizationPreferences(
+            defaults: defaults, transport: transport,
+            cacheKey: { key }, requestIdentity: { testRequestIdentity(family: "mobile") }
+        )
+        let first = preferences.cardPresentation
+        XCTAssertEqual(first, CardPresentationPreference(posterSize: .large, caption: .artwork))
+
+        key = "vivid.uiCustomization.second.profile.mobile"
+        preferences.restoreCachedPreferences()
+        XCTAssertEqual(preferences.cardPresentation, .standard)
+        key = "vivid.uiCustomization.first.profile.mobile"
+        preferences.restoreCachedPreferences()
+        XCTAssertEqual(preferences.cardPresentation, first)
+        let calls = await transport.snapshot()
+        XCTAssertTrue(calls.keys.isEmpty)
+        XCTAssertEqual(calls.writes, 0)
+    }
+
     func testLegacyShortcutCacheIsDiscardedWithoutLosingCardPreferences() async throws {
         let suiteName = "ui-retired-navigation-\(UUID().uuidString)"
         let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))

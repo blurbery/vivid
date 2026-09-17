@@ -552,7 +552,7 @@ final class SettingValuesAPITests: XCTestCase {
         await tokenStore.setProfileId("profile-a")
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(session: URLSession(configuration: config), tokenStore: tokenStore)
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config), tokenStore: tokenStore)
         let captured = HTTPRequestIdentity(
             serverId: "server-a",
             serverURL: "http://settings-test.invalid",
@@ -604,7 +604,7 @@ final class SettingValuesAPITests: XCTestCase {
 
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(session: URLSession(configuration: config), tokenStore: tokenStore)
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config), tokenStore: tokenStore)
         async let first = http.requestData(
             method: "GET",
             path: "/api/v1/settings/contract/capabilities",
@@ -656,7 +656,7 @@ final class SettingValuesAPITests: XCTestCase {
 
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(session: URLSession(configuration: config), tokenStore: tokenStore)
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config), tokenStore: tokenStore)
         let sessionExpiredCount = LockedCounter()
         let observer = NotificationCenter.default.addObserver(
             forName: .vividSessionExpired,
@@ -721,8 +721,7 @@ final class SettingValuesAPITests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
         let ordinaryJoinCount = LockedCounter()
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: tokenStore,
             refreshFlightJoinObserver: { kind in
                 if case .ordinary = kind {
@@ -1140,8 +1139,7 @@ final class SettingValuesAPITests: XCTestCase {
         let barrier = SerializedCancellationPassBarrier()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: harness.tokenStore,
             cancellationPassBarrier: { await barrier.enter() }
         )
@@ -1198,8 +1196,7 @@ final class SettingValuesAPITests: XCTestCase {
         let barrier = SerializedCancellationPassBarrier()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: harness.tokenStore,
             scopedRefreshRetryBarrier: { await barrier.enter() }
         )
@@ -1244,8 +1241,7 @@ final class SettingValuesAPITests: XCTestCase {
         let barrier = SerializedCancellationPassBarrier()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: harness.tokenStore,
             cancellationSessionBarrier: { index in
                 if index == 1 { await barrier.enter() }
@@ -1281,8 +1277,7 @@ final class SettingValuesAPITests: XCTestCase {
         let cancellationBarrier = SerializedCancellationPassBarrier()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: harness.tokenStore,
             cancellationPassBarrier: { await cancellationBarrier.enter() }
         )
@@ -1366,8 +1361,7 @@ final class SettingValuesAPITests: XCTestCase {
         let barrier = SerializedCancellationPassBarrier()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: harness.tokenStore,
             requestCaptureBarrier: { await barrier.enter() }
         )
@@ -1409,8 +1403,7 @@ final class SettingValuesAPITests: XCTestCase {
         let barrier = SerializedCancellationPassBarrier()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: harness.tokenStore,
             responseReceivedBarrier: { await barrier.enter() }
         )
@@ -1515,8 +1508,7 @@ final class SettingValuesAPITests: XCTestCase {
         let barrier = SerializedCancellationPassBarrier()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(
-            session: URLSession(configuration: config),
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config),
             tokenStore: harness.tokenStore,
             requestCaptureBarrier: { await barrier.enter() }
         )
@@ -1955,7 +1947,7 @@ final class SettingValuesAPITests: XCTestCase {
 
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(session: URLSession(configuration: config), tokenStore: tokenStore)
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config), tokenStore: tokenStore)
         return VividAPI(http: http, tokenStore: tokenStore)
     }
 
@@ -1989,7 +1981,7 @@ final class SettingValuesAPITests: XCTestCase {
 
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(session: URLSession(configuration: config), tokenStore: tokenStore)
+        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config), tokenStore: tokenStore)
         return (tokenStore, identity, http)
     }
 

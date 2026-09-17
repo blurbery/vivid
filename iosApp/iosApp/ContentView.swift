@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var debugPlayContentId: String?
     @State private var didAttemptDebugAutoPlay = false
     @State private var didStartInitialStateCheck = false
+    @State private var initialStateAttempt = 0
+    @State private var showsCredentialReadError = false
     @State private var didFinishStartupSplash = false
     @State private var showsStartupOverlay = true
     @Environment(\.accessibilityReduceMotion) private var reduceStartupMotion
@@ -46,6 +48,11 @@ struct ContentView: View {
     var body: some View {
         launchContent
             .environment(router)
+            .alert("Saved login unavailable", isPresented: $showsCredentialReadError) {
+                Button("Retry") { initialStateAttempt += 1 }
+            } message: {
+                Text("Vivid couldn’t read your saved login from Keychain. Your saved account has not been removed. Try again.")
+            }
         // A server change is a hard data boundary even when both servers map
         // to the same auth state. Re-key the routed subtree so profile, home,
         // library, focus, and modal state cannot survive from the old server.
@@ -53,7 +60,7 @@ struct ContentView: View {
         #if os(tvOS)
         .background { TVAppBackdrop() }
         #endif
-        #if os(iOS)
+        #if os(iOS) || os(tvOS)
         .id(TVSavedAccountStore.shared.contentRevision)
         #endif
         #if os(iOS) || os(tvOS)
@@ -551,7 +558,7 @@ struct ContentView: View {
         if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
         } else if TVSavedAccountStore.shared.busy {
-            Color.clear.ignoresSafeArea().overlay { ProgressView() }
+            Color.clear.ignoresSafeArea().overlay { VividLoadingDots() }
         } else if didCompleteProviderSetup,
                   router.authState != .loading, router.authState != .needsServerSetup,
                   TVSavedAccountStore.shared.showsSelector {
@@ -563,7 +570,7 @@ struct ContentView: View {
         if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
         } else if TVSavedAccountStore.shared.busy {
-            Color.black.ignoresSafeArea().overlay { ProgressView() }
+            Color.black.ignoresSafeArea().overlay { VividLoadingDots() }
         } else if router.authState != .loading, router.authState != .needsServerSetup,
                   TVSavedAccountStore.shared.showsSelector {
             PhoneSavedProfilesScreen()
@@ -586,7 +593,7 @@ struct ContentView: View {
                 startupPresentation
                 #endif
             }
-            .task {
+            .task(id: initialStateAttempt) {
                 guard !didStartInitialStateCheck else { return }
                 didStartInitialStateCheck = true
                 #if os(iOS) || os(tvOS)
@@ -829,7 +836,27 @@ struct ContentView: View {
         let activeServerId = ServerRegistry.shared.activeServerId
         let hasStoredAccessToken: Bool
         if !needsProviderSetup, let activeServerId, !activeServerId.isEmpty {
-            hasStoredAccessToken = await TokenStore.shared.hasAccessTokenForActiveServer(serverId: activeServerId)
+            do {
+                hasStoredAccessToken = try await KeychainReadFailure.retryTemporaryRead {
+                    guard ServerRegistry.shared.activeServerId == activeServerId else {
+                        throw HTTPError.requestIdentityChanged
+                    }
+                    return try await TokenStore.shared.hasAccessTokenForActiveServer(serverId: activeServerId)
+                }
+                guard ServerRegistry.shared.activeServerId == activeServerId else {
+                    throw HTTPError.requestIdentityChanged
+                }
+            } catch {
+                didStartInitialStateCheck = false
+                if !Task.isCancelled {
+                    if ServerRegistry.shared.activeServerId != activeServerId {
+                        initialStateAttempt += 1
+                    } else {
+                        showsCredentialReadError = true
+                    }
+                }
+                return
+            }
         } else {
             hasStoredAccessToken = false
         }

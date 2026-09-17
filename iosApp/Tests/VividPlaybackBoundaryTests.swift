@@ -1698,6 +1698,12 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let window = playbackWindow(for: controller.engine)
         defer { window.isHidden = true; window.rootViewController = nil }
 
+        func waitForInitialSeek() async throws {
+            let deadline = ContinuousClock.now + .seconds(5)
+            while controller.engine.state == .seeking && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        }
         controller.setMuted(true)
         defer { controller.stop() }
         let spec = try VividLoadSpec(
@@ -1707,6 +1713,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         controller.pause()
         controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
+        try await waitForInitialSeek()
         XCTAssertEqual(controller.engine.state, .paused)
         controller.prepareForReplacement()
         XCTAssertFalse(controller.shouldPlayWhenReady)
@@ -1714,6 +1721,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         try await controller.finishLoad(replacement)
         controller.setSpeed(1.5)
         XCTAssertFalse(controller.shouldPlayWhenReady)
+        try await waitForInitialSeek()
         XCTAssertEqual(controller.engine.state, .paused)
         controller.play()
         let deadline = Date().addingTimeInterval(5)

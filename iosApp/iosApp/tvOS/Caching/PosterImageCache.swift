@@ -50,8 +50,8 @@ enum PosterImageCache {
     /// costs a fraction of the CPU and memory of decoding the full image and
     /// resizing it, and the result needs no separate decompression pass.
     /// ImageIO never upscales, so a small source stays at its native size.
-    static func displayRequest(url: URL, pixelSize: CGSize, priority: VividImageRequest.Priority = .normal) -> VividImageRequest {
-        var request = VividImageRequest(url: url, priority: priority)
+    static func displayRequest(url: URL, pixelSize: CGSize, priority: VividImageRequest.Priority = .normal, cacheScope: String = VividCacheScope.artwork) -> VividImageRequest {
+        var request = VividImageRequest(url: url, priority: priority, cacheScope: cacheScope)
         request.thumbnail = VividImageRequest.ThumbnailOptions(
             size: pixelSize,
             unit: .pixels,
@@ -77,8 +77,10 @@ enum PosterImageCache {
 
     /// Synchronous memory-cache lookup of a warmed card decode. Cheap
     /// dictionary access, safe to call from a view body.
-    static func warmedCardImage(for url: URL) -> PlatformImage? {
-        VividImagePipeline.shared.cache[cardWarmRequest(for: url)]?.image
+    static func warmedCardImage(for url: URL, cacheScope: String = VividCacheScope.artwork) -> PlatformImage? {
+        var request = VividImageRequest(url: url, cacheScope: cacheScope)
+        request.thumbnail = VividImageRequest.ThumbnailOptions(maxPixelSize: cardWarmMaxPixelSize)
+        return VividImagePipeline.shared.cache[request]?.image
     }
 
     /// Warm card artwork (posters, stills, covers, portraits, avatars) into
@@ -122,6 +124,11 @@ enum PosterImageCache {
     /// tight, especially on 3 GB Apple TV hardware.
     static func trimDecodedMemory() {
         VividImagePipeline.shared.cache.removeAll(caches: .memory)
+    }
+
+    static func resetForAccountSwitch() async {
+        prefetcher.stopPrefetching()
+        await VividImagePipeline.shared.cancelForAccountSwitch()
     }
 
     #if os(tvOS)

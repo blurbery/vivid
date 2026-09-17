@@ -27,7 +27,6 @@ final class TVLoginPreparation {
         error = nil
         status = "Getting ready"
         pinProfile = nil
-        var stage = "profile"
         do {
             let account = await TokenStore.shared.refreshAccountIdentity()
             if !AuthService.shared.hasProfile {
@@ -42,23 +41,10 @@ final class TVLoginPreparation {
                 }
                 try await AuthService.shared.selectProfile(profileId: primary.id, pin: pin, requiresPIN: primary.hasPin)
             }
-            if showsWelcome { try await Task.sleep(for: .seconds(3)) }
-            status = "Almost done"
-            stage = "home"
-            let almostDoneStarted = ContinuousClock.now
-            _ = try await retryTemporaryFailure { try await StartupContentPrefetcher.fetchHomeSections() }
-            stage = "libraries"
-            _ = try await retryTemporaryFailure { try await StartupContentPrefetcher.fetchUserLibraries() }
-            StartupContentPrefetcher.prefetchAuthenticatedContent()
+            // Home hydrates its profile-scoped disk snapshot before its first
+            // render. Fresh sections and libraries must not gate the handoff.
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
-            #if os(tvOS)
-            await TVSavedAccountStore.shared.captureCurrent()
-            #endif
-            if showsWelcome {
-                try await ContinuousClock().sleep(until: almostDoneStarted.advanced(by: .seconds(3)))
-                status = "Welcome to Vivid"
-                try await Task.sleep(for: .seconds(3))
-            }
+            StartupContentPrefetcher.prefetchAuthenticatedContent()
             try Task.checkCancellation()
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
             ready = true
@@ -66,10 +52,8 @@ final class TVLoginPreparation {
             cancel()
         } catch {
             Logger(subsystem: "Vivid", category: "LoginPreparation")
-                .error("Preparation failed at \(stage, privacy: .public): \(String(describing: type(of: error)), privacy: .public)")
-            self.error = stage == "profile"
-                ? "Couldn’t prepare your viewing profile. Please try again."
-                : "You’re signed in, but Vivid couldn’t load your home data. Please try again."
+                .error("Profile preparation failed: \(String(describing: type(of: error)), privacy: .public)")
+            self.error = "Couldn’t prepare your viewing profile. Please try again."
         }
     }
 

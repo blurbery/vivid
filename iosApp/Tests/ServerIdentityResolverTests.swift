@@ -126,7 +126,7 @@ final class ServerIdentityResolverTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ServerIdentityStubProtocol.self]
         return ServerIdentityResolver(
-            httpClient: HTTPClient(session: URLSession(configuration: configuration))
+            httpClient: HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: configuration))
         )
     }
 

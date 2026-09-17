@@ -137,7 +137,7 @@ final class AuthService: @unchecked Sendable {
         }
         if MediaServerProvider.forServerID(expectedAccount.serverId) == .emby {
             let login = try await EmbyConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)
-            try await installSession(accessToken: login.token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: login.userID)
+            try await installSession(accessToken: login.token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: login.userID, cacheAccountID: String(EmbyAdapter.numberID(login.userID)))
             #if os(tvOS) || os(iOS)
             await VividCloudAccountSync.shared.noteExplicitAuthentication(
                 serverID: expectedAccount.serverId, userID: String(EmbyAdapter.numberID(login.userID))
@@ -152,7 +152,8 @@ final class AuthService: @unchecked Sendable {
         try await installSession(
             accessToken: response.accessToken,
             refreshToken: response.refreshToken,
-            expectedAccount: expectedAccount
+            expectedAccount: expectedAccount,
+            cacheAccountID: String(response.user.id)
         )
         #if os(tvOS) || os(iOS)
         await VividCloudAccountSync.shared.noteExplicitAuthentication(
@@ -169,7 +170,8 @@ final class AuthService: @unchecked Sendable {
         accessToken: String,
         refreshToken: String,
         expectedAccount: RefreshAccountIdentity,
-        nativeUserID: String? = nil
+        nativeUserID: String? = nil,
+        cacheAccountID: String? = nil
     ) async throws {
         guard let transitionLease = await HTTPClient.shared.beginIdentityTransition() else {
             throw CancellationError()
@@ -194,19 +196,23 @@ final class AuthService: @unchecked Sendable {
             refreshToken: refreshToken,
             nativeUserID: nativeUserID
         )
+        VividCacheScope.recordAccount(cacheAccountID, serverID: expectedAccount.serverId)
         await clearAllCaches()
         await HTTPClient.shared.endIdentityTransition(transitionLease)
     }
 
     #if os(tvOS) || os(iOS)
     @MainActor
-    func restoreTVAccount(_ session: TVSavedAccountSession, serverID: String) async throws {
+    func restoreTVAccount(_ session: TVSavedAccountSession, serverID: String, accountID: String) async throws {
         guard let lease = await HTTPClient.shared.beginIdentityTransition() else { throw CancellationError() }
         await HTTPClient.shared.cancelInFlightRequests()
+        clearAllCaches()
+        await PosterImageCache.resetForAccountSwitch()
         guard await serverRegistry.commitSwitchTo(serverId: serverID, holding: lease) else {
             await HTTPClient.shared.endIdentityTransition(lease)
             throw ServerRegistryError.persistenceFailed
         }
+        VividCacheScope.recordAccount(accountID, serverID: serverID)
         launchPreferences.clearRememberedProfile(for: serverID)
         await TokenStore.shared.clearTokens()
         await TokenStore.shared.saveTokens(accessToken: session.accessToken, refreshToken: session.refreshToken, nativeUserID: session.nativeUserID)

@@ -572,6 +572,7 @@ class PlayerViewModel {
     private var hideControlsTask: Task<Void, Never>?
     #if os(iOS)
     private var touchControlsPinned = false
+    private var touchControlPressed = false
     #endif
     private var noticeDismissTask: Task<Void, Never>?
     private var remoteDismissTask: Task<Void, Never>?
@@ -1429,9 +1430,9 @@ class PlayerViewModel {
         guard result == .success,
               protocolV3ReplanTask == nil,
               let protocolV3 = activePreparedProtocolV3,
-              protocolV3.serverFeatures.contains(
+              (protocolV3.plan.nativeApiMajor == 2 || protocolV3.serverFeatures.contains(
                   PlaybackProtocolV3.headerAuthenticatedMediaFeature
-              ),
+              )),
               let sessionId = activePlaybackSessionId,
               let loadEpoch = vividPlaybackController.activeLoadEpoch,
               let failedSpec = vividPlaybackController.activeSpec,
@@ -1447,7 +1448,8 @@ class PlayerViewModel {
                   additionalHeaders: protocolV3.plan.stream.headers,
                   requiresHeaderAuthenticatedMedia: true,
                   allowsAuthorizedMediaOrigins:
-                      protocolV3.negotiatedAuthorizedMediaOrigins
+                      protocolV3.negotiatedAuthorizedMediaOrigins,
+                  nativeApiMajor: protocolV3.plan.nativeApiMajor
               ),
               activePlaybackSessionId == sessionId,
               activePreparedProtocolV3?.plan.planId == protocolV3.plan.planId,
@@ -1485,7 +1487,7 @@ class PlayerViewModel {
               committedProtocolV3LoadEpoch == epoch,
               let spec = vividPlaybackController.activeSpec, !spec.options.nativeRemoteHLS,
               let protocolV3 = activePreparedProtocolV3,
-              protocolV3.serverFeatures.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature),
+              (protocolV3.plan.nativeApiMajor == 2 || protocolV3.serverFeatures.contains(PlaybackProtocolV3.headerAuthenticatedMediaFeature)),
               protocolV3.plan.planId == spec.planID,
               let sessionId = activePlaybackSessionId, sessionId == spec.sessionID else { return nil }
         do {
@@ -1499,7 +1501,8 @@ class PlayerViewModel {
                   let request = await makeStreamRequest(session: session,
                     additionalHeaders: protocolV3.plan.stream.headers,
                     requiresHeaderAuthenticatedMedia: true,
-                    allowsAuthorizedMediaOrigins: protocolV3.negotiatedAuthorizedMediaOrigins) else { return nil }
+                    allowsAuthorizedMediaOrigins: protocolV3.negotiatedAuthorizedMediaOrigins,
+                    nativeApiMajor: protocolV3.plan.nativeApiMajor) else { return nil }
             try requireCurrentStreamLoad(generation)
             guard vividPlaybackController.activeLoadEpoch == epoch,
                   activePlaybackSessionId == sessionId,
@@ -1530,9 +1533,9 @@ class PlayerViewModel {
     ) -> Bool {
         guard protocolV3ReplanTask == nil,
               let protocolV3 = activePreparedProtocolV3,
-              protocolV3.serverFeatures.contains(
+              (protocolV3.plan.nativeApiMajor == 2 || protocolV3.serverFeatures.contains(
                   PlaybackProtocolV3.headerAuthenticatedMediaFeature
-              ),
+              )),
               let sessionId = activePlaybackSessionId,
               let watchDetail = currentWatchDetail,
               let selectedVersion = currentSelectedVersion,
@@ -1664,7 +1667,8 @@ class PlayerViewModel {
                         additionalHeaders: protocolV3.plan.stream.headers,
                         requiresHeaderAuthenticatedMedia: true,
                         allowsAuthorizedMediaOrigins:
-                            protocolV3.negotiatedAuthorizedMediaOrigins
+                            protocolV3.negotiatedAuthorizedMediaOrigins,
+                        nativeApiMajor: protocolV3.plan.nativeApiMajor
                     ) else {
                         throw VividLoadSpec.ValidationError.invalidStreamURL(session.streamUrl)
                     }
@@ -2083,7 +2087,8 @@ class PlayerViewModel {
                         PlaybackProtocolV3.headerAuthenticatedMediaFeature
                     ) == true,
                     allowsAuthorizedMediaOrigins:
-                        prepared.protocolV3?.negotiatedAuthorizedMediaOrigins == true
+                        prepared.protocolV3?.negotiatedAuthorizedMediaOrigins == true,
+                    nativeApiMajor: prepared.protocolV3?.plan.nativeApiMajor
                 ) else {
                     throw VividLoadSpec.ValidationError.invalidStreamURL(prepared.session.streamUrl)
                 }
@@ -2832,7 +2837,8 @@ class PlayerViewModel {
                         serverURL: streamRequest.serverUrl,
                         additionalHeaders: [:],
                         accessToken: nil,
-                        requiresHeaderAuthenticatedMedia: true
+                        requiresHeaderAuthenticatedMedia: true,
+                        nativeApiMajor: prepared.protocolV3?.plan.nativeApiMajor
                     )?.url
                 },
                 apiOriginURL: URL(string: streamRequest.serverUrl),
@@ -3634,6 +3640,7 @@ class PlayerViewModel {
         isHUDPresented = false
         #if os(iOS)
         touchControlsPinned = false
+        touchControlPressed = false
         #endif
         showNextUpScreen = isNextUpTransitioning
         if !isNextUpTransitioning {
@@ -4068,7 +4075,8 @@ class PlayerViewModel {
                         PlaybackProtocolV3.headerAuthenticatedMediaFeature
                     ) == true,
                     allowsAuthorizedMediaOrigins:
-                        prepared.protocolV3?.negotiatedAuthorizedMediaOrigins == true
+                        prepared.protocolV3?.negotiatedAuthorizedMediaOrigins == true,
+                    nativeApiMajor: prepared.protocolV3?.plan.nativeApiMajor
                 ) else {
                     throw VividLoadSpec.ValidationError.invalidStreamURL(session.streamUrl)
                 }
@@ -5633,6 +5641,15 @@ class PlayerViewModel {
         scheduleHideControls()
     }
 
+    #if os(iOS)
+    func touchControlPressChanged(_ pressed: Bool) {
+        guard showControls else { touchControlPressed = false; return }
+        touchControlPressed = pressed
+        if pressed { hideControlsTask?.cancel() }
+        else { scheduleHideControls() }
+    }
+    #endif
+
     /// Hide the controls overlay immediately, cancelling any pending
     /// auto-hide. Wired to the Siri Remote Menu button on tvOS so the user
     /// can dismiss the overlay without waiting out the 5s timer; tapping
@@ -6108,24 +6125,34 @@ class PlayerViewModel {
         session: PlaybackSessionResponse,
         additionalHeaders: [String: String] = [:],
         requiresHeaderAuthenticatedMedia: Bool = false,
-        allowsAuthorizedMediaOrigins: Bool = false
+        allowsAuthorizedMediaOrigins: Bool = false,
+        nativeApiMajor: Int? = nil
     ) async -> StreamRequest? {
         if MediaServerProvider.active == .emby, !session.streamUrl.hasPrefix("file://") {
             return await sessionBridge.embyStreamRequest(sessionID: session.sessionId)
         }
         let serverUrl = await VividAPI.shared.currentServerUrl()
-        let token = await VividAPI.shared.currentAccessToken()
+        let auth = await TokenStore.shared.captureOrdinaryRequestAuth()
+        let token = auth?.accessToken
+        var headers = additionalHeaders
+        if nativeApiMajor == 2 {
+            guard let accountServerURL = auth?.account.serverURL,
+                  ServerRegistry.normalize(url: accountServerURL) == ServerRegistry.normalize(url: serverUrl) else { return nil }
+            headers["X-Profile-Id"] = auth?.profileId
+            headers["X-Profile-Token"] = auth?.profileToken
+        }
         return StreamRequest.resolve(
             rawURL: session.streamUrl,
             serverURL: serverUrl,
-            additionalHeaders: additionalHeaders,
+            additionalHeaders: headers,
             accessToken: token,
             requiresHeaderAuthenticatedMedia: requiresHeaderAuthenticatedMedia,
             // The caller knows the attempt's session, so a proxy URL naming a
             // different one is rejected rather than trusted.
             authorizedMediaOriginSessionId: allowsAuthorizedMediaOrigins
                 ? session.sessionId
-                : nil
+                : nil,
+            nativeApiMajor: nativeApiMajor
         )
     }
 
@@ -6498,11 +6525,15 @@ class PlayerViewModel {
     }
 
     /// Duration the transport overlay stays on-screen after the last user
-    /// interaction before auto-hiding while playing. Matches Infuse/Apple TV.
+    /// interaction before auto-hiding while playing.
     private static let autoHideSeconds: UInt64 = 5
 
     private func scheduleHideControls() {
         #if os(iOS)
+        if touchControlPressed {
+            hideControlsTask?.cancel()
+            return
+        }
         if touchControlsPinned {
             pinControlsVisible()
             return
@@ -6528,9 +6559,7 @@ class PlayerViewModel {
                 break
             }
             guard let self, !self.isScrubbing else { return }
-            #if os(tvOS)
             guard self.isPlaying else { return }
-            #endif
             withAnimation { self.showControls = false }
         }
     }
