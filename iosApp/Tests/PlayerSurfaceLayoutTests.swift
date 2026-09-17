@@ -381,7 +381,28 @@ final class PlayerSurfaceLayoutTests: XCTestCase {
         defer { window.isHidden = true; window.rootViewController = nil; engine.stop(); model.cleanup() }
         try await settle(window)
         let surface = try XCTUnwrap(surfaces(in: window).first)
-        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "v3_h264_aac", withExtension: "mp4"))
+        // The bundled clip is only two seconds long. Keep real moving media
+        // running throughout layout/rotation checks instead of racing EOF.
+        let source = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "v3_h264_aac", withExtension: "mp4"))
+        let asset = AVURLAsset(url: source)
+        let clipDuration = try await asset.load(.duration)
+        let composition = AVMutableComposition()
+        for mediaType in [AVMediaType.video, .audio] {
+            for sourceTrack in try await asset.loadTracks(withMediaType: mediaType) {
+                let track = try XCTUnwrap(composition.addMutableTrack(withMediaType: mediaType, preferredTrackID: kCMPersistentTrackID_Invalid))
+                for index in 0..<30 {
+                    try track.insertTimeRange(CMTimeRange(start: .zero, duration: clipDuration), of: sourceTrack,
+                                              at: CMTimeMultiply(clipDuration, multiplier: Int32(index)))
+                }
+            }
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let exporter = try XCTUnwrap(AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough))
+        exporter.outputURL = url
+        exporter.outputFileType = .mov
+        await exporter.export()
+        guard exporter.status == .completed else { throw exporter.error ?? URLError(.cannotCreateFile) }
         let options = LoadOptions()
         try await engine.load(url: url, options: options)
         engine.play()
