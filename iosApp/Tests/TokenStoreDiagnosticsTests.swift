@@ -1,3 +1,4 @@
+import Security
 import XCTest
 @testable import Vivid
 
@@ -10,6 +11,32 @@ import XCTest
 /// consumed by hand out of collected reports, so a rename is a silent break
 /// in meaning rather than a compile error.
 final class TokenStoreDiagnosticsTests: XCTestCase {
+    func testTemporaryReadFailureDoesNotCacheAnEmptySession() async {
+        var accessReads = 0
+        let keychain = SharedKeychain(
+            service: "vivid.test.read", accessGroup: nil,
+            allowsAppLocalFallback: false,
+            readItem: { query in
+                guard query[kSecAttrAccount as String] as? String == TokenStore.accessTokenKey(for: "test-server") else {
+                    return (errSecItemNotFound, nil)
+                }
+                accessReads += 1
+                return accessReads == 1
+                    ? (errSecNotAvailable, nil)
+                    : (errSecSuccess, Data("saved-session".utf8))
+            }
+        )
+        let store = TokenStore(keychain: keychain)
+        await store.retargetActiveServer(serverId: "test-server")
+        let unavailable = await store.getAccessToken()
+        let recovered = await store.getAccessToken()
+        let cached = await store.getAccessToken()
+        XCTAssertNil(unavailable)
+        XCTAssertEqual(recovered, "saved-session")
+        XCTAssertEqual(cached, "saved-session")
+        XCTAssertEqual(accessReads, 2)
+    }
+
     /// Every field valid and matching — the shape the classifier should never
     /// see, since the guard would have succeeded.
     private func reason(

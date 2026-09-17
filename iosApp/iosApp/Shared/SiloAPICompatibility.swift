@@ -65,7 +65,7 @@ enum SiloAPICompatibility {
             }
             var q = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
             if let order = q.removeValue(forKey: "order"), order == "desc", let sort = q["sort"], !sort.hasPrefix("-") { q["sort"] = "-" + sort }
-            if let offset = q.removeValue(forKey: "offset"), offset != "0" { q["seek"] = offset }
+            if let offset = q.removeValue(forKey: "offset"), offset != "0" || q["snapshot"] != nil { q["seek"] = offset }
             if let snapshot = q.removeValue(forKey: "snapshot"), !snapshot.isEmpty { q["cursor"] = snapshot }
             if let include = q.removeValue(forKey: "include_total") { q["skip_total"] = include == "false" ? "true" : "false" }
             let keys = q.keys.filter { $0.hasPrefix("groups[") }
@@ -90,6 +90,14 @@ enum SiloAPICompatibility {
             }
             c.queryItems = q.keys.sorted().map { URLQueryItem(name: $0, value: q[$0]) }
         }
+        if mapped.hasPrefix("/api/v2/settings/values") {
+            c.queryItems = (c.queryItems ?? []).flatMap { item -> [URLQueryItem] in
+                guard ["keys", "library_ids", "series_ids"].contains(item.name), let value = item.value else { return [item] }
+                return value.split(separator: ",", omittingEmptySubsequences: false).map {
+                    URLQueryItem(name: item.name, value: String($0))
+                }
+            }
+        }
         if mapped == "/api/v2/catalog/filters" {
             c.queryItems = (c.queryItems ?? []).map { item in
                 item.name == "include_technical" ? URLQueryItem(name: "skip_technical", value: item.value == "true" ? "false" : "true") : item
@@ -107,13 +115,14 @@ enum SiloAPICompatibility {
             var encoded = encodeIDs(json)
             if mapped == "/api/v2/downloads", method == "POST", var object = encoded as? [String: Any] {
                 object["media_file_id"] = object.removeValue(forKey: "file_id")
+                if object["season_number"] != nil { object["series"] = true }
                 encoded = object
             }
             if mapped == "/api/v2/sync/progress", var object = encoded as? [String: Any], let items = object["items"] as? [[String: Any]] {
-                object["items"] = items.map { item -> [String: Any] in
+                object["items"] = try items.map { item -> [String: Any] in
                     var item = item
-                    if let seconds = item.removeValue(forKey: "position") as? Double { item["position_ms"] = Int64((seconds * 1000).rounded()) }
-                    if let seconds = item.removeValue(forKey: "duration") as? Double { item["duration_ms"] = Int64((seconds * 1000).rounded()) }
+                    if let seconds = item.removeValue(forKey: "position") as? Double { item["position_ms"] = try milliseconds(seconds) }
+                    if let seconds = item.removeValue(forKey: "duration") as? Double { item["duration_ms"] = try milliseconds(seconds) }
                     return item
                 }
                 encoded = object
@@ -123,9 +132,15 @@ enum SiloAPICompatibility {
         return result
     }
 
+    private static func milliseconds(_ seconds: Double) throws -> Int64 {
+        let value = (seconds * 1000).rounded()
+        guard value.isFinite, value >= 0, value < Double(Int64.max) else { throw Failure.invalidDiscovery }
+        return Int64(value)
+    }
+
     private static let numericIDs: Set<String> = ["file_id", "media_file_id", "last_file_id", "switched_file_id", "person_id", "library_id", "impersonator_user_id", "requested_media_file_id", "effective_media_file_id"]
     private static func encodeIDs(_ value: Any, key: String = "") -> Any {
-        if let object = value as? [String: Any] { return object.mapValuesWithKeys { $0 == "value" ? $1 : encodeIDs($1, key: $0) } }
+        if let object = value as? [String: Any] { return object.mapValuesWithKeys { ["value", "headers", "diagnostics", "platform_details"].contains($0) ? $1 : encodeIDs($1, key: $0) } }
         if let array = value as? [Any] { return array.map { encodeIDs($0, key: key == "allowed_library_ids" ? "library_id" : key) } }
         if numericIDs.contains(key), let number = value as? NSNumber { return number.stringValue }
         return value
@@ -195,9 +210,18 @@ enum SiloAPICompatibility {
     }
 
     private static func decodeIDs(_ value: Any, key: String = "", numericObjectID: Bool = false) -> Any {
-        if let object = value as? [String: Any] {
+        if var object = value as? [String: Any] {
+            if ["intro", "credits"].contains(key) {
+                object["start"] = object["start"] ?? object["start_seconds"]
+                object["end"] = object["end"] ?? object["end_seconds"]
+            }
+            if key == "versions" {
+                object["duration"] = object["duration"] ?? object["duration_seconds"]
+            }
             return object.mapValuesWithKeys { field, child in
-                if field == "value" { return child }
+                if ["value", "headers", "diagnostics", "platform_details"].contains(field) { return child }
+                // Credit person IDs are strings in Vivid; other person responses use integers.
+                if field == "person_id", key == "cast" || key == "crew" { return child }
                 let numeric = field == "user" || field == "cast" || field == "crew" || (field == "items" && numericObjectID)
                 if field == "id", numericObjectID, let string = child as? String, let integer = Int(string) { return integer }
                 return decodeIDs(child, key: field, numericObjectID: numeric)

@@ -124,6 +124,11 @@ enum PosterImageCache {
         VividImagePipeline.shared.cache.removeAll(caches: .memory)
     }
 
+    static func resetForAccountSwitch() async {
+        prefetcher.stopPrefetching()
+        await VividImagePipeline.shared.cancelForAccountSwitch()
+    }
+
     #if os(tvOS)
     /// Extra decoded artwork capacity only while the discovery Home is visible.
     static func setHomeBrowsingMemoryBudget(_ enabled: Bool) {

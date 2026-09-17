@@ -153,6 +153,18 @@ final class VividImagePipeline: @unchecked Sendable {
         for url in urls { cache.removeCachedData(for: VividImageRequest(url: url)) }
     }
 
+    /// Called before publishing the destination account. Cancel shared work,
+    /// not just its view waiters, and prevent old decodes refilling memory.
+    func cancelForAccountSwitch() async {
+        cache.removeAll(caches: .memory)
+        await flights.cancelAll()
+        #if os(tvOS)
+        await embyDataFlights.cancelAll()
+        #endif
+        let tasks = await session.allTasks
+        tasks.forEach { $0.cancel() }
+    }
+
     func data(for request: VividImageRequest) async throws -> Data {
         if request.url.isFileURL { return try Data(contentsOf: request.url, options: .mappedIfSafe) }
         #if os(tvOS)
@@ -214,8 +226,14 @@ final class VividImagePipeline: @unchecked Sendable {
 
 /// Coalesce Emby artwork independently of thumbnail size. Transport recovery
 /// is shared with Silo in fetchData, so retries are not multiplied here.
-private actor VividEmbyImageDataFlights {
+actor VividEmbyImageDataFlights {
     private var tasks: [URL: (UUID, Task<Data, Error>)] = [:]
+
+    func cancelAll() {
+        let outgoing = tasks.values
+        tasks.removeAll()
+        for (_, task) in outgoing { task.cancel() }
+    }
 
     func cancel(urls: Set<URL>) {
         for url in urls { tasks.removeValue(forKey: url)?.1.cancel() }
@@ -246,6 +264,11 @@ private actor VividEmbyImageDataFlights {
 
 private actor VividImageFlights {
     private var tasks: [VividImageRequest: (UUID, Task<VividImageContainer, Error>)] = [:]
+    func cancelAll() {
+        let outgoing = tasks.values
+        tasks.removeAll()
+        for (_, task) in outgoing { task.cancel() }
+    }
     func cancel(urls: Set<URL>) {
         for request in Array(tasks.keys) where urls.contains(request.url) {
             tasks.removeValue(forKey: request)?.1.cancel()

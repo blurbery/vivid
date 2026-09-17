@@ -64,8 +64,11 @@ final class TVLibrarySimilarityStore {
         guard !filters.genres.isEmpty || !filters.studios.isEmpty || !filters.networks.isEmpty else { return [] }
         filters.sort = .ratingImdb
         let mediaType: BrowseMediaType = source.type == "movie" ? .movie : .series
+        // Native Silo cursors bind the page size as well as the filters.
+        // Seed the window with the same size used by every candidate page.
+        let candidatePageSize = 100
         let countQuery = CatalogQueryBuilder.build(filters, libraryId: nil,
-            mediaType: mediaType, offset: 0, limit: 1, snapshot: nil, includeTotal: true)
+            mediaType: mediaType, offset: 0, limit: candidatePageSize, snapshot: nil, includeTotal: true)
         let summary: CatalogResponse = try await VividAPI.shared.get("/api/v1/catalog", query: countQuery)
         try checkContext(context)
         var candidates = summary.items
@@ -74,7 +77,7 @@ final class TVLibrarySimilarityStore {
         let offsets = Self.candidateOffsets(total: summary.total ?? 300, seed: source.contentId)
         for offset in offsets {
             let query = CatalogQueryBuilder.build(filters, libraryId: nil,
-                mediaType: mediaType, offset: offset, limit: 100,
+                mediaType: mediaType, offset: offset, limit: candidatePageSize,
                 snapshot: summary.snapshot, includeTotal: false)
             do {
                 let response: CatalogResponse = try await VividAPI.shared.get("/api/v1/catalog", query: query)

@@ -1255,8 +1255,8 @@ actor HTTPClient {
                     siloPlaybackSessions[sessionKey] = (installation, sequence)
                     body["sequence"] = sequence
                 }
-                if legacyPath.hasSuffix("/route-events") { body["event_id"] = UUID().uuidString }
-                if mapped.httpMethod == "DELETE" { body["stop_id"] = UUID().uuidString }
+                if legacyPath.hasSuffix("/route-events") { body["event_id"] = UUID().uuidString.lowercased() }
+                if mapped.httpMethod == "DELETE" { body["stop_id"] = UUID().uuidString.lowercased() }
                 mapped.httpBody = try JSONSerialization.data(withJSONObject: body)
                 mapped.setValue("application/json", forHTTPHeaderField: "Content-Type")
             }
@@ -1344,7 +1344,11 @@ actor HTTPClient {
         }
         var (data, response) = try await performTransport(request: mapped, timeout: timeout,
             dispatchRevision: dispatchRevision, reportReachability: reportReachability)
-        guard (200..<300).contains(response.statusCode) else { return (data, response) }
+        guard (200..<300).contains(response.statusCode) else {
+            let failure = HTTPError.http(statusCode: response.statusCode, body: String(data: data, encoding: .utf8))
+            if failure.serverErrorCode == "installation_changed" { siloPlaybackInstallations[authority] = nil }
+            return (data, response)
+        }
         if (legacyPath == "/api/v1/downloads" || legacyPath == "/api/v1/downloads/subscriptions" || legacyPath.hasSuffix("/manifests")),
            var document = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            var items = document["items"] as? [Any] {
@@ -2248,7 +2252,11 @@ enum HTTPError: LocalizedError, CustomStringConvertible {
     /// can match on this without re-parsing the body.
     var serverErrorCode: String? {
         if case .http(_, let body) = self {
-            return Self.parseServerError(body).flatMap { $0.error ?? $0.code }
+            return Self.parseServerError(body).flatMap { problem in
+                if let code = problem.error ?? problem.code { return code }
+                guard let type = problem.type, type.hasPrefix("https://siloserver.org/docs/api/v2/problems/") else { return nil }
+                return URL(string: type)?.lastPathComponent
+            }
         }
         return nil
     }
@@ -2262,6 +2270,7 @@ enum HTTPError: LocalizedError, CustomStringConvertible {
         let message: String?
         let code: String?
         let detail: String?
+        let type: String?
     }
 
     private static func parseServerError(_ body: String?) -> ServerError? {

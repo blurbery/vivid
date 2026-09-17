@@ -203,6 +203,8 @@ final class AuthService: @unchecked Sendable {
     func restoreTVAccount(_ session: TVSavedAccountSession, serverID: String) async throws {
         guard let lease = await HTTPClient.shared.beginIdentityTransition() else { throw CancellationError() }
         await HTTPClient.shared.cancelInFlightRequests()
+        clearAllCaches()
+        await PosterImageCache.resetForAccountSwitch()
         guard await serverRegistry.commitSwitchTo(serverId: serverID, holding: lease) else {
             await HTTPClient.shared.endIdentityTransition(lease)
             throw ServerRegistryError.persistenceFailed

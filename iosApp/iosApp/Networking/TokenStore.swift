@@ -598,12 +598,12 @@ actor TokenStore {
     /// Minimal launch-time check for whether the active server has a stored
     /// access token. This reads only the access-token slot; the full token
     /// cache is still loaded lazily by the first authenticated request.
-    func hasAccessTokenForActiveServer(serverId: String) -> Bool {
+    func hasAccessTokenForActiveServer(serverId: String) throws -> Bool {
         retargetActiveServer(serverId: serverId)
         if loadedForServerId == activeServerId {
             return cachedAccessToken != nil
         }
-        cachedAccessToken = accountKeychain.get(Self.accessTokenKey(for: serverId))
+        cachedAccessToken = try accountKeychain.getChecked(Self.accessTokenKey(for: serverId))
         return cachedAccessToken != nil
     }
 
@@ -862,9 +862,17 @@ actor TokenStore {
             cachedRefreshToken = nil
             cachedProfileToken = nil
         } else {
-            cachedAccessToken = accountKeychain.get(accessTokenKey)
-            cachedRefreshToken = accountKeychain.get(refreshTokenKey)
-            cachedProfileToken = profileKeychain.get(profileTokenKey)
+            do {
+                let access = try accountKeychain.getChecked(accessTokenKey)
+                let refresh = try accountKeychain.getChecked(refreshTokenKey)
+                let profile = try profileKeychain.getChecked(profileTokenKey)
+                cachedAccessToken = access
+                cachedRefreshToken = refresh
+                cachedProfileToken = profile
+            } catch {
+                // Leave the cache invalid so a temporary read failure can recover.
+                return
+            }
         }
         loadedForServerId = activeServerId
     }

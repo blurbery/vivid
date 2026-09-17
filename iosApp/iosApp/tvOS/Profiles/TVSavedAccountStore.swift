@@ -378,8 +378,11 @@ final class TVSavedAccountStore {
             await UICustomizationPreferences.shared.refresh()
             await PlayerSettings.shared.reloadForCurrentProfile()
             router.dismissItemDetail()
-            contentRevision = UUID()
             #endif
+            // Server publication precedes the token/profile commit. Rebuild
+            // only after restoration so both platforms discard early loads
+            // and same-server account state from the outgoing session.
+            contentRevision = UUID()
             if prepareHome {
                 await TVLoginPreparation.shared.begin(router: router)
             } else {

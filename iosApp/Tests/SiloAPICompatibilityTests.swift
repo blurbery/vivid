@@ -87,6 +87,192 @@ final class SiloAPICompatibilityTests: XCTestCase {
         XCTAssertEqual(try response(#"{"revision":"opaque","manifest_revision":12}"#, path: "/api/v1/settings/contract/capabilities")["revision"] as? Int, 12)
     }
 
+    func testNativeItemDetailKeepsCreditIDsAsStrings() throws {
+        // Upstream v2 get_catalog_item_ok fixture, with crew coverage added.
+        let wire = #"""
+        {
+          "content_id": "movie:heat-1995",
+          "type": "movie",
+          "title": "Heat",
+          "year": 1995,
+          "genres": [
+            "Crime"
+          ],
+          "keywords": [],
+          "status": "",
+          "overlay_summary": {
+            "resolution": "4K"
+          },
+          "user_state": {
+            "played": true,
+            "is_favorite": true,
+            "in_watchlist": false
+          },
+          "work_formats": [
+            {
+              "type": "ebook",
+              "content_id": "ebook:heat",
+              "library_id": "2"
+            }
+          ],
+          "tagline": "A Los Angeles crime saga",
+          "cast": [
+            {
+              "name": "Al Pacino",
+              "character": "Vincent Hanna",
+              "order": 0,
+              "person_id": "7"
+            }
+          ],
+          "crew": [],
+          "user_data": {
+            "watched_count": 1,
+            "unplayed_count": 0,
+            "in_progress_count": 0,
+            "played": true,
+            "last_file_id": "120"
+          },
+          "versions": [
+            {
+              "file_id": "120",
+              "file_path": "/media/movies/Heat.mkv",
+              "resolution": "2160p",
+              "codec_video": "",
+              "codec_audio": "",
+              "hdr": false,
+              "container": "",
+              "file_size": 0,
+              "duration": 0,
+              "bitrate": 0,
+              "added_at": "2026-01-02T03:04:05.678Z"
+            }
+          ],
+          "subtitles": []
+        }
+        """#
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(wire.utf8)) as? [String: Any])
+        object["crew"] = [["name": "Director", "job": "Director", "person_id": "008"]]
+        let data = try SiloAPICompatibility.response(JSONSerialization.data(withJSONObject: object), path: "/api/v1/catalog/items/movie:heat-1995")
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let item = try decoder.decode(ItemDetail.self, from: data)
+        XCTAssertEqual(item.title, "Heat")
+        XCTAssertEqual(item.cast?.first?.personId, "7")
+        XCTAssertEqual(item.crew?.first?.personId, "008")
+        XCTAssertEqual(item.versions?.first?.fileId, 120)
+        XCTAssertEqual(item.userData?.lastFileId, 120)
+    }
+
+    func testNativeWatchDetailDecodesMarkerTimesAndDuration() throws {
+        let wire = #"""
+        {
+          "content_id": "movie:heat-1995",
+          "type": "movie",
+          "title": "Heat",
+          "year": 1995,
+          "versions": [
+            {
+              "file_id": "42",
+              "resolution": "1080p",
+              "codec_video": "h264",
+              "codec_audio": "eac3",
+              "hdr": false,
+              "container": "mkv",
+              "file_size": 1024,
+              "duration_seconds": 10200,
+              "bitrate": 8000000,
+              "added_at": "2026-01-02T03:04:05.000Z",
+              "video_tracks": [
+                {
+                  "codec": "h264",
+                  "dv_config_present": false,
+                  "dv_bl_compat_id_present": false,
+                  "width": 1920,
+                  "height": 1080,
+                  "interlaced": false
+                }
+              ],
+              "audio_tracks": [
+                {
+                  "language": "eng",
+                  "codec": "eac3",
+                  "channels": 6,
+                  "default": true
+                }
+              ],
+              "chapters": [
+                {
+                  "index": 1,
+                  "title": "Opening",
+                  "start_seconds": 0,
+                  "end_seconds": 300,
+                  "source": "embedded"
+                }
+              ],
+              "intro": {
+                "start_seconds": 0,
+                "end_seconds": 90
+              }
+            }
+          ],
+          "playback_variants": [
+            {
+              "variant_id": "v1",
+              "part_count": 1,
+              "default_file_id": "42",
+              "parts": [
+                {
+                  "part_index": 0,
+                  "default_file_id": "42",
+                  "versions": []
+                }
+              ]
+            }
+          ],
+          "subtitles": [
+            {
+              "source": "embedded",
+              "language": "eng",
+              "forced": false,
+              "hearing_impaired": false
+            }
+          ],
+          "credits": {
+            "start_seconds": 10000,
+            "end_seconds": 10200
+          },
+          "user_data": {
+            "position_seconds": 1325.5,
+            "duration_seconds": 10200,
+            "is_in_progress": true,
+            "watched_count": 0,
+            "unplayed_count": 0,
+            "in_progress_count": 0,
+            "played": false,
+            "last_file_id": "3"
+          },
+          "effective_subtitle_language": "eng"
+        }
+        """#
+        let data = try SiloAPICompatibility.response(Data(wire.utf8), path: "/api/v1/watch/movie:heat-1995")
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let item = try decoder.decode(WatchDetail.self, from: data)
+        XCTAssertEqual(item.versions.first?.duration, 10200)
+        XCTAssertEqual(item.versions.first?.intro?.end, 90)
+        XCTAssertEqual(item.credits?.start, 10000)
+        XCTAssertEqual(item.versions.first?.chapters?.first?.endSeconds, 300)
+        XCTAssertEqual(item.userData?.positionSeconds, 1325.5)
+    }
+
+    func testV2SettingsListsUseRepeatedQueryParameters() throws {
+        let mapped = try request("/api/v1/settings/values/effective?keys=ui.theme,player.volume&library_ids=1,2&series_ids=tv:one,tv:two")
+        let items = try XCTUnwrap(URLComponents(url: mapped.url!, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(items.filter { $0.name == "keys" }.compactMap(\.value), ["ui.theme", "player.volume"])
+        XCTAssertEqual(items.filter { $0.name == "library_ids" }.compactMap(\.value), ["1", "2"])
+        XCTAssertEqual(items.filter { $0.name == "series_ids" }.compactMap(\.value), ["tv:one", "tv:two"])
+    }
+
     func testQRLoginUnwrapsTokens() throws {
         let result = try response(#"{"status":"approved","profile_id":"p","tokens":{"access_token":"a","refresh_token":"r","user":{"id":"42"}}}"#, path: "/api/v1/auth/device/poll")
         XCTAssertEqual(result["access_token"] as? String, "a")
