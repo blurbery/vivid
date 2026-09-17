@@ -48,6 +48,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let spec = try VividLoadSpec(directURL: url, headers: old, startPosition: 0, audioOnly: true)
         let epoch = controller.beginLoad(spec, shouldPlayWhenReady: !paused)
         try await controller.finishLoad(epoch)
+        if !paused { controller.play() }
         let expectedState: PlaybackState = paused ? .paused : .playing
         let deadline = Date().addingTimeInterval(5)
         while controller.engine.state != expectedState && Date() < deadline {

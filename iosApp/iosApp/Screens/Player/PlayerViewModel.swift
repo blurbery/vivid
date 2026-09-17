@@ -4711,7 +4711,7 @@ class PlayerViewModel {
             autoSkippedIntroKey = key
         }
         cancelPendingIntroAutoSkip()
-        seekTo(seconds: introRange.end)
+        seekTo(seconds: introRange.end, revealingControls: false)
     }
 
     func skipCredits() {
@@ -4981,7 +4981,7 @@ class PlayerViewModel {
 
     /// Seek to a specific timestamp. Used by the chapter sheet and the tvOS
     /// progress-bar scrubber.
-    func seekTo(seconds: Double) {
+    func seekTo(seconds: Double, revealingControls: Bool = true) {
         guard !hasReachedEndOfFile else { return }
         skipDebounceTask?.cancel()
         skipDebounceTask = nil
@@ -4989,7 +4989,9 @@ class PlayerViewModel {
             "[CMP-SEEK] absolute seek requested seconds=\(seconds, privacy: .public)"
         )
         commitSeek(to: max(0, seconds), source: "absolute")
-        scheduleHideControls()
+        if revealingControls || showControls {
+            scheduleHideControls()
+        }
     }
 
     private func applyMarkerRanges(intro: TimeRange?, credits: TimeRange?) {
@@ -5163,7 +5165,7 @@ class PlayerViewModel {
             Self.logger.info(
                 "[CMP-MARKERS] auto-skip intro target=\(range.end, privacy: .public) current=\(self.currentTime, privacy: .public)"
             )
-            self.seekTo(seconds: range.end)
+            self.seekTo(seconds: range.end, revealingControls: false)
         }
     }
 
@@ -5208,7 +5210,7 @@ class PlayerViewModel {
             handleEndOfFile()
             return
         }
-        seekTo(seconds: target)
+        seekTo(seconds: target, revealingControls: false)
     }
 
     private func currentIntroSkipKey(for range: TimeRange) -> String? {

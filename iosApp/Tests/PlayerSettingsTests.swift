@@ -90,6 +90,36 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertEqual(model.openingSkipRanges.count, 2)
     }
 
+    func testMarkerSkipsPreserveControlVisibilityAndSeekToRangeEnd() {
+        for visible in [false, true] {
+            for marker in ["intro", "recap", "credits"] {
+                let model = PlayerViewModel()
+                model.duration = 200
+                model.currentTime = 10
+                model.showControls = visible
+                switch marker {
+                case "intro": model.introRange = TimeRange(start: 0, end: 30)
+                case "recap": model.recapRange = TimeRange(start: 0, end: 30)
+                default: model.creditsRange = TimeRange(start: 0, end: 30)
+                }
+                if marker == "credits" { model.skipCredits() } else { model.skipIntro() }
+                XCTAssertEqual(model.currentTime, 30, marker)
+                XCTAssertEqual(model.showControls, visible, marker)
+                model.cleanup()
+            }
+        }
+    }
+
+    func testOrdinaryTimestampSeekStillRevealsControls() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.duration = 200
+        model.showControls = false
+        model.seekTo(seconds: 30)
+        XCTAssertEqual(model.currentTime, 30)
+        XCTAssertTrue(model.showControls)
+    }
+
     func testSelectedFileMarkersSurviveBeforeDurationAndRejectInvalidRanges() {
         let model = PlayerViewModel()
         defer { model.cleanup() }

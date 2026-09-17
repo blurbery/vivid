@@ -53,7 +53,13 @@ final class MockIntroDB: URLProtocol, @unchecked Sendable {
         precondition(mismatch == nil, "Never apply another episode's timestamps")
         precondition(VividIntroDBClient.Segment(start_ms: -1, end_ms: 1000).range(duration: 100) == nil)
         precondition(VividIntroDBClient.Segment(start_ms: 2000, end_ms: 1000).range(duration: 100) == nil)
-        print("IntroDB checks passed: anonymous requests, milliseconds, bounds, cache, invalid IDs, missing data, rate limiting and episode identity.")
+        MockIntroDB.body = #"{"imdb_id":"tt0944947","season":1,"episode":1,"intro":{"start_ms":30000,"end_ms":60000},"outro":{"start_ms":1700000,"end_ms":1800000},"recap":{"start_ms":0,"end_ms":20000}}"#
+        let separate = try await client().segments(for: identity)
+        precondition(separate?.recap?.range(duration: 1800)?.start == 0)
+        precondition(separate?.recap?.range(duration: 1800)?.end == 20)
+        precondition(separate?.intro?.range(duration: 1800)?.start == 30)
+        precondition(separate?.outro?.range(duration: 1800)?.start == 1700)
+        print("IntroDB checks passed: anonymous requests, milliseconds, bounds, separate intro/credits/recap, cache, invalid IDs, missing data, rate limiting and episode identity.")
     }
 }
 SWIFT
