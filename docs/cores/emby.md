@@ -1,4 +1,4 @@
-<p align="center"><img src="../branding/vivid-mark-silver.png" width="96" height="96" alt="Vivid logo"></p>
+<p align="center"><img src="../branding/vivid-mark-silver.svg" width="96" height="96" alt="Vivid logo"></p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Emby server core</h1>
 <p align="center"><a href="../README.md">Documentation</a> · <a href="vivid.md">Vivid core</a> · <a href="../server-connections.md">Server connections</a></p>

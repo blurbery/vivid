@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/branding/vivid-mark-silver.png" width="96" height="96" alt="Vivid silver logo">
+  <img src="docs/branding/vivid-mark-silver.svg" width="96" height="96" alt="Vivid silver logo">
 </p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Agent Instructions</h1>
