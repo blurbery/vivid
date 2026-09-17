@@ -1422,9 +1422,10 @@ class PlayerViewModel {
         )
     }
 
-    /// Progress owns token refresh. Direct readers adopt new headers without
-    /// replacing their buffered session; native routes retain reload recovery.
-    private func attemptProtocolV3AuthenticationReloadAfterProgress(
+    /// Progress owns token refresh. Adopt new headers only when the engine can
+    /// preserve the active reader. Unsupported updates wait for actual media
+    /// authentication failure, which retains same-route reload recovery.
+    private func updateProtocolV3AuthenticationAfterProgress(
         _ result: PlaybackProgressReportResult
     ) async {
         guard result == .success,
@@ -1457,7 +1458,7 @@ class PlayerViewModel {
               vividPlaybackController.activeSpec?.planID == failedSpec.planID,
               vividPlaybackController.activeSpec?.sessionID == sessionId,
               vividPlaybackController.activeSpec?.options.httpHeaders == failedSpec.options.httpHeaders,
-              VividAuthenticationRecoveryPolicy.shouldReloadAfterProgress(
+              VividAuthenticationRecoveryPolicy.shouldUpdateHeadersAfterProgress(
                   result,
                   activeHeaders: failedSpec.options.httpHeaders,
                   currentHeaders: streamRequest.headers
@@ -1468,13 +1469,7 @@ class PlayerViewModel {
         if vividPlaybackController.updateSourceHeaders(streamRequest.headers, for: loadEpoch,
             expectedHeaders: failedSpec.options.httpHeaders, sourceURL: streamRequest.url) {
             Self.logger.info("Stream recovery reason=authorization_rotated outcome=headers_updated")
-            return
         }
-        _ = beginProtocolV3SameRouteReload(
-            fallbackClassification: "authorization_rotated",
-            fallbackMessage: "Playback authorization changed while media was active.",
-            refreshedStreamRequest: streamRequest
-        )
     }
 
     private func refreshDirectSourceHeaders(
@@ -1528,7 +1523,6 @@ class PlayerViewModel {
     private func beginProtocolV3SameRouteReload(
         fallbackClassification: String,
         fallbackMessage: String,
-        refreshedStreamRequest: StreamRequest? = nil,
         transientFailureCode: Int? = nil
     ) -> Bool {
         guard protocolV3ReplanTask == nil,
@@ -1546,14 +1540,6 @@ class PlayerViewModel {
             return false
         }
 
-        if let refreshedStreamRequest,
-           !VividAuthenticationRecoveryPolicy.shouldReload(
-               failedHeaders: failedSpec.options.httpHeaders,
-               refreshedHeaders: refreshedStreamRequest.headers
-           ) {
-            return false
-        }
-
         let planId = protocolV3.plan.planId
         let resumePosition = currentTime.isFinite ? max(0, currentTime) : 0
         let failedHeaders = failedSpec.options.httpHeaders
@@ -1561,7 +1547,7 @@ class PlayerViewModel {
         if transientFailureCode != nil {
             guard transientRecoveryBudget.beginReload() else { return false }
         }
-        guard transientFailureCode != nil || refreshedStreamRequest != nil || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
+        guard transientFailureCode != nil || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
             progressTask?.cancel()
             finalizeTerminalPlaybackError(fallbackMessage)
             return true
@@ -1579,13 +1565,9 @@ class PlayerViewModel {
 
         if let code = transientFailureCode {
             Self.logger.warning("Stream recovery domain=NSURLErrorDomain code=\(code, privacy: .public) outcome=same_route_reload")
-        } else if refreshedStreamRequest == nil {
+        } else {
             Self.logger.warning(
                 "Protocol V3 media credential expired; refreshing and reloading plan \(planId, privacy: .public) at source position \(resumePosition, privacy: .public)"
-            )
-        } else {
-            Self.logger.info(
-                "Protocol V3 media credential rotated; proactively reloading plan \(planId, privacy: .public) at source position \(resumePosition, privacy: .public)"
             )
         }
         Self.logger.info("Stream recovery outcome=session_reconstruction")
@@ -1630,7 +1612,7 @@ class PlayerViewModel {
             }
 
             do {
-                if refreshedStreamRequest == nil && transientFailureCode == nil {
+                if transientFailureCode == nil {
                     // This request uses the normal API transport, whose 401 path
                     // refreshes TokenStore before retrying. Its result is otherwise
                     // best-effort; the header comparison below is authoritative.
@@ -1658,21 +1640,15 @@ class PlayerViewModel {
                     activeQualityId: self.activeQualityId,
                     protocolV3: protocolV3
                 )
-                let streamRequest: StreamRequest
-                if let refreshedStreamRequest {
-                    streamRequest = refreshedStreamRequest
-                } else {
-                    guard let resolved = await self.makeStreamRequest(
-                        session: session,
-                        additionalHeaders: protocolV3.plan.stream.headers,
-                        requiresHeaderAuthenticatedMedia: true,
-                        allowsAuthorizedMediaOrigins:
-                            protocolV3.negotiatedAuthorizedMediaOrigins,
-                        nativeApiMajor: protocolV3.plan.nativeApiMajor
-                    ) else {
-                        throw VividLoadSpec.ValidationError.invalidStreamURL(session.streamUrl)
-                    }
-                    streamRequest = resolved
+                guard let streamRequest = await self.makeStreamRequest(
+                    session: session,
+                    additionalHeaders: protocolV3.plan.stream.headers,
+                    requiresHeaderAuthenticatedMedia: true,
+                    allowsAuthorizedMediaOrigins:
+                        protocolV3.negotiatedAuthorizedMediaOrigins,
+                    nativeApiMajor: protocolV3.plan.nativeApiMajor
+                ) else {
+                    throw VividLoadSpec.ValidationError.invalidStreamURL(session.streamUrl)
                 }
                 try self.requireCurrentStreamLoad(recoveryGeneration)
                 guard transientFailureCode != nil || VividAuthenticationRecoveryPolicy.shouldReload(
@@ -1727,12 +1703,10 @@ class PlayerViewModel {
                 }
                 self.applySecondarySubtitleTrackSelection(self.selectedSecondarySubtitleId)
                 self.markProtocolV3VividLoadCommitted()
-                if refreshedStreamRequest == nil {
-                    try await self.confirmAuthenticationRecovery(generation: recoveryGeneration,
-                        transientRecovery: transientFailureCode != nil)
-                    if transientFailureCode == nil {
-                        self.authenticationRecoveryBudget.recovered(generation: recoveryEpisode)
-                    }
+                try await self.confirmAuthenticationRecovery(generation: recoveryGeneration,
+                    transientRecovery: transientFailureCode != nil)
+                if transientFailureCode == nil {
+                    self.authenticationRecoveryBudget.recovered(generation: recoveryEpisode)
                 }
                 shouldFallbackToReplan = false
                 Self.logger.info(
@@ -4737,7 +4711,7 @@ class PlayerViewModel {
             autoSkippedIntroKey = key
         }
         cancelPendingIntroAutoSkip()
-        seekTo(seconds: introRange.end)
+        seekTo(seconds: introRange.end, revealingControls: false)
     }
 
     func skipCredits() {
@@ -5007,7 +4981,7 @@ class PlayerViewModel {
 
     /// Seek to a specific timestamp. Used by the chapter sheet and the tvOS
     /// progress-bar scrubber.
-    func seekTo(seconds: Double) {
+    func seekTo(seconds: Double, revealingControls: Bool = true) {
         guard !hasReachedEndOfFile else { return }
         skipDebounceTask?.cancel()
         skipDebounceTask = nil
@@ -5015,7 +4989,9 @@ class PlayerViewModel {
             "[CMP-SEEK] absolute seek requested seconds=\(seconds, privacy: .public)"
         )
         commitSeek(to: max(0, seconds), source: "absolute")
-        scheduleHideControls()
+        if revealingControls || showControls {
+            scheduleHideControls()
+        }
     }
 
     private func applyMarkerRanges(intro: TimeRange?, credits: TimeRange?) {
@@ -5057,16 +5033,18 @@ class PlayerViewModel {
         let fileID = currentSelectedVersion?.fileId
         introDBLookupTask = Task { @MainActor [weak self] in
             do {
-                // The connector supplies series metadata; the external lookup
-                // accepts only the common IMDb/season/episode identity.
+                // Use the series identity, never an episode-level TMDB ID.
                 let series = try await MetadataRequestPool.shared.itemDetail(contentId: seriesID)
                 try Task.checkCancellation()
-                guard let imdb = series.imdbId, VividSkipSource.isEnabled else { return }
-                let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode)
+                guard VividSkipSource.isEnabled else { return }
+                let imdb = series.imdbId ?? ""
+                let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode,
+                    tmdbID: series.tmdbId.flatMap(Int.init))
+                guard identity.fallbackIdentifier != nil else { return }
                 let fetched = try? await VividIntroDBClient.shared.segments(for: identity)
                 let markers = VividIntroDBClient.Segments(
                     imdb_id: imdb, season: season, episode: episode,
-                    intro: fileMarkers.intro, outro: fileMarkers.outro
+                    intro: fileMarkers.intro, outro: fileMarkers.outro, tmdb_id: identity.tmdbID
                 ).fillingMissing(from: fetched)
                 guard let self, !Task.isCancelled, VividSkipSource.isEnabled,
                       self.activePlaybackSessionId == sessionID,
@@ -5189,7 +5167,7 @@ class PlayerViewModel {
             Self.logger.info(
                 "[CMP-MARKERS] auto-skip intro target=\(range.end, privacy: .public) current=\(self.currentTime, privacy: .public)"
             )
-            self.seekTo(seconds: range.end)
+            self.seekTo(seconds: range.end, revealingControls: false)
         }
     }
 
@@ -5234,7 +5212,7 @@ class PlayerViewModel {
             handleEndOfFile()
             return
         }
-        seekTo(seconds: target)
+        seekTo(seconds: target, revealingControls: false)
     }
 
     private func currentIntroSkipKey(for range: TimeRange) -> String? {
@@ -6494,7 +6472,7 @@ class PlayerViewModel {
                         observedPosition: self.currentTime
                     )
                 } else {
-                    await self.attemptProtocolV3AuthenticationReloadAfterProgress(result)
+                    await self.updateProtocolV3AuthenticationAfterProgress(result)
                 }
             }
         }

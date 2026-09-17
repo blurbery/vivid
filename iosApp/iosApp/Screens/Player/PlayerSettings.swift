@@ -750,6 +750,22 @@ actor VividIntroDBClient {
         let imdbID: String
         let season: Int
         let episode: Int
+        let tmdbID: Int?
+
+        init(imdbID: String, season: Int, episode: Int, tmdbID: Int? = nil) {
+            self.imdbID = imdbID
+            self.season = season
+            self.episode = episode
+            self.tmdbID = tmdbID.flatMap { $0 > 0 ? $0 : nil }
+        }
+
+        var fallbackIdentifier: URLQueryItem? {
+            if let tmdbID, tmdbID > 0 {
+                return URLQueryItem(name: "tmdb_id", value: String(tmdbID))
+            }
+            guard imdbID.range(of: "^tt[0-9]{7,8}$", options: .regularExpression) != nil else { return nil }
+            return URLQueryItem(name: "imdb_id", value: imdbID)
+        }
     }
     struct Segment: Decodable, Sendable {
         let start_ms: Double
@@ -791,17 +807,23 @@ actor VividIntroDBClient {
         let intro: Segment?
         let outro: Segment?
         var recap: Segment? = nil
+        var tmdb_id: Int? = nil
 
         func fillingMissing(from fallback: Segments?) -> Segments {
-            guard let fallback, fallback.imdb_id == imdb_id,
+            guard let fallback,
+                  (!imdb_id.isEmpty && fallback.imdb_id == imdb_id) ||
+                    (tmdb_id != nil && fallback.tmdb_id == tmdb_id),
+                  imdb_id.isEmpty || fallback.imdb_id.isEmpty || fallback.imdb_id == imdb_id,
+                  tmdb_id == nil || fallback.tmdb_id == nil || fallback.tmdb_id == tmdb_id,
                   fallback.season == season, fallback.episode == episode else { return self }
             return Segments(imdb_id: imdb_id, season: season, episode: episode,
                             intro: intro ?? fallback.intro, outro: outro ?? fallback.outro,
-                            recap: recap ?? fallback.recap)
+                            recap: recap ?? fallback.recap, tmdb_id: tmdb_id ?? fallback.tmdb_id)
         }
     }
 
     struct FallbackResponse: Decodable, Sendable {
+        let tmdb_id: Int?
         struct Timestamp: Decodable, Sendable {
             let start_ms: Double?
             let end_ms: Double?
@@ -831,7 +853,7 @@ actor VividIntroDBClient {
             }
             return Segments(imdb_id: episode.imdbID, season: episode.season, episode: episode.episode,
                             intro: first(intro, credits: false), outro: first(credits, credits: true),
-                            recap: first(recap, credits: false))
+                            recap: first(recap, credits: false), tmdb_id: tmdb_id ?? episode.tmdbID)
         }
     }
 
@@ -846,13 +868,13 @@ actor VividIntroDBClient {
     }
 
     func fallbackSegments(for episode: Episode) async throws -> Segments? {
-        guard episode.imdbID.range(of: "^tt[0-9]{7,8}$", options: .regularExpression) != nil,
+        guard let identifier = episode.fallbackIdentifier,
               episode.season > 0, episode.episode > 0 else { return nil }
         if let cached = fallbackCache[episode], Date().timeIntervalSince(cached.0) < 3600 {
             return cached.1
         }
         var url = URLComponents(string: "https://api.theintrodb.org/v3/media")!
-        url.queryItems = [URLQueryItem(name: "imdb_id", value: episode.imdbID),
+        url.queryItems = [identifier,
                          URLQueryItem(name: "season", value: String(episode.season)),
                          URLQueryItem(name: "episode", value: String(episode.episode))]
         // Public lookup, with no API key, server credentials or shared cookies.
@@ -860,7 +882,10 @@ actor VividIntroDBClient {
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse,
               response.statusCode == 200, data.count < 100_000 else { return nil }
-        let result = try JSONDecoder().decode(FallbackResponse.self, from: data).segments(for: episode)
+        let responseBody = try JSONDecoder().decode(FallbackResponse.self, from: data)
+        guard let responseTMDBID = responseBody.tmdb_id, responseTMDBID > 0 else { return nil }
+        if identifier.name == "tmdb_id", responseBody.tmdb_id != episode.tmdbID { return nil }
+        let result = responseBody.segments(for: episode)
         if fallbackCache.count >= 200 { fallbackCache.removeAll() }
         fallbackCache[episode] = (Date(), result)
         return result

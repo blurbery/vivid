@@ -8,6 +8,8 @@ on:
       - 'iosApp/Tests/**'
       - 'iosApp/project*.yml'
       - 'iosApp/**/Package.resolved'
+      - 'scripts/tests/playback-auth-refresh-tests.py'
+      - 'scripts/ci/check-introdb-client.sh'
       - '.github/workflows/player-regression.yml'
   push:
     branches: [fix/next-up-persistent-surface]
@@ -53,6 +55,11 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '26.3'
+      - name: Verify playback survives credential refresh
+        if: matrix.action == 'test'
+        run: |
+          python3 scripts/tests/playback-auth-refresh-tests.py
+          bash scripts/ci/check-introdb-client.sh
       - name: Prepare iOS simulator
         if: matrix.action == 'test'
         timeout-minutes: 10
