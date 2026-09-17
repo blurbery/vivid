@@ -15,20 +15,26 @@ struct VividStartupView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if renderingUnavailable {
-                VividLogoView(size: 480)
-            } else {
-                VividStarCanvas(
-                    reduceMotion: reduceMotion,
-                    isActive: scenePhase == .active,
-                    onCompletion: { animationFinished = true },
-                    onUnavailable: {
-                        renderingUnavailable = true
-                        animationFinished = true
+            GeometryReader { geometry in
+                let canvasSize = min(geometry.size.width, geometry.size.height, 720)
+                Group {
+                    if renderingUnavailable {
+                        VividLogoView(size: canvasSize / 1.5)
+                    } else {
+                        VividStarCanvas(
+                            reduceMotion: reduceMotion,
+                            isActive: scenePhase == .active,
+                            onCompletion: { animationFinished = true },
+                            onUnavailable: {
+                                renderingUnavailable = true
+                                animationFinished = true
+                            }
+                        )
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(width: canvasSize, height: canvasSize)
                     }
-                )
-                .aspectRatio(1, contentMode: .fit)
-                .frame(maxWidth: 720, maxHeight: 720)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .overlay {

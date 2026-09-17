@@ -4,6 +4,7 @@ import SwiftUI
 struct TVSavedProfilesScreen: View {
     let router: AppRouter
     @State private var store = TVSavedAccountStore.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack {
             Color.clear.ignoresSafeArea()
@@ -34,7 +35,13 @@ struct TVSavedProfilesScreen: View {
             }
             .disabled(store.showsAnimation)
             if store.showsAnimation {
-                VividStartupView(isContentReady: true) { store.showsAnimation = false }
+                VividStartupView(isContentReady: true) {
+                    withAnimation(.easeInOut(duration: reduceMotion ? 0.2 : 0.55)) {
+                        store.showsAnimation = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(1)
             }
         }
         .environment(router)

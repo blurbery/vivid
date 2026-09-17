@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var didAttemptDebugAutoPlay = false
     @State private var didStartInitialStateCheck = false
     @State private var didFinishStartupSplash = false
+    @State private var showsStartupOverlay = true
+    @Environment(\.accessibilityReduceMotion) private var reduceStartupMotion
     @State private var pendingInitialAuthState: AppRouter.AuthState?
     #if os(iOS) || os(tvOS)
     @State private var showsCloudRestore = false
@@ -42,7 +44,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        authContent
+        launchContent
             .environment(router)
         // A server change is a hard data boundary even when both servers map
         // to the same auth state. Re-key the routed subtree so profile, home,
@@ -478,6 +480,42 @@ struct ContentView: View {
 
     }
 
+    // Keep the completed Metal frame mounted while the destination fades in.
+    // Route resolution still owns authentication; this only bridges presentation.
+    @ViewBuilder
+    private var launchContent: some View {
+        #if os(iOS) || os(tvOS)
+        ZStack {
+            authContent
+                .opacity(didFinishStartupSplash ? 1 : 0)
+                .animation(startupHandoffAnimation, value: didFinishStartupSplash)
+                .disabled(showsStartupOverlay)
+                .accessibilityHidden(showsStartupOverlay)
+            if showsStartupOverlay {
+                startupPresentation
+                    .opacity(didFinishStartupSplash ? 0 : 1)
+                    .scaleEffect(didFinishStartupSplash && !reduceStartupMotion ? 0.96 : 1)
+                    .animation(startupHandoffAnimation, value: didFinishStartupSplash)
+                    .zIndex(1)
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .task(id: didFinishStartupSplash) {
+            guard didFinishStartupSplash else { return }
+            do {
+                try await Task.sleep(for: .seconds(reduceStartupMotion ? 0.2 : 0.55))
+            } catch { return }
+            showsStartupOverlay = false
+        }
+        #else
+        authContent
+        #endif
+    }
+
+    private var startupHandoffAnimation: Animation {
+        .easeInOut(duration: reduceStartupMotion ? 0.2 : 0.55)
+    }
+
     private var initialSplashContentReady: Bool {
         pendingInitialAuthState != nil
     }
@@ -541,7 +579,13 @@ struct ContentView: View {
     private var routedAuthContent: some View {
         switch router.authState {
         case .loading:
-            startupPresentation
+            Group {
+                #if os(iOS) || os(tvOS)
+                Color.black.ignoresSafeArea()
+                #else
+                startupPresentation
+                #endif
+            }
             .task {
                 guard !didStartInitialStateCheck else { return }
                 didStartInitialStateCheck = true
