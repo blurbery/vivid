@@ -32,7 +32,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 
     private func assertCredentialUpdatePreservesSession(paused: Bool) async throws {
-        let file = try embeddedMediaFixture()
+        let file = try embeddedMediaFixture(durationSeconds: 30)
         defer { try? FileManager.default.removeItem(at: file) }
         let server = try CredentialPlaybackServer(media: Data(contentsOf: file))
         let url = try await server.start()
@@ -178,7 +178,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         return window
     }
 
-    private func embeddedMediaFixture(secondAudio: Bool = false) throws -> URL {
+    private func embeddedMediaFixture(secondAudio: Bool = false, durationSeconds: Int = 3) throws -> URL {
         func integer(_ value: UInt64, width: Int? = nil) -> Data {
             let count = width ?? max(1, (64 - value.leadingZeroBitCount + 7) / 8)
             return Data((0..<count).reversed().map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) })
@@ -192,7 +192,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let header = number(0x4286, 1) + number(0x42F7, 1) + number(0x42F2, 4) + number(0x42F3, 8)
             + element(0x4282, Data("matroska".utf8)) + number(0x4287, 4) + number(0x4285, 2)
         let info = number(0x2AD7B1, 1_000_000)
-            + element(0x4489, integer(Double(3000).bitPattern, width: 8))
+            + element(0x4489, integer(Double(durationSeconds * 1000).bitPattern, width: 8))
         let audio = number(0xD7, 1) + number(0x73C5, 1) + number(0x83, 2)
             + element(0x86, Data("A_PCM/INT/LIT".utf8))
             + element(0xE1, element(0xB5, integer(Double(48000).bitPattern, width: 8))
@@ -208,7 +208,7 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         let alternateTrack = secondAudio ? element(0xAE, alternative) : Data()
         var segment = element(0x1549A966, info)
             + element(0x1654AE6B, element(0xAE, audio) + subtitle(2, "eng") + subtitle(3, "fra") + alternateTrack)
-        for index in 0..<30 {
+        for index in 0..<(durationSeconds * 10) {
             var cluster = number(0xE7, UInt64(index * 100))
             cluster += element(0xA3, Data([0x81, 0, 0, 0x80]) + Data(repeating: 0, count: 9600))
             if secondAudio {

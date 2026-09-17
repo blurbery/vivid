@@ -883,6 +883,7 @@ actor VividIntroDBClient {
         guard let response = response as? HTTPURLResponse,
               response.statusCode == 200, data.count < 100_000 else { return nil }
         let responseBody = try JSONDecoder().decode(FallbackResponse.self, from: data)
+        guard let responseTMDBID = responseBody.tmdb_id, responseTMDBID > 0 else { return nil }
         if identifier.name == "tmdb_id", responseBody.tmdb_id != episode.tmdbID { return nil }
         let result = responseBody.segments(for: episode)
         if fallbackCache.count >= 200 { fallbackCache.removeAll() }

@@ -102,8 +102,16 @@ final class MockIntroDB: URLProtocol, @unchecked Sendable {
         precondition(unidentified == nil, "TMDB response must identify the requested series")
         MockIntroDB.expectedIDName = "imdb_id"
         MockIntroDB.expectedID = "tt0944947"
-        let imdbFallback = try await client().fallbackSegments(for: identity)
-        precondition(imdbFallback?.intro?.range(duration: 100)?.end == 2)
+        let imdbClient = client()
+        let unidentifiedIMDb = try await imdbClient.fallbackSegments(for: identity)
+        precondition(unidentifiedIMDb == nil, "IMDb lookups must also return a TMDB identity")
+        MockIntroDB.body = #"{"tmdb_id":0,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
+        let invalidIdentity = try await imdbClient.fallbackSegments(for: identity)
+        precondition(invalidIdentity == nil)
+        MockIntroDB.body = #"{"tmdb_id":1399,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
+        let imdbFallback = try await imdbClient.fallbackSegments(for: identity)
+        precondition(imdbFallback?.intro?.range(duration: 100)?.end == 2,
+                     "Rejected responses must not poison the cache")
         let invalidIDs = VividIntroDBClient.Episode(imdbID: "", season: 1, episode: 1, tmdbID: -1)
         let invalidResult = try await client().fallbackSegments(for: invalidIDs)
         precondition(invalidResult == nil)
