@@ -23,7 +23,7 @@ The transparent silver mark is Vivid’s main logo. It uses the owner-approved r
   <tbody>
     <tr><td>Main logo, either theme</td><td><a href="vivid-mark-silver.png">Transparent silver PNG</a></td><td>Silver</td></tr>
     <tr><td>Website favicon</td><td><a href="../../website/public/favicon.png">512 × 512 PNG</a> and <a href="../../website/public/favicon.ico">16–64 px ICO fallback</a></td><td>Existing website icon, preserved unchanged</td></tr>
-    <tr><td>Safari favourites</td><td><a href="../../website/public/apple-touch-icon.png">Opaque 512 × 512 PNG</a></td><td>Existing website icon, preserved unchanged</td></tr>
+    <tr><td>Safari favourites</td><td><a href="../../website/public/apple-touch-icon.png">Opaque 512 × 512 PNG</a></td><td>New full-square iOS logo</td></tr>
   </tbody>
 </table>
 
@@ -31,7 +31,7 @@ The transparent PNG is exported from [the SVG master](vivid-mark-silver.svg) on 
 
 The [iOS app master](vivid-app-icon.svg), [optional small-size master](vivid-app-icon-small.svg), and Apple TV [foreground](vivid-tv-foreground.svg) and [background](vivid-tv-background.svg) are the sources for runtime icons. The rounded [presentation SVG](vivid-presentation.svg) and [presentation PDF](vivid-presentation.pdf) are design previews only. Never place the presentation tile inside an app icon or an in-app logo: that creates an extra inset border and recessed appearance.
 
-The website and Apple TV assembly animations sample the approved silver colours directly. The website reveal does not add a white brightness wash, and the lower logo stays assembled at the bottom of the page. Only the lower Get Vivid section contains a TestFlight link. The website uses tighter section spacing on desktop and mobile, with brighter secondary text and footer links for readability. Static website logos no longer invert or recolour the artwork. The Safari touch icon and favicons retain the existing live website artwork independently of the updated logo. Preserve these files when updating website branding. The touch icon is opaque, and the ICO retains its 16, 32, 48 and 64 px sizes. Every page links the favicon and Apple touch icon. The website build gives changed icons new content-hashed paths and retains standard root URLs for browser fallback requests. Existing browser caches may take time to refresh.
+The website and Apple TV assembly animations sample the approved silver colours directly. The website reveal does not add a white brightness wash, and the lower logo stays assembled at the bottom of the page. Only the lower Get Vivid section contains a TestFlight link. The website uses tighter section spacing on desktop and mobile, with brighter secondary text and footer links for readability. Static website logos no longer invert or recolour the artwork. The Safari touch icon uses the new full-square iOS logo. The website favicons retain their existing artwork and must remain unchanged when updating other branding. The touch icon is opaque, and the ICO retains its 16, 32, 48 and 64 px sizes. Every page links the favicon and Apple touch icon. The website build gives changed icons new content-hashed paths and retains standard root URLs for browser fallback requests. Existing browser caches may take time to refresh.
 
 Preserve the aspect ratio and the clear space already included in the square canvas. Do not add text inside the symbol, stretch it or add shadows. The silver logo does not need a theme switch.
 
