@@ -24,6 +24,14 @@ final class VividPlaybackBoundaryTests: XCTestCase {
     }
 
     func testLucidRejectsInPlaceCredentialUpdateWithoutChangingPausedSession() async throws {
+        try await assertCredentialUpdatePreservesSession(paused: true)
+    }
+
+    func testLucidRejectsInPlaceCredentialUpdateWithoutInterruptingPlayingSession() async throws {
+        try await assertCredentialUpdatePreservesSession(paused: false)
+    }
+
+    private func assertCredentialUpdatePreservesSession(paused: Bool) async throws {
         let file = try embeddedMediaFixture()
         defer { try? FileManager.default.removeItem(at: file) }
         let server = try CredentialPlaybackServer(media: Data(contentsOf: file))
@@ -38,23 +46,33 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         controller.setMuted(true)
         defer { controller.stop() }
         let spec = try VividLoadSpec(directURL: url, headers: old, startPosition: 0, audioOnly: true)
-        let epoch = controller.beginLoad(spec, shouldPlayWhenReady: false)
+        let epoch = controller.beginLoad(spec, shouldPlayWhenReady: !paused)
         try await controller.finishLoad(epoch)
+        let expectedState: PlaybackState = paused ? .paused : .playing
         let deadline = Date().addingTimeInterval(5)
-        while controller.engine.state != .paused && Date() < deadline {
+        while controller.engine.state != expectedState && Date() < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertEqual(controller.engine.state, .paused)
+        XCTAssertEqual(controller.engine.state, expectedState)
         let time = controller.engine.currentTime
         let track = controller.engine.activeAudioTrackIndex
-        // Lucid requires the existing reload boundary to install fresh headers.
+        // A rejected header update must leave the current reader intact.
         XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
         XCTAssertEqual(controller.activeLoadEpoch, epoch)
         XCTAssertEqual(controller.activeSpec?.options.httpHeaders, old)
-        XCTAssertEqual(controller.engine.state, .paused)
+        XCTAssertEqual(controller.engine.state, expectedState)
         XCTAssertEqual(controller.engine.currentTime, time)
         XCTAssertEqual(controller.engine.activeAudioTrackIndex, track)
-        XCTAssertFalse(controller.shouldPlayWhenReady)
+        XCTAssertEqual(controller.shouldPlayWhenReady, !paused)
+        if !paused {
+            let advanceDeadline = Date().addingTimeInterval(5)
+            while controller.engine.currentTime <= time && Date() < advanceDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertGreaterThan(controller.engine.currentTime, time)
+            XCTAssertEqual(controller.activeLoadEpoch, epoch)
+            XCTAssertNil(controller.engine.errorInfo)
+        }
         _ = controller.beginLoad(spec, shouldPlayWhenReady: false)
         XCTAssertFalse(controller.updateSourceHeaders(next, for: epoch, expectedHeaders: old, sourceURL: url))
     }
@@ -551,26 +569,26 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             VividAuthenticationRecoveryPolicy.finalFailure(HTTPError.http(statusCode: 401, body: nil))))
     }
 
-    func testPeriodicProgressReloadsOnlyAfterSuccessWithChangedAuthorization() {
+    func testPeriodicProgressUpdatesHeadersOnlyAfterSuccessWithChangedAuthorization() {
         let active = ["Authorization": "Bearer old-token"]
         let refreshed = ["authorization": "Bearer new-token"]
 
-        XCTAssertTrue(VividAuthenticationRecoveryPolicy.shouldReloadAfterProgress(
+        XCTAssertTrue(VividAuthenticationRecoveryPolicy.shouldUpdateHeadersAfterProgress(
             .success,
             activeHeaders: active,
             currentHeaders: refreshed
         ))
-        XCTAssertFalse(VividAuthenticationRecoveryPolicy.shouldReloadAfterProgress(
+        XCTAssertFalse(VividAuthenticationRecoveryPolicy.shouldUpdateHeadersAfterProgress(
             .success,
             activeHeaders: refreshed,
             currentHeaders: refreshed
         ))
-        XCTAssertFalse(VividAuthenticationRecoveryPolicy.shouldReloadAfterProgress(
+        XCTAssertFalse(VividAuthenticationRecoveryPolicy.shouldUpdateHeadersAfterProgress(
             .missingSession,
             activeHeaders: active,
             currentHeaders: refreshed
         ))
-        XCTAssertFalse(VividAuthenticationRecoveryPolicy.shouldReloadAfterProgress(
+        XCTAssertFalse(VividAuthenticationRecoveryPolicy.shouldUpdateHeadersAfterProgress(
             .transientFailure,
             activeHeaders: active,
             currentHeaders: refreshed

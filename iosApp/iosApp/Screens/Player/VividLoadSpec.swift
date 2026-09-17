@@ -99,7 +99,7 @@ enum VividAuthenticationRecoveryPolicy {
         return authorizationHeader(in: failedHeaders) != refreshed
     }
 
-    static func shouldReloadAfterProgress(
+    static func shouldUpdateHeadersAfterProgress(
         _ result: PlaybackProgressReportResult,
         activeHeaders: [String: String],
         currentHeaders: [String: String]
