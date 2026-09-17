@@ -75,7 +75,7 @@ final class TVLibrarySimilarityStore {
         var seen = Set(candidates.map(\.contentId))
         var complete = true
         let offsets = Self.candidateOffsets(total: summary.total ?? 300, seed: source.contentId)
-        for offset in offsets {
+        for offset in offsets where offset != 0 {
             let query = CatalogQueryBuilder.build(filters, libraryId: nil,
                 mediaType: mediaType, offset: offset, limit: candidatePageSize,
                 snapshot: summary.snapshot, includeTotal: false)

@@ -1660,11 +1660,16 @@ final class DownloadManager {
         try await persistBootstrap()
         guard await scopeIsCurrent(), var stage = file.progressBootstrap else { throw HTTPError.requestIdentityChanged }
         do {
+            var seenCursors = Set<String>()
+            var pages = 0
             while stage.page?.complete != true {
                 try Task.checkCancellation()
+                guard pages < 2000 else { throw HTTPError.invalidResponse }
+                pages += 1
                 let page: SiloProgressBootstrapPage
                 if let previous = stage.page {
-                    guard previous.expiresAt > Date(), let cursor = previous.page.nextCursor, !cursor.isEmpty else { throw HTTPError.invalidResponse }
+                    guard previous.expiresAt > Date(), let cursor = previous.page.nextCursor,
+                          !cursor.isEmpty, seenCursors.insert(cursor).inserted else { throw HTTPError.invalidResponse }
                     page = try await http.get("/api/v2/sync/progress/snapshots/\(previous.snapshotId)", query: ["cursor": cursor], expectedAuth: auth)
                     guard page.snapshotId == previous.snapshotId, page.itemCount == previous.itemCount,
                           page.capturedAt == previous.capturedAt else { throw HTTPError.invalidResponse }

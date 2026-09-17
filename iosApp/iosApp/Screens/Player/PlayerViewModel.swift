@@ -6125,7 +6125,8 @@ class PlayerViewModel {
         let token = auth?.accessToken
         var headers = additionalHeaders
         if nativeApiMajor == 2 {
-            guard auth?.account.serverURL == serverUrl else { return nil }
+            guard let accountServerURL = auth?.account.serverURL,
+                  ServerRegistry.normalize(url: accountServerURL) == ServerRegistry.normalize(url: serverUrl) else { return nil }
             headers["X-Profile-Id"] = auth?.profileId
             headers["X-Profile-Token"] = auth?.profileToken
         }

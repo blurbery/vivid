@@ -1222,12 +1222,23 @@ actor HTTPClient {
         reportReachability: Bool = true
     ) async throws -> (Data, HTTPURLResponse) {
         try ensureRequestDispatchAllowed(expectedRevision: dispatchRevision)
-        guard let url = request.url, let legacyPath = SiloAPICompatibility.legacyPath(url),
-              try await apiDiscovery.usesV2(for: url, session: session) else {
+        guard let url = request.url, let legacyPath = SiloAPICompatibility.legacyPath(url) else {
             return try await performTransport(request: request, timeout: timeout,
                 dispatchRevision: dispatchRevision, reportReachability: reportReachability)
         }
+        let usesV2: Bool
+        do {
+            usesV2 = try await apiDiscovery.usesV2(for: url, session: session)
+        } catch let error as URLError {
+            try ensureRequestDispatchAllowed(expectedRevision: dispatchRevision)
+            if reportReachability { await Self.noteServerUnreachable(for: error) }
+            throw HTTPError.network(underlying: error)
+        }
         try ensureRequestDispatchAllowed(expectedRevision: dispatchRevision)
+        guard usesV2 else {
+            return try await performTransport(request: request, timeout: timeout,
+                dispatchRevision: dispatchRevision, reportReachability: reportReachability)
+        }
         var mapped = try SiloAPICompatibility.request(request)
         let authority = SiloAPICompatibility.discoveryURL(for: url)!
         if legacyPath.hasPrefix("/api/v1/playback/"), legacyPath != "/api/v1/playback/capability" {
