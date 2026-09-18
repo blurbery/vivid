@@ -1958,6 +1958,7 @@ actor PlaybackSessionBridge {
                     _ = try await connection.request("POST",
                         "/Users/\(EmbyConnection.id(userID))/PlayedItems/\(EmbyConnection.id(contentId))")
                 }
+                await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: connection.identity)
             } else {
                 try await VividAPI.shared.setWatched(contentId: contentId, played: true)
             }

@@ -20,11 +20,11 @@ final class MDBListClientTests: XCTestCase {
     }
 
     func testMDBListProgressOnlyShowsKnownTotalsAndClampsCounts() {
-        XCTAssertNil(MDBListSyncProgress(step: 2, label: "Reading history").fraction)
-        XCTAssertEqual(MDBListSyncProgress(step: 3, label: "Movies", completed: 5, total: 20).fraction, 0.25)
-        XCTAssertEqual(MDBListSyncProgress(step: 4, label: "Episodes", completed: 25, total: 20).fraction, 1)
+        XCTAssertNil(MDBListSyncProgress(step: 2, label: "Movies").fraction)
+        XCTAssertEqual(MDBListSyncProgress(step: 2, label: "Movies", completed: 5, total: 20).fraction, 0.25)
+        XCTAssertEqual(MDBListSyncProgress(step: 2, label: "Episodes", completed: 25, total: 20).fraction, 1)
         XCTAssertEqual(MDBListSyncProgress(step: 1, label: "Watchlist", completed: 0, total: 0).fraction, 1)
-        XCTAssertEqual(MDBListSyncProgress(step: 3, label: "Movies", completed: 5, total: 20).description, "Step 3 of 4 · Movies · 5 of 20")
+        XCTAssertEqual(MDBListSyncProgress(step: 2, label: "Movies", completed: 5, total: 20).description, "Step 2 of 2 · Movies · 5 of 20")
     }
 
     func testOpenSubtitlesConnectionUsesDocumentedLanguagesResponse() {

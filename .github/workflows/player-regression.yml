@@ -10,6 +10,8 @@ on:
       - 'iosApp/**/Package.resolved'
       - 'scripts/tests/playback-auth-refresh-tests.py'
       - 'scripts/ci/check-introdb-client.sh'
+      - 'scripts/ci/check-mdblist-sync.sh'
+      - 'iosApp/iosApp/Plugins/MDBList*.swift'
       - '.github/workflows/player-regression.yml'
   push:
     branches: [fix/next-up-persistent-surface]
@@ -60,6 +62,7 @@ jobs:
         run: |
           python3 scripts/tests/playback-auth-refresh-tests.py
           bash scripts/ci/check-introdb-client.sh
+          bash scripts/ci/check-mdblist-sync.sh
       - name: Prepare iOS simulator
         if: matrix.action == 'test'
         timeout-minutes: 10

@@ -360,7 +360,7 @@ struct MDBListSyncProgress: Equatable, Sendable {
         return min(1, max(0, Double(completed) / Double(total)))
     }
     var description: String {
-        let stage = "Step \(step) of 4 · \(label)"
+        let stage = "Step \(step) of 2 · \(label)"
         guard let total else { return stage }
         return stage + " · \(min(max(0, completed), max(0, total))) of \(max(0, total))"
     }
