@@ -717,21 +717,17 @@ actor VividAPI {
     /// or unwatched. Server resolves the leaf targets.
     func setWatched(contentId: String, played: Bool) async throws {
         #if os(iOS) || os(tvOS)
-        if !played {
-            let auth = await tokenStore.captureOrdinaryRequestAuth()
-            guard let auth, let profile = auth.profileId else { throw HTTPError.requestIdentityChanged }
-            if try await MDBListSyncStore.shared.removeLocalImport(contentID: contentId, expected: auth) { return }
-            let identity = HTTPRequestIdentity(serverId: auth.account.serverId, serverURL: auth.account.serverURL,
-                profileId: profile, clientFamily: "apple", credentialGenerationID: auth.account.credentialGenerationID)
-            _ = try await http.requestData(method: "DELETE", path: "/api/v1/watched/\(contentId)", requestIdentity: identity)
-            return
-        }
+        let auth = await tokenStore.captureOrdinaryRequestAuth()
+        guard let auth, let profile = auth.profileId else { throw HTTPError.requestIdentityChanged }
+        let identity = HTTPRequestIdentity(serverId: auth.account.serverId, serverURL: auth.account.serverURL,
+            profileId: profile, clientFamily: "apple", credentialGenerationID: auth.account.credentialGenerationID)
+        _ = try await http.requestData(method: played ? "POST" : "DELETE",
+            path: "/api/v1/watched/\(contentId)", requestIdentity: identity)
+        if played { await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: auth) }
+        #else
+        if played { try await http.postVoid("/api/v1/watched/\(contentId)") }
+        else { try await http.delete("/api/v1/watched/\(contentId)") }
         #endif
-        if played {
-            try await http.postVoid("/api/v1/watched/\(contentId)")
-        } else {
-            try await http.delete("/api/v1/watched/\(contentId)")
-        }
     }
 
     // --- Collections ---

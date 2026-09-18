@@ -49,7 +49,7 @@ struct MDBListSettingsView: View {
                         Button { connect() } label: { TVSettingsRowLabel(title: connecting ? "Connecting…" : "Connect") }
                             .buttonStyle(TVSettingsPaneRowStyle()).disabled(connecting || key.isEmpty)
                     } else {
-                        Button { store.importHistory() } label: { TVSettingsRowLabel(title: "Sync now") }
+                        Button { store.syncNow() } label: { TVSettingsRowLabel(title: "Sync now") }
                             .buttonStyle(TVSettingsPaneRowStyle()).disabled(store.isSyncing)
                         Button { disconnect() } label: { TVSettingsRowLabel(title: "Disconnect") }
                             .buttonStyle(TVSettingsPaneRowStyle())
@@ -80,7 +80,7 @@ struct MDBListSettingsView: View {
                         .disabled(connecting || key.isEmpty)
                     Link("Get your free API key", destination: URL(string: "https://mdblist.com/preferences/")!)
                 } else {
-                    Button("Sync now") { store.importHistory() }.disabled(store.isSyncing)
+                    Button("Sync now") { store.syncNow() }.disabled(store.isSyncing)
                     Button("Disconnect", role: .destructive, action: disconnect)
                 }
                 if store.isConnected { Text(store.status).font(.footnote).foregroundStyle(.secondary) }
@@ -120,14 +120,14 @@ struct MDBListSettingsView: View {
             Text("MDBList")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text("Bring your watch history to Vivid.")
+            Text("Connect your MDBList account.")
                 #if os(tvOS)
                 .font(.system(size: 40, weight: .bold, design: .rounded))
                 #else
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 #endif
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Import watched history and sync watchlists both ways with MDBList. Vivid also exports completed watches. Watchlist imports include titles on your active server.")
+            Text("Send completed watches to MDBList and sync watchlists both ways. Watchlist matches include titles on your active server.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -183,7 +183,7 @@ struct MDBListSettingsView: View {
             do {
                 try await store.connect(candidate)
                 key = ""
-                await store.sync(force: true)
+                store.syncNow()
             } catch { message = error.localizedDescription }
         }
     }

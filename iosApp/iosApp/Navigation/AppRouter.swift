@@ -261,7 +261,6 @@ class AppRouter {
         backdropURL: String? = nil
     ) {
         #if os(iOS) || os(tvOS)
-        MDBListSyncStore.shared.ignoreImport(contentID: contentId)
         DiagTrace.breadcrumb(.essential,
             category: .focus,
             tag: "Navigation",
@@ -317,7 +316,6 @@ class AppRouter {
         resumePosition: Double? = nil
     ) {
         #if os(iOS) || os(tvOS)
-        MDBListSyncStore.shared.ignoreImport(contentID: contentId)
         DiagTrace.breadcrumb(.essential,
             category: .focus,
             tag: "Navigation",
