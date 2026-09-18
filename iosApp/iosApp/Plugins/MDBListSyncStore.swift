@@ -32,6 +32,7 @@ final class MDBListSyncStore {
         var acknowledged: Set<String> = []
         var exportedContentIDs: Set<String> = []
         var pendingCompletions: [String: String]? = [:]
+        var quotaRetryAfter: Date?
         var lastSync: Date?
     }
 
@@ -64,7 +65,7 @@ final class MDBListSyncStore {
         isConnected = !credential.isEmpty
         status = isConnected ? "Connected" : "Not connected"
         nextSync = .distantPast
-        quotaRetryAfter = .distantPast
+        quotaRetryAfter = state.quotaRetryAfter ?? .distantPast
     }
 
     func connect(_ input: String) async throws {
@@ -84,6 +85,7 @@ final class MDBListSyncStore {
             watchlistEntries = [:]
             UserDefaults.standard.removeObject(forKey: importKey(capturedScope) + ".ignored")
         }
+        quotaRetryAfter = state.quotaRetryAfter ?? .distantPast
         credential = key
         revision = UUID()
         isConnected = true
@@ -220,7 +222,9 @@ final class MDBListSyncStore {
             if revision == generation { status = (error as? MDBListFailure)?.localizedDescription ?? "Sync interrupted. It will try again later." }
             if revision == generation, case MDBListFailure.quota = error {
                 quotaRetryAfter = Date().addingTimeInterval(3600)
+                state.quotaRetryAfter = quotaRetryAfter
                 nextSync = quotaRetryAfter
+                try? save()
             }
         }
     }

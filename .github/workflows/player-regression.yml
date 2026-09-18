@@ -12,6 +12,8 @@ on:
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
       - 'iosApp/iosApp/Plugins/MDBList*.swift'
+      - 'iosApp/iosApp/Plugins/PluginsSettingsView.swift'
+      - 'iosApp/iosApp/Networking/VividAPI.swift'
       - '.github/workflows/player-regression.yml'
   push:
     branches: [fix/next-up-persistent-surface]

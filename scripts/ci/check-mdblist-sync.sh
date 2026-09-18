@@ -94,7 +94,7 @@ enum CacheKey { static let watchlist = "watchlist" }
         }
         let old = Data(#"{"userID":1,"acknowledged":[],"exportedContentIDs":[],"pending":{},"remoteWatched":[]}"#.utf8)
         let checkpoint = try JSONDecoder().decode(MDBListSyncStore.Checkpoint.self, from: old)
-        precondition(checkpoint.pendingCompletions == nil)
+        precondition(checkpoint.pendingCompletions == nil && checkpoint.quotaRetryAfter == nil)
         let store = MDBListSyncStore()
         try await store.connect("test-key")
         precondition(store.isConnected && !store.isSyncing && MDBListClient.validations == 1)
@@ -155,7 +155,27 @@ enum CacheKey { static let watchlist = "watchlist" }
         let attempts = MDBListClient.validations
         await reloaded.sync(force: true)
         precondition(MDBListClient.validations == attempts)
-        print("MDBList checks passed: connect-only validation, no history scans, legacy checkpoint, retry/reload, timestamp preservation, duplicates, disconnect, unwatch, partial exports, account switching and quota backoff")
+        let restarted = MDBListSyncStore()
+        await restarted.sync(force: true)
+        precondition(MDBListClient.validations == attempts, "Restart must retain quota backoff")
+        TokenStore.shared.auth.profileId = "other"
+        VividCloudPreferences.matchingActiveAccount?.profile?.id = "other"
+        restarted.reload()
+        TokenStore.shared.auth = auth
+        VividCloudPreferences.matchingActiveAccount?.profile?.id = "profile"
+        await restarted.sync(force: true)
+        precondition(MDBListClient.validations == attempts, "Returning to a profile must retain quota backoff")
+        SharedKeychain.values["vivid.mdblist.key.v1." + scope] = "refreshed-key"
+        await restarted.sync(force: true)
+        precondition(MDBListClient.validations == attempts, "Credential reload must retain quota backoff")
+        var expired = try JSONDecoder().decode(MDBListSyncStore.Checkpoint.self, from: UserDefaults.standard.data(forKey: checkpointKey)!)
+        expired.quotaRetryAfter = Date().addingTimeInterval(-1)
+        UserDefaults.standard.set(try JSONEncoder().encode(expired), forKey: checkpointKey)
+        MDBListClient.quota = false
+        let recovered = MDBListSyncStore()
+        await recovered.sync(force: true)
+        precondition(MDBListClient.validations == attempts + 1, "Expired quota backoff must allow recovery")
+        print("MDBList checks passed: connect-only validation, no history scans, legacy checkpoint, retry/reload, timestamp preservation, duplicates, disconnect, unwatch, partial exports, account switching and persistent quota backoff/recovery")
     }
 }
 SWIFT
