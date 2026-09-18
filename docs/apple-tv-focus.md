@@ -48,6 +48,17 @@ actionable item can be a real focus target.
 - Move focus geometry with layout (`padding`, `frame`, alignment), not
   `.offset`, because tvOS resolves focus from layout frames.
 
+Player skip prompts claim initial focus after mounting when the transport is
+hidden, so Select activates the skip directly. A directional move reveals and
+focuses the timeline; during an intro countdown, Left/Right stays within the
+Cancel/Skip row and Up/Down opens the timeline. Once controls are visible,
+normal focus movement owns navigation. Revealing controls must not seed Skip
+again, and skip focus sections must wrap the buttons rather than their
+full-screen positioning frames. Visible skip prompts sit above the measured
+transport stack with a 32-point gap, clearing the title, shortcuts and timeline.
+The remote Play/Pause command remains owned
+by the player shell.
+
 Good local examples:
 
 - `TVCatalogGrid`
