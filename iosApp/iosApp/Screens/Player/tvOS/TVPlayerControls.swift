@@ -65,6 +65,11 @@ struct TVPlayerControls: View {
     /// if it ends as a light touch. Select and drag interactions clear this
     /// candidate so their existing transport behavior remains exclusive.
     @State private var fullHUDContactCanToggle = false
+    @State private var transportHeight: CGFloat = 240
+
+    private var skipPromptBottomInset: CGFloat {
+        viewModel.showControls ? max(180, transportHeight + 48 + 32) : 180
+    }
 
     // Focus states. SwiftUI's focus engine only holds focus on one
     // focusable at a time, so selecting one of these implicitly clears the
@@ -158,37 +163,6 @@ struct TVPlayerControls: View {
                 }
             }
         }
-        .onChange(of: viewModel.showIntroSkip) { _, visible in
-            if visible {
-                // The skip layer renders beneath the HUD, so claiming focus
-                // here while the HUD is up would yank the user out of it
-                // mid-navigation. The HUD-dismiss handler above re-seeds
-                // transport focus, and Skip stays reachable by direction.
-                if !isHUDPresented && !viewModel.showControls {
-                    focusedIntroAction = .skip
-                }
-            } else {
-                focusedIntroAction = nil
-                // Hand focus back to the transport when the Skip button
-                // disappears while controls are still up, instead of leaving
-                // nothing focused.
-                if viewModel.showControls && !isHUDPresented {
-                    isScrubberFocused = true
-                }
-            }
-        }
-        .onChange(of: viewModel.showCreditsSkip) { _, visible in
-            if visible {
-                if !isHUDPresented && !viewModel.showControls {
-                    isCreditsSkipFocused = true
-                }
-            } else {
-                isCreditsSkipFocused = false
-                if viewModel.showControls && !isHUDPresented {
-                    isScrubberFocused = true
-                }
-            }
-        }
         .onChange(of: viewModel.requestedTVHUDEntryPoint) { _, entryPoint in
             guard let entryPoint else { return }
             applyHUDEntryPoint(entryPoint)
@@ -204,7 +178,10 @@ struct TVPlayerControls: View {
         }
         .onChange(of: viewModel.showControls) { _, visible in
             fullHUDContactCanToggle = false
-            if !visible { hudReturnTarget = nil }
+            if !visible {
+                hudReturnTarget = nil
+                DispatchQueue.main.async { focusStandaloneSkipPrompt() }
+            }
         }
         // Re-arm the auto-hide whenever focus moves between transport controls,
         // so navigating the overlay doesn't let the fixed 5s timer hide it (and
@@ -238,13 +215,29 @@ struct TVPlayerControls: View {
         if isHUDPresented {
             if focusedHUDTab == nil { focusedHUDTab = activeHUDTab }
         } else if viewModel.showControls {
-            if viewModel.showIntroSkip && focusedIntroAction == nil {
-                focusedIntroAction = .skip
-            } else if viewModel.showCreditsSkip && !isCreditsSkipFocused {
-                isCreditsSkipFocused = true
-            } else if focusedTransportButton == nil && !isScrubberFocused {
+            if focusedTransportButton == nil && !isScrubberFocused &&
+                focusedIntroAction == nil && !isCreditsSkipFocused {
                 isScrubberFocused = true
             }
+        } else {
+            focusStandaloneSkipPrompt()
+        }
+    }
+
+    @MainActor
+    private func focusMountedSkipPrompt() async {
+        // Let the button join the focus graph before claiming initial focus.
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        focusStandaloneSkipPrompt()
+    }
+
+    private func focusStandaloneSkipPrompt() {
+        guard !isHUDPresented, !viewModel.showControls else { return }
+        if viewModel.showIntroSkip {
+            focusedIntroAction = .skip
+        } else if viewModel.showCreditsSkip {
+            isCreditsSkipFocused = true
         }
     }
 
@@ -313,25 +306,23 @@ struct TVPlayerControls: View {
                 .padding(.horizontal, 80)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             transportStack
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.size.height
+                } action: { height in
+                    transportHeight = height
+                }
                 .padding(.horizontal, Self.transportHorizontalInset)
                 .padding(.bottom, 48)
         }
         .onAppear {
             focusedTransportButton = nil
-            // When the intro-skip button is showing, let it own first focus
-            // instead of racing this scrubber seed — otherwise revealing the
-            // controls during the intro window lands focus nondeterministically
-            // on the scrubber or the Skip button.
+            // Opening controls is an explicit move away from the skip prompt.
+            focusedIntroAction = nil
+            isCreditsSkipFocused = false
             if let returnTarget = hudReturnTarget {
                 trapsTransportFocus = false
                 isScrubberFocused = false
                 focusedTransportButton = returnTarget
-            } else if viewModel.showIntroSkip {
-                isScrubberFocused = false
-                focusedIntroAction = .skip
-            } else if viewModel.showCreditsSkip {
-                isScrubberFocused = false
-                isCreditsSkipFocused = true
             } else {
                 isScrubberFocused = true
             }
@@ -370,29 +361,26 @@ struct TVPlayerControls: View {
         }
     }
 
-    /// Up/Down is the boundary from the standalone skip prompt into transport.
-    /// Keep Left/Right available for moving between Skip and Cancel.
+    /// Reveal the timeline at the boundary of the standalone prompt. Once
+    /// controls exist, their native focus graph owns directional movement.
     private func moveFromSkipPrompt(_ direction: MoveCommandDirection) {
-        guard direction == .up || direction == .down, !isHUDPresented else { return }
-        viewModel.revealControls()
-        trapsTransportFocus = false
-        focusedIntroAction = nil
-        isCreditsSkipFocused = false
-        DispatchQueue.main.async {
-            guard viewModel.showControls, !isHUDPresented else { return }
-            focusedTransportButton = .playPause
+        guard !viewModel.showControls, !isHUDPresented else { return }
+        // Preserve native movement between Cancel and Skip during a countdown.
+        if viewModel.showIntroSkip && viewModel.introAutoSkipCountdownSeconds != nil &&
+            (direction == .left || direction == .right) {
+            return
         }
+        viewModel.revealControls()
     }
 
     private var introSkipLayer: some View {
         introSkipButton
-            .padding(.horizontal, 80)
-            .padding(.bottom, 180)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            // Group Skip + Cancel as their own focus region so the engine can
-            // move between them and the transport row below by direction.
             .focusSection()
             .onMoveCommand(perform: moveFromSkipPrompt)
+            .task { await focusMountedSkipPrompt() }
+            .padding(.horizontal, 80)
+            .padding(.bottom, skipPromptBottomInset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
     }
 
     private var creditsSkipLayer: some View {
@@ -408,11 +396,12 @@ struct TVPlayerControls: View {
         .buttonStyle(TVSkipGlassButtonStyle())
         .focused($isCreditsSkipFocused)
         .accessibilityLabel("Skip Credits")
-        .padding(.horizontal, 80)
-        .padding(.bottom, 180)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .focusSection()
-            .onMoveCommand(perform: moveFromSkipPrompt)
+        .onMoveCommand(perform: moveFromSkipPrompt)
+        .task { await focusMountedSkipPrompt() }
+        .padding(.horizontal, 80)
+        .padding(.bottom, skipPromptBottomInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
     }
 
     private var introSkipButton: some View {
