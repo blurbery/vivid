@@ -152,6 +152,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
         try session.setActive(true)
+        trace?.mark("mpv_audio_session_ready")
         let instance = VividMPVCore()
         #if os(iOS)
         instance.onEnterBackground = { [weak self] in
@@ -164,6 +165,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.matchContentEnabled = options.matchContentEnabled
         instance.headers = options.httpHeaders
         instance.startPosition = max(0, startPosition)
+        // Keep playback running through content matching. The display core
+        // negotiates HDMI independently; it must not add a startup pause.
         instance.autoplay = options.autoplay
         instance.audioOnly = options.audioOnly
         instance.initialRate = requestedRate
@@ -232,7 +235,11 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "time-pos": if let value = value as? Double, value.isFinite { clock.currentTime = value; updateExternalCues() }
         case "duration": duration = (value as? Double) ?? 0
         case "demuxer-cache-state": cacheSnapshot = value as? [String: Any] ?? [:]
-        case "paused-for-cache": isBuffering = value as? Bool ?? false; updatePhase()
+        case "paused-for-cache":
+            isBuffering = value as? Bool ?? false
+            trace?.event("mpv_buffering", fields: "active=\(isBuffering)")
+            recordPipelineSnapshot()
+            updatePhase()
         case "seeking": isSeeking = value as? Bool ?? false; updatePhase()
         case "pause": wantsPlay = !(value as? Bool ?? true); updatePhase()
         case "eof-reached": observeEndOfFile(value as? Bool ?? false)
@@ -274,16 +281,31 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     fileprivate func event(_ name: String, data: [String: Any]?, token: UInt64) {
         guard token == generation else { return }
         switch name {
-        case "file-loaded": isSessionReady = true; startupProgress = nil; applyInitialAudioSelection(); updatePhase(); trace?.mark("mpv_file_loaded")
+        case "display-commit-lock":
+            if let transition = data?["transition"] as? String,
+               ["start_file", "end_file"].contains(transition),
+               let wait = data?["wait_ms"] as? Double, wait.isFinite, wait >= 0,
+               let held = data?["held_ms"] as? Double, held.isFinite, held >= 0 {
+                trace?.event("mpv_display_commit_lock", fields: "transition=\(transition) wait_ms=\(wait) held_ms=\(held)")
+            }
+        case "display-criteria-prepared":
+            trace?.mark("mpv_display_criteria_prepared")
+        case "display-switch-started", "display-switch-ended":
+            trace?.event(name == "display-switch-started" ? "mpv_display_switch_started" : "mpv_display_switch_ended")
+            recordPipelineSnapshot()
+        case "file-loaded":
+            isSessionReady = true; startupProgress = nil; applyInitialAudioSelection(); updatePhase()
+            trace?.mark("mpv_file_loaded")
         case "playback-restart":
             hasFirstFrameReadyForDisplay = true; isSeeking = false; isBuffering = false
             updatePhase(); trace?.mark("mpv_playback_restart")
+            trace?.seekPicture()
         case "end-file":
             handleEndFile(data)
         case "log-message":
             if let fields = Self.audioDiagnostic(data) {
                 trace?.event("mpv_audio_diagnostic", fields: fields)
-                if fields.hasPrefix("raw_s=") { recordPipelineSnapshot() }
+                if fields.hasPrefix("raw_s=") || fields.hasPrefix("event=audio_transport ") { recordPipelineSnapshot() }
             }
         default: break
         }
@@ -329,6 +351,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
 
     private func recordPipelineSnapshot() {
+        guard trace != nil else { return }
         var fields = ["position_s=\(currentTime)", "playing=\(wantsPlay)", "buffering=\(isBuffering)", "seeking=\(isSeeking)"]
         for key in ["fw-bytes", "total-bytes", "raw-input-rate", "reader-pts", "cache-end", "cache-duration", "eof", "underrun", "idle"] {
             if let number = cacheSnapshot[key] as? NSNumber, number.doubleValue.isFinite {
@@ -346,7 +369,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         trace?.event("mpv_pipeline", fields: fields.joined(separator: " "))
     }
     // Raw mpv messages can contain authenticated URLs. Only fixed fault labels
-    // and strictly numeric AVPlayer heartbeat fields may enter the device log.
+    // and strictly numeric AVPlayer heartbeat/status fields may enter the device log.
     private static func audioDiagnostic(_ data: [String: Any]?) -> String? {
         guard let prefix = data?["prefix"] as? String,
               let text = data?["text"] as? String else { return nil }
@@ -372,6 +395,15 @@ final class VividMPVPlayer: NSObject, ObservableObject {
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["raw_s", "clock_s", "fed_s", "status", "time_control", "reader_gap_bytes"]
             return names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        let statusPattern = #"\Aitem status (-?[0-9]+) -> (-?[0-9]+), time control (-?[0-9]+) -> (-?[0-9]+), pos (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s\z"#
+        if let regex = try? NSRegularExpression(pattern: statusPattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["old_status", "status", "old_time_control", "time_control", "clock_s", "fed_s"]
+            return "event=audio_transport " + names.enumerated().compactMap { index, name in
                 guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
@@ -457,6 +489,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func pause() { wantsPlay = false; core?.setProperty("pause", value: "yes"); updatePhase() }
     func setRate(_ rate: Float) {
         guard rate.isFinite, rate > 0 else { return }
+        trace?.event("mpv_rate_requested", fields: "rate=\(rate) previous=\(requestedRate)")
         requestedRate = rate
         guard let core else { return }
         let token = generation
@@ -488,6 +521,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         seekGeneration &+= 1
         let seekToken = seekGeneration
         isSeeking = true; state = .seeking; updatePhase()
+        trace?.beginSeek(target: seconds)
         core.command(["seek", String(max(0, duration > 0 ? min(seconds, duration) : seconds)), "absolute+exact"])
         for _ in 0..<300 {
             try? await Task.sleep(for: .milliseconds(50))

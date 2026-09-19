@@ -168,6 +168,7 @@ struct TVCircleMenuButton<MenuContent: View>: View {
     let title: String?
     let accessibilityLabel: String
     let stabilizesFocusMotion: Bool
+    let onFocus: (Bool) -> Void
     @ViewBuilder let menu: () -> MenuContent
 
     @FocusState private var isFocused: Bool
@@ -177,12 +178,14 @@ struct TVCircleMenuButton<MenuContent: View>: View {
         title: String? = nil,
         accessibilityLabel: String,
         stabilizesFocusMotion: Bool = false,
+        onFocus: @escaping (Bool) -> Void = { _ in },
         @ViewBuilder menu: @escaping () -> MenuContent
     ) {
         self.icon = icon
         self.title = title
         self.accessibilityLabel = accessibilityLabel
         self.stabilizesFocusMotion = stabilizesFocusMotion
+        self.onFocus = onFocus
         self.menu = menu
     }
 
@@ -208,6 +211,9 @@ struct TVCircleMenuButton<MenuContent: View>: View {
             .menuStyle(.button)
             .buttonStyle(TVCircleFocusHostButtonStyle(isPressed: nil))
             .focused($isFocused)
+            .onChange(of: isFocused) { _, focused in
+                onFocus(focused)
+            }
             .accessibilityLabel(accessibilityLabel)
         }
     }

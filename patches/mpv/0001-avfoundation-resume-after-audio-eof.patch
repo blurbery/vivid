@@ -1,6 +1,67 @@
 --- a/audio/out/ao_avfoundation.m
 +++ b/audio/out/ao_avfoundation.m
-@@ -818,6 +818,12 @@
+@@ -21,6 +21,7 @@
+ #include "audio/out/ao_coreaudio_utils.h"
+ #include "common/common.h"
+ #include "common/msg.h"
++#include "filters/f_async_queue.h"
+ #include "internal.h"
+ #include "options/m_option.h"
+ #include "osdep/timer.h"
+@@ -304,6 +305,19 @@
+         CMTimeMake(SPDIF_FRAMES_PER_BURST, p->spdif_rate));
+ }
+
++// An opportunistic prefetch must not report a hardware underrun while
++// AVPlayer still has playable audio. ao_read_data marks the AO stopped on
++// a short read, which otherwise pauses the whole player as this driver
++// builds its lead. Keep pulling normally below the existing one-second
++// priming reserve, so real starvation and EOF still reach mpv.
++static bool avp_wait_for_prefetch(struct ao *ao, int request_samples)
++{
++    struct priv *p = ao->priv;
++    int64_t ahead = p->es_pts - avp_feed_position_ns(ao);
++    return ahead >= AVP_START_MIN_NS &&
++        mp_async_queue_get_samples(ao_get_queue(ao)) < request_samples;
++}
++
+ // One read/unwrap pass: pull IEC 61937 data from mpv and append every
+ // complete burst's payload to the elementary stream. Returns false when out
+ // of data, at EOF, or reloading.
+@@ -318,6 +332,9 @@
+     if ((p->stash_size - p->stash_len) / sstride < request_sample_count)
+         request_sample_count = (p->stash_size - p->stash_len) / sstride;
+     if (request_sample_count <= 0)
++        return false;
++
++    if (avp_wait_for_prefetch(ao, request_sample_count))
+         return false;
+
+     int64_t cur_time_av = avp_current_time_ns(ao);
+@@ -492,15 +509,13 @@
+         p->avp_start_deadline = -1; // playing; nothing left to supervise
+         return;
+     }
+-    // A source that cannot outpace realtime (a realtime-pinned or
+-    // CPU-bound server transcode) trickles preroll in slowly; a hard
+-    // deadline would abandon it for PCM within seconds. Keep waiting while
+-    // priming is still making progress, like a blocking loader would: the
+-    // pipeline engages once preroll is satisfied, just late. The startup
+-    // gate bounds this -- a parked player keeps pulling at full speed,
+-    // tops the gate out quickly, progress stops, and the deadline below
+-    // resumes its work.
+-    if (p->es_pts > p->avp_primed_pts && p->es_pts < AVP_START_LEAD_NS(p)) {
++    // Try the existing seek-to-start workaround after the priming grace,
++    // even while packets arrive. Progress alone does not prove AVPlayer
++    // has engaged; postponing this seek can leave its clock parked until
++    // the entire startup lead is filled. Once tried, retain slow-source
++    // patience before abandoning compressed output for PCM.
++    if (p->avp_start_seeked && p->es_pts > p->avp_primed_pts &&
++        p->es_pts < AVP_START_LEAD_NS(p)) {
+         p->avp_primed_pts = p->es_pts;
+         p->avp_start_deadline = now + AVP_START_GRACE_NS;
+         return;
+@@ -818,6 +833,12 @@
      if (p->spdif) {
          void (^start_block)(void) = ^{
              p->avp_playing = true;

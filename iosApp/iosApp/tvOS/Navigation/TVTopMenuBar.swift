@@ -489,6 +489,8 @@ private final class TVTopMenuExitPressUIView: UIView, UIGestureRecognizerDelegat
         guard let window else { return }
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleMenuPress(_:)))
         recognizer.allowedPressTypes = [NSNumber(value: UIPress.PressType.menu.rawValue)]
+        // Remote Menu presses only; a clickpad touch must reach the focused button.
+        recognizer.allowedTouchTypes = []
         recognizer.cancelsTouchesInView = true
         recognizer.delegate = self
 

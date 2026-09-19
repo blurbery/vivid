@@ -1,6 +1,7 @@
 #if os(tvOS)
 import CoreGraphics
 import SwiftUI
+import UIKit
 
 enum TVPlayerTimeDisplayMode: Equatable {
     case elapsedRemaining
@@ -384,7 +385,7 @@ struct TVPlayerControls: View {
     }
 
     private var creditsSkipLayer: some View {
-        Button {
+        TVSkipButton(accessibilityTitle: "Skip Credits") {
             viewModel.skipCredits()
         } label: {
             Label("Skip Credits", systemImage: "forward.end.fill")
@@ -393,7 +394,6 @@ struct TVPlayerControls: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(width: 220)
         }
-        .buttonStyle(TVSkipGlassButtonStyle())
         .focused($isCreditsSkipFocused)
         .accessibilityLabel("Skip Credits")
         .focusSection()
@@ -412,7 +412,7 @@ struct TVPlayerControls: View {
 
             HStack(spacing: 18) {
                 if viewModel.introAutoSkipCountdownSeconds != nil {
-                    Button {
+                    TVSkipButton(accessibilityTitle: "Cancel " + viewModel.introSkipLabel) {
                         viewModel.cancelIntroAutoSkip()
                     } label: {
                         Label("Cancel", systemImage: "xmark")
@@ -421,7 +421,6 @@ struct TVPlayerControls: View {
                             .fixedSize(horizontal: true, vertical: false)
                             .frame(width: 136)
                     }
-                    .buttonStyle(TVSkipGlassButtonStyle())
                     .focused($focusedIntroAction, equals: .cancel)
                     .accessibilityLabel("Cancel " + viewModel.introSkipLabel)
                 }
@@ -432,7 +431,7 @@ struct TVPlayerControls: View {
     }
 
     private var skipIntroNowButton: some View {
-        Button {
+        TVSkipButton(accessibilityTitle: viewModel.introSkipLabel) {
             viewModel.skipIntro()
         } label: {
             Label(
@@ -444,7 +443,6 @@ struct TVPlayerControls: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(width: 220)
         }
-        .buttonStyle(TVSkipGlassButtonStyle())
         .focused($focusedIntroAction, equals: .skip)
         .accessibilityLabel(
             viewModel.introAutoSkipCountdownSeconds == nil ? viewModel.introSkipLabel : viewModel.introSkipLabel + " Now"
@@ -731,29 +729,113 @@ struct TVPlayerControls: View {
         PlayerTimeFormatter.formatCountdown(seconds)
     }
 }
-private struct TVSkipGlassButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        TVSkipGlassButtonBody(configuration: configuration)
-    }
-}
-
-private struct TVSkipGlassButtonBody: View {
-    let configuration: ButtonStyleConfiguration
-    @Environment(\.isFocused) private var isFocused
+/// The native view is the only focus and Select owner. The glass label is
+/// passive, avoiding SwiftUI Button's delayed press-release activation.
+private struct TVSkipButton<Label: View>: View {
+    let accessibilityTitle: String
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+    @State private var isFocused = false
+    @State private var isPressed = false
 
     var body: some View {
-        configuration.label
+        label()
             .foregroundStyle(.white)
             .padding(.horizontal, 24)
             .frame(height: 76)
-            .contentShape(Capsule())
-            .vividPlayerGlass(in: Capsule(), tint: isFocused ? .white.opacity(0.3) : nil, interactive: true)
+            .vividPlayerGlass(in: Capsule(), tint: isFocused ? .white.opacity(0.3) : nil)
             .overlay(Capsule().stroke(.white.opacity(isFocused ? 1 : 0), lineWidth: 3))
+            .allowsHitTesting(false)
+            .overlay {
+                TVSkipSelectView(
+                    accessibilityTitle: accessibilityTitle,
+                    action: action,
+                    onFocus: { isFocused = $0 },
+                    onPress: { isPressed = $0 }
+                )
+            }
             .scaleEffect(isFocused ? 1.06 : 1)
             .shadow(color: .black.opacity(isFocused ? 0.45 : 0), radius: 12, y: 6)
-            .opacity(configuration.isPressed ? 0.75 : 1)
-            .focusEffectDisabled()
+            .opacity(isPressed ? 0.75 : 1)
             .animation(.easeOut(duration: 0.15), value: isFocused)
+    }
+}
+
+private struct TVSkipSelectView: UIViewRepresentable {
+    let accessibilityTitle: String
+    let action: () -> Void
+    let onFocus: (Bool) -> Void
+    let onPress: (Bool) -> Void
+
+    func makeUIView(context: Context) -> TVSkipSelectUIView {
+        let view = TVSkipSelectUIView()
+        updateUIView(view, context: context)
+        return view
+    }
+
+    func updateUIView(_ view: TVSkipSelectUIView, context: Context) {
+        view.accessibilityLabel = accessibilityTitle
+        view.action = action
+        view.onFocus = onFocus
+        view.onPress = onPress
+    }
+}
+
+private final class TVSkipSelectUIView: UIView {
+    var action: () -> Void = {}
+    var onFocus: (Bool) -> Void = { _ in }
+    var onPress: (Bool) -> Void = { _ in }
+    private var selectIsDown = false
+
+    override var canBecomeFocused: Bool { true }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        onFocus(isFocused)
+        if !isFocused { endSelect() }
+        PlaybackTrialTrace.controlEvent("skip_focus", fields: "focused=\(isFocused)")
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let others = presses.filter { $0.type != .select }
+        if presses.contains(where: { $0.type == .select }), isFocused, !selectIsDown {
+            selectIsDown = true
+            onPress(true)
+            PlaybackTrialTrace.controlEvent("skip_select", fields: "focused=true")
+            action()
+        }
+        if !others.isEmpty { super.pressesBegan(others, with: event) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if presses.contains(where: { $0.type == .select }) { endSelect() }
+        let others = presses.filter { $0.type != .select }
+        if !others.isEmpty { super.pressesEnded(others, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if presses.contains(where: { $0.type == .select }) { endSelect() }
+        let others = presses.filter { $0.type != .select }
+        if !others.isEmpty { super.pressesCancelled(others, with: event) }
+    }
+
+    override func accessibilityActivate() -> Bool {
+        action()
+        return true
+    }
+
+    private func endSelect() {
+        guard selectIsDown else { return }
+        selectIsDown = false
+        onPress(false)
     }
 }
 

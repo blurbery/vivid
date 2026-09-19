@@ -47,9 +47,11 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import subprocess
           sources = list(Path('native-build').glob('**/audio/out/ao_avfoundation.m'))
           assert sources, 'Missing compiled driver source'
           for path in sources:
+              subprocess.run(['python3', 'scripts/tests/compressed-audio-recovery-tests.py', str(path)], check=True)
               text = path.read_text()
               start = text[text.index('static void start('):]
               block = start[:start.index('static void stop(')]

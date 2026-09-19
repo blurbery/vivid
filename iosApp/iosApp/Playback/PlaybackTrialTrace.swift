@@ -9,8 +9,13 @@ import OSLog
 final class PlaybackTrialTrace {
     private static let log = Logger(subsystem: "com.blurbery.vivid", category: "PlaybackTrial")
     private static var pendingPlay: Double?
+    private static weak var active: PlaybackTrialTrace?
+
+    static func controlEvent(_ name: String, fields: String = "") {
+        active?.event(name, fields: fields)
+    }
     #if VIVID_P8_TRIAL
-    private let recording: P8TrialRecording
+    private static let recording = P8TrialRecording()
     #endif
     static func requestPlay() { pendingPlay = CACurrentMediaTime() }
 
@@ -20,13 +25,11 @@ final class PlaybackTrialTrace {
     private var seekStarted: Double?
     private var seekID = 0
 
-    init(preserveRecording: Bool = false) {
-        #if VIVID_P8_TRIAL
-        recording = P8TrialRecording(preserveExisting: preserveRecording)
-        #endif
+    init() {
         started = Self.pendingPlay ?? CACurrentMediaTime()
         let origin = Self.pendingPlay == nil ? "engine_load" : "play_request"
         Self.pendingPlay = nil
+        Self.active = self
         let backend = "mpv"
         event("start", fields: "origin=\(origin) engine=\(LucidCore.name) path=\(LucidCore.path) backend=\(backend)")
         mark(origin, at: started)
@@ -57,9 +60,10 @@ final class PlaybackTrialTrace {
     }
 
     func event(_ name: String, fields: String = "") {
+        let fields = "since_start_ms=\(Int((CACurrentMediaTime() - started) * 1000)) " + fields
         Self.log.info("trial session=\(self.id, privacy: .public) event=\(name, privacy: .public) \(fields, privacy: .public)")
         #if VIVID_P8_TRIAL
-        recording.append("trial session=\(id) event=\(name) \(fields)\n")
+        Self.recording.append("trial session=\(id) event=\(name) \(fields)\n")
         #endif
     }
 }
@@ -71,21 +75,17 @@ private final class P8TrialRecording: @unchecked Sendable {
     private var handle: FileHandle?
     private var byteCount = 0
 
-    init(preserveExisting: Bool) {
+    init() {
         Self.queue.async { [self] in
             guard let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
             let url = directory.appendingPathComponent("MPVTrial.log")
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                if !preserveExisting || !FileManager.default.fileExists(atPath: url.path) {
+                if !FileManager.default.fileExists(atPath: url.path) {
                     FileManager.default.createFile(atPath: url.path, contents: nil)
                 }
-                handle = try FileHandle(forWritingTo: url)
-                if preserveExisting {
-                    byteCount = Int(try handle?.seekToEnd() ?? 0)
-                } else {
-                    try handle?.truncate(atOffset: 0)
-                }
+                handle = try FileHandle(forUpdating: url)
+                try handle?.truncate(atOffset: 0)
             } catch { handle = nil }
         }
     }
@@ -93,9 +93,20 @@ private final class P8TrialRecording: @unchecked Sendable {
     func append(_ line: String) {
         guard let data = line.data(using: .utf8) else { return }
         Self.queue.async { [self] in
-            guard byteCount + data.count <= 256 * 1024 else { return }
             do {
-                try handle?.write(contentsOf: data)
+                guard let handle else { return }
+                if byteCount + data.count > 256 * 1024 {
+                    // Keep recent complete lines across title changes without
+                    // unbounded logs or I/O on the playback queue.
+                    try handle.seek(toOffset: UInt64(max(0, byteCount - 128 * 1024)))
+                    let tail = try handle.readToEnd() ?? Data()
+                    let retained = tail.firstIndex(of: 10).map { Data(tail.suffix(from: tail.index(after: $0))) } ?? Data()
+                    try handle.truncate(atOffset: 0)
+                    try handle.seek(toOffset: 0)
+                    try handle.write(contentsOf: retained)
+                    byteCount = retained.count
+                }
+                try handle.write(contentsOf: data)
                 byteCount += data.count
             } catch { handle = nil }
         }
