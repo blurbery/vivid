@@ -26,6 +26,10 @@ enum SharedStorage {
     /// Shared Keychain service name. Same on both sides.
     static let keychainService = "com.blurbery.vivid"
 
+    // Account credentials belong to the selected native Apple TV user,
+    // just like saved account cards and viewing-profile preferences.
+    static let accountCredentialAudience: KeychainAudience = .currentUser
+
     /// Stable account names for the mirrored active-server tokens.
     static let mirroredAccessTokenAccount = "com.blurbery.vivid.topshelf.accessToken"
     static let mirroredProfileTokenAccount = "com.blurbery.vivid.topshelf.profileToken"

@@ -50,7 +50,7 @@ final class AuthService: @unchecked Sendable {
         guard let id = ServerRegistry.shared.activeServerId, !id.isEmpty else {
             return false
         }
-        return SharedKeychain(audience: .userIndependent)
+        return SharedKeychain(audience: SharedStorage.accountCredentialAudience)
             .get(TokenStore.accessTokenKey(for: id)) != nil
     }
 

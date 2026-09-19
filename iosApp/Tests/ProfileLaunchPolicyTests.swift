@@ -444,7 +444,7 @@ final class ProfileLaunchPolicyTests: XCTestCase {
     }
 
     func testCredentialAudienceClassification() {
-        XCTAssertEqual(TokenStore.accountCredentialAudience, .userIndependent)
+        XCTAssertEqual(TokenStore.accountCredentialAudience, .currentUser)
         XCTAssertEqual(TokenStore.profileCredentialAudience, .currentUser)
     }
 }

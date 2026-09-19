@@ -433,6 +433,9 @@ final class VividPlaybackController {
         }
         switch timeline.seekDisposition(forSourceTime: sourceSeconds) {
         case .local(let playerSeconds):
+            // Returning from terminal Next Up keeps this load epoch alive.
+            // Its next genuine EOF must be publishable after the rewind.
+            didPublishEnd = false
             let seekGeneration = generation
             await engine.seek(to: playerSeconds)
             guard seekGeneration == generation else {

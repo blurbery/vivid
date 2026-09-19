@@ -778,6 +778,20 @@ struct ContentView: View {
         let shouldSyncCloudAccounts = true
         #endif
         if shouldSyncCloudAccounts {
+            do {
+                try await KeychainReadFailure.retryTemporaryRead {
+                    try ServerRegistry.shared.retryInitialRegistryReadIfNeeded()
+                    #if os(tvOS)
+                    try await TVSavedAccountStore.shared.restoreLocalSessionForLaunch()
+                    #endif
+                }
+            } catch {
+                didStartInitialStateCheck = false
+                if !Task.isCancelled { showsCredentialReadError = true }
+                return
+            }
+        }
+        if shouldSyncCloudAccounts {
             let needsCloudBootstrap = TVSavedAccountStore.shared.accounts.isEmpty
                 || ServerRegistry.shared.entries.isEmpty
             if needsCloudBootstrap {
@@ -916,7 +930,7 @@ struct ContentView: View {
     /// post-hoc. Run off the critical launch path.
     private static func logTopShelfDiagnostics() async {
         let suite = SharedStorage.suite
-        let accountKeychain = SharedKeychain(audience: .userIndependent)
+        let accountKeychain = SharedKeychain(audience: SharedStorage.accountCredentialAudience)
         let profileKeychain = SharedKeychain(audience: .currentUser)
         let hasServerURL = suite.string(forKey: SharedStorage.serverUrlKey) != nil
         let hasProfileID = suite.string(forKey: SharedStorage.profileIdKey) != nil

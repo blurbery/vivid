@@ -9,6 +9,15 @@ on:
       - 'iosApp/project*.yml'
       - 'iosApp/**/Package.resolved'
       - 'scripts/tests/playback-auth-refresh-tests.py'
+      - 'scripts/tests/playback-end-recovery-tests.py'
+      - 'scripts/tests/native-profile-restoration-tests.py'
+      - 'iosApp/iosApp/ContentView.swift'
+      - 'iosApp/iosApp/Shared/SharedStorage.swift'
+      - 'iosApp/iosApp/Networking/TokenStore.swift'
+      - 'iosApp/iosApp/Networking/ServerRegistry.swift'
+      - 'iosApp/iosApp/Screens/Auth/AuthService.swift'
+      - 'iosApp/iosApp/tvOS/Profiles/**'
+      - 'iosApp/TopShelf/**'
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
       - 'iosApp/iosApp/Plugins/MDBList*.swift'
@@ -59,6 +68,12 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '26.3'
+      - name: Verify native Apple TV account restoration
+        if: matrix.action == 'test'
+        run: python3 scripts/tests/native-profile-restoration-tests.py
+      - name: Verify unexpected stream endings preserve the current episode
+        if: matrix.action == 'test'
+        run: python3 scripts/tests/playback-end-recovery-tests.py
       - name: Verify playback survives credential refresh
         if: matrix.action == 'test'
         run: |

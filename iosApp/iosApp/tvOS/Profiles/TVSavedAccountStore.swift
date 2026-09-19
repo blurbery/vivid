@@ -221,6 +221,22 @@ final class TVSavedAccountStore {
         else { error = "Incorrect PIN. Try again." }
         return valid
     }
+    /// Restore only this native user's explicitly selected local account.
+    /// Cloud availability must not decide whether an existing user is signed in.
+    func restoreLocalSessionForLaunch() async throws {
+        guard let account = activeAccount, !account.requiresLogin,
+              ServerRegistry.shared.entry(with: account.serverID) != nil else { return }
+        let credentials = keychain.withAudience(SharedStorage.accountCredentialAudience)
+        if ServerRegistry.shared.activeServerId == account.serverID,
+           try credentials.getChecked(TokenStore.accessTokenKey(for: account.serverID)) != nil {
+            return
+        }
+        guard let raw = try keychain.getChecked(sessionKey(account.id)),
+              let data = raw.data(using: .utf8),
+              let saved = try? JSONDecoder().decode(TVSavedAccountSession.self, from: data) else { return }
+        try await AuthService.shared.restoreTVAccount(saved, serverID: account.serverID, accountID: account.userID)
+    }
+
     func prepareColdLaunch() {
         ProfileLaunchPreferences.shared.behavior = .automatic
         unlockedID = nil

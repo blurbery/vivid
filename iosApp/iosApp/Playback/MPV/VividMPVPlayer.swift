@@ -116,6 +116,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var source: (URL, LoadOptions, Int32?)?
     private var requestedRate: Float = 1
     private var rateTask: Task<Void, Never>?
+    private var endConfirmationTask: Task<Void, Never>?
     private var wantsPlay = false
     private var videoTrack: [String: Any] = [:]
     private var outputChannels: Int?
@@ -234,7 +235,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "paused-for-cache": isBuffering = value as? Bool ?? false; updatePhase()
         case "seeking": isSeeking = value as? Bool ?? false; updatePhase()
         case "pause": wantsPlay = !(value as? Bool ?? true); updatePhase()
-        case "eof-reached": if value as? Bool == true { state = .ended; playbackPhase = .ended; isBuffering = false }
+        case "eof-reached": observeEndOfFile(value as? Bool ?? false)
         case "track-list": rawTracks = value as? [[String: Any]] ?? []; readTracks()
         case "chapter-list":
             mediaChapters = (value as? [[String: Any]] ?? []).enumerated().map {
@@ -278,9 +279,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             hasFirstFrameReadyForDisplay = true; isSeeking = false; isBuffering = false
             updatePhase(); trace?.mark("mpv_playback_restart")
         case "end-file":
-            if let code = data?["error"] as? Int {
-                fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Lucid playback failed (\(code))."))
-            } else if data?["reason"] as? Int == 0 { state = .ended; playbackPhase = .ended; isBuffering = false }
+            handleEndFile(data)
         case "log-message":
             if let fields = Self.audioDiagnostic(data) {
                 trace?.event("mpv_audio_diagnostic", fields: fields)
@@ -289,6 +288,46 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         default: break
         }
     }
+    private func handleEndFile(_ data: [String: Any]?) {
+        if let code = data?["error"] as? Int {
+            fail(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Lucid playback failed (\(code))."))
+        } else if data?["reason"] as? Int == 0 {
+            observeEndOfFile(true)
+        } else {
+            cancelEndConfirmation()
+        }
+    }
+
+    private func cancelEndConfirmation() {
+        endConfirmationTask?.cancel()
+        endConfirmationTask = nil
+    }
+
+    private func observeEndOfFile(_ reached: Bool) {
+        guard reached else { cancelEndConfirmation(); return }
+        guard errorInfo == nil, state != .ended, endConfirmationTask == nil else { return }
+        let token = generation
+        let seekToken = seekGeneration
+        // keep-open retains the source for rewinding from Next Up. Its EOF
+        // property can precede end-file(error), so allow queued errors to win.
+        endConfirmationTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(250)) }
+            catch { return }
+            guard let self, !Task.isCancelled, self.generation == token,
+                  self.seekGeneration == seekToken, self.errorInfo == nil else { return }
+            self.endConfirmationTask = nil
+            guard self.isSessionReady, self.hasFirstFrameReadyForDisplay else {
+                self.fail(PlaybackErrorInfo(kind: .softwarePipelineFailed,
+                    message: "The media stream ended before playback started."))
+                return
+            }
+            self.isSeeking = false
+            self.isBuffering = false
+            self.playbackPhase = .ended
+            self.state = .ended
+        }
+    }
+
     private func recordPipelineSnapshot() {
         var fields = ["position_s=\(currentTime)", "playing=\(wantsPlay)", "buffering=\(isBuffering)", "seeking=\(isSeeking)"]
         for key in ["fw-bytes", "total-bytes", "raw-input-rate", "reader-pts", "cache-end", "cache-duration", "eof", "underrun", "idle"] {
@@ -444,6 +483,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
     func seek(to seconds: Double) async {
         guard let core, seconds.isFinite else { return }
+        cancelEndConfirmation()
         let token = generation
         seekGeneration &+= 1
         let seekToken = seekGeneration
@@ -553,6 +593,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func prepareForItemReplacement() { pause(); hasFirstFrameReadyForDisplay = false }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         generation &+= 1
+        cancelEndConfirmation()
         rateTask?.cancel(); rateTask = nil
         softwarePiPSource = nil
         core?.delegate = nil; core?.dispose(preserveDisplayCriteria: !resetDisplayCriteria)
@@ -577,6 +618,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         if deactivatesAudioSessionOnStop { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
     private func fail(_ error: PlaybackErrorInfo) {
+        cancelEndConfirmation()
         core?.setProperty("pause", value: "yes")
         errorInfo = error; state = .error(error.message); playbackPhase = .error(error.message)
         isBuffering = false; isSeeking = false; trace?.event("mpv_failed", fields: "kind=\(error.kind.rawValue)")

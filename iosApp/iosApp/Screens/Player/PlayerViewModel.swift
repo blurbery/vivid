@@ -536,6 +536,7 @@ class PlayerViewModel {
     /// UI in a terminal paused state without letting tail-drain callbacks
     /// overwrite it or surface a false decode error.
     private var hasReachedEndOfFile = false
+    private var pendingUnexpectedEndEpoch: VividPlaybackController.LoadEpoch?
     let settings = PlayerSettings.shared
     let sleepTimer = SleepTimer()
     private let nowPlaying = VividVideoNowPlayingCoordinator()
@@ -839,7 +840,6 @@ class PlayerViewModel {
     private static let nextUpHUDCountdownThresholdSeconds: Double = 100
     private static let introAutoSkipCountdownDefaultSeconds = 5
     static var nextUpCountdownTotal: Int { nextUpCountdownDefaultSeconds }
-    private static let nearEndPlaybackErrorThresholdSeconds: Double = 8
     private var nextUpAutoplayCancelled = false
     /// Set when the user taps Keep Watching; suppresses re-presenting the
     /// pre-end Next Up prompt while the playhead stays inside the prompt
@@ -1184,6 +1184,8 @@ class PlayerViewModel {
 
     @MainActor
     private func handleVividFailure(_ failure: PlaybackErrorInfo) {
+        guard !hasReachedEndOfFile else { return }
+        suppressNextUpForPlaybackFailure()
         if failure.kind == .audioTrackSwitchFailed {
             // The engine tore its pipeline down for the switch and the rebuild
             // failed, so there is nothing left playing whatever the phase. It
@@ -1265,11 +1267,14 @@ class PlayerViewModel {
         if serverCanAdapt.contains(failure.kind),
            activePreparedProtocolV3 != nil,
            committedProtocolV3LoadEpoch != nil {
-            attemptProtocolV3Replan(
+            guard protocolV3ReplanTask == nil else { return }
+            if !attemptProtocolV3Replan(
                 position: currentTime,
                 classification: failure.kind.rawValue,
                 message: failure.message
-            )
+            ) {
+                finalizeTerminalPlaybackError(failure.message)
+            }
             return
         }
         if failure.kind == .sourceRateLimited {
@@ -1376,11 +1381,7 @@ class PlayerViewModel {
             Self.logger.info("Ignoring playback error after EOF: \(logMessage, privacy: .public)")
             return
         }
-        if shouldTreatPlaybackErrorAsNaturalEnd() {
-            Self.logger.info("Treating near-end playback error as EOF: \(logMessage, privacy: .public)")
-            handleEndOfFile()
-            return
-        }
+        suppressNextUpForPlaybackFailure()
         if activePreparedProtocolV3 != nil,
            committedProtocolV3LoadEpoch != nil {
             attemptProtocolV3Recovery(after: message)
@@ -1396,11 +1397,14 @@ class PlayerViewModel {
     }
 
     private func attemptProtocolV3Recovery(after message: String) {
-        attemptProtocolV3Replan(
+        guard protocolV3ReplanTask == nil else { return }
+        if !attemptProtocolV3Replan(
             position: currentTime,
             classification: protocolV3FailureClassification(message),
             message: message
-        )
+        ) {
+            finalizeTerminalPlaybackError(message)
+        }
     }
 
     /// Rebuilds the committed plan with the account bearer currently held by
@@ -1578,6 +1582,7 @@ class PlayerViewModel {
             var finalClassification = fallbackClassification
             var finalMessage = fallbackMessage
             defer {
+                defer { self.recoverPendingUnexpectedEnd() }
                 if self.authenticationReloadGeneration == recoveryGeneration {
                     self.authenticationReloadGeneration = nil
                 }
@@ -1962,6 +1967,7 @@ class PlayerViewModel {
             var uncommittedPrepared: PreparedPlayback?
             var chainedLoadFailureRecovery: (position: Double, classification: String, message: String)?
             defer {
+                defer { self.recoverPendingUnexpectedEnd() }
                 self.protocolV3ReplanTask = nil
                 if completesQualitySwitch { self.isQualitySwitching = false }
                 if let recovery = chainedLoadFailureRecovery {
@@ -2219,15 +2225,6 @@ class PlayerViewModel {
         return (true, protocolV3FailureClassification(message), message)
     }
 
-    private func shouldTreatPlaybackErrorAsNaturalEnd() -> Bool {
-        guard duration.isFinite, duration > 0, currentTime.isFinite, currentTime > 0 else {
-            return false
-        }
-        let remaining = duration - currentTime
-        let progress = currentTime / duration
-        return remaining <= Self.nearEndPlaybackErrorThresholdSeconds || progress >= 0.985
-    }
-
     private func loadNextUpCandidate(for detail: WatchDetail) {
         nextUpLookupTask?.cancel()
         nextUpLookupTask = nil
@@ -2469,7 +2466,10 @@ class PlayerViewModel {
     private func updateNextUpPresentation(for movieTime: Double) {
         // A retained native host must not reopen the outgoing episode's
         // postroll before the successor has presented its own first frame.
-        guard !hasReachedEndOfFile,
+        guard !hasReachedEndOfFile, error == nil, !isLoading, !isBuffering,
+              isPlaying, !isScrubbing, seekTargetTime == nil,
+              !vividPlaybackController.engine.isSeeking, !isQualitySwitching,
+              protocolV3ReplanTask == nil,
               let epoch = activeVividLoadEpoch,
               startedVividLoadEpoch == epoch else { return }
         if showNextUpScreen {
@@ -2558,7 +2558,10 @@ class PlayerViewModel {
     }
 
     private func updateNextUpCountdownForActivePlayback(at movieTime: Double) {
-        guard showNextUpScreen,
+        guard error == nil, !isLoading, !isBuffering, isPlaying,
+              !isScrubbing, seekTargetTime == nil, !isQualitySwitching,
+              !vividPlaybackController.engine.isSeeking, protocolV3ReplanTask == nil,
+              showNextUpScreen,
               !isNextUpTransitioning,
               !nextUpScreenVideoEnded,
               settings.autoPlayNextEpisode,
@@ -2725,28 +2728,36 @@ class PlayerViewModel {
     }
 
     private func updatePlaybackCompletion(at position: Double, endedNaturally: Bool = false) {
-        guard completedPlaybackContentId == nil,
-              let detail = currentWatchDetail,
-              ["movie", "episode"].contains(detail.type),
-              PlaybackCompletionPolicy.isComplete(
+        let newlyCompleted: Bool
+        if completedPlaybackContentId == nil,
+           let detail = currentWatchDetail,
+           ["movie", "episode"].contains(detail.type),
+           PlaybackCompletionPolicy.isComplete(
                 position: position, duration: duration,
                 credits: currentSelectedVersion?.credits ?? creditsRange,
-                endedNaturally: endedNaturally
-              ) else { return }
-        completedPlaybackContentId = detail.contentId
-        recordCurrentPlaybackMutation(markedCompleted: true)
+                endedNaturally: endedNaturally) {
+            completedPlaybackContentId = detail.contentId
+            recordCurrentPlaybackMutation(markedCompleted: true)
+            newlyCompleted = true
+        } else {
+            newlyCompleted = false
+        }
+        // Even an item marked watched earlier needs its final EOF position.
+        guard newlyCompleted || endedNaturally, position.isFinite, position >= 0 else { return }
         if let offline = offlinePlaybackContext {
-            recordOfflineProgress(context: offline, position: position, markCompleted: true)
+            recordOfflineProgress(context: offline, position: position,
+                                  markCompleted: completedPlaybackContentId != nil)
             return
         }
-        let contentId = detail.contentId
+        let contentId = completedPlaybackContentId
         let prior = naturalEndProgressTask
         let paused = !isPlaying
+        let eligible = newlyCompleted || progressIsEligible
         let refreshHome = refreshHomeAfterPlaybackWrite
         naturalEndProgressTask = Task { [sessionBridge] in
             await prior?.value
             let result = await sessionBridge.reportProgress(
-                position: position, isPaused: paused, eligible: true,
+                position: position, isPaused: paused, eligible: eligible,
                 completedContentId: contentId)
             if result == .success { refreshHome?() }
         }
@@ -3362,77 +3373,71 @@ class PlayerViewModel {
         )
     }
 
-    /// Called when the active backend reports natural EOF. Move the shell into
-    /// a paused end-state immediately so the player does not look frozen if
-    /// auto-play-next is unavailable.
-    private func handleEndOfFile() {
-        // Once per load. Two callers can land here for the same end — the
-        // `.ended` event and a near-end playback error reclassified as a
-        // natural finish — and running twice would raise the Next Up postroll
-        // twice. Latching the flag up-front (rather than at the bottom, as
-        // before) is what makes the guard airtight; every intentional resume
-        // (`beginFreshLoad`, `keepWatchingCurrentEpisode`, `commitSeek`,
-        // `handleFileLoaded`) already clears it, so a genuine second end
-        // still reports.
-        guard !hasReachedEndOfFile else { return }
-        hasReachedEndOfFile = true
+    private func suppressNextUpForPlaybackFailure() {
+        // Cancel the task without changing the user's autoplay preference.
+        cancelNextUpCountdown()
+        showNextUpScreen = false
+        nextUpScreenVideoEnded = false
+    }
 
-        // Detect a premature EOF before the autoplay hand-off. FFmpeg's
-        // demuxer reports end-of-stream when the upstream HTTP connection is
-        // reset, even if the file's real duration is still seconds away. The
-        // player then drains its buffered packets cleanly and lands here, but
-        // treating that as a natural end would trigger autoplay against the
-        // same dead network that just dropped us.
+    private func recoverPendingUnexpectedEnd() {
+        guard let epoch = pendingUnexpectedEndEpoch else { return }
+        guard !isDisposed, epoch == activeVividLoadEpoch else {
+            pendingUnexpectedEndEpoch = nil
+            return
+        }
+        guard !freshLoadOwnsFailureHandling, protocolV3ReplanTask == nil else { return }
+        pendingUnexpectedEndEpoch = nil
+        handlePlaybackError("The media stream ended before playback completion could be confirmed.")
+    }
+
+    /// Validate terminal timing before completing an item or showing Next Up.
+    private func handleEndOfFile() {
+        guard !hasReachedEndOfFile else { return }
         let observedPosition = currentTime
         let safeDuration = duration
-        let isPremature: Bool = {
-            guard safeDuration.isFinite, safeDuration > 0,
-                  observedPosition.isFinite, observedPosition > 0 else {
-                return false
-            }
-            let remaining = safeDuration - observedPosition
-            let progress = observedPosition / safeDuration
-            return remaining > Self.nearEndPlaybackErrorThresholdSeconds
-                && progress < 0.985
-        }()
-
-        if isPremature {
+        guard PlayerNextUpCompletionPolicy.isConfirmedEnd(
+            currentTime: observedPosition, duration: safeDuration
+        ) else {
+            // Do not latch completion or write watched history for a truncated
+            // stream. The existing recovery path retains the current item,
+            // source position and track selections; failure offers Retry.
             Self.logger.warning(
-                "[CMP] handleEndOfFile suppressing autoplay: premature EOF at \(observedPosition, privacy: .public)/\(safeDuration, privacy: .public)"
+                "Unexpected source end at \(observedPosition, privacy: .public)/\(safeDuration, privacy: .public); recovering current item"
             )
-            // Cancel autoplay before we enter the postroll so the hand-off
-            // to the next episode short-circuits — `beginNextUpPostroll`
-            // checks `!nextUpAutoplayCancelled` before calling
-            // `playNextEpisodeNow()`. The user is left on a recoverable
-            // surface where they can retry via Play Now, pick from On Deck,
-            // or hit Back.
-            nextUpAutoplayCancelled = true
-            cancelNextUpCountdown()
-            // `showNotice` is `@MainActor`; this callback may not be, so
-            // dispatch onto the main actor explicitly.
-            Task { @MainActor [weak self] in
-                self?.showNotice(
-                    title: "Connection lost",
-                    message: "Lost connection to the server before the episode finished.",
-                    tone: .warning,
-                    duration: 6
-                )
+            #if os(iOS) || os(tvOS)
+            DiagTrace.breadcrumb(
+                .essential, level: .warning, category: .playback, tag: "Player",
+                message: "unexpected end of stream",
+                attrs: [
+                    "reason": .string("premature_source_end"),
+                    "position_ms": .int(PlaybackSessionBridge.diagnosticsPositionMilliseconds(observedPosition)),
+                ]
+            )
+            #endif
+            suppressNextUpForPlaybackFailure()
+            if freshLoadOwnsFailureHandling || protocolV3ReplanTask != nil
+                || (activePreparedProtocolV3 != nil && committedProtocolV3LoadEpoch == nil) {
+                // An EOF does not throw from load(). Retain it until the
+                // owning load settles, instead of silently dropping it.
+                pendingUnexpectedEndEpoch = activeVividLoadEpoch
+                return
             }
+            handleVividFailure(PlaybackErrorInfo(kind: .softwarePipelineFailed,
+                message: "The media stream ended before playback completion could be confirmed."))
+            return
         }
+        hasReachedEndOfFile = true
 
         #if os(iOS) || os(tvOS)
-        // Terminal outcome #2 of 2. A premature EOF is a failure the user
-        // sees as "it just stopped", so it must not be filed as a clean
-        // finish — the `reason` token is the only thing separating the two in
-        // a report, since both arrive on this same path.
         DiagTrace.breadcrumb(
             .essential,
-            level: isPremature ? .warning : .info,
+            level: .info,
             category: .playback,
             tag: "Player",
             message: "playback reached end of stream",
             attrs: [
-                "reason": .string(isPremature ? "premature_source_end" : "natural_end"),
+                "reason": .string("natural_end"),
                 "play_method": .string(activeRouteLabel),
                 "position_ms": .int(
                     PlaybackSessionBridge.diagnosticsPositionMilliseconds(observedPosition)
@@ -3444,7 +3449,7 @@ class PlayerViewModel {
         hideControlsTask?.cancel()
         hideControlsTask = nil
         vividPlaybackController.pause()
-        if !isPremature, duration.isFinite, duration > 0 {
+        if duration.isFinite, duration > 0 {
             currentTime = duration
         }
         isLoading = false
@@ -3461,53 +3466,7 @@ class PlayerViewModel {
             playbackRate: settings.playbackSpeed
         )
 
-        if !isPremature {
-            updatePlaybackCompletion(at: currentTime, endedNaturally: true)
-            recordCurrentPlaybackMutation(markedCompleted: true)
-
-            // Vivid has already delivered the native terminal event, so
-            // publish the terminal position now rather than waiting for the
-            // periodic reporter's next ten-second tick. Teardown still sends
-            // its authoritative final report; it awaits this task first so
-            // the two writes cannot race the same session lifecycle.
-            if offlinePlaybackContext == nil,
-               currentTime.isFinite,
-               currentTime >= 0 {
-                let priorNaturalEndProgressTask = naturalEndProgressTask
-                let endPosition = currentTime
-                let eligible = progressIsEligible
-                let completedContentId = completedPlaybackContentId
-                #if os(iOS) || os(tvOS)
-                let refreshHome = refreshHomeAfterPlaybackWrite
-                #endif
-                naturalEndProgressTask = Task { [sessionBridge] in
-                    await priorNaturalEndProgressTask?.value
-                    let result = await sessionBridge.reportProgress(
-                        position: endPosition,
-                        isPaused: true, eligible: eligible, completedContentId: completedContentId
-                    )
-                    #if os(iOS) || os(tvOS)
-                    if result == .success { refreshHome?() }
-                    #endif
-                }
-            }
-        }
-
-        // Natural end of an offline download: latch the local watched state
-        // immediately (not just at close) so retention/reclaim see it even
-        // if the process dies before `cleanup()` runs. DownloadManager is
-        // MainActor-isolated; this callback may not be.
-        if !isPremature, let offline = offlinePlaybackContext {
-            let endPosition = currentTime
-            Task { @MainActor [weak self] in
-                self?.recordOfflineProgress(
-                    context: offline,
-                    position: endPosition,
-                    markCompleted: true
-                )
-            }
-        }
-
+        updatePlaybackCompletion(at: currentTime, endedNaturally: true)
         beginNextUpPostroll(videoEnded: true)
     }
 
@@ -3894,6 +3853,7 @@ class PlayerViewModel {
             guard let self, !self.isDisposed else { return }
             var uncommittedPrepared: PreparedPlayback?
             defer {
+                defer { self.recoverPendingUnexpectedEnd() }
                 if self.freshLoadGeneration == currentFreshLoadGeneration {
                     self.freshLoadTask = nil
                     self.freshLoadOwnsFailureHandling = false
@@ -4268,6 +4228,7 @@ class PlayerViewModel {
     }
 
     private func finalizeTerminalPlaybackError(_ message: String) {
+        suppressNextUpForPlaybackFailure()
         #if os(iOS) || os(tvOS)
         // Terminal outcome #1 of 2 (the other is `handleEndOfFile`). Every
         // Every Vivid recovery path ends either here or in `handleEndOfFile`,
@@ -4882,6 +4843,7 @@ class PlayerViewModel {
     /// the prior seek.
     @discardableResult
     private func commitSeek(to target: Double, source: String = "unspecified") -> Bool {
+        pendingUnexpectedEndEpoch = nil
         watchTimeGate.interrupt()
         let clampedTarget = duration > 0 ? min(max(0, target), duration) : max(0, target)
         let requiresReplan: Bool = {
