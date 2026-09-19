@@ -777,12 +777,13 @@ struct ContentView: View {
         #else
         let shouldSyncCloudAccounts = true
         #endif
-        #if os(tvOS)
         if shouldSyncCloudAccounts {
             do {
                 try await KeychainReadFailure.retryTemporaryRead {
                     try ServerRegistry.shared.retryInitialRegistryReadIfNeeded()
+                    #if os(tvOS)
                     try await TVSavedAccountStore.shared.restoreLocalSessionForLaunch()
+                    #endif
                 }
             } catch {
                 didStartInitialStateCheck = false
@@ -790,7 +791,6 @@ struct ContentView: View {
                 return
             }
         }
-        #endif
         if shouldSyncCloudAccounts {
             let needsCloudBootstrap = TVSavedAccountStore.shared.accounts.isEmpty
                 || ServerRegistry.shared.entries.isEmpty

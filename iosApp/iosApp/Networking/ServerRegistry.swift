@@ -185,7 +185,8 @@ final class ServerRegistry {
         self.launchPreferences = launchPreferences
         self.persistenceOverride = persistenceOverride
         load()
-        migrateLegacyProfileMappingsIfNeeded()
+        do { try migrateLegacyProfileMappingsIfNeeded() }
+        catch { needsProfileMigrationRetry = true }
         activeServerSnapshot.write(activeServerId)
     }
 
@@ -680,14 +681,20 @@ final class ServerRegistry {
     // MARK: - Persistence
 
     private var needsRegistryReadRetry = false
+    private var needsProfileMigrationRetry = false
 
     func retryInitialRegistryReadIfNeeded() throws {
         #if os(tvOS)
-        guard needsRegistryReadRetry else { return }
-        try loadTVRegistry()
-        needsRegistryReadRetry = false
-        migrateLegacyProfileMappingsIfNeeded()
+        if needsRegistryReadRetry {
+            try loadTVRegistry()
+            needsRegistryReadRetry = false
+            needsProfileMigrationRetry = true
+        }
         #endif
+        if needsProfileMigrationRetry {
+            try migrateLegacyProfileMappingsIfNeeded()
+            needsProfileMigrationRetry = false
+        }
     }
 
     #if os(tvOS)
@@ -842,7 +849,7 @@ final class ServerRegistry {
     /// Move the old registry-owned profile ID into the current user's launch
     /// store. The legacy field remains encoded until the destination mapping
     /// and account epoch can be read back, making interruption retry-safe.
-    private func migrateLegacyProfileMappingsIfNeeded() {
+    private func migrateLegacyProfileMappingsIfNeeded() throws {
         let accountKeychain = keychain.withAudience(SharedStorage.accountCredentialAudience)
         let profileKeychain = keychain.withAudience(.currentUser)
         for index in entries.indices {
@@ -852,7 +859,7 @@ final class ServerRegistry {
             let accessKey = TokenStore.accessTokenKey(for: serverID)
             let epochKey = TokenStore.accountEpochKey(for: serverID)
 
-            guard accountKeychain.get(accessKey) != nil else {
+            guard try accountKeychain.getChecked(accessKey) != nil else {
                 // A signed-out legacy entry has no account to which the old
                 // profile could safely be bound.
                 let legacyProfileID = entries[index].legacyProfileId
@@ -864,12 +871,12 @@ final class ServerRegistry {
             }
 
             let accountEpoch: String
-            if let existing = accountKeychain.get(epochKey), !existing.isEmpty {
+            if let existing = try accountKeychain.getChecked(epochKey), !existing.isEmpty {
                 accountEpoch = existing
             } else {
                 let generated = UUID().uuidString
                 guard accountKeychain.set(generated, for: epochKey),
-                      accountKeychain.get(epochKey) == generated else {
+                      try accountKeychain.getChecked(epochKey) == generated else {
                     continue
                 }
                 accountEpoch = generated
@@ -877,7 +884,7 @@ final class ServerRegistry {
 
             guard launchPreferences.migrateLegacyProfile(
                 profileID: profileID,
-                requiresPIN: profileKeychain.get(
+                requiresPIN: try profileKeychain.getChecked(
                     TokenStore.profileTokenKey(for: serverID)
                 ) != nil,
                 accountEpoch: accountEpoch,

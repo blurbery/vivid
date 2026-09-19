@@ -17,6 +17,12 @@ def method(path, marker):
 
 registry = 'iosApp/iosApp/Networking/ServerRegistry.swift'
 accounts = 'iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift'
+persist = method(registry, 'private func persist()')
+head, platform = persist.split('#if os(tvOS)', 1)
+tv, other = platform.split('#else', 1)
+_, tail = other.split('#endif', 1)
+persist = (head + tv + tail).replace(', privacy: .public', '')
+persist = persist.replace('private func persist() -> Bool {', '@discardableResult private func persist() -> Bool {\n        writes += 1')
 swift = r'''
 import Foundation
 enum KeychainAudience: Hashable { case currentUser, userIndependent }
@@ -25,29 +31,40 @@ enum ReadError: Error { case unavailable }
     var user = "a"
     var items: [String: String] = [:]
     var unavailable = false
+    var unavailableKey: String?
 }
 @MainActor struct Keychain {
     let storage: Storage
     var audience = KeychainAudience.currentUser
     func withAudience(_ audience: KeychainAudience) -> Self { Self(storage: storage, audience: audience) }
     func getChecked(_ key: String) throws -> String? {
-        if storage.unavailable { throw ReadError.unavailable }
+        if storage.unavailable || storage.unavailableKey == key { throw ReadError.unavailable }
         return storage.items[(audience == .currentUser ? storage.user : "shared") + ":" + key]
     }
-    func set(_ value: String, for key: String) { storage.items[storage.user + ":" + key] = value }
+    func get(_ key: String) -> String? { try? getChecked(key) }
+    @discardableResult func set(_ value: String, for key: String) -> Bool { storage.items[storage.user + ":" + key] = value; return true }
 }
-struct Defaults {
+final class Defaults {
     var values: [String: String] = [:]
+    func set(_ value: String, forKey key: String) { values[key] = value }
+    func removeObject(forKey key: String) { values.removeValue(forKey: key) }
     func string(forKey key: String) -> String? { values[key] }
     func data(forKey key: String) -> Data? { values[key]?.data(using: .utf8) }
 }
-struct Entry: Codable { let id: String; var lastUsedAt = Date(timeIntervalSince1970: 0) }
+struct Entry: Codable { let id: String; var legacyProfileId: String?; var lastUsedAt = Date(timeIntervalSince1970: 0) }
 enum SharedStorage {
     static let activeServerIdKey = "activeServerId"
     static let accountCredentialAudience = KeychainAudience.currentUser
 }
-enum TokenStore { static func accessTokenKey(for id: String) -> String { id + ".access" } }
+struct LaunchPreferences { func migrateLegacyProfile(profileID: String, requiresPIN: Bool, accountEpoch: String, for serverID: String) -> Bool { true } }
+enum TokenStore {
+    static func accountEpochKey(for id: String) -> String { id + ".epoch" }
+    static func profileTokenKey(for id: String) -> String { id + ".profile" }
+    static func accessTokenKey(for id: String) -> String { id + ".access" } }
+struct Logger { func error(_ message: String) {} }
 @MainActor final class ServerRegistry {
+    static let logger = Logger()
+    var persistenceOverride: (([Entry], String?) -> Bool)?
     static var shared = ServerRegistry(storage: Storage())
     static let defaultsKey = "legacy"
     static let currentTVRegistryAccount = "currentRegistry"
@@ -60,17 +77,15 @@ enum TokenStore { static func accessTokenKey(for id: String) -> String { id + ".
     var entries: [Entry] = []
     var activeServerId: String?
     var mirrors = 0, writes = 0
+    let launchPreferences = LaunchPreferences()
     init(storage: Storage) { keychain = Keychain(storage: storage) }
     func entry(with id: String) -> Entry? { entries.first { $0.id == id } }
-    func persist() {
-        let data = try! JSONEncoder().encode(SharedRegistryState(entries: entries))
-        keychain.set(String(decoding: data, as: UTF8.self), for: Self.currentTVRegistryAccount)
-        writes += 1
-    }
+''' + persist + r'''
     func registerDiagnosticsSensitiveHosts(_ entries: [Entry]) {}
     func mirrorActiveServer() { mirrors += 1 }
-''' + method(registry, 'static func ownedLegacyServerIDs') + '\n' + method(registry, 'private func loadTVRegistry') + r'''
+''' + method(registry, 'static func ownedLegacyServerIDs') + '\n' + method(registry, 'private func loadTVRegistry') + '\n' + method(registry, 'private func migrateLegacyProfileMappingsIfNeeded') + r'''
     func load() throws { try loadTVRegistry() }
+    func migrate() throws { try migrateLegacyProfileMappingsIfNeeded() }
 }
 struct Account { let id: String; let serverID: String; let userID: String; var requiresLogin = false }
 struct TVSavedAccountSession: Codable { let accessToken: String }
@@ -104,6 +119,9 @@ struct TVSavedAccountSession: Codable { let accessToken: String }
         a.defaults.values["activeServerId"] = "server-a"
         try a.load()
         check(a.entries.map(\.id) == ["server-a"], "Only this user's saved servers migrate")
+        let migratedData = Data(storage.items["a:currentRegistry"]!.utf8)
+        let migrated = try JSONDecoder().decode(ServerRegistry.SharedRegistryState.self, from: migratedData)
+        check(migrated.entries.map(\.id) == ["server-a"], "Migration persists only owned entries in the current user's registry")
         check(storage.items["shared:sharedRegistry"] != nil, "Migration retains the legacy registry")
         storage.user = "b"
         let b = ServerRegistry(storage: storage); try b.load()
@@ -167,6 +185,24 @@ struct TVSavedAccountSession: Codable { let accessToken: String }
         do { try await accountStore.restoreLocalSessionForLaunch(); preconditionFailure("Expected credential read error") }
         catch ReadError.unavailable {}
         check(AuthService.shared.restores == before, "Unavailable credentials remain retryable, not signed out")
+        storage.unavailable = false
+        for key in ["server-a.access", "server-a.epoch", "server-a.profile"] {
+            let migration = ServerRegistry(storage: storage)
+            migration.entries = [Entry(id: "server-a", legacyProfileId: "profile-a")]
+            storage.items["a:server-a.access"] = "sample"
+            storage.items["a:server-a.epoch"] = "epoch"
+            storage.unavailableKey = key
+            do { try migration.migrate(); preconditionFailure("Expected checked migration read failure") }
+            catch ReadError.unavailable {}
+            check(migration.entries[0].legacyProfileId == "profile-a" && migration.writes == 0, "Unavailable credentials, epoch or PIN proof must retain the legacy profile")
+            storage.unavailableKey = nil
+            try migration.migrate()
+            check(migration.entries[0].legacyProfileId == nil && migration.writes == 1, "Migration retries after storage becomes available")
+        }
+        let signedOut = ServerRegistry(storage: storage)
+        signedOut.entries = [Entry(id: "missing", legacyProfileId: "profile-old")]
+        try signedOut.migrate()
+        check(signedOut.entries[0].legacyProfileId == nil && signedOut.writes == 1, "A genuinely absent credential permits clearing the legacy mapping")
         print("\(count) native-profile restoration checks passed")
     }
 }

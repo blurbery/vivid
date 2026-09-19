@@ -16,17 +16,21 @@ def source(path):
     return (root / path).read_text()
 
 def declaration(text, marker):
-    start = text.index(marker)
-    brace = text.index('{', start)
+    start = text.find(marker)
+    if start < 0: raise SystemExit(f"Missing declaration: {marker}")
+    brace = text.find('{', start)
+    if brace < 0: raise SystemExit(f"Missing opening brace: {marker}")
     depth, end = 1, brace + 1
     while depth:
+        if end >= len(text): raise SystemExit(f"Unclosed declaration: {marker}")
         depth += (text[end] == '{') - (text[end] == '}')
         end += 1
     return text[start:end].replace(', privacy: .public', '')
 
 vm = source('iosApp/iosApp/Screens/Player/PlayerViewModel.swift')
 policy = source('iosApp/iosApp/Screens/Player/PlayerNextUpCompletionPolicy.swift')
-names = ['handleEndOfFile', 'handlePlaybackError', 'performCreditsSkip', 'updateNextUpPresentation', 'shouldShowNextUpBeforeEnd', 'handleVividFailure', 'attemptProtocolV3Recovery', 'updateNextUpCountdownForActivePlayback']
+policy += '\n' + declaration(source('iosApp/iosApp/Screens/Player/PlayerSettings.swift'), 'enum PlaybackCompletionPolicy')
+names = ['handleEndOfFile', 'handlePlaybackError', 'performCreditsSkip', 'updateNextUpPresentation', 'shouldShowNextUpBeforeEnd', 'handleVividFailure', 'attemptProtocolV3Recovery', 'updateNextUpCountdownForActivePlayback', 'updatePlaybackCompletion']
 for name in ['suppressNextUpForPlaybackFailure', 'shouldTreatPlaybackErrorAsNaturalEnd', 'recoverPendingUnexpectedEnd']:
     if 'private func ' + name in vm:
         names.append(name)
@@ -36,11 +40,28 @@ if 'private func suppressNextUpForPlaybackFailure' not in vm:
 engine = source('iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift')
 engine_methods = '\n'.join(declaration(engine, 'private func ' + name) for name in
     ['handleEndFile', 'cancelEndConfirmation', 'observeEndOfFile', 'fail']) if 'private func observeEndOfFile' in engine else ''
+if engine_methods:
+    delay = 'try await Task.sleep(for: .milliseconds(250))'
+    if engine_methods.count(delay) != 1:
+        raise SystemExit('Expected exactly one EOF confirmation delay; update the controlled-clock adapter')
+    engine_methods = engine_methods.replace(delay, 'try await self?.delay.wait()')
 engine_harness = r'''
+@MainActor final class ConfirmationDelay {
+    var entered = false
+    var continuation: CheckedContinuation<Void, Never>?
+    func wait() async throws {
+        try Task.checkCancellation()
+        entered = true
+        await withCheckedContinuation { continuation = $0 }
+        try Task.checkCancellation()
+    }
+    func advance() { continuation?.resume(); continuation = nil }
+}
 enum EngineState: Equatable { case playing, ended, error(String) }
 struct Core { func setProperty(_ name: String, value: String) {} }
 struct Trace { func event(_ name: String, fields: String) {} }
 @MainActor final class EndHarness {
+    let delay = ConfirmationDelay()
     var generation: UInt64 = 1, seekGeneration: UInt64 = 0
     var endConfirmationTask: Task<Void, Never>?
     var errorInfo: PlaybackErrorInfo?
@@ -92,7 +113,14 @@ struct Engine { var isSeeking = false; var activeAudioTrackIndex: Int? }
 struct Options { var nativeRemoteHLS = false }
 struct Spec { var options = Options() }
 @MainActor final class Controller { var engine = Engine(); var activeSpec: Spec? = Spec(); var pauses = 0; func pause() { pauses += 1 } }
-struct Bridge { func reportProgress(position: Double, isPaused: Bool, eligible: Bool, completedContentId: String?) async -> Int { 1 } }
+enum ReportResult { case success }
+@MainActor final class Bridge {
+    var positions: [Double] = []
+    func reportProgress(position: Double, isPaused: Bool, eligible: Bool, completedContentId: String?) async -> ReportResult { positions.append(position); return .success }
+}
+struct TimeRange { var start: Double; var end: Double }
+struct WatchDetail { var type = "episode"; var contentId = "episode" }
+struct Version { var credits: TimeRange? }
 @MainActor final class Harness {
     static let logger = Logger()
     static let nearEndPlaybackErrorThresholdSeconds = 8.0
@@ -123,7 +151,12 @@ struct Bridge { func reportProgress(position: Double, isPaused: Bool, eligible: 
     var hideControlsTask: Task<Void, Never>?, progressTask: Task<Void, Never>?, naturalEndProgressTask: Task<Void, Never>?
     var activePreparedProtocolV3: Int? = 1, committedProtocolV3LoadEpoch: Int? = 1
     var offlinePlaybackContext: Int?
-    var completedPlaybackContentId: String?
+    var completedPlaybackContentId: String? { didSet { if completedPlaybackContentId != nil { completions += 1 } } }
+    var currentWatchDetail: WatchDetail? = WatchDetail()
+    var currentSelectedVersion: Version?
+    var creditsRange: TimeRange?
+    var refreshHomeAfterPlaybackWrite: (() -> Void)?
+    var offlineWrites = 0
     let vividPlaybackController = Controller(), nowPlaying = NowPlaying(), sessionBridge = Bridge(), settings = Settings()
     let title = "episode", progressIsEligible = true
     var recoveries = 0, errors = 0, completions = 0, watchedWrites = 0, postrolls = 0, countdown = 5, seeks = 0
@@ -141,9 +174,8 @@ struct Bridge { func reportProgress(position: Double, isPaused: Bool, eligible: 
     func isExpiredPlaybackSessionSource(_ f: PlaybackErrorInfo?) -> Bool { false }
     func attemptStaleSessionRenewal(reason: String, observedPosition: Double) -> Bool { false }
     func finalizeTerminalPlaybackError(_ message: String) { suppressNextUpForPlaybackFailure(); errors += 1; error = message }
-    func updatePlaybackCompletion(at position: Double, endedNaturally: Bool) { completions += 1 }
     func recordCurrentPlaybackMutation(markedCompleted: Bool) { watchedWrites += 1 }
-    func recordOfflineProgress(context: Int, position: Double, markCompleted: Bool) {}
+    func recordOfflineProgress(context: Int, position: Double, markCompleted: Bool) { offlineWrites += 1 }
     enum Presentation { case automatic }
     func beginNextUpPostroll(videoEnded: Bool, source: Presentation = .automatic) { postrolls += 1; showNextUpScreen = true; if !nextUpAutoplayCancelled { countdown = 5 } }
     func showNotice(title: String, message: String, tone: Tone, duration: Double) {}
@@ -261,6 +293,17 @@ struct Bridge { func reportProgress(position: Double, isPaused: Bool, eligible: 
         let cancelled = Harness(); cancelled.nextUpAutoplayCancelled = true; cancelled.end()
         cancelled.currentTime = 3600; cancelled.end()
         check(cancelled.countdown == 0, "Recovery must preserve the user's cancelled autoplay")
+        for offline in [true, false] {
+            for previouslyCompleted in [true, false] {
+                let h = Harness(); h.currentTime = 3600
+                if offline { h.offlinePlaybackContext = 1 }
+                if previouslyCompleted { h.completedPlaybackContentId = "episode" }
+                h.end(); h.end()
+                await h.naturalEndProgressTask?.value
+                check(offline ? h.offlineWrites == 1 : h.sessionBridge.positions == [3600], "EOF writes the final position once, including already-watched items")
+                check(h.watchedWrites == (previouslyCompleted ? 0 : 1), "Watched mutation is emitted once, only on completion transition")
+            }
+        }
         let credits = Harness(); credits.skipCredits(to: 3600)
         check(credits.postrolls == 1 && credits.completions == 1, "Intentional end-of-credits skip still completes")
         let midCredits = Harness(); midCredits.skipCredits(to: 3500)
@@ -275,9 +318,12 @@ struct Bridge { func reportProgress(position: Double, isPaused: Bool, eligible: 
         let noPicture = EndHarness(); noPicture.hasFirstFrameReadyForDisplay = false; noPicture.eof()
         let stopped = EndHarness(); stopped.eof(); stopped.endFile(2)
         let delayedError = EndHarness(); delayedError.eof()
-        try? await Task.sleep(for: .milliseconds(100))
+        let pending = [natural, replaced, sought, unopened, noPicture, delayedError]
+        while pending.contains(where: { !$0.delay.entered }) { await Task.yield() }
+        let confirmations = pending.compactMap { $0.endConfirmationTask }
         delayedError.endFile(4, error: -13)
-        try? await Task.sleep(for: .milliseconds(250))
+        for h in pending { h.delay.advance() }
+        for task in confirmations { await task.value }
         check(natural.ends == 1, "Natural EOF and duplicate end-file complete once")
         check(eofThenError.ends == 0 && eofThenError.errorInfo != nil, "EOF followed by error must fail without completing")
         check(errorThenEOF.ends == 0 && errorThenEOF.errorInfo != nil, "EOF cannot override a known error")
@@ -298,7 +344,7 @@ struct Bridge { func reportProgress(position: Double, isPaused: Bool, eligible: 
 '''
 if not engine_methods:
     start = swift.index('        let natural = EndHarness()')
-    end = swift.index('        print(', start)
+    end = swift.index('        let rewind = SeekHarness()', start)
     swift = swift[:start] + swift[end:]
 with tempfile.TemporaryDirectory(prefix='vivid-end-', dir=root.parent) as folder:
     folder = Path(folder)

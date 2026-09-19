@@ -2728,28 +2728,36 @@ class PlayerViewModel {
     }
 
     private func updatePlaybackCompletion(at position: Double, endedNaturally: Bool = false) {
-        guard completedPlaybackContentId == nil,
-              let detail = currentWatchDetail,
-              ["movie", "episode"].contains(detail.type),
-              PlaybackCompletionPolicy.isComplete(
+        let newlyCompleted: Bool
+        if completedPlaybackContentId == nil,
+           let detail = currentWatchDetail,
+           ["movie", "episode"].contains(detail.type),
+           PlaybackCompletionPolicy.isComplete(
                 position: position, duration: duration,
                 credits: currentSelectedVersion?.credits ?? creditsRange,
-                endedNaturally: endedNaturally
-              ) else { return }
-        completedPlaybackContentId = detail.contentId
-        recordCurrentPlaybackMutation(markedCompleted: true)
+                endedNaturally: endedNaturally) {
+            completedPlaybackContentId = detail.contentId
+            recordCurrentPlaybackMutation(markedCompleted: true)
+            newlyCompleted = true
+        } else {
+            newlyCompleted = false
+        }
+        // Even an item marked watched earlier needs its final EOF position.
+        guard newlyCompleted || endedNaturally, position.isFinite, position >= 0 else { return }
         if let offline = offlinePlaybackContext {
-            recordOfflineProgress(context: offline, position: position, markCompleted: true)
+            recordOfflineProgress(context: offline, position: position,
+                                  markCompleted: completedPlaybackContentId != nil)
             return
         }
-        let contentId = detail.contentId
+        let contentId = completedPlaybackContentId
         let prior = naturalEndProgressTask
         let paused = !isPlaying
+        let eligible = newlyCompleted || progressIsEligible
         let refreshHome = refreshHomeAfterPlaybackWrite
         naturalEndProgressTask = Task { [sessionBridge] in
             await prior?.value
             let result = await sessionBridge.reportProgress(
-                position: position, isPaused: paused, eligible: true,
+                position: position, isPaused: paused, eligible: eligible,
                 completedContentId: contentId)
             if result == .success { refreshHome?() }
         }
@@ -3459,50 +3467,6 @@ class PlayerViewModel {
         )
 
         updatePlaybackCompletion(at: currentTime, endedNaturally: true)
-        recordCurrentPlaybackMutation(markedCompleted: true)
-
-        // Vivid has already delivered the native terminal event, so
-        // publish the terminal position now rather than waiting for the
-        // periodic reporter's next ten-second tick. Teardown still sends
-        // its authoritative final report; it awaits this task first so
-        // the two writes cannot race the same session lifecycle.
-        if offlinePlaybackContext == nil,
-           currentTime.isFinite,
-           currentTime >= 0 {
-            let priorNaturalEndProgressTask = naturalEndProgressTask
-            let endPosition = currentTime
-            let eligible = progressIsEligible
-            let completedContentId = completedPlaybackContentId
-            #if os(iOS) || os(tvOS)
-            let refreshHome = refreshHomeAfterPlaybackWrite
-            #endif
-            naturalEndProgressTask = Task { [sessionBridge] in
-                await priorNaturalEndProgressTask?.value
-                let result = await sessionBridge.reportProgress(
-                    position: endPosition,
-                    isPaused: true, eligible: eligible, completedContentId: completedContentId
-                )
-                #if os(iOS) || os(tvOS)
-                if result == .success { refreshHome?() }
-                #endif
-            }
-        }
-
-        // Natural end of an offline download: latch the local watched state
-        // immediately (not just at close) so retention/reclaim see it even
-        // if the process dies before `cleanup()` runs. DownloadManager is
-        // MainActor-isolated; this callback may not be.
-        if let offline = offlinePlaybackContext {
-            let endPosition = currentTime
-            Task { @MainActor [weak self] in
-                self?.recordOfflineProgress(
-                    context: offline,
-                    position: endPosition,
-                    markCompleted: true
-                )
-            }
-        }
-
         beginNextUpPostroll(videoEnded: true)
     }
 
