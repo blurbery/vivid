@@ -355,104 +355,117 @@ with tempfile.TemporaryDirectory(prefix='vivid-end-', dir=root.parent) as folder
 
 # Verify the production early snapshot without a device or changing HDMI state.
 base = source('iosApp/iosApp/Playback/MPV/MpvPlayerCoreBase.swift')
-if 'private func prepareInitialDisplayCriteria' in base:
-    early = declaration(base, 'private func prepareInitialDisplayCriteria')
-    cadence = declaration(base, 'static func presentsFields')
-    rates_start = base.index('private static let nominalRefreshRates:')
-    rates_end = base.index(']', base.index('= [', rates_start)) + 1
-    nominal = base[rates_start:rates_end] + '\n' + declaration(base, 'static func nominalRefreshRate')
-    early_swift = r'''
+if 'private func prepareInitialDisplayCriteria' not in base:
+    raise SystemExit('Missing required early-display implementation')
+early = declaration(base, 'private func prepareInitialDisplayCriteria')
+early += '\n' + declaration(base, 'private func holdDisplayCriteriaForSource')
+cadence = declaration(base, 'static func presentsFields')
+rates_start = base.index('private static let nominalRefreshRates:')
+rates_end = base.index(']', base.index('= [', rates_start)) + 1
+nominal = base[rates_start:rates_end] + '\n' + declaration(base, 'static func nominalRefreshRate')
+early_swift = r'''
 import Foundation
 final class ControlledQueue {
-    var jobs: [() -> Void] = []
-    func async(execute: @escaping () -> Void) { jobs.append(execute) }
-    func drain() { let pending = jobs; jobs = []; pending.forEach { $0() } }
+var jobs: [() -> Void] = []
+func async(execute: @escaping () -> Void) { jobs.append(execute) }
+func drain() { let pending = jobs; jobs = []; pending.forEach { $0() } }
 }
 enum DispatchQueue { static let main = ControlledQueue() }
 final class Delegate {
-    var events = 0
-    func onEvent(name: String, data: [String: Any]?) { precondition(name == "display-criteria-prepared"); events += 1 }
+var events = 0
+func onEvent(name: String, data: [String: Any]?) { precondition(name == "display-criteria-prepared"); events += 1 }
 }
 final class Early {
-    var preparesDisplayCriteriaEarly = true
-    let cacheLock = NSLock()
-    var initialDisplayCriteriaPending = true, displayCriteriaHeld = true, isLifecycleActive = true
-    var displayCriteriaEpoch: UInt64 = 1
-    var delegate: Delegate? = Delegate()
-    var params: [String: Any]? = ["w": Int64(1920), "h": Int64(1080), "gamma": "bt.1886"]
-    var track: [String: Any]? = [:]
-    var fps: Double? = 24, presented: Double? = 24, deinterlaced: Bool? = false
-    var applications = 0, resultingFPS = 0.0, resultingProfile: Int64 = 0
-    var resultingCompatibility: Int64?, resultingGamma: String?
-    var applies = true
-    func readMapProperty(_ name: String) -> [String: Any]? { name == "video-out-params" ? params : track }
-    func readDoubleProperty(_ name: String) -> Double? { name == "container-fps" ? fps : presented }
-    func readFlagProperty(_ name: String) -> Bool? { deinterlaced }
-    func validateSideDataDimensions(width: Int64, height: Int64) -> Bool { width > 0 && height > 0 && width <= 16384 && height <= 16384 }
-    func updateDisplayCriteria(doviProfile: Int64, doviLevel: Int64, doviCompatibilityId: Int64?, fps: Double,
-        width: Int32, height: Int32, sigPeak: Double, gamma: String?, primaries: String?, colorMatrix: String?) -> Bool {
-        applications += 1; resultingFPS = fps; resultingProfile = doviProfile
-        resultingCompatibility = doviCompatibilityId; resultingGamma = gamma
-        return applies
-    }
-    __EARLY__
-    __CADENCE__
-    __NOMINAL__
-    func prepare() { prepareInitialDisplayCriteria() }
+var preparesDisplayCriteriaEarly = true
+let cacheLock = NSLock()
+let displayCriteriaCommitLock = NSLock()
+var cachedEstimatedFps = 0.0
+var commitHeldDuringWrite = false, cacheReleasedDuringWrite = false
+var initialDisplayCriteriaPending = true, displayCriteriaHeld = true, isLifecycleActive = true
+var displayCriteriaEpoch: UInt64 = 1
+var delegate: Delegate? = Delegate()
+var params: [String: Any]? = ["w": Int64(1920), "h": Int64(1080), "gamma": "bt.1886"]
+var track: [String: Any]? = [:]
+var fps: Double? = 24, presented: Double? = 24, deinterlaced: Bool? = false
+var applications = 0, resultingFPS = 0.0, resultingProfile: Int64 = 0
+var resultingCompatibility: Int64?, resultingGamma: String?
+var applies = true
+func readMapProperty(_ name: String) -> [String: Any]? { name == "video-out-params" ? params : track }
+func readDoubleProperty(_ name: String) -> Double? { name == "container-fps" ? fps : presented }
+func readFlagProperty(_ name: String) -> Bool? { deinterlaced }
+func validateSideDataDimensions(width: Int64, height: Int64) -> Bool { width > 0 && height > 0 && width <= 16384 && height <= 16384 }
+func updateDisplayCriteria(doviProfile: Int64, doviLevel: Int64, doviCompatibilityId: Int64?, fps: Double,
+    width: Int32, height: Int32, sigPeak: Double, gamma: String?, primaries: String?, colorMatrix: String?) -> Bool {
+    let available = displayCriteriaCommitLock.try()
+    commitHeldDuringWrite = !available
+    if available { displayCriteriaCommitLock.unlock() }
+    cacheReleasedDuringWrite = cacheLock.try()
+    if cacheReleasedDuringWrite { cacheLock.unlock() }
+    applications += 1; resultingFPS = fps; resultingProfile = doviProfile
+    resultingCompatibility = doviCompatibilityId; resultingGamma = gamma
+    return applies
+}
+__EARLY__
+__CADENCE__
+__NOMINAL__
+func prepare() { prepareInitialDisplayCriteria() }
 }
 @main struct Checks {
-    static func main() {
-        var count = 0
-        func check(_ yes: @autoclosure () -> Bool, _ message: String) { precondition(yes(), message); count += 1 }
-        let ready = Early(); ready.prepare()
-        check(ready.applications == 0, "HDMI writes must dispatch to main")
-        DispatchQueue.main.drain()
-        check(ready.applications == 1 && ready.resultingFPS == 24, "Decoded cadence starts matching before playback restart")
-        check(ready.displayCriteriaHeld, "Partial observers remain held until authoritative restart")
-        check(ready.delegate!.events == 1, "Successful early matching emits a timing milestone")
-        ready.prepare(); DispatchQueue.main.drain()
-        check(ready.applications == 1, "Repeated reconfiguration cannot repeat initial matching")
-        for mutate in [
-            { (x: Early) in x.preparesDisplayCriteriaEarly = false },
-            { (x: Early) in x.params = nil },
-            { (x: Early) in x.params?["w"] = Int64(0) },
-            { (x: Early) in x.track = nil },
-            { (x: Early) in x.fps = nil },
-            { (x: Early) in x.fps = .nan },
-            { (x: Early) in x.presented = 0 },
-            { (x: Early) in x.presented = .infinity },
-            { (x: Early) in x.deinterlaced = nil }
-        ] {
-            let x = Early(); mutate(x); x.prepare(); DispatchQueue.main.drain()
-            check(x.applications == 0 && x.initialDisplayCriteriaPending, "Incomplete or disabled snapshot leaves original matching fallback")
-        }
-        let retry = Early(); retry.params = nil; retry.prepare(); retry.params = ready.params; retry.prepare(); DispatchQueue.main.drain()
-        check(retry.applications == 1, "Later valid output can retry an incomplete snapshot")
-        for mutate in [
-            { (x: Early) in x.displayCriteriaEpoch += 1 },
-            { (x: Early) in x.displayCriteriaHeld = false },
-            { (x: Early) in x.isLifecycleActive = false }
-        ] {
-            let x = Early(); x.prepare(); mutate(x); DispatchQueue.main.drain()
-            check(x.applications == 0, "Ended, replaced or already-reconciled snapshot cannot change HDMI")
-        }
-        let interlaced = Early(); interlaced.fps = 25; interlaced.presented = 50; interlaced.prepare(); DispatchQueue.main.drain()
-        check(interlaced.resultingFPS == 50, "Measured field output retains doubled refresh")
-        let filtered = Early(); filtered.fps = 25; filtered.presented = 25; filtered.deinterlaced = true; filtered.prepare(); DispatchQueue.main.drain()
-        check(filtered.resultingFPS == 50, "Explicit deinterlacing retains doubled refresh")
-        let dv = Early(); dv.track = ["dolby-vision-profile": Int64(7)]; dv.params?.removeValue(forKey: "gamma"); dv.prepare(); DispatchQueue.main.drain()
-        check(dv.resultingProfile == 8 && dv.resultingCompatibility == 1 && dv.resultingGamma == "smpte2084", "DV7 conversion keeps existing output criteria")
-        let hdr = Early(); hdr.params?["gamma"] = "smpte2084"; hdr.prepare(); DispatchQueue.main.drain()
-        check(hdr.resultingGamma == "smpte2084", "HDR output metadata survives snapshot")
-        let rejected = Early(); rejected.applies = false; rejected.prepare(); DispatchQueue.main.drain()
-        check(rejected.delegate!.events == 0, "Rejected criteria cannot claim success")
-        print("\(count) production early-display checks passed")
+static func main() {
+    var count = 0
+    func check(_ yes: @autoclosure () -> Bool, _ message: String) { precondition(yes(), message); count += 1 }
+    let ready = Early(); ready.prepare()
+    check(ready.applications == 0, "HDMI writes must dispatch to main")
+    DispatchQueue.main.drain()
+    check(ready.applications == 1 && ready.resultingFPS == 24, "Decoded cadence starts matching before playback restart")
+    check(ready.displayCriteriaHeld, "Partial observers remain held until authoritative restart")
+    check(ready.delegate!.events == 1, "Successful early matching emits a timing milestone")
+    ready.prepare(); DispatchQueue.main.drain()
+    check(ready.applications == 1, "Repeated reconfiguration cannot repeat initial matching")
+    for mutate in [
+        { (x: Early) in x.preparesDisplayCriteriaEarly = false },
+        { (x: Early) in x.params = nil },
+        { (x: Early) in x.params?["w"] = Int64(0) },
+        { (x: Early) in x.track = nil },
+        { (x: Early) in x.fps = nil },
+        { (x: Early) in x.fps = .nan },
+        { (x: Early) in x.presented = 0 },
+        { (x: Early) in x.presented = .infinity },
+        { (x: Early) in x.deinterlaced = nil }
+    ] {
+        let x = Early(); mutate(x); x.prepare(); DispatchQueue.main.drain()
+        check(x.applications == 0 && x.initialDisplayCriteriaPending, "Incomplete or disabled snapshot leaves original matching fallback")
     }
+    let retry = Early(); retry.params = nil; retry.prepare(); retry.params = ready.params; retry.prepare(); DispatchQueue.main.drain()
+    check(retry.applications == 1, "Later valid output can retry an incomplete snapshot")
+    for mutate in [
+        { (x: Early) in x.displayCriteriaEpoch += 1 },
+        { (x: Early) in x.displayCriteriaHeld = false },
+        { (x: Early) in x.isLifecycleActive = false }
+    ] {
+        let x = Early(); x.prepare(); mutate(x); DispatchQueue.main.drain()
+        check(x.applications == 0, "Ended, replaced or already-reconciled snapshot cannot change HDMI")
+    }
+    let interlaced = Early(); interlaced.fps = 25; interlaced.presented = 50; interlaced.prepare(); DispatchQueue.main.drain()
+    check(interlaced.resultingFPS == 50, "Measured field output retains doubled refresh")
+    let filtered = Early(); filtered.fps = 25; filtered.presented = 25; filtered.deinterlaced = true; filtered.prepare(); DispatchQueue.main.drain()
+    check(filtered.resultingFPS == 50, "Explicit deinterlacing retains doubled refresh")
+    let dv = Early(); dv.track = ["dolby-vision-profile": Int64(7)]; dv.params?.removeValue(forKey: "gamma"); dv.prepare(); DispatchQueue.main.drain()
+    check(dv.resultingProfile == 8 && dv.resultingCompatibility == 1 && dv.resultingGamma == "smpte2084", "DV7 conversion keeps existing output criteria")
+    let hdr = Early(); hdr.params?["gamma"] = "smpte2084"; hdr.prepare(); DispatchQueue.main.drain()
+    check(hdr.resultingGamma == "smpte2084", "HDR output metadata survives snapshot")
+    let rejected = Early(); rejected.applies = false; rejected.prepare(); DispatchQueue.main.drain()
+    check(rejected.delegate!.events == 0, "Rejected criteria cannot claim success")
+    let locking = Early(); locking.prepare(); DispatchQueue.main.drain()
+    check(locking.commitHeldDuringWrite, "Source transitions cannot interleave with the platform write")
+    check(locking.cacheReleasedDuringWrite, "Platform write does not hold the cache lock")
+    print("\(count) production early-display checks passed")
+}
 }
 '''.replace('__EARLY__', early).replace('__CADENCE__', cadence).replace('__NOMINAL__', nominal)
-    with tempfile.TemporaryDirectory(prefix='vivid-early-display-', dir=root.parent) as folder:
-        folder = Path(folder)
-        path = folder / 'checks.swift'
-        path.write_text(early_swift)
-        subprocess.run(['xcrun', 'swiftc', '-parse-as-library', '-module-cache-path', str(folder/'cache'), str(path), '-o', str(folder/'checks')], check=True, timeout=90)
-        subprocess.run([str(folder/'checks')], check=True, timeout=15)
+with tempfile.TemporaryDirectory(prefix='vivid-early-display-', dir=root.parent) as folder:
+    folder = Path(folder)
+    path = folder / 'checks.swift'
+    path.write_text(early_swift)
+    subprocess.run(['xcrun', 'swiftc', '-parse-as-library', '-module-cache-path', str(folder/'cache'), str(path), '-o', str(folder/'checks')], check=True, timeout=90)
+    subprocess.run([str(folder/'checks')], check=True, timeout=15)

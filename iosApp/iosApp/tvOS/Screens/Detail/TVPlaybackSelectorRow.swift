@@ -22,6 +22,7 @@ struct TVPlaybackActionSelectors: View {
     @State private var subtitleError = false
     @State private var subtitleRetry = 0
     @State private var subtitleReadGeneration = 0
+    @State private var subtitleMenuFocused = false
     @State private var requestedSubtitleContext: OpenSubtitlePlaybackContext?
 
     var body: some View {
@@ -72,7 +73,10 @@ struct TVPlaybackActionSelectors: View {
     private var subtitleMenu: some View {
         TVCircleMenuButton(icon: "captions.bubble", title: "Subtitles",
                            accessibilityLabel: "Subtitles, \(LucidSubtitleInventory.shared.selectionLabel(context: fileSubtitleContext, fallback: subtitleFallback))", stabilizesFocusMotion: true,
-                           onFocus: { requestedSubtitleContext = fileSubtitleContext }) {
+                           onFocus: { focused in
+                               subtitleMenuFocused = focused
+                               if focused { requestedSubtitleContext = fileSubtitleContext }
+                           }) {
             Button {
                 if let context = fileSubtitleContext {
                     LucidSubtitleInventory.shared.clearChoice(context: context)
@@ -117,10 +121,13 @@ struct TVPlaybackActionSelectors: View {
             }
         }
         .disabled(fileSubtitleContext == nil)
+        .onChange(of: fileSubtitleContext) { _, context in
+            if subtitleMenuFocused { requestedSubtitleContext = context }
+        }
         .task(id: "\(fileSubtitleContext?.contentID ?? ""):\(currentVersion?.fileId ?? -1):\(subtitleRetry):\(requestedSubtitleContext == fileSubtitleContext)") {
             subtitleReadGeneration += 1
             let generation = subtitleReadGeneration
-            subtitleTracks = []; subtitleError = false
+            subtitleTracks = []; subtitleError = false; subtitleLoading = false
             guard let context = fileSubtitleContext, requestedSubtitleContext == context else { return }
             subtitleLoading = true
             defer { if subtitleReadGeneration == generation { subtitleLoading = false } }

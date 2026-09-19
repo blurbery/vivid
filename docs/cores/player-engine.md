@@ -16,7 +16,8 @@ If that information is unavailable, the first playback-ready snapshot remains
 the fallback. Playback continues through the switch; Vivid adds no HDMI startup
 pause. The TV's physical blackout can cover advancing playback. Final decoded
 criteria are still reconciled at playback readiness, and stale snapshots cannot
-change the display after a source ends. Consecutive episodes retain the existing
+change the display after a source ends. A separate commit lock serialises the
+early write with source transitions without holding the property-cache lock. Consecutive episodes retain the existing
 display-criteria reuse. Living Room testing confirmed the earlier switch; other
 display routes and extended episode chaining remain unverified.
 
@@ -66,6 +67,7 @@ Earlier Living Room checks covered Dune 1, Dune 2, seeking and synchronised play
 
 On Apple TV, detail-screen subtitle discovery starts when the subtitle selector
 receives focus for that file, rather than whenever a detail screen appears.
+If the file changes while that selector retains focus, its subtitle list refreshes.
 Ordinary Play therefore avoids opening a second server session and demuxer just
 to populate an unused subtitle menu. Actual playback still records its embedded
 tracks in the existing inventory cache. Device test builds can enable

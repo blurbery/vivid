@@ -162,6 +162,9 @@ class MpvPlayerCoreBase: NSObject {
   /// file's criteria stay on the HDMI link until a coherent decoded-output
   /// snapshot or the next file's first frame proves they need to change.
   private var displayCriteriaHeld = true
+  // Serialises source transitions with the main-thread display write.
+  // Never hold cacheLock while entering the platform hook.
+  private let displayCriteriaCommitLock = NSLock()
   private var displayCriteriaEpoch: UInt64 = 0
   private var initialDisplayCriteriaPending = false
   private var cachedVideoGamma: String?
@@ -1114,12 +1117,7 @@ class MpvPlayerCoreBase: NSObject {
       completeGetPropertyRequest(event)
 
     case MPV_EVENT_START_FILE:
-      cacheLock.lock()
-      cachedEstimatedFps = 0
-      displayCriteriaEpoch &+= 1
-      initialDisplayCriteriaPending = true
-      displayCriteriaHeld = true
-      cacheLock.unlock()
+      holdDisplayCriteriaForSource(starting: true)
       if let startFilePtr = event.data?.assumingMemoryBound(to: mpv_event_start_file.self) {
         let sourceId = startFilePtr.pointee.playlist_entry_id
         activeSourceId = sourceId
@@ -1136,11 +1134,7 @@ class MpvPlayerCoreBase: NSObject {
       // Queued after the video chain is torn down but before this client can
       // receive any teardown-valued property change, so the hold is in place
       // before those deliveries could commit a partial snapshot.
-      cacheLock.lock()
-      displayCriteriaEpoch &+= 1
-      initialDisplayCriteriaPending = false
-      displayCriteriaHeld = true
-      cacheLock.unlock()
+      holdDisplayCriteriaForSource(starting: false)
       if let endFilePtr = event.data?.assumingMemoryBound(to: mpv_event_end_file.self) {
         let endFile = endFilePtr.pointee
         var data: [String: Any] = ["reason": Int(endFile.reason.rawValue)]
@@ -1182,6 +1176,7 @@ class MpvPlayerCoreBase: NSObject {
       let deinterlaceActive = readFlagProperty("deinterlace-active") ?? false
       let videoParams = readMapProperty("video-params") ?? [:]
       let videoTrack = readMapProperty("current-tracks/video") ?? [:]
+      displayCriteriaCommitLock.lock()
       cacheLock.lock()
       cachedEstimatedFps = estimatedFps
       cachedContainerFps = containerFps
@@ -1197,6 +1192,7 @@ class MpvPlayerCoreBase: NSObject {
       displayCriteriaHeld = false
       initialDisplayCriteriaPending = false
       cacheLock.unlock()
+      displayCriteriaCommitLock.unlock()
       scheduleDisplayCriteriaUpdate()
       var data: [String: Any]?
       if let position = readDoubleProperty("time-pos") {
@@ -1225,6 +1221,17 @@ class MpvPlayerCoreBase: NSObject {
     default:
       break
     }
+  }
+
+  private func holdDisplayCriteriaForSource(starting: Bool) {
+    displayCriteriaCommitLock.lock()
+    defer { displayCriteriaCommitLock.unlock() }
+    cacheLock.lock()
+    defer { cacheLock.unlock() }
+    if starting { cachedEstimatedFps = 0 }
+    displayCriteriaEpoch &+= 1
+    initialDisplayCriteriaPending = starting
+    displayCriteriaHeld = true
   }
 
   /// A configured decoded video output can precede audio readiness. Start
@@ -1269,6 +1276,8 @@ class MpvPlayerCoreBase: NSObject {
     cacheLock.unlock()
     DispatchQueue.main.async { [weak self, profile, gamma, primaries, matrix, compatibility] in
       guard let self, self.isLifecycleActive else { return }
+      self.displayCriteriaCommitLock.lock()
+      defer { self.displayCriteriaCommitLock.unlock() }
       self.cacheLock.lock()
       let current = self.displayCriteriaEpoch == epoch && self.displayCriteriaHeld
       self.cacheLock.unlock()
