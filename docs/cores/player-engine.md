@@ -10,6 +10,16 @@ Generate `iosApp/project-ios.yml` for iOS or `iosApp/project.yml` for tvOS with 
 
 Lucid renders into Vivid’s persistent player surface. Changing controls, opening menus or presenting Next Up does not create a second player. Apple TV requests frame rate and dynamic range through Apple’s display manager, respecting Match Content. The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation path remains platform-specific.
 
+Apple TV starts content matching as soon as mpv supplies a complete decoded
+video-output snapshot and measured cadence, without waiting for audio startup.
+If that information is unavailable, the first playback-ready snapshot remains
+the fallback. Playback continues through the switch; Vivid adds no HDMI startup
+pause. The TV's physical blackout can cover advancing playback. Final decoded
+criteria are still reconciled at playback readiness, and stale snapshots cannot
+change the display after a source ends. Consecutive episodes retain the existing
+display-criteria reuse. Living Room testing confirmed the earlier switch; other
+display routes and extended episode chaining remain unverified.
+
 The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences. Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read. Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available. Apple TV scrubbing does not start thumbnail extraction.
 
 ## Audio support
@@ -38,16 +48,27 @@ OpenSubtitles is optional. On tvOS, search is a native submenu beside embedded t
 
 ## Builds and native audio patch
 
-Both platform specs pin `edde746/mpv-build` at `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6`, containing mpv 0.41.0 and FFmpeg 8.0.1. The device-tested build additionally uses [the native audio EOF recovery patch](../../patches/mpv/0001-avfoundation-resume-after-audio-eof.patch).
+Both platform specs pin `edde746/mpv-build` at `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6`, containing mpv 0.41.0 and FFmpeg 8.0.1. Device builds additionally require [the native audio recovery patch](../../patches/mpv/0001-avfoundation-resume-after-audio-eof.patch).
 
-The [audio-driver workflow](../../.github/workflows/mpv-audio-driver.yml) applies that patch and rebuilds libmpv using the other pinned dependency binaries. Verified workflow run 35028421151 produced the iOS and tvOS device slices. To reproduce the tested device binary, replace only the matching resolved artifact slice before linking: `ios-arm64/Libmpv.framework` for iOS or `tvos-arm64_arm64e/Libmpv.framework` for tvOS. Verify the marker `resuming compressed feed after audio EOF` in the linked app binary.
+The [audio-driver workflow](../../.github/workflows/mpv-audio-driver.yml) applies that patch and rebuilds libmpv using the other pinned dependency binaries. Earlier workflow run 35028421151 produced iOS and tvOS slices with the EOF recovery fix only. Rebuild the current patch before testing the additional startup recovery change, then replace only the matching resolved artifact slice before linking: `ios-arm64/Libmpv.framework` for iOS or `tvos-arm64_arm64e/Libmpv.framework` for tvOS. Verify the marker `resuming compressed feed after audio EOF` in the linked app binary.
+
+The current source patch also bounds the first compressed-audio seek-to-start recovery attempt to the existing two-second grace after minimum priming. Incoming packets retain the slow-source extension before PCM fallback, but cannot keep postponing that first recovery attempt while the audio clock is stopped. The driver also defers an opportunistic audio read when its input queue cannot satisfy the request and AVPlayer retains at least the existing one-second priming reserve. This prevents prefetch from being reported as an output underrun and pausing the whole player. Reads resume as input arrives or the reserve drains, preserving real starvation and EOF handling. Buffer capacities and minimum priming are unchanged. Both changes have focused transport-decision coverage. In the local 0.14.3 (30) Living Room build, blurbery confirmed that the prefetch change removed the pause after the switch. Earlier native artifacts do not contain it; iOS device validation and broader codec/route coverage remain outstanding.
 
 A fresh Swift package resolution alone does **not** include that additional patch. Keep the source patch, exact native build inputs and matching binary available together. The [playback workflow](../../.github/workflows/mpv-experiment.yml) checks dependency pins, track translation and platform builds; it does not certify a stock package as identical to the patched device build. Publishing or changing dependency revisions requires separate authorisation.
 
-Source headers are passed as a typed string list. `PlaybackTrialTrace` retains allowlisted timing and numeric audio/cache diagnostics; raw media-core messages and source URLs are excluded. The optional tvOS debug diagnostic records to `Library/Caches/MPVTrial.log`. Its internal diagnostic names do not select a different engine.
+Source headers are passed as a typed string list. `PlaybackTrialTrace` retains allowlisted timing and numeric audio/cache diagnostics; raw media-core messages and source URLs are excluded. The optional tvOS debug diagnostic records to `Library/Caches/MPVTrial.log`. The trial also records display-switch start/end notifications, numeric audio transport transitions and cache snapshots when buffering changes. Switch notifications describe tvOS state, not a direct measurement of the television panel. Its internal diagnostic names do not select a different engine.
 
 ## Verification
 
 On 16 September 2026, both signed device builds passed and were installed on iPhone and Living Room Apple TV. The linked binaries retained the audio EOF recovery marker. Twenty-six focused tests passed against the production language-selection logic. blurbery confirmed the installed playback and subtitle changes worked.
 
 Earlier Living Room checks covered Dune 1, Dune 2, seeking and synchronised playback; Punisher testing covered Dolby Vision. These observations do not certify Atmos output, every codec or source, physical iPad behaviour, every PiP/AirPlay route or full external ASS styling. A successful build is separate from a device playback check.
+
+On Apple TV, detail-screen subtitle discovery starts when the subtitle selector
+receives focus for that file, rather than whenever a detail screen appears.
+Ordinary Play therefore avoids opening a second server session and demuxer just
+to populate an unused subtitle menu. Actual playback still records its embedded
+tracks in the existing inventory cache. Device test builds can enable
+`VIVID_P8_TRIAL` to record bounded startup, buffering and skip-activation traces.
+The 256 KiB rolling trace retains recent events across title changes within the
+app run, including native Select receipt, skip actions and seek completion.

@@ -159,9 +159,11 @@ class MpvPlayerCoreBase: NSObject {
   /// No stream is being presented: between a file's END_FILE (or START_FILE)
   /// and the next PLAYBACK_RESTART, and before the first file. While held,
   /// `applyDisplayCriteriaFromCaches` commits nothing, so the previous
-  /// file's criteria stay on the HDMI link until the next file's first frame
-  /// proves whether they need to change.
+  /// file's criteria stay on the HDMI link until a coherent decoded-output
+  /// snapshot or the next file's first frame proves they need to change.
   private var displayCriteriaHeld = true
+  private var displayCriteriaEpoch: UInt64 = 0
+  private var initialDisplayCriteriaPending = false
   private var cachedVideoGamma: String?
   private var cachedVideoPrimaries: String?
   private var cachedVideoColorMatrix: String?
@@ -298,6 +300,8 @@ class MpvPlayerCoreBase: NSObject {
   }
 
   func configurePlatformMpvOptions(mpv: OpaquePointer) {}
+
+  var preparesDisplayCriteriaEarly: Bool { false }
 
   func updateEDRMode(sigPeak: Double) {}
 
@@ -1112,6 +1116,8 @@ class MpvPlayerCoreBase: NSObject {
     case MPV_EVENT_START_FILE:
       cacheLock.lock()
       cachedEstimatedFps = 0
+      displayCriteriaEpoch &+= 1
+      initialDisplayCriteriaPending = true
       displayCriteriaHeld = true
       cacheLock.unlock()
       if let startFilePtr = event.data?.assumingMemoryBound(to: mpv_event_start_file.self) {
@@ -1131,6 +1137,8 @@ class MpvPlayerCoreBase: NSObject {
       // receive any teardown-valued property change, so the hold is in place
       // before those deliveries could commit a partial snapshot.
       cacheLock.lock()
+      displayCriteriaEpoch &+= 1
+      initialDisplayCriteriaPending = false
       displayCriteriaHeld = true
       cacheLock.unlock()
       if let endFilePtr = event.data?.assumingMemoryBound(to: mpv_event_end_file.self) {
@@ -1151,6 +1159,9 @@ class MpvPlayerCoreBase: NSObject {
 
     case MPV_EVENT_SHUTDOWN:
       MpvLog.debug("[MpvPlayerCore] MPV shutdown event")
+
+    case MPV_EVENT_VIDEO_RECONFIG:
+      prepareInitialDisplayCriteria()
 
     case MPV_EVENT_PLAYBACK_RESTART:
       // The first shown frame after a load or seek: the moment the presented
@@ -1184,6 +1195,7 @@ class MpvPlayerCoreBase: NSObject {
       cachedDoviProfile = (videoTrack["dolby-vision-profile"] as? Int64) ?? 0
       cachedDoviLevel = (videoTrack["dolby-vision-level"] as? Int64) ?? 0
       displayCriteriaHeld = false
+      initialDisplayCriteriaPending = false
       cacheLock.unlock()
       scheduleDisplayCriteriaUpdate()
       var data: [String: Any]?
@@ -1212,6 +1224,61 @@ class MpvPlayerCoreBase: NSObject {
 
     default:
       break
+    }
+  }
+
+  /// A configured decoded video output can precede audio readiness. Start
+  /// matching from a complete snapshot then, without pausing either stream.
+  /// Keep observer-driven updates held until PLAYBACK_RESTART reconciles the
+  /// final cadence, so partial property notifications cannot clear the mode.
+  private func prepareInitialDisplayCriteria() {
+    guard preparesDisplayCriteriaEarly else { return }
+    cacheLock.lock()
+    let pending = initialDisplayCriteriaPending && displayCriteriaHeld
+    let epoch = displayCriteriaEpoch
+    cacheLock.unlock()
+    guard pending,
+      let params = readMapProperty("video-out-params"),
+      let track = readMapProperty("current-tracks/video"),
+      let width = params["w"] as? Int64,
+      let height = params["h"] as? Int64,
+      validateSideDataDimensions(width: width, height: height),
+      let fps = readDoubleProperty("container-fps"), fps.isFinite, fps > 0,
+      let presented = readDoubleProperty("estimated-vf-fps"), presented.isFinite, presented > 0,
+      let deinterlaced = readFlagProperty("deinterlace-active")
+    else { return }
+
+    let fields = deinterlaced || Self.presentsFields(container: fps, presented: presented)
+    let refreshRate = Self.nominalRefreshRate(fields ? fps * 2 : fps)
+    var profile = (track["dolby-vision-profile"] as? Int64) ?? 0
+    let level = (track["dolby-vision-level"] as? Int64) ?? 0
+    let peak = (params["sig-peak"] as? Double) ?? 0
+    var gamma = params["gamma"] as? String
+    var primaries = params["primaries"] as? String
+    var matrix = params["colormatrix"] as? String
+    var compatibility: Int64?
+    if profile == 7 {
+      profile = 8
+      compatibility = 1
+      gamma = gamma ?? "smpte2084"
+      primaries = primaries ?? "bt2020"
+      matrix = matrix ?? "bt2020nc"
+    }
+    cacheLock.lock()
+    initialDisplayCriteriaPending = false
+    cacheLock.unlock()
+    DispatchQueue.main.async { [weak self, profile, gamma, primaries, matrix, compatibility] in
+      guard let self, self.isLifecycleActive else { return }
+      self.cacheLock.lock()
+      let current = self.displayCriteriaEpoch == epoch && self.displayCriteriaHeld
+      self.cacheLock.unlock()
+      guard current else { return }
+      if self.updateDisplayCriteria(doviProfile: profile, doviLevel: level,
+        doviCompatibilityId: compatibility, fps: refreshRate,
+        width: Int32(width), height: Int32(height), sigPeak: peak,
+        gamma: gamma, primaries: primaries, colorMatrix: matrix) {
+        self.delegate?.onEvent(name: "display-criteria-prepared", data: nil)
+      }
     }
   }
 

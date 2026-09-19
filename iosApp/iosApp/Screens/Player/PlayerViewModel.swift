@@ -4667,6 +4667,7 @@ class PlayerViewModel {
     }
 
     func skipIntro() {
+        PlaybackTrialTrace.controlEvent("skip_intro_action", fields: "has_range=\(activeIntroSkipRange != nil) loading=\(isLoading)")
         guard let introRange = activeIntroSkipRange else { return }
         if let key = currentIntroSkipKey(for: introRange) {
             autoSkippedIntroKey = key
@@ -4676,6 +4677,7 @@ class PlayerViewModel {
     }
 
     func skipCredits() {
+        PlaybackTrialTrace.controlEvent("skip_credits_action", fields: "has_range=\(creditsRange != nil) loading=\(isLoading)")
         guard let creditsRange else { return }
         if let key = currentCreditsSkipKey(for: creditsRange) {
             autoSkippedCreditsKey = key

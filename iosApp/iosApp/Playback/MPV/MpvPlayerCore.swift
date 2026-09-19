@@ -31,6 +31,14 @@ class MpvPlayerCore: MpvPlayerCoreBase {
     private var displayModeSwitchWaiterGeneration = 0
   #endif
 
+  override var preparesDisplayCriteriaEarly: Bool {
+    #if os(tvOS)
+      return matchContentEnabled
+    #else
+      return false
+    #endif
+  }
+
   var isPipStarting = false
   var onEnterBackground: (() -> Void)?
 
@@ -850,7 +858,27 @@ class MpvPlayerCore: MpvPlayerCoreBase {
     dispose()
   }
 
+  #if os(tvOS) && VIVID_P8_TRIAL
+    @objc private func traceDisplaySwitchStarted() {
+      delegate?.onEvent(name: "display-switch-started", data: nil)
+    }
+
+    @objc private func traceDisplaySwitchEnded() {
+      delegate?.onEvent(name: "display-switch-ended", data: nil)
+    }
+  #endif
+
   private func setupNotifications() {
+    #if os(tvOS) && VIVID_P8_TRIAL
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(traceDisplaySwitchStarted),
+        name: .AVDisplayManagerModeSwitchStart, object: nil
+      )
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(traceDisplaySwitchEnded),
+        name: .AVDisplayManagerModeSwitchEnd, object: nil
+      )
+    #endif
     #if os(iOS)
       let scene = window?.windowScene
       NotificationCenter.default.addObserver(

@@ -57,7 +57,17 @@ again, and skip focus sections must wrap the buttons rather than their
 full-screen positioning frames. Visible skip prompts sit above the measured
 transport stack with a 32-point gap, clearing the title, shortcuts and timeline.
 The remote Play/Pause command remains owned
-by the player shell.
+by the player shell. Skip and countdown Cancel use a native focusable view
+that consumes Select once on press-down, including its release/cancellation.
+Their glass labels are passive; there is no second SwiftUI Button gesture
+waiting for release. Arrows and Menu continue through the native responder chain.
+
+The custom touch-surface contact observer must set `allowedPressTypes = []`.
+It only handles touch events; accepting the default Select press without
+finishing its lifecycle can block the focused button's activation, even when
+that button highlights and dims. See Apple's [tvOS gesture-recogniser note
+111175673](https://developer.apple.com/documentation/tvos-release-notes/tvos-17-release-notes).
+The observer remains non-preventing for touch gestures.
 
 Good local examples:
 
@@ -609,3 +619,7 @@ yet been installed on Living Room; the owner’s installed-build confirmation do
 not establish device coverage of that change.
 
 Spotlight retains its existing crop-before-display sequence, readiness gate, six-second rotation timing and native navigation. Shared image transport retries a temporary connection, DNS or timeout failure once, including Silo, and caps each resource transfer at 45 seconds. HTTP, decoding and cancellation failures are not retried. Regression checks cover recovery, persistent failure and cancellation; the subsequent all-poster stall was reproduced even after clearing artwork and Home metadata. Spotlight crop preparation now runs serially on a bounded Core Graphics thumbnail with CPU-only Vision requests, avoiding synchronous UIImage preparation alongside artwork decoding. A physical Apple TV check confirmed Silo → Emby → Silo artwork loading and playback on both providers with this crop change.
+
+Window recognisers dedicated to remote buttons also set `allowedTouchTypes = []`,
+so a Menu or arrow observer cannot cancel a focused button’s clickpad touch.
+The scrubber pan bridge accepts indirect touches but no button presses.

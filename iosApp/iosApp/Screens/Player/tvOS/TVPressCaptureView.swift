@@ -154,6 +154,10 @@ final class TouchSurfaceContactGestureUIView: UIView, UIGestureRecognizerDelegat
 
         let contact = TouchSurfaceContactGestureRecognizer(target: self, action: #selector(handleContact(_:)))
         contact.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+        // Custom recognisers accept Select by default on tvOS. This observer
+        // only handles touches, so a press would never reach a terminal state
+        // and could block the focused button's activation (Apple 111175673).
+        contact.allowedPressTypes = []
         contact.cancelsTouchesInView = false
         contact.delaysTouchesBegan = false
         contact.delaysTouchesEnded = false
@@ -167,6 +171,7 @@ final class TouchSurfaceContactGestureUIView: UIView, UIGestureRecognizerDelegat
                 action: #selector(handleDirectionalPress(_:))
             )
             press.allowedPressTypes = [NSNumber(value: pressType.rawValue)]
+            press.allowedTouchTypes = []
             press.minimumPressDuration = 0
             press.cancelsTouchesInView = false
             press.delegate = self
@@ -385,6 +390,7 @@ final class PanCaptureUIView: UIView, UIGestureRecognizerDelegate {
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+        pan.allowedPressTypes = []
         pan.cancelsTouchesInView = false
         pan.delegate = self
         window.addGestureRecognizer(pan)
@@ -476,11 +482,13 @@ final class DirectionalPressGestureUIView: UIView, UIGestureRecognizerDelegate {
         for direction in [TVPressCaptureView.ArrowDirection.left, .right] {
             let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
             tap.allowedPressTypes = [NSNumber(value: pressType(for: direction).rawValue)]
+            tap.allowedTouchTypes = []
             tap.delegate = self
             tap.name = gestureName(for: direction)
 
             let hold = UILongPressGestureRecognizer(target: self, action: #selector(handleHold(_:)))
             hold.allowedPressTypes = [NSNumber(value: pressType(for: direction).rawValue)]
+            hold.allowedTouchTypes = []
             hold.minimumPressDuration = Self.holdThreshold
             hold.delegate = self
             hold.name = gestureName(for: direction)

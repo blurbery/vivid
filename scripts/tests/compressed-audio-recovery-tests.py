@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Exercise the patched driver's transport decisions with a controlled clock.
+
+Pass the ao_avfoundation.m produced by the pinned Apple patch series. Only
+Objective-C message sends and external clocks are stubbed; the C control flow
+is extracted from the source that the native workflow compiles.
+"""
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+source = Path(sys.argv[1]).read_text()
+start = source.index('static void avp_update_transport(struct ao *ao)')
+end = source.index('\n// Main driver', start)
+body = source[start:end]
+prefetch_start = source.index('static bool avp_wait_for_prefetch(')
+prefetch_end = source.index('\n// One read/unwrap pass', prefetch_start)
+prefetch = source[prefetch_start:prefetch_end]
+pull = source[source.index('static bool avp_pull('):source.index('static void avp_update_transport(')]
+assert pull.index('if (avp_wait_for_prefetch(ao, request_sample_count))') < pull.index('ao_read_data(ao,')
+for message, stub in {
+    '[p->player setRate:1];': 'rate_calls++;',
+    '[p->item seekToTime:kCMTimeZero completionHandler:nil];': 'seek_calls++;',
+}.items():
+    assert message in body, message
+    body = body.replace(message, stub)
+assert '[p->' not in body, 'Unmocked Objective-C call'
+
+harness = r'''
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#define S INT64_C(1000000000)
+#define AVP_START_MIN_NS S
+#define AVP_START_GRACE_NS (2*S)
+#define AVP_START_LEAD_NS(p) (2*(p)->avp_lead_ns)
+#define MP_WARN(...) ((void)0)
+#define MP_ERR(...) ((void)0)
+struct priv {
+    bool avp_playing, spdif_reload_requested, avp_rate_applied;
+    bool avp_eof, avp_start_seeked;
+    void *item, *player;
+    int64_t es_pts, avp_start_deadline, avp_primed_pts, avp_lead_ns;
+};
+struct ao { struct priv *priv; };
+static int64_t now, clock_pos, feed_pos, queued_samples;
+static int rate_calls, seek_calls, reload_calls, checks;
+static int64_t mp_time_ns(void) { return now; }
+static int64_t avp_feed_position_ns(struct ao *ao) { return feed_pos; }
+static void *ao_get_queue(struct ao *ao) { return ao; }
+static int64_t mp_async_queue_get_samples(void *queue) { return queued_samples; }
+static int64_t avp_current_time_ns(struct ao *ao) { return clock_pos; }
+static void spdif_reload(struct ao *ao) {
+    reload_calls++; ao->priv->spdif_reload_requested = true;
+}
+static void check(bool ok, const char *name) {
+    checks++;
+    if (!ok) { fprintf(stderr, "FAIL: %s\n", name); exit(1); }
+}
+''' + prefetch + body + r'''
+static struct priv p;
+static struct ao ao = { &p };
+static void reset(void) {
+    p = (struct priv){ .avp_playing=true, .item=&p, .avp_lead_ns=8*S };
+    now=clock_pos=feed_pos=queued_samples=rate_calls=seek_calls=reload_calls=0;
+}
+static void tick(int64_t time, int64_t fed) {
+    now=time; p.es_pts=fed; avp_update_transport(&ao);
+}
+int main(void) {
+    reset(); tick(0, S/2);
+    check(!p.avp_rate_applied && !seek_calls, "wait for minimum priming");
+    tick(8*S, S/2);
+    check(!seek_calls && !reload_calls, "slow source before minimum stays intact");
+    tick(9*S, S);
+    check(rate_calls==1 && p.avp_start_deadline==11*S, "grace begins at priming");
+    tick(10*S, 2*S);
+    check(!seek_calls && p.avp_start_deadline==11*S, "progress cannot postpone first recovery");
+    tick(11*S, 3*S);
+    check(seek_calls==1 && !reload_calls, "recover parked clock on time despite progress");
+    tick(12*S, 4*S); tick(14*S, 5*S); tick(17*S, 6*S);
+    check(seek_calls==1 && !reload_calls && p.avp_start_deadline==19*S,
+          "retain slow-source patience after first recovery");
+    clock_pos=S/10; tick(18*S, 7*S);
+    check(p.avp_start_deadline==-1 && !reload_calls, "moving clock stops supervision");
+    clock_pos=0; tick(25*S, 7*S);
+    check(seek_calls==1 && !reload_calls, "do not seek again after healthy playback");
+
+    reset(); tick(0,S); tick(2*S,S);
+    check(seek_calls==1, "stalled input still gets first recovery");
+    tick(3*S,S); tick(5*S,S);
+    check(reload_calls==1, "no progress after recovery falls back to PCM");
+    tick(8*S,S);
+    check(reload_calls==1, "no repeated fallback once reload requested");
+
+    reset(); tick(0,S); tick(2*S,16*S); tick(4*S,16*S);
+    check(reload_calls==1 && seek_calls==1, "full startup lead cannot postpone fallback");
+    reset(); p.avp_eof=true; tick(0,S/4);
+    check(rate_calls==1, "short EOF stream can start without minimum lead");
+    reset(); p.avp_playing=false; tick(20*S,4*S);
+    check(!rate_calls && !seek_calls, "paused transport unchanged");
+    reset(); p.item=NULL; tick(20*S,4*S);
+    check(!rate_calls, "missing item unchanged");
+    reset(); p.spdif_reload_requested=true; tick(20*S,4*S);
+    check(!rate_calls, "pending reload unchanged");
+    reset(); tick(0,S); clock_pos=1; tick(S,2*S);
+    check(!seek_calls && p.avp_start_deadline==-1, "normal startup never seeks");
+    reset(); tick(0,S); tick(2*S,3*S);
+    check(seek_calls==1, "fresh item after user seek gets its own bounded recovery");
+    reset(); p.es_pts=2*S;
+    check(avp_wait_for_prefetch(&ao, 4800), "queued audio prevents empty prefetch underrun");
+    queued_samples=4799;
+    check(avp_wait_for_prefetch(&ao, 4800), "short prefetch waits while audio is buffered");
+    queued_samples=4800;
+    check(!avp_wait_for_prefetch(&ao, 4800), "full read proceeds without waiting");
+    queued_samples=0; feed_pos=S;
+    check(avp_wait_for_prefetch(&ao, 4800), "one-second reserve boundary");
+    feed_pos=S+1;
+    check(!avp_wait_for_prefetch(&ao, 4800), "real starvation below reserve reaches mpv");
+    feed_pos=2*S;
+    check(!avp_wait_for_prefetch(&ao, 4800), "drained audio is never masked");
+    p.es_pts=0; feed_pos=0;
+    check(!avp_wait_for_prefetch(&ao, 4800), "initial priming is never blocked");
+    p.es_pts=16*S; feed_pos=0;
+    check(avp_wait_for_prefetch(&ao, 4800), "retain full startup lead without false underrun");
+    feed_pos=16*S;
+    check(!avp_wait_for_prefetch(&ao, 4800), "pending EOF is read as buffered audio drains");
+    printf("%d compressed audio transport checks passed\n", checks);
+}
+'''
+with tempfile.TemporaryDirectory(prefix='vivid-audio-test-') as directory:
+    path = Path(directory)
+    (path/'transport.c').write_text(harness)
+    subprocess.run(['cc', '-std=c11', '-Wall', '-Werror', '-Wno-unused-parameter',
+                    str(path/'transport.c'), '-o', str(path/'transport')], check=True)
+    subprocess.run([str(path/'transport')], check=True)
