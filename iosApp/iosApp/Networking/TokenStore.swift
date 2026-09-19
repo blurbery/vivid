@@ -74,7 +74,7 @@ struct SessionExpiryEvent: Equatable, Sendable {
 actor TokenStore {
     static let shared = TokenStore()
 
-    static let accountCredentialAudience: KeychainAudience = .userIndependent
+    static let accountCredentialAudience = SharedStorage.accountCredentialAudience
     static let profileCredentialAudience: KeychainAudience = .currentUser
 
     private let keychain: SharedKeychain

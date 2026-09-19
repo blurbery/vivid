@@ -54,6 +54,27 @@ Final playback teardown releases shared audio only when that controller actually
 - Renew or replan through the current session bridge and load-spec path. Cancellation is not a playback failure; rate limiting must not trigger an immediate retry loop.
 - Preserve pause intent, resume position, seek completion and exactly-once end/episode-handover work across recovery.
 
+Unexpected or uncertain end-of-stream events must not open Next Up or mark the
+item completed. A terminal event needs finite, positive source timing within
+eight seconds of the known duration. Earlier endings and missing timing use the
+current item's existing recovery/error path. Playback errors never become
+successful completion merely because they occur near the end. Intentional
+credits skips to the duration still complete normally. Recovery and buffering
+must not advance the automatic Next Up presentation. Pausing, scrubbing, seeking,
+quality changes and terminal errors also suspend automatic advancement. An EOF
+property is confirmed after 250 ms so a queued engine error can cancel it;
+replacement loads, seeks and withdrawn EOF signals invalidate that confirmation.
+The retained source remains available for rewinding from terminal Next Up, and a
+local rewind re-arms its next end notification. Fresh and provisional loads keep
+ownership of their failures. Premature EOF during a load is retained until that
+owner settles, scoped to the same episode and discarded on a new seek or load.
+A rejected recovery presents the existing Retry surface. Emby and offline failures retain their existing Retry behaviour.
+
+Focused handler tests cover these boundaries with instrumented recovery calls.
+They do not simulate real HTTP/HLS outages, server restarts or native output.
+The EOF confirmation window is bounded; an error arriving after completion or a
+truncated source reporting a plausible near-end duration remains ambiguous.
+
 ## Apple TV presentation
 
 The tvOS Next Up preview is 960 × 540 points, keeping its 16:9 ratio and the existing metadata and action positions. A 10-point gap separates the preview from its metadata. It resizes the same persistent player surface through the existing preview anchor; episode loading, first-frame gating and transport commands are unchanged.

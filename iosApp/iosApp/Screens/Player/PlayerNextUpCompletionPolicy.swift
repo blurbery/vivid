@@ -16,6 +16,16 @@ enum PlayerNextUpPlaybackAction: Equatable {
 }
 
 enum PlayerNextUpCompletionPolicy {
+    /// Only a terminal event with a valid source timeline may complete an
+    /// item. Keep the existing eight-second EOF tolerance, without allowing
+    /// a percentage threshold to discard longer endings on long episodes.
+    static func isConfirmedEnd(currentTime: Double, duration: Double) -> Bool {
+        guard duration.isFinite, duration > 0,
+              currentTime.isFinite, currentTime > 0 else { return false }
+        let remaining = duration - currentTime
+        return remaining >= -8 && remaining <= 8
+    }
+
     static func isInPromptWindow(
         currentTime: Double,
         duration: Double,

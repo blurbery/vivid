@@ -118,8 +118,8 @@ private final class ActiveServerIDSnapshot: @unchecked Sendable {
 /// active. Singleton via `.shared`; observed by SwiftUI via `@Observable`.
 ///
 /// Per-server persistence splits across two stores:
-/// - **UserDefaults**: the server list and active ID on iOS. tvOS stores the shared list in the
-///   user-independent Keychain and the active ID in current-user defaults.
+/// - **UserDefaults**: the server list and active ID on iOS. tvOS stores its per-user list in the
+///   current-user Keychain and the active ID in current-user defaults.
 /// - **Keychain**: per-server tokens under stable storage identifiers,
 ///   activated by `TokenStore.switchActiveServer`.
 ///
@@ -143,6 +143,18 @@ final class ServerRegistry {
 
     private static let defaultsKey = "vividServerRegistry.v1"
     private static let sharedTVRegistryAccount = "com.blurbery.vivid.serverRegistry.v2"
+    private static let currentTVRegistryAccount = "com.blurbery.vivid.serverRegistry.currentUser.v1"
+
+    private struct SavedAccountServerReference: Decodable { let serverID: String }
+
+    static func ownedLegacyServerIDs(savedAccounts: Data?, activeServerID: String?) -> Set<String> {
+        let accounts = savedAccounts.flatMap {
+            try? JSONDecoder().decode([SavedAccountServerReference].self, from: $0)
+        } ?? []
+        var ids = Set(accounts.map(\.serverID))
+        if let activeServerID, !activeServerID.isEmpty { ids.insert(activeServerID) }
+        return ids
+    }
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
         category: "ServerRegistry"
@@ -667,10 +679,22 @@ final class ServerRegistry {
 
     // MARK: - Persistence
 
-    private func load() {
+    private var needsRegistryReadRetry = false
+
+    func retryInitialRegistryReadIfNeeded() throws {
         #if os(tvOS)
-        let sharedKeychain = keychain.withAudience(.userIndependent)
-        if let encoded = sharedKeychain.get(Self.sharedTVRegistryAccount),
+        guard needsRegistryReadRetry else { return }
+        try loadTVRegistry()
+        needsRegistryReadRetry = false
+        migrateLegacyProfileMappingsIfNeeded()
+        #endif
+    }
+
+    #if os(tvOS)
+    private func loadTVRegistry() throws {
+        let currentKeychain = keychain.withAudience(.currentUser)
+        let legacyKeychain = keychain.withAudience(.userIndependent)
+        if let encoded = try currentKeychain.getChecked(Self.currentTVRegistryAccount),
            let data = encoded.data(using: .utf8),
            let state = try? JSONDecoder().decode(SharedRegistryState.self, from: data) {
             entries = state.entries
@@ -680,12 +704,29 @@ final class ServerRegistry {
             entries = legacy.entries
             activeServerId = legacy.activeServerId
             persist()
+        } else if let encoded = try legacyKeychain.getChecked(Self.sharedTVRegistryAccount),
+           let data = encoded.data(using: .utf8),
+           let state = try? JSONDecoder().decode(SharedRegistryState.self, from: data) {
+            activeServerId = defaults.string(forKey: SharedStorage.activeServerIdKey)
+            let owned = Self.ownedLegacyServerIDs(
+                savedAccounts: defaults.data(forKey: "vivid.accounts.v1"),
+                activeServerID: activeServerId
+            )
+            entries = state.entries.filter { owned.contains($0.id) }
+            if !entries.isEmpty { persist() }
         }
         if activeServerId == nil || !entries.contains(where: { $0.id == activeServerId }) {
             activeServerId = entries.sorted { $0.lastUsedAt > $1.lastUsedAt }.first?.id
         }
         registerDiagnosticsSensitiveHosts(entries)
         mirrorActiveServer()
+    }
+    #endif
+
+    private func load() {
+        #if os(tvOS)
+        do { try loadTVRegistry() }
+        catch { needsRegistryReadRetry = true }
         #else
         guard let data = defaults.data(forKey: Self.defaultsKey) else { return }
         do {
@@ -755,9 +796,9 @@ final class ServerRegistry {
         do {
             let data = try JSONEncoder().encode(SharedRegistryState(entries: entries))
             guard let encoded = String(data: data, encoding: .utf8) else { return false }
-            let sharedKeychain = keychain.withAudience(.userIndependent)
-            guard sharedKeychain.set(encoded, for: Self.sharedTVRegistryAccount),
-                  sharedKeychain.get(Self.sharedTVRegistryAccount) == encoded else { return false }
+            let currentKeychain = keychain.withAudience(.currentUser)
+            guard currentKeychain.set(encoded, for: Self.currentTVRegistryAccount),
+                  currentKeychain.get(Self.currentTVRegistryAccount) == encoded else { return false }
             defaults.removeObject(forKey: Self.defaultsKey)
             if let activeServerId {
                 defaults.set(activeServerId, forKey: SharedStorage.activeServerIdKey)
@@ -802,7 +843,7 @@ final class ServerRegistry {
     /// store. The legacy field remains encoded until the destination mapping
     /// and account epoch can be read back, making interruption retry-safe.
     private func migrateLegacyProfileMappingsIfNeeded() {
-        let accountKeychain = keychain.withAudience(.userIndependent)
+        let accountKeychain = keychain.withAudience(SharedStorage.accountCredentialAudience)
         let profileKeychain = keychain.withAudience(.currentUser)
         for index in entries.indices {
             guard let profileID = entries[index].legacyProfileId,

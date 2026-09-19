@@ -29,7 +29,7 @@ struct TopShelfHTTPClient {
          keychain: SharedKeychain = SharedKeychain(),
          session: URLSession = .shared) {
         self.defaults = defaults
-        self.accountKeychain = keychain.withAudience(.userIndependent)
+        self.accountKeychain = keychain.withAudience(SharedStorage.accountCredentialAudience)
         self.profileKeychain = keychain.withAudience(.currentUser)
         self.session = session
     }

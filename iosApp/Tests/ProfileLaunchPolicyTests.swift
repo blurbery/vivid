@@ -443,8 +443,16 @@ final class ProfileLaunchPolicyTests: XCTestCase {
         ))
     }
 
+    func testNativeTVRegistryMigrationDoesNotAdoptAnotherUsersServers() {
+        let accounts = Data(#"[{"serverID":"server-a"},{"serverID":"server-b"}]"#.utf8)
+        XCTAssertEqual(ServerRegistry.ownedLegacyServerIDs(savedAccounts: accounts, activeServerID: "server-a"), ["server-a", "server-b"])
+        XCTAssertEqual(ServerRegistry.ownedLegacyServerIDs(savedAccounts: nil, activeServerID: nil), [])
+        XCTAssertEqual(ServerRegistry.ownedLegacyServerIDs(savedAccounts: Data("invalid".utf8), activeServerID: nil), [])
+        XCTAssertEqual(ServerRegistry.ownedLegacyServerIDs(savedAccounts: nil, activeServerID: "legacy-server"), ["legacy-server"])
+    }
+
     func testCredentialAudienceClassification() {
-        XCTAssertEqual(TokenStore.accountCredentialAudience, .userIndependent)
+        XCTAssertEqual(TokenStore.accountCredentialAudience, .currentUser)
         XCTAssertEqual(TokenStore.profileCredentialAudience, .currentUser)
     }
 }
