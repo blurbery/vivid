@@ -1226,8 +1226,24 @@ class MpvPlayerCoreBase: NSObject {
   }
 
   private func holdDisplayCriteriaForSource(starting: Bool) {
+    #if VIVID_P8_TRIAL
+      let requestedAt = DispatchTime.now().uptimeNanoseconds
+    #endif
     displayCriteriaCommitLock.lock()
-    defer { displayCriteriaCommitLock.unlock() }
+    #if VIVID_P8_TRIAL
+      let acquiredAt = DispatchTime.now().uptimeNanoseconds
+    #endif
+    defer {
+      displayCriteriaCommitLock.unlock()
+      #if VIVID_P8_TRIAL
+        // Capture on the event thread; main-queue delivery time is not lock wait.
+        dispatchDelegateEvent(name: "display-commit-lock", data: [
+          "transition": starting ? "start_file" : "end_file",
+          "wait_ms": Double(acquiredAt - requestedAt) / 1_000_000,
+          "held_ms": Double(DispatchTime.now().uptimeNanoseconds - acquiredAt) / 1_000_000
+        ])
+      #endif
+    }
     cacheLock.lock()
     defer { cacheLock.unlock() }
     if starting { cachedEstimatedFps = 0 }

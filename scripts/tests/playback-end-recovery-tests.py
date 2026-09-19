@@ -380,6 +380,11 @@ final class Early {
 var preparesDisplayCriteriaEarly = true
 let cacheLock = NSLock()
 let displayCriteriaCommitLock = NSLock()
+var lockTimings: [[String: Any]] = []
+func dispatchDelegateEvent(name: String, data: [String: Any]?) {
+    precondition(name == "display-commit-lock")
+    if let data { lockTimings.append(data) }
+}
 var cachedEstimatedFps = 0.0
 var displayCriteriaUpdateScheduled = true
 var cachedDoviProfile: Int64 = 0, cachedDoviLevel: Int64 = 0
@@ -478,6 +483,10 @@ static func main() {
     let released = cached.displayCriteriaCommitLock.try()
     check(released, "Held-criteria return releases commit lock")
     if released { cached.displayCriteriaCommitLock.unlock() }
+    #if VIVID_P8_TRIAL
+    check(cached.lockTimings.map { $0["transition"] as? String } == ["end_file", "start_file"], "Both source transitions report lock timing")
+    check(cached.lockTimings.allSatisfy { ($0["wait_ms"] as? Double ?? -1) >= 0 && ($0["held_ms"] as? Double ?? -1) >= 0 }, "Lock timings are non-negative measured durations")
+    #endif
     print("\(count) production early-display checks passed")
 }
 }
@@ -486,5 +495,5 @@ with tempfile.TemporaryDirectory(prefix='vivid-early-display-', dir=root.parent)
     folder = Path(folder)
     path = folder / 'checks.swift'
     path.write_text(early_swift)
-    subprocess.run(['xcrun', 'swiftc', '-parse-as-library', '-module-cache-path', str(folder/'cache'), str(path), '-o', str(folder/'checks')], check=True, timeout=90)
+    subprocess.run(['xcrun', 'swiftc', '-D', 'VIVID_P8_TRIAL', '-parse-as-library', '-module-cache-path', str(folder/'cache'), str(path), '-o', str(folder/'checks')], check=True, timeout=90)
     subprocess.run([str(folder/'checks')], check=True, timeout=15)

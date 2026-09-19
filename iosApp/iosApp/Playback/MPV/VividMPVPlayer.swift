@@ -281,6 +281,13 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     fileprivate func event(_ name: String, data: [String: Any]?, token: UInt64) {
         guard token == generation else { return }
         switch name {
+        case "display-commit-lock":
+            if let transition = data?["transition"] as? String,
+               ["start_file", "end_file"].contains(transition),
+               let wait = data?["wait_ms"] as? Double, wait.isFinite, wait >= 0,
+               let held = data?["held_ms"] as? Double, held.isFinite, held >= 0 {
+                trace?.event("mpv_display_commit_lock", fields: "transition=\(transition) wait_ms=\(wait) held_ms=\(held)")
+            }
         case "display-criteria-prepared":
             trace?.mark("mpv_display_criteria_prepared")
         case "display-switch-started", "display-switch-ended":
