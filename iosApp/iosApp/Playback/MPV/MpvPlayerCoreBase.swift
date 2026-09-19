@@ -352,6 +352,8 @@ class MpvPlayerCoreBase: NSObject {
   }
 
   private func applyDisplayCriteriaFromCaches() {
+    displayCriteriaCommitLock.lock()
+    defer { displayCriteriaCommitLock.unlock() }
     cacheLock.lock()
     displayCriteriaUpdateScheduled = false
     if displayCriteriaHeld {

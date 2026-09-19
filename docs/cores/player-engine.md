@@ -17,7 +17,7 @@ the fallback. Playback continues through the switch; Vivid adds no HDMI startup
 pause. The TV's physical blackout can cover advancing playback. Final decoded
 criteria are still reconciled at playback readiness, and stale snapshots cannot
 change the display after a source ends. A separate commit lock serialises the
-early write with source transitions without holding the property-cache lock. Consecutive episodes retain the existing
+early and cached writes with source transitions without holding the property-cache lock. Consecutive episodes retain the existing
 display-criteria reuse. Living Room testing confirmed the earlier switch; other
 display routes and extended episode chaining remain unverified.
 

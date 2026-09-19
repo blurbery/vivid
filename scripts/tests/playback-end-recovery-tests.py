@@ -359,6 +359,7 @@ if 'private func prepareInitialDisplayCriteria' not in base:
     raise SystemExit('Missing required early-display implementation')
 early = declaration(base, 'private func prepareInitialDisplayCriteria')
 early += '\n' + declaration(base, 'private func holdDisplayCriteriaForSource')
+early += '\n' + declaration(base, 'private func applyDisplayCriteriaFromCaches')
 cadence = declaration(base, 'static func presentsFields')
 rates_start = base.index('private static let nominalRefreshRates:')
 rates_end = base.index(']', base.index('= [', rates_start)) + 1
@@ -380,6 +381,13 @@ var preparesDisplayCriteriaEarly = true
 let cacheLock = NSLock()
 let displayCriteriaCommitLock = NSLock()
 var cachedEstimatedFps = 0.0
+var displayCriteriaUpdateScheduled = true
+var cachedDoviProfile: Int64 = 0, cachedDoviLevel: Int64 = 0
+var cachedDeinterlaceActive = false
+var cachedContainerFps = 24.0, cachedWidth = 1920.0, cachedHeight = 1080.0, cachedLastSigPeak = 0.0
+var cachedVideoGamma: String?, cachedVideoPrimaries: String?, cachedVideoColorMatrix: String?
+func applyCached() { applyDisplayCriteriaFromCaches() }
+func transition(starting: Bool) { holdDisplayCriteriaForSource(starting: starting) }
 var commitHeldDuringWrite = false, cacheReleasedDuringWrite = false
 var initialDisplayCriteriaPending = true, displayCriteriaHeld = true, isLifecycleActive = true
 var displayCriteriaEpoch: UInt64 = 1
@@ -459,6 +467,17 @@ static func main() {
     let locking = Early(); locking.prepare(); DispatchQueue.main.drain()
     check(locking.commitHeldDuringWrite, "Source transitions cannot interleave with the platform write")
     check(locking.cacheReleasedDuringWrite, "Platform write does not hold the cache lock")
+    let cached = Early(); cached.displayCriteriaHeld = false; cached.applyCached()
+    check(cached.commitHeldDuringWrite, "Cached display write serialises source transitions")
+    check(cached.cacheReleasedDuringWrite, "Cached display hook leaves property cache unlocked")
+    check(cached.applications == 1 && !cached.displayCriteriaUpdateScheduled, "Cached callback still commits and clears scheduling")
+    cached.transition(starting: false); cached.applyCached()
+    check(cached.applications == 1, "Ended source blocks queued cached write")
+    cached.transition(starting: true); cached.applyCached()
+    check(cached.applications == 1, "Replacement source blocks cached write until ready")
+    let released = cached.displayCriteriaCommitLock.try()
+    check(released, "Held-criteria return releases commit lock")
+    if released { cached.displayCriteriaCommitLock.unlock() }
     print("\(count) production early-display checks passed")
 }
 }
