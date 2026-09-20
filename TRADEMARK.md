@@ -8,7 +8,7 @@
 
 ---
 
-**Vivid™ and the interlocking-ribbon logo are trademarks claimed by blurbery.** They identify this project and its official releases. This includes the silver logo, app icons, animated logo and other colour treatments of the same mark.
+**Vivid™ and the two-piece V logo are trademarks claimed by blurbery.** They identify this project and its official releases. This includes the silver logo, app icons, animated logo and other colour treatments of the same mark.
 
 <table width="100%">
   <thead><tr><th align="left">Brand element</th><th align="left" width="10000">Use</th></tr></thead>
