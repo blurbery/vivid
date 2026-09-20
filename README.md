@@ -39,7 +39,7 @@ Vivid connects to your existing media server for your library, artwork and playb
   <tbody>
     <tr><td><strong>Silo</strong></td><td>A self-hosted server for films, series and other media.</td><td><a href="docs/cores/silo.md">Available</a></td></tr>
     <tr><td><strong>Emby</strong></td><td>A personal media server for organising and streaming your collection.</td><td><a href="docs/cores/emby.md">Available</a></td></tr>
-    <tr><td><strong>Jellyfin</strong></td><td>A free, open-source media server for your own library.</td><td>Implemented; platform verification pending</td></tr>
+    <tr><td><strong>Jellyfin</strong></td><td>A free, open-source media server for your own library.</td><td><a href="docs/cores/jellyfin.md">Available</a></td></tr>
   </tbody>
 </table>
 

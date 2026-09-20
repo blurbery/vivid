@@ -43,7 +43,7 @@ Vivid is the shared player core. Each server has a separate server core that sup
 | [Jellyfin server core](cores/jellyfin.md) | Native connection and current verification limits |
 
 > [!NOTE]
-> Silo and Emby are available on iPhone, iPad and Apple TV. Emby still has the feature limits listed in its guide; Jellyfin has a native core, with Apple platform verification pending. Use the source and resolved package revisions to check what a build implements.
+> Silo, Emby and Jellyfin have separate native server cores on iPhone, iPad and Apple TV. Their guides distinguish implemented features, passed automated checks and remaining device-verification gaps. Use the source and resolved package revisions to check what a build implements.
 
 > [!IMPORTANT]
 > Documentation changes require blurbery’s prior, explicit approval, including wording, formatting, new pages, renames and deletions. See the [documentation ownership policy](../CONTRIBUTING.md#documentation-ownership).

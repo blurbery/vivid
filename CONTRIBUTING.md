@@ -27,7 +27,7 @@ xcodebuild build -project Vivid.xcodeproj -scheme VividTV \
   -destination 'generic/platform=tvOS Simulator' CODE_SIGNING_ALLOWED=NO
 ```
 
-For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample). Keep credentials and personal signing details out of Git. Use a running Silo server for its integration checks, or an Emby server for its iPhone and Apple TV integration. Generated media fixtures cover focused engine checks without a server.
+For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample). Keep credentials and personal signing details out of Git. Use a running server for the provider being checked: Silo, Emby or Jellyfin. Keep each provider's integration checks separate and consult its core guide for supported features and device-verification gaps. Generated media fixtures cover focused engine checks without a server.
 
 ## Pull requests and repository control
 
