@@ -675,7 +675,7 @@ struct JellyfinAdapter {
         }
         if path == "/api/v1/settings/effective" {
             let settings = (query["keys"] ?? "").split(separator:",").compactMap { key -> [String:Any]? in
-                let prefix = "vivid.jellyfin.setting.\(connection.identity!.account.serverId).\(userID)."
+                let prefix = "vivid.jellyfin.setting.\(connection.identity?.account.serverId ?? connection.serverURL).\(userID)."
                 let user = UserDefaults.standard.string(forKey:prefix + String(key))
                 let device = UserDefaults.standard.string(forKey:prefix + "device." + String(key))
                 guard let value = device ?? user else { return nil }
@@ -691,7 +691,7 @@ struct JellyfinAdapter {
             return Self.catalogFilterOptions(try await connection.object("GET", "/Items/Filters", query:q))
         }
         if p.count >= 3, p[2] == "settings" {
-            let key = "vivid.jellyfin.setting.\(connection.identity!.account.serverId).\(userID).\(p.dropFirst(3).joined(separator: "."))"
+            let key = "vivid.jellyfin.setting.\(connection.identity?.account.serverId ?? connection.serverURL).\(userID).\(p.dropFirst(3).joined(separator: "."))"
             if method == "GET" {
                 guard let value = UserDefaults.standard.string(forKey:key) else { throw HTTPError.http(statusCode: 404, body: nil) }
                 return ["key":p.last ?? "", "value":value]

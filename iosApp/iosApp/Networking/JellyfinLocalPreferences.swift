@@ -73,10 +73,14 @@ actor JellyfinLocalPreferences {
 }
 """#.utf8))) as? [String:Any] ?? [:]
 
+    nonisolated static func storageKey(serverID: String, userID: String) -> String {
+        "vivid.jellyfin.preferences." + serverID + "." + userID
+    }
+
     func route(connection: JellyfinConnection, method: String, path: [String], query: [String:String], body: [String:Any]) async throws -> Any {
         try await connection.validate()
         guard let account = connection.identity?.account, let user = connection.userID else { throw JellyfinError.signInRequired }
-        let storageKey = "vivid.jellyfin.preferences." + account.serverId + "." + user
+        let storageKey = Self.storageKey(serverID: account.serverId, userID: user)
         return try apply(storageKey:storageKey,user:user,method:method,path:path,query:query,body:body)
     }
 

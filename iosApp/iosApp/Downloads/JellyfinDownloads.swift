@@ -82,12 +82,42 @@ actor JellyfinDownloads {
             current.removeValue(forKey:path[3]); try save(current,connection:connection); return [:]
         }
         if method == "PATCH", path.count == 4, let status = body["status"] as? String, ["downloading","completed"].contains(status) {
-            var row = entry["row"] as? [String:Any] ?? [:]
-            row["status"] = status; entry["row"] = row; current[path[3]] = entry
+            let row = entry["row"] as? [String:Any] ?? [:]
+            guard let updated = try Self.updatedStatus(row: row, body: body) else { return [:] }
+            entry["row"] = updated; current[path[3]] = entry
             try save(current,connection:connection)
             return [:]
         }
         throw JellyfinError.unsupportedFeature
+    }
+
+    /// Status callbacks share a content revision, so timestamps order writes
+    /// within that revision. A completed transfer cannot regress on a replay.
+    nonisolated static func updatedStatus(row: [String: Any], body: [String: Any]) throws -> [String: Any]? {
+        let currentRevision = row["revision"] as? Int ?? 0
+        let revision = body["revision"] as? Int ?? currentRevision
+        guard revision >= currentRevision else { return nil }
+        func timestamp(_ raw: String) throws -> Date {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: raw) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            guard let date = formatter.date(from: raw) else { throw JellyfinError.invalidResponse }
+            return date
+        }
+        let updatedAt = body["updated_at"] as? String ?? body["updatedAt"] as? String
+        let incomingDate = try updatedAt.map(timestamp)
+        if revision == currentRevision {
+            if let stored = row["updatedAt"] as? String {
+                guard let incomingDate, incomingDate >= (try timestamp(stored)) else { return nil }
+            }
+            if row["status"] as? String == "completed", body["status"] as? String == "downloading" { return nil }
+        }
+        var updated = row
+        updated["status"] = body["status"]
+        updated["revision"] = revision
+        if let updatedAt { updated["updatedAt"] = updatedAt }
+        return updated
     }
 
     static func manifest(id: String, raw: [String:Any], source: [String:Any], adapter: JellyfinAdapter) throws -> [String:Any] {

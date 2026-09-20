@@ -147,6 +147,13 @@ final class JellyfinPlayback {
         stopped = true
     }
 
+    /// Retire a replaced session at its last reported position. A preview
+    /// that never qualified for progress must not change watched state.
+    func retireForReplacement() async throws {
+        if started { try await report(position: lastPosition, isPaused: true, stopping: true) }
+        else { try await stopWithoutProgress() }
+    }
+
     func report(position: Double, isPaused: Bool, stopping: Bool = false) async throws {
         guard !stopped else { return }
         lastPosition = position.isFinite ? max(0,position) : lastPosition

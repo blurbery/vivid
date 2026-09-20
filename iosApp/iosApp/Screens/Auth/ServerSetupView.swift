@@ -149,7 +149,7 @@ struct PhoneProviderSelectionView: View {
                     ServerSetupView(router: router, provider: .jellyfin)
                 } label: {
                     providerCard("Jellyfin", image: "JellyfinLogo", available: true)
-                }
+                }.buttonStyle(.plain)
                 Button(action: onRestore) {
                     Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
                 }

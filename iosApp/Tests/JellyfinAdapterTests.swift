@@ -65,25 +65,28 @@ final class JellyfinAdapterTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let preferences = JellyfinLocalPreferences(defaults: defaults)
         for (key, value) in [("playback.subtitle_language", "eng"), ("playback.subtitle_mode", "always"), ("playback.audio_language", "fra")] {
-            _ = try await preferences.apply(storageKey: "account-one", user: "one", method: "PUT",
+            _ = try await preferences.apply(storageKey: JellyfinLocalPreferences.storageKey(serverID: "account-one", userID: "one"), user: "one", method: "PUT",
                 path: ["api", "v1", "settings", "values", key], query: ["scope": "profile_device"], body: ["value": value])
         }
         let reloaded = JellyfinLocalPreferences(defaults: defaults)
-        func read(_ key: String) async throws -> [[String: Any]] {
-            let result = try await reloaded.apply(storageKey: key, user: key, method: "GET",
+        func read(server: String, user: String) async throws -> [[String: Any]] {
+            let raw = try await reloaded.apply(storageKey: JellyfinLocalPreferences.storageKey(serverID: server, userID: user), user: user, method: "GET",
                 path: ["api", "v1", "settings", "values", "effective"],
-                query: ["keys": "playback.subtitle_language,playback.subtitle_mode,playback.audio_language"], body: [:]) as! [String: Any]
-            return result["settings"] as! [[String: Any]]
+                query: ["keys": "playback.subtitle_language,playback.subtitle_mode,playback.audio_language"], body: [:])
+            let result = try XCTUnwrap(raw as? [String: Any])
+            return try XCTUnwrap(result["settings"] as? [[String: Any]])
         }
-        let first = try await read("account-one")
+        let first = try await read(server: "account-one", user: "one")
         XCTAssertEqual(first.map { $0["value"] as? String }, ["eng", "always", "fra"])
-        let second = try await read("account-two")
-        XCTAssertTrue(second[0]["value"] is NSNull)
-        XCTAssertEqual(second[1]["value"] as? String, "auto")
-        XCTAssertTrue(second[2]["value"] is NSNull)
+        for (server, user) in [("account-one", "two"), ("account-two", "one")] {
+            let second = try await read(server: server, user: user)
+            XCTAssertTrue(second[0]["value"] is NSNull)
+            XCTAssertEqual(second[1]["value"] as? String, "auto")
+            XCTAssertTrue(second[2]["value"] is NSNull)
+        }
     }
 
-    func testQualityCapRequiresResizeForHigherResolutionSource() {
+    func testQualityCapRequiresResizeForHigherResolutionSource() throws {
         var body: [String: Any] = ["EnableDirectPlay": true, "EnableDirectStream": true,
             "DeviceProfile": ["TranscodingProfiles": [["Type": "Video"]]]]
         JellyfinPlayback.applyPlaybackLimits(to: &body,
@@ -91,7 +94,7 @@ final class JellyfinAdapterTests: XCTestCase {
             quality: "1080p-high", hdr: true, dolbyVision: true)
         XCTAssertEqual(body["EnableDirectPlay"] as? Bool, false)
         XCTAssertEqual(body["AllowVideoStreamCopy"] as? Bool, false)
-        let profile = body["DeviceProfile"] as! [String: Any]
+        let profile = try XCTUnwrap(body["DeviceProfile"] as? [String: Any])
         XCTAssertEqual((profile["TranscodingProfiles"] as? [[String: Any]])?.first?["MaxHeight"] as? Int, 1080)
     }
 
@@ -172,6 +175,53 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertNil(expired)
     }
 
+    func testDownloadStatusRejectsDelayedAndReplayedUpdates() throws {
+        let row: [String: Any] = ["status": "completed", "revision": 2, "updatedAt": "2026-09-20T06:00:02.000Z"]
+        XCTAssertNil(try JellyfinDownloads.updatedStatus(row: row, body: ["status": "downloading", "revision": 1, "updated_at": "2026-09-20T06:00:03.000Z"]))
+        XCTAssertNil(try JellyfinDownloads.updatedStatus(row: row, body: ["status": "downloading", "revision": 2, "updated_at": "2026-09-20T06:00:01.000Z"]))
+        XCTAssertNil(try JellyfinDownloads.updatedStatus(row: row, body: ["status": "downloading", "revision": 2, "updated_at": "2026-09-20T06:00:03.000Z"]))
+        let next = try XCTUnwrap(JellyfinDownloads.updatedStatus(row: row, body: ["status": "downloading", "revision": 3, "updated_at": "2026-09-20T06:00:03.000Z"]))
+        XCTAssertEqual(next["revision"] as? Int, 3)
+        XCTAssertEqual(next["updatedAt"] as? String, "2026-09-20T06:00:03.000Z")
+        let completed = try XCTUnwrap(JellyfinDownloads.updatedStatus(row: next, body: ["status": "completed", "revision": 3, "updated_at": "2026-09-20T06:00:04.000Z"]))
+        XCTAssertEqual(completed["status"] as? String, "completed")
+        XCTAssertThrowsError(try JellyfinDownloads.updatedStatus(row: row, body: ["status": "completed", "updated_at": "invalid-date"]))
+    }
+
+    func testLegacySettingsWithoutCapturedIdentityKeepTheirKeyFormat() async throws {
+        let adapter = adapter { _ in XCTFail("Local settings must not request the server"); return (500, [:]) }
+        let key = "test." + UUID().uuidString
+        let path = "/api/v1/settings/" + key
+        defer { UserDefaults.standard.removeObject(forKey: "vivid.jellyfin.setting." + adapter.connection.serverURL + "." + user + "." + key) }
+        _ = try await adapter.route(method: "PUT", path: path, query: [:], body: ["value": "saved"])
+        let value = try await adapter.route(method: "GET", path: path, query: [:], body: nil)
+        XCTAssertEqual((value as? [String: Any])?["value"] as? String, "saved")
+    }
+
+    @MainActor
+    func testReplacementRetiresLastQualifiedPositionAndPreservesPreviewState() async throws {
+        var bodies: [[String: Any]] = []
+        let adapter = adapter { request in
+            bodies.append(try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any]))
+            return (200, [:])
+        }
+        let stream = StreamRequest(url: URL(string: "https://media.example.test/stream")!, headers: [:], serverUrl: adapter.connection.serverURL)
+        let qualified = JellyfinPlayback(connection: adapter.connection, itemID: item, sourceID: source,
+            playSessionID: "old-session", stream: stream, method: "DirectPlay", audioIndex: nil, subtitleIndex: nil, position: 0)
+        try await qualified.report(position: 72, isPaused: false)
+        try await qualified.retireForReplacement()
+        XCTAssertEqual(bodies.last?["PlaySessionId"] as? String, "old-session")
+        XCTAssertEqual(bodies.last?["PositionTicks"] as? Int64, 720_000_000)
+        let count = bodies.count
+        try await qualified.retireForReplacement()
+        XCTAssertEqual(bodies.count, count)
+        let preview = JellyfinPlayback(connection: adapter.connection, itemID: item, sourceID: source,
+            playSessionID: "preview", stream: stream, method: "DirectPlay", audioIndex: nil, subtitleIndex: nil, position: 12)
+        try await preview.retireForReplacement()
+        XCTAssertEqual(bodies.last?["Failed"] as? Bool, true)
+        XCTAssertNil(bodies.last?["PositionTicks"])
+    }
+
     func testProviderIdentityAndBasePathsStaySeparate() throws {
         XCTAssertEqual(MediaServerProvider.forServerID("jellyfin:one"), .jellyfin)
         XCTAssertEqual(MediaServerProvider.forServerID("emby:one"), .emby)
@@ -198,7 +248,7 @@ final class JellyfinAdapterTests: XCTestCase {
         _ = try await adapter.items(query: ["UserId":"other-account"])
     }
 
-    func testLegacyJellyfinRetryOnlyForMissingRoute() async throws {
+    func testLegacyJellyfinRetryOnlyForMapped404() async throws {
         var paths: [String] = []
         let adapter = adapter { request in
             paths.append(request.url!.path)
@@ -262,7 +312,7 @@ final class JellyfinAdapterTests: XCTestCase {
         let adapter = adapter { request in
             requests.append(request)
             if request.url!.path.hasSuffix("/PlaybackInfo") {
-                let body = try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as! [String:Any]
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String:Any])
                 XCTAssertEqual(body["UserId"] as? String, self.user)
                 XCTAssertEqual(body["MediaSourceId"] as? String, self.source)
                 XCTAssertEqual(body["AudioStreamIndex"] as? Int, 2)
@@ -280,7 +330,7 @@ final class JellyfinAdapterTests: XCTestCase {
         try await playback.ping()
         try await playback.stopWithoutProgress()
         XCTAssertEqual(requests.suffix(2).map { $0.url!.path }, ["/jellyfin/Sessions/Playing/Ping","/jellyfin/Sessions/Playing/Stopped"])
-        let stop = try JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as! [String:Any]
+        let stop = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as? [String:Any])
         XCTAssertEqual(stop["Failed"] as? Bool, true)
         XCTAssertNil(stop["PositionTicks"])
 
@@ -289,7 +339,7 @@ final class JellyfinAdapterTests: XCTestCase {
         try await reporting.report(position:65,isPaused:false)
         try await reporting.report(position:70,isPaused:true,stopping:true)
         XCTAssertEqual(requests.suffix(3).map { $0.url!.path }, ["/jellyfin/Sessions/Playing","/jellyfin/Sessions/Playing/Progress","/jellyfin/Sessions/Playing/Stopped"])
-        let final = try JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as! [String:Any]
+        let final = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as? [String:Any])
         XCTAssertEqual(final["PositionTicks"] as? Int64, 700_000_000)
     }
 }

@@ -897,6 +897,19 @@ actor PlaybackSessionBridge {
                 start: effectiveStartPosition ?? 0, audioOrdinal: resolvedAudioTrackIndex,
                 subtitleIndex: subtitleIntent.ffmpegStreamIndex, bitrateKbps: bandwidthCapKbps,
                 quality: resolvedQualityPreference)
+            // Keep the current session until replacement preparation succeeds.
+            // Drain its progress writes before retiring the captured session.
+            let previous = jellyfinPlayback
+            _ = await progressWriteTail?.value
+            if let previous, await previous.playSessionID != playback.playSessionID {
+                do { try await previous.retireForReplacement() }
+                catch { logger.warning("Jellyfin replacement stop failed: \(MediaLogRedactor.sanitize(error), privacy: .public)") }
+            }
+            do { try await jellyfinMetadata.connection.validate() }
+            catch {
+                _ = await Task { try? await playback.stopWithoutProgress() }.value
+                throw error
+            }
             jellyfinPlayback = playback
             adoptSession(prepared.session)
             return prepared
@@ -2139,8 +2152,15 @@ actor PlaybackSessionBridge {
                     try await playback.stopWithoutProgress()
                     return .deferred
                 }
-                try await playback.report(position: position, isPaused: isPaused, stopping: true)
-                return await writeJellyfinCompletion(after: .success, contentId: completedContentId, playback: playback)
+                let stopResult: PlaybackProgressReportResult
+                do {
+                    try await playback.report(position: position, isPaused: isPaused, stopping: true)
+                    stopResult = .success
+                } catch {
+                    logger.warning("Jellyfin stop report failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+                    stopResult = .transientFailure
+                }
+                return await writeJellyfinCompletion(after: stopResult, contentId: completedContentId, playback: playback)
             } catch {
                 return .transientFailure
             }

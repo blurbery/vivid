@@ -80,8 +80,7 @@ final class HomeSectionsMutationTests: XCTestCase {
                                     items: [try makeItem(contentId: "episode")])]
         for (enabled, provider) in [(true, MediaServerProvider.silo), (false, .emby), (false, .jellyfin)] {
             let result = HomeSectionPreferences.combinedSections(sections, enabled: enabled, provider: provider)
-            XCTAssertEqual(result[0].sectionType, "next_up")
-            XCTAssertEqual(result[0].title, "next")
+            XCTAssertEqual(result, sections)
         }
     }
 
