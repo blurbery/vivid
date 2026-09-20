@@ -184,7 +184,7 @@ struct PhoneSavedAccountCards: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 88, maximum: 112), spacing: 12, alignment: .top)], alignment: .leading, spacing: 16) {
                     profileCards
                 }
-            } else {
+            } else if displayedAccounts.count < 3 {
                 GeometryReader { geometry in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 22) {
@@ -195,6 +195,18 @@ struct PhoneSavedAccountCards: View {
                     }
                 }
                 .frame(height: 150)
+            } else {
+                VStack(spacing: 24) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top),
+                                              count: displayedAccounts.count == 3 ? 3 : min(2, max(1, displayedAccounts.count))), spacing: 24) {
+                        accountCards
+                    }
+                    if store.canAddAccount { addProfileButton.frame(width: 112) }
+                }
+                .frame(maxWidth: 380)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity)
+
             }
         }
         .coordinateSpace(name: "savedProfileCards")
@@ -249,6 +261,12 @@ struct PhoneSavedAccountCards: View {
 
     @ViewBuilder
     private var profileCards: some View {
+        accountCards
+        if store.canAddAccount { addProfileButton }
+    }
+
+    @ViewBuilder
+    private var accountCards: some View {
         ForEach(displayedAccounts) { account in
             Button { activateProfile(account) } label: {
                 tile(account)
@@ -268,20 +286,21 @@ struct PhoneSavedAccountCards: View {
             .accessibilityAction(named: "Move earlier") { moveProfile(account.id, by: -1) }
             .accessibilityAction(named: "Move later") { moveProfile(account.id, by: 1) }
         }
-        if store.canAddAccount {
-            Button { editorRoute = .add } label: {
-                VStack(spacing: isSettings ? 8 : 12) {
-                    Image(systemName: "plus").font(.system(size: 32))
-                        .frame(width: avatarSize, height: avatarSize).background(.white.opacity(0.12), in: Circle())
-                    Text("Add Profile").font(.subheadline.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
-                }.frame(width: isSettings ? nil : 112)
-                    .frame(maxWidth: isSettings ? .infinity : nil)
-            }
+    }
+
+    private var addProfileButton: some View {
+        Button { editorRoute = .add } label: {
+            VStack(spacing: isSettings ? 8 : 12) {
+                Image(systemName: "plus").font(.system(size: 32))
+                    .frame(width: avatarSize, height: avatarSize).background(.white.opacity(0.12), in: Circle())
+                Text("Add Profile").font(.subheadline.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
+            }.frame(width: isSettings ? nil : 112)
+                .frame(maxWidth: isSettings ? .infinity : nil)
         }
     }
 
     private func serverLabel(for account: TVSavedAccount) -> String {
-        if MediaServerProvider.forServerID(account.serverID) == .emby { return "Emby" }
+        if MediaServerProvider.forServerID(account.serverID).usesNativeUser { return MediaServerProvider.forServerID(account.serverID).name }
         return registry.entry(with: account.serverID)?.displayName ?? "Media server"
     }
 
@@ -397,8 +416,8 @@ struct PhoneSavedAccountCards: View {
                 }
                 if store.needsLogin(account) { Text("Signed out").font(.caption).foregroundStyle(.secondary) }
             }
-        }.frame(width: isSettings ? nil : 112)
-            .frame(maxWidth: isSettings ? .infinity : nil)
+        }.frame(width: !isSettings && displayedAccounts.count < 3 ? 112 : nil)
+            .frame(maxWidth: isSettings || displayedAccounts.count >= 3 ? .infinity : nil)
     }
 }
 
@@ -445,7 +464,7 @@ struct PhoneSavedAccountEditor: View {
                     Picker("Server Provider", selection: $provider) {
                         Text("Silo").tag("Silo")
                         Text("Emby").tag("Emby")
-                        Text("Jellyfin · Coming soon").tag("Jellyfin")
+                        Text("Jellyfin").tag("Jellyfin")
                     }
                     if !registry.entries.isEmpty {
                         Picker("Saved Server", selection: $serverURL) {
@@ -462,11 +481,11 @@ struct PhoneSavedAccountEditor: View {
                 SecureField("Password", text: $password).textContentType(.password)
                 Button(account == nil ? "Add Profile" : store.needsLogin(account!) ? "Sign In" : "Update Login") {
                     Task {
-                        let success = await store.authenticate(id: accountID, serverURL: serverURL, username: username, password: password, router: router, provider: provider == "Emby" ? .emby : .silo)
+                        let success = await store.authenticate(id: accountID, serverURL: serverURL, username: username, password: password, router: router, provider: MediaServerProvider(rawValue: provider.lowercased()) ?? .silo)
                         password = ""
                         if success { dismiss() } else { message = store.error }
                     }
-                }.disabled((accountID == nil && !store.canAddAccount) || provider == "Jellyfin" || store.busy || (password.isEmpty && provider != "Emby") || username.isEmpty || serverURL.isEmpty)
+                }.disabled((accountID == nil && !store.canAddAccount) || store.busy || (password.isEmpty && provider == "Silo") || username.isEmpty || serverURL.isEmpty)
             } header: { PhoneSettingsSectionHeader("Account") }
             .textInputAutocapitalization(.never).autocorrectionDisabled()
             if active, let accountID {
@@ -520,7 +539,7 @@ struct PhoneSavedAccountEditor: View {
         }
         .onAppear {
             if let account {
-                provider = MediaServerProvider.forServerID(account.serverID) == .emby ? "Emby" : "Silo"
+                provider = MediaServerProvider.forServerID(account.serverID).name
                 username = account.username
                 serverURL = registry.entry(with: account.serverID)?.url ?? ""
             } else { serverURL = registry.activeServer?.url ?? "" }

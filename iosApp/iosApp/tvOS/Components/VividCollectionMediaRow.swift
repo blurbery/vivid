@@ -119,7 +119,7 @@ struct VividCollectionMediaRow: View, Equatable {
                 item: item,
                 showProgress: true,
                 action: { onSelect(item.contentId) },
-                showsEpisodeDetails: MediaServerProvider.active == .emby
+                showsEpisodeDetails: MediaServerProvider.active.usesNativeUser
                     && section.sectionType.lowercased().contains("next"),
                 playAction: play,
                 focusedItemId: focus,

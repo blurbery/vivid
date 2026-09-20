@@ -23,6 +23,19 @@ enum CatalogQueryBuilder {
         return query
     }
 
+    static func jellyfinQuery(_ state: CatalogFilterState, base: [String: String]) -> [String: String] {
+        var query = base.filter { !$0.key.hasPrefix("groups[") && $0.key != "match" }
+        if let scope = state.mediaScope { query["type"] = scope }
+        if !state.genres.isEmpty { query["genre"] = state.genres.sorted().joined(separator: "|") }
+        if !state.contentRatings.isEmpty { query["content_rating"] = state.contentRatings.sorted().joined(separator: "|") }
+        if !state.decades.isEmpty {
+            query["years"] = state.decades.sorted().flatMap { Array($0...($0 + 9)) }.map(String.init).joined(separator: ",")
+        }
+        if state.watchStatus == .watchlist { query["source"] = "watchlist" }
+        else if let status = state.watchStatus { query["jellyfin_watch_status"] = status.rawValue }
+        return query
+    }
+
     static func build(
         _ state: CatalogFilterState,
         libraryId: Int?,
@@ -76,6 +89,7 @@ enum CatalogQueryBuilder {
         if let status = state.watchStatus { groups.addWatchStatus(status) }
         groups.encode(into: &q)
 
+        if MediaServerProvider.active == .jellyfin { return jellyfinQuery(state, base: q) }
         return MediaServerProvider.active == .emby ? embyQuery(state, base: q) : q
     }
 }

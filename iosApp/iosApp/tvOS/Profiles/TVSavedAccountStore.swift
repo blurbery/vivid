@@ -105,7 +105,7 @@ final class TVSavedAccountStore {
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
     var canAddAccount: Bool {
         #if os(iOS)
-        accounts.count < 3
+        accounts.count < 4
         #else
         true
         #endif
@@ -325,7 +325,7 @@ final class TVSavedAccountStore {
 
     func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter, provider requestedProvider: MediaServerProvider? = nil) async -> Bool {
         guard !busy else { return false }
-        guard id != nil || canAddAccount else { error = "You can save up to three profiles. Delete a saved profile to add another."; return false }
+        guard id != nil || canAddAccount else { error = "You can save up to four profiles. Delete a saved profile to add another."; return false }
         await captureCurrent(refreshMetadata: false)
         guard !busy else { return false }
         busy = true; error = nil
@@ -339,7 +339,12 @@ final class TVSavedAccountStore {
             let provider = requestedProvider ?? MediaServerProvider.forServerID(selected?.serverID ?? ServerRegistry.shared.activeServerId)
             let login: LoginResponse
             let nativeUserID: String?
-            if provider == .emby {
+            if provider == .jellyfin {
+                let result = try await JellyfinConnection.login(serverURL: normalized, username: username, password: password)
+                nativeUserID = result.userID
+                login = LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
+                    user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:username,email:"",role:"user",downloadAllowed:false,impersonation:nil))
+            } else if provider == .emby {
                 let result = try await EmbyConnection.login(serverURL: normalized, username: username, password: password)
                 nativeUserID = result.userID
                 login = LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
@@ -348,14 +353,14 @@ final class TVSavedAccountStore {
                 nativeUserID = nil
                 login = try await HTTPClient.shared.loginSavedAccount(serverURL: normalized, username: username, password: password)
             }
-            let serverID = (provider == .emby ? "emby:" : "") + ServerRegistry.serverId(for: normalized)
+            let serverID = (provider.usesNativeUser ? provider.rawValue + ":" : "") + ServerRegistry.serverId(for: normalized)
             let userID = String(login.user.id)
             let existing = id.flatMap { id in accounts.first { $0.id == id } }
                 ?? accounts.first { $0.serverID == serverID && $0.userID == userID }
             if let existing, existing.userID != userID || existing.serverID != serverID {
                 error = "These credentials belong to a different account. Use Add Profile instead."; return false
             }
-            guard existing != nil || canAddAccount else { error = "You can save up to three profiles."; return false }
+            guard existing != nil || canAddAccount else { error = "You can save up to four profiles."; return false }
             let accountID = existing?.id ?? UUID().uuidString
             let account = TVSavedAccount(id: accountID, serverID: serverID, userID: userID,
                                          username: login.user.username, profile: existing?.profile, requiresLogin: false,

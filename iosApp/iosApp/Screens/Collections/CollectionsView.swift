@@ -731,7 +731,7 @@ struct LibraryCollectionDetailView: View {
         if reset {
             // Surface the cached page-1 snapshot instantly so the grid
             // doesn't blank out while the network call runs.
-            if items.isEmpty, MediaServerProvider.active != .emby,
+            if items.isEmpty, !MediaServerProvider.active.usesNativeUser,
                let cached: CatalogResponse = ResponseCache.shared.get(
                    CacheKey.collectionItems(collectionId)
                ) {
@@ -875,7 +875,7 @@ struct MobileForYouCollections: View {
     private func load() async {
         isLoading = true
         error = nil
-        if MediaServerProvider.active == .emby {
+        if MediaServerProvider.active.usesNativeUser {
             do {
                 let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
                 entries = response.collections.map { Entry(libraryID:0,collection:$0) }

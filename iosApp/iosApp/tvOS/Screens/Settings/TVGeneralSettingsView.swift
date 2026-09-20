@@ -45,6 +45,12 @@ struct TVGeneralSettingsPane: View {
                         isOn: homeSections.combineEmbyNextUp
                     ) { homeSections.setCombineEmbyNextUp(!homeSections.combineEmbyNextUp) }
                 }
+                if MediaServerProvider.forServerID(registry.activeServerId) == .jellyfin {
+                    TVSettingsToggleRow(
+                        title: "Combine Next Up with Continue Watching",
+                        isOn: homeSections.combineJellyfinNextUp
+                    ) { homeSections.setCombineJellyfinNextUp(!homeSections.combineJellyfinNextUp) }
+                }
 
             }
             if preferences.capabilityState != .checking, let message = preferences.capabilityMessage {

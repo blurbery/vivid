@@ -153,7 +153,7 @@ final class TVTMDbStore {
         else if VividMediaType.isSeries(detail.type) { kind = "tv" }
         else { return nil }
         if let id = Int(detail.tmdbId ?? ""), id > 0 { return (kind,id) }
-        guard MediaServerProvider.active == .emby, let imdb = detail.imdbId, imdb.range(of:"^tt[0-9]{7,10}$",options:.regularExpression) != nil else { return nil }
+        guard MediaServerProvider.active.usesNativeUser, let imdb = detail.imdbId, imdb.range(of:"^tt[0-9]{7,10}$",options:.regularExpression) != nil else { return nil }
         let result: ExternalMatches = try await request("find/" + imdb,credential:credential,query:["external_source":"imdb_id"])
         try checkContext(context)
         let matches = kind == "movie" ? result.movie_results : result.tv_results

@@ -5,8 +5,53 @@
 
 ---
 
-Jellyfin is planned. Its provider card remains Coming Soon; there is no native Jellyfin login, library or playback adapter in the current app.
+Jellyfin has its own server core. Its provider card opens Vivid's existing server and username/password forms on iPhone, iPad and Apple TV. The connection supplies metadata and playable sources to Vivid's shared player; it does not use Silo Protocol V3 or the Emby adapter.
 
-Vivid’s platform engines provide playback infrastructure. Their container and codec support does not implement a Jellyfin server connection. A future adapter must supply Jellyfin authentication, library/source metadata, session negotiation and progress reporting without reusing Silo credentials or pretending to implement Silo Protocol V3. It should use Vivid’s existing player, embedded subtitles and chapters, and optional IntroDB integration.
+## Ownership and authentication
 
-No Jellyfin device verification is claimed.
+`JellyfinProvider.swift` owns Jellyfin discovery, authenticated transport and catalogue mapping. `JellyfinPlayback.swift` owns playback negotiation and reporting. `JellyfinDownloads.swift` and `JellyfinLocalPreferences.swift` keep download records and client preferences separate from other providers. Shared Vivid code selects the provider and presents its results. Silo and Emby wire implementations remain unchanged.
+
+Server identities use a `jellyfin:` prefix. Native user IDs and access tokens remain scoped to that server account in Keychain. Requests capture their account identity and reject results after a session switch. Authentication uses Jellyfin's MediaBrowser authorisation header. Credentials are not placed in generated image, subtitle or media URLs, and API redirects are rejected. Custom server base paths are preserved without adding `/emby` or `/jellyfin`.
+
+## API mapping
+
+The core follows the [official Jellyfin API specification](https://api.jellyfin.org/openapi/jellyfin-openapi-stable.json).
+
+| Vivid operation | Jellyfin endpoint |
+|---|---|
+| Server discovery | `GET /System/Info/Public` |
+| Login / logout | `POST /Users/AuthenticateByName`, `POST /Sessions/Logout` |
+| Libraries | `GET /UserViews` |
+| Browse, search, favourites and history lists | `GET /Items` with native filters |
+| Item details | `GET /Items/{id}` |
+| Home rows | `GET /UserItems/Resume`, `/Shows/NextUp`, `/Items/Latest` |
+| Seasons / episodes | `GET /Shows/{id}/Seasons`, `/Shows/{id}/Episodes` |
+| Filters / similar titles | `GET /Items/Filters`, `/Items/{id}/Similar` |
+| Artwork | `GET /Items/{id}/Images/{type}` |
+| Playback negotiation | `POST /Items/{id}/PlaybackInfo` |
+| Original stream | `GET /Videos/{id}/stream` |
+| Session reporting | `POST /Sessions/Playing`, `/Sessions/Playing/Ping`, `/Sessions/Playing/Progress`, `/Sessions/Playing/Stopped` |
+| Watched / favourite changes | `POST` or `DELETE /UserPlayedItems/{id}`, `/UserFavoriteItems/{id}` |
+| Offline progress | `POST /UserItems/{id}/UserData` |
+
+Jellyfin 12 moved several user-scoped routes. A missing-route HTTP 404 retries the corresponding older Jellyfin route under `/Users/{userId}`. Authentication failures do not trigger fallback, and no fallback selects another provider. Older Jellyfin server versions still need live verification.
+
+## Playback and limits
+
+Jellyfin maps source IDs, media streams, chapters and tick-based progress into Vivid's models. PlaybackInfo supplies direct-play or transcoded sources. Vivid retains its shared controls, engine, subtitle inventory and next-episode behaviour. A short, unqualified preview is retired with Jellyfin's `Failed` stop flag so it does not reset resume progress or mark a title watched. Qualified playback reports start, progress and stop normally.
+
+Library browsing requests card metadata without cast, media sources, streams or chapters; detail and playback requests retain the full fields. Native library-ID mappings are reused for five minutes, partitioned by server, Jellyfin user and login epoch. Watched state, favourites and pagination remain in browse responses. A bounded check of two 60-title movie pages reduced response size by about 91% and measured 3.4–4.4 seconds instead of about 7 seconds; these are individual server/network observations, not an on-device performance guarantee.
+
+Season metadata retains Jellyfin watched and unplayed counts. Episode detail mapping retains watched flags and tick-based resume positions. On iPhone, initial episode-rail positioning does not replace Jellyfin’s requested resume episode; a user scroll can change the selected episode.
+
+Home supports a Jellyfin-specific option to combine Continue Watching and Next Up. The shared Apple TV six-row cap applies after combining rows. Spotlight presents the combined Continue Watching choice too, interleaving resume and Next Up items within its ten-slide limit. iPhone and iPad support four saved server-account cards. Person IDs map to Vivid navigation IDs within the Jellyfin account, including crew. More Like This uses Jellyfin’s similar-items endpoint on iOS and tvOS.
+
+Original-file downloads respect the account's download permission. Converted downloads, Emby Sync jobs, automatic series downloads and server administration are not implemented. Watchlists, row dismissals and client preferences are local and account-scoped. Row dismissal does not change Jellyfin watched state. Collection browsing is supported; collection editing and Jellyfin realtime events are not implemented. Jellyfin users are server accounts, not Silo household viewing profiles.
+
+## Verification
+
+Jellyfin 12.1.0 live checks passed for authentication, library views, full catalogue fields, resume and next-up rows, latest items, filters, movie details, similar titles, seasons, episodes and PlaybackInfo negotiation. A direct-play stream returned an authenticated HTTP 206 response for a bounded 4 KiB read. These checks did not submit watched-progress changes.
+
+Twelve focused Jellyfin XCTest cases and six extracted Home/Spotlight projection tests passed in a temporary macOS harness using the Jellyfin source files and Vivid's real wire models. They cover URL/provider separation, native authentication and user scope, legacy fallback, home response mapping, filter/download capabilities, playback negotiation and reporting, and preview retirement. The harness substitutes app storage and host services; it does not establish full iOS/tvOS integration. A signed iOS Debug build passed and was installed in place on the connected iPhone 16 Pro Max. The app and extension versions, signing identity, device provisioning and patched media-library marker were verified. The owner reported that the initial iPhone Jellyfin build worked well, then reported cast navigation and slow More Like This loading. The follow-up signed iPhone build includes those fixes, combined Home rows and the four-profile limit. Twenty-five native-profile restoration checks passed. Settings and account isolation were checked in source and the harness; full on-device settings coverage, saved-account switching, native Apple TV user switching and tvOS compilation remain outstanding.
+
+For an iOS Debug test launch, `VIVID_SHOW_SERVER_SETUP=1` opens the provider chooser before account restoration. This launch-only switch does not sign out saved accounts or reset Keychain/iCloud data. Ordinary launches retain their existing behaviour.

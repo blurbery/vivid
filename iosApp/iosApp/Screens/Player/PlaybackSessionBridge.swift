@@ -710,14 +710,24 @@ actor PlaybackSessionBridge {
     // MARK: - Start Session
 
     private var embyPlayback: EmbyPlayback?
+    private var jellyfinPlayback: JellyfinPlayback?
 
     func reportNativePlaybackStarted(_ prepared: PreparedPlayback) async {
+        if let playback = jellyfinPlayback, playback.playSessionID == prepared.session.sessionId {
+            try? await playback.ping()
+            return
+        }
         guard let playback = embyPlayback, playback.playSessionID == prepared.session.sessionId else { return }
         try? await playback.ping()
     }
 
     func embyStreamRequest(sessionID: String) async -> StreamRequest? {
         guard let playback = embyPlayback, playback.playSessionID == sessionID else { return nil }
+        do { try await playback.connection.validate(); return playback.stream } catch { return nil }
+    }
+
+    func jellyfinStreamRequest(sessionID: String) async -> StreamRequest? {
+        guard let playback = jellyfinPlayback, playback.playSessionID == sessionID else { return nil }
         do { try await playback.connection.validate(); return playback.stream } catch { return nil }
     }
 
@@ -736,13 +746,21 @@ actor PlaybackSessionBridge {
     ) async throws -> PreparedPlayback {
         logger.info("Fetching watch detail for \(contentId, privacy: .public)")
         let embyMetadata: EmbyPlayback.Metadata?
+        let jellyfinMetadata: JellyfinPlayback.Metadata?
         let watchDetail: WatchDetail
-        if MediaServerProvider.active == .emby {
+        if MediaServerProvider.active == .jellyfin {
+            let metadata = try await JellyfinPlayback.loadMetadata(contentID: contentId)
+            jellyfinMetadata = metadata
+            embyMetadata = nil
+            watchDetail = metadata.detail
+        } else if MediaServerProvider.active == .emby {
+            jellyfinMetadata = nil
             let metadata = try await EmbyPlayback.loadMetadata(contentID: contentId)
             embyMetadata = metadata
             watchDetail = metadata.detail
         } else {
             embyMetadata = nil
+            jellyfinMetadata = nil
             watchDetail = try await VividAPI.shared.get("/api/v1/watch/\(contentId)")
         }
         logger.info("Got \(watchDetail.versions.count) versions, type=\(watchDetail.type, privacy: .public)")
@@ -873,6 +891,15 @@ actor PlaybackSessionBridge {
                 message: "Select a profile before starting playback.",
                 retryable: false
             )
+        }
+        if let jellyfinMetadata {
+            let (prepared, playback) = try await JellyfinPlayback.prepare(metadata: jellyfinMetadata, detail: watchDetail, version: selectedVersion,
+                start: effectiveStartPosition ?? 0, audioOrdinal: resolvedAudioTrackIndex,
+                subtitleIndex: subtitleIntent.ffmpegStreamIndex, bitrateKbps: bandwidthCapKbps,
+                quality: resolvedQualityPreference)
+            jellyfinPlayback = playback
+            adoptSession(prepared.session)
+            return prepared
         }
         if let embyMetadata {
             let (prepared, playback) = try await EmbyPlayback.prepare(metadata: embyMetadata, detail: watchDetail, version: selectedVersion,
@@ -1908,7 +1935,7 @@ actor PlaybackSessionBridge {
 
     @discardableResult
     func refreshPlaybackAuthentication(sessionId expectedSession: String, position: Double, isPaused: Bool) async throws {
-        guard sessionId == expectedSession, embyPlayback == nil,
+        guard sessionId == expectedSession, embyPlayback == nil, jellyfinPlayback == nil,
               position.isFinite, position >= 0 else { throw CancellationError() }
         let result = await reportProgress(position: position, isPaused: isPaused, eligible: position > 0)
         guard result == .success || result == .deferred else { throw URLError(.cannotConnectToHost) }
@@ -1918,10 +1945,22 @@ actor PlaybackSessionBridge {
     func reportProgress(position: Double, isPaused: Bool, eligible: Bool, completedContentId: String? = nil) async -> PlaybackProgressReportResult {
         guard let sid = sessionId, position.isFinite, position >= 0 else { return .transientFailure }
         let playback = embyPlayback
+        let jellyfin = jellyfinPlayback
         let eligible = eligible || completedContentId != nil
         let prior = progressWriteTail
         let write = Task { [self] in
             _ = await prior?.value
+            if let playback = jellyfin {
+                guard eligible else {
+                    do { try await playback.ping(); return PlaybackProgressReportResult.deferred }
+                    catch { return .transientFailure }
+                }
+                do {
+                    try await playback.report(position: position, isPaused: isPaused)
+                    return await writeJellyfinCompletion(after: .success, contentId: completedContentId, playback: playback)
+                }
+                catch { return .transientFailure }
+            }
             if let playback {
                 guard eligible else {
                     do { try await playback.ping(); return PlaybackProgressReportResult.deferred }
@@ -1957,6 +1996,32 @@ actor PlaybackSessionBridge {
                 if (item["UserData"] as? [String: Any])?["Played"] as? Bool != true {
                     _ = try await connection.request("POST",
                         "/Users/\(EmbyConnection.id(userID))/PlayedItems/\(EmbyConnection.id(contentId))")
+                }
+                await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: connection.identity)
+            } else {
+                try await VividAPI.shared.setWatched(contentId: contentId, played: true)
+            }
+            return result
+        } catch {
+            logger.warning("Watched completion write failed: \(MediaLogRedactor.sanitize(error), privacy: .public)")
+            return result == .missingSession ? .missingSession : .transientFailure
+        }
+    }
+
+    private func writeJellyfinCompletion(after result: PlaybackProgressReportResult,
+                                 contentId: String?, playback: JellyfinPlayback?) async -> PlaybackProgressReportResult {
+        guard let contentId else { return result }
+        do {
+            if let playback {
+                let connection = await playback.connection
+                guard connection.userID != nil else { return .transientFailure }
+                let item = try await connection.object("GET",
+                    "/Items/\(JellyfinConnection.id(contentId))")
+                // Jellyfin's played action can update play counts. Reassert only
+                // when the preceding position/Stop write left it unwatched.
+                if (item["UserData"] as? [String: Any])?["Played"] as? Bool != true {
+                    _ = try await connection.request("POST",
+                        "/UserPlayedItems/\(JellyfinConnection.id(contentId))")
                 }
                 await MDBListSyncStore.shared.completedWatch(contentID: contentId, expected: connection.identity)
             } else {
@@ -2064,6 +2129,22 @@ actor PlaybackSessionBridge {
         guard let sid = sessionId else { return .transientFailure }
         let pendingProgress = progressWriteTail
         let eligible = eligible || completedContentId != nil
+        if let playback = jellyfinPlayback {
+            jellyfinPlayback = nil
+            sessionId = nil
+            currentSession = nil
+            do {
+                _ = await pendingProgress?.value
+                if !eligible {
+                    try await playback.stopWithoutProgress()
+                    return .deferred
+                }
+                try await playback.report(position: position, isPaused: isPaused, stopping: true)
+                return await writeJellyfinCompletion(after: .success, contentId: completedContentId, playback: playback)
+            } catch {
+                return .transientFailure
+            }
+        }
         if let playback = embyPlayback {
             embyPlayback = nil
             sessionId = nil

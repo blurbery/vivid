@@ -116,7 +116,7 @@ final class TVHomeMetadataCache {
         if ResponseCache.shared.get(CacheKey.homeSections, as: SectionsResponse.self) == nil,
            !snapshot.rows.isEmpty || snapshot.spotlightUpdatedAt != nil {
             var sections = snapshot.rows.map(\.section)
-            for slide in snapshot.spotlight where MediaServerProvider.active != .emby && !sections.contains(where: { $0.id == slide.rowID }) {
+            for slide in snapshot.spotlight where !MediaServerProvider.active.usesNativeUser && !sections.contains(where: { $0.id == slide.rowID }) {
                 let items = snapshot.spotlight.filter { $0.rowID == slide.rowID }.map(\.item)
                 sections.append(ResolvedSection(
                     id: slide.rowID, sectionType: "spotlight", title: slide.rowTitle,
@@ -326,7 +326,7 @@ final class TVHomeMetadataCache {
     /// Keep that metadata in the same persistent cache as the slide itself.
     static func detailContentIDs(for item: SectionItem) -> [String] {
         #if os(iOS)
-        if MediaServerProvider.active == .emby, item.type == "episode",
+        if MediaServerProvider.active.usesNativeUser, item.type == "episode",
            let seriesID = item.seriesId, seriesID != item.contentId {
             return [item.contentId, seriesID]
         }
@@ -335,7 +335,7 @@ final class TVHomeMetadataCache {
     }
 
     func spotlightMetadata(for item: SectionItem) -> ItemDetail? {
-        guard MediaServerProvider.active == .emby,
+        guard MediaServerProvider.active.usesNativeUser,
               let id = Self.detailContentIDs(for: item).last else { return nil }
         return snapshot.details[id]
     }

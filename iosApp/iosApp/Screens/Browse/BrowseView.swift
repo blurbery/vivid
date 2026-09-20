@@ -199,7 +199,7 @@ struct BrowseView: View {
                 }
             }
             Divider()
-            if MediaServerProvider.active != .emby {
+            if !MediaServerProvider.active.usesNativeUser {
             Toggle("Match all filters", isOn: Binding(
                 get: { viewModel.filterState.matchAll },
                 set: { value in

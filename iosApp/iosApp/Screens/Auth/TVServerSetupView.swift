@@ -92,7 +92,7 @@ struct TVServerSetupView: View {
                 fieldLabel("Server address")
                 AuroraInputField(
                     text: $viewModel.host,
-                    placeholder: provider == .emby ? "emby.example.com" : "silo.example.com",
+                    placeholder: provider.serverPlaceholder,
                     focus: $focusedField,
                     equals: .host,
                     contentType: .URL,

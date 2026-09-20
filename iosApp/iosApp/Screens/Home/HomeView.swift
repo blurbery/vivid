@@ -417,7 +417,7 @@ struct HomeView: View {
     // MARK: - Navigation
 
     private func navigateToDetail(_ destinationContentId: String, _ item: SectionItem) {
-        if MediaServerProvider.active == .emby, item.type == "collection" {
+        if MediaServerProvider.active.usesNativeUser, item.type == "collection" {
             router.navigate(to:.libraryCollection(libraryId:0,collectionId:item.contentId,title:item.title,kind:.regular))
             return
         }
@@ -632,7 +632,7 @@ private struct PhoneSpotlightArtworkSurface: View {
                 thumbhash: thumbhash,
                 height: artworkHeight,
                 isEnabled: true,
-                usesSubjectFraming: MediaServerProvider.active == .emby,
+                usesSubjectFraming: MediaServerProvider.active.usesNativeUser,
                 coordinateSpaceName: "phone-home-spotlight-scroll",
                 fadeStart: fadeStart,
                 fadeMiddle: 0.84,

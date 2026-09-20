@@ -300,7 +300,7 @@ struct DownloadOptionsSheet: View {
             if formats.count > 1 {
                 Text("Lower bitrates use less storage. The server prepares the file before download starts. This choice applies only to this download.")
             } else {
-                Text(MediaServerProvider.active == .emby
+                Text(MediaServerProvider.active == .jellyfin ? "Jellyfin downloads keep the original file and source quality." : MediaServerProvider.active == .emby
                      ? "Smaller downloads need Emby's conversion service and permission for this account. Original keeps the source quality."
                      : "Smaller downloads appear when your server allows download transcoding.")
             }
@@ -310,7 +310,7 @@ struct DownloadOptionsSheet: View {
     private func qualityDetail(for format: DownloadFormat) -> String {
         switch format {
         case .original:
-            return MediaServerProvider.active == .emby ? "Keep the original file" : "Source quality, with compatibility fallback if needed"
+            return MediaServerProvider.active.usesNativeUser ? "Keep the original file" : "Source quality, with compatibility fallback if needed"
         case .twentyMbps, .tenMbps, .fiveMbps, .twoMbps, .oneMbps:
             return "Reduce the bitrate for a smaller offline file"
         }

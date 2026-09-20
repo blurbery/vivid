@@ -771,6 +771,17 @@ struct ContentView: View {
     /// TokenStore only needs to be retargeted to that active server before the
     /// first authenticated request lazily loads the full token cache.
     private func checkInitialState() async {
+        #if DEBUG && os(iOS)
+        if ProcessInfo.processInfo.environment["VIVID_SHOW_SERVER_SETUP"] == "1" {
+            // Device testing can open the provider chooser without signing out
+            // saved accounts or changing their Keychain/iCloud records.
+            router.path = NavigationPath()
+            pendingInitialAuthState = .needsServerSetup
+            LaunchTimeline.recordInitialStateResolved(state: AppRouter.AuthState.needsServerSetup.diagnosticsState)
+            finishInitialStartupIfReady()
+            return
+        }
+        #endif
         #if os(iOS) || os(tvOS)
         #if DEBUG
         let shouldSyncCloudAccounts = ProcessInfo.processInfo.environment["VIVID_RESTART_SETUP"] != "1"

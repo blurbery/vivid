@@ -19,20 +19,20 @@ Vivid owns its interface, browsing behaviour and playback experience. Each media
   <tbody>
     <tr><td>Silo</td><td>Implemented in the current client</td></tr>
     <tr><td>Emby</td><td>Available on iPhone, iPad and Apple TV; documented feature limits apply</td></tr>
-    <tr><td>Jellyfin</td><td>Planned; no native connection implementation yet</td></tr>
+    <tr><td>Jellyfin</td><td>Native core implemented; Apple platform integration verification pending</td></tr>
   </tbody>
 </table>
 
 > [!NOTE]
-> Silo and Emby are available; see the [Emby core](cores/emby.md) for implemented behaviour and verification gaps. Jellyfin remains planned. Keep each provider’s requests and credentials separate.
+> Silo and Emby are available; see the [Emby core](cores/emby.md) for implemented behaviour and verification gaps. Jellyfin has its own [native core](cores/jellyfin.md), with Apple platform verification pending. Keep each provider’s requests and credentials separate.
 
 ## Saved accounts on Apple TV, iPhone and iPad
 
-A fresh iPhone/iPad installation attempts a private iCloud vault restore, falling through to local setup when no usable session is restored. A fresh Apple TV opens the provider selector directly. On iPhone, iPad and Apple TV, Restore from iCloud below the provider cards lets you check for saved accounts manually, retry or go back to server setup. The selector uses Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin remains Coming Soon.
+A fresh iPhone/iPad installation attempts a private iCloud vault restore, falling through to local setup when no usable session is restored. A fresh Apple TV opens the provider selector directly. On iPhone, iPad and Apple TV, Restore from iCloud below the provider cards lets you check for saved accounts manually, retry or go back to server setup. The selector uses Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin opens the same form with its own native authentication.
 
 The first-run marker belongs to the installation. Removing the app removes its sandbox, preferences, caches and downloads. Keychain can outlive an uninstall, so the next clean Vivid installation clears Vivid’s local Keychain audience before it restores anything from iCloud. An ordinary app update keeps the existing Keychain data. This cleanup is limited to Vivid’s storage identity.
 
-Settings lists circular saved-account cards and Add Profile. Here, a **profile card is a saved server account**, identified by server and user; it is distinct from a Silo viewing profile within that account. Add Profile signs in another Silo or Emby account. A ring highlights the signed-in account on both mobile and Apple TV. Selecting an inactive saved account switches sessions, while selecting the active card opens its account settings.
+Settings lists circular saved-account cards and Add Profile. Here, a **profile card is a saved server account**, identified by server and user; it is distinct from a Silo viewing profile within that account. Add Profile signs in another Silo, Emby or Jellyfin account. The iPhone/iPad Who’s watching screen keeps one or two accounts and Add Profile on the original horizontal row. With three or more accounts it uses the fitted layout: three saved accounts across, with Add Profile centred underneath; four saved accounts use two rows of two. A ring highlights the signed-in account on both mobile and Apple TV. Selecting an inactive saved account switches sessions, while selecting the active card opens its account settings.
 
 On Apple TV, native tvOS users retain separate server lists, login credentials and saved-account selections. Returning to a configured native user restores their selected local saved session before startup routing, without requiring iCloud. New native users still start setup. Migration only adopts legacy shared server entries referenced by that user's saved accounts or active server; it does not import another native user's credentials. Top Shelf reads the current native user's credentials too.
 
@@ -54,7 +54,7 @@ Vivid uses server-provided account pictures with initials as a fallback. The leg
 
 First sign-in uses the Vivid startup animation while Home is prepared, with “Getting ready”, “Almost done” and “Welcome to Vivid” shown for at least three seconds each. Adding or re-authenticating a saved account from the selector or Settings also keeps the startup presentation visible until Home and libraries are ready, with a retry screen if preparation fails. Normal cached startup does not repeat those setup messages. The saved-account selector uses a black background, a centred silver V and “Who’s watching?”.
 
-Manage Servers and Add Profile share the registered server list. Selecting or adding a Silo connection through either flow keeps it available to the other. Silo and Emby can be added on mobile and Apple TV; Jellyfin remains planned. Setup and sign-in use black backgrounds and the shared Vivid footer. Apple TV opens the same username/password form for Silo and Emby, without starting QR pairing.
+Manage Servers and Add Profile share the registered server list. Selecting or adding a Silo connection through either flow keeps it available to the other. Silo and Emby can be added on mobile and Apple TV; Jellyfin has its own [native core](cores/jellyfin.md), with Apple platform verification pending. Setup and sign-in use black backgrounds and the shared Vivid footer. Apple TV opens the same username/password form for all three providers, without starting QR pairing.
 
 An account can have an optional four-digit Vivid PIN. Its salted digest is kept in Keychain, with a thirty-second delay after five incorrect attempts. PIN-protected cards remain locked if their PIN record cannot be read. This local account lock is separate from the server's viewing-profile PIN and must not bypass its verification proof.
 
@@ -78,7 +78,7 @@ The implementation lives in <a href="../iosApp/iosApp/tvOS/Profiles/TVSavedAccou
 
 ### Restore and troubleshooting
 
-Use the same Apple iCloud account and the matching saved server account and viewing profile on each device. On Apple TV, check the **current Apple TV user**, not only the App Store account or default user. Vivid uses that user's private CloudKit database. The three-card limit when manually adding saved accounts on iPhone/iPad is not a device limit; it cannot block a fourth device from syncing. Apple TV does not impose that three-card limit.
+Use the same Apple iCloud account and the matching saved server account and viewing profile on each device. On Apple TV, check the **current Apple TV user**, not only the App Store account or default user. Vivid uses that user's private CloudKit database. The four-card limit when manually adding saved accounts on iPhone/iPad is not a device limit; it cannot block a fourth device from syncing. Apple TV does not impose that four-card limit.
 
 Development and Production CloudKit databases are separate. TestFlight uses Production; a development installation can use Development even with the same Apple account. Deploying a schema makes its record types available in Production but does not copy Development records. Correct signed entitlements alone do not prove that the Production schema or saved records exist. The [12 September Production restore record](release/versioning.md#production-icloud-restoration) documents the schema repair and confirmed Apple TV restoration.
 
@@ -102,7 +102,7 @@ The API key stays in Keychain and syncs through the encrypted private iCloud acc
 
 MDBList watched-history import and its local watched-status overlay are removed. Watched indicators and resume positions come from the media server. Existing local import records are discarded without changing either service's history. Sync now sends pending completed watches and checks watchlists only.
 
-Silo and Emby are the implemented providers; Jellyfin remains planned. The owner reported testing the preceding plugin build on iPhone and Apple TV. Follow-up fixes in [PR #8](https://github.com/blurbery/vivid/pull/8) passed targeted checks, signed device builds and remote iOS tests/tvOS build checks; those follow-up builds were not installed. This does not establish every live account, quota, subtitle or cross-device scenario.
+Silo and Emby are the implemented providers; Jellyfin has its own [native core](cores/jellyfin.md), with Apple platform verification pending. The owner reported testing the preceding plugin build on iPhone and Apple TV. Follow-up fixes in [PR #8](https://github.com/blurbery/vivid/pull/8) passed targeted checks, signed device builds and remote iOS tests/tvOS build checks; those follow-up builds were not installed. This does not establish every live account, quota, subtitle or cross-device scenario.
 
 ## Optional Seerr requests on Apple TV, iPhone and iPad
 

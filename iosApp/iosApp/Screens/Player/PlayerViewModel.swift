@@ -6070,6 +6070,9 @@ class PlayerViewModel {
         allowsAuthorizedMediaOrigins: Bool = false,
         nativeApiMajor: Int? = nil
     ) async -> StreamRequest? {
+        if MediaServerProvider.active == .jellyfin, !session.streamUrl.hasPrefix("file://") {
+            return await sessionBridge.jellyfinStreamRequest(sessionID: session.sessionId)
+        }
         if MediaServerProvider.active == .emby, !session.streamUrl.hasPrefix("file://") {
             return await sessionBridge.embyStreamRequest(sessionID: session.sessionId)
         }

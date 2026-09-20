@@ -37,6 +37,7 @@ final class HomeSectionPreferences {
     /// Home data refreshes—so Home can reset its row band and marquee once.
     private(set) var layoutRevision = 0
     private(set) var combineEmbyNextUp = false
+    private(set) var combineJellyfinNextUp = false
 
     @ObservationIgnored private let defaults: SharedDefaults
     @ObservationIgnored private let storageKey: @MainActor () -> String?
@@ -46,6 +47,7 @@ final class HomeSectionPreferences {
         var orderedSectionIds: [String]
         var hiddenSectionIds: Set<String>
         var combineEmbyNextUp: Bool? = nil
+        var combineJellyfinNextUp: Bool? = nil
     }
 
     init(
@@ -69,6 +71,7 @@ final class HomeSectionPreferences {
               let data = defaults.data(forKey: key),
               let stored = try? JSONDecoder().decode(StoredLayout.self, from: data) else {
             combineEmbyNextUp = false
+            combineJellyfinNextUp = false
             orderedSectionIds = []
             hiddenSectionIds = []
             layoutRevision &+= 1
@@ -76,6 +79,7 @@ final class HomeSectionPreferences {
         }
 
         combineEmbyNextUp = stored.combineEmbyNextUp ?? false
+        combineJellyfinNextUp = stored.combineJellyfinNextUp ?? false
         orderedSectionIds = Self.unique(stored.orderedSectionIds)
         hiddenSectionIds = stored.hiddenSectionIds
         layoutRevision &+= 1
@@ -126,7 +130,7 @@ final class HomeSectionPreferences {
         _ sections: [ResolvedSection],
         includingHidden: Bool = false
     ) -> [ResolvedSection] {
-        let projected = Self.combinedSections(sections, enabled: combineEmbyNextUp, provider: MediaServerProvider.active)
+        let projected = Self.combinedSections(sections, enabled: MediaServerProvider.active == .jellyfin ? combineJellyfinNextUp : combineEmbyNextUp, provider: MediaServerProvider.active)
         let nonEmpty = projected.filter {
             (includingHidden || !$0.items.isEmpty) && (MediaServerProvider.active != .emby || !EmbyAdapter.excludesHomeRow(id:$0.id,type:$0.sectionType,title:$0.title))
         }
@@ -171,6 +175,19 @@ final class HomeSectionPreferences {
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
     }
 
+    func setCombineJellyfinNextUp(_ enabled: Bool) {
+        guard MediaServerProvider.active == .jellyfin else { return }
+        refresh()
+        guard combineJellyfinNextUp != enabled else { return }
+        combineJellyfinNextUp = enabled
+        #if os(tvOS)
+        enforceVisibleRowLimit(in: knownSections)
+        #endif
+        layoutRevision &+= 1
+        persist()
+        NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
+    }
+
     static func hiddenSections(server: String, profile: String) -> Set<String> {
         let key = "\(platformStoragePrefix).\(server).\(profile)"
         guard let data = SharedDefaults.shared.data(forKey: key),
@@ -188,7 +205,7 @@ final class HomeSectionPreferences {
     nonisolated static func combinedSections(
         _ sections: [ResolvedSection], enabled: Bool, provider: MediaServerProvider
     ) -> [ResolvedSection] {
-        guard enabled, provider == .emby else { return sections }
+        guard enabled, provider == .emby || provider == .jellyfin else { return sections }
         let resume = sections.filter { $0.sectionType == "continue_watching" }
         let next = sections.filter { $0.sectionType == "next_up" }
         guard let anchor = resume.first ?? next.first else { return sections }
@@ -212,7 +229,8 @@ final class HomeSectionPreferences {
         let stored = StoredLayout(
             orderedSectionIds: orderedSectionIds,
             hiddenSectionIds: hiddenSectionIds,
-            combineEmbyNextUp: combineEmbyNextUp
+            combineEmbyNextUp: combineEmbyNextUp,
+            combineJellyfinNextUp: combineJellyfinNextUp
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
         defaults.set(data, forKey: key)

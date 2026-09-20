@@ -92,9 +92,9 @@ struct HomeFeedRow: View {
                                     * homeCards.presentation.posterSize.scale,
                                 showsCaption: homeCards.presentation.caption.showsTitle,
                                 showsMetadata: homeCards.presentation.caption.showsMetadata,
-                                showsEpisodeDetails: MediaServerProvider.active == .emby
+                                showsEpisodeDetails: MediaServerProvider.active.usesNativeUser
                                     && section.sectionType.lowercased().contains("next"),
-                                opensResumeContext: isResume || (MediaServerProvider.active == .emby && section.sectionType.lowercased().contains("next")),
+                                opensResumeContext: isResume || (MediaServerProvider.active.usesNativeUser && section.sectionType.lowercased().contains("next")),
                                 onRemoveFromContinueWatching: removalAction(for: item),
                                 onSetWatched: watchedAction(for: item)
                             )
@@ -105,7 +105,7 @@ struct HomeFeedRow: View {
                                 showsCaption: homeCards.presentation.caption.showsTitle,
                                 showsMetadata: homeCards.presentation.caption.showsMetadata,
                                 showsProgress: isResume,
-                                opensResumeContext: isResume || (MediaServerProvider.active == .emby && section.sectionType.lowercased().contains("next")),
+                                opensResumeContext: isResume || (MediaServerProvider.active.usesNativeUser && section.sectionType.lowercased().contains("next")),
                                 episodeAccessibilityLabel: episodeAccessibilityLabel(for: item),
                                 onRemoveFromContinueWatching: removalAction(for: item),
                                 onSetWatched: watchedAction(for: item)

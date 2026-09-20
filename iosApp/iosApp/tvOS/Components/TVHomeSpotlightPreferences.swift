@@ -29,12 +29,56 @@ final class TVHomeSpotlightPreferences {
         }.map { Array(NSOrderedSet(array: $0).array.compactMap { $0 as? String }.prefix(3)) }
     }
 
+    /// Spotlight uses the same combined row choice as Home, independently
+    /// of Home visibility and its visible-row cap.
+    func sourceSections(from sections: [ResolvedSection]) -> [ResolvedSection] {
+        let home = HomeSectionPreferences.shared
+        home.refresh()
+        let provider = MediaServerProvider.active
+        let enabled = provider == .jellyfin ? home.combineJellyfinNextUp : home.combineEmbyNextUp
+        return Self.projectedSources(sections, combined: enabled, provider: provider)
+    }
+
+    nonisolated static func projectedSources(_ sections: [ResolvedSection], combined: Bool,
+                                             provider: MediaServerProvider) -> [ResolvedSection] {
+        let projected = HomeSectionPreferences.combinedSections(sections, enabled: combined, provider: provider)
+        guard combined, provider.usesNativeUser else { return projected }
+        let rows = sections.filter { $0.sectionType == "continue_watching" }
+            + sections.filter { $0.sectionType == "next_up" }
+        var seen = Set<String>()
+        var items: [SectionItem] = []
+        // Include both sources within Spotlight's ten-slide budget instead of
+        // allowing a full resume row to crowd out every next-up episode.
+        for index in 0..<(rows.map { $0.items.count }.max() ?? 0) {
+            for row in rows where row.items.indices.contains(index) {
+                let item = row.items[index]
+                if seen.insert(item.contentId).inserted { items.append(item) }
+            }
+        }
+        return projected.map { row in
+            guard row.sectionType == "continue_watching" else { return row }
+            return ResolvedSection(id: row.id, sectionType: row.sectionType, title: row.title,
+                featured: row.featured, itemLimit: row.itemLimit, totalCount: items.count,
+                isCustom: row.isCustom, customized: row.customized, items: items)
+        }
+    }
+
     func initializeIfNeeded(from sections: [ResolvedSection]) {
         refresh()
-        let candidates = sections.filter { !$0.items.isEmpty }
+        let sources = sourceSections(from: sections)
+        let candidates = sources.filter { !$0.items.isEmpty }
+        if let selectedRowIDs, sections.contains(where: { $0.sectionType == "next_up" }),
+           !sources.contains(where: { $0.sectionType == "next_up" }),
+           let combined = sources.first(where: { $0.sectionType == "continue_watching" }) {
+            let mergedIDs = Set(sections.filter { $0.sectionType == "continue_watching" || $0.sectionType == "next_up" }.map(\.id))
+            var seen = Set<String>()
+            let normalized = selectedRowIDs.map { mergedIDs.contains($0) ? combined.id : $0 }
+                .filter { seen.insert($0).inserted }
+            if normalized != selectedRowIDs { save(normalized) }
+        }
         guard !candidates.isEmpty, storageKey != nil else { return }
         if let selectedRowIDs, !selectedRowIDs.isEmpty {
-            let available = Set(sections.map(\.id))
+            let available = Set(sources.map(\.id))
             if selectedRowIDs.allSatisfy({ !available.contains($0) }) {
                 save(Array(candidates.prefix(3).map(\.id)))
                 return
@@ -60,8 +104,16 @@ final class TVHomeSpotlightPreferences {
     }
 
     func slides(from sections: [ResolvedSection]) -> [TVHomeSpotlightSlide] {
-        let ids = selectedRowIDs ?? Array(sections.prefix(3).map(\.id))
-        let sources = ids.compactMap { id in sections.first { $0.id == id } }
+        let projected = sourceSections(from: sections)
+        let ids = selectedRowIDs ?? Array(projected.prefix(3).map(\.id))
+        let sources = ids.compactMap { id -> ResolvedSection? in
+            if let row = projected.first(where: { $0.id == id }) { return row }
+            if sections.contains(where: { $0.id == id && $0.sectionType == "next_up" }),
+               !projected.contains(where: { $0.sectionType == "next_up" }) {
+                return projected.first { $0.sectionType == "continue_watching" }
+            }
+            return nil
+        }
         var slides: [TVHomeSpotlightSlide] = []
         var seen = Set<String>()
         let longestRow = sources.map { $0.items.count }.max() ?? 0

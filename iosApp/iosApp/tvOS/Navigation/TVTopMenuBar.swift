@@ -31,7 +31,7 @@ enum TVLibraryTabType: String, CaseIterable, Hashable {
         switch self {
         case .movies:
             return library.type == "movies" || library.isMixedLibrary
-                || (MediaServerProvider.active == .emby && library.type == "movie")
+                || (MediaServerProvider.active.usesNativeUser && library.type == "movie")
         case .series: return library.isSeriesLibrary || library.isMixedLibrary
         }
     }

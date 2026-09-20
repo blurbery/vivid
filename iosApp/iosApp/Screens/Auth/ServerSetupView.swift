@@ -33,7 +33,7 @@ struct ServerSetupView: View {
                 AuroraTextField(
                     label: "Server address",
                     text: $viewModel.host,
-                    placeholder: provider == .emby ? "emby.example.com" : "silo.example.com",
+                    placeholder: provider.serverPlaceholder,
                     focus: $focusedField,
                     equals: .host,
                     contentType: .url,
@@ -145,7 +145,11 @@ struct PhoneProviderSelectionView: View {
                 } label: {
                     providerCard("Emby", image: "EmbyLogo", available: true)
                 }.buttonStyle(.plain)
-                providerCard("Jellyfin", image: "JellyfinLogo", available: false)
+                NavigationLink {
+                    ServerSetupView(router: router, provider: .jellyfin)
+                } label: {
+                    providerCard("Jellyfin", image: "JellyfinLogo", available: true)
+                }
                 Button(action: onRestore) {
                     Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
                 }

@@ -214,6 +214,12 @@ enum DownloadAuthHeaders {
         request.httpMethod = "GET"
         request.allowsCellularAccess = allowsCellular
 
+        if MediaServerProvider.forServerID(auth.account.serverId) == .jellyfin {
+            let connection = JellyfinConnection(serverURL: auth.account.serverURL, token: auth.accessToken,
+                                            userID: nil, identity: auth)
+            connection.headers.forEach { request.setValue($0.value,forHTTPHeaderField:$0.key) }
+            return request
+        }
         if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
             let connection = EmbyConnection(serverURL: auth.account.serverURL, token: auth.accessToken,
                                             userID: nil, identity: auth)

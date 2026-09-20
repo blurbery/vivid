@@ -142,7 +142,7 @@ struct SectionRow: View {
             showProgress: showProgress,
             icon: showsHeadingIcon && isContinueWatching ? "play.circle.fill" : nil,
             layout: layout,
-            showsEpisodeDetails: MediaServerProvider.active == .emby
+            showsEpisodeDetails: MediaServerProvider.active.usesNativeUser
                 && section.sectionType.lowercased().contains("next"),
             prefersDefaultFocusOnFirstItem: prefersDefaultFocusOnFirstItem,
             defaultFocusPriority: defaultFocusPriority,

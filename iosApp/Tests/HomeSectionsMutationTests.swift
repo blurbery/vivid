@@ -17,6 +17,21 @@ final class HomeSectionsMutationTests: XCTestCase {
         XCTAssertEqual(preferences.arrangedSections(rows, includingHidden: true).map(\.id), ["hidden"])
     }
 
+    func testCombinedSpotlightIncludesBothSourcesWithoutChangingHomeOrder() throws {
+        let resumeItems = try (0..<12).map { try makeItem(contentId: "resume-\($0)") }
+        let nextItems = try (0..<12).map { try makeItem(contentId: "next-\($0)") }
+        let rows = [makeSection(id: "resume", type: "continue_watching", totalCount: 12, items: resumeItems),
+                    makeSection(id: "next", type: "next_up", totalCount: 12, items: nextItems)]
+        for provider in [MediaServerProvider.jellyfin, .emby] {
+            let projected = TVHomeSpotlightPreferences.projectedSources(rows, combined: true, provider: provider)
+            XCTAssertEqual(projected.map(\.id), ["resume"])
+            XCTAssertEqual(Array(projected[0].items.prefix(4).map(\.contentId)), ["resume-0", "next-0", "resume-1", "next-1"])
+            XCTAssertEqual(HomeSectionPreferences.combinedSections(rows, enabled: true, provider: provider)[0].items[1].contentId, "resume-1")
+            XCTAssertEqual(TVHomeSpotlightPreferences.projectedSources(rows, combined: false, provider: provider), rows)
+        }
+        XCTAssertEqual(TVHomeSpotlightPreferences.projectedSources(rows, combined: true, provider: .silo), rows)
+    }
+
     func testCombinedEmbyHomeKeepsResumeMetadataAndRemovesDuplicateNextUp() throws {
         let resume = try makeItem(contentId: "episode", progressUpdatedAt: "resume-state")
         let duplicate = try makeItem(contentId: "episode", progressUpdatedAt: nil)
@@ -26,6 +41,22 @@ final class HomeSectionsMutationTests: XCTestCase {
             makeSection(id: "next", type: "next_up", totalCount: 2, items: [duplicate, next])
         ]
         let result = HomeSectionPreferences.combinedSections(sections, enabled: true, provider: .emby)
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].id, "resume")
+        XCTAssertEqual(result[0].title, "Continue Watching")
+        XCTAssertEqual(result[0].items.map(\.contentId), ["episode", "next"])
+        XCTAssertEqual(result[0].items[0].progressUpdatedAt, "resume-state")
+    }
+
+    func testCombinedJellyfinHomeKeepsResumeMetadataAndRemovesDuplicateNextUp() throws {
+        let resume = try makeItem(contentId: "episode", progressUpdatedAt: "resume-state")
+        let duplicate = try makeItem(contentId: "episode", progressUpdatedAt: nil)
+        let next = try makeItem(contentId: "next", progressUpdatedAt: nil)
+        let sections = [
+            makeSection(id: "resume", type: "continue_watching", totalCount: 1, items: [resume]),
+            makeSection(id: "next", type: "next_up", totalCount: 2, items: [duplicate, next])
+        ]
+        let result = HomeSectionPreferences.combinedSections(sections, enabled: true, provider: .jellyfin)
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(result[0].id, "resume")
         XCTAssertEqual(result[0].title, "Continue Watching")
@@ -47,7 +78,7 @@ final class HomeSectionsMutationTests: XCTestCase {
     func testCombinedHomeDoesNotChangeSiloOrDisabledEmby() throws {
         let sections = [makeSection(id: "next", type: "next_up", totalCount: 1,
                                     items: [try makeItem(contentId: "episode")])]
-        for (enabled, provider) in [(true, MediaServerProvider.silo), (false, .emby)] {
+        for (enabled, provider) in [(true, MediaServerProvider.silo), (false, .emby), (false, .jellyfin)] {
             let result = HomeSectionPreferences.combinedSections(sections, enabled: enabled, provider: provider)
             XCTAssertEqual(result[0].sectionType, "next_up")
             XCTAssertEqual(result[0].title, "next")

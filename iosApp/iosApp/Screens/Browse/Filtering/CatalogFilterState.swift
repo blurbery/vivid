@@ -80,7 +80,7 @@ enum CatalogFacet: String, CaseIterable, Codable, Hashable {
     /// Facets offered for a library media type, in display order. Sections
     /// whose option list resolves empty are hidden by the UI.
     static func available(for mediaType: BrowseMediaType) -> [CatalogFacet] {
-        if MediaServerProvider.active == .emby {
+        if MediaServerProvider.active.usesNativeUser {
             let common: [CatalogFacet] = [.genre, .decade, .watchStatus, .contentRating]
             return mediaType == .mixed ? [.itemType] + common : common
         }
@@ -146,7 +146,7 @@ struct CatalogFilterState: Equatable, Codable, Hashable {
     static let none = CatalogFilterState()
 
     func normalised(for provider: MediaServerProvider) -> Self {
-        guard provider == .emby else { return self }
+        guard provider.usesNativeUser else { return self }
         var state = self
         state.matchAll = true
         state.studios = []

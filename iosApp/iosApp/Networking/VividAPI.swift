@@ -56,7 +56,7 @@ actor VividAPI {
             // Gate only the artwork request, never launch/profile navigation.
             // Concurrent startup prefetches join one probe, and older or
             // unreachable servers fall back to an empty query.
-            if MediaServerProvider.active == .emby { return [:] }
+            if MediaServerProvider.active.usesNativeUser { return [:] }
             await ImageSizeCapability.shared.refresh()
             return ImageSizeCapability.shared.requestQuery
         }
@@ -799,6 +799,11 @@ actor VividAPI {
     /// commit profile ID and proof together behind HTTPClient's transition
     /// barrier.
     func verifyProfileSelection(profileId: String, pin: String?) async throws -> String? {
+        if MediaServerProvider.active == .jellyfin {
+            let connection = try await JellyfinConnection.current()
+            guard profileId == connection.userID else { throw JellyfinError.signInRequired }
+            return nil
+        }
         if MediaServerProvider.active == .emby {
             let connection = try await EmbyConnection.current()
             guard profileId == connection.userID else { throw EmbyError.signInRequired }

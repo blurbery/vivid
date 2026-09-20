@@ -25,7 +25,7 @@ struct FilterView: View {
             List {
                 quickSection
                 categoriesSection
-                if MediaServerProvider.active != .emby { matchSection }
+                if !MediaServerProvider.active.usesNativeUser { matchSection }
                 preserveSection
             }
             .listStyle(.plain)
