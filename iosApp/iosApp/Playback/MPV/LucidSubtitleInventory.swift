@@ -77,7 +77,9 @@ final class LucidSubtitleInventory {
             guard prepared.selectedVersion.fileId == context.fileID,
                   self.key(context.contentID, context.fileID) == key else { throw OpenSubtitlesError.context }
             let request: StreamRequest?
-            if MediaServerProvider.active == .emby {
+            if MediaServerProvider.active == .jellyfin {
+                request = await bridge.jellyfinStreamRequest(sessionID: prepared.session.sessionId)
+            } else if MediaServerProvider.active == .emby {
                 request = await bridge.embyStreamRequest(sessionID: prepared.session.sessionId)
             } else {
                 request = await StreamRequest.resolve(rawURL: prepared.session.streamUrl,

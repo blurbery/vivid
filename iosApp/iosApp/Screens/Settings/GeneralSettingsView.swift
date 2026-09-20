@@ -32,6 +32,12 @@ struct GeneralSettingsView: View {
                         set: { homeSections.setCombineEmbyNextUp($0) }
                     ))
                 }
+                if MediaServerProvider.forServerID(registry.activeServerId) == .jellyfin {
+                    Toggle("Combine Next Up with Continue Watching", isOn: Binding(
+                        get: { homeSections.combineJellyfinNextUp },
+                        set: { homeSections.setCombineJellyfinNextUp($0) }
+                    ))
+                }
             } header: { PhoneSettingsSectionHeader("Home Screen") }
             Section {
                 Picker("Poster Size", selection: Binding(get: { homeCards.presentation.posterSize }, set: { homeCards.setPosterSize($0) })) {
@@ -170,7 +176,7 @@ struct PhoneSpotlightSettingsView: View {
         List {
             SettingsPageHeader(title: "Home Screen", subtitle: "Choose up to three rows for your discovery spotlight.", systemImage: "rectangle.3.group").settingsPageHeaderRow()
             Section {
-                ForEach(sections) { section in
+                ForEach(preferences.sourceSections(from: sections)) { section in
                     Button { preferences.toggle(section.id) } label: {
                         HStack {
                             Text(section.title)

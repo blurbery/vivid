@@ -5,7 +5,7 @@
 
 ---
 
-Vivid is the shared player core. It owns the playback experience used by every server core: the interface, controls, playback state and common player features. Silo and Emby supply server connections and translate their data into the inputs Vivid needs. Jellyfin is planned.
+Vivid is the shared player core. It owns the playback experience used by every server core: the interface, controls, playback state and common player features. Silo, Emby and Jellyfin supply separate server connections and translate their data into the inputs Vivid needs. Each provider owns its authentication and wire contracts.
 
 These cores describe responsibility boundaries. They are not a claim that the current source has already been split into separate Swift packages or that every server connection is implemented.
 

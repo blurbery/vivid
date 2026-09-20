@@ -37,6 +37,22 @@ final class TVLibrarySimilarityStore {
             try checkContext(context)
         }
         guard source.type == "movie" || VividMediaType.isSeries(source.type) else { return [] }
+        if MediaServerProvider.active == .jellyfin {
+            let connection = try await JellyfinConnection.current()
+            let sourceID = try JellyfinConnection.id(source.contentId)
+            let catalog = try await JellyfinAdapter(connection: connection).items(
+                "/Items/\(sourceID)/Similar", query: ["Limit": "12", "Fields": "Overview,Genres,Studios,ProviderIds,PrimaryImageAspectRatio"]
+            )
+            let response: CatalogResponse = try JellyfinAdapter.decode(catalog)
+            try checkContext(context)
+            var seen = Set<String>()
+            let result = response.items.filter {
+                $0.contentId != source.contentId && seen.insert($0.contentId).inserted
+            }.prefix(10).map { SimilarPosterItem(item: $0) }
+            if cache.count >= 40 { cache.removeAll() }
+            cache[key] = (Date(), result)
+            return result
+        }
         #if os(tvOS)
         if MediaServerProvider.active == .emby {
             let connection = try await EmbyConnection.current()

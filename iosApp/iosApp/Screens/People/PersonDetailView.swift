@@ -166,6 +166,7 @@ final class PersonDetailViewModel {
     #endif
 
     private func scheduleMetadataRefreshIfNeeded(for person: Person?) {
+        guard MediaServerProvider.active != .jellyfin else { return }
         guard let person else { return }
         guard person.isMetadataIncomplete else {
             metadataRefreshTask?.cancel()

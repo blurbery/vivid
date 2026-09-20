@@ -18,6 +18,8 @@ Vivid's Apple TV Home uses a discovery spotlight above ordinary media rows on a 
 
 - Moving Up from the first row to the eagerly mounted spotlight uses native directional focus and scrolling, without a forced focus handoff or manual scroll animation. Explicit focus requests remain for tab-bar entry and detail returns. While a spotlight exists, the first row does not keep a high-priority default-focus preference. Remembered horizontal card selections do not invalidate the whole Home feed. The owner reported smoother navigation after the native `.card` conversion and accepted the resulting Home behaviour on Living Room.
 
+Home applies the shared six-section limit to Jellyfin as well as the other providers. Emby and Jellyfin each offer their own Combine Continue Watching and Next Up option. When enabled, Spotlight’s Continue Watching choice includes both sources, interleaved within the ten-item limit; the Home row retains resume ordering and removes duplicate Next Up items.
+
 ## Device metadata cache
 
 Settings → Metadata lists Spotlight and the enabled Home rows, including Continue Watching. Each entry has a separate clear-cache button. Only enabled Home rows are retained, capped at twenty items per row; the spotlight is capped at ten. Disabling a row or receiving refreshed content removes obsolete entries and artwork references.

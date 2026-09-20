@@ -15,7 +15,7 @@ class LoginViewModel {
             error = "Please enter your username."
             return
         }
-        guard !password.isEmpty || MediaServerProvider.active == .emby else {
+        guard !password.isEmpty || MediaServerProvider.active.usesNativeUser else {
             error = "Please enter your password."
             return
         }

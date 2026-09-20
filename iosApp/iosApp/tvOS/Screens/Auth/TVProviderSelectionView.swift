@@ -57,7 +57,14 @@ struct TVProviderSelectionView: View {
                     .buttonStyle(.card)
                     .focused($focusedProvider, equals: .emby)
                     .accessibilityHint("Connect to your Emby server")
-                    comingSoonCard(.jellyfin, width: cardWidth)
+                    NavigationLink {
+                        TVServerSetupView(router: router, provider: .jellyfin)
+                    } label: {
+                        providerCard(.jellyfin, width: cardWidth)
+                    }
+                    .buttonStyle(.card)
+                    .focused($focusedProvider, equals: .jellyfin)
+                    .accessibilityHint("Connect to your Jellyfin server")
                 }
             }
             .overlay(alignment: .bottom) {
@@ -83,15 +90,6 @@ struct TVProviderSelectionView: View {
         .ignoresSafeArea()
     }
 
-    private func comingSoonCard(_ provider: Provider, width: CGFloat) -> some View {
-        Button {} label: {
-            providerCard(provider, width: width)
-        }
-        .buttonStyle(.card)
-        .focused($focusedProvider, equals: provider)
-        .accessibilityHint("\(provider.rawValue) support is coming soon")
-    }
-
     private func providerCard(
         _ provider: Provider,
         width: CGFloat
@@ -103,11 +101,6 @@ struct TVProviderSelectionView: View {
                 .frame(width: width * 0.58, height: 100)
                 .accessibilityLabel(provider.rawValue)
 
-            if provider == .jellyfin {
-                Text("Coming soon")
-                    .font(.system(size: 24))
-                    .foregroundStyle(.white.opacity(0.65))
-            }
         }
         .frame(width: width, height: width / VividTheme.backdropAspectRatio)
         .background(

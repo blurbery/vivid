@@ -195,7 +195,7 @@ struct TVSavedAccountCards: View {
         }
     }
     private func serverLabel(for account: TVSavedAccount) -> String {
-        if MediaServerProvider.forServerID(account.serverID) == .emby { return "Emby" }
+        if MediaServerProvider.forServerID(account.serverID).usesNativeUser { return MediaServerProvider.forServerID(account.serverID).name }
         return registry.entry(with: account.serverID)?.displayName ?? "Media server"
     }
 
@@ -278,7 +278,7 @@ struct TVSavedAccountEditor: View {
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
     private var selectedProvider: MediaServerProvider {
         account.map { MediaServerProvider.forServerID($0.serverID) }
-            ?? (provider == "Emby" ? .emby : .silo)
+            ?? (MediaServerProvider(rawValue: provider.lowercased()) ?? .silo)
     }
     private var isActive: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
 
@@ -315,7 +315,7 @@ struct TVSavedAccountEditor: View {
                             } label: {
                                 HStack {
                                     TVSettingsRowLabel(title: option,
-                                        detail: option == "Jellyfin" ? "Coming soon" : nil)
+                                        detail: nil)
                                     Spacer()
                                     if provider == option { Image(systemName: "checkmark") }
                                 }
@@ -323,7 +323,7 @@ struct TVSavedAccountEditor: View {
                             .buttonStyle(TVSettingsPaneRowStyle())
                         }
                     }
-                    if provider != "Jellyfin", registry.sortedEntries.contains(where: { MediaServerProvider.forServerID($0.id) == selectedProvider }) {
+                    if registry.sortedEntries.contains(where: { MediaServerProvider.forServerID($0.id) == selectedProvider }) {
                         TVSettingsSectionHeader("SAVED SERVERS")
                         TVSettingsGroup {
                             ForEach(registry.sortedEntries.filter { MediaServerProvider.forServerID($0.id) == selectedProvider }) { entry in
@@ -344,7 +344,7 @@ struct TVSavedAccountEditor: View {
                         }
                     }
                 }
-                if account != nil || provider != "Jellyfin" {
+                Group {
                 TVSettingsSectionHeader("ACCOUNT")
                 TVSettingsGroup {
                     if account == nil {
@@ -363,7 +363,6 @@ struct TVSavedAccountEditor: View {
                     }
                     Button {
                         Task {
-                            guard account != nil || provider != "Jellyfin" else { return }
                             _ = await store.authenticate(id: accountID, serverURL: serverURL,
                                 username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password, router: router, provider: selectedProvider)
                             password = ""
@@ -373,13 +372,11 @@ struct TVSavedAccountEditor: View {
                                            detail: "Validate and save this account’s login on the Apple TV.")
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
-                    .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (password.isEmpty && selectedProvider != .emby))
+                    .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (password.isEmpty && !selectedProvider.usesNativeUser))
                 }
                 if account == nil {
                     TVSettingsFooter("Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile.")
                 }
-                } else {
-                    TVSettingsFooter("\(provider) connections are coming soon.")
                 }
                 if isActive, let account {
                     TVSettingsSectionHeader("ACCOUNT PIN")

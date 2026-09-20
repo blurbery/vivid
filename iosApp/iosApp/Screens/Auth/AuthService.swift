@@ -69,6 +69,16 @@ final class AuthService: @unchecked Sendable {
     /// succeeds. If both optional identity probes fail, the display name
     /// falls back to the URL.
     func checkServer(url: String, provider: MediaServerProvider = .silo) async throws -> SetupStatus {
+        if provider == .jellyfin {
+            let normalized = ServerRegistry.normalize(url: url)
+            let name = try await JellyfinConnection.probe(serverURL: normalized)
+            try Task.checkCancellation()
+            let id = "jellyfin:" + ServerRegistry.serverId(for: normalized)
+            let entry = ServerEntry(id: id, url: normalized, fetchedName: name, lastUsedAt: Date())
+            guard serverRegistry.addOrUpdate(entry) != nil,
+                  await serverRegistry.switchTo(serverId: id) else { throw ServerRegistryError.persistenceFailed }
+            return SetupStatus(needsSetup: false)
+        }
         if provider == .emby {
             let normalized = ServerRegistry.normalize(url: url)
             let name = try await EmbyConnection.probe(serverURL: normalized)
@@ -134,6 +144,16 @@ final class AuthService: @unchecked Sendable {
     func login(username: String, password: String) async throws {
         guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
             throw HTTPError.serverUrlNotConfigured
+        }
+        if MediaServerProvider.forServerID(expectedAccount.serverId) == .jellyfin {
+            let login = try await JellyfinConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)
+            try await installSession(accessToken: login.token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: login.userID, cacheAccountID: String(JellyfinAdapter.numberID(login.userID)))
+            #if os(tvOS) || os(iOS)
+            await VividCloudAccountSync.shared.noteExplicitAuthentication(
+                serverID: expectedAccount.serverId, userID: String(JellyfinAdapter.numberID(login.userID))
+            )
+            #endif
+            return
         }
         if MediaServerProvider.forServerID(expectedAccount.serverId) == .emby {
             let login = try await EmbyConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)

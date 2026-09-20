@@ -11,7 +11,7 @@ struct TVHomeScreenSettingsView: View {
 
     private var selected: [String] { preferences.selectedRowIDs ?? [] }
     private var missingRowIDs: [String] {
-        selected.filter { id in !sections.contains { $0.id == id } }
+        selected.filter { id in !preferences.sourceSections(from: sections).contains { $0.id == id } }
     }
 
     var body: some View {
@@ -33,7 +33,7 @@ struct TVHomeScreenSettingsView: View {
                     Button("Try Again") { Task { await loadSections() } }
                 } else {
                     TVSettingsGroup {
-                        ForEach(sections) { section in
+                        ForEach(preferences.sourceSections(from: sections)) { section in
                             row(id: section.id, title: section.title)
                         }
                         ForEach(missingRowIDs, id: \.self) { id in

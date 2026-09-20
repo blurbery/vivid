@@ -124,6 +124,9 @@ extension VividAPI {
     /// subtitle). `path` is an API-relative path taken from the manifest
     /// (`artwork_urls.*` / `subtitles[].fetch_url`).
     func fetchDownloadAssetData(path: String, auth: CapturedOrdinaryRequestAuth) async throws -> Data {
+        if MediaServerProvider.forServerID(auth.account.serverId) == .jellyfin {
+            return try await JellyfinConnection.current(matching: auth).assetData(path)
+        }
         if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
             return try await EmbyConnection.current(matching: auth).assetData(path)
         }
@@ -137,6 +140,10 @@ extension VividAPI {
     /// Build the absolute file-endpoint URL for a download, resolved
     /// against the captured account origin. Used by the background downloader.
     func downloadFileURL(downloadId: String, auth: CapturedOrdinaryRequestAuth) async -> URL? {
+        if MediaServerProvider.forServerID(auth.account.serverId) == .jellyfin {
+            guard let connection = try? await JellyfinConnection.current(matching: auth) else { return nil }
+            return try? await JellyfinDownloads.shared.fileURL(id:downloadId,connection:connection)
+        }
         if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
             guard let connection = try? await EmbyConnection.current(matching: auth) else { return nil }
             return try? await EmbyDownloads.shared.fileURL(id:downloadId,connection:connection)

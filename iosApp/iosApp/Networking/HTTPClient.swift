@@ -390,6 +390,17 @@ actor HTTPClient {
         timeout: HTTPTimeout = .standard,
         requestIdentity: HTTPRequestIdentity? = nil
     ) async throws -> HTTPRawResponse {
+        if let requestIdentity, MediaServerProvider.forServerID(requestIdentity.serverId) == .jellyfin {
+            _ = try captureRequestDispatchRevision()
+            let auth = try await tokenStore.captureRequestAuth(expected: requestIdentity)
+            let connection = try await JellyfinConnection.current()
+            guard connection.identity?.account == auth.account,
+                  connection.identity?.profileId == auth.profileId else { throw HTTPError.requestIdentityChanged }
+            let value = try body.map { try JSONSerialization.jsonObject(with: $0) }
+            let result = try await JellyfinAdapter(connection: connection).route(method: method, path: path, query: query, body: value)
+            try await connection.validate()
+            return HTTPRawResponse(data:try JSONSerialization.data(withJSONObject:result,options:[.fragmentsAllowed]),statusCode:200,headers:[:])
+        }
         if let requestIdentity, MediaServerProvider.forServerID(requestIdentity.serverId) == .emby {
             _ = try captureRequestDispatchRevision()
             let auth = try await tokenStore.captureRequestAuth(expected: requestIdentity)
@@ -950,6 +961,19 @@ actor HTTPClient {
             throw HTTPError.serverUrlNotConfigured
         }
 
+        if MediaServerProvider.forServerID(capturedAuth?.account.serverId) == .jellyfin {
+            let connection = try await JellyfinConnection.current()
+            guard connection.identity == capturedAuth else { throw HTTPError.requestIdentityChanged }
+            if let explicitProfile = additionalHeaders.first(where: { $0.key.lowercased() == "x-profile-id" })?.value,
+               explicitProfile != connection.identity?.profileId { throw HTTPError.requestIdentityChanged }
+            let outgoing = try makeRequest(serverUrl)
+            let query = Dictionary((URLComponents(url: outgoing.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { _, last in last })
+            let body = try outgoing.httpBody.map { try JSONSerialization.jsonObject(with: $0) }
+            let result = try await JellyfinAdapter(connection: connection).route(method: method, path: path, query: query, body: body)
+            try await connection.validate()
+            let data = try JSONSerialization.data(withJSONObject: result, options: [.fragmentsAllowed])
+            return (data, HTTPURLResponse(url: outgoing.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
         if MediaServerProvider.forServerID(capturedAuth?.account.serverId) == .emby {
             let connection = try await EmbyConnection.current()
             guard connection.identity == capturedAuth else { throw HTTPError.requestIdentityChanged }

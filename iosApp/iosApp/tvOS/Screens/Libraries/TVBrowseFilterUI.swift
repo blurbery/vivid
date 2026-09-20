@@ -77,7 +77,7 @@ struct TVBrowseControlRow: View {
                     Button(isLoadingFacets ? "Loading filters…" : "Reload filter options", action: onLoadFacets)
                         .disabled(isLoadingFacets)
                 }
-                if MediaServerProvider.active != .emby {
+                if !MediaServerProvider.active.usesNativeUser {
                 Section("Match") {
                     Toggle("Match all selected filters", isOn: Binding(
                         get: { filter.matchAll },

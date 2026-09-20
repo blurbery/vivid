@@ -87,8 +87,8 @@ class ServerSetupViewModel {
             candidates.append(try makeURL(scheme: scheme, host: parsed.host, port: explicitPort, path: parsed.path))
         }
 
-        if selectedScheme == .auto, (provider != .emby || parsed.schemeOverride == nil), explicitPort == nil {
-            candidates.append(try makeURL(scheme: "http", host: parsed.host, port: provider == .emby ? "8096" : "8090", path: parsed.path))
+        if selectedScheme == .auto, (!provider.usesNativeUser || parsed.schemeOverride == nil), explicitPort == nil {
+            candidates.append(try makeURL(scheme: "http", host: parsed.host, port: provider.usesNativeUser ? "8096" : "8090", path: parsed.path))
         }
 
         return unique(candidates)

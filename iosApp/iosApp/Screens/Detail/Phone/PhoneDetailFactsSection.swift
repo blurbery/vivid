@@ -239,7 +239,7 @@ struct DetailMediaSection: View {
 
     private func bitrate(_ value: Int?, useMbps: Bool = false) -> String? {
         guard let value, value > 0 else { return nil }
-        let kbps = MediaServerProvider.active == .emby ? Double(value) / 1_000 : Double(value)
+        let kbps = MediaServerProvider.active.usesNativeUser ? Double(value) / 1_000 : Double(value)
         return useMbps || kbps >= 1_000
             ? String(format: "%.2f Mbps", kbps / 1_000)
             : String(format: "%.0f kbps", kbps)

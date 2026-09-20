@@ -82,9 +82,9 @@ Before conveying any new GPL-covered binary, including through TestFlight:
 
 The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList history and watchlists, OpenSubtitles and both timestamp services. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory.
 
-Use `admin@vividapp.co` for feedback. A starting beta description is:
+Use `admin@vividapp.co` for feedback. For an uploaded build containing the Jellyfin integration, a starting beta description is:
 
-> I’m building Vivid for watching your own media on iPhone, iPad and Apple TV. Connect to Silo or Emby, browse your library and continue watching across your server accounts. Playback includes subtitles and chapters from your media and optional intro, recap and credits skips. Jellyfin is planned.
+> I’m building Vivid for watching your own media on iPhone, iPad and Apple TV. Connect to Silo, Emby or Jellyfin, browse your library and continue watching across your server accounts. Playback includes subtitles and chapters from your media and optional intro, recap and credits skips.
 
 For What to Test, use the [paired bullet-block format](versioning.md#testflight-note-format), with each change followed by its own indented testing line and a blank line before the next change. Describe only changes present in that build and verify the saved line breaks in App Store Connect.
 

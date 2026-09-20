@@ -16,6 +16,7 @@ struct PhoneEpisodeRail: View {
     @State private var uiCustomization = UICustomizationPreferences.shared
     @State private var visibleEpisodeId: String?
     @State private var scrollIsIdle = true
+    @State private var jellyfinUserScroll = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var cardWidth: CGFloat {
@@ -84,6 +85,13 @@ struct PhoneEpisodeRail: View {
         }
         .onScrollPhaseChange { _, newPhase in
             scrollIsIdle = newPhase == .idle
+            if MediaServerProvider.active == .jellyfin {
+                // Initial layout and programmatic resume positioning must not
+                // select the first visible card over the requested episode.
+                if newPhase == .interacting { jellyfinUserScroll = true }
+                guard newPhase == .idle, jellyfinUserScroll else { return }
+                jellyfinUserScroll = false
+            }
             guard selectsCenteredEpisode,
                   newPhase == .idle,
                   let visibleEpisodeId,
