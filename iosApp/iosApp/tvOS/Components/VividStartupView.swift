@@ -1,6 +1,6 @@
 #if os(tvOS) || os(iOS)
 import SwiftUI
-import MetalKit
+import UIKit
 
 struct VividStartupView: View {
     let isContentReady: Bool
@@ -8,31 +8,15 @@ struct VividStartupView: View {
     let onCompletion: () -> Void
     @State private var animationFinished = false
     @State private var completed = false
-    @State private var renderingUnavailable = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             GeometryReader { geometry in
                 let canvasSize = min(geometry.size.width, geometry.size.height, 720)
-                Group {
-                    if renderingUnavailable {
-                        VividLogoView(size: canvasSize / 1.5)
-                    } else {
-                        VividStarCanvas(
-                            reduceMotion: reduceMotion,
-                            isActive: scenePhase == .active,
-                            onCompletion: { animationFinished = true },
-                            onUnavailable: {
-                                renderingUnavailable = true
-                                animationFinished = true
-                            }
-                        )
-                        .aspectRatio(1, contentMode: .fit)
-                        .frame(width: canvasSize, height: canvasSize)
-                    }
+                VividGlideLogo(size: canvasSize / 1.5) {
+                    animationFinished = true
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -64,167 +48,67 @@ struct VividStartupView: View {
     }
 }
 
-private struct VividStarCanvas: UIViewRepresentable {
-    let reduceMotion: Bool
-    let isActive: Bool
-    let onCompletion: () -> Void
-    let onUnavailable: () -> Void
+struct VividGlideLogo: View {
+    let size: CGFloat
+    var onCompletion: () -> Void = {}
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var arrived = false
+    @State private var finished = false
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    private static let hasPieces = UIImage(named: "VividMarkLeft") != nil
+        && UIImage(named: "VividMarkRight") != nil
 
-    func makeUIView(context: Context) -> MTKView {
-        let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
-        view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        view.backgroundColor = .black
-        view.isOpaque = true
-        view.colorPixelFormat = .bgra8Unorm
-        view.preferredFramesPerSecond = 30
-        view.isUserInteractionEnabled = false
-        guard let renderer = VividStarRenderer(view: view, onCompletion: onCompletion) else {
-            view.isPaused = true
-            DispatchQueue.main.async(execute: onUnavailable)
-            return view
-        }
-        context.coordinator.renderer = renderer
-        view.delegate = renderer
-        renderer.update(view: view, reduceMotion: reduceMotion, isActive: isActive)
-        return view
-    }
-
-    func updateUIView(_ view: MTKView, context: Context) {
-        context.coordinator.renderer?.update(view: view, reduceMotion: reduceMotion, isActive: isActive)
-    }
-
-    static func dismantleUIView(_ view: MTKView, coordinator: Coordinator) {
-        view.isPaused = true
-        view.delegate = nil
-        coordinator.renderer = nil
-    }
-
-    final class Coordinator {
-        var renderer: VividStarRenderer?
-    }
-}
-
-private final class VividStarRenderer: NSObject, MTKViewDelegate {
-    private struct Star {
-        let homeScatter: SIMD4<Float>
-        let angle: SIMD4<Float>
-    }
-    private struct Uniforms {
-        var assembly: Float
-        var pixels: Float
-    }
-
-    private let queue: MTLCommandQueue
-    private let markPipeline: MTLRenderPipelineState
-    private let starPipeline: MTLRenderPipelineState
-    private let texture: MTLTexture
-    private let stars: MTLBuffer
-    private let starCount: Int
-    private let onCompletion: () -> Void
-    private var elapsed: Double = 0
-    private var previousTime: CFTimeInterval?
-    private var finished = false
-    private var reduceMotion = false
-
-    init?(view: MTKView, onCompletion: @escaping () -> Void) {
-        guard let device = view.device,
-              let queue = device.makeCommandQueue(),
-              let sourceURL = Bundle.main.url(forResource: "VividStarAnimation.metal", withExtension: "txt"),
-              let source = try? String(contentsOf: sourceURL, encoding: .utf8),
-              let library = try? device.makeLibrary(source: source, options: nil),
-              let image = UIImage(named: "VividMarkSource")?.cgImage,
-              let texture = try? MTKTextureLoader(device: device).newTexture(
-                cgImage: image, options: [.SRGB: false, .origin: MTKTextureLoader.Origin.topLeft]
-              ) else { return nil }
-
-        func pipeline(vertex: String, fragment: String, blending: Bool) -> MTLRenderPipelineState? {
-            let descriptor = MTLRenderPipelineDescriptor()
-            descriptor.vertexFunction = library.makeFunction(name: vertex)
-            descriptor.fragmentFunction = library.makeFunction(name: fragment)
-            descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
-            descriptor.colorAttachments[0].isBlendingEnabled = blending
-            descriptor.colorAttachments[0].sourceRGBBlendFactor = .one
-            descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
-            descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-            descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
-            return try? device.makeRenderPipelineState(descriptor: descriptor)
-        }
-        guard let markPipeline = pipeline(vertex: "vividMarkVertex", fragment: "vividMarkFragment", blending: false),
-              let starPipeline = pipeline(vertex: "vividStarVertex", fragment: "vividStarFragment", blending: true),
-              let pixels = CGContext(
-                data: nil, width: 96, height: 96, bitsPerComponent: 8, bytesPerRow: 96 * 4,
-                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ) else { return nil }
-        pixels.interpolationQuality = .high
-        pixels.draw(image, in: CGRect(x: 0, y: 0, width: 96, height: 96))
-        guard let rgba = pixels.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
-        var particles: [Star] = []
-        for y in stride(from: 0, to: 96, by: 2) {
-            for x in 0..<96 where rgba[(y * 96 + x) * 4 + 3] >= 180 {
-                let seed = Double(x * 197 + y * 9277)
-                func random(_ n: Double) -> Float {
-                    let value = sin(seed + n * 71.7) * 43758.5453
-                    return Float(value - floor(value))
-                }
-                particles.append(Star(
-                    homeScatter: SIMD4((Float(x) + 0.5) / 48 - 1, 1 - (Float(y) + 0.5) / 48,
-                                       0.18 + random(1) * 0.62, 0.2 + random(2) * 0.8),
-                    angle: SIMD4(random(3) * .pi * 2, 0, 0, 0)
-                ))
+    var body: some View {
+        ZStack {
+            if finished || reduceMotion || !Self.hasPieces {
+                VividLogoView(size: size)
+            } else {
+                piece("VividMarkLeft", direction: -1, delay: 0)
+                piece("VividMarkRight", direction: 1, delay: 0.144)
             }
         }
-        guard !particles.isEmpty,
-              let stars = device.makeBuffer(bytes: particles, length: particles.count * MemoryLayout<Star>.stride) else { return nil }
-        self.queue = queue
-        self.markPipeline = markPipeline
-        self.starPipeline = starPipeline
-        self.texture = texture
-        self.stars = stars
-        self.starCount = particles.count
-        self.onCompletion = onCompletion
-        super.init()
+        .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Vivid")
+        .task(id: scenePhase) {
+            guard !finished, scenePhase == .active else { return }
+            guard !reduceMotion, Self.hasPieces else {
+                finish()
+                return
+            }
+            arrived = true
+            do {
+                try await Task.sleep(for: .seconds(1.344))
+            } catch { return }
+            guard !Task.isCancelled else { return }
+            finish()
+        }
+        .onChange(of: reduceMotion) { _, reduced in
+            if reduced { finish() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Finish in place when interrupted, without replaying on return.
+            if phase != .active && arrived { finish() }
+        }
     }
 
-    func update(view: MTKView, reduceMotion: Bool, isActive: Bool) {
-        self.reduceMotion = reduceMotion
-        if !isActive { previousTime = nil }
-        view.isPaused = finished || !isActive
+    private func piece(_ name: String, direction: CGFloat, delay: Double) -> some View {
+        Image(name)
+            .renderingMode(.original)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .offset(x: arrived ? 0 : direction * size * 30 / 346,
+                    y: arrived ? 0 : -size * 20 / 346)
+            .opacity(arrived ? 1 : 0)
+            .animation(.timingCurve(0.22, 0.75, 0.18, 1, duration: 1.2).delay(delay), value: arrived)
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
-
-    func draw(in view: MTKView) {
-        guard !finished,
-              let drawable = view.currentDrawable,
-              let pass = view.currentRenderPassDescriptor,
-              let command = queue.makeCommandBuffer(),
-              let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return }
-        let now = CACurrentMediaTime()
-        if let previousTime { elapsed += min(max(now - previousTime, 0), 0.05) }
-        previousTime = now
-        let progress = reduceMotion ? 1 : min(elapsed / 2.35, 1)
-        var uniforms = Uniforms(assembly: Float(progress * progress * (3 - 2 * progress)), pixels: Float(view.drawableSize.width))
-        encoder.setRenderPipelineState(markPipeline)
-        encoder.setFragmentTexture(texture, index: 0)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        if uniforms.assembly < 0.999 {
-            encoder.setRenderPipelineState(starPipeline)
-            encoder.setVertexBuffer(stars, offset: 0, index: 0)
-            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
-            encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: starCount)
-        }
-        encoder.endEncoding()
-        command.present(drawable)
-        if progress >= 1 {
-            finished = true
-            view.isPaused = true
-            let completion = onCompletion
-            command.addCompletedHandler { _ in DispatchQueue.main.async(execute: completion) }
-        }
-        command.commit()
+    private func finish() {
+        guard !finished else { return }
+        finished = true
+        onCompletion()
     }
 }
 #endif

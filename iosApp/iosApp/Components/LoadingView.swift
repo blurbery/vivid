@@ -14,7 +14,11 @@ struct LoadingView: View {
             }
 
             VStack(spacing: 20) {
+                #if os(iOS) || os(tvOS)
+                VividGlideLogo(size: 132)
+                #else
                 VividMarkView(width: 132)
+                #endif
 
                 ProgressView()
                     .tint(.vividOnSurface)
