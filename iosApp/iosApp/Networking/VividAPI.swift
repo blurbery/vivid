@@ -509,10 +509,14 @@ actor VividAPI {
         )
     }
 
-    func episodes(seriesId: String, seasonNumber: Int) async throws -> EpisodesResponse {
-        try await http.get(
+    func episodes(seriesId: String, seasonNumber: Int, jellyfinResumeEpisodeId: String? = nil) async throws -> EpisodesResponse {
+        var query = await imageSizeQuery
+        if MediaServerProvider.active == .jellyfin, let jellyfinResumeEpisodeId {
+            query["resume_episode_id"] = jellyfinResumeEpisodeId
+        }
+        return try await http.get(
             "/api/v1/catalog/series/\(seriesId)/seasons/\(seasonNumber)/episodes",
-            query: await imageSizeQuery
+            query: query
         )
     }
 

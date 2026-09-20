@@ -115,16 +115,18 @@ struct TVSavedAccountCards: View {
                         .accessibilityAction(named: "Arrange Profiles") { beginArrangement(account.id) }
                     }
                 }
-                NavigationLink(value: TVAccountRoute.editor(nil)) {
-                    VStack(spacing: 14) {
-                        Image(systemName: "plus").font(.system(size: 46, weight: .medium))
-                            .frame(width: 108, height: 108)
-                            .background(.white.opacity(0.12), in: Circle())
-                        Text("Add Profile").font(.system(size: 20, weight: .medium))
-                    }.frame(width: 142)
+                if store.canAddAccount {
+                    NavigationLink(value: TVAccountRoute.editor(nil)) {
+                        VStack(spacing: 14) {
+                            Image(systemName: "plus").font(.system(size: 46, weight: .medium))
+                                .frame(width: 108, height: 108)
+                                .background(.white.opacity(0.12), in: Circle())
+                            Text("Add Profile").font(.system(size: 20, weight: .medium))
+                        }.frame(width: 142)
+                    }
+                    .buttonStyle(TVAccountCircleStyle())
+                    .disabled(isEditingProfiles)
                 }
-                .buttonStyle(TVAccountCircleStyle())
-                .disabled(isEditingProfiles)
             }
             .padding(16)
             .frame(minWidth: viewport.size.width, alignment: isSettings ? .leading : .center)

@@ -417,6 +417,27 @@ final class ProfileLaunchPolicyTests: XCTestCase {
         ))
     }
 
+    func testTopShelfOnlyShowsTheSoleUnlockedSavedAccount() throws {
+        let account: [String: Any] = ["id": "saved", "serverID": "server", "requiresLogin": false]
+        func allowed(_ rows: [[String: Any]], active: String = "saved", server: String = "server", pin: Bool = false) throws -> Bool {
+            TopShelfProfilePolicy.allowsSavedAccountContent(
+                accountsData: try JSONSerialization.data(withJSONObject: rows),
+                activeAccountID: active, serverID: server, hasStoredPIN: { _ in pin })
+        }
+        XCTAssertTrue(try allowed([account]))
+        XCTAssertFalse(try allowed([]))
+        XCTAssertFalse(try allowed([account, account.merging(["id": "second"]) { _, value in value }]))
+        XCTAssertFalse(try allowed([account], active: "other"))
+        XCTAssertFalse(try allowed([account], server: "other"))
+        XCTAssertFalse(try allowed([account], pin: true))
+        XCTAssertFalse(try allowed([account.merging(["pinEnabled": true]) { _, value in value }]))
+        XCTAssertFalse(try allowed([account.merging(["requiresLogin": true]) { _, value in value }]))
+        for data in [nil, Data("invalid".utf8)] {
+            XCTAssertFalse(TopShelfProfilePolicy.allowsSavedAccountContent(
+                accountsData: data, activeAccountID: "saved", serverID: "server", hasStoredPIN: { _ in false }))
+        }
+    }
+
     func testTopShelfRequiresCurrentUserProofForProtectedProfile() {
         let protected = RememberedProfile(
             profileID: "profile-a",

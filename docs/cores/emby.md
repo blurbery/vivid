@@ -62,6 +62,12 @@ Initial audio selection uses Emby’s existing track metadata. Vivid prefers a c
 
 Compatible AC-3 selection and TrueHD 7.1 source playback have been verified with Emby in development builds. See the [player engine core](player-engine.md#audio-support) for supported formats and output limits. This does not guarantee every channel layout or packaged audio-switching route. Emby Direct Play describes server delivery; local FFmpeg decoding to PCM can still be used.
 
+## Apple TV Top Shelf
+
+Top Shelf loads Continue Watching and Next Up directly from this provider’s native endpoints, independently of the in-app combined-row setting. It preserves the exact episode ID and resume progress, uses the main series poster for episodes, and keeps the existing detail and direct-play actions. Credentials come from the selected native Apple TV user’s saved account; the account, native user and credential epoch are checked again before returning the response. Silo retains its existing Top Shelf request path. Personalised content requires a single signed-in, unprotected saved account and the existing viewing-profile policy. Multiple accounts show static Vivid artwork; account changes request a system refresh.
+
+Focused native Top Shelf request/mapping checks and the tvOS extension build passed. A read-only Jellyfin check returned both rows and a credential-free series poster URL returned HTTP 200. Live Emby Top Shelf responses and presentation on the Apple TV Home Screen still need device verification. These changes have not been uploaded.
+
 ## Validation
 
 The app changes published through `v0.13.0` (`2ee9005c`) include the device-tested Emby setup and account selection, episode labels, resume bars, compatible-audio selection and serialised manual audio changes. Device checks covered the iPhone compatible-audio path, Next Up labels and shared episode-card changes. Apple TV checks confirmed account switching after the initial add-account crash was addressed. That confirmation does not prove the cause of the original crash or cover every account-transition failure.

@@ -18,6 +18,7 @@ class ItemDetailViewModel {
     /// One-shot entry intent from Continue Watching; normal poster opens
     /// leave this nil and retain the existing initial-season policy.
     @ObservationIgnored var initialResumeSeasonNumber: Int?
+    @ObservationIgnored var jellyfinResumeEpisode: (contentId: String, seasonNumber: Int?)?
     #endif
     var episodes: [EpisodeListItem] = []
     /// Parent-series portrait artwork used only when an episode's season has
@@ -868,9 +869,7 @@ class ItemDetailViewModel {
         fetchSeasons: @escaping @Sendable (String) async throws -> SeasonsResponse = {
             try await MetadataRequestPool.shared.seasons(seriesId: $0)
         },
-        fetchEpisodes: @escaping @Sendable (String, Int) async throws -> EpisodesResponse = {
-            try await MetadataRequestPool.shared.episodes(seriesId: $0, seasonNumber: $1)
-        }
+        fetchEpisodes: (@Sendable (String, Int) async throws -> EpisodesResponse)? = nil
     ) async -> Bool {
         guard let seasonNumber else { return false }
         seriesContentId = contentId
@@ -880,7 +879,9 @@ class ItemDetailViewModel {
                 isLoadingEpisodes = false
             }
         }
-        async let episodeResponse = try? fetchEpisodes(contentId, seasonNumber)
+        async let episodeResponse = try? fetchEpisodePage(
+            seriesId: contentId, seasonNumber: seasonNumber, fetchEpisodes: fetchEpisodes
+        )
         let seasonResponse = try? await fetchSeasons(contentId)
         guard !Task.isCancelled,
               expectedDetailGeneration == nil || expectedDetailGeneration == detailGeneration,
@@ -1135,6 +1136,28 @@ class ItemDetailViewModel {
         )
     }
 
+    private func fetchEpisodePage(
+        seriesId: String,
+        seasonNumber: Int,
+        coalescesMetadataRequest: Bool = true,
+        fetchEpisodes: (@Sendable (String, Int) async throws -> EpisodesResponse)? = nil
+    ) async throws -> EpisodesResponse {
+        if let fetchEpisodes { return try await fetchEpisodes(seriesId, seasonNumber) }
+        #if os(iOS) || os(tvOS)
+        if MediaServerProvider.active == .jellyfin,
+           let resume = jellyfinResumeEpisode, resume.seasonNumber == seasonNumber {
+            return try await VividAPI.shared.episodes(
+                seriesId: seriesId, seasonNumber: seasonNumber,
+                jellyfinResumeEpisodeId: resume.contentId
+            )
+        }
+        #endif
+        if coalescesMetadataRequest {
+            return try await MetadataRequestPool.shared.episodes(seriesId: seriesId, seasonNumber: seasonNumber)
+        }
+        return try await VividAPI.shared.episodes(seriesId: seriesId, seasonNumber: seasonNumber)
+    }
+
     func loadEpisodes(
         seriesId: String,
         seasonNumber: Int,
@@ -1170,18 +1193,10 @@ class ItemDetailViewModel {
         }
 
         do {
-            let response: EpisodesResponse
-            if coalescesMetadataRequest {
-                response = try await MetadataRequestPool.shared.episodes(
-                    seriesId: seriesId,
-                    seasonNumber: seasonNumber
-                )
-            } else {
-                response = try await VividAPI.shared.episodes(
-                    seriesId: seriesId,
-                    seasonNumber: seasonNumber
-                )
-            }
+            let response = try await fetchEpisodePage(
+                seriesId: seriesId, seasonNumber: seasonNumber,
+                coalescesMetadataRequest: coalescesMetadataRequest
+            )
             guard generation == episodeLoadGeneration else { return }
             ResponseCache.shared.set(response, for: key)
             let sorted = response.episodes.sorted(by: { $0.episodeNumber < $1.episodeNumber })

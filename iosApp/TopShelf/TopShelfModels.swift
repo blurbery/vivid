@@ -9,6 +9,8 @@ struct TopShelfSectionsResponse: Decodable {
 
     enum CodingKeys: String, CodingKey { case sections }
 
+    init(sections: [TopShelfSection]) { self.sections = sections }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sections = try c.decodeIfPresent([TopShelfSection].self, forKey: .sections) ?? []

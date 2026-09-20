@@ -266,6 +266,18 @@ struct JellyfinAdapter {
             path: "/Items/\(imageID)/Images/\(kind)", query: ["tag": tag, "maxWidth": kind == "Backdrop" ? "1920" : "780", "quality": "90"]).absoluteString
     }
 
+    func poster(_ raw: [String: Any]) -> String? {
+        guard ["Episode", "Season"].contains(raw["Type"] as? String ?? ""),
+              let seriesID = raw["SeriesId"] as? String,
+              (try? JellyfinConnection.id(seriesID)) != nil else {
+            return image(raw, kind: "Primary")
+        }
+        var query = ["maxWidth": "780", "quality": "90"]
+        if let tag = raw["SeriesPrimaryImageTag"] as? String, !tag.isEmpty { query["tag"] = tag }
+        return try? JellyfinConnection.url(serverURL: connection.serverURL,
+            path: "/Items/\(seriesID)/Images/Primary", query: query).absoluteString
+    }
+
     func item(_ raw: [String: Any]) throws -> [String: Any] {
         guard let id = raw["Id"] as? String, let name = raw["Name"] as? String else { throw JellyfinError.invalidResponse }
         _ = try JellyfinConnection.id(id)
@@ -305,7 +317,7 @@ struct JellyfinAdapter {
             }
             return member
         }
-        value["posterUrl"] = image(raw, kind: "Primary")
+        value["posterUrl"] = poster(raw)
         value["stillUrl"] = image(raw, kind: "Primary")
         value["backdropUrl"] = image(raw, kind: "Backdrop")
         value["logoUrl"] = image(raw, kind: "Logo")
@@ -379,6 +391,39 @@ struct JellyfinAdapter {
         return ["items": converted, "total": total, "totalExact": true, "hasMore": (Int(q["StartIndex"] ?? "0") ?? 0) + converted.count < total]
     }
 
+    func episodes(seriesID: String, seasonNumber: String, resumeEpisodeID: String?) async throws -> [String: Any] {
+        async let page = connection.object("GET", "/Shows/\(JellyfinConnection.id(seriesID))/Episodes", query: [
+            "Season": seasonNumber, "UserId": userID, "EnableUserData": "true",
+            "Fields": Self.fields, "Recursive": "false", "IncludeItemTypes": "Episode",
+            "SortBy": "ParentIndexNumber,IndexNumber", "SortOrder": "Ascending"
+        ])
+        async let resume = resumeItem(resumeEpisodeID)
+        var rows = try await page["Items"] as? [[String: Any]] ?? []
+        if let selected = try await resume {
+            guard selected["Id"] as? String == resumeEpisodeID,
+                  selected["Type"] as? String == "Episode",
+                  selected["SeriesId"] as? String == seriesID,
+                  selected["ParentIndexNumber"] as? Int == Int(seasonNumber),
+                  let episodeNumber = selected["IndexNumber"] as? Int else {
+                throw JellyfinError.invalidResponse
+            }
+            if let index = rows.firstIndex(where: {
+                $0["Id"] as? String == resumeEpisodeID
+                    || $0["IndexNumber"] as? Int == episodeNumber
+            }) {
+                rows[index] = selected
+            } else {
+                rows.append(selected)
+            }
+        }
+        return ["episodes": try rows.map(item)]
+    }
+
+    private func resumeItem(_ id: String?) async throws -> [String: Any]? {
+        guard let id else { return nil }
+        return try await rawItem(id)
+    }
+
     func libraryViews() async throws -> [String: Any] {
         let result = try await connection.object("GET", "/UserViews")
         await JellyfinLibraryDirectory.shared.remember(result["Items"] as? [[String: Any]] ?? [], connection: connection)
@@ -446,7 +491,17 @@ struct JellyfinAdapter {
 
     func section(_ id: String, _ title: String, _ catalog: [String: Any], featured: Bool = false) -> [String: Any] {
         let hidden = Set(UserDefaults.standard.stringArray(forKey:storagePrefix + ".dismissals." + id) ?? [])
-        let rows = (catalog["items"] as? [[String:Any]] ?? []).filter { !hidden.contains($0["contentId"] as? String ?? "") }
+        let rows = (catalog["items"] as? [[String:Any]] ?? []).filter {
+            !hidden.contains($0["contentId"] as? String ?? "")
+        }.map { item in
+            var card = item
+            if ["continue_watching", "next_up"].contains(id),
+               item["type"] as? String == "episode",
+               let still = item["stillUrl"] as? String, !still.isEmpty {
+                card["backdropUrl"] = still
+            }
+            return card
+        }
         return ["id":id,"sectionType":id,"title":title,"featured":featured,"items":rows,"totalCount":rows.count]
     }
 
@@ -607,8 +662,7 @@ struct JellyfinAdapter {
             return ["seasons":try seasonRows(result["Items"] as? [[String:Any]] ?? [])]
         }
         if p.count == 8, p[2] == "catalog", p[3] == "series", p[7] == "episodes" {
-            let result = try await items("/Shows/\(JellyfinConnection.id(p[4]))/Episodes", query: ["Season":p[6],"Recursive":"false","IncludeItemTypes":"Episode","SortBy":"ParentIndexNumber,IndexNumber","SortOrder":"Ascending"])
-            return ["episodes": result["items"] ?? []]
+            return try await episodes(seriesID: p[4], seasonNumber: p[6], resumeEpisodeID: query["resume_episode_id"])
         }
         if p.count == 4, ["favorites", "watched"].contains(p[2]) {
             let kind = p[2] == "favorites" ? "FavoriteItems" : "PlayedItems"

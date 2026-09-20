@@ -24,6 +24,7 @@ final class ContentProvider: TVTopShelfContentProvider {
         )
 
         let http = TopShelfHTTPClient()
+        let identity = http.contentIdentity
         guard http.isPersonalizedContentAllowed else {
             defaults.set(
                 "profile-selection-required",
@@ -45,11 +46,13 @@ final class ContentProvider: TVTopShelfContentProvider {
 
         let cwItems = items(from: response, matching: Self.isContinueWatching)
         let nuItems = items(from: response, matching: Self.isNextUp)
-        let seriesPosters = await fetchSeriesPosters(
+        let seriesPosters = http.usesNativeServer ? EpisodePosters() : await fetchSeriesPosters(
             for: cwItems + nuItems,
             using: http,
             imageSizeQuery: imageSizeQuery
         )
+
+        guard http.isPersonalizedContentAllowed, http.contentIdentity == identity else { return nil }
 
         let continueWatching = collection(
             title: "Continue Watching",
