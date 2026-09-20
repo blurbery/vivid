@@ -712,6 +712,23 @@ actor PlaybackSessionBridge {
     private var embyPlayback: EmbyPlayback?
     private var jellyfinPlayback: JellyfinPlayback?
     private var jellyfinStartAttempt = UUID()
+    private var jellyfinTransitionInProgress = false
+    private var jellyfinTransitionPlayback: JellyfinPlayback?
+    private var jellyfinTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private func waitForJellyfinTransition() async {
+        while jellyfinTransitionInProgress {
+            await withCheckedContinuation { jellyfinTransitionWaiters.append($0) }
+        }
+    }
+
+    private func finishJellyfinTransition() {
+        jellyfinTransitionInProgress = false
+        jellyfinTransitionPlayback = nil
+        let waiters = jellyfinTransitionWaiters
+        jellyfinTransitionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
 
     private func validateJellyfinStart(_ attempt: UUID) throws {
         try Task.checkCancellation()
@@ -719,6 +736,7 @@ actor PlaybackSessionBridge {
     }
 
     func reportNativePlaybackStarted(_ prepared: PreparedPlayback) async {
+        if jellyfinTransitionInProgress { await waitForJellyfinTransition() }
         if let playback = jellyfinPlayback, playback.playSessionID == prepared.session.sessionId {
             try? await playback.ping()
             return
@@ -906,33 +924,39 @@ actor PlaybackSessionBridge {
                 start: effectiveStartPosition ?? 0, audioOrdinal: resolvedAudioTrackIndex,
                 subtitleIndex: subtitleIntent.ffmpegStreamIndex, bitrateKbps: bandwidthCapKbps,
                 quality: resolvedQualityPreference)
+            // PlaybackInfo does not open a stream (AutoOpenLiveStream is false).
+            // Discard unadopted candidates locally: a Jellyfin Stopped request
+            // would clear this client's current playback, not just that candidate.
             do {
                 try validateJellyfinStart(jellyfinAttempt)
-                // Keep the current session until preparation succeeds, then drain
-                // its writes. Every suspension can admit a newer start or stop.
-                let previous = jellyfinPlayback
+                await waitForJellyfinTransition()
+                try validateJellyfinStart(jellyfinAttempt)
+                jellyfinTransitionInProgress = true
+                jellyfinTransitionPlayback = jellyfinPlayback
+                defer { finishJellyfinTransition() }
+
+                // Freeze new progress captures before draining the final tail.
                 _ = await progressWriteTail?.value
                 try validateJellyfinStart(jellyfinAttempt)
+                try await jellyfinMetadata.connection.validate()
+                try validateJellyfinStart(jellyfinAttempt)
+
+                // Detach before retiring: a cancelled replacement must never
+                // leave the bridge pointing at an already stopped session.
+                let previous = jellyfinPlayback
+                jellyfinPlayback = nil
+                sessionId = nil
+                currentSession = nil
                 if let previous {
-                    let previousID = await previous.playSessionID
+                    let retirement = Task { try await previous.retireForReplacement() }
+                    do { try await retirement.value }
+                    catch { logger.warning("Jellyfin replacement stop failed: \(MediaLogRedactor.sanitize(error), privacy: .public)") }
                     try validateJellyfinStart(jellyfinAttempt)
-                    let candidateID = await playback.playSessionID
-                    try validateJellyfinStart(jellyfinAttempt)
-                    if previousID != candidateID {
-                        do { try await previous.retireForReplacement() }
-                        catch { logger.warning("Jellyfin replacement stop failed: \(MediaLogRedactor.sanitize(error), privacy: .public)") }
-                        try validateJellyfinStart(jellyfinAttempt)
-                    }
                 }
                 try await jellyfinMetadata.connection.validate()
                 try validateJellyfinStart(jellyfinAttempt)
                 jellyfinPlayback = playback
                 adoptSession(prepared.session)
-            } catch {
-                // An unstructured task does not inherit caller cancellation.
-                // Only retire this attempt's candidate, never the current one.
-                _ = await Task { try? await playback.stopWithoutProgress() }.value
-                throw error
             }
             return prepared
         }
@@ -1978,6 +2002,20 @@ actor PlaybackSessionBridge {
     }
 
     func reportProgress(position: Double, isPaused: Bool, eligible: Bool, completedContentId: String? = nil) async -> PlaybackProgressReportResult {
+        if jellyfinTransitionInProgress {
+            let expectedSession = sessionId
+            let completingPlayback = jellyfinTransitionPlayback
+            await waitForJellyfinTransition()
+            // A sample from the old stream must not become the new stream's position.
+            if expectedSession == nil || sessionId != expectedSession {
+                // A terminal watched write still belongs to the captured account/item.
+                if let completedContentId, let completingPlayback {
+                    return await writeJellyfinCompletion(after: .deferred,
+                        contentId: completedContentId, playback: completingPlayback)
+                }
+                return .deferred
+            }
+        }
         guard let sid = sessionId, position.isFinite, position >= 0 else { return .transientFailure }
         let playback = embyPlayback
         let jellyfin = jellyfinPlayback
@@ -2161,11 +2199,19 @@ actor PlaybackSessionBridge {
         completedContentId: String? = nil,
         finalProgressAlreadyReported: Bool = false
     ) async -> PlaybackProgressReportResult {
-        jellyfinStartAttempt = UUID()
+        let stopAttempt = UUID()
+        jellyfinStartAttempt = stopAttempt
+        if jellyfinTransitionInProgress {
+            await waitForJellyfinTransition()
+            guard jellyfinStartAttempt == stopAttempt else { return .deferred }
+        }
         guard let sid = sessionId else { return .transientFailure }
         let pendingProgress = progressWriteTail
         let eligible = eligible || completedContentId != nil
         if let playback = jellyfinPlayback {
+            jellyfinTransitionInProgress = true
+            jellyfinTransitionPlayback = playback
+            defer { finishJellyfinTransition() }
             jellyfinPlayback = nil
             sessionId = nil
             currentSession = nil

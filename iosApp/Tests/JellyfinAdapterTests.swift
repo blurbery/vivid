@@ -312,7 +312,8 @@ final class JellyfinAdapterTests: XCTestCase {
         let adapter = adapter { request in
             requests.append(request)
             if request.url!.path.hasSuffix("/PlaybackInfo") {
-                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String:Any])
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+                XCTAssertEqual(body["AutoOpenLiveStream"] as? Bool, false, "Negotiation must not allocate an open stream")
                 XCTAssertEqual(body["UserId"] as? String, self.user)
                 XCTAssertEqual(body["MediaSourceId"] as? String, self.source)
                 XCTAssertEqual(body["AudioStreamIndex"] as? Int, 2)
