@@ -298,6 +298,8 @@ private struct ItemDetailPhoneContent: View {
             #if os(iOS)
             selectedSeriesEpisodeId = resumeContext?.episodeContentId
             viewModel.initialResumeSeasonNumber = resumeContext?.seasonNumber
+            viewModel.jellyfinResumeEpisode = MediaServerProvider.active == .jellyfin
+                ? resumeContext.map { ($0.episodeContentId, $0.seasonNumber) } : nil
             #else
             selectedSeriesEpisodeId = nil
             #endif
@@ -585,7 +587,9 @@ private struct ItemDetailPhoneContent: View {
                 selectedNextUpSubtitleTrackIndex: preferredNextUpSubtitleTrackIndex,
                 nextUpWatchDetail: nextUpWatchDetail,
                 isLoadingSelectedEpisodePlayback: isLoadingNextUpWatchDetail,
-                selectedEpisodeContentId: playbackEpisode(for: detail)?.contentId,
+                selectedEpisodeContentId: MediaServerProvider.active == .jellyfin
+                    ? (selectedSeriesEpisodeId ?? playbackEpisode(for: detail)?.contentId)
+                    : playbackEpisode(for: detail)?.contentId,
                 onSelectSeason: { season in
                     selectedSeriesEpisodeId = nil
                     Task { await viewModel.selectSeason(season) }
@@ -1047,12 +1051,11 @@ private struct ItemDetailPhoneContent: View {
     /// then first-unwatched next-up policy. Season detail continues to use the
     /// unmodified next-up path.
     private func playbackEpisode(for detail: ItemDetail) -> EpisodeListItem? {
-        if detail.type == "series",
-           let selectedSeriesEpisodeId,
-           let selected = viewModel.episodes.first(where: {
-               $0.contentId == selectedSeriesEpisodeId
-           }) {
-            return selected
+        if detail.type == "series", let selectedSeriesEpisodeId {
+            if let selected = viewModel.episodes.first(where: {
+                $0.contentId == selectedSeriesEpisodeId
+            }) { return selected }
+            if MediaServerProvider.active == .jellyfin { return nil }
         }
         return nextUpEpisode(for: detail)
     }

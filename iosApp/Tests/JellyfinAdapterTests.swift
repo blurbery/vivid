@@ -132,6 +132,178 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(response.episodes[1].episodeNumber, 39)
     }
 
+    func testResumeEpisodeUsesExactVersionInsteadOfSeasonRepresentative() async throws {
+        let adapter = adapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            XCTAssertEqual(query.first { $0.name == "UserId" }?.value, self.user)
+            XCTAssertFalse(query.contains { $0.name == "resume_episode_id" })
+            if request.url!.path.hasSuffix("/Episodes") {
+                return (200, ["Items": [
+                    ["Id": "earlier", "Name": "Earlier", "Type": "Episode", "SeriesId": "show",
+                     "ParentIndexNumber": 2, "IndexNumber": 1, "UserData": ["Played": false]],
+                    ["Id": "representative", "Name": "Episode", "Type": "Episode", "SeriesId": "show",
+                     "ParentIndexNumber": 2, "IndexNumber": 3,
+                     "UserData": ["Played": false, "PlaybackPositionTicks": 0]]
+                ]])
+            }
+            XCTAssertEqual(request.url!.path, "/jellyfin/Items/" + self.item)
+            return (200, ["Id": self.item, "Name": "Resume version", "Type": "Episode", "SeriesId": "show",
+                "ParentIndexNumber": 2, "IndexNumber": 3, "RunTimeTicks": 30_000_000_000,
+                "UserData": ["Played": false, "PlaybackPositionTicks": 13_077_083_599],
+                "MediaSources": [["Id": self.source, "Name": "1080p", "MediaStreams": [
+                    ["Type": "Video", "Index": 0, "Codec": "h264", "Height": 1080],
+                    ["Type": "Audio", "Index": 1, "Codec": "aac", "Language": "eng"],
+                    ["Type": "Subtitle", "Index": 2, "Codec": "srt", "Language": "eng"]]]]])
+        }
+        let raw = try await adapter.route(method: "GET", path: "/api/v1/catalog/series/show/seasons/2/episodes",
+            query: ["resume_episode_id": item], body: nil)
+        let response: EpisodesResponse = try JellyfinAdapter.decode(raw)
+        XCTAssertEqual(response.episodes.count, 2)
+        XCTAssertEqual(response.episodes[0].contentId, "earlier")
+        XCTAssertEqual(response.episodes[0].userData?.played, false)
+        let selected = try XCTUnwrap(response.episodes.first { $0.contentId == item })
+        XCTAssertEqual(selected.seasonNumber, 2)
+        XCTAssertEqual(selected.episodeNumber, 3)
+        XCTAssertEqual(selected.userData?.isInProgress, true)
+        XCTAssertEqual(try XCTUnwrap(selected.userData?.positionSeconds), 1307.7083599, accuracy: 0.0001)
+        XCTAssertEqual(selected.files?.first?.fileId, JellyfinAdapter.numberID(source))
+        let watch: WatchDetail = try JellyfinAdapter.decode(try adapter.watch(
+            try await adapter.rawItem(item), preferences: [:]))
+        XCTAssertEqual(watch.versions.first?.audioTracks?.count, 1)
+        XCTAssertEqual(watch.versions.first?.subtitleTracks?.count, 1)
+        XCTAssertEqual(watch.userData?.positionSeconds, selected.userData?.positionSeconds)
+    }
+
+    func testResumeEpisodeRejectsDifferentSeriesOrSeason() async throws {
+        for (series, season) in [("other-show", 2), ("show", 1)] {
+            let adapter = adapter { request in
+                if request.url!.path.hasSuffix("/Episodes") { return (200, ["Items": []]) }
+                return (200, ["Id": self.item, "Name": "Wrong route", "Type": "Episode", "SeriesId": series,
+                              "ParentIndexNumber": season, "IndexNumber": 3])
+            }
+            do {
+                _ = try await adapter.episodes(seriesID: "show", seasonNumber: "2", resumeEpisodeID: item)
+                XCTFail("A different series or season must not be inserted into this page")
+            } catch JellyfinError.invalidResponse { }
+            session?.invalidateAndCancel()
+        }
+    }
+
+    func testMissingResumeVersionPreservesSeasonRowsAndTheirWatchState() async throws {
+        let adapter = adapter { request in
+            if request.url!.path.hasSuffix("/Episodes") {
+                return (200, ["Items": [["Id": "earlier", "Name": "Earlier", "Type": "Episode",
+                    "SeriesId": "show", "ParentIndexNumber": 2, "IndexNumber": 1,
+                    "UserData": ["Played": true, "PlaybackPositionTicks": 0]]]])
+            }
+            XCTAssertTrue(request.url!.path.hasSuffix("/Items/" + self.item))
+            return (404, [:]) // Both the current and legacy item routes are absent.
+        }
+        let response: EpisodesResponse = try JellyfinAdapter.decode(try await adapter.episodes(
+            seriesID: "show", seasonNumber: "2", resumeEpisodeID: item))
+        XCTAssertEqual(response.episodes.map(\.contentId), ["earlier"])
+        XCTAssertEqual(response.episodes.first?.userData?.played, true)
+        XCTAssertEqual(response.episodes.first?.userData?.positionSeconds, 0)
+        XCTAssertFalse(response.episodes.contains { $0.contentId == item })
+    }
+
+    func testResumeFetchDoesNotHideAuthenticationOrServerFailures() async throws {
+        for status in [401, 403, 500] {
+            let adapter = adapter { request in
+                request.url!.path.hasSuffix("/Episodes") ? (200, ["Items": []]) : (status, [:])
+            }
+            do {
+                _ = try await adapter.episodes(seriesID: "show", seasonNumber: "2", resumeEpisodeID: item)
+                XCTFail("Resume failure must propagate: \(status)")
+            } catch JellyfinError.signInRequired {
+                XCTAssertEqual(status, 401)
+            } catch HTTPError.http(let actual, _) {
+                XCTAssertEqual(actual, status)
+            }
+            session?.invalidateAndCancel()
+        }
+    }
+
+    func testResumeFetchDoesNotHideTransportFailureOrCancellation() async throws {
+        for code in [URLError.timedOut, URLError.cancelled] {
+            let adapter = adapter { request in
+                if request.url!.path.hasSuffix("/Episodes") { return (200, ["Items": []]) }
+                throw URLError(code)
+            }
+            do {
+                _ = try await adapter.episodes(seriesID: "show", seasonNumber: "2", resumeEpisodeID: item)
+                XCTFail("Transport failures must propagate")
+            } catch let error as URLError {
+                XCTAssertEqual(error.code, code)
+            }
+            session?.invalidateAndCancel()
+        }
+    }
+
+    func testMissingSeasonStillFailsWhenResumeIsMissing() async throws {
+        let adapter = adapter { _ in (404, [:]) }
+        do {
+            _ = try await adapter.episodes(seriesID: "show", seasonNumber: "2", resumeEpisodeID: item)
+            XCTFail("Only the optional resume item may be absent")
+        } catch HTTPError.http(let status, _) {
+            XCTAssertEqual(status, 404)
+        }
+    }
+
+    func testResumeEpisodeMissingFromSeasonListIsRetained() async throws {
+        let adapter = adapter { request in
+            if request.url!.path.hasSuffix("/Episodes") { return (200, ["Items": []]) }
+            return (200, ["Id": self.item, "Name": "Resume", "Type": "Episode", "SeriesId": "show",
+                          "ParentIndexNumber": 2, "IndexNumber": 3,
+                          "UserData": ["Played": false, "PlaybackPositionTicks": 50_000_000]])
+        }
+        let response: EpisodesResponse = try JellyfinAdapter.decode(try await adapter.episodes(
+            seriesID: "show", seasonNumber: "2", resumeEpisodeID: item))
+        XCTAssertEqual(response.episodes.map(\.contentId), [item])
+        XCTAssertEqual(response.episodes.first?.userData?.positionSeconds, 5)
+    }
+
+    func testSeriesCardsUseMainPosterAndKeepEpisodeStillsSeparate() throws {
+        let adapter = adapter { _ in XCTFail("Artwork mapping needs no metadata request"); return (200, [:]) }
+        for kind in ["Episode", "Season"] {
+            let raw: [String: Any] = ["Id": item, "Name": "Episode or season", "Type": kind,
+                "SeriesId": "parent-series", "ImageTags": ["Primary": "own-art"],
+                "SeriesPrimaryImageTag": "series-art"]
+            let mapped = try adapter.item(raw)
+            let poster = try XCTUnwrap(URLComponents(string: try XCTUnwrap(mapped["posterUrl"] as? String)))
+            XCTAssertEqual(poster.path, "/jellyfin/Items/parent-series/Images/Primary")
+            XCTAssertEqual(poster.queryItems?.first { $0.name == "tag" }?.value, "series-art")
+            let still = try XCTUnwrap(URLComponents(string: try XCTUnwrap(mapped["stillUrl"] as? String)))
+            XCTAssertEqual(still.path, "/jellyfin/Items/" + item + "/Images/Primary")
+            var missingTag = raw
+            missingTag.removeValue(forKey: "SeriesPrimaryImageTag")
+            let untagged = try XCTUnwrap(URLComponents(string: try XCTUnwrap(adapter.poster(missingTag))))
+            XCTAssertEqual(untagged.path, poster.path)
+            XCTAssertNil(untagged.queryItems?.first { $0.name == "tag" })
+        }
+        for kind in ["Series", "Movie"] {
+            let mapped = try adapter.item(["Id": item, "Name": "Title", "Type": kind,
+                                           "ImageTags": ["Primary": "own-art"]])
+            let poster = try XCTUnwrap(URLComponents(string: try XCTUnwrap(mapped["posterUrl"] as? String)))
+            XCTAssertEqual(poster.path, "/jellyfin/Items/" + item + "/Images/Primary")
+        }
+    }
+
+    func testResumeAndNextUpCardsUseEpisodePreviewWithoutReplacingSeriesPoster() throws {
+        let adapter = adapter { _ in return (200, [:]) }
+        let mapped = try adapter.item(["Id": item, "Name": "Episode", "Type": "Episode",
+            "SeriesId": "parent-series", "ImageTags": ["Primary": "episode-preview"],
+            "SeriesPrimaryImageTag": "series-poster", "ParentBackdropItemId": "parent-series",
+            "ParentBackdropImageTags": ["series-backdrop"]])
+        for row in ["continue_watching", "next_up", "latestmedia_library"] {
+            let section = adapter.section(row, row, ["items": [mapped]])
+            let card = try XCTUnwrap((section["items"] as? [[String: Any]])?.first)
+            XCTAssertEqual(card["posterUrl"] as? String, mapped["posterUrl"] as? String)
+            XCTAssertEqual(card["backdropUrl"] as? String,
+                mapped[row == "latestmedia_library" ? "backdropUrl" : "stillUrl"] as? String)
+        }
+    }
+
     func testBrowseRequestsOnlyCardMetadataAndKeepsWatchState() async throws {
         let adapter = adapter { request in
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []

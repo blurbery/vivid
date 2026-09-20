@@ -304,11 +304,11 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     /// progress, then the first unwatched in the selected season,
     /// then fall back to the first episode we have.
     private var nextUpEpisode: EpisodeListItem? {
-        if let selectedEpisodeContentId,
-           let selected = episodes.first(where: {
-               $0.contentId == selectedEpisodeContentId
-           }) {
-            return selected
+        if let selectedEpisodeContentId {
+            if let selected = episodes.first(where: {
+                $0.contentId == selectedEpisodeContentId
+            }) { return selected }
+            if MediaServerProvider.active == .jellyfin { return nil }
         }
         if let inProgress = episodes.first(where: { $0.userData?.isInProgress == true }) {
             return inProgress

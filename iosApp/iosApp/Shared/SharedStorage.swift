@@ -72,6 +72,8 @@ enum SharedStorage {
     static let activeServerIdKey = "activeServerId"
     static let profileIdKey = "profileId"
     static let profileLaunchStateKey = "profileLaunchState.v1"
+    static let savedAccountsKey = "vivid.accounts.v1"
+    static let activeSavedAccountKey = "vivid.activeAccount.v1"
 
     /// Breadcrumb keys the Top Shelf extension writes after each run.
     /// The main app prints these on launch so device builds without a log

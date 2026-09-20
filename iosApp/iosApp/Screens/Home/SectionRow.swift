@@ -9,7 +9,8 @@ extension ResolvedSection {
     #if os(tvOS)
     var tvHomeUsesLandscapeArtwork: Bool {
         isContinueWatchingSection || sectionType.lowercased().contains("next")
-            || items.contains { $0.type.lowercased() == "episode" }
+            || (MediaServerProvider.active != .jellyfin
+                && items.contains { $0.type.lowercased() == "episode" })
     }
     #endif
 }
@@ -74,8 +75,9 @@ struct SectionRow: View {
         section.items.contains(where: { $0.type.lowercased() == "episode" })
     }
 
-    /// True when the row should render 16:9 episode stills instead of posters.
-    /// A dedicated "Next Up" row always does. For other episode-bearing rows
+    /// Jellyfin discovery rows use posters. Continue Watching and Next Up
+    /// retain the same card layout as the other providers.
+    /// A dedicated "Next Up" row always uses 16:9 episode stills. For other episode-bearing rows
     /// the platforms differ: tvOS Skyline keeps every episode row as a still,
     /// and keeps Continue Watching as a still-based resume row even when the
     /// row currently contains movies only. iOS/iPadOS/macOS reserve stills for

@@ -145,6 +145,12 @@ struct TVItemDetailView: View {
             // Once resolved, a return from playback preserves the browsed season.
             let navigationContext = pendingSeriesNavigationContext
             viewModel.initialResumeSeasonNumber = navigationContext?.seasonNumber
+            if let navigationContext {
+                viewModel.jellyfinResumeEpisode = MediaServerProvider.active == .jellyfin
+                    ? (navigationContext.episodeContentId, navigationContext.seasonNumber) : nil
+            } else if !hasLoadedDetailVisit {
+                viewModel.jellyfinResumeEpisode = nil
+            }
             didClearSubtitleOverride = false
             didClearNextUpSubtitleOverride = false
             nextUpPlaybackDetail = nil

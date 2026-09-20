@@ -3,6 +3,9 @@ import Foundation
 import CryptoKit
 import CloudKit
 import OSLog
+#if os(tvOS)
+import TVServices
+#endif
 
 struct TVSavedAccount: Codable, Identifiable, Hashable {
     let id: String
@@ -104,18 +107,14 @@ final class TVSavedAccountStore {
     private(set) var contentRevision = UUID()
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
     var canAddAccount: Bool {
-        #if os(iOS)
         accounts.count < 4
-        #else
-        true
-        #endif
     }
     var error: String?
     private var unlockedID: String?
     private let defaults = SharedDefaults.shared
     private let keychain = SharedKeychain(audience: .currentUser)
-    private let listKey = "vivid.accounts.v1"
-    private let activeKey = "vivid.activeAccount.v1"
+    private let listKey = SharedStorage.savedAccountsKey
+    private let activeKey = SharedStorage.activeSavedAccountKey
     private let modificationDatesKey = "vivid.accountModificationDates.v1"
     private var modificationDates: [String: Date] = [:]
 
@@ -158,6 +157,9 @@ final class TVSavedAccountStore {
             defaults.set(data, forKey: modificationDatesKey)
         }
         defaults.set(activeID, forKey: activeKey)
+        #if os(tvOS)
+        TVTopShelfContentProvider.topShelfContentDidChange()
+        #endif
     }
 
     private func markAccountChanged(_ id: String, at date: Date = Date()) {
@@ -612,6 +614,7 @@ final class TVSavedAccountStore {
             let existingIndex = accounts.firstIndex {
                 VividCloudAccountIdentity.key(for: $0) == identity
             }
+            guard existingIndex != nil || canAddAccount else { continue }
             let localID = existingIndex.map { accounts[$0].id } ?? envelope.account.id
             let localDate = modificationDates[localID] ?? .distantPast
             guard envelope.updatedAt > localDate || existingIndex == nil else { continue }

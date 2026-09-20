@@ -1,18 +1,8 @@
 import Foundation
 
-/// Bare-bones authenticated GET helper for the Top Shelf extension.
-///
-/// The main app's `HTTPClient` owns a lot we don't need here: token
-/// refresh, in-flight request cancellation, cookie storage, logging. The
-/// extension runs for a second or two at a time, reads exactly one
-/// endpoint, and has no UI surface to refresh into — so a single
-/// `URLSession.data(for:)` call with pre-attached headers is sufficient.
-///
-/// Access token refresh is intentionally absent: Silo's access
-/// tokens effectively don't expire, so a 401 here would indicate the
-/// user has signed out in the main app. In that case we simply return
-/// no content and let the system fall back to the static top-shelf
-/// image.
+/// Reads Top Shelf data using the selected account's provider and credentials.
+/// Silo retains its home-section request; native providers request resume and
+/// next-up rows directly. Expired sessions return no personalised content.
 struct TopShelfHTTPClient {
     enum Error: Swift.Error {
         case notAuthenticated
@@ -38,6 +28,12 @@ struct TopShelfHTTPClient {
         guard let serverID = defaults.string(forKey: SharedStorage.activeServerIdKey) else {
             return false
         }
+        guard TopShelfProfilePolicy.allowsSavedAccountContent(
+            accountsData: defaults.data(forKey: SharedStorage.savedAccountsKey),
+            activeAccountID: defaults.string(forKey: SharedStorage.activeSavedAccountKey),
+            serverID: serverID,
+            hasStoredPIN: { profileKeychain.get("vivid.account." + $0 + ".pin.v1") != nil }
+        ) else { return false }
         let state = ProfileLaunchState.load(from: defaults)
         return TopShelfProfilePolicy.allowsPersonalizedContent(
             state: state,
@@ -52,10 +48,51 @@ struct TopShelfHTTPClient {
         )
     }
 
-    /// Negotiate the same large-image contract as the main tvOS app. Older
-    /// servers and transient failures return an empty query, preserving the
-    /// extension's existing fallback behavior.
+    struct ContentIdentity: Equatable {
+        let serverID: String?
+        let serverURL: String?
+        let profileID: String?
+        let accountID: String?
+        let epoch: String?
+    }
+
+    var contentIdentity: ContentIdentity {
+        let serverID = defaults.string(forKey: SharedStorage.activeServerIdKey)
+        return ContentIdentity(serverID: serverID,
+            serverURL: defaults.string(forKey: SharedStorage.serverUrlKey),
+            profileID: defaults.string(forKey: SharedStorage.profileIdKey),
+            accountID: defaults.string(forKey: SharedStorage.activeSavedAccountKey),
+            epoch: serverID.flatMap { accountKeychain.get(SharedStorage.accountEpochAccount(for: $0)) })
+    }
+
+    var usesNativeServer: Bool {
+        let id = defaults.string(forKey: SharedStorage.activeServerIdKey) ?? ""
+        return id.hasPrefix("emby:") || id.hasPrefix("jellyfin:")
+    }
+
+    private struct NativeIdentity: Equatable {
+        let serverID: String
+        let serverURL: String
+        let userID: String
+        let token: String
+        let epoch: String?
+    }
+
+    private func nativeIdentity() throws -> NativeIdentity {
+        guard usesNativeServer, isPersonalizedContentAllowed,
+              let serverID = defaults.string(forKey: SharedStorage.activeServerIdKey),
+              let url = defaults.string(forKey: SharedStorage.serverUrlKey),
+              let user = accountKeychain.get("vivid.nativeUserID." + serverID),
+              user == defaults.string(forKey: SharedStorage.profileIdKey),
+              let token = accountKeychain.get(SharedStorage.accessTokenAccount(for: serverID)), !token.isEmpty else {
+            throw Error.notAuthenticated
+        }
+        return NativeIdentity(serverID: serverID, serverURL: url, userID: user, token: token,
+                              epoch: accountKeychain.get(SharedStorage.accountEpochAccount(for: serverID)))
+    }
+
     func fetchImageSizeQuery() async -> [String: String] {
+        if usesNativeServer { return [:] }
         let capability: ImageSizeCapabilityResponse? = try? await get(
             "/api/v1/images/capability"
         )
@@ -66,7 +103,15 @@ struct TopShelfHTTPClient {
     }
 
     func fetchHomeSections(imageSizeQuery: [String: String]) async throws -> TopShelfSectionsResponse {
-        try await get("/api/v1/home/sections", query: imageSizeQuery)
+        if usesNativeServer {
+            let identity = try nativeIdentity()
+            let client = TopShelfNativeClient(provider: identity.serverID.hasPrefix("emby:") ? .emby : .jellyfin,
+                serverURL: identity.serverURL, userID: identity.userID, token: identity.token)
+            let response = try await client.fetchHomeSections()
+            guard try nativeIdentity() == identity else { throw Error.notAuthenticated }
+            return response
+        }
+        return try await get("/api/v1/home/sections", query: imageSizeQuery)
     }
 
     func fetchSeasons(
