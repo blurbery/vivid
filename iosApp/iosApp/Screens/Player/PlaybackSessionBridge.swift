@@ -711,6 +711,12 @@ actor PlaybackSessionBridge {
 
     private var embyPlayback: EmbyPlayback?
     private var jellyfinPlayback: JellyfinPlayback?
+    private var jellyfinStartAttempt = UUID()
+
+    private func validateJellyfinStart(_ attempt: UUID) throws {
+        try Task.checkCancellation()
+        guard jellyfinStartAttempt == attempt else { throw CancellationError() }
+    }
 
     func reportNativePlaybackStarted(_ prepared: PreparedPlayback) async {
         if let playback = jellyfinPlayback, playback.playSessionID == prepared.session.sessionId {
@@ -744,6 +750,8 @@ actor PlaybackSessionBridge {
         prefersLastUsedVersion: Bool = false,
         preferredQualityOverride: String? = nil
     ) async throws -> PreparedPlayback {
+        let jellyfinAttempt = UUID()
+        jellyfinStartAttempt = jellyfinAttempt
         logger.info("Fetching watch detail for \(contentId, privacy: .public)")
         let embyMetadata: EmbyPlayback.Metadata?
         let jellyfinMetadata: JellyfinPlayback.Metadata?
@@ -893,25 +901,39 @@ actor PlaybackSessionBridge {
             )
         }
         if let jellyfinMetadata {
+            try validateJellyfinStart(jellyfinAttempt)
             let (prepared, playback) = try await JellyfinPlayback.prepare(metadata: jellyfinMetadata, detail: watchDetail, version: selectedVersion,
                 start: effectiveStartPosition ?? 0, audioOrdinal: resolvedAudioTrackIndex,
                 subtitleIndex: subtitleIntent.ffmpegStreamIndex, bitrateKbps: bandwidthCapKbps,
                 quality: resolvedQualityPreference)
-            // Keep the current session until replacement preparation succeeds.
-            // Drain its progress writes before retiring the captured session.
-            let previous = jellyfinPlayback
-            _ = await progressWriteTail?.value
-            if let previous, await previous.playSessionID != playback.playSessionID {
-                do { try await previous.retireForReplacement() }
-                catch { logger.warning("Jellyfin replacement stop failed: \(MediaLogRedactor.sanitize(error), privacy: .public)") }
-            }
-            do { try await jellyfinMetadata.connection.validate() }
-            catch {
+            do {
+                try validateJellyfinStart(jellyfinAttempt)
+                // Keep the current session until preparation succeeds, then drain
+                // its writes. Every suspension can admit a newer start or stop.
+                let previous = jellyfinPlayback
+                _ = await progressWriteTail?.value
+                try validateJellyfinStart(jellyfinAttempt)
+                if let previous {
+                    let previousID = await previous.playSessionID
+                    try validateJellyfinStart(jellyfinAttempt)
+                    let candidateID = await playback.playSessionID
+                    try validateJellyfinStart(jellyfinAttempt)
+                    if previousID != candidateID {
+                        do { try await previous.retireForReplacement() }
+                        catch { logger.warning("Jellyfin replacement stop failed: \(MediaLogRedactor.sanitize(error), privacy: .public)") }
+                        try validateJellyfinStart(jellyfinAttempt)
+                    }
+                }
+                try await jellyfinMetadata.connection.validate()
+                try validateJellyfinStart(jellyfinAttempt)
+                jellyfinPlayback = playback
+                adoptSession(prepared.session)
+            } catch {
+                // An unstructured task does not inherit caller cancellation.
+                // Only retire this attempt's candidate, never the current one.
                 _ = await Task { try? await playback.stopWithoutProgress() }.value
                 throw error
             }
-            jellyfinPlayback = playback
-            adoptSession(prepared.session)
             return prepared
         }
         if let embyMetadata {
@@ -2139,6 +2161,7 @@ actor PlaybackSessionBridge {
         completedContentId: String? = nil,
         finalProgressAlreadyReported: Bool = false
     ) async -> PlaybackProgressReportResult {
+        jellyfinStartAttempt = UUID()
         guard let sid = sessionId else { return .transientFailure }
         let pendingProgress = progressWriteTail
         let eligible = eligible || completedContentId != nil
