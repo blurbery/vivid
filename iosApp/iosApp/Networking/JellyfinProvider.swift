@@ -416,12 +416,20 @@ struct JellyfinAdapter {
                 rows.append(selected)
             }
         }
+        try await connection.validate()
         return ["episodes": try rows.map(item)]
     }
 
     private func resumeItem(_ id: String?) async throws -> [String: Any]? {
         guard let id else { return nil }
-        return try await rawItem(id)
+        do {
+            return try await rawItem(id)
+        } catch HTTPError.http(statusCode: 404, body: _) {
+            // A deleted resume version must not hide the remaining season.
+            // Keep authentication, cancellation and all other failures visible.
+            try await connection.validate()
+            return nil
+        }
     }
 
     func libraryViews() async throws -> [String: Any] {

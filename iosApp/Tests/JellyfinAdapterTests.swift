@@ -189,6 +189,67 @@ final class JellyfinAdapterTests: XCTestCase {
         }
     }
 
+    func testMissingResumeVersionPreservesSeasonRowsAndTheirWatchState() async throws {
+        let adapter = adapter { request in
+            if request.url!.path.hasSuffix("/Episodes") {
+                return (200, ["Items": [["Id": "earlier", "Name": "Earlier", "Type": "Episode",
+                    "SeriesId": "show", "ParentIndexNumber": 2, "IndexNumber": 1,
+                    "UserData": ["Played": true, "PlaybackPositionTicks": 0]]]])
+            }
+            XCTAssertTrue(request.url!.path.hasSuffix("/Items/" + self.item))
+            return (404, [:]) // Both the current and legacy item routes are absent.
+        }
+        let response: EpisodesResponse = try JellyfinAdapter.decode(try await adapter.episodes(
+            seriesID: "show", seasonNumber: "2", resumeEpisodeID: item))
+        XCTAssertEqual(response.episodes.map(\.contentId), ["earlier"])
+        XCTAssertEqual(response.episodes.first?.userData?.played, true)
+        XCTAssertEqual(response.episodes.first?.userData?.positionSeconds, 0)
+        XCTAssertFalse(response.episodes.contains { $0.contentId == item })
+    }
+
+    func testResumeFetchDoesNotHideAuthenticationOrServerFailures() async throws {
+        for status in [401, 403, 500] {
+            let adapter = adapter { request in
+                request.url!.path.hasSuffix("/Episodes") ? (200, ["Items": []]) : (status, [:])
+            }
+            do {
+                _ = try await adapter.episodes(seriesID: "show", seasonNumber: "2", resumeEpisodeID: item)
+                XCTFail("Resume failure must propagate: \(status)")
+            } catch JellyfinError.signInRequired {
+                XCTAssertEqual(status, 401)
+            } catch HTTPError.http(let actual, _) {
+                XCTAssertEqual(actual, status)
+            }
+            session?.invalidateAndCancel()
+        }
+    }
+
+    func testResumeFetchDoesNotHideTransportFailureOrCancellation() async throws {
+        for code in [URLError.timedOut, URLError.cancelled] {
+            let adapter = adapter { request in
+                if request.url!.path.hasSuffix("/Episodes") { return (200, ["Items": []]) }
+                throw URLError(code)
+            }
+            do {
+                _ = try await adapter.episodes(seriesID: "show", seasonNumber: "2", resumeEpisodeID: item)
+                XCTFail("Transport failures must propagate")
+            } catch let error as URLError {
+                XCTAssertEqual(error.code, code)
+            }
+            session?.invalidateAndCancel()
+        }
+    }
+
+    func testMissingSeasonStillFailsWhenResumeIsMissing() async throws {
+        let adapter = adapter { _ in (404, [:]) }
+        do {
+            _ = try await adapter.episodes(seriesID: "show", seasonNumber: "2", resumeEpisodeID: item)
+            XCTFail("Only the optional resume item may be absent")
+        } catch HTTPError.http(let status, _) {
+            XCTAssertEqual(status, 404)
+        }
+    }
+
     func testResumeEpisodeMissingFromSeasonListIsRetained() async throws {
         let adapter = adapter { request in
             if request.url!.path.hasSuffix("/Episodes") { return (200, ["Items": []]) }
