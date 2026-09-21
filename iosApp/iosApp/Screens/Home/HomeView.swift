@@ -483,8 +483,13 @@ private struct PhoneDiscoverySpotlight: View {
     @State private var selection = 0
     @State private var visible = false
     @State private var cycleStarted = Date()
+    @State private var cyclePausedAt: Date?
+    @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var shouldRotate: Bool {
+        visible && scenePhase == .active && !reduceMotion && !router.isItemDetailPresentationActive
+    }
     private var slides: [TVHomeSpotlightSlide] { preferences.slides(from: sections) }
     private func spotlightMetadata(for item: SectionItem) -> String {
         let metadata = TVHomeMetadataCache.shared.spotlightMetadata(for: item)
@@ -542,8 +547,8 @@ private struct PhoneDiscoverySpotlight: View {
                                 .fill(.white.opacity(0.3))
                                 .overlay(alignment: .leading) {
                                     if selectedIndex == index {
-                                        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !visible || scenePhase != .active || reduceMotion)) { timeline in
-                                            let progress = reduceMotion ? 1 : min(max(timeline.date.timeIntervalSince(cycleStarted) / 6, 0), 1)
+                                        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !shouldRotate)) { timeline in
+                                            let progress = reduceMotion ? 1 : min(max((cyclePausedAt ?? timeline.date).timeIntervalSince(cycleStarted) / 6, 0), 1)
                                             Rectangle().fill(.white)
                                                 .frame(width: 36 * progress)
                                                 .transaction { $0.animation = nil }
@@ -584,14 +589,28 @@ private struct PhoneDiscoverySpotlight: View {
                 transaction.disablesAnimations = true
                 withTransaction(transaction) { selection = selectedIndex }
             }
-            .onChange(of: selectedIndex) { _, _ in cycleStarted = Date() }
-            .task(id: "\(visible)-\(scenePhase == .active)-\(reduceMotion)-\(selectedIndex)") {
-                guard visible, scenePhase == .active, !reduceMotion else { return }
+            .onChange(of: selectedIndex) { _, _ in
                 cycleStarted = Date()
+                if cyclePausedAt != nil { cyclePausedAt = cycleStarted }
+            }
+            .onChange(of: shouldRotate) { _, rotating in
+                if rotating {
+                    if let cyclePausedAt {
+                        cycleStarted = cycleStarted.addingTimeInterval(Date().timeIntervalSince(cyclePausedAt))
+                    }
+                    cyclePausedAt = nil
+                } else if cyclePausedAt == nil {
+                    cyclePausedAt = Date()
+                }
+            }
+            .task(id: "\(shouldRotate)-\(selectedIndex)") {
+                guard shouldRotate else { return }
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(6)) } catch { return }
-                    guard slides.count > 1 else { return }
+                    let remaining = max(0, 6 - Date().timeIntervalSince(cycleStarted))
+                    do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+                    guard !Task.isCancelled, shouldRotate, slides.count > 1 else { return }
                     withAnimation(.easeInOut(duration: 0.4)) { selection += 1 }
+                    return
                 }
             }
         }

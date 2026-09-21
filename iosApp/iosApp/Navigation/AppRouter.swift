@@ -96,6 +96,13 @@ class AppRouter {
     /// are otherwise unreproducible. Transitions that leave the state
     /// unchanged are dropped so a re-entrant reset can't pad the timeline.
     var authState: AuthState = .loading {
+        willSet {
+            #if os(iOS)
+            guard newValue != authState else { return }
+            presentedItemDetail = nil
+            itemDetailPresentationDidDismiss()
+            #endif
+        }
         didSet {
             // Consume the cause unconditionally: a no-op assignment must not
             // leave a stale reason to be misattributed to the next transition.
@@ -189,8 +196,15 @@ class AppRouter {
     }
 
     #if os(iOS)
-    var presentedItemDetail: ItemDetailPresentation?
+    var presentedItemDetail: ItemDetailPresentation? {
+        didSet {
+            if presentedItemDetail != nil { isItemDetailPresentationActive = true }
+        }
+    }
+    var isItemDetailPresentationActive = false
     var itemDetailPath = NavigationPath()
+    @ObservationIgnored var captureItemDetailBackdrop: (() -> UIImage?)?
+    @ObservationIgnored var itemDetailBackdropImage: UIImage?
     #endif
 
     // MARK: - Player Presentation
@@ -377,6 +391,8 @@ class AppRouter {
         // callback from an old sheet must not erase a newly opened detail.
         guard presentedItemDetail == nil else { return }
         itemDetailPath = NavigationPath()
+        itemDetailBackdropImage = nil
+        isItemDetailPresentationActive = false
     }
     #endif
 
@@ -418,6 +434,7 @@ class AppRouter {
         #if os(iOS)
         recordScreenBreadcrumb(target: "itemDetail", action: "present")
         if presentedItemDetail == nil {
+            itemDetailBackdropImage = captureItemDetailBackdrop?()
             let source = browseSource.flatMap { source in
                 source.contentIDs.contains(contentId) ? source : nil
             }

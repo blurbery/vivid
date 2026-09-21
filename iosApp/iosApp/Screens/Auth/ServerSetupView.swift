@@ -127,7 +127,7 @@ struct ServerSetupView: View {
 #if os(iOS)
 struct PhoneProviderSelectionView: View {
     var router: AppRouter
-    let onRestore: () -> Void
+    var onRestore: (() -> Void)? = nil
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -136,7 +136,9 @@ struct PhoneProviderSelectionView: View {
                     .font(.headline)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white.opacity(0.72))
-                NavigationLink(value: Route.serverSetup) {
+                NavigationLink {
+                    ServerSetupView(router: router, provider: .silo)
+                } label: {
                     providerCard("Silo", image: "SiloWordmark", available: true)
                 }
                 .buttonStyle(.plain)
@@ -150,10 +152,12 @@ struct PhoneProviderSelectionView: View {
                 } label: {
                     providerCard("Jellyfin", image: "JellyfinLogo", available: true)
                 }.buttonStyle(.plain)
-                Button(action: onRestore) {
-                    Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
+                if let onRestore {
+                    Button(action: onRestore) {
+                        Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
             }
             .frame(maxWidth: 480)
             .padding(24)
