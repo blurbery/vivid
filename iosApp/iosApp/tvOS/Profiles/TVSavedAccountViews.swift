@@ -264,6 +264,7 @@ private struct TVAccountCircleStyle: ButtonStyle {
 struct TVSavedAccountEditor: View {
     let accountID: String?
     var addingServer = false
+    var selectedServerProvider: MediaServerProvider? = nil
     @State private var provider = "Silo"
     @State private var registry = ServerRegistry.shared
     @State private var store = TVSavedAccountStore.shared
@@ -280,6 +281,7 @@ struct TVSavedAccountEditor: View {
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
     private var selectedProvider: MediaServerProvider {
         account.map { MediaServerProvider.forServerID($0.serverID) }
+            ?? selectedServerProvider
             ?? (MediaServerProvider(rawValue: provider.lowercased()) ?? .silo)
     }
     private var isActive: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
@@ -307,22 +309,24 @@ struct TVSavedAccountEditor: View {
                 .padding(.bottom, 12)
 
                 if account == nil {
-                    TVSettingsSectionHeader("SERVER TYPE")
-                    TVSettingsGroup {
-                        ForEach(["Silo", "Emby", "Jellyfin"], id: \.self) { option in
-                            Button {
-                                provider = option
-                                password = ""
-                                store.error = nil
-                            } label: {
-                                HStack {
-                                    TVSettingsRowLabel(title: option,
-                                        detail: nil)
-                                    Spacer()
-                                    if provider == option { Image(systemName: "checkmark") }
+                    if selectedServerProvider == nil {
+                        TVSettingsSectionHeader("SERVER TYPE")
+                        TVSettingsGroup {
+                            ForEach(["Silo", "Emby", "Jellyfin"], id: \.self) { option in
+                                Button {
+                                    provider = option
+                                    password = ""
+                                    store.error = nil
+                                } label: {
+                                    HStack {
+                                        TVSettingsRowLabel(title: option,
+                                            detail: nil)
+                                        Spacer()
+                                        if provider == option { Image(systemName: "checkmark") }
+                                    }
                                 }
+                                .buttonStyle(TVSettingsPaneRowStyle())
                             }
-                            .buttonStyle(TVSettingsPaneRowStyle())
                         }
                     }
                     if registry.sortedEntries.contains(where: { MediaServerProvider.forServerID($0.id) == selectedProvider }) {
