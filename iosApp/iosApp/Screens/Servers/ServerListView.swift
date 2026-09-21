@@ -97,7 +97,7 @@ struct ServerListView: View {
 
                 TVSettingsGroup {
                 NavigationLink {
-                    TVSavedAccountEditor(accountID: nil, addingServer: true)
+                    TVProviderSelectionView(addingServer: true)
                 } label: {
                     HStack(spacing: 16) {
                         Image(systemName: "plus")

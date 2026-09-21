@@ -10,6 +10,8 @@ Generate `iosApp/project-ios.yml` for iOS or `iosApp/project.yml` for tvOS with 
 
 Lucid renders into Vivid’s persistent player surface. Changing controls, opening menus or presenting Next Up does not create a second player. Apple TV requests frame rate and dynamic range through Apple’s display manager, respecting Match Content. The iOS bridge retains its media-time presentation path; the tvOS host-clock presentation path remains platform-specific.
 
+On Apple TV, the visible player disables the app's idle timer while Vivid is active, including during paused playback. Leaving the player or making the app inactive restores normal screen saver behaviour. Returning to the active player disables the timer again without changing the playback state.
+
 Apple TV starts content matching as soon as mpv supplies a complete decoded
 video-output snapshot and measured cadence, without waiting for audio startup.
 If that information is unavailable, the first playback-ready snapshot remains

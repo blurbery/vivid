@@ -2,8 +2,10 @@ import SwiftUI
 
 #if os(tvOS)
 struct TVProviderSelectionView: View {
-    let onRestore: () -> Void
+    var onRestore: (() -> Void)? = nil
+    var addingServer = false
     @Environment(AppRouter.self) private var router
+    @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedProvider: Provider?
 
     private enum Provider: String {
@@ -21,6 +23,14 @@ struct TVProviderSelectionView: View {
     }
 
     var body: some View {
+        if addingServer {
+            providerSelection.onExitCommand { dismiss() }
+        } else {
+            providerSelection
+        }
+    }
+
+    private var providerSelection: some View {
         GeometryReader { geometry in
             let spacing = VividTheme.padding
             let cardWidth = min(
@@ -42,15 +52,25 @@ struct TVProviderSelectionView: View {
                 }
 
                 HStack(spacing: spacing) {
-                    NavigationLink(value: Route.serverSetup) {
-                        providerCard(.silo, width: cardWidth)
+                    Group {
+                        if addingServer {
+                            NavigationLink {
+                                setupDestination(for: .silo)
+                            } label: {
+                                providerCard(.silo, width: cardWidth)
+                            }
+                        } else {
+                            NavigationLink(value: Route.serverSetup) {
+                                providerCard(.silo, width: cardWidth)
+                            }
+                        }
                     }
                     .buttonStyle(.card)
                     .focused($focusedProvider, equals: .silo)
                     .accessibilityHint("Connect to your Silo server")
 
                     NavigationLink {
-                        TVServerSetupView(router: router, provider: .emby)
+                        setupDestination(for: .emby)
                     } label: {
                         providerCard(.emby, width: cardWidth)
                     }
@@ -58,7 +78,7 @@ struct TVProviderSelectionView: View {
                     .focused($focusedProvider, equals: .emby)
                     .accessibilityHint("Connect to your Emby server")
                     NavigationLink {
-                        TVServerSetupView(router: router, provider: .jellyfin)
+                        setupDestination(for: .jellyfin)
                     } label: {
                         providerCard(.jellyfin, width: cardWidth)
                     }
@@ -68,14 +88,16 @@ struct TVProviderSelectionView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                Button(action: onRestore) {
-                    Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
-                        .font(.system(size: 24, weight: .medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                if !addingServer, let onRestore {
+                    Button(action: onRestore) {
+                        Label("Restore from iCloud", systemImage: "icloud.and.arrow.down")
+                            .font(.system(size: 24, weight: .medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.bordered)
+                    .offset(y: 100)
                 }
-                .buttonStyle(.bordered)
-                .offset(y: 100)
             }
             .position(
                 x: geometry.size.width / 2,
@@ -88,6 +110,15 @@ struct TVProviderSelectionView: View {
                 .padding(.bottom, 40)
         }
         .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private func setupDestination(for provider: MediaServerProvider) -> some View {
+        if addingServer {
+            TVSavedAccountEditor(accountID: nil, addingServer: true, selectedServerProvider: provider)
+        } else {
+            TVServerSetupView(router: router, provider: provider)
+        }
     }
 
     private func providerCard(

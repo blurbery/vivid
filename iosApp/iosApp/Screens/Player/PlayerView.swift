@@ -1,5 +1,8 @@
 
 import SwiftUI
+#if os(tvOS)
+import UIKit
+#endif
 
 /// Sent as soon as the final position has reached the active server. Home can
 /// refresh at that point without waiting for the remaining session teardown.
@@ -60,6 +63,8 @@ struct PlayerView: View {
     @State private var orientationCoordinator = PlayerOrientationCoordinator.shared
     #endif
     #if os(tvOS)
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isTVPlayerVisible = false
     @State private var isTimelinePreviewVisible = false
     @State private var timelineTimeDisplayMode: TVPlayerTimeDisplayMode = .elapsedRemaining
     @State private var timelineSelectionRequest: UUID?
@@ -361,6 +366,10 @@ struct PlayerView: View {
             onPlaybackStarted?()
         }
         #if os(tvOS)
+        .onChange(of: scenePhase) { _, phase in
+            guard isTVPlayerVisible else { return }
+            UIApplication.shared.isIdleTimerDisabled = phase == .active
+        }
         .onChange(of: viewModel.showControls) { _, visible in
             if visible {
                 hideTimelinePreview()
@@ -374,6 +383,12 @@ struct PlayerView: View {
             dismissPlayer()
         }
         .onAppear {
+            #if os(tvOS)
+            // Keep the displayed video awake even while paused. Playback state
+            // must not control the idle timer during this presentation.
+            isTVPlayerVisible = true
+            UIApplication.shared.isIdleTimerDisabled = scenePhase == .active
+            #endif
             #if os(iOS)
             // A Picture in Picture restore re-presents this cover for a session
             // that is still playing. Adopt that view model instead of minting a
@@ -413,6 +428,8 @@ struct PlayerView: View {
         }
         .onDisappear {
             #if os(tvOS)
+            isTVPlayerVisible = false
+            UIApplication.shared.isIdleTimerDisabled = false
             timelinePreviewHideTask?.cancel()
             timelinePreviewHideTask = nil
             #endif
