@@ -18,11 +18,11 @@ function bulletDescription(body) {
 
   const included = [];
   for (const bullet of bullets) {
-    const candidate = [...included, `• ${bullet}`].join("\n");
+    const candidate = [...included, `- ${bullet}`].join("\n");
     if (candidate.length > MAX_NOTES_LENGTH) break;
-    included.push(`• ${bullet}`);
+    included.push(`- ${bullet}`);
   }
-  if (included.length < bullets.length) included.push("• More details on GitHub…");
+  if (included.length < bullets.length) included.push("- More details on GitHub…");
   return included.join("\n");
 }
 
@@ -38,8 +38,7 @@ export function buildDiscordReleasePayload(release) {
     embeds: [
       {
         color: VIVID_SILVER,
-        title: version,
-        url: release.html_url,
+        title: `Release - ${version}`,
         description: `${notes}\n\n[View on GitHub](${release.html_url})`,
         footer: { text: "Vivid · GitHub release" },
         ...(release.published_at ? { timestamp: release.published_at } : {}),

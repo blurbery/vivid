@@ -17,10 +17,11 @@ describe("Discord release notifications", () => {
 
     assert.deepEqual(payload.allowed_mentions, { parse: [] });
     assert.equal(payload.embeds[0].color, 0xb1b0b0);
-    assert.equal(payload.embeds[0].title, "0.22.2");
+    assert.equal(payload.embeds[0].title, "Release - 0.22.2");
+    assert.equal("url" in payload.embeds[0], false);
     assert.equal(
       payload.embeds[0].description,
-      "• Fixed playback startup.\n• Improved subtitle selection.\n\n[View on GitHub](https://github.com/blurbery/vivid/releases/tag/v0.22.2)",
+      "- Fixed playback startup.\n- Improved subtitle selection.\n\n[View on GitHub](https://github.com/blurbery/vivid/releases/tag/v0.22.2)",
     );
   });
 
@@ -32,7 +33,7 @@ describe("Discord release notifications", () => {
       body: "",
     });
 
-    assert.equal(payload.embeds[0].title, "0.22.2");
+    assert.equal(payload.embeds[0].title, "Release - 0.22.2");
     assert.equal(
       payload.embeds[0].description,
       "Release notes are available on GitHub.\n\n[View on GitHub](https://github.com/blurbery/vivid/releases/tag/v0.22.2)",
