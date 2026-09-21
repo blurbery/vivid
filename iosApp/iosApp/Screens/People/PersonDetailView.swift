@@ -519,6 +519,9 @@ private struct TVPersonDetailContent: View {
 private struct PhonePersonDetailContent: View {
     let person: Person
     var viewModel: PersonDetailViewModel
+    #if os(iOS)
+    @State private var showsFullBiography = false
+    #endif
 
     @Environment(AppRouter.self) private var router
 
@@ -587,6 +590,33 @@ private struct PhonePersonDetailContent: View {
                         .foregroundColor(.vividSecondaryText)
                         .lineLimit(8)
                         .fixedSize(horizontal: false, vertical: true)
+                        #if os(iOS)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showsFullBiography = true }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Opens the full biography")
+                        .sheet(isPresented: $showsFullBiography) {
+                            NavigationStack {
+                                ScrollView {
+                                    Text(bio)
+                                        .font(.body)
+                                        .lineSpacing(5)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(24)
+                                        .textSelection(.enabled)
+                                }
+                                .navigationTitle(person.name)
+                                .navigationBarTitleDisplayMode(.inline)
+                                .toolbar {
+                                    ToolbarItem(placement: .confirmationAction) {
+                                        Button("Done") { showsFullBiography = false }
+                                    }
+                                }
+                            }
+                            .presentationDetents([.medium, .large])
+                            .presentationDragIndicator(.visible)
+                        }
+                        #endif
                 }
             }
         }

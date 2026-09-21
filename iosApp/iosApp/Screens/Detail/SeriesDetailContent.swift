@@ -378,10 +378,10 @@ struct SeriesDetailContent<BelowOverview: View>: View {
         VStack(alignment: .leading, spacing: 36) {
             episodesSection
             trailersSection
-            similarSection
             if let cast = detail.cast, !cast.isEmpty {
                 castSection(cast: cast)
             }
+            similarSection
             detailsSection
                 .padding(.horizontal, VividTheme.safePadding)
         }

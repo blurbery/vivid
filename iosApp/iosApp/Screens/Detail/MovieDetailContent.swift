@@ -286,12 +286,12 @@ struct MovieDetailContent<BelowOverview: View>: View {
 
             trailersSection
 
-            if showsSimilarRail {
-                similarSection
-            }
-
             if let cast = detail.cast, !cast.isEmpty {
                 castSection(cast: cast)
+            }
+
+            if showsSimilarRail {
+                similarSection
             }
             detailsSection
                 .padding(.horizontal, VividTheme.safePadding)
