@@ -317,6 +317,7 @@ struct PersonDetailView: View {
     #if os(iOS)
     @Environment(\.detailPullBackAction) private var goBack
     @Environment(\.dismiss) private var dismiss
+    @State private var topChromeScrollState = PhoneDetailScrollState()
     #endif
 
     init(personId: Int) {
@@ -326,6 +327,23 @@ struct PersonDetailView: View {
     var body: some View {
         rootContent
             #if os(iOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: VividTheme.topBarIconHitSize + 9)
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .overlay(alignment: .top) {
+                PhoneDetailTopChrome(
+                    title: "",
+                    isScrollGlassEnabled: false,
+                    scrollState: topChromeScrollState,
+                    leadingSystemName: "chevron.left",
+                    leadingAccessibilityLabel: "Back",
+                    onLeadingTap: {
+                        if let goBack { goBack() } else { dismiss() }
+                    }
+                )
+            }
             .environment(\.detailPullBackAction, {
                 if let goBack { goBack() } else { dismiss() }
             })

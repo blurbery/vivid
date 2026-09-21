@@ -24,7 +24,7 @@ struct ItemDetailView: View {
 
 /// Static top-control layout. Scroll progress is read only by the tiny opacity
 /// leaves below, so changing chrome never rebuilds buttons or their actions.
-private struct PhoneDetailTopChrome: View {
+struct PhoneDetailTopChrome: View {
     let title: String
     let isScrollGlassEnabled: Bool
     let scrollState: PhoneDetailScrollState
@@ -61,7 +61,7 @@ private struct PhoneDetailTopChrome: View {
 
 
             }
-            .padding(.leading, leadingSystemName == "xmark" ? 9 : 18)
+            .padding(.leading, 9)
             .padding(.trailing, 18)
             .padding(.top, 9)
         }
@@ -305,7 +305,7 @@ private struct ItemDetailPhoneContent: View {
             selectedSeriesEpisodeId = nil
             #endif
             refreshOnPlayerDismiss = false
-            detailScrollState.reset()
+            detailScrollState.prepare(for: contentId)
             await viewModel.loadDetail(contentId: contentId)
             seedSubtitleOverrideIfNeeded()
         }
