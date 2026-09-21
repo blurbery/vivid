@@ -61,7 +61,8 @@ private struct PhoneDetailTopChrome: View {
 
 
             }
-            .padding(.horizontal, 18)
+            .padding(.leading, leadingSystemName == "xmark" ? 9 : 18)
+            .padding(.trailing, 18)
             .padding(.top, 9)
         }
         .zIndex(20)
