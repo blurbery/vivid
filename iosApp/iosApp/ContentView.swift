@@ -63,6 +63,17 @@ struct ContentView: View {
         #if os(iOS) || os(tvOS)
         .id(TVSavedAccountStore.shared.contentRevision)
         #endif
+        // Account restoration may re-key the content while Keychain retries.
+        // Keep the startup task outside that subtree so it can finish routing.
+        .task(id: initialStateAttempt) {
+            guard router.authState == .loading, !didStartInitialStateCheck else { return }
+            didStartInitialStateCheck = true
+            defer { didStartInitialStateCheck = false }
+            #if os(iOS) || os(tvOS)
+            LaunchTimeline.recordInitialStateCheckStarted()
+            #endif
+            await checkInitialState()
+        }
         #if os(iOS) || os(tvOS)
         .sheet(isPresented: $showsCloudRestore) {
             TVCloudRestoreView {
@@ -530,7 +541,10 @@ struct ContentView: View {
     @ViewBuilder
     private var startupPresentation: some View {
         #if os(tvOS) || os(iOS)
-        VividStartupView(isContentReady: initialSplashContentReady) {
+        VividStartupView(
+            isContentReady: initialSplashContentReady,
+            isLoading: didStartInitialStateCheck && !showsCredentialReadError
+        ) {
             LaunchTimeline.recordSplashFinished()
             didFinishStartupSplash = true
             finishInitialStartupIfReady()
@@ -592,14 +606,6 @@ struct ContentView: View {
                 #else
                 startupPresentation
                 #endif
-            }
-            .task(id: initialStateAttempt) {
-                guard !didStartInitialStateCheck else { return }
-                didStartInitialStateCheck = true
-                #if os(iOS) || os(tvOS)
-                LaunchTimeline.recordInitialStateCheckStarted()
-                #endif
-                await checkInitialState()
             }
 
         case .needsServerSetup, .needsLogin:
