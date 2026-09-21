@@ -202,12 +202,23 @@ struct ServerListView: View {
 
 
             Section {
+                #if os(iOS)
+                NavigationLink {
+                    PhoneProviderSelectionView(router: router)
+                        .navigationTitle("Add Server")
+                        .vividNavigationTitleDisplayMode(.inline)
+                } label: {
+                    Label("Add Server", systemImage: "plus")
+                        .foregroundColor(.vividOnSurface)
+                }
+                #else
                 Button {
                     router.resetToServerSetup()
                 } label: {
                     Label("Add Server", systemImage: "plus")
                         .foregroundColor(.vividOnSurface)
                 }
+                #endif
             }
 
         }

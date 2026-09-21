@@ -2560,7 +2560,8 @@ private struct ItemDetailPresentationModifier: ViewModifier {
                 ItemDetailSheet(presentation: presentation, router: router)
             }
         } else {
-            content.sheet(item: $router.presentedItemDetail,
+            content.background { DetailBackdropSourceReader(router: router) }
+                .sheet(item: $router.presentedItemDetail,
                           onDismiss: { router.itemDetailPresentationDidDismiss() }) { presentation in
                 ItemDetailSheet(presentation: presentation, router: router)
             }
@@ -2626,6 +2627,15 @@ private struct ItemDetailSheet: View {
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(28)
         .presentationBackground(.ultraThickMaterial)
+        .presentationBackgroundInteraction(
+            UIDevice.current.userInterfaceIdiom == .phone && router.itemDetailBackdropImage != nil
+                ? .enabled : .automatic
+        )
+        .background {
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                DetailPresentationBackdrop(sourceImage: router.itemDetailBackdropImage)
+            }
+        }
         // Nested pages handle a top pull as Back. The sheet's native dismiss
         // remains available only at the root, preserving the source page.
         .interactiveDismissDisabled(!router.itemDetailPath.isEmpty)
@@ -2733,6 +2743,7 @@ private struct MobileSearchPage: View {
                         }
                     }
             }
+            .background { DetailBackdropSourceReader(router: searchRouter) }
             .sheet(
                 item: $searchRouter.presentedItemDetail,
                 onDismiss: { searchRouter.itemDetailPresentationDidDismiss() }

@@ -189,8 +189,15 @@ class AppRouter {
     }
 
     #if os(iOS)
-    var presentedItemDetail: ItemDetailPresentation?
+    var presentedItemDetail: ItemDetailPresentation? {
+        didSet {
+            if presentedItemDetail != nil { isItemDetailPresentationActive = true }
+        }
+    }
+    var isItemDetailPresentationActive = false
     var itemDetailPath = NavigationPath()
+    @ObservationIgnored var captureItemDetailBackdrop: (() -> UIImage?)?
+    @ObservationIgnored var itemDetailBackdropImage: UIImage?
     #endif
 
     // MARK: - Player Presentation
@@ -377,6 +384,8 @@ class AppRouter {
         // callback from an old sheet must not erase a newly opened detail.
         guard presentedItemDetail == nil else { return }
         itemDetailPath = NavigationPath()
+        itemDetailBackdropImage = nil
+        isItemDetailPresentationActive = false
     }
     #endif
 
@@ -418,6 +427,7 @@ class AppRouter {
         #if os(iOS)
         recordScreenBreadcrumb(target: "itemDetail", action: "present")
         if presentedItemDetail == nil {
+            itemDetailBackdropImage = captureItemDetailBackdrop?()
             let source = browseSource.flatMap { source in
                 source.contentIDs.contains(contentId) ? source : nil
             }
