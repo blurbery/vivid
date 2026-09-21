@@ -96,6 +96,13 @@ class AppRouter {
     /// are otherwise unreproducible. Transitions that leave the state
     /// unchanged are dropped so a re-entrant reset can't pad the timeline.
     var authState: AuthState = .loading {
+        willSet {
+            #if os(iOS)
+            guard newValue != authState else { return }
+            presentedItemDetail = nil
+            itemDetailPresentationDidDismiss()
+            #endif
+        }
         didSet {
             // Consume the cause unconditionally: a no-op assignment must not
             // leave a stale reason to be misattributed to the next transition.

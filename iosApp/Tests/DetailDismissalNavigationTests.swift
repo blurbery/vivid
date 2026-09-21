@@ -22,6 +22,51 @@ private actor ContinueWatchingResponseGate {
 
 @MainActor
 final class DetailDismissalNavigationTests: XCTestCase {
+    func testAuthTransitionsClearDetailStateBeforeReturningHome() {
+        for destination in [AppRouter.AuthState.needsLogin, .needsServerSetup, .needsProfile] {
+            let router = AppRouter()
+            router.authState = .authenticated
+            router.presentItemDetail(contentId: "movie")
+            router.itemDetailPath.append("nested-detail")
+            router.itemDetailBackdropImage = UIImage()
+
+            router.authState = destination
+
+            XCTAssertNil(router.presentedItemDetail)
+            XCTAssertTrue(router.itemDetailPath.isEmpty)
+            XCTAssertNil(router.itemDetailBackdropImage)
+            XCTAssertFalse(router.isItemDetailPresentationActive)
+            router.resetToHome()
+            XCTAssertFalse(router.isItemDetailPresentationActive)
+        }
+    }
+
+    func testUnchangedAuthStatePreservesOpenDetail() {
+        let router = AppRouter()
+        router.authState = .authenticated
+        router.presentItemDetail(contentId: "movie")
+        let detailID = router.presentedItemDetail?.id
+
+        router.authState = .authenticated
+
+        XCTAssertEqual(router.presentedItemDetail?.id, detailID)
+        XCTAssertTrue(router.isItemDetailPresentationActive)
+    }
+
+    func testDismissalKeepsSpotlightPausedUntilFinishedAndPreservesNewCard() {
+        let router = AppRouter()
+        router.presentItemDetail(contentId: "first")
+        router.dismissItemDetail()
+        XCTAssertTrue(router.isItemDetailPresentationActive)
+        router.itemDetailPresentationDidDismiss()
+        XCTAssertFalse(router.isItemDetailPresentationActive)
+
+        router.presentItemDetail(contentId: "second")
+        router.itemDetailPresentationDidDismiss()
+        XCTAssertEqual(router.presentedItemDetail?.contentId, "second")
+        XCTAssertTrue(router.isItemDetailPresentationActive)
+    }
+
     func testPlaybackCompletionUpdatesEveryResidentSeriesEpisodeCopy() throws {
         let decoded = try JSONDecoder().decode(EpisodesResponse.self, from: Data(#"""
         {"episodes":[

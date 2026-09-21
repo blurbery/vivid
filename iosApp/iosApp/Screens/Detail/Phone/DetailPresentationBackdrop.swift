@@ -60,6 +60,10 @@ struct DetailPresentationBackdrop: UIViewControllerRepresentable {
         private weak var sourceView: UIView?
         private var sourceWasAccessibilityHidden = false
 
+        deinit {
+            displayLink?.invalidate()
+        }
+
         override func loadView() {
             view = UIView()
             view.isUserInteractionEnabled = false
