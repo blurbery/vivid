@@ -34,7 +34,7 @@ jobs:
       - name: Check Discord release notification
         env:
           DISCORD_RELEASE_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
-        run: test -n "$DISCORD_RELEASE_WEBHOOK_URL"
+        run: node scripts/release/discord-notify.mjs --check-webhook
       - name: Publish version and update bullets
         id: publish
         env:

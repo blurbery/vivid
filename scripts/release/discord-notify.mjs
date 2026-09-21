@@ -48,12 +48,22 @@ export function buildDiscordReleasePayload(release) {
   };
 }
 
-export async function postDiscordRelease(release, webhookValue) {
-  const webhook = new URL(webhookValue);
+export function validateDiscordWebhookUrl(webhookValue) {
+  let webhook;
+  try {
+    webhook = new URL(webhookValue);
+  } catch {
+    throw new Error("DISCORD_RELEASE_WEBHOOK_URL must be a Discord webhook URL");
+  }
   if (webhook.protocol !== "https:" || webhook.hostname !== "discord.com" ||
       !webhook.pathname.startsWith("/api/webhooks/")) {
     throw new Error("DISCORD_RELEASE_WEBHOOK_URL must be a Discord webhook URL");
   }
+  return webhook;
+}
+
+export async function postDiscordRelease(release, webhookValue) {
+  const webhook = validateDiscordWebhookUrl(webhookValue);
   webhook.searchParams.set("wait", "true");
 
   const response = await fetch(webhook, {
@@ -69,7 +79,14 @@ export async function postDiscordRelease(release, webhookValue) {
 async function main() {
   const releasePath = process.argv[2];
   const webhook = process.env.DISCORD_RELEASE_WEBHOOK_URL;
-  if (!releasePath || !webhook) {
+  if (!webhook) {
+    throw new Error("Release JSON path and DISCORD_RELEASE_WEBHOOK_URL are required");
+  }
+  if (releasePath === "--check-webhook") {
+    validateDiscordWebhookUrl(webhook);
+    return;
+  }
+  if (!releasePath) {
     throw new Error("Release JSON path and DISCORD_RELEASE_WEBHOOK_URL are required");
   }
   const release = JSON.parse(await readFile(releasePath, "utf8"));

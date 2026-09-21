@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildDiscordReleasePayload } from "./discord-notify.mjs";
+import {
+  buildDiscordReleasePayload,
+  validateDiscordWebhookUrl,
+} from "./discord-notify.mjs";
 
 describe("Discord release notifications", () => {
   it("posts release bullets in a Vivid embed with a GitHub link", () => {
@@ -33,6 +36,17 @@ describe("Discord release notifications", () => {
     assert.equal(
       payload.embeds[0].description,
       "Release notes are available on GitHub.\n\n[View on GitHub](https://github.com/blurbery/vivid/releases/tag/v0.22.2)",
+    );
+  });
+
+  it("rejects an invalid webhook value before a release is published", () => {
+    assert.throws(
+      () => validateDiscordWebhookUrl("-"),
+      /must be a Discord webhook URL/,
+    );
+    assert.throws(
+      () => validateDiscordWebhookUrl("https://example.com/api/webhooks/1/token"),
+      /must be a Discord webhook URL/,
     );
   });
 });
