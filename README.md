@@ -17,6 +17,7 @@
   <a href="docs/README.md">Documentation</a> ·
   <a href="https://github.com/blurbery/vivid/releases">Releases</a> ·
   <a href="docs/branding/README.md">Branding</a> ·
+  <a href="https://discord.gg/G45pWmtEEm">Discord</a> ·
   <a href="#support">Support Vivid</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
@@ -66,7 +67,9 @@ Updates on `main` get a semantic version. Release titles are just the version nu
 
 ## Support
 
-I'll add GitHub Sponsors once I've finished setting it up. For now, testing the app and reporting issues helps a lot.
+Join the [Vivid Discord](https://discord.gg/G45pWmtEEm) to get help, share feedback and follow the project. Feel free to invite anyone who might enjoy Vivid.
+
+I'll add GitHub Sponsors once I've finished setting it up. For now, testing the app, reporting issues and spreading the word helps a lot.
 
 ## Licence
 
