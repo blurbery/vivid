@@ -159,3 +159,81 @@ with tempfile.TemporaryDirectory(prefix='vivid-audio-test-') as directory:
     subprocess.run(['cc', '-std=c11', '-Wall', '-Werror', '-Wno-unused-parameter',
                     str(path/'transport.c'), '-o', str(path/'transport')], check=True)
     subprocess.run([str(path/'transport')], check=True)
+
+# Exercise the actual replacement function with lightweight renderer doubles.
+# No audio device is opened; only Foundation ownership and property transfer run.
+sink_start = source.index('static bool pcm_recreate_sink(')
+sink_end = source.index('\nstatic bool pcm_should_feed(', sink_start)
+sink_body = source[sink_start:sink_end]
+sink_harness = r'''
+#import <Foundation/Foundation.h>
+#include <stdbool.h>
+#include <stdint.h>
+#define HAVE_MACOS_11_3_FEATURES 0
+#define HAVE_MACOS_12_FEATURES 0
+#define MP_WARN(...) ((void)0)
+#define MP_VERBOSE(...) ((void)0)
+#define AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification @"TestFlush"
+static bool fail_renderer;
+@interface AVSampleBufferAudioRenderer : NSObject
+@property float volume;
+@property(getter=isMuted) BOOL muted;
+@end
+@implementation AVSampleBufferAudioRenderer
+- (instancetype)init {
+    self = [super init];
+    if (fail_renderer) { [self release]; return nil; }
+    self.volume = 1;
+    return self;
+}
+@end
+@interface AVSampleBufferRenderSynchronizer : NSObject
+- (void)addRenderer:(AVSampleBufferAudioRenderer *)renderer;
+@end
+@implementation AVSampleBufferRenderSynchronizer
+- (void)addRenderer:(AVSampleBufferAudioRenderer *)renderer { }
+@end
+struct priv {
+    AVSampleBufferAudioRenderer *renderer;
+    AVSampleBufferRenderSynchronizer *synchronizer;
+    NSObject *observer;
+    int64_t end_time_av, pcm_last_log_ns;
+    bool pcm_needs_fresh_sink;
+};
+struct ao { struct priv *priv; };
+static int reloads;
+static void ao_request_reload(struct ao *ao) { reloads++; }
+''' + sink_body + r'''
+int main(void) {
+    @autoreleasepool {
+        struct priv p = { .renderer=[AVSampleBufferAudioRenderer new],
+            .synchronizer=[AVSampleBufferRenderSynchronizer new],
+            .observer=[NSObject new], .pcm_needs_fresh_sink=true,
+            .end_time_av=9000, .pcm_last_log_ns=1000 };
+        struct ao ao = { &p };
+        p.renderer.volume = 0.37f;
+        p.renderer.muted = YES;
+        assert(pcm_recreate_sink(&ao));
+        assert(p.renderer.volume == 0.37f && p.renderer.isMuted);
+        assert(p.end_time_av == -1 && p.pcm_last_log_ns == 0 && !p.pcm_needs_fresh_sink);
+        p.renderer.volume = 0.0f;
+        p.renderer.muted = NO;
+        assert(pcm_recreate_sink(&ao));
+        assert(p.renderer.volume == 0.0f && !p.renderer.isMuted);
+        AVSampleBufferAudioRenderer *original = p.renderer;
+        p.pcm_needs_fresh_sink = true;
+        fail_renderer = true;
+        assert(!pcm_recreate_sink(&ao));
+        assert(reloads == 1 && p.renderer == original && p.pcm_needs_fresh_sink);
+        [[NSNotificationCenter defaultCenter] removeObserver:p.observer];
+        [p.renderer release]; [p.synchronizer release]; [p.observer release];
+        puts("7 PCM renderer replacement checks passed");
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix='vivid-pcm-sink-test-') as directory:
+    path = Path(directory)
+    (path/'sink.m').write_text(sink_harness)
+    subprocess.run(['clang', '-fblocks', '-framework', 'Foundation',
+                    str(path/'sink.m'), '-o', str(path/'sink')], check=True)
+    subprocess.run([str(path/'sink')], check=True)

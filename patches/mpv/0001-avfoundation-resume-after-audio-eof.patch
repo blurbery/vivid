@@ -112,16 +112,12 @@
      [p->renderer stopRequestingMediaData];
      if (!p->feed_enabled)
          return;
-@@ -690,10 +711,16 @@
+@@ -690,10 +711,12 @@
          pcm_request_media_data(ao);
          return;
      }
 +    int64_t retry_ns = p->pcm_lookahead_ns / 2;
 +    int64_t leeway_ns = p->pcm_lookahead_ns / 10;
-+#if TARGET_OS_TV
-+    retry_ns = MPMIN(retry_ns, MP_TIME_MS_TO_NS(100));
-+    leeway_ns = MP_TIME_MS_TO_NS(10);
-+#endif
      dispatch_source_set_timer(
          p->feed_timer,
 -        dispatch_time(DISPATCH_TIME_NOW, p->pcm_lookahead_ns / 2),
@@ -131,7 +127,7 @@
  }
 
  // Turn the bounded PCM feed on or off. Serialized on p->queue so it cannot
-@@ -706,11 +733,21 @@
+@@ -706,11 +729,21 @@
      void (^block)(void) = ^{
          p->feed_enabled = enabled;
          pcm_cancel_pending_feed(p);
@@ -153,7 +149,7 @@
      };
      if (dispatch_get_specific(&avfoundation_queue_key) == p)
          block();
-@@ -719,16 +756,33 @@
+@@ -719,16 +752,33 @@
  }
  #endif  // TARGET_OS_OSX
 
@@ -189,7 +185,7 @@
              pcm_pause_feeding(ao);
              return;
          }
-@@ -750,6 +804,12 @@
+@@ -750,6 +800,12 @@
      bool eof;
      int real_sample_count = ao_read_data(ao, data, request_sample_count, end_time_av - cur_time_av + cur_time_mp + time_delta, &eof, false, true);
      if (eof) {
@@ -202,7 +198,7 @@
          [p->renderer stopRequestingMediaData];
          ao_stop_streaming(ao);
      }
-@@ -811,6 +871,85 @@
+@@ -811,6 +867,88 @@
      if (sample_buffer) CFRelease(sample_buffer);
  }
 
@@ -221,6 +217,9 @@
 +        ao_request_reload(ao);
 +        return false;
 +    }
++    // Carry user controls across the seek before the new sink can play.
++    renderer.volume = p->renderer.volume;
++    renderer.muted = p->renderer.isMuted;
 +    [synchronizer addRenderer:renderer];
 +#if HAVE_MACOS_11_3_FEATURES
 +    if (@available(tvOS 14.5, *))
@@ -288,7 +287,7 @@
  static void start(struct ao *ao)
  {
      struct priv *p = ao->priv;
-@@ -818,6 +957,12 @@
+@@ -818,6 +956,12 @@
      if (p->spdif) {
          void (^start_block)(void) = ^{
              p->avp_playing = true;
@@ -301,7 +300,7 @@
              if (!p->item)
                  avp_create_item(ao);
              else if (p->avp_rate_applied)
-@@ -832,9 +977,24 @@
+@@ -832,6 +976,21 @@
          return;
      }
 
@@ -322,12 +321,8 @@
 +#endif
      p->end_time_av = -1;
      [p->synchronizer setRate:1];
--#if TARGET_OS_OSX
-+#if TARGET_OS_OSX || TARGET_OS_TV
-     // With no bound there is nothing to gate, so arm exactly as before rather
-     // than routing the first arm through the queue.
-     if (p->pcm_lookahead_ns) {
-@@ -861,7 +1021,13 @@
+ #if TARGET_OS_OSX
+@@ -861,7 +1020,13 @@
          [p->renderer stopRequestingMediaData];
          [p->renderer flush];
          [p->synchronizer setRate:0];
@@ -342,7 +337,7 @@
          // A frozen clock never drains the queue, so leave nothing scheduled;
          // start() turns feeding back on.
          p->feed_enabled = false;
-@@ -904,9 +1070,26 @@
+@@ -904,9 +1069,26 @@
          return true;
      }
 
@@ -370,7 +365,7 @@
          // The clock is stopped, so the bound can never be undercut again on
          // its own. Stop asking rather than waking every half-bound to
          // rediscover that.
-@@ -914,7 +1097,7 @@
+@@ -914,7 +1096,7 @@
              pcm_set_feeding(ao, false);
  #endif
      } else {
@@ -379,7 +374,57 @@
          if (p->pcm_lookahead_ns)
              pcm_set_feeding(ao, true);
  #endif
-@@ -974,6 +1157,23 @@
+@@ -947,22 +1129,33 @@
+         }
+     }
+
+-    switch (cmd) {
+-    case AOCONTROL_GET_MUTE:
+-        *(bool*)arg = [p->renderer isMuted];
+-        return CONTROL_OK;
+-    case AOCONTROL_GET_VOLUME:
+-        *(float*)arg = [p->renderer volume] * 100;
+-        return CONTROL_OK;
+-    case AOCONTROL_SET_MUTE:
+-        [p->renderer setMuted:*(bool*)arg];
+-        return CONTROL_OK;
+-    case AOCONTROL_SET_VOLUME:
+-        [p->renderer setVolume:*(float*)arg / 100];
+-        return CONTROL_OK;
+-    default:
+-        return CONTROL_UNKNOWN;
+-    }
++    int (^control_block)(void) = ^int {
++        switch (cmd) {
++        case AOCONTROL_GET_MUTE:
++            *(bool*)arg = [p->renderer isMuted];
++            return CONTROL_OK;
++        case AOCONTROL_GET_VOLUME:
++            *(float*)arg = [p->renderer volume] * 100;
++            return CONTROL_OK;
++        case AOCONTROL_SET_MUTE:
++            [p->renderer setMuted:*(bool*)arg];
++            return CONTROL_OK;
++        case AOCONTROL_SET_VOLUME:
++            [p->renderer setVolume:*(float*)arg / 100];
++            return CONTROL_OK;
++        default:
++            return CONTROL_UNKNOWN;
++        }
++    };
++#if TARGET_OS_TV
++    // Renderer replacement and user controls must share the same queue.
++    if (p->pcm_lookahead_ns && dispatch_get_specific(&avfoundation_queue_key) != p) {
++        __block int result;
++        dispatch_sync(p->queue, ^{ result = control_block(); });
++        return result;
++    }
++#endif
++    return control_block();
+ }
+
+ @implementation AVObserver
+@@ -974,6 +1167,23 @@
      return self;
  }
  - (void)handleRestartNotification:(NSNotification*)notification {
@@ -403,7 +448,7 @@
      char *name = cfstr_get_cstr((CFStringRef)notification.name);
      MP_WARN(ao, "restarting due to system notification; this will cause desync\n");
      MP_VERBOSE(ao, "notification name: %s\n", name);
-@@ -1179,7 +1379,7 @@
+@@ -1179,7 +1389,7 @@
          goto error;
      }
 
@@ -412,7 +457,7 @@
      // --audio-buffer is documented as a minimum the device may exceed, so it
      // cannot double as this maximum; it only keeps the bound from dropping
      // under what the core was told to expect.
-@@ -1190,10 +1390,14 @@
+@@ -1190,10 +1400,14 @@
                                                 p->queue);
          if (p->feed_timer) {
              dispatch_source_set_event_handler(p->feed_timer, ^{
@@ -427,7 +472,7 @@
              });
              dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
                                        DISPATCH_TIME_FOREVER, 0);
-@@ -1272,7 +1476,7 @@
+@@ -1272,7 +1486,7 @@
          dispatch_release(p->avp_timer);
          p->avp_timer = NULL;
      }
@@ -436,7 +481,7 @@
      if (p->feed_timer) {
          dispatch_source_cancel(p->feed_timer);
          dispatch_release(p->feed_timer);
-@@ -1322,7 +1526,7 @@
+@@ -1322,7 +1536,7 @@
          // as this returns. Cancelling on p->queue means no handler is
          // mid-flight and none can start afterwards. stop() above already
          // left the timer idle.
@@ -445,7 +490,7 @@
          if (p->feed_timer) {
              dispatch_sync(p->queue, ^{
                  dispatch_source_cancel(p->feed_timer);
-@@ -1372,7 +1576,7 @@
+@@ -1372,7 +1586,7 @@
  #endif
      },
      .options = (const struct m_option[]) {
