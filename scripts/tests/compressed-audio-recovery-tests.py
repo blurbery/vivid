@@ -170,11 +170,10 @@ sink_harness = r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
-#define HAVE_MACOS_11_3_FEATURES 0
-#define HAVE_MACOS_12_FEATURES 0
 #define MP_WARN(...) ((void)0)
 #define MP_VERBOSE(...) ((void)0)
 #define AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification @"TestFlush"
+#define AVSampleBufferAudioRendererOutputConfigurationDidChangeNotification @"TestOutputChange"
 static bool fail_renderer;
 @interface AVSampleBufferAudioRenderer : NSObject
 @property float volume;
@@ -189,10 +188,27 @@ static bool fail_renderer;
 }
 @end
 @interface AVSampleBufferRenderSynchronizer : NSObject
+@property BOOL delaysRateChangeUntilHasSufficientMediaData;
 - (void)addRenderer:(AVSampleBufferAudioRenderer *)renderer;
 @end
 @implementation AVSampleBufferRenderSynchronizer
+- (instancetype)init {
+    self = [super init];
+    self.delaysRateChangeUntilHasSufficientMediaData = YES;
+    return self;
+}
 - (void)addRenderer:(AVSampleBufferAudioRenderer *)renderer { }
+@end
+@interface SinkObserver : NSObject
+@property int flushCount;
+@property int outputChangeCount;
+- (void)handleRestartNotification:(NSNotification *)notification;
+@end
+@implementation SinkObserver
+- (void)handleRestartNotification:(NSNotification *)notification {
+    if ([notification.name isEqualToString:@"TestFlush"]) self.flushCount++;
+    if ([notification.name isEqualToString:@"TestOutputChange"]) self.outputChangeCount++;
+}
 @end
 struct priv {
     AVSampleBufferAudioRenderer *renderer;
@@ -209,7 +225,7 @@ int main(void) {
     @autoreleasepool {
         struct priv p = { .renderer=[AVSampleBufferAudioRenderer new],
             .synchronizer=[AVSampleBufferRenderSynchronizer new],
-            .observer=[NSObject new], .pcm_needs_fresh_sink=true,
+            .observer=[SinkObserver new], .pcm_needs_fresh_sink=true,
             .end_time_av=9000, .pcm_last_log_ns=1000 };
         struct ao ao = { &p };
         p.renderer.volume = 0.37f;
@@ -217,10 +233,25 @@ int main(void) {
         assert(pcm_recreate_sink(&ao));
         assert(p.renderer.volume == 0.37f && p.renderer.isMuted);
         assert(p.end_time_av == -1 && p.pcm_last_log_ns == 0 && !p.pcm_needs_fresh_sink);
+        assert(p.synchronizer.delaysRateChangeUntilHasSufficientMediaData == !HAVE_MACOS_11_3_FEATURES);
+        SinkObserver *observer = (SinkObserver *)p.observer;
+        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+        [center postNotificationName:@"TestFlush" object:p.renderer];
+        [center postNotificationName:@"TestOutputChange" object:p.renderer];
+        assert(observer.flushCount == 1);
+        assert(observer.outputChangeCount == HAVE_MACOS_12_FEATURES);
+        AVSampleBufferAudioRenderer *oldRenderer = [p.renderer retain];
         p.renderer.volume = 0.0f;
         p.renderer.muted = NO;
         assert(pcm_recreate_sink(&ao));
         assert(p.renderer.volume == 0.0f && !p.renderer.isMuted);
+        [center postNotificationName:@"TestFlush" object:oldRenderer];
+        [center postNotificationName:@"TestOutputChange" object:oldRenderer];
+        assert(observer.flushCount == 1 && observer.outputChangeCount == HAVE_MACOS_12_FEATURES);
+        [oldRenderer release];
+        [center postNotificationName:@"TestFlush" object:p.renderer];
+        [center postNotificationName:@"TestOutputChange" object:p.renderer];
+        assert(observer.flushCount == 2 && observer.outputChangeCount == 2 * HAVE_MACOS_12_FEATURES);
         AVSampleBufferAudioRenderer *original = p.renderer;
         p.pcm_needs_fresh_sink = true;
         fail_renderer = true;
@@ -228,13 +259,16 @@ int main(void) {
         assert(reloads == 1 && p.renderer == original && p.pcm_needs_fresh_sink);
         [[NSNotificationCenter defaultCenter] removeObserver:p.observer];
         [p.renderer release]; [p.synchronizer release]; [p.observer release];
-        puts("7 PCM renderer replacement checks passed");
+        printf("12 PCM renderer replacement checks passed (features=%d)\n", HAVE_MACOS_12_FEATURES);
     }
 }
 '''
 with tempfile.TemporaryDirectory(prefix='vivid-pcm-sink-test-') as directory:
     path = Path(directory)
     (path/'sink.m').write_text(sink_harness)
-    subprocess.run(['clang', '-fblocks', '-framework', 'Foundation',
-                    str(path/'sink.m'), '-o', str(path/'sink')], check=True)
-    subprocess.run([str(path/'sink')], check=True)
+    for enabled in (0, 1):
+        subprocess.run(['clang', '-fblocks', '-framework', 'Foundation',
+                        f'-DHAVE_MACOS_11_3_FEATURES={enabled}',
+                        f'-DHAVE_MACOS_12_FEATURES={enabled}',
+                        str(path/'sink.m'), '-o', str(path/'sink')], check=True)
+        subprocess.run([str(path/'sink')], check=True)
