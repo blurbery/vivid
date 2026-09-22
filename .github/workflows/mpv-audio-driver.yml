@@ -5,6 +5,12 @@ on:
     branches: [experiment-2.0]
     paths: ['patches/mpv/**', '.github/workflows/mpv-audio-driver.yml']
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Native library to rebuild
+        type: choice
+        default: both
+        options: [both, tvos-device, ios-device]
 
 permissions:
   contents: read
@@ -19,7 +25,7 @@ jobs:
       max-parallel: 1
       fail-fast: false
       matrix:
-        platform: [tvos-device, ios-device]
+        platform: ${{ github.event_name == 'workflow_dispatch' && inputs.platform != 'both' && inputs.platform != '' && fromJSON(format('["{0}"]', inputs.platform)) || fromJSON('["tvos-device","ios-device"]') }}
     runs-on: macos-26
     timeout-minutes: 45
     steps:

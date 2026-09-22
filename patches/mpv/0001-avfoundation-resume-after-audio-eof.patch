@@ -8,7 +8,31 @@
  #include "internal.h"
  #include "options/m_option.h"
  #include "osdep/timer.h"
-@@ -304,6 +305,19 @@
+@@ -122,13 +123,8 @@
+     // dropouts over ~4 min fell from 21/min (Plezy 2.15) and 10.6/min
+     // (this AO at 2 s) to zero.
+     double opt_compressed_lead;
+-#if TARGET_OS_OSX
+-    // The bounded PCM lookahead is macOS-only. That is where --volume is
+-    // driven from a slider or the keyboard and the lag is felt; on tvOS and
+-    // iOS the hardware volume never reaches mpv's software gain, and the
+-    // renderer's deep queue is what carries AirPlay. Everything below
+-    // compiles out entirely there.
+-    //
++#if TARGET_OS_OSX || TARGET_OS_TV
++    // tvOS opts into the bound for AirPlay; other tvOS routes default to zero.
+     // How far ahead of the playhead the PCM path is allowed to enqueue.
+     // AVSampleBufferAudioRenderer's own backpressure sits far out -- around
+     // 1.7s when measured against a local route -- and mpv multiplies the
+@@ -145,6 +141,7 @@
+     // wakes forever re-deciding not to feed. Only mutated on p->queue.
+     bool feed_enabled;
+     double opt_max_lookahead;
++    int64_t pcm_last_log_ns;
+ #endif
+ };
+
+@@ -304,6 +301,19 @@
          CMTimeMake(SPDIF_FRAMES_PER_BURST, p->spdif_rate));
  }
 
@@ -28,7 +52,7 @@
  // One read/unwrap pass: pull IEC 61937 data from mpv and append every
  // complete burst's payload to the elementary stream. Returns false when out
  // of data, at EOF, or reloading.
-@@ -318,6 +332,9 @@
+@@ -318,6 +328,9 @@
      if ((p->stash_size - p->stash_len) / sstride < request_sample_count)
          request_sample_count = (p->stash_size - p->stash_len) / sstride;
      if (request_sample_count <= 0)
@@ -38,7 +62,7 @@
          return false;
 
      int64_t cur_time_av = avp_current_time_ns(ao);
-@@ -492,15 +509,13 @@
+@@ -492,15 +505,13 @@
          p->avp_start_deadline = -1; // playing; nothing left to supervise
          return;
      }
@@ -61,7 +85,78 @@
          p->avp_primed_pts = p->es_pts;
          p->avp_start_deadline = now + AVP_START_GRACE_NS;
          return;
-@@ -818,6 +833,12 @@
+@@ -649,7 +660,7 @@
+     p->avp_primed_pts = 0;
+ }
+
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+ static void feed(struct ao *ao);
+
+ static void pcm_request_media_data(struct ao *ao)
+@@ -690,10 +701,16 @@
+         pcm_request_media_data(ao);
+         return;
+     }
++    int64_t retry_ns = p->pcm_lookahead_ns / 2;
++    int64_t leeway_ns = p->pcm_lookahead_ns / 10;
++#if TARGET_OS_TV
++    retry_ns = MPMIN(retry_ns, MP_TIME_MS_TO_NS(100));
++    leeway_ns = MP_TIME_MS_TO_NS(10);
++#endif
+     dispatch_source_set_timer(
+         p->feed_timer,
+-        dispatch_time(DISPATCH_TIME_NOW, p->pcm_lookahead_ns / 2),
+-        DISPATCH_TIME_FOREVER, p->pcm_lookahead_ns / 10);
++        dispatch_time(DISPATCH_TIME_NOW, retry_ns),
++        DISPATCH_TIME_FOREVER, leeway_ns);
+ }
+
+ // Turn the bounded PCM feed on or off. Serialized on p->queue so it cannot
+@@ -719,16 +736,40 @@
+ }
+ #endif  // TARGET_OS_OSX
+
++#if TARGET_OS_TV
++static bool pcm_wait_for_prefetch(int64_t ahead, int64_t queued_samples, int request_samples)
++{
++    return ahead >= MP_TIME_S_TO_NS(1) && queued_samples < request_samples;
++}
++#endif
++
+ static void feed(struct ao *ao)
+ {
+     struct priv *p = ao->priv;
+     int samplerate = ao->samplerate;
+     int sstride = ao->sstride;
+
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+     if (p->pcm_lookahead_ns) {
+         int64_t now = CMTimeGetNanoseconds([p->synchronizer currentTime]);
+-        if (p->end_time_av - now >= p->pcm_lookahead_ns) {
++        int64_t ahead = p->end_time_av - now;
++#if TARGET_OS_TV
++        int64_t host_now = mp_time_ns();
++        if (host_now - p->pcm_last_log_ns >= MP_TIME_S_TO_NS(2)) {
++            p->pcm_last_log_ns = host_now;
++            MP_VERBOSE(ao, "pcm: clock %.3f, fed %.3f, ahead %.3f, rate %.3f, status %d\n",
++                       now / 1e9, p->end_time_av / 1e9, ahead / 1e9,
++                       (double)p->synchronizer.rate, (int)p->renderer.status);
++        }
++        // A short opportunistic read is not an underrun while the renderer
++        // still has a second of audio queued. Revisit it on the existing timer.
++        if (pcm_wait_for_prefetch(ahead,
++                mp_async_queue_get_samples(ao_get_queue(ao)), samplerate / 10)) {
++            pcm_pause_feeding(ao);
++            return;
++        }
++#endif
++        if (ahead >= p->pcm_lookahead_ns) {
+             pcm_pause_feeding(ao);
+             return;
+         }
+@@ -818,6 +859,12 @@
      if (p->spdif) {
          void (^start_block)(void) = ^{
              p->avp_playing = true;
@@ -74,3 +169,75 @@
              if (!p->item)
                  avp_create_item(ao);
              else if (p->avp_rate_applied)
+@@ -834,7 +881,7 @@
+
+     p->end_time_av = -1;
+     [p->synchronizer setRate:1];
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+     // With no bound there is nothing to gate, so arm exactly as before rather
+     // than routing the first arm through the queue.
+     if (p->pcm_lookahead_ns) {
+@@ -861,7 +908,7 @@
+         [p->renderer stopRequestingMediaData];
+         [p->renderer flush];
+         [p->synchronizer setRate:0];
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+         // A frozen clock never drains the queue, so leave nothing scheduled;
+         // start() turns feeding back on.
+         p->feed_enabled = false;
+@@ -906,7 +953,7 @@
+
+     if (paused) {
+         [p->synchronizer setRate:0];
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+         // The clock is stopped, so the bound can never be undercut again on
+         // its own. Stop asking rather than waking every half-bound to
+         // rediscover that.
+@@ -914,7 +961,7 @@
+             pcm_set_feeding(ao, false);
+ #endif
+     } else {
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+         if (p->pcm_lookahead_ns)
+             pcm_set_feeding(ao, true);
+ #endif
+@@ -1179,7 +1226,7 @@
+         goto error;
+     }
+
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+     // --audio-buffer is documented as a minimum the device may exceed, so it
+     // cannot double as this maximum; it only keeps the bound from dropping
+     // under what the core was told to expect.
+@@ -1272,7 +1319,7 @@
+         dispatch_release(p->avp_timer);
+         p->avp_timer = NULL;
+     }
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+     if (p->feed_timer) {
+         dispatch_source_cancel(p->feed_timer);
+         dispatch_release(p->feed_timer);
+@@ -1322,7 +1369,7 @@
+         // as this returns. Cancelling on p->queue means no handler is
+         // mid-flight and none can start afterwards. stop() above already
+         // left the timer idle.
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+         if (p->feed_timer) {
+             dispatch_sync(p->queue, ^{
+                 dispatch_source_cancel(p->feed_timer);
+@@ -1372,7 +1419,7 @@
+ #endif
+     },
+     .options = (const struct m_option[]) {
+-#if TARGET_OS_OSX
++#if TARGET_OS_OSX || TARGET_OS_TV
+         {"max-lookahead", OPT_DOUBLE(opt_max_lookahead), M_RANGE(0, 10)},
+ #endif
+         {"accept-compressed", OPT_BOOL(opt_accept_compressed)},

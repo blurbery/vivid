@@ -17,6 +17,12 @@ body = source[start:end]
 prefetch_start = source.index('static bool avp_wait_for_prefetch(')
 prefetch_end = source.index('\n// One read/unwrap pass', prefetch_start)
 prefetch = source[prefetch_start:prefetch_end]
+pcm_start = source.index('static bool pcm_wait_for_prefetch(')
+pcm_end = source.index('\n#endif', pcm_start)
+pcm_prefetch = source[pcm_start:pcm_end]
+pcm_feed = source[source.index('static void feed(struct ao *ao)\n{'):source.index('static void start(')]
+assert pcm_feed.index('if (ahead >= p->pcm_lookahead_ns)') < pcm_feed.index('ao_read_data(')
+assert pcm_feed.index('if (pcm_wait_for_prefetch(') < pcm_feed.index('ao_read_data(')
 pull = source[source.index('static bool avp_pull('):source.index('static void avp_update_transport(')]
 assert pull.index('if (avp_wait_for_prefetch(ao, request_sample_count))') < pull.index('ao_read_data(ao,')
 for message, stub in {
@@ -33,6 +39,7 @@ harness = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #define S INT64_C(1000000000)
+#define MP_TIME_S_TO_NS(s) ((s)*S)
 #define AVP_START_MIN_NS S
 #define AVP_START_GRACE_NS (2*S)
 #define AVP_START_LEAD_NS(p) (2*(p)->avp_lead_ns)
@@ -59,7 +66,7 @@ static void check(bool ok, const char *name) {
     checks++;
     if (!ok) { fprintf(stderr, "FAIL: %s\n", name); exit(1); }
 }
-''' + prefetch + body + r'''
+''' + prefetch + pcm_prefetch + body + r'''
 static struct priv p;
 static struct ao ao = { &p };
 static void reset(void) {
@@ -127,7 +134,13 @@ int main(void) {
     check(avp_wait_for_prefetch(&ao, 4800), "retain full startup lead without false underrun");
     feed_pos=16*S;
     check(!avp_wait_for_prefetch(&ao, 4800), "pending EOF is read as buffered audio drains");
-    printf("%d compressed audio transport checks passed\n", checks);
+    check(!pcm_wait_for_prefetch(0, 0, 4800), "PCM initial priming is allowed");
+    check(pcm_wait_for_prefetch(2*S, 0, 4800), "PCM queued audio prevents false underrun");
+    check(pcm_wait_for_prefetch(S, 4799, 4800), "PCM short prefetch waits at reserve");
+    check(!pcm_wait_for_prefetch(S, 4800, 4800), "PCM complete packet proceeds");
+    check(!pcm_wait_for_prefetch(S-1, 0, 4800), "PCM real starvation remains visible");
+    check(!pcm_wait_for_prefetch(-S, 0, 4800), "PCM drained clock permits EOF read");
+    printf("%d audio transport checks passed\n", checks);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='vivid-audio-test-') as directory:
