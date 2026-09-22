@@ -22,6 +22,24 @@ private actor ContinueWatchingResponseGate {
 
 @MainActor
 final class DetailDismissalNavigationTests: XCTestCase {
+    func testReturningToSameDetailPreservesScrolledChrome() {
+        let state = PhoneDetailScrollState()
+        state.prepare(for: "series-one")
+        state.update(620)
+        state.prepare(for: "series-one")
+        XCTAssertEqual(state.offset, 480)
+        state.update(0)
+        XCTAssertEqual(state.offset, 0)
+    }
+
+    func testDifferentDetailStartsWithUnscrolledChrome() {
+        let state = PhoneDetailScrollState()
+        state.prepare(for: "movie-one")
+        state.update(320)
+        state.prepare(for: "movie-two")
+        XCTAssertEqual(state.offset, 0)
+    }
+
     func testAuthTransitionsClearDetailStateBeforeReturningHome() {
         for destination in [AppRouter.AuthState.needsLogin, .needsServerSetup, .needsProfile] {
             let router = AppRouter()

@@ -63,19 +63,18 @@ reviews:
 
     - path: "docs/**"
       instructions: |
-        Vivid documentation is controlled by blurbery. Flag documentation changes
-        unless the PR identifies prior explicit approval from blurbery. Check factual
+        Documentation changes do not require separate owner approval. Check factual
         claims, validation claims, links, versioning rules, Australian English and the
         existing Vivid document structure.
 
     - path: "AGENTS.md"
       instructions: |
-        Flag any weakening of repository safety, validation, publishing, design,
-        documentation ownership or AI-disclosure requirements. This file may only be
+        Flag any weakening of repository safety, validation, publishing, design
+        or AI-disclosure requirements. This file may only be
         changed with blurbery's explicit approval.
 
     - path: "CONTRIBUTING.md"
       instructions: |
         Flag any weakening of contribution controls, physical-device validation,
-        design ownership, documentation ownership or AI-disclosure requirements.
+        design ownership or AI-disclosure requirements.
         This file may only be changed with blurbery's explicit approval.

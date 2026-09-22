@@ -9,7 +9,11 @@ struct PhoneCastRail: View {
     let cast: [CastMember]
     let onTap: (String) -> Void
 
+    #if os(iOS)
+    private let photoSize: CGFloat = 88
+    #else
     private let photoSize: CGFloat = 76
+    #endif
     private let cardWidth: CGFloat = 96
     private let cardSpacing: CGFloat = 14
     private let maxEntries = 24

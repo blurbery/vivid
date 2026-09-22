@@ -80,6 +80,7 @@ extension View {
             .vividNavigationBarBackgroundHidden()
             .vividToolbarColorSchemeDark()
             #if os(iOS)
+            .modifier(MobileTopScrollEdgeModifier())
             .toolbar(.visible, for: .navigationBar)
             .modifier(TabletSettingsWidth())
             #endif

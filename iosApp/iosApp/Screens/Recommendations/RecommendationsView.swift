@@ -62,6 +62,7 @@ struct RecommendationsView: View {
                 default: WatchlistView(showsNavigationTitle: false)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .modifier(MobileTopScrollEdgeModifier())
         .environment(\.forYouScrollHeader, AnyView(mobileSectionTabs))
         .environment(chromeScrollState)
         .background(Color.black.ignoresSafeArea())

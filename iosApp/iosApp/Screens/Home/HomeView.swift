@@ -329,6 +329,7 @@ struct HomeView: View {
                 guard !isRefreshing else { return }
                 pullRefreshRequest += 1
             }
+            .modifier(MobileTopScrollEdgeModifier())
             .coordinateSpace(name: "phone-home-spotlight-scroll")
             .ignoresSafeArea(.container, edges: .top)
             #endif

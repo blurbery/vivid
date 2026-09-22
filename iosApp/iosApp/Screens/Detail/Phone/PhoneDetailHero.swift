@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 final class PhoneDetailScrollState {
     private(set) var offset: CGFloat = 0
+    private var contentId: String?
 
     func update(_ rawOffset: CGFloat) {
         // Nothing in the chrome changes below 150 points or above 480. Folding
@@ -19,7 +20,9 @@ final class PhoneDetailScrollState {
         offset = normalized
     }
 
-    func reset() {
+    func prepare(for contentId: String) {
+        guard self.contentId != contentId else { return }
+        self.contentId = contentId
         offset = 0
     }
 }

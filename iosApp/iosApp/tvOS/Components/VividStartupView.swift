@@ -5,9 +5,11 @@ import UIKit
 struct VividStartupView: View {
     let isContentReady: Bool
     var statusText: String? = nil
+    var isLoading = false
     let onCompletion: () -> Void
     @State private var animationFinished = false
     @State private var completed = false
+    @State private var showsLoadingDots = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -19,6 +21,13 @@ struct VividStartupView: View {
                     animationFinished = true
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .center) {
+                    if showsLoadingDots && isLoading && !isContentReady {
+                        VividLoadingDots()
+                            .foregroundStyle(.white.opacity(0.85))
+                            .offset(y: canvasSize / 3 + 32)
+                    }
+                }
             }
         }
         .overlay {
@@ -37,6 +46,14 @@ struct VividStartupView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(statusText ?? "Vivid is loading")
+        .task(id: isLoading && !isContentReady) {
+            showsLoadingDots = false
+            guard isLoading, !isContentReady else { return }
+            do { try await Task.sleep(for: .seconds(2)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            showsLoadingDots = true
+        }
         .onChange(of: animationFinished) { _, _ in finishIfReady() }
         .onChange(of: isContentReady) { _, _ in finishIfReady() }
     }

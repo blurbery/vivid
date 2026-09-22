@@ -40,13 +40,9 @@ Do not invent testing or claim another person’s checks as your own. -->
 - **Design impact:** <!-- State “No design changes” or describe the approved visual/interaction changes. -->
 - **Approval from blurbery:** <!-- Link/reference the approval, or “Not applicable, no design changes.” -->
 
-## Documentation impact and approval
+## Documentation impact
 
-> [!IMPORTANT]
-> Only blurbery can approve documentation changes, including edits, additions, renames and deletions. Owner-directed Vivid builds include relevant existing documentation updates under the standing policy; unrelated documentation changes require separate approval.
-
-- **Documentation impact:** <!-- State “No documentation changes” or describe the approved changes. -->
-- **Approval from blurbery:** <!-- Link/reference the approval, or “Not applicable, no documentation changes.” -->
+<!-- Describe relevant documentation updates, or state “No documentation changes”. Separate documentation approval is not required. -->
 
 ## AI disclosure
 

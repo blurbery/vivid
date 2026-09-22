@@ -317,6 +317,7 @@ struct PersonDetailView: View {
     #if os(iOS)
     @Environment(\.detailPullBackAction) private var goBack
     @Environment(\.dismiss) private var dismiss
+    @State private var topChromeScrollState = PhoneDetailScrollState()
     #endif
 
     init(personId: Int) {
@@ -326,6 +327,23 @@ struct PersonDetailView: View {
     var body: some View {
         rootContent
             #if os(iOS)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: VividTheme.topBarIconHitSize + 9)
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .overlay(alignment: .top) {
+                PhoneDetailTopChrome(
+                    title: "",
+                    isScrollGlassEnabled: false,
+                    scrollState: topChromeScrollState,
+                    leadingSystemName: "chevron.left",
+                    leadingAccessibilityLabel: "Back",
+                    onLeadingTap: {
+                        if let goBack { goBack() } else { dismiss() }
+                    }
+                )
+            }
             .environment(\.detailPullBackAction, {
                 if let goBack { goBack() } else { dismiss() }
             })
@@ -519,6 +537,9 @@ private struct TVPersonDetailContent: View {
 private struct PhonePersonDetailContent: View {
     let person: Person
     var viewModel: PersonDetailViewModel
+    #if os(iOS)
+    @State private var showsFullBiography = false
+    #endif
 
     @Environment(AppRouter.self) private var router
 
@@ -587,6 +608,33 @@ private struct PhonePersonDetailContent: View {
                         .foregroundColor(.vividSecondaryText)
                         .lineLimit(8)
                         .fixedSize(horizontal: false, vertical: true)
+                        #if os(iOS)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showsFullBiography = true }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Opens the full biography")
+                        .sheet(isPresented: $showsFullBiography) {
+                            NavigationStack {
+                                ScrollView {
+                                    Text(bio)
+                                        .font(.body)
+                                        .lineSpacing(5)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(24)
+                                        .textSelection(.enabled)
+                                }
+                                .navigationTitle(person.name)
+                                .navigationBarTitleDisplayMode(.inline)
+                                .toolbar {
+                                    ToolbarItem(placement: .confirmationAction) {
+                                        Button("Done") { showsFullBiography = false }
+                                    }
+                                }
+                            }
+                            .presentationDetents([.medium, .large])
+                            .presentationDragIndicator(.visible)
+                        }
+                        #endif
                 }
             }
         }

@@ -117,12 +117,12 @@ struct ServerListView: View {
                 TVSettingsFooter("Select the trash icon to remove a saved server and its profiles from your Vivid devices.")
                 if let removalError { TVSettingsFooter(removalError) }
             }
-            .frame(maxWidth: 1080, alignment: .leading)
-            .padding(.bottom, 64)
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 48)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .safeAreaPadding(.horizontal, VividTheme.Skyline.safeAreaX)
-        .safeAreaPadding(.top, 64)
+        .tvSettingsPageSurface()
         .defaultFocus($focusedRow, defaultTVRow)
     }
 

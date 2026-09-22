@@ -211,7 +211,10 @@ final class VividImagePipeline: @unchecked Sendable {
         let (data, response) = try await VividImageRetry.load {
             try await session(for: request.cacheScope).data(from: request.url, delegate: delegate)
         }
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 32 * 1024 * 1024 else {
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw VividImageHTTPError(statusCode: http.statusCode)
+        }
+        guard response is HTTPURLResponse, data.count <= 32 * 1024 * 1024 else {
             throw URLError(.badServerResponse)
         }
         return data
@@ -440,7 +443,9 @@ struct VividLazyImage<Content: View>: View {
                 }
                 do {
                     let image = try await withTaskCancellationHandler {
-                        try await VividImagePipeline.shared.image(for: request)
+                        try await VividImageRetry.recover {
+                            try await VividImagePipeline.shared.image(for: request)
+                        }
                     } onCancel: {
                         VividImageDiagnostics.shared.count("lazy.taskCancelled")
                     }
