@@ -167,6 +167,7 @@ sink_end = source.index('\nstatic bool pcm_should_feed(', sink_start)
 sink_body = source[sink_start:sink_end]
 sink_harness = r'''
 #import <Foundation/Foundation.h>
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 #define HAVE_MACOS_11_3_FEATURES 0
