@@ -1419,7 +1419,7 @@ actor HTTPClient {
             if siloCatalogWindows.count >= 64 { siloCatalogWindows.removeAll() }
             siloCatalogWindows[windowKey] = cursor
         }
-        return (try SiloAPICompatibility.response(data, path: legacyPath), response)
+        return (try SiloAPICompatibility.response(data, path: legacyPath, requestURL: mapped.url), response)
     }
 
     private func performTransport(

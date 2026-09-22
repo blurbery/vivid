@@ -4,6 +4,10 @@ import Foundation
 /// Silo v2's wire contract; v1 requests and responses pass through unchanged.
 enum SiloAPICompatibility {
     enum Failure: Error { case invalidDiscovery, unsupportedStatus(Int), missingWindow }
+    private static let artworkURLFields: Set<String> = [
+        "poster_url", "backdrop_url", "logo_url", "photo_url",
+        "still_url", "thumbnail_url", "avatar_url", "image_url"
+    ]
 
     static func legacyPath(_ url: URL) -> String? {
         guard let range = url.path.range(of: "/api/v1/") else { return nil }
@@ -145,7 +149,7 @@ enum SiloAPICompatibility {
         return value
     }
 
-    static func response(_ data: Data, path: String) throws -> Data {
+    static func response(_ data: Data, path: String, requestURL: URL? = nil) throws -> Data {
         guard !data.isEmpty, let json = try? JSONSerialization.jsonObject(with: data) else { return data }
         var value = decodeIDs(json, numericObjectID: path == "/api/v1/auth/me" || path == "/api/v1/user/libraries" || path.hasPrefix("/api/v1/people/"))
         if var object = value as? [String: Any] {
@@ -205,7 +209,31 @@ enum SiloAPICompatibility {
             if path == "/api/v1/health" { object["status"] = "ok" }
             if path != "/api/v1/user/libraries" { value = object }
         }
+        // Silo v2 signs artwork with root-relative URLs. Resolve them against
+        // the server that answered this request before image views fetch them.
+        // Absolute CDN URLs and protocol-relative URLs retain their meaning.
+        if let requestURL { value = resolveRelativeURLs(value, requestURL: requestURL) }
         return try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys])
+    }
+
+    private static func resolveRelativeURLs(_ value: Any, requestURL: URL) -> Any {
+        if let object = value as? [String: Any] {
+            return object.mapValuesWithKeys { key, child in
+                if artworkURLFields.contains(key), let path = child as? String,
+                   path.hasPrefix("/"), !path.hasPrefix("//"),
+                   let absolute = URL(string: path, relativeTo: requestURL)?.absoluteURL,
+                   absolute.scheme == requestURL.scheme,
+                   absolute.host == requestURL.host,
+                   absolute.port == requestURL.port {
+                    return absolute.absoluteString
+                }
+                return resolveRelativeURLs(child, requestURL: requestURL)
+            }
+        }
+        if let array = value as? [Any] {
+            return array.map { resolveRelativeURLs($0, requestURL: requestURL) }
+        }
+        return value
     }
 
     private static func decodeIDs(_ value: Any, key: String = "", numericObjectID: Bool = false) -> Any {

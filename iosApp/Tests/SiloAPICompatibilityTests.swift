@@ -15,6 +15,23 @@ final class SiloAPICompatibilityTests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: SiloAPICompatibility.response(Data(body.utf8), path: path)) as? [String: Any])
     }
 
+    func testSignedRelativeArtworkURLsResolveToTheRespondingServer() throws {
+        let wire = #"{"sections":[{"items":[{"poster_url":"/api/v2/artwork/poster?exp=123&sig=a%2Fb%2Bc","backdrop_url":"https://cdn.example/backdrop","logo_url":"//cdn.example/logo","stream_url":"/api/v2/playback/stream","title":"/api/v2/artwork/not-a-url"}]}]}"#
+        let requestURL = URL(string: "https://server.example:8443/silo/api/v2/home/sections")!
+        let data = try SiloAPICompatibility.response(
+            Data(wire.utf8), path: "/api/v1/home/sections", requestURL: requestURL
+        )
+        let document = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let section = try XCTUnwrap((document["sections"] as? [[String: Any]])?.first)
+        let item = try XCTUnwrap((section["items"] as? [[String: Any]])?.first)
+        XCTAssertEqual(item["poster_url"] as? String,
+                       "https://server.example:8443/api/v2/artwork/poster?exp=123&sig=a%2Fb%2Bc")
+        XCTAssertEqual(item["backdrop_url"] as? String, "https://cdn.example/backdrop")
+        XCTAssertEqual(item["logo_url"] as? String, "//cdn.example/logo")
+        XCTAssertEqual(item["stream_url"] as? String, "/api/v2/playback/stream")
+        XCTAssertEqual(item["title"] as? String, "/api/v2/artwork/not-a-url")
+    }
+
     func testRenamedEndpointsAndMethodsPreserveBasePathAndAuth() throws {
         let cases = [
             ("/api/v1/auth/setup", "GET", "/api/v2/system/setup", "GET"),

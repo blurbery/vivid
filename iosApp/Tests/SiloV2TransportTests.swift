@@ -2,6 +2,26 @@ import XCTest
 @testable import Vivid
 
 final class SiloV2TransportTests: XCTestCase {
+    func testHomeArtworkResolvesSignedRelativeURLBeforeDecoding() async throws {
+        let http = await makeClient()
+        SiloV2TransportStub.configure { request in
+            switch request.url!.path {
+            case "/api/v2/system/info":
+                return (200, [:], #"{"api_major":2}"#)
+            case "/api/v2/home/sections":
+                return (200, [:], #"{"sections":[{"id":"recent","section_type":"recent","title":"Recent","items":[{"content_id":"movie:one","type":"movie","title":"One","poster_url":"/api/v2/artwork/poster?exp=123&sig=a%2Fb"}]}]}"#)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+
+        let sections: SectionsResponse = try await http.get("/api/v1/home/sections")
+        XCTAssertEqual(sections.sections.first?.items.first?.posterUrl,
+                       "http://silo-v2-test.invalid/api/v2/artwork/poster?exp=123&sig=a%2Fb")
+        XCTAssertEqual(SiloV2TransportStub.requests().map { $0.url!.path },
+                       ["/api/v2/system/info", "/api/v2/home/sections"])
+    }
+
     func testDiscoveredDownloadsFollowCursorAndMergePages() async throws {
         let http = await makeClient()
         SiloV2TransportStub.configure { request in
