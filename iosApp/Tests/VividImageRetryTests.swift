@@ -115,4 +115,58 @@ final class VividImageRetryTests: XCTestCase {
         let attempts = await task.value
         XCTAssertEqual(attempts, 1)
     }
+    func testRecoveryClassifiesTemporaryFailuresOnly() {
+        for status in [408, 500, 502, 503, 504] {
+            XCTAssertTrue(VividImageRetry.isRecoverable(VividImageHTTPError(statusCode: status)))
+        }
+        for status in [400, 401, 403, 404, 429, 501] {
+            XCTAssertFalse(VividImageRetry.isRecoverable(VividImageHTTPError(statusCode: status)))
+        }
+        for error in [URLError(.cancelled), URLError(.cannotDecodeContentData), URLError(.badServerResponse)] {
+            XCTAssertFalse(VividImageRetry.isRecoverable(error))
+        }
+        XCTAssertFalse(VividImageRetry.isRecoverable(CancellationError()))
+    }
+
+    func testVisibleArtworkRecoversFromServerFailure() async throws {
+        var attempts = 0
+        let image = try await VividImageRetry.recover {
+            attempts += 1
+            if attempts == 1 { throw VividImageHTTPError(statusCode: 503) }
+            return "poster"
+        }
+        XCTAssertEqual(image, "poster")
+        XCTAssertEqual(attempts, 2)
+    }
+
+    func testVisibleArtworkRecoveryBudgetIsBounded() async {
+        var attempts = 0
+        do {
+            _ = try await VividImageRetry.recover { () -> Int in
+                attempts += 1
+                throw VividImageHTTPError(statusCode: 503)
+            }
+            XCTFail("Expected recovery to stop")
+        } catch { XCTAssertEqual(attempts, 4) }
+    }
+
+    func testCancellingVisibleArtworkStopsDelayedRecovery() async {
+        let started = expectation(description: "Artwork request started")
+        let task = Task {
+            var attempts = 0
+            do {
+                _ = try await VividImageRetry.recover { () -> Int in
+                    attempts += 1
+                    started.fulfill()
+                    throw VividImageHTTPError(statusCode: 503)
+                }
+            } catch {}
+            return attempts
+        }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        let attempts = await task.value
+        XCTAssertEqual(attempts, 1)
+    }
+
 }
