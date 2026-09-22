@@ -130,6 +130,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var subtitleTasks: [Int: Task<Void, Never>] = [:]
     private var trace: PlaybackTrialTrace?
     private var cacheSnapshot: [String: Any] = [:]
+    #if VIVID_P8_TRIAL
+    private var audioTraceTask: Task<Void, Never>?
+    #endif
 
     func load(url: URL, startPosition: Double = 0, options: LoadOptions = LoadOptions(),
               audioSourceStreamIndex: Int32? = nil) async throws {
@@ -172,6 +175,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.initialRate = requestedRate
         instance.initialVolume = volume
         instance.audioLanguages = options.preferredAudioLanguages
+        #if os(tvOS)
+        instance.airPlayPCM = session.currentRoute.outputs.contains { $0.portType == .airPlay }
+        #endif
         let proxy = VividMPVDelegate(owner: self, generation: token)
         delegateProxy = proxy; instance.delegate = proxy
         core = instance
@@ -191,12 +197,21 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         #endif
         #if VIVID_P8_TRIAL
         instance.setLogLevel("v")
+        audioTraceTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                guard let self, self.generation == token else { return }
+                self.recordPipelineSnapshot()
+                self.recordAudioRoute()
+            }
+        }
         #else
         instance.setLogLevel("warn")
         #endif
         for (name, format) in Self.observations { instance.observeProperty(name, format: format) }
         videoRoute = options.audioOnly ? .audio : .sampleBuffer
         trace?.event("mpv_initialised", fields: "backend=mpv compressed_sink=avplayer pcm_sink=samplebuffer")
+        trace?.event("mpv_audio_policy", fields: "airplay_pcm=\(instance.airPlayPCM) layouts=\(instance.airPlayPCM ? "7.1,5.1,stereo" : "auto-safe")")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             instance.commandAsync(["loadfile", url.absoluteString, "replace"]) { result in
                 continuation.resume(with: result.map { _ in () })
@@ -353,6 +368,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private func recordPipelineSnapshot() {
         guard trace != nil else { return }
         var fields = ["position_s=\(currentTime)", "playing=\(wantsPlay)", "buffering=\(isBuffering)", "seeking=\(isSeeking)"]
+        if let gap = diagnostics.liveTelemetry?.avSyncGapMs, gap.isFinite {
+            fields.append("avsync_ms=\(gap)")
+        }
         for key in ["fw-bytes", "total-bytes", "raw-input-rate", "reader-pts", "cache-end", "cache-duration", "eof", "underrun", "idle"] {
             if let number = cacheSnapshot[key] as? NSNumber, number.doubleValue.isFinite {
                 fields.append("\(key)=\(number)")
@@ -368,6 +386,17 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         }
         trace?.event("mpv_pipeline", fields: fields.joined(separator: " "))
     }
+    #if VIVID_P8_TRIAL
+    private func recordAudioRoute() {
+        let session = AVAudioSession.sharedInstance()
+        let airPlay = session.currentRoute.outputs.contains { $0.portType == .airPlay }
+        let hdmi = session.currentRoute.outputs.contains { $0.portType == .HDMI }
+        trace?.event("mpv_audio_route", fields:
+            "airplay=\(airPlay) hdmi=\(hdmi) session_channels=\(session.outputNumberOfChannels) " +
+            "sample_rate=\(session.sampleRate) latency_s=\(session.outputLatency) io_buffer_s=\(session.ioBufferDuration) " +
+            "player_channels=\(outputChannels ?? 0) apple_mode=\(Self.appleRenderingMode)")
+    }
+    #endif
     // Raw mpv messages can contain authenticated URLs. Only fixed fault labels
     // and strictly numeric AVPlayer heartbeat/status fields may enter the device log.
     private static func audioDiagnostic(_ data: [String: Any]?) -> String? {
@@ -390,6 +419,33 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             return nil
         }
         guard prefix == "ao/avfoundation" else { return nil }
+        if message == "restarting due to system notification; this will cause desync" {
+            return "fault=audio_system_restart"
+        }
+        if message.hasPrefix("notification name: ") && message.contains("AVSampleBufferAudioRendererWasFlushedAutomatically") {
+            return "event=audio_system_flush"
+        }
+        if message.hasPrefix("notification name: ") && message.contains("AVSampleBufferAudioRendererOutputConfigurationDidChange") {
+            return "event=audio_output_configuration_changed"
+        }
+        if message == "pcm fresh sink after reset" {
+            return "event=pcm_fresh_sink_after_reset"
+        }
+        if message == "pcm fresh sink failed; requesting audio reload" {
+            return "fault=pcm_fresh_sink_failed"
+        }
+        if message == "pcm renderer failed; requesting audio reload" {
+            return "fault=pcm_renderer_failed"
+        }
+        let pcmPattern = #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)\z"#
+        if let regex = try? NSRegularExpression(pattern: pcmPattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["clock_s", "fed_s", "ahead_s", "rate", "status"]
+            return "event=pcm_transport " + names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
         let pattern = #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#
         if let regex = try? NSRegularExpression(pattern: pattern),
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
@@ -627,6 +683,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func prepareForItemReplacement() { pause(); hasFirstFrameReadyForDisplay = false }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
         generation &+= 1
+        #if VIVID_P8_TRIAL
+        audioTraceTask?.cancel(); audioTraceTask = nil
+        #endif
         cancelEndConfirmation()
         rateTask?.cancel(); rateTask = nil
         softwarePiPSource = nil
@@ -708,9 +767,10 @@ private final class VividMPVCore: MpvPlayerCore {
     var initialRate: Float = 1
     var initialVolume: Float = 1
     var audioLanguages: [String] = []
+    var airPlayPCM = false
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
-                        "audio-exclusive": "yes", "audio-channels": "auto-safe",
+                        "audio-exclusive": "yes", "audio-channels": airPlayPCM ? "7.1,5.1,stereo" : "auto-safe",
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osc": "no", "osd-level": "0", "pause": autoplay ? "no" : "yes",
                         "start": String(startPosition), "speed": String(initialRate),
@@ -718,6 +778,11 @@ private final class VividMPVCore: MpvPlayerCore {
                         "cache": "yes", "demuxer-max-bytes": "268435456", "demuxer-max-back-bytes": "16777216",
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
         for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value)) }
+        #if os(tvOS)
+        if airPlayPCM {
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-max-lookahead", "4"))
+        }
+        #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
         VividMPVHeaders.apply(headers, to: mpv)
     }

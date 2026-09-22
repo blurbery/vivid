@@ -17,6 +17,15 @@ body = source[start:end]
 prefetch_start = source.index('static bool avp_wait_for_prefetch(')
 prefetch_end = source.index('\n// One read/unwrap pass', prefetch_start)
 prefetch = source[prefetch_start:prefetch_end]
+pcm_start = source.index('static bool pcm_wait_for_prefetch(')
+pcm_end = source.index('\n#endif', pcm_start)
+pcm_prefetch = source[pcm_start:pcm_end]
+pcm_policy_start = source.index('static bool pcm_should_feed(')
+pcm_policy_end = source.index('\nstatic void pcm_pump(', pcm_policy_start)
+pcm_policy = source[pcm_policy_start:pcm_policy_end]
+pcm_feed = source[source.index('static void feed(struct ao *ao)\n{'):source.index('static void start(')]
+assert pcm_feed.index('if (ahead >= p->pcm_lookahead_ns)') < pcm_feed.index('ao_read_data(')
+assert pcm_feed.index('if (pcm_wait_for_prefetch(') < pcm_feed.index('ao_read_data(')
 pull = source[source.index('static bool avp_pull('):source.index('static void avp_update_transport(')]
 assert pull.index('if (avp_wait_for_prefetch(ao, request_sample_count))') < pull.index('ao_read_data(ao,')
 for message, stub in {
@@ -33,6 +42,7 @@ harness = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #define S INT64_C(1000000000)
+#define MP_TIME_S_TO_NS(s) ((s)*S)
 #define AVP_START_MIN_NS S
 #define AVP_START_GRACE_NS (2*S)
 #define AVP_START_LEAD_NS(p) (2*(p)->avp_lead_ns)
@@ -59,7 +69,7 @@ static void check(bool ok, const char *name) {
     checks++;
     if (!ok) { fprintf(stderr, "FAIL: %s\n", name); exit(1); }
 }
-''' + prefetch + body + r'''
+''' + prefetch + pcm_prefetch + pcm_policy + body + r'''
 static struct priv p;
 static struct ao ao = { &p };
 static void reset(void) {
@@ -127,7 +137,20 @@ int main(void) {
     check(avp_wait_for_prefetch(&ao, 4800), "retain full startup lead without false underrun");
     feed_pos=16*S;
     check(!avp_wait_for_prefetch(&ao, 4800), "pending EOF is read as buffered audio drains");
-    printf("%d compressed audio transport checks passed\n", checks);
+    check(!pcm_wait_for_prefetch(0, 0, 4800), "PCM initial priming is allowed");
+    check(pcm_wait_for_prefetch(2*S, 0, 4800), "PCM queued audio prevents false underrun");
+    check(pcm_wait_for_prefetch(S, 4799, 4800), "PCM short prefetch waits at reserve");
+    check(!pcm_wait_for_prefetch(S, 4800, 4800), "PCM complete packet proceeds");
+    check(!pcm_wait_for_prefetch(S-1, 0, 4800), "PCM real starvation remains visible");
+    check(!pcm_wait_for_prefetch(-S, 0, 4800), "PCM drained clock permits EOF read");
+    check(pcm_should_feed(true, true, -S, 4*S), "PCM starts after a flushed seek");
+    check(!pcm_should_feed(false, true, 0, 4*S), "PCM pause disables refill");
+    check(!pcm_should_feed(true, false, 0, 4*S), "PCM backpressure prevents enqueue");
+    check(pcm_should_feed(true, true, 0, 4*S), "PCM readiness recovery resumes refill");
+    check(!pcm_should_feed(true, true, 4*S, 4*S), "PCM lead is bounded at four seconds");
+    check(pcm_should_feed(true, true, 4*S-1, 4*S), "PCM drained lead resumes refill");
+    check(!pcm_should_feed(false, false, -S, 4*S), "PCM stop stays idle after flush");
+    printf("%d audio transport checks passed\n", checks);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='vivid-audio-test-') as directory:
@@ -136,3 +159,116 @@ with tempfile.TemporaryDirectory(prefix='vivid-audio-test-') as directory:
     subprocess.run(['cc', '-std=c11', '-Wall', '-Werror', '-Wno-unused-parameter',
                     str(path/'transport.c'), '-o', str(path/'transport')], check=True)
     subprocess.run([str(path/'transport')], check=True)
+
+# Exercise the actual replacement function with lightweight renderer doubles.
+# No audio device is opened; only Foundation ownership and property transfer run.
+sink_start = source.index('static bool pcm_recreate_sink(')
+sink_end = source.index('\nstatic bool pcm_should_feed(', sink_start)
+sink_body = source[sink_start:sink_end]
+sink_harness = r'''
+#import <Foundation/Foundation.h>
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#define MP_WARN(...) ((void)0)
+#define MP_VERBOSE(...) ((void)0)
+#define AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification @"TestFlush"
+#define AVSampleBufferAudioRendererOutputConfigurationDidChangeNotification @"TestOutputChange"
+static bool fail_renderer;
+@interface AVSampleBufferAudioRenderer : NSObject
+@property float volume;
+@property(getter=isMuted) BOOL muted;
+@end
+@implementation AVSampleBufferAudioRenderer
+- (instancetype)init {
+    self = [super init];
+    if (fail_renderer) { [self release]; return nil; }
+    self.volume = 1;
+    return self;
+}
+@end
+@interface AVSampleBufferRenderSynchronizer : NSObject
+@property BOOL delaysRateChangeUntilHasSufficientMediaData;
+- (void)addRenderer:(AVSampleBufferAudioRenderer *)renderer;
+@end
+@implementation AVSampleBufferRenderSynchronizer
+- (instancetype)init {
+    self = [super init];
+    self.delaysRateChangeUntilHasSufficientMediaData = YES;
+    return self;
+}
+- (void)addRenderer:(AVSampleBufferAudioRenderer *)renderer { }
+@end
+@interface SinkObserver : NSObject
+@property int flushCount;
+@property int outputChangeCount;
+- (void)handleRestartNotification:(NSNotification *)notification;
+@end
+@implementation SinkObserver
+- (void)handleRestartNotification:(NSNotification *)notification {
+    if ([notification.name isEqualToString:@"TestFlush"]) self.flushCount++;
+    if ([notification.name isEqualToString:@"TestOutputChange"]) self.outputChangeCount++;
+}
+@end
+struct priv {
+    AVSampleBufferAudioRenderer *renderer;
+    AVSampleBufferRenderSynchronizer *synchronizer;
+    NSObject *observer;
+    int64_t end_time_av, pcm_last_log_ns;
+    bool pcm_needs_fresh_sink;
+};
+struct ao { struct priv *priv; };
+static int reloads;
+static void ao_request_reload(struct ao *ao) { reloads++; }
+''' + sink_body + r'''
+int main(void) {
+    @autoreleasepool {
+        struct priv p = { .renderer=[AVSampleBufferAudioRenderer new],
+            .synchronizer=[AVSampleBufferRenderSynchronizer new],
+            .observer=[SinkObserver new], .pcm_needs_fresh_sink=true,
+            .end_time_av=9000, .pcm_last_log_ns=1000 };
+        struct ao ao = { &p };
+        p.renderer.volume = 0.37f;
+        p.renderer.muted = YES;
+        assert(pcm_recreate_sink(&ao));
+        assert(p.renderer.volume == 0.37f && p.renderer.isMuted);
+        assert(p.end_time_av == -1 && p.pcm_last_log_ns == 0 && !p.pcm_needs_fresh_sink);
+        assert(p.synchronizer.delaysRateChangeUntilHasSufficientMediaData == !HAVE_MACOS_11_3_FEATURES);
+        SinkObserver *observer = (SinkObserver *)p.observer;
+        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+        [center postNotificationName:@"TestFlush" object:p.renderer];
+        [center postNotificationName:@"TestOutputChange" object:p.renderer];
+        assert(observer.flushCount == 1);
+        assert(observer.outputChangeCount == HAVE_MACOS_12_FEATURES);
+        AVSampleBufferAudioRenderer *oldRenderer = [p.renderer retain];
+        p.renderer.volume = 0.0f;
+        p.renderer.muted = NO;
+        assert(pcm_recreate_sink(&ao));
+        assert(p.renderer.volume == 0.0f && !p.renderer.isMuted);
+        [center postNotificationName:@"TestFlush" object:oldRenderer];
+        [center postNotificationName:@"TestOutputChange" object:oldRenderer];
+        assert(observer.flushCount == 1 && observer.outputChangeCount == HAVE_MACOS_12_FEATURES);
+        [oldRenderer release];
+        [center postNotificationName:@"TestFlush" object:p.renderer];
+        [center postNotificationName:@"TestOutputChange" object:p.renderer];
+        assert(observer.flushCount == 2 && observer.outputChangeCount == 2 * HAVE_MACOS_12_FEATURES);
+        AVSampleBufferAudioRenderer *original = p.renderer;
+        p.pcm_needs_fresh_sink = true;
+        fail_renderer = true;
+        assert(!pcm_recreate_sink(&ao));
+        assert(reloads == 1 && p.renderer == original && p.pcm_needs_fresh_sink);
+        [[NSNotificationCenter defaultCenter] removeObserver:p.observer];
+        [p.renderer release]; [p.synchronizer release]; [p.observer release];
+        printf("12 PCM renderer replacement checks passed (features=%d)\n", HAVE_MACOS_12_FEATURES);
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix='vivid-pcm-sink-test-') as directory:
+    path = Path(directory)
+    (path/'sink.m').write_text(sink_harness)
+    for enabled in (0, 1):
+        subprocess.run(['clang', '-fblocks', '-framework', 'Foundation',
+                        f'-DHAVE_MACOS_11_3_FEATURES={enabled}',
+                        f'-DHAVE_MACOS_12_FEATURES={enabled}',
+                        str(path/'sink.m'), '-o', str(path/'sink')], check=True)
+        subprocess.run([str(path/'sink')], check=True)
