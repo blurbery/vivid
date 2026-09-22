@@ -20,6 +20,9 @@ prefetch = source[prefetch_start:prefetch_end]
 pcm_start = source.index('static bool pcm_wait_for_prefetch(')
 pcm_end = source.index('\n#endif', pcm_start)
 pcm_prefetch = source[pcm_start:pcm_end]
+pcm_policy_start = source.index('static bool pcm_should_feed(')
+pcm_policy_end = source.index('\nstatic void pcm_pump(', pcm_policy_start)
+pcm_policy = source[pcm_policy_start:pcm_policy_end]
 pcm_feed = source[source.index('static void feed(struct ao *ao)\n{'):source.index('static void start(')]
 assert pcm_feed.index('if (ahead >= p->pcm_lookahead_ns)') < pcm_feed.index('ao_read_data(')
 assert pcm_feed.index('if (pcm_wait_for_prefetch(') < pcm_feed.index('ao_read_data(')
@@ -66,7 +69,7 @@ static void check(bool ok, const char *name) {
     checks++;
     if (!ok) { fprintf(stderr, "FAIL: %s\n", name); exit(1); }
 }
-''' + prefetch + pcm_prefetch + body + r'''
+''' + prefetch + pcm_prefetch + pcm_policy + body + r'''
 static struct priv p;
 static struct ao ao = { &p };
 static void reset(void) {
@@ -140,6 +143,13 @@ int main(void) {
     check(!pcm_wait_for_prefetch(S, 4800, 4800), "PCM complete packet proceeds");
     check(!pcm_wait_for_prefetch(S-1, 0, 4800), "PCM real starvation remains visible");
     check(!pcm_wait_for_prefetch(-S, 0, 4800), "PCM drained clock permits EOF read");
+    check(pcm_should_feed(true, true, -S, 4*S), "PCM starts after a flushed seek");
+    check(!pcm_should_feed(false, true, 0, 4*S), "PCM pause disables refill");
+    check(!pcm_should_feed(true, false, 0, 4*S), "PCM backpressure prevents enqueue");
+    check(pcm_should_feed(true, true, 0, 4*S), "PCM readiness recovery resumes refill");
+    check(!pcm_should_feed(true, true, 4*S, 4*S), "PCM lead is bounded at four seconds");
+    check(pcm_should_feed(true, true, 4*S-1, 4*S), "PCM drained lead resumes refill");
+    check(!pcm_should_feed(false, false, -S, 4*S), "PCM stop stays idle after flush");
     printf("%d audio transport checks passed\n", checks);
 }
 '''

@@ -419,6 +419,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             return nil
         }
         guard prefix == "ao/avfoundation" else { return nil }
+        if message == "pcm renderer failed; requesting audio reload" {
+            return "fault=pcm_renderer_failed"
+        }
         let pcmPattern = #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)\z"#
         if let regex = try? NSRegularExpression(pattern: pcmPattern),
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
