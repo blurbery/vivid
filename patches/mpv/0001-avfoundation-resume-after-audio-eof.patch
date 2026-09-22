@@ -24,15 +24,18 @@
      // How far ahead of the playhead the PCM path is allowed to enqueue.
      // AVSampleBufferAudioRenderer's own backpressure sits far out -- around
      // 1.7s when measured against a local route -- and mpv multiplies the
-@@ -145,6 +141,7 @@
+@@ -145,6 +141,10 @@
      // wakes forever re-deciding not to feed. Only mutated on p->queue.
      bool feed_enabled;
      double opt_max_lookahead;
 +    int64_t pcm_last_log_ns;
++#if TARGET_OS_TV
++    bool pcm_needs_fresh_sink;
++#endif
  #endif
  };
 
-@@ -304,6 +301,19 @@
+@@ -304,6 +304,19 @@
          CMTimeMake(SPDIF_FRAMES_PER_BURST, p->spdif_rate));
  }
 
@@ -52,7 +55,7 @@
  // One read/unwrap pass: pull IEC 61937 data from mpv and append every
  // complete burst's payload to the elementary stream. Returns false when out
  // of data, at EOF, or reloading.
-@@ -318,6 +328,9 @@
+@@ -318,6 +331,9 @@
      if ((p->stash_size - p->stash_len) / sstride < request_sample_count)
          request_sample_count = (p->stash_size - p->stash_len) / sstride;
      if (request_sample_count <= 0)
@@ -62,7 +65,7 @@
          return false;
 
      int64_t cur_time_av = avp_current_time_ns(ao);
-@@ -492,15 +505,13 @@
+@@ -492,15 +508,13 @@
          p->avp_start_deadline = -1; // playing; nothing left to supervise
          return;
      }
@@ -85,7 +88,7 @@
          p->avp_primed_pts = p->es_pts;
          p->avp_start_deadline = now + AVP_START_GRACE_NS;
          return;
-@@ -649,8 +660,11 @@
+@@ -649,8 +663,11 @@
      p->avp_primed_pts = 0;
  }
 
@@ -98,7 +101,7 @@
 
  static void pcm_request_media_data(struct ao *ao)
  {
-@@ -682,6 +696,10 @@
+@@ -682,6 +699,10 @@
  {
      struct priv *p = ao->priv;
 
@@ -109,7 +112,7 @@
      [p->renderer stopRequestingMediaData];
      if (!p->feed_enabled)
          return;
-@@ -690,10 +708,16 @@
+@@ -690,10 +711,16 @@
          pcm_request_media_data(ao);
          return;
      }
@@ -128,7 +131,7 @@
  }
 
  // Turn the bounded PCM feed on or off. Serialized on p->queue so it cannot
-@@ -706,11 +730,21 @@
+@@ -706,11 +733,21 @@
      void (^block)(void) = ^{
          p->feed_enabled = enabled;
          pcm_cancel_pending_feed(p);
@@ -150,7 +153,7 @@
      };
      if (dispatch_get_specific(&avfoundation_queue_key) == p)
          block();
-@@ -719,16 +753,33 @@
+@@ -719,16 +756,33 @@
  }
  #endif  // TARGET_OS_OSX
 
@@ -186,7 +189,7 @@
              pcm_pause_feeding(ao);
              return;
          }
-@@ -750,6 +801,12 @@
+@@ -750,6 +804,12 @@
      bool eof;
      int real_sample_count = ao_read_data(ao, data, request_sample_count, end_time_av - cur_time_av + cur_time_mp + time_delta, &eof, false, true);
      if (eof) {
@@ -199,11 +202,49 @@
          [p->renderer stopRequestingMediaData];
          ao_stop_streaming(ao);
      }
-@@ -811,6 +868,47 @@
+@@ -811,6 +871,85 @@
      if (sample_buffer) CFRelease(sample_buffer);
  }
 
 +#if TARGET_OS_TV
++// Called on p->queue only. A seek discards the old renderer and its clock,
++// just as a new playback session does. Ordinary pause and EOF keep their sink.
++static bool pcm_recreate_sink(struct ao *ao)
++{
++    struct priv *p = ao->priv;
++    AVSampleBufferAudioRenderer *renderer = [[AVSampleBufferAudioRenderer alloc] init];
++    AVSampleBufferRenderSynchronizer *synchronizer = [[AVSampleBufferRenderSynchronizer alloc] init];
++    if (!renderer || !synchronizer) {
++        [renderer release];
++        [synchronizer release];
++        MP_WARN(ao, "pcm fresh sink failed; requesting audio reload\n");
++        ao_request_reload(ao);
++        return false;
++    }
++    [synchronizer addRenderer:renderer];
++#if HAVE_MACOS_11_3_FEATURES
++    if (@available(tvOS 14.5, *))
++        [synchronizer setDelaysRateChangeUntilHasSufficientMediaData:NO];
++#endif
++    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
++    [center removeObserver:p->observer name:nil object:p->renderer];
++    [p->renderer release];
++    [p->synchronizer release];
++    p->renderer = renderer;
++    p->synchronizer = synchronizer;
++    p->end_time_av = -1;
++    p->pcm_last_log_ns = 0;
++    p->pcm_needs_fresh_sink = false;
++#if HAVE_MACOS_12_FEATURES
++    if (@available(tvOS 15.0, *)) {
++        [center addObserver:p->observer selector:@selector(handleRestartNotification:) name:AVSampleBufferAudioRendererOutputConfigurationDidChangeNotification object:renderer];
++    }
++#endif
++    [center addObserver:p->observer selector:@selector(handleRestartNotification:) name:AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification object:renderer];
++    MP_VERBOSE(ao, "pcm fresh sink after reset\n");
++    return true;
++}
++
 +static bool pcm_should_feed(bool enabled, bool ready, int64_t ahead, int64_t limit)
 +{
 +    return enabled && ready && ahead < limit;
@@ -247,7 +288,7 @@
  static void start(struct ao *ao)
  {
      struct priv *p = ao->priv;
-@@ -818,6 +916,12 @@
+@@ -818,6 +957,12 @@
      if (p->spdif) {
          void (^start_block)(void) = ^{
              p->avp_playing = true;
@@ -260,13 +301,15 @@
              if (!p->item)
                  avp_create_item(ao);
              else if (p->avp_rate_applied)
-@@ -832,9 +936,22 @@
+@@ -832,9 +977,24 @@
          return;
      }
 
 +#if TARGET_OS_TV
 +    if (p->pcm_lookahead_ns) {
 +        void (^start_block)(void) = ^{
++            if (p->pcm_needs_fresh_sink && !pcm_recreate_sink(ao))
++                return;
 +            [p->synchronizer setRate:1];
 +            pcm_set_feeding(ao, true);
 +        };
@@ -284,26 +327,32 @@
      // With no bound there is nothing to gate, so arm exactly as before rather
      // than routing the first arm through the queue.
      if (p->pcm_lookahead_ns) {
-@@ -861,7 +978,11 @@
+@@ -861,7 +1021,13 @@
          [p->renderer stopRequestingMediaData];
          [p->renderer flush];
          [p->synchronizer setRate:0];
 -#if TARGET_OS_OSX
 +#if TARGET_OS_TV
-+        if (p->pcm_lookahead_ns)
++        if (p->pcm_lookahead_ns) {
 +            p->end_time_av = -1;
++            p->pcm_needs_fresh_sink = true;
++        }
 +#endif
 +#if TARGET_OS_OSX || TARGET_OS_TV
          // A frozen clock never drains the queue, so leave nothing scheduled;
          // start() turns feeding back on.
          p->feed_enabled = false;
-@@ -904,9 +1025,22 @@
+@@ -904,9 +1070,26 @@
          return true;
      }
 
 +#if TARGET_OS_TV
 +    if (p->pcm_lookahead_ns) {
 +        void (^pause_block)(void) = ^{
++            // Core start() owns the new epoch after reset. An unpause arriving
++            // before it must not feed the flushed, obsolete renderer.
++            if (p->pcm_needs_fresh_sink)
++                return;
 +            [p->synchronizer setRate:paused ? 0 : 1];
 +            pcm_set_feeding(ao, !paused);
 +        };
@@ -321,7 +370,7 @@
          // The clock is stopped, so the bound can never be undercut again on
          // its own. Stop asking rather than waking every half-bound to
          // rediscover that.
-@@ -914,7 +1048,7 @@
+@@ -914,7 +1097,7 @@
              pcm_set_feeding(ao, false);
  #endif
      } else {
@@ -330,7 +379,31 @@
          if (p->pcm_lookahead_ns)
              pcm_set_feeding(ao, true);
  #endif
-@@ -1179,7 +1313,7 @@
+@@ -974,6 +1157,23 @@
+     return self;
+ }
+ - (void)handleRestartNotification:(NSNotification*)notification {
++#if TARGET_OS_TV
++    struct priv *p = ao->priv;
++    if (p->pcm_lookahead_ns) {
++        void (^restart_block)(void) = ^{
++            if (notification.object != p->renderer || p->pcm_needs_fresh_sink)
++                return;
++            MP_WARN(ao, "restarting due to system notification; this will cause desync\n");
++            stop(ao);
++            start(ao);
++        };
++        if (dispatch_get_specific(&avfoundation_queue_key) == p)
++            restart_block();
++        else
++            dispatch_sync(p->queue, restart_block);
++        return;
++    }
++#endif
+     char *name = cfstr_get_cstr((CFStringRef)notification.name);
+     MP_WARN(ao, "restarting due to system notification; this will cause desync\n");
+     MP_VERBOSE(ao, "notification name: %s\n", name);
+@@ -1179,7 +1379,7 @@
          goto error;
      }
 
@@ -339,7 +412,7 @@
      // --audio-buffer is documented as a minimum the device may exceed, so it
      // cannot double as this maximum; it only keeps the bound from dropping
      // under what the core was told to expect.
-@@ -1190,10 +1324,14 @@
+@@ -1190,10 +1390,14 @@
                                                 p->queue);
          if (p->feed_timer) {
              dispatch_source_set_event_handler(p->feed_timer, ^{
@@ -354,7 +427,7 @@
              });
              dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
                                        DISPATCH_TIME_FOREVER, 0);
-@@ -1272,7 +1410,7 @@
+@@ -1272,7 +1476,7 @@
          dispatch_release(p->avp_timer);
          p->avp_timer = NULL;
      }
@@ -363,7 +436,7 @@
      if (p->feed_timer) {
          dispatch_source_cancel(p->feed_timer);
          dispatch_release(p->feed_timer);
-@@ -1322,7 +1460,7 @@
+@@ -1322,7 +1526,7 @@
          // as this returns. Cancelling on p->queue means no handler is
          // mid-flight and none can start afterwards. stop() above already
          // left the timer idle.
@@ -372,7 +445,7 @@
          if (p->feed_timer) {
              dispatch_sync(p->queue, ^{
                  dispatch_source_cancel(p->feed_timer);
-@@ -1372,7 +1510,7 @@
+@@ -1372,7 +1576,7 @@
  #endif
      },
      .options = (const struct m_option[]) {
