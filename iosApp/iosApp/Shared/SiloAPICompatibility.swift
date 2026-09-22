@@ -4,6 +4,10 @@ import Foundation
 /// Silo v2's wire contract; v1 requests and responses pass through unchanged.
 enum SiloAPICompatibility {
     enum Failure: Error { case invalidDiscovery, unsupportedStatus(Int), missingWindow }
+    private static let artworkURLFields: Set<String> = [
+        "poster_url", "backdrop_url", "logo_url", "photo_url",
+        "still_url", "thumbnail_url", "avatar_url", "image_url"
+    ]
 
     static func legacyPath(_ url: URL) -> String? {
         guard let range = url.path.range(of: "/api/v1/") else { return nil }
@@ -39,7 +43,6 @@ enum SiloAPICompatibility {
             let parts = path.split(separator: "/")
             if (parts.count == 4 && !["sort-preference", "order", "groups"].contains(String(parts[3]))) || (parts.count == 5 && parts[3] == "groups" && parts[4] != "order") { verb = "PATCH" }
         }
-        if path == "/api/v1/onboarding/progress", method == "POST" { verb = "PUT" }
         while p.hasSuffix("/") { p.removeLast() }
         return (p, verb)
     }
@@ -146,7 +149,7 @@ enum SiloAPICompatibility {
         return value
     }
 
-    static func response(_ data: Data, path: String) throws -> Data {
+    static func response(_ data: Data, path: String, requestURL: URL? = nil) throws -> Data {
         guard !data.isEmpty, let json = try? JSONSerialization.jsonObject(with: data) else { return data }
         var value = decodeIDs(json, numericObjectID: path == "/api/v1/auth/me" || path == "/api/v1/user/libraries" || path.hasPrefix("/api/v1/people/"))
         if var object = value as? [String: Any] {
@@ -206,7 +209,43 @@ enum SiloAPICompatibility {
             if path == "/api/v1/health" { object["status"] = "ok" }
             if path != "/api/v1/user/libraries" { value = object }
         }
+        // Silo v2 signs artwork with root-relative URLs. Resolve them against
+        // the server that answered this request before image views fetch them.
+        // Absolute CDN URLs and protocol-relative URLs retain their meaning.
+        if let requestURL { value = resolveRelativeURLs(value, requestURL: requestURL) }
         return try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys])
+    }
+
+    private static func resolveRelativeURLs(_ value: Any, requestURL: URL) -> Any {
+        if let object = value as? [String: Any] {
+            return object.mapValuesWithKeys { key, child in
+                if artworkURLFields.contains(key), let path = child as? String,
+                   path.hasPrefix("/"), !path.hasPrefix("//"),
+                   let absolute = artworkURL(path, relativeTo: requestURL) {
+                    return absolute.absoluteString
+                }
+                return resolveRelativeURLs(child, requestURL: requestURL)
+            }
+        }
+        if let array = value as? [Any] {
+            return array.map { resolveRelativeURLs($0, requestURL: requestURL) }
+        }
+        return value
+    }
+
+    /// Resolve cached root-relative Silo artwork as well as fresh responses.
+    /// A local Home snapshot can outlive the response conversion that wrote it.
+    static func artworkURL(_ raw: String, relativeTo serverURL: URL?) -> URL? {
+        guard let parsed = URL(string: raw) else { return nil }
+        guard raw.hasPrefix("/"), !raw.hasPrefix("//") else { return parsed }
+        guard let serverURL,
+              ["http", "https"].contains(serverURL.scheme?.lowercased() ?? ""),
+              serverURL.host != nil,
+              let absolute = URL(string: raw, relativeTo: serverURL)?.absoluteURL,
+              absolute.scheme == serverURL.scheme,
+              absolute.host == serverURL.host,
+              absolute.port == serverURL.port else { return nil }
+        return absolute
     }
 
     private static func decodeIDs(_ value: Any, key: String = "", numericObjectID: Bool = false) -> Any {

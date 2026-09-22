@@ -713,7 +713,11 @@ enum StartupContentPrefetcher {
     private static func normalizedURL(from urlString: String?) -> URL? {
         guard let trimmed = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty,
-              let url = URL(string: trimmed),
+              let url = SiloAPICompatibility.artworkURL(
+                  trimmed,
+                  relativeTo: MediaServerProvider.active == .silo
+                      ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+              ),
               url.scheme != nil else {
             return nil
         }

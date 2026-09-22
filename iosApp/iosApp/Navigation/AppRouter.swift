@@ -766,8 +766,6 @@ private extension Route {
             return "login"
         case .serverNeedsSetup:
             return "serverNeedsSetup"
-        case .onboardingTour:
-            return "onboardingTour"
         case .profileSelection:
             return "profileSelection"
         case .home:

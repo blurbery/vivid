@@ -661,10 +661,8 @@ struct ContentView: View {
         case .authenticated:
             #if os(tvOS)
             TVMainTabView(router: router)
-                .onboardingTourGate(router: router)
             #else
             MainTabView(router: router)
-                .onboardingTourGate(router: router)
             #endif
         }
     }
@@ -1104,13 +1102,6 @@ struct ContentView: View {
             TVServerNeedsSetupView(router: router)
             #else
             ServerNeedsSetupView(router: router)
-            #endif
-        case .onboardingTour:
-            #if os(tvOS)
-            EmptyStateView(icon: "sparkles", title: "Take the tour on your phone or the web", subtitle: nil)
-                .vividPageBackground()
-            #else
-            OnboardingTourView(router: router)
             #endif
         case .login:
             loginRoot

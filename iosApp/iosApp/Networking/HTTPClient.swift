@@ -1356,12 +1356,10 @@ actor HTTPClient {
         // account/profile. A concurrent edit is surfaced as a precondition failure.
         let conditionalCollection = legacyPath.hasPrefix("/api/v1/collections/") && ["PATCH", "DELETE"].contains(mapped.httpMethod ?? "")
         let conditionalMonitor = legacyPath.hasPrefix("/api/v1/downloads/subscriptions/") && ["PATCH", "DELETE"].contains(mapped.httpMethod ?? "")
-        let conditionalOnboarding = legacyPath == "/api/v1/onboarding/progress" && mapped.httpMethod == "PUT"
-        if conditionalCollection || conditionalMonitor || conditionalOnboarding {
+        if conditionalCollection || conditionalMonitor {
             var read = mapped
             read.httpMethod = "GET"
             read.httpBody = nil
-            if conditionalOnboarding { read.url = URL(string: mapped.url!.absoluteString.replacingOccurrences(of: "/onboarding/progress", with: "/onboarding/state")) }
             let (readData, readResponse) = try await performTransport(request: read, timeout: timeout,
                 dispatchRevision: dispatchRevision, reportReachability: reportReachability)
             guard (200..<300).contains(readResponse.statusCode) else { return (readData, readResponse) }
@@ -1421,7 +1419,7 @@ actor HTTPClient {
             if siloCatalogWindows.count >= 64 { siloCatalogWindows.removeAll() }
             siloCatalogWindows[windowKey] = cursor
         }
-        return (try SiloAPICompatibility.response(data, path: legacyPath), response)
+        return (try SiloAPICompatibility.response(data, path: legacyPath, requestURL: mapped.url), response)
     }
 
     private func performTransport(
