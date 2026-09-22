@@ -119,6 +119,27 @@ final class HomeSectionsMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testFreshHomeResponseReplacesExpiredArtworkRequest() async throws {
+        let expired = "https://server.example/api/v2/artwork/poster?exp=100&sig=old"
+        let renewed = "https://server.example/api/v2/artwork/poster?exp=200&sig=new"
+        let cachedRows = [makeSection(id: "latest", type: "latest", totalCount: 1,
+                                      items: [try makeItem(contentId: "movie", posterURL: expired)])]
+        let freshRows = [makeSection(id: "latest", type: "latest", totalCount: 1,
+                                     items: [try makeItem(contentId: "movie", posterURL: renewed)])]
+        ResponseCache.shared.set(SectionsResponse(sections: cachedRows), for: CacheKey.homeSections)
+        defer { ResponseCache.shared.remove(CacheKey.homeSections) }
+        let model = HomeViewModel(fetchHomeSections: { SectionsResponse(sections: freshRows) })
+        XCTAssertEqual(model.sections.first?.items.first?.posterUrl, expired)
+
+        await model.loadSections()
+
+        XCTAssertEqual(model.sections.first?.items.first?.posterUrl, renewed)
+        let oldRequest = PosterImageCache.displayRequest(url: URL(string: expired)!, pixelSize: CGSize(width: 180, height: 270))
+        let newRequest = PosterImageCache.displayRequest(url: URL(string: renewed)!, pixelSize: CGSize(width: 180, height: 270))
+        XCTAssertNotEqual(oldRequest, newRequest)
+    }
+
+    @MainActor
     func testHiddenHomeChangesCoalesceUntilReturn() async throws {
         let original = [makeSection(id: "latest", type: "latest", totalCount: 1,
                                     items: [try makeItem(contentId: "original")])]
@@ -513,7 +534,8 @@ final class HomeSectionsMutationTests: XCTestCase {
     private func makeItem(
         contentId: String,
         progressUpdatedAt: String? = "2026-07-10T12:00:00Z",
-        seriesId: String? = nil
+        seriesId: String? = nil,
+        posterURL: String? = nil
     ) throws -> SectionItem {
         var fields: [String: Any] = [
             "contentId": contentId,
@@ -525,6 +547,9 @@ final class HomeSectionsMutationTests: XCTestCase {
         }
         if let seriesId {
             fields["seriesId"] = seriesId
+        }
+        if let posterURL {
+            fields["posterUrl"] = posterURL
         }
         let data = try JSONSerialization.data(withJSONObject: fields)
         return try JSONDecoder().decode(SectionItem.self, from: data)

@@ -1,7 +1,40 @@
 import XCTest
+import SwiftUI
 @testable import Vivid
 
 final class VividImageRetryTests: XCTestCase {
+    @MainActor
+    func testVisibleFailedImageRetriesWhenAppReturnsToForeground() async throws {
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+        let failed = expectation(description: "Missing image shows an error")
+        let recovered = expectation(description: "Same image request recovers on foreground")
+        let request = VividImageRequest(url: imageURL, cacheScope: UUID().uuidString)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        window.rootViewController = UIHostingController(rootView:
+            VividLazyImage(request: request, transaction: Transaction(animation: nil)) { state in
+                if state.image != nil {
+                    Color.green.onAppear { recovered.fulfill() }
+                } else if state.error != nil {
+                    Color.red.onAppear { failed.fulfill() }
+                } else {
+                    Color.clear
+                }
+            }
+        )
+        window.makeKeyAndVisible()
+        await fulfillment(of: [failed], timeout: 5)
+
+        let png = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).pngData { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        try png.write(to: imageURL)
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        await fulfillment(of: [recovered], timeout: 5)
+        window.isHidden = true
+    }
+
     func testCacheOwnershipSeparatesServerAccountAndProfile() {
         let owner = VividCacheScope.key(serverID: "s", accountID: "a", profileID: "p")
         XCTAssertEqual(owner, VividCacheScope.key(serverID: "s", accountID: "a", profileID: "p"))

@@ -226,6 +226,13 @@ struct HomeView: View {
             }
             await viewModel.refreshForHomeEntry(sinceLastHidden: homeHiddenAt)
             if !Task.isCancelled { homeHiddenAt = nil }
+            // Silo artwork links expire while Home is open. Refresh the rows
+            // before a cached image is evicted and its old link stops working.
+            while !Task.isCancelled, shouldSyncHome, MediaServerProvider.active == .silo {
+                do { try await Task.sleep(for: .seconds(30 * 60)) } catch { return }
+                guard !Task.isCancelled, shouldSyncHome else { return }
+                await viewModel.loadSections()
+            }
             #else
             guard shouldSyncHome else { return }
             await viewModel.loadSections()

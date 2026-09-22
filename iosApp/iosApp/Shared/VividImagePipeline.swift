@@ -413,16 +413,19 @@ struct VividLazyImage<Content: View>: View {
     private struct LoadKey: Hashable {
         let request: VividImageRequest?
         let canPresentOrLoad: Bool
+        let retryGeneration: Int
     }
     @SwiftUI.State private var loaded: LoadedImage?
     @SwiftUI.State private var failure: Error?
+    @SwiftUI.State private var retryGeneration = 0
     var body: some View {
         let _ = VividImageDiagnostics.shared.count("leaf.VividLazyImage.body")
         let retained = loaded?.request == request ? loaded?.image : nil
         let availableImage = retained ?? request.flatMap { VividImagePipeline.shared.cache[$0]?.image }
         // A displayed bitmap keeps the task identity stable across gate changes.
         // Missing images still restart when permission to load changes.
-        let key = LoadKey(request: request, canPresentOrLoad: isLoadingEnabled || availableImage != nil)
+        let key = LoadKey(request: request, canPresentOrLoad: isLoadingEnabled || availableImage != nil,
+                          retryGeneration: retryGeneration)
         content(VividImageState(image: availableImage.map(Image.init(uiImage:)), error: failure))
             .task(id: key) {
                 VividImageDiagnostics.shared.count(request == nil ? "lazy.nilTask" : "lazy.taskStarted")
@@ -455,6 +458,11 @@ struct VividLazyImage<Content: View>: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                 if !isLoadingEnabled { loaded = nil }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                // A visible error has exhausted its bounded retries. Give it
+                // another chance when the app returns and connectivity may differ.
+                if failure != nil, isLoadingEnabled { retryGeneration &+= 1 }
             }
             .onDisappear { VividImageDiagnostics.shared.count("lazy.disappear") }
     }
