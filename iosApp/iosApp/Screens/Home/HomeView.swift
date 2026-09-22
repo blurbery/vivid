@@ -329,7 +329,7 @@ struct HomeView: View {
                 guard !isRefreshing else { return }
                 pullRefreshRequest += 1
             }
-            .modifier(HomeTopScrollEdgeModifier())
+            .modifier(MobileTopScrollEdgeModifier())
             .coordinateSpace(name: "phone-home-spotlight-scroll")
             .ignoresSafeArea(.container, edges: .top)
             #endif
@@ -699,19 +699,6 @@ private struct PhoneSpotlightArtworkSurface: View {
             if let resolved = await HeroBackdropPalette.tintColor(for: imageURL), !Task.isCancelled {
                 tint = resolved
             }
-        }
-    }
-}
-#endif
-
-#if os(iOS)
-private struct HomeTopScrollEdgeModifier: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.scrollEdgeEffectHidden(true, for: .top)
-        } else {
-            content
         }
     }
 }

@@ -2793,6 +2793,8 @@ private struct MobileSettingsPage: View {
                         MobileUtilityCloseToolbar(accessibilityLabel: "Close settings", action: onDismiss)
                     }
             }
+            .modifier(MobileTopScrollEdgeModifier())
+            .toolbarBackground(.hidden, for: .navigationBar)
             .environment(router)
         }
     }
