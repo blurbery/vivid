@@ -419,6 +419,15 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             return nil
         }
         guard prefix == "ao/avfoundation" else { return nil }
+        if message == "restarting due to system notification; this will cause desync" {
+            return "fault=audio_system_restart"
+        }
+        if message.hasPrefix("notification name: ") && message.contains("AVSampleBufferAudioRendererWasFlushedAutomatically") {
+            return "event=audio_system_flush"
+        }
+        if message.hasPrefix("notification name: ") && message.contains("AVSampleBufferAudioRendererOutputConfigurationDidChange") {
+            return "event=audio_output_configuration_changed"
+        }
         if message == "pcm renderer failed; requesting audio reload" {
             return "fault=pcm_renderer_failed"
         }
