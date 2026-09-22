@@ -39,7 +39,6 @@ enum SiloAPICompatibility {
             let parts = path.split(separator: "/")
             if (parts.count == 4 && !["sort-preference", "order", "groups"].contains(String(parts[3]))) || (parts.count == 5 && parts[3] == "groups" && parts[4] != "order") { verb = "PATCH" }
         }
-        if path == "/api/v1/onboarding/progress", method == "POST" { verb = "PUT" }
         while p.hasSuffix("/") { p.removeLast() }
         return (p, verb)
     }
