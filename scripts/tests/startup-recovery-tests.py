@@ -2,8 +2,8 @@
 """Run extracted Vivid startup code in an isolated iOS Simulator app.
 
 Requires an already-booted simulator. Uses fake credentials and account updates;
-never launches, uninstalls or reads the installed Vivid app. --source-ref HEAD
-with --expect-stall verifies the pre-fix failure against a Git revision.
+never launches, uninstalls or reads the installed Vivid app.
+--source-ref <pre-fix-revision> with --expect-stall verifies the original failure.
 """
 import argparse
 import atexit

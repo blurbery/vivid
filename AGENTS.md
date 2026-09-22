@@ -102,18 +102,13 @@ This covers layout, navigation and interaction design, focus behaviour, colours,
 - Bug fixes and refactors must preserve the approved design. If a fix would alter it, request approval first; do not introduce a redesign under the label of cleanup, accessibility, performance or consistency work.
 - PRs containing unapproved design changes are not ready for review and must not be merged, even if tests pass or another reviewer approves.
 
-## Documentation ownership
+## Documentation
 
-> [!IMPORTANT]
-> **Vivid’s documentation is controlled exclusively by blurbery. No documentation changes without blurbery’s prior, explicit approval.** Contributors, reviewers and AI tools cannot approve documentation changes on the owner’s behalf.
+Documentation changes do not require separate approval from blurbery. Keep relevant existing docs accurate when behaviour, setup or release processes change, and describe documentation impact in the PR.
 
-This covers the README, guides, branding text and assets, notices, contribution rules, agent instructions, PR templates and documentation comments or references in source and build files.
-
-- An explicit documentation request authorises the requested edits. For owner-directed Vivid builds, review relevant existing docs and update them when the authorised behaviour, setup or release process changes. Unrelated documentation changes still require approval.
-- Keep wording, formatting and scope within the owner’s approval. Typo fixes, link repairs, automated updates, cleanup and AI rewrites must be covered by that request or the standing build-documentation policy.
-- Reference blurbery’s request in the PR. For each Vivid build, state whether relevant docs were updated, no update was needed or an update remains outstanding.
-- PRs containing unapproved documentation changes are not ready for review and must not be merged, even if another reviewer approves.
-- Preserve applicable copyright and licence notices. Approval to restyle a document does not authorize changing its legal terms.
+- Review factual claims, validation evidence, links, Australian English and the existing document structure.
+- Keep updates within the task scope and preserve applicable copyright and licence notices.
+- Design and publishing permissions still apply to their respective operations.
 
 ## AI-assisted contributions
 

@@ -29,7 +29,8 @@ struct VividImageHTTPError: Error {
 
 extension VividImageRetry {
     /// Only demand-loaded views use this budget; prefetching keeps its existing
-    /// single transport retry. SwiftUI cancellation also cancels the backoff.
+    /// single transport retry. Four load rounds allow at most eight transport
+    /// attempts, or four HTTP attempts. SwiftUI cancellation cancels the backoff.
     static func recover<Value>(operation: () async throws -> Value) async throws -> Value {
         let delays: [Duration] = [.seconds(2), .seconds(5), .seconds(15)]
         var retries = 0

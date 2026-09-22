@@ -169,4 +169,17 @@ final class VividImageRetryTests: XCTestCase {
         XCTAssertEqual(attempts, 1)
     }
 
+    func testComposedDemandTransportBudgetRemainsBounded() async {
+        var attempts = 0
+        do {
+            _ = try await VividImageRetry.recover {
+                try await VividImageRetry.load { () -> Int in
+                    attempts += 1
+                    throw URLError(.networkConnectionLost)
+                }
+            }
+            XCTFail("Expected persistent transport failure")
+        } catch { XCTAssertEqual(attempts, 8) }
+    }
+
 }
