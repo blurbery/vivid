@@ -32,6 +32,16 @@ final class SiloAPICompatibilityTests: XCTestCase {
         XCTAssertEqual(item["title"] as? String, "/api/v2/artwork/not-a-url")
     }
 
+    func testCachedRelativeArtworkCanLoadAfterHomeIsReopened() {
+        let base = URL(string: "https://server.example:8443/silo")!
+        let cached = "/api/v2/artwork/poster?exp=123&sig=a%2Fb%2Bc"
+        XCTAssertEqual(SiloAPICompatibility.artworkURL(cached, relativeTo: base)?.absoluteString,
+                       "https://server.example:8443/api/v2/artwork/poster?exp=123&sig=a%2Fb%2Bc")
+        XCTAssertNil(SiloAPICompatibility.artworkURL(cached, relativeTo: nil))
+        XCTAssertEqual(SiloAPICompatibility.artworkURL("https://cdn.example/poster", relativeTo: base)?.absoluteString,
+                       "https://cdn.example/poster")
+    }
+
     func testRenamedEndpointsAndMethodsPreserveBasePathAndAuth() throws {
         let cases = [
             ("/api/v1/auth/setup", "GET", "/api/v2/system/setup", "GET"),

@@ -296,8 +296,11 @@ final class TVHomeMetadataCache {
             strings += [slide.item.backdropUrl, slide.item.posterUrl, slide.item.logoUrl,
                         value.details[slide.id]?.backdropUrl].compactMap { $0 }
         }
+        let base = MediaServerProvider.active == .silo
+            ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
         return Set(strings.compactMap { raw in
-            guard let url = URL(string: raw), ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+            guard let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base),
+                  ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return nil }
             return url
         })
     }
@@ -371,11 +374,13 @@ final class TVHomeMetadataCache {
             // Prepare only current Spotlight art, sequentially, using the same
             // analysis and persistent records as the visible carousel.
             var urls = Set<String>()
+            let base = MediaServerProvider.active == .silo
+                ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
             for slide in snapshot.spotlight {
                 for raw in [slide.item.backdropUrl, snapshot.details[slide.item.contentId]?.backdropUrl].compactMap({ $0 }) {
                     guard urls.insert(raw).inserted else { continue }
                     guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
-                    guard let url = URL(string: raw) else { continue }
+                    guard let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base) else { continue }
                     let record = preparedSpotlight[raw]
                     if record?.cropPrepared != true || record?.cropVersion != 1 {
                         let request = PosterImageCache.displayRequest(url: url, pixelSize: CGSize(width: 768, height: 768), priority: .low)

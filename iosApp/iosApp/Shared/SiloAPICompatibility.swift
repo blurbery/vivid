@@ -221,10 +221,7 @@ enum SiloAPICompatibility {
             return object.mapValuesWithKeys { key, child in
                 if artworkURLFields.contains(key), let path = child as? String,
                    path.hasPrefix("/"), !path.hasPrefix("//"),
-                   let absolute = URL(string: path, relativeTo: requestURL)?.absoluteURL,
-                   absolute.scheme == requestURL.scheme,
-                   absolute.host == requestURL.host,
-                   absolute.port == requestURL.port {
+                   let absolute = artworkURL(path, relativeTo: requestURL) {
                     return absolute.absoluteString
                 }
                 return resolveRelativeURLs(child, requestURL: requestURL)
@@ -234,6 +231,21 @@ enum SiloAPICompatibility {
             return array.map { resolveRelativeURLs($0, requestURL: requestURL) }
         }
         return value
+    }
+
+    /// Resolve cached root-relative Silo artwork as well as fresh responses.
+    /// A local Home snapshot can outlive the response conversion that wrote it.
+    static func artworkURL(_ raw: String, relativeTo serverURL: URL?) -> URL? {
+        guard let parsed = URL(string: raw) else { return nil }
+        guard raw.hasPrefix("/"), !raw.hasPrefix("//") else { return parsed }
+        guard let serverURL,
+              ["http", "https"].contains(serverURL.scheme?.lowercased() ?? ""),
+              serverURL.host != nil,
+              let absolute = URL(string: raw, relativeTo: serverURL)?.absoluteURL,
+              absolute.scheme == serverURL.scheme,
+              absolute.host == serverURL.host,
+              absolute.port == serverURL.port else { return nil }
+        return absolute
     }
 
     private static func decodeIDs(_ value: Any, key: String = "", numericObjectID: Bool = false) -> Any {

@@ -107,7 +107,7 @@ struct CachedAsyncImage: View {
     /// Synchronous memory-cache lookup for the card-size decode the
     /// prefetchers warm. Cheap dictionary access — safe to call from `body`.
     private func prefetchedImage() -> PlatformImage? {
-        guard let url = URL(string: url) else { return nil }
+        guard let url = resolvedURL else { return nil }
         return PosterImageCache.warmedCardImage(for: url, cacheScope: cacheScope ?? VividCacheScope.artwork)
     }
 
@@ -118,7 +118,7 @@ struct CachedAsyncImage: View {
     // MARK: - Request construction
 
     private func request(for size: CGSize) -> VividImageRequest? {
-        guard let url = URL(string: url) else { return nil }
+        guard let url = resolvedURL else { return nil }
         // Scale by the native display scale so we ask the decoder for the
         // exact pixel dimensions we render at.
         let pixelSize = CGSize(
@@ -126,6 +126,12 @@ struct CachedAsyncImage: View {
             height: size.height * displayScale
         )
         return PosterImageCache.displayRequest(url: url, pixelSize: pixelSize, cacheScope: cacheScope ?? VividCacheScope.artwork)
+    }
+
+    private var resolvedURL: URL? {
+        let base = MediaServerProvider.active == .silo
+            ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+        return SiloAPICompatibility.artworkURL(url, relativeTo: base)
     }
 
     private func placeholder(in size: CGSize) -> some View {
@@ -172,7 +178,9 @@ struct TVEpisodeArtwork: View {
     var body: some View {
         let _ = VividImageDiagnostics.shared.count("leaf.TVEpisodeArtwork.body")
         let key = ImageKey(url: url, width: size.width * displayScale, height: size.height * displayScale)
-        let request = URL(string: url).map {
+        let base = MediaServerProvider.active == .silo
+            ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+        let request = SiloAPICompatibility.artworkURL(url, relativeTo: base).map {
             PosterImageCache.displayRequest(url: $0, pixelSize: CGSize(width: key.width, height: key.height))
         }
         let cached = isVisible ? request.flatMap { VividImagePipeline.shared.cache[$0]?.image } : nil

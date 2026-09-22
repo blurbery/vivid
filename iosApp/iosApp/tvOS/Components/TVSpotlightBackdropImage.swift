@@ -25,7 +25,12 @@ struct TVSpotlightBackdropImage: View {
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .clipped()
         .task(id: "\(url)#\(size)#\(displayScale)") {
-            guard let imageURL = URL(string: url) else { onReady(); return }
+            let base = MediaServerProvider.active == .silo
+                ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+            guard let imageURL = SiloAPICompatibility.artworkURL(url, relativeTo: base) else {
+                onReady()
+                return
+            }
             let request = PosterImageCache.displayRequest(
                 url: imageURL,
                 pixelSize: CGSize(width: size.width * displayScale, height: size.height * displayScale)
