@@ -46,6 +46,7 @@ private struct DetailScrollDismissalModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .modifier(MobileTopScrollEdgeModifier())
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 DetailDismissalPolicy.isAtTop(
                     offset: geometry.contentOffset.y, topInset: geometry.contentInsets.top

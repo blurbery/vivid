@@ -98,17 +98,25 @@ private struct PhoneDetailTopGlass: View {
     @ViewBuilder
     var body: some View {
         if isEnabled {
-            PhoneDetailStaticGlassStrip(reduceTransparency: reduceTransparency)
+            GeometryReader { geometry in
+                PhoneDetailStaticGlassStrip(
+                    reduceTransparency: reduceTransparency,
+                    topInset: geometry.safeAreaInsets.top
+                )
                 .equatable()
-                .opacity(phoneDetailSmoothProgress(scrollState.offset, from: 200, to: 360))
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+                .offset(y: -geometry.safeAreaInsets.top)
+            }
+            .frame(height: VividTheme.topBarIconHitSize + 18)
+            .opacity(phoneDetailSmoothProgress(scrollState.offset, from: 200, to: 360))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 }
 
 private struct PhoneDetailStaticGlassStrip: View, Equatable {
     let reduceTransparency: Bool
+    let topInset: CGFloat
 
     var body: some View {
         Group {
@@ -121,7 +129,7 @@ private struct PhoneDetailStaticGlassStrip: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: VividTheme.topBarIconHitSize + 18)
+        .frame(height: topInset + VividTheme.topBarIconHitSize + 18)
     }
 }
 
@@ -236,6 +244,8 @@ private struct ItemDetailPhoneContent: View {
     @State private var preferredNextUpAudioTrackIndex: Int?
     @State private var preferredNextUpSubtitleTrackIndex: Int?
     @State private var nextUpWatchDetail: WatchDetail?
+    @State private var nextUpWatchRequestID = UUID()
+    @State private var nextUpSelectionRevision = 0
     /// Keeps the playback selector's footprint occupied while a newly focused
     /// episode is resolving its files and tracks. The series page renders a
     /// same-size skeleton from this state instead of collapsing the stack.
@@ -513,6 +523,7 @@ private struct ItemDetailPhoneContent: View {
                     router.navigate(to: .itemDetail(contentId: season.contentId))
                 },
                 onSelectNextUpVersion: { fileId in
+                    nextUpSelectionRevision += 1
                     preferredNextUpFileId = fileId
                     preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
                         for: nextUpWatchDetail,
@@ -526,6 +537,7 @@ private struct ItemDetailPhoneContent: View {
                     )
                 },
                 onSelectNextUpAudioTrack: { index in
+                    nextUpSelectionRevision += 1
                     preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
                         for: nextUpWatchDetail,
                         versionFileId: preferredNextUpFileId,
@@ -539,6 +551,7 @@ private struct ItemDetailPhoneContent: View {
                     )
                 },
                 onSelectNextUpSubtitleTrack: { index in
+                    nextUpSelectionRevision += 1
                     preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
                         for: nextUpWatchDetail,
                         versionFileId: preferredNextUpFileId,
@@ -635,6 +648,7 @@ private struct ItemDetailPhoneContent: View {
                     selectedSeriesEpisodeId = id
                 },
                 onSelectNextUpVersion: { fileId in
+                    nextUpSelectionRevision += 1
                     preferredNextUpFileId = fileId
                     preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
                         for: nextUpWatchDetail,
@@ -648,6 +662,7 @@ private struct ItemDetailPhoneContent: View {
                     )
                 },
                 onSelectNextUpAudioTrack: { index in
+                    nextUpSelectionRevision += 1
                     preferredNextUpAudioTrackIndex = sanitizedAudioTrackIndex(
                         for: nextUpWatchDetail,
                         versionFileId: preferredNextUpFileId,
@@ -661,6 +676,7 @@ private struct ItemDetailPhoneContent: View {
                     )
                 },
                 onSelectNextUpSubtitleTrack: { index in
+                    nextUpSelectionRevision += 1
                     preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
                         for: nextUpWatchDetail,
                         versionFileId: preferredNextUpFileId,
@@ -1066,47 +1082,126 @@ private struct ItemDetailPhoneContent: View {
     }
 
     private func loadNextUpWatchDetail(for detail: ItemDetail) async {
-        guard let nextUp = playbackEpisode(for: detail) else {
-            nextUpWatchDetail = nil
-            isLoadingNextUpWatchDetail = false
-            preferredNextUpFileId = nil
-            preferredNextUpAudioTrackIndex = nil
-            preferredNextUpSubtitleTrackIndex = nil
-            return
-        }
-
-        let requestedContentId = nextUp.contentId
-        isLoadingNextUpWatchDetail = true
-        nextUpWatchDetail = nil
+        #if os(iOS)
+        // Do not make visible selectors compete with whole-season warming.
+        viewModel.stopEpisodePagePrefetch()
+        #endif
+        let requestID = UUID()
+        nextUpWatchRequestID = requestID
         preferredNextUpFileId = nil
         preferredNextUpAudioTrackIndex = nil
         preferredNextUpSubtitleTrackIndex = nil
 
+        guard let nextUp = playbackEpisode(for: detail) else {
+            nextUpWatchDetail = nil
+            isLoadingNextUpWatchDetail = false
+            return
+        }
+
+        let requestedContentId = nextUp.contentId
+        let cacheKey = CacheKey.itemWatchDetail(requestedContentId)
+        let cached: WatchDetail? = ResponseCache.shared.get(cacheKey)
+        nextUpWatchDetail = cached?.contentId == requestedContentId ? cached : nil
+        if nextUpWatchDetail == nil,
+           let item: ItemDetail = ResponseCache.shared.get(CacheKey.itemDetail(requestedContentId)),
+           item.contentId == requestedContentId {
+            nextUpWatchDetail = WatchDetail(catalogItem: item)
+        }
+        isLoadingNextUpWatchDetail = nextUpWatchDetail == nil
+        seedNextUpSubtitleSelection()
+        let selectionRevision = nextUpSelectionRevision
+
         defer {
-            // A cancelled request may finish after the user has already
-            // centered another episode. Only the request that still owns the
-            // current selection is allowed to remove its skeleton.
-            if playbackEpisode(for: detail)?.contentId == requestedContentId {
+            // Request identity also protects A -> B -> A from A's old defer.
+            if nextUpWatchRequestID == requestID {
                 isLoadingNextUpWatchDetail = false
             }
         }
+        guard let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+              !Task.isCancelled, nextUpWatchRequestID == requestID else { return }
 
-        do {
-            let watchDetail = try await VividAPI.shared.watchDetail(contentId: requestedContentId)
-            guard !Task.isCancelled,
-                  playbackEpisode(for: detail)?.contentId == requestedContentId else { return }
-            nextUpWatchDetail = watchDetail
-            preferredNextUpSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-                version: effectiveVersion(for: watchDetail, versionFileId: nil),
-                signature: watchDetail.effectiveSubtitleTrackSignature,
-                mode: watchDetail.effectiveSubtitleMode,
-                usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
-            )
-        } catch {
-            guard !Task.isCancelled,
-                  playbackEpisode(for: detail)?.contentId == requestedContentId else { return }
-            nextUpWatchDetail = nil
+        enum EpisodeMetadata {
+            case catalog(ItemDetail?)
+            case playback(WatchDetail?)
         }
+        let needsCatalog = nextUpWatchDetail == nil
+        let didResolvePlayback = await withTaskGroup(of: EpisodeMetadata.self, returning: Bool.self) { group in
+            group.addTask {
+                .playback(try? await MetadataRequestPool.shared.watchDetail(contentId: requestedContentId))
+            }
+            if needsCatalog {
+                group.addTask {
+                    .catalog(try? await MetadataRequestPool.shared.itemDetail(contentId: requestedContentId))
+                }
+            }
+            var resolvedPlayback = false
+            for await result in group {
+                guard await TokenStore.shared.currentOrdinaryRequestAuth(matchingIdentityOf: auth) != nil,
+                      !Task.isCancelled, nextUpWatchRequestID == requestID,
+                      playbackEpisode(for: detail)?.contentId == requestedContentId else {
+                    group.cancelAll()
+                    return false
+                }
+                switch result {
+                case .catalog(let item):
+                    guard let item, item.contentId == requestedContentId,
+                          let preview = WatchDetail(catalogItem: item) else { continue }
+                    ResponseCache.shared.set(item, for: CacheKey.itemDetail(requestedContentId))
+                    // A full watch response always wins, irrespective of arrival order.
+                    if nextUpWatchDetail == nil, nextUpSelectionRevision == selectionRevision {
+                        nextUpWatchDetail = preview
+                        seedNextUpSubtitleSelection()
+                        isLoadingNextUpWatchDetail = false
+                    }
+                case .playback(let watchDetail):
+                    guard let watchDetail, watchDetail.contentId == requestedContentId else { continue }
+                    resolvedPlayback = true
+                    ResponseCache.shared.set(watchDetail, for: cacheKey)
+                    // Background preferences must not reset a manual track/version pick.
+                    if nextUpSelectionRevision == selectionRevision {
+                        nextUpWatchDetail = watchDetail
+                        seedNextUpSubtitleSelection()
+                    }
+                    isLoadingNextUpWatchDetail = false
+                    group.cancelAll()
+                }
+            }
+            return resolvedPlayback
+        }
+        guard didResolvePlayback, !Task.isCancelled, nextUpWatchRequestID == requestID else { return }
+
+        // Warm only the adjacent cards, sequentially and after the active
+        // episode is ready. The view task cancels this work on selection/exit.
+        guard let index = viewModel.episodes.firstIndex(where: { $0.contentId == requestedContentId }) else { return }
+        let neighbours = [index + 1, index - 1].compactMap { offset -> String? in
+            guard viewModel.episodes.indices.contains(offset) else { return nil }
+            return viewModel.episodes[offset].contentId
+        }
+        for neighbour in neighbours {
+            guard await TokenStore.shared.currentOrdinaryRequestAuth(matchingIdentityOf: auth) != nil,
+                  !Task.isCancelled, nextUpWatchRequestID == requestID else { return }
+            let key = CacheKey.itemWatchDetail(neighbour)
+            if let _: WatchDetail = ResponseCache.shared.get(key) { continue }
+            guard let value = try? await MetadataRequestPool.shared.watchDetail(contentId: neighbour) else { continue }
+            guard await TokenStore.shared.currentOrdinaryRequestAuth(matchingIdentityOf: auth) != nil,
+                  !Task.isCancelled, nextUpWatchRequestID == requestID,
+                  value.contentId == neighbour else { return }
+            ResponseCache.shared.set(value, for: key)
+        }
+        #if os(iOS)
+        guard !Task.isCancelled, nextUpWatchRequestID == requestID else { return }
+        viewModel.prefetchSeasonsAfterPlaybackSelectors()
+        #endif
+    }
+
+    private func seedNextUpSubtitleSelection() {
+        guard let watchDetail = nextUpWatchDetail else { return }
+        preferredNextUpSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
+            version: effectiveVersion(for: watchDetail, versionFileId: nil),
+            signature: watchDetail.effectiveSubtitleTrackSignature,
+            mode: watchDetail.effectiveSubtitleMode,
+            usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
+        )
     }
 
     private func presentPlayerFromDetail(

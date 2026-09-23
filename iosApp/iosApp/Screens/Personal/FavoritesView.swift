@@ -65,7 +65,7 @@ struct IOSPersonalMediaPosterLayout: View {
     }
 
     /// MediaCard scales overrides by the selected global preference. Cancel
-    /// that scale, then cap the standard width to the measured grid cell.
+    /// that scale so saved-title posters fill their measured grid cells.
     private var cardWidthOverride: CGFloat {
         if UIDevice.current.userInterfaceIdiom == .pad {
             return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth)
@@ -74,7 +74,8 @@ struct IOSPersonalMediaPosterLayout: View {
         return AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columnCount,
-            spacing: 8
+            spacing: 8,
+            maximumWidth: nil
         ) / uiCustomization.cardPresentation.posterSize.scale
     }
 

@@ -1127,6 +1127,32 @@ struct WatchDetail: Codable {
     }
 }
 
+extension WatchDetail {
+    /// Presentation-only metadata from the catalogue. Playback still obtains
+    /// the full watch response and server preferences through its normal path.
+    init?(catalogItem item: ItemDetail) {
+        guard item.type == "episode", let versions = item.versions, !versions.isEmpty else { return nil }
+        contentId = item.contentId
+        type = item.type
+        title = item.title
+        year = item.year
+        overview = item.overview
+        self.versions = versions
+        subtitles = item.subtitles
+        intro = item.intro
+        credits = item.credits
+        userData = item.userData
+        seriesId = item.seriesId
+        seriesTitle = item.seriesTitle
+        seasonNumber = item.seasonNumber
+        episodeNumber = item.episodeNumber
+        effectiveSubtitleLanguage = nil
+        effectiveSubtitleMode = item.effectiveSubtitleMode
+        effectiveShowForcedSubtitles = item.effectiveShowForcedSubtitles
+        effectiveSubtitleTrackSignature = item.effectiveSubtitleTrackSignature
+    }
+}
+
 // MARK: - Collections
 
 struct UserCollection: Codable, Identifiable {

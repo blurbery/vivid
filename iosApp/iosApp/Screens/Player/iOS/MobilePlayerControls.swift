@@ -80,11 +80,15 @@ struct MobilePlayerControls: View {
                 }
                 .transition(.opacity)
             }
-            if viewModel.showIntroSkip {
-                introSkipPill
-            }
-            if viewModel.showCreditsSkip {
-                creditsSkipPill
+            // Marker metadata can arrive before the stream is ready. Keep
+            // skip actions off the loading/buffering screen.
+            if !viewModel.isLoading && !viewModel.isBuffering && viewModel.error == nil {
+                if viewModel.showIntroSkip {
+                    introSkipPill
+                }
+                if viewModel.showCreditsSkip {
+                    creditsSkipPill
+                }
             }
             if showsStats {
                 MobilePlaybackStatsOverlay(stats: viewModel.playbackStats)
