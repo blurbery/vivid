@@ -58,17 +58,18 @@ enum AdaptiveColumns {
     }
 
     /// Fits a fixed-density grid card inside its actual container while
-    /// preserving the standard poster width whenever enough room is available.
+    /// preserving the standard width by default. Pass nil to fill each cell.
     static func fittedPosterWidth(
         containerWidth: CGFloat,
         columnCount: Int,
         spacing: CGFloat,
-        maximumWidth: CGFloat = VividTheme.posterCardWidth
+        maximumWidth: CGFloat? = VividTheme.posterCardWidth
     ) -> CGFloat {
-        guard containerWidth > 0, columnCount > 0 else { return maximumWidth }
+        guard containerWidth > 0, columnCount > 0 else { return maximumWidth ?? VividTheme.posterCardWidth }
         let totalSpacing = CGFloat(max(0, columnCount - 1)) * spacing
         let availableWidth = max(1, containerWidth - totalSpacing)
-        return min(maximumWidth, availableWidth / CGFloat(columnCount))
+        let cellWidth = availableWidth / CGFloat(columnCount)
+        return min(maximumWidth ?? cellWidth, cellWidth)
     }
 }
 

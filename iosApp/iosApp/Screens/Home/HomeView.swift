@@ -666,24 +666,9 @@ private struct PhoneSpotlightArtworkSurface: View {
                 fadeEnd: usesTabletFade ? (height + 220) / artworkHeight : 1,
                 smoothFade: true
             )
-            Canvas { context, size in
-                for x in stride(from: CGFloat.zero, to: size.width, by: 2) {
-                    let fraction = x / max(1, size.width)
-                    let wave = sin(fraction * .pi * 2 + 0.4) * 22 + sin(fraction * .pi * 3.1) * 10
-                    let start = usesTabletFade ? height + 140 : height + 25 + wave
-                    let end = usesTabletFade ? size.height : size.height - 4 - (wave + 32) * 0.35
-                    let stops = (0...48).map { step -> Gradient.Stop in
-                        let t = Double(step) / 48
-                        let alpha = t * t * t * (t * (t * 6 - 15) + 10)
-                        return .init(color: .black.opacity(alpha), location: t)
-                    }
-                    context.fill(
-                        Path(CGRect(x: x, y: 0, width: 2, height: size.height)),
-                        with: .linearGradient(Gradient(stops: stops), startPoint: CGPoint(x: x, y: start), endPoint: CGPoint(x: x, y: end))
-                    )
-                }
-            }
-            .allowsHitTesting(false)
+            PhoneSpotlightFade(height: height, usesTabletFade: usesTabletFade)
+                .equatable()
+                .allowsHitTesting(false)
 
         }
         .frame(height: height + 360)
@@ -705,6 +690,34 @@ private struct PhoneSpotlightArtworkSurface: View {
             tint = HeroBackdropPalette.cachedTint(for: imageURL) ?? Color(white: 0.12)
             if let resolved = await HeroBackdropPalette.tintColor(for: imageURL), !Task.isCancelled {
                 tint = resolved
+            }
+        }
+    }
+}
+
+// The fade depends only on layout, not artwork, tint or scroll position.
+// Keep its unchanged gradient out of the per-strip drawing loop.
+private struct PhoneSpotlightFade: View, Equatable {
+    let height: CGFloat
+    let usesTabletFade: Bool
+
+    private static let gradient = Gradient(stops: (0...48).map { step in
+        let t = Double(step) / 48
+        let alpha = t * t * t * (t * (t * 6 - 15) + 10)
+        return .init(color: .black.opacity(alpha), location: t)
+    })
+
+    var body: some View {
+        Canvas { context, size in
+            for x in stride(from: CGFloat.zero, to: size.width, by: 2) {
+                let fraction = x / max(1, size.width)
+                let wave = sin(fraction * .pi * 2 + 0.4) * 22 + sin(fraction * .pi * 3.1) * 10
+                let start = usesTabletFade ? height + 140 : height + 25 + wave
+                let end = usesTabletFade ? size.height : size.height - 4 - (wave + 32) * 0.35
+                context.fill(
+                    Path(CGRect(x: x, y: 0, width: 2, height: size.height)),
+                    with: .linearGradient(Self.gradient, startPoint: CGPoint(x: x, y: start), endPoint: CGPoint(x: x, y: end))
+                )
             }
         }
     }

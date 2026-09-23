@@ -550,7 +550,8 @@ struct LibraryCollectionsView: View {
         return AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columns.count,
-            spacing: 12
+            spacing: 12,
+            maximumWidth: nil
         )
         #else
         return nil
@@ -821,7 +822,7 @@ struct MobileForYouCollections: View {
         if UIDevice.current.userInterfaceIdiom == .pad {
             return AdaptiveColumns.tabletPosterWidth(containerWidth: gridWidth, spacing: 12)
         }
-        return AdaptiveColumns.fittedPosterWidth(containerWidth: gridWidth, columnCount: columnCount, spacing: 12)
+        return AdaptiveColumns.fittedPosterWidth(containerWidth: gridWidth, columnCount: columnCount, spacing: 12, maximumWidth: nil)
     }
 
     var body: some View {

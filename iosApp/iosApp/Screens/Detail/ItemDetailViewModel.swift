@@ -259,14 +259,6 @@ class ItemDetailViewModel {
                    initialResumeSeasonNumber == resumeSeason {
                     initialResumeSeasonNumber = nil
                 }
-                if !Task.isCancelled, generation == detailGeneration,
-                   let selectedSeason {
-                    // Secondary seasons stay outside the resume
-                    // page's initial metadata wave.
-                    startEpisodePagePrefetch(
-                        seriesId: contentId, seasons: seasons, selectedSeason: selectedSeason
-                    )
-                }
             } else {
                 await loadRelatedStructure(
                     for: enriched,
@@ -952,7 +944,7 @@ class ItemDetailViewModel {
                 #if os(iOS)
                 initialResumeSeasonNumber = nil
                 #endif
-                #if !os(tvOS)
+                #if !os(tvOS) && !os(iOS)
                 startEpisodePagePrefetch(
                     seriesId: seriesId,
                     seasons: seasons,
@@ -970,6 +962,17 @@ class ItemDetailViewModel {
             // hydrated from cache.
         }
     }
+
+    #if os(iOS)
+    /// Other seasons are optional browsing work. The phone calls this only
+    /// after the selected episode's playback controls have resolved.
+    func prefetchSeasonsAfterPlaybackSelectors() {
+        guard let seriesId = seriesContentId, let selectedSeason else { return }
+        startEpisodePagePrefetch(
+            seriesId: seriesId, seasons: seasons, selectedSeason: selectedSeason
+        )
+    }
+    #endif
 
     #if !os(tvOS)
     /// Stop background season warming when its detail page leaves the screen.

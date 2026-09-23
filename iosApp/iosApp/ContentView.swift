@@ -1875,7 +1875,7 @@ struct MainTabView: View {
         .tint(.vividOnSurface)
         #if os(iOS)
         .overlay {
-            if router.presentedItemDetail != nil {
+            if UIDevice.current.userInterfaceIdiom == .pad, router.presentedItemDetail != nil {
                 // Native sheets intentionally leave a narrow safe-area strip
                 // above their largest detent. Mask the live tab content there
                 // with dense glass so no logo, row or poster leaks around the
@@ -1971,7 +1971,7 @@ struct MainTabView: View {
         }
         #endif
         #if os(iOS)
-        .modifier(ItemDetailPresentationModifier(router: router))
+        .modifier(ItemDetailPresentationModifier(router: router, zoomNamespace: zoomNamespace))
         #endif
         #endif
         // Outside the presentation modifiers so the video player inherits
@@ -2543,23 +2543,26 @@ struct MainTabView: View {
 }
 
 #if os(iOS)
-/// Native bottom-presented catalog detail card. The sheet owns a small nested
-/// navigation stack for episode and Cast & Crew hops, while the tab/sidebar
-/// navigation underneath remains exactly where the user left it.
+/// The full-screen detail owns its nested navigation. iPhone uses the system's
+/// continuously interactive zoom so a pull can shrink, move, cancel or return
+/// to the tapped card while the browse page retains its position.
 private struct ItemDetailPresentationModifier: ViewModifier {
     @Bindable var router: AppRouter
+    let zoomNamespace: Namespace.ID
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            content.fullScreenCover(item: $router.presentedItemDetail,
-                                    onDismiss: { router.itemDetailPresentationDidDismiss() }) { presentation in
+        content.fullScreenCover(item: $router.presentedItemDetail,
+                                onDismiss: { router.itemDetailPresentationDidDismiss() }) { presentation in
+            if UIDevice.current.userInterfaceIdiom == .phone {
                 ItemDetailSheet(presentation: presentation, router: router)
-            }
-        } else {
-            content.background { DetailBackdropSourceReader(router: router) }
-                .sheet(item: $router.presentedItemDetail,
-                          onDismiss: { router.itemDetailPresentationDidDismiss() }) { presentation in
+                    // Keep zoom on the cover, not a pushed destination. The
+                    // source remains mounted, including across player returns.
+                    // A source-less deep link uses the system's centred zoom.
+                    .navigationTransition(.zoom(
+                        sourceID: presentation.zoomSourceID ?? presentation.id.uuidString,
+                        in: zoomNamespace
+                    ))
+            } else {
                 ItemDetailSheet(presentation: presentation, router: router)
             }
         }
@@ -2571,14 +2574,33 @@ private struct ItemDetailSheet: View {
     @Bindable var router: AppRouter
 
     var body: some View {
+        Group {
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                detailNavigation
+            } else {
+                detailNavigation
+                    .presentationSizing(.page)
+                    .presentationDetents([.large])
+                    .presentationContentInteraction(.resizes)
+                    .presentationDragIndicator(.hidden)
+                    .presentationCornerRadius(28)
+                    .presentationBackground(.ultraThickMaterial)
+            }
+        }
+        // Actor and episode pages retain Back within this presentation.
+        .interactiveDismissDisabled(!router.itemDetailPath.isEmpty)
+        .modifier(PlayerPresentationModifier(router: router, detailPresentationID: presentation.id))
+        .environment(router)
+    }
+
+    private var detailNavigation: some View {
         NavigationStack(path: $router.itemDetailPath) {
             GeometryReader { geometry in
                 let pageHeight = geometry.size.height + geometry.safeAreaInsets.bottom
 
                 if browseSource == nil {
-                    // iPhone has one detail page. Do not put its vertical
-                    // scroll view inside an unused horizontal scroll view:
-                    // the native sheet should coordinate with that page directly.
+                    // Keep the vertical scroll view directly in the cover so
+                    // the native zoom gesture can coordinate with scrolling.
                     detailPage(contentID: currentContentID, width: geometry.size.width, height: pageHeight)
                 } else {
                     // Keep iPad's source-aware, finger-following page deck.
@@ -2609,55 +2631,36 @@ private struct ItemDetailSheet: View {
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
         }
-        // The sheet host reserves a bottom safe-area strip for the home
-        // indicator. Let the detail surface paint through that strip; the
-        // scroll content already owns its own bottom breathing room.
+        // Artwork paints to the screen edges. Keep the top safe area for the
+        // existing X/Back chrome; each detail scroll surface extends its own
+        // artwork above it. Content already owns its bottom breathing room.
         .ignoresSafeArea(.container, edges: .bottom)
-        // A page-sized sheet avoids the narrow form-card treatment on iPad,
-        // while the large detent raises the rounded card to the top safe area.
-        // Native pull-down dismissal still returns to the exact source page.
-        .presentationSizing(.page)
-        .presentationDetents([.large])
-        // Keep one native sheet/scroll policy throughout a continuous drag.
-        // Switching policies at the top can leave a reversing drag in content bounce.
-        .presentationContentInteraction(.resizes)
-        .presentationDragIndicator(.hidden)
-        .presentationCornerRadius(28)
-        .presentationBackground(.ultraThickMaterial)
-        .presentationBackgroundInteraction(
-            UIDevice.current.userInterfaceIdiom == .phone && router.itemDetailBackdropImage != nil
-                ? .enabled : .automatic
-        )
-        .background {
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                DetailPresentationBackdrop(sourceImage: router.itemDetailBackdropImage)
-            }
-        }
-        // Nested pages handle a top pull as Back. The sheet's native dismiss
-        // remains available only at the root, preserving the source page.
-        .interactiveDismissDisabled(!router.itemDetailPath.isEmpty)
-        .modifier(PlayerPresentationModifier(router: router, detailPresentationID: presentation.id))
-        .environment(router)
     }
 
     private var currentContentID: String {
         router.presentedItemDetail?.contentId ?? presentation.contentId
     }
 
+    @ViewBuilder
     private func detailPage(contentID: String, width: CGFloat, height: CGFloat) -> some View {
         let shape = UnevenRoundedRectangle(
             topLeadingRadius: 28, bottomLeadingRadius: 0,
             bottomTrailingRadius: 0, topTrailingRadius: 28, style: .continuous
         )
-        return ItemDetailView(
+        let page = ItemDetailView(
             contentId: contentID,
             onClose: router.dismissItemDetail,
             resumeContext: presentation.resumeContext?.seriesContentId == contentID ? presentation.resumeContext : nil
         )
             .frame(width: width, height: height)
-            .clipShape(shape)
-            .contentShape(shape)
             .id(contentID)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            // UIKit rounds the moving card during the interactive transition.
+            // Clipping here would cut off the artwork behind the status bar.
+            page
+        } else {
+            page.clipShape(shape).contentShape(shape)
+        }
     }
 
     /// iPhone detail cards are intentionally fixed to the title that was
@@ -2720,6 +2723,7 @@ private struct ItemDetailSheet: View {
 #if os(iOS)
 private struct MobileSearchPage: View {
     @State private var searchRouter = AppRouter()
+    @Namespace private var zoomNamespace
     @State private var blurRequest = 0
     @State private var isDismissing = false
 
@@ -2740,13 +2744,8 @@ private struct MobileSearchPage: View {
                         }
                     }
             }
-            .background { DetailBackdropSourceReader(router: searchRouter) }
-            .sheet(
-                item: $searchRouter.presentedItemDetail,
-                onDismiss: { searchRouter.itemDetailPresentationDidDismiss() }
-            ) { presentation in
-                ItemDetailSheet(presentation: presentation, router: searchRouter)
-            }
+            .environment(\.zoomNamespace, zoomNamespace)
+            .modifier(ItemDetailPresentationModifier(router: searchRouter, zoomNamespace: zoomNamespace))
             .modifier(PlayerPresentationModifier(router: searchRouter))
             .environment(searchRouter)
         }

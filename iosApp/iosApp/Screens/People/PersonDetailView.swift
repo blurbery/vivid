@@ -344,9 +344,9 @@ struct PersonDetailView: View {
                     }
                 )
             }
-            .environment(\.detailPullBackAction, {
-                if let goBack { goBack() } else { dismiss() }
-            })
+            // Actor profiles scroll normally; only the explicit Back control
+            // above uses the inherited navigation action.
+            .environment(\.detailPullBackAction, nil)
             #endif
             .onAppear {
                 viewModel.resumeMetadataRefreshIfNeeded()

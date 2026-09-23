@@ -134,7 +134,7 @@ struct CatalogGrid: View {
     }
 
     /// MediaCard applies the global poster-size scale after its override. Undo
-    /// that scale here, then cap the standard width to the measured grid cell.
+    /// that scale here so three-column library/search cards fill their cells.
     private var gridCardWidthOverride: CGFloat? {
         #if os(iOS)
         if UIDevice.current.userInterfaceIdiom == .pad {
@@ -144,7 +144,8 @@ struct CatalogGrid: View {
         let fittedWidth = AdaptiveColumns.fittedPosterWidth(
             containerWidth: gridWidth,
             columnCount: columns.count,
-            spacing: 8
+            spacing: 8,
+            maximumWidth: usesThreeColumnPhoneLayout ? nil : VividTheme.posterCardWidth
         )
         return fittedWidth / uiCustomization.cardPresentation.posterSize.scale
         #else

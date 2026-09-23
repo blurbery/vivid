@@ -177,8 +177,8 @@ class AppRouter {
         }
     }
 
-    /// iPhone and iPad present catalog details as a native bottom sheet instead
-    /// of pushing them into the tab or split-view navigation stack. A fresh UUID
+    /// Catalog details have their own full-screen presentation instead of
+    /// pushing into the tab or split-view navigation stack. A fresh UUID
     /// makes reopening the same title after dismissal a new presentation while
     /// keeping the content id itself available to the sheet root.
     struct ItemDetailPresentation: Identifiable, Equatable {
@@ -186,12 +186,16 @@ class AppRouter {
         var contentId: String
         let browseSource: ItemDetailBrowseSource?
         let resumeContext: ItemDetailResumeContext?
+        /// The exact card placement that opened this presentation. Keep it
+        /// stable while navigating to actors, episodes or playback and back.
+        let zoomSourceID: String?
 
         init(contentId: String, browseSource: ItemDetailBrowseSource? = nil,
-             resumeContext: ItemDetailResumeContext? = nil) {
+             resumeContext: ItemDetailResumeContext? = nil, zoomSourceID: String? = nil) {
             self.contentId = contentId
             self.browseSource = browseSource
             self.resumeContext = resumeContext
+            self.zoomSourceID = zoomSourceID
         }
     }
 
@@ -432,6 +436,10 @@ class AppRouter {
         resumeContext: ItemDetailResumeContext? = nil
     ) {
         #if os(iOS)
+        // Consume the card's hand-off once. A later deep link must never
+        // animate towards a stale poster from an earlier presentation.
+        let zoomSourceID = pendingZoomSourceID
+        pendingZoomSourceID = nil
         recordScreenBreadcrumb(target: "itemDetail", action: "present")
         if presentedItemDetail == nil {
             itemDetailBackdropImage = captureItemDetailBackdrop?()
@@ -442,7 +450,8 @@ class AppRouter {
             presentedItemDetail = ItemDetailPresentation(
                 contentId: contentId,
                 browseSource: source,
-                resumeContext: resumeContext
+                resumeContext: resumeContext,
+                zoomSourceID: zoomSourceID
             )
         } else {
             itemDetailPath.append(Route.itemDetail(contentId: contentId))
