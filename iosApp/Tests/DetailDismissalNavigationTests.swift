@@ -46,13 +46,11 @@ final class DetailDismissalNavigationTests: XCTestCase {
             router.authState = .authenticated
             router.presentItemDetail(contentId: "movie")
             router.itemDetailPath.append("nested-detail")
-            router.itemDetailBackdropImage = UIImage()
 
             router.authState = destination
 
             XCTAssertNil(router.presentedItemDetail)
             XCTAssertTrue(router.itemDetailPath.isEmpty)
-            XCTAssertNil(router.itemDetailBackdropImage)
             XCTAssertFalse(router.isItemDetailPresentationActive)
             router.resetToHome()
             XCTAssertFalse(router.isItemDetailPresentationActive)

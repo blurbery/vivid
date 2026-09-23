@@ -94,67 +94,6 @@ private extension View {
     }
 }
 
-// MARK: - Secondary pill
-
-/// Apple-TV-style dark secondary pill. Sits next to `TVPrimaryPillButton`
-/// in the hero row. Filled dark squared tile with white icon + label — Apple
-/// uses this for "Play Free Episode" alongside a white "Subscribe"
-/// button; we use it for "Start Over" alongside a white "Resume …".
-struct TVSecondaryPillButton: View {
-    let icon: String
-    let title: String
-    var collapsesWhenUnfocused: Bool = false
-    var stabilizesFocusMotion = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            TVSecondaryPillLabel(
-                icon: icon,
-                title: title,
-                collapsesWhenUnfocused: collapsesWhenUnfocused,
-                stabilizesFocusMotion: stabilizesFocusMotion
-            )
-        }
-        .buttonStyle(TVPillButtonStyle(
-            kind: .secondary,
-            focusTreatment: .compact,
-            collapsesWhenUnfocused: collapsesWhenUnfocused,
-            stabilizesFocusMotion: stabilizesFocusMotion
-        ))
-        .accessibilityLabel(title)
-    }
-}
-
-private struct TVSecondaryPillLabel: View {
-    let icon: String
-    let title: String
-    let collapsesWhenUnfocused: Bool
-    let stabilizesFocusMotion: Bool
-
-    @Environment(\.isFocused) private var isFocused
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 28, weight: .semibold))
-                .frame(width: 36, height: 36, alignment: .center)
-            if !stabilizesFocusMotion && (!collapsesWhenUnfocused || isFocused) {
-                Text(title)
-                    .font(.system(size: 26, weight: .semibold))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .transition(
-                        stabilizesFocusMotion
-                            ? .opacity
-                            : .opacity.combined(with: .move(edge: .leading))
-                    )
-            }
-        }
-        .animation(.easeInOut(duration: 0.18), value: isFocused)
-    }
-}
-
 // MARK: - Circle menu button
 
 /// Circle-shaped overflow/"more" button that opens a `Menu`. Same visual

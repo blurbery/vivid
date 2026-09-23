@@ -23,7 +23,7 @@ These instructions apply to AI coding, documentation and review work in this rep
 
 ## Project Structure & Module Organization
 
-This repository contains Vivid, an independent Apple media client. SwiftUI app code lives under `iosApp/iosApp/`, the shared Lucid Engine adapter lives in `iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift`, app tests live in `iosApp/Tests/`, focused engine-adapter checks live in `scripts/tests/`, Top Shelf code lives in `iosApp/TopShelf/`, resources live in `iosApp/Resources/`, and generated Xcode structure is controlled by `iosApp/project.yml`. Start with [the documentation index](docs/README.md). GitHub release automation lives in `.github/workflows/release.yml` and `scripts/release/`; unsigned sideload tooling lives in `fastlane/`. App Store Connect is configured for iOS and tvOS TestFlight, but Apple signing and upload credentials remain local and no upload automation is committed.
+This repository contains Vivid, an independent Apple media client. SwiftUI app code lives under `iosApp/iosApp/`, the shared Lucid Engine adapter lives in `iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift`, app tests live in `iosApp/Tests/`, focused engine-adapter checks live in `scripts/tests/`, Top Shelf code lives in `iosApp/TopShelf/`, resources live in `iosApp/Resources/`, and generated Xcode structure is controlled by `iosApp/project-ios.yml` (iOS), `iosApp/project.yml` (tvOS) and their shared `iosApp/project-common.yml`. Start with [the documentation index](docs/README.md). GitHub release automation lives in `.github/workflows/release.yml` and `scripts/release/`; unsigned sideload tooling lives in `fastlane/`. App Store Connect is configured for iOS and tvOS TestFlight, but Apple signing and upload credentials remain local and no upload automation is committed.
 
 ## Vivid repository and release rules
 
@@ -31,8 +31,8 @@ This repository contains Vivid, an independent Apple media client. SwiftUI app c
 - Work only in `blurbery/vivid` for Vivid tasks. Changes here do not authorize changes to any other repository.
 - Read [the release docs](docs/release/versioning.md) before changing release tooling or publishing an update.
 - TestFlight marketing version stays `0.14.3` unless blurbery explicitly approves a change. Before each authorised upload, verify App Store Connect history and use that platform's latest uploaded build number plus exactly 1. iOS/iPadOS and tvOS advance independently, including paired uploads; do not skip numbers to make them match. Extensions match their containing app. Local test builds and GitHub releases do not advance TestFlight counters. If history cannot be verified or the next number is unavailable, report the conflict rather than guessing, resetting or silently skipping a number. Follow [Versioning & Releases](docs/release/versioning.md).
-- Updates pushed to `main` use the existing `semantic-release` workflow. Features bump minor; fixes and other updates bump patch; breaking changes bump major. No new commits means no release.
-- Logo, branding, artwork and small visual polish updates bump patch (`0.0.1` → `0.0.2`). Use `fix:`, `style:` or `docs:` as appropriate; reserve `feat:` for new functionality. Do not rewrite earlier releases to apply this policy.
+- Updates pushed to `main` use the existing `semantic-release` workflow. Features bump minor; fixes bump patch; breaking changes bump major. Documentation-only and housekeeping updates must use `[skip release]`, including the squash message, without skipping required CI. They must not create a release or version bump. No new commits means no release.
+- Logo, branding, artwork and small visual polish updates bump patch (`0.0.1` → `0.0.2`). Use `fix:` or `style:` for shipped visual changes; reserve `feat:` for new functionality. Pure documentation changes use `docs:` with `[skip release]`. Do not rewrite earlier releases to apply this policy.
 - GitHub release titles must contain only the version, for example `0.1.1`. No app name, `v` prefix or descriptive title. Git tags retain the `v` prefix.
 - Release bodies must contain only flat dot points describing what changed. No headings, dates, author lists, hashes, comparison links or automated footer. Use the documented `Release-Notes:` commit block for curated bullets.
 - Preserve `release.config.mjs`, `scripts/release/notes.mjs` and `.github/workflows/release.yml` as the source of this behaviour. Run the focused release tests if changing them.
@@ -47,7 +47,7 @@ This repository contains Vivid, an independent Apple media client. SwiftUI app c
 
 ## Build, Test, and Development Commands
 
-- `cd iosApp && xcodegen generate` regenerates `Vivid.xcodeproj` from `project.yml`; do this after target or source layout changes.
+- From `iosApp/`, use `xcodegen generate --spec project-ios.yml` for iOS or `xcodegen generate --spec project.yml` for tvOS. Both write `Vivid.xcodeproj`; regenerate after switching platforms or changing target/source layout.
 - `cd iosApp && xcodebuild build -project Vivid.xcodeproj -scheme Vivid -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO` builds iOS without local signing.
 - Use scheme `VividTV` with a tvOS simulator destination for tvOS builds.
 
@@ -55,7 +55,7 @@ Use the configured Xcode and an available destination. The current scheme and ta
 
 ## Coding Style & Naming Conventions
 
-Use Swift 5 and SwiftUI naming conventions. Types use `PascalCase`; functions and properties use `camelCase`. Keep platform-specific code under the existing `iOS` or `tvOS` folders and update `project.yml` instead of hand-editing generated `.xcodeproj` files. Do not change bundle IDs, keychain groups, signing or API identifiers as part of documentation or branding edits. Vivid’s release identifiers and App Store Connect record are configured. Follow the distribution guide to verify signing, production CloudKit schema and the exact archive before an Apple upload.
+Use Swift 5 and SwiftUI naming conventions. Types use `PascalCase`; functions and properties use `camelCase`. Keep platform-specific code under the existing `iOS` or `tvOS` folders and update the relevant platform spec or `project-common.yml` instead of hand-editing generated `.xcodeproj` files. Do not change bundle IDs, keychain groups, signing or API identifiers as part of documentation or branding edits. Vivid’s release identifiers and App Store Connect record are configured. Follow the distribution guide to verify signing, production CloudKit schema and the exact archive before an Apple upload.
 
 For tvOS focus work, read `docs/apple-tv-focus.md` before editing navigation,
 menus, grids, or custom controls. Prefer a stable native focus graph or a
@@ -111,6 +111,8 @@ Documentation changes do not require separate approval from blurbery. Keep relev
 - Design and publishing permissions still apply to their respective operations.
 
 ## AI-assisted contributions
+
+For blurbery’s own Vivid PRs, use one accurate disclosure sentence: “Implemented these changes with Astra as a tool.” Use that wording only when Astra was actually used; otherwise name the tool actually used. This replaces the multi-field breakdown for the owner’s work. Other contributors should use the detailed disclosure guidance below.
 
 AI tools are welcome, but the contributor remains responsible for the submitted work. No particular tool is required. Review generated changes, verify their behaviour and understand the affected code before submitting them.
 

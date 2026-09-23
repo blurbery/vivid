@@ -15,7 +15,7 @@
   <tbody>
     <tr><td><strong>Vivid</strong></td><td>The app name. Keep the capital V.</td></tr>
     <tr><td><strong>blurbery</strong></td><td>The maintainer’s GitHub username, used for contact and approval requests.</td></tr>
-    <tr><td><strong>Ribbon symbol</strong></td><td>The approved logo, with the light- or dark-background treatment.</td></tr>
+    <tr><td><strong>Two-piece V symbol</strong></td><td>The approved silver logo for light and dark backgrounds.</td></tr>
   </tbody>
 </table>
 

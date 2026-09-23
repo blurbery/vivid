@@ -44,7 +44,7 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
-Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList imports add local watched indicators without overwriting server history or resume positions; watchlists can sync additions and removals through MDBList.
+Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions.
 
 ## Apple TV
 
@@ -52,7 +52,7 @@ I’ve built the TV experience around a configurable Home spotlight, local Home 
 
 ## iPhone and iPad
 
-The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections. Search and Settings are full-screen pages with slide-up/down transitions, portrait on iPhone and rotatable on iPad. Movie and series details use cards on iPhone and full-screen pages on iPad, staying above Search during playback. Movie and series pages show aligned video/file and audio information. The player offers five quality choices with a one-time lower-bitrate reload for the capped modes. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the layout and device-testing limits.
+The mobile app uses a configurable glass tab bar, a looping Home spotlight and local Home metadata caching. For You combines Watchlist, Favourites and Collections. Search and Settings are full-screen pages with slide-up/down transitions, portrait on iPhone and rotatable on iPad. Movie, series and actor details open full-screen on iPhone and iPad, staying above Search during playback. iPhone details use interactive zoom transitions, with X to close and Back from actor pages. Movie and series pages show aligned video/file and audio information. The player offers five quality choices with a one-time lower-bitrate reload for the capped modes. The [app design guide](docs/app-design.md#iphone-and-ipad-layout) covers the layout and device-testing limits.
 
 ## Playback
 
@@ -63,7 +63,7 @@ Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keep
 
 ## Updates
 
-Updates on `main` get a semantic version. Release titles are just the version number, with dot points underneath saying what changed. The full rules are in the [release docs](docs/release/versioning.md).
+App changes released from `main` get a semantic version. Documentation-only and housekeeping updates do not create releases. Release titles are just the version number, with dot points underneath saying what changed. The full rules are in the [release docs](docs/release/versioning.md).
 
 ## Support
 

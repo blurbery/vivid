@@ -4,25 +4,29 @@ Vivid is an independent Apple media client developed in this repository. Open is
 
 ## Development
 
-Use the local setup below and read [the docs](docs/README.md) and [AGENTS.md](AGENTS.md) for code guidance. Generate the Xcode project from `iosApp/project.yml`. The current Xcode scheme names are listed below.
+Use the local setup below and read [the docs](docs/README.md) and [AGENTS.md](AGENTS.md) for code guidance. Generate the Xcode project from the platform-specific spec: `iosApp/project-ios.yml` for iPhone/iPad or `iosApp/project.yml` for Apple TV. The current Xcode scheme names are listed below.
 
 Preserve the working browsing, focus and playback behaviour. Validate changes with focused tests, relevant Apple builds and simulator, emulator or physical-device checks appropriate to the change. State exactly what was tested and disclose any gaps; never treat an earlier device benchmark as a measurement of a new revision.
 
 ## Local setup
 
-Install Xcode 26 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen), then generate the project:
+Use an Apple Silicon Mac, Xcode 26.3 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen). CI uses Xcode 26.3; recent signed releases use Xcode 27.0. The pinned media packages provide arm64 simulator slices. Generate the project for the platform you are building:
 
 ```sh
 cd iosApp
-xcodegen generate
+# iPhone and iPad
+xcodegen generate --spec project-ios.yml
 open Vivid.xcodeproj
 ```
 
+For Apple TV, run `xcodegen generate --spec project.yml` instead. Both specs write `Vivid.xcodeproj`, so regenerate when switching platforms; a generated project does not contain both app schemes.
+
 Lucid Engine provides iPhone, iPad and Apple TV playback with the same pinned media dependencies. Keep package pins, the native audio recovery patch and third-party notices together. Follow the [Lucid build instructions](docs/cores/player-engine.md#builds-and-native-audio-patch) to reproduce the device-tested media binary. Source changes do not authorise an Apple binary release. Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
 
-Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV. These are the current build identifiers. Choose an installed simulator in Xcode, or build the TV target without signing:
+Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV. These are the current build identifiers. Choose an installed simulator in Xcode, or generate and build the TV target without signing from `iosApp/`:
 
 ```sh
+xcodegen generate --spec project.yml
 xcodebuild build -project Vivid.xcodeproj -scheme VividTV \
   -destination 'generic/platform=tvOS Simulator' CODE_SIGNING_ALLOWED=NO
 ```
@@ -38,7 +42,7 @@ Contributors are welcome to open pull requests from branches in their own forks.
 
 ## Commits and reviews
 
-Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). Each update pushed to `main` can publish a source release, so review and validate it first. Keep release bullets factual and user-facing.
+Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). The workflow treats ordinary commits as release candidates, so documentation-only and housekeeping commits must include `[skip release]`, including the final squash message. They must not create a version bump or source release. This marker does not skip required validation. Keep app release bullets factual and user-facing.
 
 For blurbery’s own Vivid work, write concise, natural Australian English in the owner’s voice. Use short change bullets for GitHub, App Store and TestFlight release notes. Avoid em dashes and unnecessary formal sections. Include only relevant evidence and limitations, and keep the required AI disclosure brief.
 
@@ -83,6 +87,8 @@ Documentation changes do not require separate approval from blurbery. Keep relev
 - Design and publishing permissions still apply to their respective operations.
 
 ## AI-assisted contributions
+
+For blurbery’s own Vivid PRs, use one accurate disclosure sentence: “Implemented these changes with Astra as a tool.” Use that wording only when Astra was actually used; otherwise name the tool actually used. This replaces the multi-field breakdown for the owner’s work. Other contributors should use the detailed disclosure guidance below.
 
 AI tools are welcome. You remain responsible for understanding, reviewing and validating everything you submit, including generated code, tests and documentation. No particular tool is required; agents must follow [AGENTS.md](AGENTS.md).
 

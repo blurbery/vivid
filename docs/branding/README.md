@@ -27,7 +27,7 @@ The transparent silver mark is Vivid’s main logo. It uses the owner-approved t
   </tbody>
 </table>
 
-The transparent PNG is exported from [the SVG master](vivid-mark-silver.svg) on the existing 1254 × 1254 canvas. A [transparent PDF master](vivid-mark-silver.pdf) is also available. The SVG uses two smooth paths and continuous gradients, with no embedded bitmap or tessellated shading patches. Documentation headers, website logos and animation sources use PNG exports of the same artwork. Separate light- and dark-theme marks are not needed.
+The transparent PNG is exported from [the SVG master](vivid-mark-silver.svg) on the existing 1254 × 1254 canvas. A [transparent PDF master](vivid-mark-silver.pdf) is also available. The SVG uses two smooth paths and continuous gradients, with no embedded bitmap or tessellated shading patches. Documentation headers and static website logos use PNG exports of the same artwork. The website animation uses SVG pieces; the native apps use vector PDF pieces. Separate light- and dark-theme marks are not needed.
 
 The [iOS app master](vivid-app-icon.svg), [matching small-size master](vivid-app-icon-small.svg), and Apple TV [foreground](vivid-tv-foreground.svg) and [background](vivid-tv-background.svg) are the sources for runtime icons. The rounded [presentation SVG](vivid-presentation.svg) and [presentation PDF](vivid-presentation.pdf) are design previews only. Never place the presentation tile inside an app icon or an in-app logo: that creates an extra inset border and recessed appearance.
 
@@ -37,7 +37,7 @@ Preserve the aspect ratio and the clear space already included in the square can
 
 ## iOS and Apple TV app icons
 
-Both app targets already include the silver V as their app icon. The source assets below are the ones selected by `ASSETCATALOG_COMPILER_APPICON_NAME` in [the XcodeGen project](../../iosApp/project.yml): `AppIcon` for Vivid on iPhone and iPad, and `TVAppIcon` for VividTV.
+Both app targets already include the silver V as their app icon. The source assets below are the ones selected by `ASSETCATALOG_COMPILER_APPICON_NAME` in the [iOS](../../iosApp/project-ios.yml) and [tvOS](../../iosApp/project.yml) XcodeGen specs: `AppIcon` for Vivid on iPhone and iPad, and `TVAppIcon` for VividTV.
 
 <table width="100%">
   <thead><tr><th align="left">iPhone and iPad</th><th align="left" width="10000">Apple TV</th></tr></thead>

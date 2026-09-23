@@ -49,7 +49,10 @@ Do not invent testing or claim another person’s checks as your own. -->
 > [!IMPORTANT]
 > Required for every PR. Incomplete disclosures are not ready for review or merge.
 
-<!-- If AI was used, complete the fields below. If not, replace them with:
+<!-- For blurbery’s own PRs, replace the fields with one accurate sentence,
+for example: Implemented these changes with Astra as a tool.
+Only name Astra when it was actually used. Other contributors follow the fields.
+If AI was used, complete the fields below. If not, replace them with:
 No AI assistance was used for this pull request.
 Do not leave this section blank. Update it after further AI-assisted changes. -->
 

@@ -8,17 +8,17 @@
 
 ---
 
-Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. As recorded on 13 September 2026, the latest accepted uploads are iPhone/iPad 0.14.3 (21) and tvOS 0.14.3 (20). Both have completed processing, have English (Australia) testing notes with exact-source links, and are Testing in the existing internal and external groups. For the exact source and validation, see the [dated build record](versioning.md#recorded-apple-builds). GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
+Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record includes iOS and tvOS, with registered identifiers and signing capabilities. App Store Connect is the source of truth for uploaded builds, processing, review and tester availability. Its beta description maps each available platform/version/build to its immutable source. The [dated build records](versioning.md#recorded-apple-builds) preserve earlier validation and are not a current upload ledger. GitHub publishes independent [source releases](versioning.md), which may include changes not yet uploaded to TestFlight. TestFlight distribution is separate from public App Store submission.
 
 ## What is ready
 
 | Area | Current state |
 | --- | --- |
-| App targets | `Vivid` for iPhone/iPad and `VividTV` for Apple TV, generated from `iosApp/project.yml` |
+| App targets | `Vivid` for iPhone/iPad and `VividTV` for Apple TV, generated separately from `iosApp/project-ios.yml` and `iosApp/project.yml`, sharing `project-common.yml` |
 | Supported OS versions | iOS/iPadOS 18 or later; tvOS 26 or later. The committed project disables Designed for iPad distribution on Mac and Vision Pro; earlier local Mac layout tests used a development override. |
-| Build tools | The latest recorded archives used local Xcode 26.6; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
+| Build tools | Recent signed archives use local Xcode 27.0; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
-| About | Version/build, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution remains on the media information page and in acknowledgements. |
+| About | Version/build, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution appears in Acknowledgements. |
 | iCloud | The encrypted private account vault includes profile order, shared preferences and TMDb, Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The Production schema was deployed on 12 September 2026 and Bedroom Apple TV restoration was confirmed. Check schema changes and live restoration separately from archive entitlements; see the dated build record. |
 | Local device coverage | Historical development checks include iPhone 16 Pro Max on iOS 26.6.1 and Apple TV 4K (3rd generation) on tvOS 26.6. These records do not state the devices’ current OS or validate every later TestFlight build. |
 | iPad coverage | Focused simulator layout checks exist. Physical iPad playback, rotation and multitasking still need checking. |
@@ -64,9 +64,14 @@ Before conveying any new GPL-covered binary, including through TestFlight:
   Provide a no-charge source download matching each delivered binary under
   an applicable GPLv3 section 6 method; retain it for that method's required
   duration. A moving `main` URL alone is insufficient.
-- Put the immutable source link in that build's TestFlight information or
-  release information available to its recipients. Check the app's bundled
-  Open Source Licences includes GPLv3, the Apple permission, applicable
+- Before enabling a build, update the TestFlight beta description with its
+  platform, marketing version and build number, mapped to the exact public
+  immutable source archive and media dependency sources/build instructions.
+  Preserve the app introduction, localisations and mappings for all still-available
+  builds. Check link access and read back the saved description. Keep What to
+  Test limited to change bullets. If the description limit prevents preserving
+  source access, obtain authority before creating a new public source index.
+- Check the app's bundled Open Source Licences includes GPLv3, the Apple permission, applicable
   [Vivid attribution terms](../../ATTRIBUTION.md), earlier Apache notices and
   all packaged third-party licences. The bundled overview carries the full
   attribution terms; keep them aligned with `ATTRIBUTION.md`.
@@ -80,22 +85,20 @@ Before conveying any new GPL-covered binary, including through TestFlight:
 
 ## TestFlight information
 
-The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList history and watchlists, OpenSubtitles and both timestamp services. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory.
+The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList completed-watch exports and watchlists, OpenSubtitles and both timestamp services. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory.
 
 Use `admin@vividapp.co` for feedback. For an uploaded build containing the Jellyfin integration, a starting beta description is:
 
 > I’m building Vivid for watching your own media on iPhone, iPad and Apple TV. Connect to Silo, Emby or Jellyfin, browse your library and continue watching across your server accounts. Playback includes subtitles and chapters from your media and optional intro, recap and credits skips.
 
-For What to Test, use the [paired bullet-block format](versioning.md#testflight-note-format), with each change followed by its own indented testing line and a blank line before the next change. Describe only changes present in that build and verify the saved line breaks in App Store Connect.
+For What to Test, use the [plain change-bullet format](versioning.md#testflight-note-format), with one blank line between bullets and no testing instructions or source links. Describe only changes present in that build and verify the saved line breaks in App Store Connect.
 
 For example, when the uploaded build contains these changes:
 
 ```text
-• Keep saved plugin connections when a local key is temporarily unavailable.
-  What to test: Update in place and check that MDBList and OpenSubtitles remain connected for the matching server account and profile.
+• Fixed saved plugin connections being lost when a local key was temporarily unavailable.
 
-• Reuse confirmed MDBList progress after an interrupted sync.
-  What to test: Retry a failed sync and check that existing watched indicators and resume positions stay intact.
+• Fixed interrupted MDBList syncs losing confirmed export progress.
 ```
 
 Ask for the affected device, OS, server type and reproduction steps when useful. Do not request passwords or private server addresses in public feedback.

@@ -617,46 +617,6 @@ private struct EpisodeCardLabel: View {
     }
 }
 
-/// Reserves the approved 480-point episode-card geometry while an uncached
-/// season loads. Keeping artwork and caption blocks in the tree prevents the
-/// lower detail sections from jumping when real episodes arrive.
-struct TVEpisodeRailPlaceholder: View {
-    var cardWidth: CGFloat = 480
-    var cardHeightRatio: CGFloat = 9 / 16
-    var cardSpacing: CGFloat = 54
-    var hidesEpisodeTitle = false
-    private var stillHeight: CGFloat { cardWidth * cardHeightRatio }
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: cardSpacing) {
-                ForEach(0..<4, id: \.self) { _ in
-                    VStack(alignment: .leading, spacing: 18) {
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.vividSurfaceElevated)
-                            .frame(width: cardWidth, height: stillHeight)
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.white.opacity(0.22))
-                            .frame(width: 112, height: 15)
-                        if !hidesEpisodeTitle {
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color.white.opacity(0.28))
-                                .frame(width: 310, height: 22)
-                        }
-                    }
-                    .frame(width: cardWidth, alignment: .leading)
-                }
-            }
-            .padding(.vertical, 12)
-        }
-        .redacted(reason: .placeholder)
-        .allowsHitTesting(false)
-        .focusable(false)
-        .accessibilityHidden(true)
-    }
-}
-
-
 /// One native shelf across seasons. Season buttons jump inside the same scroll view.
 struct TVContinuousEpisodeShelf: View {
     let seasons: [Season]

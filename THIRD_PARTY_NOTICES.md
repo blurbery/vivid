@@ -37,7 +37,7 @@ The logos identify their respective projects and are not presented as Vivid-owne
 
 ## Lucid Engine dependencies (iOS and tvOS)
 
-`iosApp/project.yml` selects `edde746/mpv-build` at
+`iosApp/project-ios.yml` and `iosApp/project.yml` select `edde746/mpv-build` at
 `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` (mpv 0.41.0 and FFmpeg 8.0.1,
 with that repository's Apple patch series). The upstream package declares its
 bundled mpv/FFmpeg frameworks GPLv3. Its pinned Package.swift records binary

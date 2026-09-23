@@ -207,8 +207,6 @@ class AppRouter {
     }
     var isItemDetailPresentationActive = false
     var itemDetailPath = NavigationPath()
-    @ObservationIgnored var captureItemDetailBackdrop: (() -> UIImage?)?
-    @ObservationIgnored var itemDetailBackdropImage: UIImage?
     #endif
 
     // MARK: - Player Presentation
@@ -384,7 +382,7 @@ class AppRouter {
         presentedPlayer = nil
     }
 
-    /// A pull-down on a pushed actor/episode page means Back, not close sheet.
+    /// Return one step within the detail presentation without closing it.
     func goBackInItemDetail() {
         guard presentedItemDetail != nil, !itemDetailPath.isEmpty else { return }
         itemDetailPath.removeLast()
@@ -395,7 +393,6 @@ class AppRouter {
         // callback from an old sheet must not erase a newly opened detail.
         guard presentedItemDetail == nil else { return }
         itemDetailPath = NavigationPath()
-        itemDetailBackdropImage = nil
         isItemDetailPresentationActive = false
     }
     #endif
@@ -442,7 +439,6 @@ class AppRouter {
         pendingZoomSourceID = nil
         recordScreenBreadcrumb(target: "itemDetail", action: "present")
         if presentedItemDetail == nil {
-            itemDetailBackdropImage = captureItemDetailBackdrop?()
             let source = browseSource.flatMap { source in
                 source.contentIDs.contains(contentId) ? source : nil
             }

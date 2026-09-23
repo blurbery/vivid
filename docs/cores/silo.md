@@ -7,7 +7,7 @@
 
 The Silo server core connects Vivid to a Silo server. It supplies server data and playback sources to the [Vivid core](vivid.md); it does not own a separate player or duplicate Vivid’s controls.
 
-Silo is one of the implemented server connections, alongside Emby. “Core” describes its responsibility in the app; the existing source still contains Silo-specific models and calls in shared code, so this documentation does not claim the separation is already complete.
+Silo is one of the implemented server connections, alongside Emby and Jellyfin. “Core” describes its responsibility in the app; the existing source still contains Silo-specific models and calls in shared code, so this documentation does not claim the separation is already complete.
 
 ## Server ownership
 
@@ -19,7 +19,7 @@ Silo Protocol V3 is a Silo contract. Vivid’s capped quality modes translate in
 
 Vivid owns the controls, focus, seeking, loading UI, resume/next-episode presentation and track-selection experience. The Silo core provides the source, metadata and server operations those features need. Player fixes belong to Vivid unless the defect is in Silo’s data or protocol translation.
 
-Skip-marker selection belongs to Vivid. Selected-file intro/credits markers take priority; IntroDB and TheIntroDB fill missing ranges using series IMDb identity and episode numbering supplied by the connection. Item-level markers from other editions and realtime marker updates do not override the selected file. See [marker timing](../playback/architecture.md#introdb-marker-timing). No Silo server configuration is changed by that client behaviour.
+Skip-marker selection belongs to Vivid. Selected-file intro/credits markers take priority; IntroDB fills missing ranges using series IMDb identity and episode numbering; TheIntroDB prefers TMDb identity and falls back to IMDb. The connection supplies those identifiers. Item-level markers from other editions and realtime marker updates do not override the selected file. See [marker timing](../playback/architecture.md#introdb-marker-timing). No Silo server configuration is changed by that client behaviour.
 
 Vivid reads chapters and embedded subtitle tracks from the opened media. The optional OpenSubtitles plugin adds user-selected temporary SRT downloads through Vivid’s shared player. Silo subtitle sidecars, server appearance settings, live subtitle generation and skip markers do not supply the player’s subtitle or chapter inventory. Phone-assisted Apple TV setup and its Bonjour discovery are removed. Existing manual/QR account login and the TV remote-playback receiver remain distinct active paths.
 

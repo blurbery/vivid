@@ -20,14 +20,14 @@ Vivid uses `semantic-release` to publish a GitHub source release after updates r
     <tr><td><code>feat:</code></td><td>Minor</td></tr>
     <tr><td><code>fix:</code>, <code>perf:</code></td><td>Patch</td></tr>
     <tr><td><code>!</code> after the type/scope, or a <code>BREAKING CHANGE:</code> footer</td><td>Major</td></tr>
-    <tr><td>Documentation, maintenance and other updates</td><td>Patch</td></tr>
+    <tr><td>Documentation-only and housekeeping updates with <code>[skip release]</code></td><td>No release</td></tr>
     <tr><td>No new commits</td><td>No release</td></tr>
   </tbody>
 </table>
 
 The largest change since the previous version determines the increment. Tags use `v0.1.0`; the release title is `0.1.0` with no prefix, product name or extra wording.
 
-Logo, branding, artwork, documentation and small visual polish updates are **patch changes**: increment the last number by one, for example `0.0.1` → `0.0.2`. Use `fix:`, `style:` or `docs:` as appropriate, not `feat:`. Reserve `feat:` for new functionality. Keep existing published versions; this policy applies to future releases.
+Shipped logo, branding, artwork and small visual polish updates are **patch changes**: increment the last number by one, for example `0.0.1` → `0.0.2`. Use `fix:` or `style:` as appropriate, not `feat:`. Documentation-only changes use `docs:` with `[skip release]` and must not increment the version. Reserve `feat:` for new functionality. Keep existing published versions; this policy applies to future releases.
 
 Vivid’s source releases in this repository begin at `v0.6.0`.
 
@@ -35,15 +35,19 @@ Vivid’s source releases in this repository begin at `v0.6.0`.
 
 Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The Apple marketing version and GitHub source-release version are independent. Record the exact pushed source commit for each TestFlight upload; do not change the Apple marketing version to match a GitHub tag.
 
-TestFlight marketing version stays `0.14.3` until blurbery explicitly approves changing it before archiving or uploading. Each authorised update uses that platform's latest uploaded App Store Connect build number plus exactly 1. iOS/iPadOS and tvOS advance independently, including paired uploads; never skip numbers just to make them match. The latest recorded uploads are build `21` for iPhone/iPad and build `20` for tvOS; these are historical records, not a substitute for checking App Store Connect. See [recorded Apple builds](#recorded-apple-builds).
+TestFlight marketing version stays `0.14.3` until blurbery explicitly approves changing it before archiving or uploading. Each authorised update uses that platform's latest uploaded App Store Connect build number plus exactly 1. iOS/iPadOS and tvOS advance independently, including paired uploads; never skip numbers just to make them match. App Store Connect is the current upload history. The [recorded Apple builds](#recorded-apple-builds) below are historical evidence, not a maintained upload ledger.
 
 Apple requires TestFlight App Review for the first build of a version; later builds within that version may not need a full review. Keeping the version stable avoids introducing a new version for every beta update, but does not guarantee immediate approval. Returning to a previously reviewed marketing version does not guarantee that a new build will skip review; expiring another build does not provide that guarantee either. See [Apple’s TestFlight App Review guidance](https://developer.apple.com/help/glossary/testflight-app-review/).
 
 Check the uploaded history before each release, including builds still processing. Local development and device-test builds do not reserve TestFlight numbers, and GitHub release versions do not control them. A single-platform update leaves the other platform's uploaded build unchanged. Every embedded extension must match its containing app. If the latest uploaded number cannot be verified or the next number is unavailable, stop and report the conflict rather than guessing, reusing or silently skipping a number. Do not assume the committed baseline has been uploaded.
 
-`iosApp/project.yml` is the committed source for the Apple marketing-version and build-number baseline shared by all shippable targets. TestFlight archives must retain that approved marketing version. The tag resolver in `scripts/ci/resolve-marketing-version.sh` remains available for source-tagged unsigned builds; it must not automatically select the marketing version for TestFlight. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives and their extensions before upload.
+`iosApp/project-common.yml` is the committed source for the Apple marketing-version and build-number baseline shared by all shippable targets. TestFlight archives must retain that approved marketing version. The tag resolver in `scripts/ci/resolve-marketing-version.sh` remains available for source-tagged unsigned builds; it must not automatically select the marketing version for TestFlight. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives and their extensions before upload.
 
 The app does not query GitHub APIs at runtime. A local or simulator build is not an uploaded TestFlight binary, even when its version and counter match. Identify distribution by the actual uploaded archive and source revision.
+
+## TestFlight-only updates
+
+Build, validate, upload and distribute the authorised source through App Store Connect. Use archive-time `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` overrides, verifying the app and extensions. Do not commit counters, create a bookkeeping PR/tag/release, or add an upload record solely for TestFlight. Preserve signed archives and dSYMs; clean task-created regenerable caches after acceptance.
 
 ## Release notes
 
@@ -53,23 +57,23 @@ Every user-authorised Vivid TestFlight upload includes distribution to the exist
 
 ### TestFlight note format
 
-Use clean plain-text bullet blocks. Each bullet states the specific change and its user-visible effect. Directly underneath, add an indented `What to test:` line with the action to try and expected behaviour. Leave one blank line before the next bullet. Keep each change paired with its testing instructions, using concise natural Australian English and no em dashes, Markdown headings or bold markers. Describe only changes included in that build; do not invent validation results.
+Use simple plain-text change bullets, with one blank line between them. State what was fixed or changed and its user-visible effect, using concise Australian English. Do not add headings, bold markers, testing instructions, em dashes or source links to What to Test. Describe only changes included in the build; do not invent validation results.
 
 ```text
-• <What changed and how it affects users.>
-  What to test: <What to try and what should happen.>
+• Fixed slow media information when opening series details.
 
-• <Next change and its user-visible effect.>
-  What to test: <Relevant action and expected behaviour.>
+• Fixed skip buttons appearing while playback was loading or buffering.
 ```
+
+Keep exact per-platform version/build source mappings and dependency build instructions in the beta description, following [source delivery](distribution.md#licence-and-source-delivery).
 
 This format applies to TestFlight notes only. GitHub release notes and App Store notes retain their separate writing preferences.
 
 ### GitHub release note format
 
-An owner-requested housekeeping commit may include `[skip release]`. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release. Ordinary commits retain the normal versioning rules.
+Documentation-only and housekeeping commits must include `[skip release]`. Preserve the marker in the final squash message. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release. Ordinary commits retain the normal versioning rules.
 
-Keep this format for every release, including documentation-only updates. Release bullets describe user-visible changes in plain language; implementation details and testing evidence belong in the contribution report.
+Keep this format for every app release. Do not publish a release for documentation-only work. Release bullets describe user-visible changes in plain language; implementation details and testing evidence belong in the contribution report.
 
 > [!IMPORTANT]
 > Release titles contain only the version number. Bodies contain only flat update bullets, with no headings, dates, author names, commit hashes, comparison links or automated footer.
@@ -106,6 +110,8 @@ The repository and its source releases are public. Apple beta distribution remai
 Each newly published source release also posts its version and update bullets to the Vivid Discord server's GitHub channel. The notification uses Vivid's silver-grey embed colour and ends with a direct link to the corresponding GitHub release. Its Discord webhook is stored only in the encrypted `DISCORD_RELEASE_WEBHOOK_URL` repository secret.
 
 ## Recorded Apple builds
+
+These dated records preserve earlier source mappings and validation. Build availability and group membership describe the time of each entry, not current TestFlight status. Use App Store Connect and its beta description for newer builds; do not add bookkeeping commits merely to record uploads. Local diagnostic build numbers in other guides are independent of TestFlight counters.
 
 On 13 September 2026, iPhone/iPad `0.14.3 (21)` and tvOS `0.14.3 (20)` were archived from merged main commit `a8d6d8099b49a905edf720715a08af1622d0aaf3` using Xcode 26.6 and explicit build-number overrides. Live App Store Connect history was checked at iOS 20 and tvOS 19 before advancing each platform by one. These builds include PR #13: removal of retired iOS navigation and unnecessary requests, the iPhone detail poster/shading swipe fix, and cached tvOS Spotlight artwork preparation with first-card startup, timer preservation and reverse wrapping. The [regression run](https://github.com/blurbery/vivid/actions/runs/34731051388) passed iOS tests and the tvOS build for the identical application tree before squash merge. Both archives passed app/extension version, signature and existing Keychain identity checks; distribution exports used Production CloudKit, and bundled licences and privacy manifests were checked against the previous uploads. Apple accepted iOS at 12:06 pm and tvOS at 12:23 pm (Australia/Sydney). Both builds completed processing and have English (Australia) testing notes with immutable source and dependency links. Both are Testing in the existing internal and external groups, with automatic tester notifications enabled. No new physical-device playback test was performed on these distribution archives. Release archives and symbols are retained. The subsequent build-counter and distribution-record commit uses `[skip release]` and does not create a GitHub source release or contribute TestFlight housekeeping to later release notes.
 

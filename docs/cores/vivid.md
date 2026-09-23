@@ -7,7 +7,7 @@
 
 Vivid is the shared player core. It owns the playback experience used by every server core: the interface, controls, playback state and common player features. Silo, Emby and Jellyfin supply separate server connections and translate their data into the inputs Vivid needs. Each provider owns its authentication and wire contracts.
 
-These cores describe responsibility boundaries. They are not a claim that the current source has already been split into separate Swift packages or that every server connection is implemented.
+These cores describe responsibility boundaries. They are not a claim that the current source has already been split into separate Swift packages or that every provider offers the same features.
 
 ## Player ownership
 
@@ -23,9 +23,9 @@ The same controls should behave consistently when the server supplies the requir
 
 ## Intro and credits skipping belongs to Vivid
 
-The **Intro & Credit Skipper** toggle in Playback settings controls selected-file markers and public IntroDB/TheIntroDB lookups on iOS and tvOS. It defaults on and preserves an explicitly saved Off choice. Separate automatic-skip preferences control automatic skipping; valid markers also supply manual Skip Intro, Skip Recap and Skip Credits prompts.
+The **Intro & Credit Skipper** toggle in Playback settings controls selected-file markers and public IntroDB/TheIntroDB lookups on iOS and tvOS. It defaults on and preserves an explicitly saved Off choice. Separate automatic-skip preferences control automatic skipping; valid markers also supply manual Skip Intro, Skip Recap and Skip Credits prompts. On iOS, prompts stay hidden during loading and buffering.
 
-Valid markers for the selected file take priority. IntroDB fills missing ranges, then TheIntroDB can fill missing intro, credits or recap ranges. Item-level markers from another edition and realtime server marker updates do not override this selection. Lookups use the series IMDb ID, season and episode number, run without media-server credentials or API keys, and do not delay playback. Public lookups cover episodes; online movies can still use their selected-file markers. Offline playback does not load these skip markers.
+Valid markers for the selected file take priority. IntroDB fills missing ranges, then TheIntroDB can fill missing intro, credits or recap ranges. Item-level markers from another edition and realtime server marker updates do not override this selection. IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb. Both use the season and episode number. Requests run without media-server credentials or API keys and do not delay playback. Public lookups cover episodes; online movies can still use their selected-file markers. Offline playback does not load these skip markers.
 
 See [marker timing](../playback/architecture.md#introdb-marker-timing) for ordering, caching, duration validation and cancellation. Earlier IntroDB playback was verified on Silo-backed Apple TV; that does not establish device coverage of the newer fallback and recap paths or every Emby route. Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
 
@@ -37,10 +37,11 @@ See [marker timing](../playback/architecture.md#introdb-marker-timing) for order
 - [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): shared playback state and marker application.
 - [PlayerSettings](../../iosApp/iosApp/Screens/Player/PlayerSettings.swift): settings and the current Vivid IntroDB client.
 - [Silo server core](silo.md): the implemented server connection.
-- [Emby server core](emby.md): current integration work and verification limits.
+- [Emby server core](emby.md): native integration and verification limits.
+- [Jellyfin server core](jellyfin.md): native integration and verification limits.
 
 ## Mobile implementation
 
-The iPhone/iPad shell shares the private iCloud account vault, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with TV. The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials. Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local. Watched and resume state belongs to the connected media server. Optional MDBList imports add local watched indicators without overwriting server history or resume positions; watchlists can sync additions and removals through MDBList. Search and Settings use full-screen slide-up pages with round close buttons. Both retain portrait on iPhone and support portrait and landscape on iPad. Movie and series details use cards on iPhone and full-screen pages on iPad, remaining above Search during playback, and movie/series Media Information uses separate aligned video/file and audio panels on mobile and TV. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim of device or format parity.
+The iPhone/iPad shell shares the private iCloud account vault, first-run preparation, Home metadata caching, TMDb trailers, Seerr and IntroDB with TV. The encrypted private iCloud vault syncs saved accounts, sessions, optional Vivid PINs, profile order, shared browsing/navigation/metadata/download preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials. Playback and subtitle preferences, downloaded media and metadata/artwork caches remain device-local. Watched and resume state belongs to the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions. Search and Settings use full-screen slide-up pages with round close buttons. Both retain portrait on iPhone and support portrait and landscape on iPad. Movie, series and actor details open full-screen on iPhone and iPad, remaining above Search during playback, and movie/series Media Information uses separate aligned video/file and audio panels on mobile and TV. See [mobile design and validation](../app-design.md#iphone-and-ipad-layout); shared code is not a claim of device or format parity.
 
 [Documentation](../README.md)
