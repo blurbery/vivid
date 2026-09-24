@@ -248,8 +248,9 @@ struct TVMainTabView: View {
 
     private var rootContent: some View {
         ZStack(alignment: .top) {
-            Color.clear
-                .ignoresSafeArea()
+            // Keep the tab canvas inside the navigation root so pushed detail
+            // pages retain their existing artwork and black background.
+            TVAppBackdrop()
 
             selectedRootContent
                 .id(selectedRoot)

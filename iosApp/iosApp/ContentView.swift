@@ -495,6 +495,9 @@ struct ContentView: View {
                     }
             }
             .environment(router)
+            #if os(tvOS)
+            .background { TVAppBackdrop() }
+            #endif
 
     }
 
