@@ -520,7 +520,18 @@ struct ContentView: View {
                     .zIndex(1)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background {
+            #if os(tvOS)
+            if showsStartupOverlay {
+                // Keep the same canvas under both fading layers during handoff.
+                TVAppBackdrop()
+            } else {
+                Color.black.ignoresSafeArea()
+            }
+            #else
+            Color.black.ignoresSafeArea()
+            #endif
+        }
         .task(id: didFinishStartupSplash) {
             guard didFinishStartupSplash else { return }
             do {

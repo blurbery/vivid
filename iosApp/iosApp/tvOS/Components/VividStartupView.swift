@@ -14,7 +14,11 @@ struct VividStartupView: View {
 
     var body: some View {
         ZStack {
+            #if os(tvOS)
+            TVAppBackdrop()
+            #else
             Color.black.ignoresSafeArea()
+            #endif
             GeometryReader { geometry in
                 let canvasSize = min(geometry.size.width, geometry.size.height, 720)
                 VividGlideLogo(size: canvasSize / 1.5) {
