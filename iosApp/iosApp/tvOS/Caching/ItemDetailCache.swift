@@ -81,7 +81,8 @@ final class ItemDetailCache {
                 else { seasons = try await MetadataRequestPool.shared.seasons(seriesId: contentId) }
                 guard isCurrent() else { return }
                 ResponseCache.shared.set(seasons, for: CacheKey.itemSeasons(contentId))
-                let model = viewModel(for: contentId)
+                // Focus warming must not hydrate or evict retained detail pages.
+                let model = entries[contentId] ?? ItemDetailViewModel()
                 guard let season = model.preferredInitialSeason(seasons: seasons.seasons.sortedForDisplay()) else { return }
                 let key = CacheKey.itemEpisodes(seriesId: contentId, seasonNumber: season.seasonNumber)
                 let cachedEpisodes: EpisodesResponse? = ResponseCache.shared.get(key)

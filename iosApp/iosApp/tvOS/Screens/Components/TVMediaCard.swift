@@ -66,10 +66,13 @@ struct TVMediaCard: View {
             }
         }
         .frame(width: resolvedCardWidth)
-        .task(id: isFocused || (focusContentId != nil && focusBinding?.wrappedValue == focusContentId)) {
-            guard isFocused || (focusContentId != nil && focusBinding?.wrappedValue == focusContentId),
-                  let id = contentId ?? focusContentId else { return }
-            await ItemDetailCache.shared.prepareFocusedDetail(contentId: id)
+        .background {
+            TVCardDetailPreload(
+                contentId: contentId ?? focusContentId,
+                focusedItemId: focusContentId == nil ? nil : focusBinding,
+                standaloneFocused: $isFocused,
+                focusId: focusContentId
+            )
         }
         .onChange(of: userState) { _, _ in
             favoriteOverride = nil

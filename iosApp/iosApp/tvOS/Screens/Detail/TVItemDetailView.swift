@@ -1156,9 +1156,8 @@ struct TVItemDetailView: View {
             guard !Task.isCancelled else { return }
             // Publish catalog file/audio choices before waiting for playback
             // enrichment. A slow watch request must not hold the selectors blank.
-            if item.versions?.isEmpty == false {
+            if usableCached == nil, item.versions?.isEmpty == false {
                 nextUpPlaybackDetail = item
-                ResponseCache.shared.set(item, for: CacheKey.itemDetail(nextUp.contentId))
                 didLoadNextUpPlaybackDetail = true
                 isLoadingNextUpPlaybackDetail = false
             }

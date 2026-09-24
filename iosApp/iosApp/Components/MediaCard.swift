@@ -658,14 +658,15 @@ private struct FocusableMediaCard<Content: View>: View {
 }
 
 /// Observe focus without invalidating the card artwork.
-private struct TVCardDetailPreload: View {
+struct TVCardDetailPreload: View {
     let contentId: String?
     let focusedItemId: FocusState<String?>.Binding?
     let standaloneFocused: FocusState<Bool>.Binding?
+    var focusId: String? = nil
     @Environment(\.tvHomeStableRows) private var managedHomeRow
     private var active: Bool {
         guard let contentId else { return false }
-        return focusedItemId?.wrappedValue == contentId || standaloneFocused?.wrappedValue == true
+        return focusedItemId?.wrappedValue == (focusId ?? contentId) || standaloneFocused?.wrappedValue == true
     }
     var body: some View {
         Color.clear.frame(width: 0, height: 0)

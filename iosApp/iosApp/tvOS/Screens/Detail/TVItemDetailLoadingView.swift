@@ -80,7 +80,7 @@ struct TVItemDetailLoadingView: View {
                                     topInset: CGFloat = TVDetailLayout.heroTopInset) -> some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.disclosureSpacing) {
             ZStack(alignment: .topLeading) {
-                if usesCompactMetadata {
+                if usesNativePage {
                     TVDetailEditorialLayout {
                         loadingTitle
                     } metadata: {
@@ -103,7 +103,7 @@ struct TVItemDetailLoadingView: View {
                     placeholder(width: 390, height: 18, cornerRadius: 5)
                         .frame(height: 28, alignment: .leading)
                     Group {
-                        if usesCompactMetadata {
+                        if usesNativePage {
                             TVDetailTechnicalRow(facts: TVHeroMetadata.releaseFacts(year: seed?.year, runtime: seed?.runtime), version: nil, summary: seed?.overlaySummary)
                         }
                         else { loadingPlaybackSummary }
@@ -190,7 +190,7 @@ struct TVItemDetailLoadingView: View {
     private var loadingActions: some View {
         HStack(spacing: 18) {
             placeholder(width: 280, height: 76, cornerRadius: 38)
-            ForEach(0..<(usesCompactMetadata ? 4 : 5), id: \.self) { _ in
+            ForEach(0..<(usesNativePage ? 4 : 5), id: \.self) { _ in
                 placeholder(width: 76, height: 76, cornerRadius: 38)
             }
         }
@@ -217,11 +217,6 @@ struct TVItemDetailLoadingView: View {
     }
 
     // MARK: - Derived presentation
-
-    private var usesCompactMetadata: Bool {
-        guard let type = seed?.mediaType else { return false }
-        return type.lowercased() == "movie" || VividMediaType.isSeries(type.lowercased())
-    }
 
     private var usesNativePage: Bool {
         guard let type = seed?.mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }

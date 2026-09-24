@@ -381,6 +381,10 @@ struct EpisodeThumbCard: View {
         if isPlayed {
             components.append("Watched")
         }
+        if usesRuntimeStatus,
+           let runtime = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
+            components.append("\(runtime) minute\(runtime == 1 ? "" : "s")")
+        }
         return components.joined(separator: ", ")
     }
 

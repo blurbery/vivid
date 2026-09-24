@@ -45,11 +45,15 @@ struct MediaRuntimeStatusOverlay: View {
 
     var runtimeMinutes: Int? = nil
 
-    private var runtime: Int? {
-        if let runtimeMinutes, runtimeMinutes > 0 { return runtimeMinutes }
+    static func displayedRuntime(minutes: Int?, duration: Double?) -> Int? {
+        if let minutes, minutes > 0 { return minutes }
         guard let duration, duration.isFinite, duration > 0,
               duration / 60 < Double(Int.max) else { return nil }
         return max(1, Int(duration / 60))
+    }
+
+    private var runtime: Int? {
+        Self.displayedRuntime(minutes: runtimeMinutes, duration: duration)
     }
 
     var body: some View {

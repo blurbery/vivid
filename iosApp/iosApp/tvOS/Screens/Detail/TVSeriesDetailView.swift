@@ -80,6 +80,11 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         .onChange(of: playFocused) { _, focused in
             if focused { didEstablishPlayFocus = true }
         }
+        .onChange(of: showActionRowFocused) { _, focused in
+            // An empty series has no Play target. Unlock the synopsis after
+            // another action receives focus, without exposing it during entry.
+            if focused && playbackEpisode == nil { didEstablishPlayFocus = true }
+        }
         .onAppear { isShowingSeriesOverview = activeEpisodeContentId == nil }
     }
 
