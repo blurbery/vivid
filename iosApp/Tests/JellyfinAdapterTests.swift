@@ -440,6 +440,15 @@ final class JellyfinAdapterTests: XCTestCase {
 
     func testHomeUsesJellyfinRowsAndArrayLatestResponse() async throws {
         let adapter = adapter { request in
+            if ["/jellyfin/UserItems/Resume", "/jellyfin/Shows/NextUp", "/jellyfin/Items/Latest"].contains(request.url!.path) {
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+                let fields = Set((query.first { $0.name == "Fields" }?.value ?? "").split(separator: ",").map(String.init))
+                XCTAssertFalse(fields.contains("People"))
+                XCTAssertFalse(fields.contains("Chapters"))
+                XCTAssertTrue(fields.contains("MediaSources"))
+                XCTAssertTrue(fields.contains("MediaStreams"))
+                XCTAssertEqual(query.first { $0.name == "EnableUserData" }?.value, "true")
+            }
             switch request.url!.path {
             case "/jellyfin/UserViews":
                 return (200, ["Items":[["Id":"library1","Name":"Films","CollectionType":"movies"]]])

@@ -226,10 +226,12 @@ struct HomeView: View {
             }
             await viewModel.refreshForHomeEntry(sinceLastHidden: homeHiddenAt)
             if !Task.isCancelled { homeHiddenAt = nil }
-            // Silo artwork links expire while Home is open. Refresh the rows
-            // before a cached image is evicted and its old link stops working.
-            while !Task.isCancelled, shouldSyncHome, MediaServerProvider.active == .silo {
-                do { try await Task.sleep(for: .seconds(30 * 60)) } catch { return }
+            // Jellyfin has no realtime event subscription: keep external watch
+            // state and new content fresh while Home is visible. Silo retains
+            // its longer artwork-link refresh interval.
+            while !Task.isCancelled, shouldSyncHome,
+                  let interval = HomeViewModel.televisionRefreshInterval(provider: MediaServerProvider.active) {
+                do { try await Task.sleep(for: interval) } catch { return }
                 guard !Task.isCancelled, shouldSyncHome else { return }
                 await viewModel.loadSections()
             }
