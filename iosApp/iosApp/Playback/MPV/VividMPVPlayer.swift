@@ -153,7 +153,11 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             fail(error); throw error
         }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+        // Preserve the active route across episode changes and audio-output reloads.
+        if session.category != .playback || session.mode != .moviePlayback
+            || session.routeSharingPolicy != .longFormAudio {
+            try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+        }
         try session.setActive(true)
         trace?.mark("mpv_audio_session_ready")
         let instance = VividMPVCore()
@@ -427,6 +431,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         }
         if message.hasPrefix("notification name: ") && message.contains("AVSampleBufferAudioRendererOutputConfigurationDidChange") {
             return "event=audio_output_configuration_changed"
+        }
+        if message == "audio session managed by application" {
+            return "event=audio_session_owned_by_app"
         }
         if message == "pcm fresh sink after reset" {
             return "event=pcm_fresh_sink_after_reset"
@@ -770,6 +777,7 @@ private final class VividMPVCore: MpvPlayerCore {
     var airPlayPCM = false
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
+                        "ao-avfoundation-manage-audio-session": "no",
                         "audio-exclusive": "yes", "audio-channels": airPlayPCM ? "7.1,5.1,stereo" : "auto-safe",
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osc": "no", "osd-level": "0", "pause": autoplay ? "no" : "yes",

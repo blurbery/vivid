@@ -8,7 +8,15 @@
  #include "internal.h"
  #include "options/m_option.h"
  #include "osdep/timer.h"
-@@ -122,13 +123,8 @@
+@@ -110,6 +111,7 @@
+     // AVPlayer. Disable to let the next configured audio output handle the
+     // bitstream instead.
+     bool opt_accept_compressed;
++    bool opt_manage_audio_session;
+     // How far ahead of the observed playhead the elementary stream is fed,
+     // in seconds. The system's audio decode pipeline reads unboundedly far
+     // ahead of the playhead (the loader's read offset sits pinned at the
+@@ -122,13 +124,8 @@
      // dropouts over ~4 min fell from 21/min (Plezy 2.15) and 10.6/min
      // (this AO at 2 s) to zero.
      double opt_compressed_lead;
@@ -24,7 +32,7 @@
      // How far ahead of the playhead the PCM path is allowed to enqueue.
      // AVSampleBufferAudioRenderer's own backpressure sits far out -- around
      // 1.7s when measured against a local route -- and mpv multiplies the
-@@ -145,6 +141,10 @@
+@@ -145,6 +142,10 @@
      // wakes forever re-deciding not to feed. Only mutated on p->queue.
      bool feed_enabled;
      double opt_max_lookahead;
@@ -35,7 +43,7 @@
  #endif
  };
 
-@@ -304,6 +304,19 @@
+@@ -304,6 +305,19 @@
          CMTimeMake(SPDIF_FRAMES_PER_BURST, p->spdif_rate));
  }
 
@@ -55,7 +63,7 @@
  // One read/unwrap pass: pull IEC 61937 data from mpv and append every
  // complete burst's payload to the elementary stream. Returns false when out
  // of data, at EOF, or reloading.
-@@ -318,6 +331,9 @@
+@@ -318,6 +332,9 @@
      if ((p->stash_size - p->stash_len) / sstride < request_sample_count)
          request_sample_count = (p->stash_size - p->stash_len) / sstride;
      if (request_sample_count <= 0)
@@ -65,7 +73,7 @@
          return false;
 
      int64_t cur_time_av = avp_current_time_ns(ao);
-@@ -492,15 +508,13 @@
+@@ -492,15 +509,13 @@
          p->avp_start_deadline = -1; // playing; nothing left to supervise
          return;
      }
@@ -88,7 +96,7 @@
          p->avp_primed_pts = p->es_pts;
          p->avp_start_deadline = now + AVP_START_GRACE_NS;
          return;
-@@ -649,8 +663,11 @@
+@@ -649,8 +664,11 @@
      p->avp_primed_pts = 0;
  }
 
@@ -101,7 +109,7 @@
 
  static void pcm_request_media_data(struct ao *ao)
  {
-@@ -682,6 +699,10 @@
+@@ -682,6 +700,10 @@
  {
      struct priv *p = ao->priv;
 
@@ -112,7 +120,7 @@
      [p->renderer stopRequestingMediaData];
      if (!p->feed_enabled)
          return;
-@@ -690,10 +711,12 @@
+@@ -690,10 +712,12 @@
          pcm_request_media_data(ao);
          return;
      }
@@ -127,7 +135,7 @@
  }
 
  // Turn the bounded PCM feed on or off. Serialized on p->queue so it cannot
-@@ -706,11 +729,21 @@
+@@ -706,11 +730,21 @@
      void (^block)(void) = ^{
          p->feed_enabled = enabled;
          pcm_cancel_pending_feed(p);
@@ -149,7 +157,7 @@
      };
      if (dispatch_get_specific(&avfoundation_queue_key) == p)
          block();
-@@ -719,16 +752,33 @@
+@@ -719,16 +753,33 @@
  }
  #endif  // TARGET_OS_OSX
 
@@ -185,7 +193,7 @@
              pcm_pause_feeding(ao);
              return;
          }
-@@ -750,6 +800,12 @@
+@@ -750,6 +801,12 @@
      bool eof;
      int real_sample_count = ao_read_data(ao, data, request_sample_count, end_time_av - cur_time_av + cur_time_mp + time_delta, &eof, false, true);
      if (eof) {
@@ -198,7 +206,7 @@
          [p->renderer stopRequestingMediaData];
          ao_stop_streaming(ao);
      }
-@@ -811,6 +867,88 @@
+@@ -811,6 +868,88 @@
      if (sample_buffer) CFRelease(sample_buffer);
  }
 
@@ -287,7 +295,7 @@
  static void start(struct ao *ao)
  {
      struct priv *p = ao->priv;
-@@ -818,6 +956,12 @@
+@@ -818,6 +957,12 @@
      if (p->spdif) {
          void (^start_block)(void) = ^{
              p->avp_playing = true;
@@ -300,7 +308,7 @@
              if (!p->item)
                  avp_create_item(ao);
              else if (p->avp_rate_applied)
-@@ -832,6 +976,21 @@
+@@ -832,6 +977,21 @@
          return;
      }
 
@@ -322,7 +330,7 @@
      p->end_time_av = -1;
      [p->synchronizer setRate:1];
  #if TARGET_OS_OSX
-@@ -861,7 +1020,13 @@
+@@ -861,7 +1021,13 @@
          [p->renderer stopRequestingMediaData];
          [p->renderer flush];
          [p->synchronizer setRate:0];
@@ -337,7 +345,7 @@
          // A frozen clock never drains the queue, so leave nothing scheduled;
          // start() turns feeding back on.
          p->feed_enabled = false;
-@@ -904,9 +1069,26 @@
+@@ -904,9 +1070,26 @@
          return true;
      }
 
@@ -365,7 +373,7 @@
          // The clock is stopped, so the bound can never be undercut again on
          // its own. Stop asking rather than waking every half-bound to
          // rediscover that.
-@@ -914,7 +1096,7 @@
+@@ -914,7 +1097,7 @@
              pcm_set_feeding(ao, false);
  #endif
      } else {
@@ -374,7 +382,7 @@
          if (p->pcm_lookahead_ns)
              pcm_set_feeding(ao, true);
  #endif
-@@ -947,22 +1129,33 @@
+@@ -947,22 +1130,33 @@
          }
      }
 
@@ -424,7 +432,7 @@
  }
 
  @implementation AVObserver
-@@ -974,6 +1167,23 @@
+@@ -974,6 +1168,23 @@
      return self;
  }
  - (void)handleRestartNotification:(NSNotification*)notification {
@@ -448,7 +456,51 @@
      char *name = cfstr_get_cstr((CFStringRef)notification.name);
      MP_WARN(ao, "restarting due to system notification; this will cause desync\n");
      MP_VERBOSE(ao, "notification name: %s\n", name);
-@@ -1179,7 +1389,7 @@
+@@ -1045,6 +1256,20 @@
+ }
+ @end
+
++#if TARGET_OS_IPHONE
++// An embedding app can own the shared session across asynchronous AO teardown.
++// Neither a failed probe nor the previous episode may deactivate its successor.
++static void set_audio_session_active(struct ao *ao, bool active)
++{
++    struct priv *p = ao->priv;
++    if (!p->opt_manage_audio_session)
++        return;
++    [AVAudioSession.sharedInstance setActive:active
++        withOptions:active ? 0 : AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
++        error:nil];
++}
++#endif
++
+ static int init(struct ao *ao)
+ {
+     struct priv *p = ao->priv;
+@@ -1063,15 +1288,19 @@
+
+ #if TARGET_OS_IPHONE
+     AVAudioSession *instance = AVAudioSession.sharedInstance;
+-    [instance setCategory:AVAudioSessionCategoryPlayback error:nil];
+-    [instance setMode:AVAudioSessionModeMoviePlayback error:nil];
++    if (p->opt_manage_audio_session) {
++        [instance setCategory:AVAudioSessionCategoryPlayback error:nil];
++        [instance setMode:AVAudioSessionModeMoviePlayback error:nil];
++    } else {
++        MP_VERBOSE(ao, "audio session managed by application\n");
++    }
+ #if HAVE_MACOS_12_FEATURES
+     if (@available(tvOS 15.0, iOS 15.0, *)) {
+         if (spdif || ao->channels.num > 2)
+             [instance setSupportsMultichannelContent:YES error:nil];
+     }
+ #endif
+-    [instance setActive:YES error:nil];
++    set_audio_session_active(ao, true);
+     NSInteger maxChannels = instance.maximumOutputNumberOfChannels;
+     if (spdif) {
+         AVAudioSessionPortDescription *port = instance.currentRoute.outputs.firstObject;
+@@ -1179,7 +1408,7 @@
          goto error;
      }
 
@@ -457,7 +509,7 @@
      // --audio-buffer is documented as a minimum the device may exceed, so it
      // cannot double as this maximum; it only keeps the bound from dropping
      // under what the core was told to expect.
-@@ -1190,10 +1400,14 @@
+@@ -1190,10 +1419,14 @@
                                                 p->queue);
          if (p->feed_timer) {
              dispatch_source_set_event_handler(p->feed_timer, ^{
@@ -472,7 +524,7 @@
              });
              dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
                                        DISPATCH_TIME_FOREVER, 0);
-@@ -1272,7 +1486,7 @@
+@@ -1272,7 +1505,7 @@
          dispatch_release(p->avp_timer);
          p->avp_timer = NULL;
      }
@@ -481,7 +533,19 @@
      if (p->feed_timer) {
          dispatch_source_cancel(p->feed_timer);
          dispatch_release(p->feed_timer);
-@@ -1322,7 +1536,7 @@
+@@ -1290,10 +1523,7 @@
+     if (p->format_description) CFRelease(p->format_description);
+
+ #if TARGET_OS_IPHONE
+-    [AVAudioSession.sharedInstance setActive:NO
+-        withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
+-        error:nil
+-    ];
++    set_audio_session_active(ao, false);
+ #endif
+
+     return CONTROL_ERROR;
+@@ -1322,7 +1552,7 @@
          // as this returns. Cancelling on p->queue means no handler is
          // mid-flight and none can start afterwards. stop() above already
          // left the timer idle.
@@ -490,7 +554,27 @@
          if (p->feed_timer) {
              dispatch_sync(p->queue, ^{
                  dispatch_source_cancel(p->feed_timer);
-@@ -1372,7 +1586,7 @@
+@@ -1341,10 +1571,7 @@
+     }
+
+ #if TARGET_OS_IPHONE
+-    [AVAudioSession.sharedInstance setActive:NO
+-        withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
+-        error:nil
+-    ];
++    set_audio_session_active(ao, false);
+ #endif
+ }
+
+@@ -1363,6 +1590,7 @@
+     .priv_size      = sizeof(struct priv),
+     .priv_defaults  = &(const struct priv){
+         .opt_accept_compressed = true,
++        .opt_manage_audio_session = true,
+         .opt_compressed_lead = 8,
+         // Well inside the renderer's own depth, so the queue still absorbs
+         // scheduling jitter, while cutting the delay before a volume change
+@@ -1372,10 +1600,11 @@
  #endif
      },
      .options = (const struct m_option[]) {
@@ -499,3 +583,7 @@
          {"max-lookahead", OPT_DOUBLE(opt_max_lookahead), M_RANGE(0, 10)},
  #endif
          {"accept-compressed", OPT_BOOL(opt_accept_compressed)},
++        {"manage-audio-session", OPT_BOOL(opt_manage_audio_session)},
+         {"compressed-lead", OPT_DOUBLE(opt_compressed_lead), M_RANGE(1, 30)},
+         {0}
+     },
