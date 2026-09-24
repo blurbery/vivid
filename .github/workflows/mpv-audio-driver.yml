@@ -66,6 +66,7 @@ jobs:
           assert binaries, 'Missing rebuilt libmpv'
           for path in binaries:
               assert b'resuming compressed feed after audio EOF' in path.read_bytes()
+              assert b'manage-audio-session\x00' in path.read_bytes()
           print('Verified compiled EOF restart patch')
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

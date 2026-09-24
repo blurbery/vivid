@@ -14,6 +14,8 @@ struct ItemDetailView: View {
     var body: some View {
         #if os(tvOS)
         TVItemDetailView(contentId: contentId, seed: tvSeed)
+            // Preserve the cinematic detail canvas independently of navigation.
+            .background(Color.black.ignoresSafeArea())
         #else
         ItemDetailPhoneContent(contentId: contentId, onClose: onClose, resumeContext: resumeContext)
         #endif

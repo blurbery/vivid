@@ -495,6 +495,9 @@ struct ContentView: View {
                     }
             }
             .environment(router)
+            #if os(tvOS)
+            .background { TVAppBackdrop() }
+            #endif
 
     }
 
@@ -517,7 +520,14 @@ struct ContentView: View {
                     .zIndex(1)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background {
+            #if os(tvOS)
+            // Navigation and startup share one persistent canvas.
+            TVAppBackdrop()
+            #else
+            Color.black.ignoresSafeArea()
+            #endif
+        }
         .task(id: didFinishStartupSplash) {
             guard didFinishStartupSplash else { return }
             do {
@@ -601,7 +611,9 @@ struct ContentView: View {
         switch router.authState {
         case .loading:
             Group {
-                #if os(iOS) || os(tvOS)
+                #if os(tvOS)
+                Color.clear.ignoresSafeArea()
+                #elseif os(iOS)
                 Color.black.ignoresSafeArea()
                 #else
                 startupPresentation

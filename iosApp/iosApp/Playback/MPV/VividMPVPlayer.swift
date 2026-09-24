@@ -98,6 +98,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             core?.updateFrame()
         }
     }
+    private static var audioSessionOwner: UUID?
+    private var audioSessionToken: UUID?
+    private static let audioTeardown = DispatchGroup()
     var deactivatesAudioSessionOnStop = false
     var ownsVideoNowPlayingSession = false
     var videoNowPlayingSession: MPNowPlayingSession? { nil }
@@ -153,8 +156,15 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             fail(error); throw error
         }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+        // Preserve the active route across episode changes and audio-output reloads.
+        if session.category != .playback || session.mode != .moviePlayback
+            || session.routeSharingPolicy != .longFormAudio {
+            try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+        }
         try session.setActive(true)
+        let sessionToken = UUID()
+        audioSessionToken = sessionToken
+        Self.audioSessionOwner = sessionToken
         trace?.mark("mpv_audio_session_ready")
         let instance = VividMPVCore()
         #if os(iOS)
@@ -689,7 +699,24 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         cancelEndConfirmation()
         rateTask?.cancel(); rateTask = nil
         softwarePiPSource = nil
-        core?.delegate = nil; core?.dispose(preserveDisplayCriteria: !resetDisplayCriteria)
+        core?.delegate = nil
+        if let core {
+            let teardown = Self.audioTeardown
+            teardown.enter()
+            core.dispose(preserveDisplayCriteria: !resetDisplayCriteria) { teardown.leave() }
+        }
+        if deactivatesAudioSessionOnStop, let sessionToRelease = audioSessionToken {
+            audioSessionToken = nil
+            // The session is shared, so wait for retired cores from every player instance.
+            Self.audioTeardown.notify(queue: .main) {
+                MainActor.assumeIsolated {
+                    // Never release a newer load's session, including another player.
+                    guard Self.audioSessionOwner == sessionToRelease else { return }
+                    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                    Self.audioSessionOwner = nil
+                }
+            }
+        }
         core = nil; delegateProxy = nil; surface.core = nil; source = nil
         trace?.event("mpv_stopped"); trace = nil
         state = .idle; playbackPhase = .idle; videoRoute = .none
@@ -708,7 +735,6 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         outputChannels = nil; outputAudioFormat = nil; videoDecoder = nil; audioDecoder = nil
         diagnostics.liveTelemetry = nil
         cacheSnapshot = [:]
-        if deactivatesAudioSessionOnStop { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
     private func fail(_ error: PlaybackErrorInfo) {
         cancelEndConfirmation()
@@ -770,6 +796,7 @@ private final class VividMPVCore: MpvPlayerCore {
     var airPlayPCM = false
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
+                        "ao-avfoundation-manage-audio-session": "no",
                         "audio-exclusive": "yes", "audio-channels": airPlayPCM ? "7.1,5.1,stereo" : "auto-safe",
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osc": "no", "osd-level": "0", "pause": autoplay ? "no" : "yes",

@@ -296,11 +296,20 @@ class HomeViewModel {
 
     /// Keep the hydrated snapshot for immediate entry, then refresh existing
     /// rows on first entry, a stale return, or a queued playback change.
-    func refreshForHomeEntry(sinceLastHidden hiddenAt: Date?, now: Date = Date()) async {
+    func refreshForHomeEntry(sinceLastHidden hiddenAt: Date?, now: Date = Date(),
+                             provider: MediaServerProvider = .active) async {
         let isStaleReturn = hiddenAt.map { now.timeIntervalSince($0) >= 60 } ?? false
-        guard !hasEnteredHome || isStaleReturn || needsSectionsRefresh || error != nil else { return }
+        guard provider == .jellyfin || !hasEnteredHome || isStaleReturn || needsSectionsRefresh || error != nil else { return }
         await loadSections()
         if !Task.isCancelled, error == nil { hasEnteredHome = true }
+    }
+
+    static func televisionRefreshInterval(provider: MediaServerProvider) -> Duration? {
+        switch provider {
+        case .jellyfin: .seconds(10)
+        case .silo: .seconds(30 * 60)
+        default: nil
+        }
     }
 
     func refreshPlaybackSections(refreshImmediately: Bool = true) async {

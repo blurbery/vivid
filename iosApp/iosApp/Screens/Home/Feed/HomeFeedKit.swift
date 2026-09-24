@@ -459,6 +459,14 @@ struct HomeStillCard: View {
 
     private var isPlayed: Bool { playedOverride ?? (item.userState?.played == true) }
 
+    private var showsEpisodeRuntimeStatus: Bool {
+        #if os(iOS)
+        EpisodeCardCaption.isEpisode(item)
+        #else
+        false
+        #endif
+    }
+
     private var height: CGFloat { (width * 9.0 / 16.0).rounded() }
 
     private var isIOSResumeCard: Bool {
@@ -553,7 +561,14 @@ struct HomeStillCard: View {
                 )
             }
 
-            if let progress = HomeFeedMeta.progress(for: item) {
+            if showsEpisodeRuntimeStatus {
+                MediaRuntimeStatusOverlay(
+                    isPlayed: isPlayed,
+                    duration: item.durationSeconds,
+                    progress: HomeFeedMeta.progress(for: item),
+                    runtimeMinutes: item.runtime
+                )
+            } else if let progress = HomeFeedMeta.progress(for: item) {
                 if isIOSResumeCard {
                     ResumeProgressBar(value: progress, duration: item.durationSeconds)
                 } else {
@@ -574,7 +589,7 @@ struct HomeStillCard: View {
         // the check says "you've finished this before" alongside the rail's
         // "here's where you are now", same as the replaced EpisodeThumbCard.
         .overlay(alignment: .topTrailing) {
-            if isPlayed {
+            if isPlayed && !showsEpisodeRuntimeStatus {
                 HomeWatchedCheck()
                     .padding(6)
             }
@@ -671,6 +686,10 @@ struct HomeStillCard: View {
         }
         if isPlayed {
             components.append("Watched")
+        }
+        if showsEpisodeRuntimeStatus,
+           let runtime = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
+            components.append("\(runtime) minute\(runtime == 1 ? "" : "s")")
         }
         return components.joined(separator: ", ")
     }

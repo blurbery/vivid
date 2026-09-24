@@ -19,7 +19,7 @@ struct TVServerSetupView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar
                 Spacer(minLength: 20)
@@ -31,7 +31,7 @@ struct TVServerSetupView: View {
             .padding(.bottom, 64)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.clear.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .bottom) {
             VividCopyrightFooter().padding(.bottom, 40)

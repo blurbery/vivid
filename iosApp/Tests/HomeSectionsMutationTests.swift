@@ -94,6 +94,22 @@ final class HomeSectionsMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testJellyfinHomeRefreshesEvenAfterAShortReturn() async {
+        var requests = 0
+        let model = HomeViewModel(fetchHomeSections: {
+            requests += 1
+            return SectionsResponse(sections: [])
+        })
+        let now = Date(timeIntervalSince1970: 1_000)
+        await model.refreshForHomeEntry(sinceLastHidden: nil, now: now, provider: .jellyfin)
+        await model.refreshForHomeEntry(sinceLastHidden: now, now: now.addingTimeInterval(1), provider: .jellyfin)
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(HomeViewModel.televisionRefreshInterval(provider: .jellyfin), .seconds(10))
+        XCTAssertEqual(HomeViewModel.televisionRefreshInterval(provider: .silo), .seconds(1800))
+        XCTAssertNil(HomeViewModel.televisionRefreshInterval(provider: .emby))
+    }
+
+    @MainActor
     func testHomeEntryRetainsCachedRowsAndSkipsShortReturns() async throws {
         let rows = [makeSection(id: "latest", type: "latest", totalCount: 1,
                                 items: [try makeItem(contentId: "cached")])]

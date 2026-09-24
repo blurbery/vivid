@@ -1,14 +1,11 @@
 import SwiftUI
 
-/// Settings inherits the persistent app canvas on tvOS. Other platforms
+/// Settings uses the shared charcoal canvas on tvOS. Other platforms
 /// retain their existing page backgrounds.
 struct SettingsBackdrop: View {
     var body: some View {
         #if os(tvOS)
-        Color.clear
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        TVAppBackdrop()
         #elseif os(iOS)
         Color.black.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
         #else

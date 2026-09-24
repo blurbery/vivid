@@ -34,7 +34,7 @@ struct BrowseView: View {
                 emptyContent
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .overlay(alignment: .top) {
             // Grid is painted from cache but the server can't be reached —
             // flag the staleness instead of letting refresh fail silently.

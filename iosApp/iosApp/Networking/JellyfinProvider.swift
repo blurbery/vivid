@@ -227,6 +227,7 @@ struct JellyfinAdapter {
     let connection: JellyfinConnection
     var userID: String { connection.userID! }
     static let browseFields = "Overview,Genres,Studios,ProviderIds,DateCreated,SortName,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
+    static let homeFields = browseFields + ",MediaSources,MediaStreams"
     static let fields = "Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,SortName,Taglines,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
 
     static func seconds(_ ticks: Any?) -> Double {
@@ -463,30 +464,47 @@ struct JellyfinAdapter {
     }
 
     func home(library: String? = nil) async throws -> [String: Any] {
-        let views = try await libraryViews()
-        let libraries = views["Items"] as? [[String:Any]] ?? []
         let parent: String?
         if let library { parent = try await libraryID(library) } else { parent = nil }
-        var sections: [[String:Any]] = []
-        var scope = ["Limit":"20", "MediaTypes":"Video"]
+        var scope = ["Limit":"20", "MediaTypes":"Video", "Fields":Self.homeFields]
         if let parent { scope["ParentId"] = parent }
-        let resume = try await items("/UserItems/Resume", query: scope)
-        sections.append(section("continue_watching", "Continue Watching", resume))
-        let next = try await items("/Shows/NextUp", query: scope.merging(["EnableResumable":"false"]) { _, new in new })
-        sections.append(section("next_up", "Next Up", next))
-        let user = try await connection.object("GET", "/Users/\(userID)")
+        // Independent rows and configuration should not add their latencies.
+        async let viewsRequest = libraryViews()
+        async let userRequest = connection.object("GET", "/Users/\(userID)")
+        async let resumeRequest = items("/UserItems/Resume", query: scope)
+        async let nextRequest = items("/Shows/NextUp", query: scope.merging(["EnableResumable":"false"]) { _, new in new })
+        let (views, user) = try await (viewsRequest, userRequest)
         let excluded = Set((user["Configuration"] as? [String:Any])?["LatestItemsExcludes"] as? [String] ?? [])
-        for view in libraries {
+        let libraries = (views["Items"] as? [[String:Any]] ?? []).compactMap { view -> (String, String)? in
             guard let id = view["Id"] as? String, let name = view["Name"] as? String,
-                  parent == nil || parent == id,
-                  !excluded.contains(id),
-                  ["movies","tvshows","mixed", ""].contains(view["CollectionType"] as? String ?? "") else { continue }
-            let latest = try await connection.request("GET", "/Items/Latest",
-                query: ["ParentId":id,"Limit":"20","Fields":Self.fields,"EnableUserData":"true"])
-            let rows = try (latest as? [[String:Any]] ?? []).map(item)
-            sections.append(section("latestmedia_" + id, "Latest " + name, ["items":rows,"total":rows.count]))
+                  parent == nil || parent == id, !excluded.contains(id),
+                  ["movies","tvshows","mixed", ""].contains(view["CollectionType"] as? String ?? "") else { return nil }
+            return (id, name)
         }
-        return ["sections":sections]
+        var latestSections: [[String: Any]] = []
+        // Fetch at most two latest-library rows at once, preserving server order.
+        for offset in stride(from: 0, to: libraries.count, by: 2) {
+            try Task.checkCancellation()
+            async let first = latestHomeSection(id: libraries[offset].0, name: libraries[offset].1)
+            if offset + 1 < libraries.count {
+                async let second = latestHomeSection(id: libraries[offset + 1].0, name: libraries[offset + 1].1)
+                let pair = try await (first, second)
+                latestSections.append(contentsOf: [pair.0, pair.1])
+            } else {
+                latestSections.append(try await first)
+            }
+        }
+        let (resume, next) = try await (resumeRequest, nextRequest)
+        try await connection.validate()
+        return ["sections": [section("continue_watching", "Continue Watching", resume),
+                             section("next_up", "Next Up", next)] + latestSections]
+    }
+
+    private func latestHomeSection(id: String, name: String) async throws -> [String: Any] {
+        let latest = try await connection.request("GET", "/Items/Latest",
+            query: ["ParentId":id,"Limit":"20","Fields":Self.homeFields,"EnableUserData":"true"])
+        let rows = try (latest as? [[String:Any]] ?? []).map(item)
+        return section("latestmedia_" + id, "Latest " + name, ["items":rows,"total":rows.count])
     }
 
     func collection(_ raw: [String:Any]) -> [String:Any]? {

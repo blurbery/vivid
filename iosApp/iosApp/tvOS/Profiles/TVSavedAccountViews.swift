@@ -7,7 +7,7 @@ struct TVSavedProfilesScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack {
-            Color.clear.ignoresSafeArea()
+            TVAppBackdrop()
             NavigationStack {
                 VStack(spacing: 28) {
                     VividLogoView(size: 280)

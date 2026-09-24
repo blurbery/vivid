@@ -58,3 +58,109 @@ with tempfile.TemporaryDirectory(prefix='vivid-mpv-tracks-') as temp:
     binary = folder / 'checks'
     subprocess.run(['xcrun', 'swiftc', '-module-cache-path', str(folder / 'module-cache'), str(path), '-o', str(binary)], check=True, timeout=60)
     subprocess.run([str(binary)], check=True, timeout=10)
+
+# Run the production teardown/ownership block with deferred native-core doubles.
+start = source.index('        core?.delegate = nil\n', source.index('    func stop('))
+end = source.index('        core = nil; delegateProxy', start)
+teardown = source[start:end]
+group_declaration = next(line.strip().removeprefix('private ') for line in source.splitlines()
+                         if 'let audioTeardown = DispatchGroup()' in line)
+group_access = 'Self.audioTeardown' if group_declaration.startswith('static ') else 'audioTeardown'
+swift = r'''
+import Foundation
+@MainActor final class AVAudioSession {
+    static let instance = AVAudioSession()
+    static func sharedInstance() -> AVAudioSession { instance }
+    enum Options { case notifyOthersOnDeactivation }
+    var deactivations = 0
+    func setActive(_ active: Bool, options: Options) throws { if !active { deactivations += 1 } }
+}
+final class Core {
+    var delegate: Int?
+    var completion: (@Sendable () -> Void)?
+    func dispose(preserveDisplayCriteria: Bool, completion: @escaping @Sendable () -> Void) {
+        self.completion = completion
+    }
+    func finish() { completion?(); completion = nil }
+}
+@MainActor final class Player {
+    static var audioSessionOwner: UUID?
+    var audioSessionToken: UUID?
+    ''' + group_declaration + r'''
+    var deactivatesAudioSessionOnStop = false
+    var core: Core?
+    func activate() {
+        let token = UUID(); audioSessionToken = token; Self.audioSessionOwner = token
+        core = Core()
+    }
+    func stop(resetDisplayCriteria: Bool = true) {
+''' + teardown + r'''
+        core = nil
+    }
+    func settled() async {
+        await withCheckedContinuation { continuation in
+            ''' + group_access + r'''.notify(queue: .main) { continuation.resume() }
+        }
+    }
+}
+@main struct Checks {
+    @MainActor static func main() async {
+        let session = AVAudioSession.sharedInstance()
+        let player = Player()
+        player.activate(); let first = player.core!
+        player.stop() // replacement does not release the session
+        player.activate(); let second = player.core!
+        player.deactivatesAudioSessionOnStop = true
+        player.stop(); player.stop() // repeated stop must not release early
+        precondition(session.deactivations == 0)
+        second.finish()
+        precondition(session.deactivations == 0) // first still tearing down
+        first.finish(); await player.settled()
+        precondition(session.deactivations == 1 && Player.audioSessionOwner == nil)
+
+        player.activate(); let retired = player.core!
+        player.stop()
+        let successor = Player(); successor.activate()
+        let owner = Player.audioSessionOwner
+        retired.finish(); await player.settled()
+        precondition(session.deactivations == 1 && Player.audioSessionOwner == owner)
+
+        let successorCore = successor.core!
+        successor.stop() // final stop while only a previous replacement is pending
+        successor.deactivatesAudioSessionOnStop = true
+        successor.stop()
+        precondition(session.deactivations == 1)
+        successorCore.finish(); await successor.settled()
+        precondition(session.deactivations == 2 && Player.audioSessionOwner == nil)
+        // Final stop in a replacement instance must wait for its predecessor too.
+        for olderFinishesFirst in [false, true] {
+            let before = session.deactivations
+            let older = Player(); older.activate(); let olderCore = older.core!
+            older.deactivatesAudioSessionOnStop = true; older.stop()
+            let newer = Player(); newer.activate(); let newerCore = newer.core!
+            newer.deactivatesAudioSessionOnStop = true; newer.stop()
+            (olderFinishesFirst ? olderCore : newerCore).finish()
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            if session.deactivations != before {
+                print("FAIL: replacement released the session before all player instances retired")
+                exit(1)
+            }
+            (olderFinishesFirst ? newerCore : olderCore).finish()
+            await newer.settled()
+            precondition(session.deactivations == before + 1 && Player.audioSessionOwner == nil)
+        }
+        print("10 production audio teardown checks passed")
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix='vivid-audio-teardown-') as temp:
+    folder = Path(temp)
+    path = folder / 'main.swift'
+    path.write_text(swift)
+    binary = folder / 'checks'
+    subprocess.run(['xcrun', 'swiftc', '-parse-as-library', '-module-cache-path',
+                    str(folder / 'module-cache'), str(path), '-o', str(binary)],
+                   check=True, timeout=60)
+    subprocess.run([str(binary)], check=True, timeout=10)

@@ -272,3 +272,63 @@ with tempfile.TemporaryDirectory(prefix='vivid-pcm-sink-test-') as directory:
                         f'-DHAVE_MACOS_12_FEATURES={enabled}',
                         str(path/'sink.m'), '-o', str(path/'sink')], check=True)
         subprocess.run([str(path/'sink')], check=True)
+
+# Exercise the real session activation helper with a shared-session double.
+# Reproduce a replacement becoming active before the previous AO is destroyed.
+session_start = source.index('static void set_audio_session_active(')
+session_end = source.index('\n#endif', session_start)
+session_body = source[session_start:session_end]
+assert source.count('set_audio_session_active(ao, false);') == 2, 'Both error and teardown must honour ownership'
+assert 'set_audio_session_active(ao, true);' in source
+assert '.opt_manage_audio_session = true' in source, 'Standalone driver keeps its default ownership'
+session_harness = r'''
+#import <Foundation/Foundation.h>
+#include <assert.h>
+#include <stdbool.h>
+#define AVAudioSession TestAudioSession
+#define AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation 1
+@interface AVAudioSession : NSObject
+@property BOOL active;
+@property int changes;
+@property NSUInteger options;
++ (instancetype)sharedInstance;
+- (BOOL)setActive:(BOOL)active withOptions:(NSUInteger)options error:(NSError **)error;
+@end
+@implementation AVAudioSession
++ (instancetype)sharedInstance { static AVAudioSession *s; if (!s) s = [self new]; return s; }
+- (BOOL)setActive:(BOOL)active withOptions:(NSUInteger)options error:(NSError **)error {
+    _active = active; _options = options; _changes++; return YES;
+}
+@end
+struct priv { bool opt_manage_audio_session; };
+struct ao { struct priv *priv; };
+''' + session_body + r'''
+int main(void) {
+    @autoreleasepool {
+        AVAudioSession *s = AVAudioSession.sharedInstance;
+        struct priv app_owned = { false }, standalone = { true };
+        struct ao old = { &app_owned }, next = { &app_owned }, independent = { &standalone };
+        s.active = YES;
+        set_audio_session_active(&next, true);
+        set_audio_session_active(&old, false);
+        assert(s.active && s.changes == 0);
+        // Repeated episodes, failed probes and output reloads cannot toggle it.
+        for (int i = 0; i < 20; i++) {
+            set_audio_session_active(&next, true);
+            set_audio_session_active(&old, false);
+        }
+        assert(s.active && s.changes == 0);
+        set_audio_session_active(&independent, true);
+        assert(s.active && s.changes == 1 && s.options == 0);
+        set_audio_session_active(&independent, false);
+        assert(!s.active && s.changes == 2 && s.options == 1);
+        puts("4 audio session ownership checks passed");
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix='vivid-audio-session-test-') as directory:
+    path = Path(directory)
+    (path/'session.m').write_text(session_harness)
+    subprocess.run(['clang', '-framework', 'Foundation', str(path/'session.m'),
+                    '-o', str(path/'session')], check=True)
+    subprocess.run([str(path/'session')], check=True)
