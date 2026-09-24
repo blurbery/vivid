@@ -100,7 +100,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
     private static var audioSessionOwner: UUID?
     private var audioSessionToken: UUID?
-    private let audioTeardown = DispatchGroup()
+    private static let audioTeardown = DispatchGroup()
     var deactivatesAudioSessionOnStop = false
     var ownsVideoNowPlayingSession = false
     var videoNowPlayingSession: MPNowPlayingSession? { nil }
@@ -701,14 +701,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         softwarePiPSource = nil
         core?.delegate = nil
         if let core {
-            let teardown = audioTeardown
+            let teardown = Self.audioTeardown
             teardown.enter()
             core.dispose(preserveDisplayCriteria: !resetDisplayCriteria) { teardown.leave() }
         }
         if deactivatesAudioSessionOnStop, let sessionToRelease = audioSessionToken {
             audioSessionToken = nil
-            // Also wait for earlier replacement cores still finishing teardown.
-            audioTeardown.notify(queue: .main) {
+            // The session is shared, so wait for retired cores from every player instance.
+            Self.audioTeardown.notify(queue: .main) {
                 MainActor.assumeIsolated {
                     // Never release a newer load's session, including another player.
                     guard Self.audioSessionOwner == sessionToRelease else { return }

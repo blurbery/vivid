@@ -63,6 +63,9 @@ with tempfile.TemporaryDirectory(prefix='vivid-mpv-tracks-') as temp:
 start = source.index('        core?.delegate = nil\n', source.index('    func stop('))
 end = source.index('        core = nil; delegateProxy', start)
 teardown = source[start:end]
+group_declaration = next(line.strip().removeprefix('private ') for line in source.splitlines()
+                         if 'let audioTeardown = DispatchGroup()' in line)
+group_access = 'Self.audioTeardown' if group_declaration.startswith('static ') else 'audioTeardown'
 swift = r'''
 import Foundation
 @MainActor final class AVAudioSession {
@@ -83,7 +86,7 @@ final class Core {
 @MainActor final class Player {
     static var audioSessionOwner: UUID?
     var audioSessionToken: UUID?
-    let audioTeardown = DispatchGroup()
+    ''' + group_declaration + r'''
     var deactivatesAudioSessionOnStop = false
     var core: Core?
     func activate() {
@@ -96,7 +99,7 @@ final class Core {
     }
     func settled() async {
         await withCheckedContinuation { continuation in
-            audioTeardown.notify(queue: .main) { continuation.resume() }
+            ''' + group_access + r'''.notify(queue: .main) { continuation.resume() }
         }
     }
 }
@@ -129,7 +132,26 @@ final class Core {
         precondition(session.deactivations == 1)
         successorCore.finish(); await successor.settled()
         precondition(session.deactivations == 2 && Player.audioSessionOwner == nil)
-        print("6 production audio teardown checks passed")
+        // Final stop in a replacement instance must wait for its predecessor too.
+        for olderFinishesFirst in [false, true] {
+            let before = session.deactivations
+            let older = Player(); older.activate(); let olderCore = older.core!
+            older.deactivatesAudioSessionOnStop = true; older.stop()
+            let newer = Player(); newer.activate(); let newerCore = newer.core!
+            newer.deactivatesAudioSessionOnStop = true; newer.stop()
+            (olderFinishesFirst ? olderCore : newerCore).finish()
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            if session.deactivations != before {
+                print("FAIL: replacement released the session before all player instances retired")
+                exit(1)
+            }
+            (olderFinishesFirst ? newerCore : olderCore).finish()
+            await newer.settled()
+            precondition(session.deactivations == before + 1 && Player.audioSessionOwner == nil)
+        }
+        print("10 production audio teardown checks passed")
     }
 }
 '''
