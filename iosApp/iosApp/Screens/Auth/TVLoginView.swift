@@ -20,7 +20,7 @@ struct TVLoginView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
             passwordContent
                 .padding(.horizontal, 108)
                 .padding(.top, 64)
@@ -28,7 +28,7 @@ struct TVLoginView: View {
         }
         .task { focusedField = .username }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.clear.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .bottom) {
             VividCopyrightFooter().padding(.bottom, 40)

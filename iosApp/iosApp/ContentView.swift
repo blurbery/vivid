@@ -522,12 +522,8 @@ struct ContentView: View {
         }
         .background {
             #if os(tvOS)
-            if showsStartupOverlay {
-                // Keep the same canvas under both fading layers during handoff.
-                TVAppBackdrop()
-            } else {
-                Color.black.ignoresSafeArea()
-            }
+            // Navigation and startup share one persistent canvas.
+            TVAppBackdrop()
             #else
             Color.black.ignoresSafeArea()
             #endif
@@ -615,7 +611,9 @@ struct ContentView: View {
         switch router.authState {
         case .loading:
             Group {
-                #if os(iOS) || os(tvOS)
+                #if os(tvOS)
+                Color.clear.ignoresSafeArea()
+                #elseif os(iOS)
                 Color.black.ignoresSafeArea()
                 #else
                 startupPresentation

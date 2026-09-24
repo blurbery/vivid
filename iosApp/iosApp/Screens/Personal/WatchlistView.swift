@@ -75,7 +75,7 @@ struct WatchlistView: View {
             }
         }
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Watchlist" : nil))
         .task(id: watchlistRevision) { await loadWatchlist() }
         .onDisappear { loadGeneration = UUID() }

@@ -39,7 +39,7 @@ Follow the [design ownership policy](../CONTRIBUTING.md#design-ownership). Refer
 
 - Keep the content, selected action and current focus easy to distinguish.
 - Use charcoal and black where appropriate, with readable foreground contrast. Vivid's approved silver logo works on light and dark backgrounds.
-- Apple TV main tabs and profile selection use the charcoal-to-black canvas within their own navigation roots. The tvOS logo loading screen and its handoff use that same canvas to avoid a black flash. Movie and series detail backgrounds remain separate.
+- Apple TV navigation uses a persistent charcoal-to-black canvas across main tabs, Search, browsing, Settings, sign-in and profile selection. The logo loading screen and its handoff use that same canvas to avoid a black flash. Movie and series details retain their separate cinematic background and black base; playback retains its black canvas.
 - Theme-aware documentation assets do not mean the entire app supports automatic light/dark appearance. Apple TV setup uses the silver Vivid mark and neutral controls; startup assembles its two vector pieces with the Glide animation.
 - Preserve aspect ratios, truncation rules and stable layout as artwork loads.
 - Reuse spacing, corner radius, typography and motion tokens from the implementation.

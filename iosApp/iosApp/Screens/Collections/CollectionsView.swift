@@ -34,7 +34,7 @@ struct CollectionsView: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .navigationTitle("Collections")
         .vividNavigationTitleDisplayMode(.large)
         .toolbar {
@@ -211,7 +211,7 @@ struct CollectionsView: View {
                 Spacer()
             }
             .padding(VividTheme.padding)
-            .background(Color.black.ignoresSafeArea())
+            .vividBackground()
             .navigationTitle("New Collection")
             .vividNavigationTitleDisplayMode(.inline)
             .toolbar {
@@ -240,7 +240,7 @@ private struct GroupActionSheet: View {
     var body: some View {
         NavigationStack {
             content
-                .background(Color.black.ignoresSafeArea())
+                .vividBackground()
                 .vividNavigationTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -485,7 +485,7 @@ struct LibraryCollectionsView: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .task(id: libraryId) {
             await viewModel.loadCollections(libraryId: libraryId)
         }
@@ -677,7 +677,7 @@ struct LibraryCollectionDetailView: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .navigationTitle(title ?? "Collection")
         .vividNavigationTitleDisplayMode(.large)
         .task(id: "\(libraryId)-\(collectionId)") {
@@ -868,7 +868,7 @@ struct MobileForYouCollections: View {
             }.padding(16)
         }
         .reportsPageChromeScroll()
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .task { await load() }
         .refreshable { await load() }
     }

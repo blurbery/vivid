@@ -175,7 +175,7 @@ struct FavoritesView: View {
             }
         }
         }
-        .background(Color.black.ignoresSafeArea())
+        .vividBackground()
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Favorites" : nil))
         .task {
             await loadFavorites()
