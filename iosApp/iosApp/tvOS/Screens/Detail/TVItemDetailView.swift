@@ -1154,19 +1154,36 @@ struct TVItemDetailView: View {
             async let watch = try? MetadataRequestPool.shared.watchDetail(contentId: nextUp.contentId)
             let item = try await MetadataRequestPool.shared.itemDetail(contentId: nextUp.contentId)
             guard !Task.isCancelled else { return }
-            let enriched = await enrichPlaybackMetadata(for: item, contentId: nextUp.contentId, prefetchedWatch: await watch)
+            // Publish catalog file/audio choices before waiting for playback
+            // enrichment. A slow watch request must not hold the selectors blank.
+            if usableCached == nil, item.versions?.isEmpty == false {
+                nextUpPlaybackDetail = item
+                didLoadNextUpPlaybackDetail = true
+                isLoadingNextUpPlaybackDetail = false
+            }
+            let watchDetail = await watch
+            guard !Task.isCancelled else { return }
+            // A failed speculative watch request is already a completed attempt;
+            // do not immediately repeat it through the enrichment fallback.
+            let enriched: ItemDetail?
+            if let watchDetail {
+                enriched = await enrichPlaybackMetadata(for: item, contentId: nextUp.contentId, prefetchedWatch: watchDetail)
+            } else {
+                enriched = nil
+            }
             guard !Task.isCancelled else { return }
             let resolved: ItemDetail?
             if let enriched, enriched.versions?.isEmpty == false {
                 ResponseCache.shared.set(enriched, for: CacheKey.itemDetail(nextUp.contentId))
                 resolved = enriched
-            } else if let usableCached {
-                resolved = usableCached
             } else {
-                resolved = enriched
+                resolved = nextUpPlaybackDetail ?? item
             }
             nextUpPlaybackDetail = resolved
-            if let resolved {
+            // The now-interactive controls may have been changed while watch
+            // metadata loaded. Do not replace an explicit choice or Auto reset.
+            if let resolved, preferredNextUpSubtitleTrackIndex == nil,
+               !didClearNextUpSubtitleOverride {
                 preferredNextUpSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
                     version: effectiveVersion(for: resolved, versionFileId: nil),
                     signature: resolved.effectiveSubtitleTrackSignature,
@@ -1177,9 +1194,6 @@ struct TVItemDetailView: View {
             didLoadNextUpPlaybackDetail = true
         } catch {
             guard !Task.isCancelled else { return }
-            if usableCached == nil {
-                nextUpPlaybackDetail = nil
-            }
             didLoadNextUpPlaybackDetail = true
         }
         isLoadingNextUpPlaybackDetail = false

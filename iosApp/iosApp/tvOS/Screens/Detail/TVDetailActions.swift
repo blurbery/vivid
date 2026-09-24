@@ -378,7 +378,6 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
     @Environment(\.resetFocus) private var resetFocus
     @State private var didResetInitialPlayFocus = false
     @State private var initialFocusSeasonKey: String?
-    @State private var initialPlayFocusTask: Task<Void, Never>?
     @FocusState private var focusedAction: ActionID?
     @FocusState private var playbackSelectorsFocused: Bool
 
@@ -404,6 +403,7 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
                         }
                     }
                     .disabled(playTitle == nil)
+                    .prefersDefaultFocus(playTitle != nil, in: focusNamespace)
                     .focused($focusedAction, equals: .play)
                     .onGeometryChange(for: Bool.self) { proxy in
                         proxy.size.width > 0 && proxy.size.height > 0
@@ -473,11 +473,9 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
                 focusedAction = nil
             }
         }
-        .task(id: focusResetKey) {
-            cancelInitialPlayFocusRetry()
+        .onChange(of: focusResetKey, initial: true) { _, _ in
             didResetInitialPlayFocus = false
             initialFocusSeasonKey = seasonKey
-            await Task.yield()
             guard playTitle != nil else { return }
             resetInitialPlayFocus()
         }
@@ -491,11 +489,7 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
                 initialFocusSeasonKey = seasonKey
             } else if initialFocusSeasonKey != seasonKey {
                 didResetInitialPlayFocus = true
-                cancelInitialPlayFocusRetry()
             }
-        }
-        .onDisappear {
-            cancelInitialPlayFocusRetry()
         }
     }
 
@@ -522,42 +516,13 @@ struct TVDetailActionRow<PlaybackSelectors: View, MoreMenu: View>: View {
         }
         didResetInitialPlayFocus = true
 
-        let actionFocus = $focusedAction
-        initialPlayFocusTask = Task { @MainActor in
-            for attempt in 0..<3 {
-                if Task.isCancelled { return }
-                if playFocused.wrappedValue { return }
-
-                if attempt > 0 {
-                    if let focusedNow = actionFocus.wrappedValue,
-                       focusedNow != .play {
-                        return
-                    }
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                    if Task.isCancelled { return }
-                    if playFocused.wrappedValue { return }
-                    if let focusedNow = actionFocus.wrappedValue,
-                       focusedNow != .play {
-                        return
-                    }
-                }
-                resetFocus(in: focusNamespace)
-                await Task.yield()
-                if attempt > 0,
-                   let focusedNow = actionFocus.wrappedValue,
-                   focusedNow != .play {
-                    return
-                }
-                actionFocus.wrappedValue = .play
-                playFocused.wrappedValue = true
-            }
-        }
+        guard !playFocused.wrappedValue else { return }
+        resetFocus(in: focusNamespace)
+        focusedAction = .play
+        playFocused.wrappedValue = true
     }
 
-    private func cancelInitialPlayFocusRetry() {
-        initialPlayFocusTask?.cancel()
-        initialPlayFocusTask = nil
-    }
+
 }
 
 // MARK: - Pill ButtonStyle

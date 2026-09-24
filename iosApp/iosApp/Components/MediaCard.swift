@@ -560,6 +560,10 @@ private struct FocusableMediaCard<Content: View>: View {
             }
         }
         .frame(width: cardWidth)
+        .background {
+            TVCardDetailPreload(contentId: self.itemId, focusedItemId: focusedItemId,
+                                standaloneFocused: standaloneFocused)
+        }
     }
 
     @ViewBuilder
@@ -650,6 +654,26 @@ private struct FocusableMediaCard<Content: View>: View {
                 Label("Remove from Continue Watching", systemImage: "xmark.circle")
             }
         }
+    }
+}
+
+/// Observe focus without invalidating the card artwork.
+struct TVCardDetailPreload: View {
+    let contentId: String?
+    let focusedItemId: FocusState<String?>.Binding?
+    let standaloneFocused: FocusState<Bool>.Binding?
+    var focusId: String? = nil
+    @Environment(\.tvHomeStableRows) private var managedHomeRow
+    private var active: Bool {
+        guard let contentId else { return false }
+        return focusedItemId?.wrappedValue == (focusId ?? contentId) || standaloneFocused?.wrappedValue == true
+    }
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0)
+            .task(id: active) {
+                guard active, !managedHomeRow, let contentId else { return }
+                await ItemDetailCache.shared.prepareFocusedDetail(contentId: contentId)
+            }
     }
 }
 

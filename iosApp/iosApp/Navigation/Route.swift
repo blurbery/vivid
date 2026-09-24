@@ -91,6 +91,7 @@ enum Route: Hashable {
 /// authoritative item response arrives. The seed is deliberately display-only:
 /// playback, personal state, selectors, and actions still wait for `ItemDetail`.
 struct TVItemDetailRouteSeed: Hashable {
+    let overlaySummary: OverlaySummary?
     let mediaType: String
     let title: String
     let year: Int?
@@ -105,6 +106,7 @@ struct TVItemDetailRouteSeed: Hashable {
     let backdropThumbhash: String?
 
     init(_ item: SectionItem) {
+        overlaySummary = item.overlaySummary
         mediaType = item.type
         title = item.title
         year = item.year
@@ -120,6 +122,7 @@ struct TVItemDetailRouteSeed: Hashable {
     }
 
     init(_ item: BrowseItem) {
+        overlaySummary = item.overlaySummary
         mediaType = item.type
         title = item.title
         year = item.year
@@ -137,6 +140,7 @@ struct TVItemDetailRouteSeed: Hashable {
     /// Continue Watching episodes open their parent Series. Keep the immediate
     /// title/logo, but do not promote episode metadata into the Series frame.
     private init(parentSeriesFrom episode: SectionItem) {
+        overlaySummary = episode.overlaySummary
         let seriesTitle = episode.seriesTitle?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         mediaType = "series"

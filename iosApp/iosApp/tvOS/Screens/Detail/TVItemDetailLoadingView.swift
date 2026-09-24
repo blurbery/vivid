@@ -80,20 +80,35 @@ struct TVItemDetailLoadingView: View {
                                     topInset: CGFloat = TVDetailLayout.heroTopInset) -> some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.disclosureSpacing) {
             ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 14) {
-                    loadingTitle
-                        .frame(width: 650, height: 160, alignment: .bottomLeading)
-                    loadingMetadata
-                        .frame(height: 36, alignment: .leading)
-                    loadingSynopsis
-                        .frame(width: TVDetailLayout.heroContentWidth, height: 112, alignment: .topLeading)
-                        .clipped()
+                if usesNativePage {
+                    TVDetailEditorialLayout {
+                        loadingTitle
+                    } metadata: {
+                        TVDetailHeading(tokens: [seed?.mediaType.lowercased() == "movie" ? "Movie" : "Series"], genres: [seed?.genre].compactMap { $0 }, rating: seed?.contentRating)
+                    } synopsis: {
+                        loadingSynopsis
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 14) {
+                        loadingTitle
+                            .frame(width: 650, height: 160, alignment: .bottomLeading)
+                        loadingMetadata
+                            .frame(height: 36, alignment: .leading)
+                        loadingSynopsis
+                            .frame(width: TVDetailLayout.heroContentWidth, height: 112, alignment: .topLeading)
+                            .clipped()
+                    }
                 }
                 VStack(alignment: .leading, spacing: TVDetailLayout.disclosureSpacing) {
                     placeholder(width: 390, height: 18, cornerRadius: 5)
                         .frame(height: 28, alignment: .leading)
-                    loadingPlaybackSummary
-                        .frame(height: 40, alignment: .topLeading)
+                    Group {
+                        if usesNativePage {
+                            TVDetailTechnicalRow(facts: TVHeroMetadata.releaseFacts(year: seed?.year, runtime: seed?.runtime), version: nil, summary: seed?.overlaySummary)
+                        }
+                        else { loadingPlaybackSummary }
+                    }
+                    .frame(height: 40, alignment: .topLeading)
                 }
                 .frame(height: TVDetailLayout.editorialHeight, alignment: .bottomLeading)
             }
@@ -163,13 +178,19 @@ struct TVItemDetailLoadingView: View {
     }
 
     private var loadingPlaybackSummary: some View {
-        TVPlaybackSelectionSummaryView(summary: .init(version: nil, audio: nil, subtitles: nil))
+        TVPlaybackSelectionSummaryView(summary: .make(
+            currentVersion: nil,
+            selectedVersionFileId: nil,
+            selectedAudioTrackIndex: nil,
+            selectedSubtitleTrackIndex: nil,
+            subtitleMode: nil
+        ))
     }
 
     private var loadingActions: some View {
         HStack(spacing: 18) {
             placeholder(width: 280, height: 76, cornerRadius: 38)
-            ForEach(0..<5, id: \.self) { _ in
+            ForEach(0..<(usesNativePage ? 4 : 5), id: \.self) { _ in
                 placeholder(width: 76, height: 76, cornerRadius: 38)
             }
         }

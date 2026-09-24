@@ -539,7 +539,16 @@ class ItemDetailViewModel {
             // published into the first body evaluation.
             PosterImageCache.prefetchVisibleMovieCast(for: cached)
             #endif
+            #if os(tvOS)
+            if let watch: WatchDetail = ResponseCache.shared.get(CacheKey.itemWatchDetail(contentId)),
+               supportsPlaybackMetadata(cached) {
+                detail = applyingPlaybackMetadata(watch, to: cached)
+            } else {
+                detail = cached
+            }
+            #else
             detail = cached
+            #endif
             isWatched = cached.userData?.played ?? false
 
             if cached.type == "series" {

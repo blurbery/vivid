@@ -60,6 +60,7 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
     @ViewBuilder let belowSynopsis: () -> BelowSynopsis
 
     @Namespace private var detailFocusNamespace
+    @State private var didEstablishPlayFocus = false
     @FocusState private var playFocused: Bool
     /// True while focus sits anywhere in the hero's primary action row —
     /// drives the scroll back to the page-entry (hero at top) framing.
@@ -85,6 +86,9 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
             }
             .focusScope(detailFocusNamespace)
             .defaultFocus($playFocused, true, priority: .userInitiated)
+        .onChange(of: playFocused) { _, focused in
+            if focused { didEstablishPlayFocus = true }
+        }
             .onPlayPauseCommand { onPlay(false) }
         } else {
             legacyBody
@@ -114,8 +118,15 @@ TVDetailHero(
                                     : detail.effectiveSubtitleMode,
                                 subtitleContext: Self.subtitleContext(for: detail)
                             ),
+                            usesCompactMetadata: true,
+            allowsSynopsisFocus: didEstablishPlayFocus,
+                            qualityVersion: currentVersion,
+                            qualitySummary: selectedVersionFileId == nil ? detail.overlaySummary : nil,
+                            metadataHeading: ["Movie"],
+                            releaseFacts: TVHeroMetadata.releaseFacts(year: detail.year, runtime: detail.runtime),
                             heroHeight: height,
                             heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),
+                            synopsisReservedHeight: 112,
                             usesFixedPageArtwork: true,
                             extendsBackdropFadeBelowHero: true,
                             actions: { actionColumn },

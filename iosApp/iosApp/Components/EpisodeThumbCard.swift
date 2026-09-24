@@ -36,6 +36,8 @@ struct EpisodeThumbCard: View {
     var initialIsFavorite = false
     var onSetFavorite: ((Bool) async -> Bool)? = nil
 
+    var usesRuntimeStatus = false
+
     @State private var playedOverride: Bool?
     @State private var favoriteOverride: Bool?
     @State private var uiCustomization = UICustomizationPreferences.shared
@@ -259,13 +261,18 @@ struct EpisodeThumbCard: View {
 
             // Progress bar (resume)
             #if !os(tvOS)
-            if showProgress, let p = progressValue, p > 0 {
+            if !usesRuntimeStatus, showProgress, let p = progressValue, p > 0 {
                 ResumeProgressBar(value: p, duration: item.durationSeconds)
             }
             #endif
 
+            if usesRuntimeStatus {
+                MediaRuntimeStatusOverlay(isPlayed: isPlayed, duration: item.durationSeconds,
+                                          progress: showProgress ? progressValue : nil, runtimeMinutes: item.runtime)
+            }
+
             // Watched check
-            if isPlayed {
+            if isPlayed && !usesRuntimeStatus {
                 HStack {
                     Spacer()
                     #if os(tvOS)
@@ -374,6 +381,10 @@ struct EpisodeThumbCard: View {
         if isPlayed {
             components.append("Watched")
         }
+        if usesRuntimeStatus,
+           let runtime = MediaRuntimeStatusOverlay.displayedRuntime(minutes: item.runtime, duration: item.durationSeconds) {
+            components.append("\(runtime) minute\(runtime == 1 ? "" : "s")")
+        }
         return components.joined(separator: ", ")
     }
 
@@ -437,7 +448,7 @@ struct EpisodeThumbCard: View {
     private var thumbnailButton: some View {
         let button = Button(action: action) {
             thumbnail.overlay(alignment: .bottom) {
-                if showProgress, let progress = progressValue, progress > 0 {
+                if !usesRuntimeStatus, showProgress, let progress = progressValue, progress > 0 {
                     tvResumeProgress(value: progress)
                 }
             }

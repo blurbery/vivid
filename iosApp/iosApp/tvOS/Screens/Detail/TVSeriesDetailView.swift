@@ -48,6 +48,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
 
 
     @Namespace private var detailFocusNamespace
+    @State private var didEstablishPlayFocus = false
     @FocusState private var playFocused: Bool
     @FocusState private var showActionRowFocused: Bool
     @State private var isShowingSeriesOverview = true
@@ -76,6 +77,14 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         }
         .focusScope(detailFocusNamespace)
         .defaultFocus($playFocused, true, priority: .userInitiated)
+        .onChange(of: playFocused) { _, focused in
+            if focused { didEstablishPlayFocus = true }
+        }
+        .onChange(of: showActionRowFocused) { _, focused in
+            // An empty series has no Play target. Unlock the synopsis after
+            // another action receives focus, without exposing it during entry.
+            if focused && playbackEpisode == nil { didEstablishPlayFocus = true }
+        }
         .onAppear { isShowingSeriesOverview = activeEpisodeContentId == nil }
     }
 
@@ -108,6 +117,15 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     : matchingPlaybackDetail?.effectiveSubtitleMode,
                 subtitleContext: matchingPlaybackDetail.map(Self.subtitleContext(for:))
             ),
+            usesCompactMetadata: true,
+            allowsSynopsisFocus: didEstablishPlayFocus,
+            qualityVersion: effectiveNextUpVersion,
+            qualitySummary: selectedNextUpFileId == nil ? (matchingPlaybackDetail?.overlaySummary ?? detail.overlaySummary) : nil,
+            metadataHeading: ["Series"] + heroFactsLine.compactMap { token in
+                guard case .text(let value) = token, value != detail.year.map(String.init) else { return nil }
+                return value
+            },
+            releaseFacts: TVHeroMetadata.releaseFacts(year: detail.year, runtime: playbackEpisode?.runtime ?? detail.runtime),
             backdropHeight: TVDetailLayout.heroHeight,
             heroHeight: height,
             heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),
@@ -137,7 +155,21 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     }
 
     private var heroFactsLine: [TVHeroFactToken] {
-        TVHeroMetadata.seriesFactsLine(from: detail)
+        let regularSeasons = seasons.filter { $0.seasonNumber > 0 }
+        let seasonCount = regularSeasons.isEmpty ? detail.seasonCount : regularSeasons.count
+        guard seasonCount == 1 else { return TVHeroMetadata.seriesFactsLine(from: detail) }
+        var facts: [TVHeroFactToken] = []
+        if let year = detail.year, year > 0 { facts.append(.text(String(year))) }
+        let seasonNumber = regularSeasons.first?.seasonNumber ?? 1
+        let loaded = episodesBySeason[seasonNumber]
+            ?? (selectedSeason?.seasonNumber == seasonNumber && !isLoadingEpisodes ? episodes : nil)
+        if let loaded {
+            let count = TVHeroMetadata.releasedEpisodeCount(loaded)
+            facts.append(.text("\(count) Episode\(count == 1 ? "" : "s")"))
+        } else {
+            facts.append(.text("Episodes"))
+        }
+        return facts
     }
 
     private var showActionRow: some View {
@@ -253,15 +285,18 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     }
 
     private var matchingPlaybackDetail: ItemDetail? {
-        guard let playbackEpisode,
-              nextUpPlaybackDetail?.contentId == playbackEpisode.contentId else {
-            return nil
+        guard let playbackEpisode else { return nil }
+        if nextUpPlaybackDetail?.contentId == playbackEpisode.contentId {
+            return nextUpPlaybackDetail
         }
-        return nextUpPlaybackDetail
+        return ResponseCache.shared.get(CacheKey.itemDetail(playbackEpisode.contentId))
     }
 
     private var nextUpVersions: [FileVersion] {
-        matchingPlaybackDetail?.versions ?? []
+        if let versions = matchingPlaybackDetail?.versions, !versions.isEmpty { return versions }
+        guard let playbackEpisode else { return [] }
+        let cachedWatch: WatchDetail? = ResponseCache.shared.get(CacheKey.itemWatchDetail(playbackEpisode.contentId))
+        return cachedWatch?.versions ?? []
     }
 
     private var effectiveNextUpVersion: FileVersion? {

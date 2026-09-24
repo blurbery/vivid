@@ -66,6 +66,14 @@ struct TVMediaCard: View {
             }
         }
         .frame(width: resolvedCardWidth)
+        .background {
+            TVCardDetailPreload(
+                contentId: contentId ?? focusContentId,
+                focusedItemId: focusContentId == nil ? nil : focusBinding,
+                standaloneFocused: $isFocused,
+                focusId: focusContentId
+            )
+        }
         .onChange(of: userState) { _, _ in
             favoriteOverride = nil
             watchlistOverride = nil
