@@ -58,3 +58,87 @@ with tempfile.TemporaryDirectory(prefix='vivid-mpv-tracks-') as temp:
     binary = folder / 'checks'
     subprocess.run(['xcrun', 'swiftc', '-module-cache-path', str(folder / 'module-cache'), str(path), '-o', str(binary)], check=True, timeout=60)
     subprocess.run([str(binary)], check=True, timeout=10)
+
+# Run the production teardown/ownership block with deferred native-core doubles.
+start = source.index('        core?.delegate = nil\n', source.index('    func stop('))
+end = source.index('        core = nil; delegateProxy', start)
+teardown = source[start:end]
+swift = r'''
+import Foundation
+@MainActor final class AVAudioSession {
+    static let instance = AVAudioSession()
+    static func sharedInstance() -> AVAudioSession { instance }
+    enum Options { case notifyOthersOnDeactivation }
+    var deactivations = 0
+    func setActive(_ active: Bool, options: Options) throws { if !active { deactivations += 1 } }
+}
+final class Core {
+    var delegate: Int?
+    var completion: (@Sendable () -> Void)?
+    func dispose(preserveDisplayCriteria: Bool, completion: @escaping @Sendable () -> Void) {
+        self.completion = completion
+    }
+    func finish() { completion?(); completion = nil }
+}
+@MainActor final class Player {
+    static var audioSessionOwner: UUID?
+    var audioSessionToken: UUID?
+    let audioTeardown = DispatchGroup()
+    var deactivatesAudioSessionOnStop = false
+    var core: Core?
+    func activate() {
+        let token = UUID(); audioSessionToken = token; Self.audioSessionOwner = token
+        core = Core()
+    }
+    func stop(resetDisplayCriteria: Bool = true) {
+''' + teardown + r'''
+        core = nil
+    }
+    func settled() async {
+        await withCheckedContinuation { continuation in
+            audioTeardown.notify(queue: .main) { continuation.resume() }
+        }
+    }
+}
+@main struct Checks {
+    @MainActor static func main() async {
+        let session = AVAudioSession.sharedInstance()
+        let player = Player()
+        player.activate(); let first = player.core!
+        player.stop() // replacement does not release the session
+        player.activate(); let second = player.core!
+        player.deactivatesAudioSessionOnStop = true
+        player.stop(); player.stop() // repeated stop must not release early
+        precondition(session.deactivations == 0)
+        second.finish()
+        precondition(session.deactivations == 0) // first still tearing down
+        first.finish(); await player.settled()
+        precondition(session.deactivations == 1 && Player.audioSessionOwner == nil)
+
+        player.activate(); let retired = player.core!
+        player.stop()
+        let successor = Player(); successor.activate()
+        let owner = Player.audioSessionOwner
+        retired.finish(); await player.settled()
+        precondition(session.deactivations == 1 && Player.audioSessionOwner == owner)
+
+        let successorCore = successor.core!
+        successor.stop() // final stop while only a previous replacement is pending
+        successor.deactivatesAudioSessionOnStop = true
+        successor.stop()
+        precondition(session.deactivations == 1)
+        successorCore.finish(); await successor.settled()
+        precondition(session.deactivations == 2 && Player.audioSessionOwner == nil)
+        print("6 production audio teardown checks passed")
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix='vivid-audio-teardown-') as temp:
+    folder = Path(temp)
+    path = folder / 'main.swift'
+    path.write_text(swift)
+    binary = folder / 'checks'
+    subprocess.run(['xcrun', 'swiftc', '-parse-as-library', '-module-cache-path',
+                    str(folder / 'module-cache'), str(path), '-o', str(binary)],
+                   check=True, timeout=60)
+    subprocess.run([str(binary)], check=True, timeout=10)

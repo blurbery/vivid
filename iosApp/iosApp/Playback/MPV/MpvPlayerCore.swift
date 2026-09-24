@@ -815,7 +815,7 @@ class MpvPlayerCore: MpvPlayerCoreBase {
     }
   #endif
 
-  func dispose(preserveDisplayCriteria: Bool = false) {
+  func dispose(preserveDisplayCriteria: Bool = false, completion: (@Sendable () -> Void)? = nil) {
     guard beginDisposal() else { return }
 
     #if os(tvOS)
@@ -841,7 +841,7 @@ class MpvPlayerCore: MpvPlayerCoreBase {
     #if os(iOS)
       ExternalDisplayManager.shared.detach(core: self)
     #endif
-    disposeSharedState(destroySynchronously: false)
+    disposeSharedState(destroySynchronously: false, completion: completion)
 
     videoLayer?.removeFromSuperlayer()
     videoLayer = nil

@@ -758,7 +758,7 @@ class MpvPlayerCoreBase: NSObject {
     return CGSize(width: cachedWidth, height: cachedHeight)
   }
 
-  func disposeSharedState(destroySynchronously: Bool) {
+  func disposeSharedState(destroySynchronously: Bool, completion: (@Sendable () -> Void)? = nil) {
     cancelPendingRequests()
 
     cacheLock.lock()
@@ -795,6 +795,7 @@ class MpvPlayerCoreBase: NSObject {
       if let callbackContext {
         Unmanaged<MpvWakeupCallbackContext>.fromOpaque(callbackContext).release()
       }
+      completion?()
     }
 
     if destroySynchronously {

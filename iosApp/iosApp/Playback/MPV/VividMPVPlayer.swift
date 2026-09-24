@@ -98,6 +98,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             core?.updateFrame()
         }
     }
+    private static var audioSessionOwner: UUID?
+    private var audioSessionToken: UUID?
+    private let audioTeardown = DispatchGroup()
     var deactivatesAudioSessionOnStop = false
     var ownsVideoNowPlayingSession = false
     var videoNowPlayingSession: MPNowPlayingSession? { nil }
@@ -159,6 +162,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
         }
         try session.setActive(true)
+        let sessionToken = UUID()
+        audioSessionToken = sessionToken
+        Self.audioSessionOwner = sessionToken
         trace?.mark("mpv_audio_session_ready")
         let instance = VividMPVCore()
         #if os(iOS)
@@ -696,7 +702,24 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         cancelEndConfirmation()
         rateTask?.cancel(); rateTask = nil
         softwarePiPSource = nil
-        core?.delegate = nil; core?.dispose(preserveDisplayCriteria: !resetDisplayCriteria)
+        core?.delegate = nil
+        if let core {
+            let teardown = audioTeardown
+            teardown.enter()
+            core.dispose(preserveDisplayCriteria: !resetDisplayCriteria) { teardown.leave() }
+        }
+        if deactivatesAudioSessionOnStop, let sessionToRelease = audioSessionToken {
+            audioSessionToken = nil
+            // Also wait for earlier replacement cores still finishing teardown.
+            audioTeardown.notify(queue: .main) {
+                MainActor.assumeIsolated {
+                    // Never release a newer load's session, including another player.
+                    guard Self.audioSessionOwner == sessionToRelease else { return }
+                    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                    Self.audioSessionOwner = nil
+                }
+            }
+        }
         core = nil; delegateProxy = nil; surface.core = nil; source = nil
         trace?.event("mpv_stopped"); trace = nil
         state = .idle; playbackPhase = .idle; videoRoute = .none
@@ -715,7 +738,6 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         outputChannels = nil; outputAudioFormat = nil; videoDecoder = nil; audioDecoder = nil
         diagnostics.liveTelemetry = nil
         cacheSnapshot = [:]
-        if deactivatesAudioSessionOnStop { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
     private func fail(_ error: PlaybackErrorInfo) {
         cancelEndConfirmation()
