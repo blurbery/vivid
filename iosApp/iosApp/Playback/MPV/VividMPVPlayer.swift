@@ -438,9 +438,6 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         if message.hasPrefix("notification name: ") && message.contains("AVSampleBufferAudioRendererOutputConfigurationDidChange") {
             return "event=audio_output_configuration_changed"
         }
-        if message == "audio session managed by application" {
-            return "event=audio_session_owned_by_app"
-        }
         if message == "pcm fresh sink after reset" {
             return "event=pcm_fresh_sink_after_reset"
         }

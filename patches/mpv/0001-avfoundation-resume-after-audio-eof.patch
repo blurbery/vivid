@@ -477,7 +477,7 @@
  static int init(struct ao *ao)
  {
      struct priv *p = ao->priv;
-@@ -1063,15 +1288,19 @@
+@@ -1063,15 +1288,17 @@
 
  #if TARGET_OS_IPHONE
      AVAudioSession *instance = AVAudioSession.sharedInstance;
@@ -486,8 +486,6 @@
 +    if (p->opt_manage_audio_session) {
 +        [instance setCategory:AVAudioSessionCategoryPlayback error:nil];
 +        [instance setMode:AVAudioSessionModeMoviePlayback error:nil];
-+    } else {
-+        MP_VERBOSE(ao, "audio session managed by application\n");
 +    }
  #if HAVE_MACOS_12_FEATURES
      if (@available(tvOS 15.0, iOS 15.0, *)) {
@@ -500,7 +498,7 @@
      NSInteger maxChannels = instance.maximumOutputNumberOfChannels;
      if (spdif) {
          AVAudioSessionPortDescription *port = instance.currentRoute.outputs.firstObject;
-@@ -1179,7 +1408,7 @@
+@@ -1179,7 +1406,7 @@
          goto error;
      }
 
@@ -509,7 +507,7 @@
      // --audio-buffer is documented as a minimum the device may exceed, so it
      // cannot double as this maximum; it only keeps the bound from dropping
      // under what the core was told to expect.
-@@ -1190,10 +1419,14 @@
+@@ -1190,10 +1417,14 @@
                                                 p->queue);
          if (p->feed_timer) {
              dispatch_source_set_event_handler(p->feed_timer, ^{
@@ -524,7 +522,7 @@
              });
              dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
                                        DISPATCH_TIME_FOREVER, 0);
-@@ -1272,7 +1505,7 @@
+@@ -1272,7 +1503,7 @@
          dispatch_release(p->avp_timer);
          p->avp_timer = NULL;
      }
@@ -533,7 +531,7 @@
      if (p->feed_timer) {
          dispatch_source_cancel(p->feed_timer);
          dispatch_release(p->feed_timer);
-@@ -1290,10 +1523,7 @@
+@@ -1290,10 +1521,7 @@
      if (p->format_description) CFRelease(p->format_description);
 
  #if TARGET_OS_IPHONE
@@ -545,7 +543,7 @@
  #endif
 
      return CONTROL_ERROR;
-@@ -1322,7 +1552,7 @@
+@@ -1322,7 +1550,7 @@
          // as this returns. Cancelling on p->queue means no handler is
          // mid-flight and none can start afterwards. stop() above already
          // left the timer idle.
@@ -554,7 +552,7 @@
          if (p->feed_timer) {
              dispatch_sync(p->queue, ^{
                  dispatch_source_cancel(p->feed_timer);
-@@ -1341,10 +1571,7 @@
+@@ -1341,10 +1569,7 @@
      }
 
  #if TARGET_OS_IPHONE
@@ -566,7 +564,7 @@
  #endif
  }
 
-@@ -1363,6 +1590,7 @@
+@@ -1363,6 +1588,7 @@
      .priv_size      = sizeof(struct priv),
      .priv_defaults  = &(const struct priv){
          .opt_accept_compressed = true,
@@ -574,7 +572,7 @@
          .opt_compressed_lead = 8,
          // Well inside the renderer's own depth, so the queue still absorbs
          // scheduling jitter, while cutting the delay before a volume change
-@@ -1372,10 +1600,11 @@
+@@ -1372,10 +1598,11 @@
  #endif
      },
      .options = (const struct m_option[]) {

@@ -33,8 +33,9 @@ struct TVExpandableSynopsis: View {
     }
 }
 
-private struct TVFullSynopsis: View {
+struct TVFullSynopsis: View {
     let overview: String
+    var title = "Description"
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedBlock: Int?
     @State private var contentHeight: CGFloat = 40
@@ -59,7 +60,7 @@ private struct TVFullSynopsis: View {
         ZStack {
             Color.black.opacity(0.15).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 24) {
-                Text("Description")
+                Text(title)
                     .font(.system(size: 38, weight: .bold))
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -99,7 +100,7 @@ private struct TVFullSynopsis: View {
 }
 
 /// Keep the text on the editorial baseline and indicate focus with a ring only.
-private struct TVSynopsisButtonStyle: ButtonStyle {
+struct TVSynopsisButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         TVSynopsisButtonStyleBody(configuration: configuration)
     }

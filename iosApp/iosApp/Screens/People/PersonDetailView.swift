@@ -407,6 +407,7 @@ struct PersonDetailView: View {
 private struct TVPersonDetailContent: View {
     let person: Person
     var viewModel: PersonDetailViewModel
+    @State private var showsFullBiography = false
 
     @Environment(AppRouter.self) private var router
 
@@ -471,12 +472,21 @@ private struct TVPersonDetailContent: View {
                 metadataRow
 
                 if let bio = clean(person.bio) {
-                    Text(bio)
-                        .font(.vividBody)
-                        .foregroundColor(.vividSecondaryText)
-                        .lineLimit(7)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 920, alignment: .leading)
+                    Button { showsFullBiography = true } label: {
+                        Text(bio)
+                            .font(.vividBody)
+                            .foregroundColor(.vividSecondaryText)
+                            .lineLimit(7)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 920, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(TVSynopsisButtonStyle())
+                    .accessibilityHint("Opens the full biography")
+                    .fullScreenCover(isPresented: $showsFullBiography) {
+                        TVFullSynopsis(overview: bio, title: "Biography")
+                            .presentationBackground(.clear)
+                    }
                 }
             }
             .padding(.top, 10)
