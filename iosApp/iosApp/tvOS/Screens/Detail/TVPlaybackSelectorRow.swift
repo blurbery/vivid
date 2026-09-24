@@ -218,11 +218,13 @@ struct TVPlaybackSelectionSummary: Equatable {
         subtitleMode: String?,
         subtitleContext: OpenSubtitlePlaybackContext? = nil
     ) -> TVPlaybackSelectionSummary {
+        let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
+            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
         guard let currentVersion else {
             return TVPlaybackSelectionSummary(
                 version: nil,
                 audio: nil,
-                subtitles: nil
+                subtitles: fallback
             )
         }
 
@@ -242,14 +244,16 @@ struct TVPlaybackSelectionSummary: Equatable {
         let codec = DetailPlaybackFormatting.normalizedVideoCodec(currentVersion.codecVideo)
         let versionParts = [quality, range ?? codec].compactMap { $0 }
         let version = versionParts.isEmpty ? "Auto" : versionParts.joined(separator: " · ")
+        // Describe the source file, not the audio preference or device's
+        // playback output. Track selection and compatibility remain automatic.
+        let sourceAudioIndex = currentVersion.audioTracks?.firstIndex { $0.isDefault == true }
+            ?? currentVersion.audioTracks?.indices.first
         let audio = DetailPlaybackFormatting.audioTechnicalSummary(
-            version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex
+            version: currentVersion, selectedAudioTrackIndex: sourceAudioIndex
         ) ?? "Auto"
 
         var context = subtitleContext
         context?.fileID = currentVersion.fileId
-        let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
-            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
         let subtitle = LucidSubtitleInventory.shared.selectionLabel(context: context, fallback: fallback)
 
         return TVPlaybackSelectionSummary(

@@ -55,6 +55,64 @@ final class ItemDetailCache {
         return vm
     }
 
+    /// Warm only the card the viewer pauses on, before opening its detail.
+    /// All requests coalesce with navigation and stop when focus leaves.
+    func prepareFocusedDetail(contentId: String) async {
+        let server = ServerRegistry.shared.activeServerId
+        let profile = ServerRegistry.shared.activeProfileId
+        func isCurrent() -> Bool {
+            !Task.isCancelled && server == ServerRegistry.shared.activeServerId
+                && profile == ServerRegistry.shared.activeProfileId
+        }
+        do {
+            try await Task.sleep(for: .milliseconds(180))
+            guard isCurrent() else { return }
+            let cached: ItemDetail? = ResponseCache.shared.get(CacheKey.itemDetail(contentId))
+            let item: ItemDetail
+            if let cached { item = cached }
+            else { item = try await MetadataRequestPool.shared.itemDetail(contentId: contentId) }
+            guard isCurrent() else { return }
+            ResponseCache.shared.set(item, for: CacheKey.itemDetail(contentId))
+            var playbackID = item.contentId
+            if item.type == "series" {
+                let cachedSeasons: SeasonsResponse? = ResponseCache.shared.get(CacheKey.itemSeasons(contentId))
+                let seasons: SeasonsResponse
+                if let cachedSeasons { seasons = cachedSeasons }
+                else { seasons = try await MetadataRequestPool.shared.seasons(seriesId: contentId) }
+                guard isCurrent() else { return }
+                ResponseCache.shared.set(seasons, for: CacheKey.itemSeasons(contentId))
+                let model = viewModel(for: contentId)
+                guard let season = model.preferredInitialSeason(seasons: seasons.seasons.sortedForDisplay()) else { return }
+                let key = CacheKey.itemEpisodes(seriesId: contentId, seasonNumber: season.seasonNumber)
+                let cachedEpisodes: EpisodesResponse? = ResponseCache.shared.get(key)
+                let episodes: EpisodesResponse
+                if let cachedEpisodes { episodes = cachedEpisodes }
+                else { episodes = try await MetadataRequestPool.shared.episodes(seriesId: contentId, seasonNumber: season.seasonNumber) }
+                guard isCurrent() else { return }
+                ResponseCache.shared.set(episodes, for: key)
+                let sorted = episodes.episodes.sorted { $0.episodeNumber < $1.episodeNumber }
+                guard let episode = sorted.first(where: { $0.userData?.isInProgress == true })
+                    ?? sorted.first(where: { $0.userData?.played != true }) ?? sorted.first else { return }
+                playbackID = episode.contentId
+            } else if item.type == "episode", let seriesID = item.seriesId {
+                // Continue Watching opens the parent Series overview.
+                let cachedSeries: ItemDetail? = ResponseCache.shared.get(CacheKey.itemDetail(seriesID))
+                if cachedSeries == nil {
+                    let series = try await MetadataRequestPool.shared.itemDetail(contentId: seriesID)
+                    guard isCurrent() else { return }
+                    ResponseCache.shared.set(series, for: CacheKey.itemDetail(seriesID))
+                }
+            }
+            guard item.type == "movie" || item.type == "series" || item.type == "episode" else { return }
+            let cachedWatch: WatchDetail? = ResponseCache.shared.get(CacheKey.itemWatchDetail(playbackID))
+            if cachedWatch == nil {
+                let watch = try await MetadataRequestPool.shared.watchDetail(contentId: playbackID)
+                guard isCurrent() else { return }
+                ResponseCache.shared.set(watch, for: CacheKey.itemWatchDetail(playbackID))
+            }
+        } catch { /* Navigation retains its normal retry/error path. */ }
+    }
+
     /// Invalidate the cached entry and any parent series/season entries
     /// derived from its `ItemDetail`. Meant for mutations that change
     /// userData the parent page reads back (mark-watched, playback

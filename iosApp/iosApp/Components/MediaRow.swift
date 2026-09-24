@@ -30,6 +30,7 @@ struct MediaRow: View {
     var onItemPlay: ((SectionItem) -> Void)? = nil
     var onSeeAll: (() -> Void)? = nil
     var showProgress: Bool = false
+    var usesRuntimeStatus = false
     var icon: String? = nil
     var layout: MediaRowLayout = .poster
     /// Preserve a caller's immediate thumbnail action instead of presenting
@@ -611,7 +612,8 @@ struct MediaRow: View {
                 onRemoveFromContinueWatching: continueWatchingRemovalAction(for: item),
                 onSetWatched: watchedToggleAction(for: item),
                 initialIsFavorite: item.userState?.isFavorite == true,
-                onSetFavorite: favoriteToggleAction(for: item)
+                onSetFavorite: favoriteToggleAction(for: item),
+                usesRuntimeStatus: usesRuntimeStatus && item.type.lowercased() == "episode"
             )
         }
     }

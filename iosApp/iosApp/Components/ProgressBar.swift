@@ -37,6 +37,50 @@ struct ResumeProgressBar: View {
 
 }
 
+/// Home uses the same watched/runtime capsule and adjacent progress as episode details.
+struct MediaRuntimeStatusOverlay: View {
+    let isPlayed: Bool
+    let duration: Double?
+    var progress: Double? = nil
+
+    var runtimeMinutes: Int? = nil
+
+    private var runtime: Int? {
+        if let runtimeMinutes, runtimeMinutes > 0 { return runtimeMinutes }
+        guard let duration, duration.isFinite, duration > 0,
+              duration / 60 < Double(Int.max) else { return nil }
+        return max(1, Int(duration / 60))
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if isPlayed || runtime != nil {
+                HStack(spacing: 4) {
+                    if isPlayed { Image(systemName: "checkmark.circle.fill") }
+                    if let runtime { Text("\(runtime)m") }
+                }
+                #if os(tvOS)
+                .font(.system(size: 18))
+                #else
+                .font(.system(size: 12))
+                #endif
+                .foregroundStyle(.white)
+                .fixedSize()
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.black.opacity(0.45), in: Capsule())
+            }
+            if let progress, progress > 0 {
+                ResumeProgressBar(value: progress, duration: duration, inset: 0)
+            } else {
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(12)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 /// A thin progress bar (0-1) for showing watch progress.
 /// Uses white fill on translucent track (no accent colour).
 struct ProgressBar: View {

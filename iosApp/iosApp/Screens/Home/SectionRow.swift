@@ -142,6 +142,7 @@ struct SectionRow: View {
             onItemPlay: playItem,
             onSeeAll: onSeeAll,
             showProgress: showProgress,
+            usesRuntimeStatus: true,
             icon: showsHeadingIcon && isContinueWatching ? "play.circle.fill" : nil,
             layout: layout,
             showsEpisodeDetails: MediaServerProvider.active.usesNativeUser

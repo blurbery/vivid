@@ -122,6 +122,12 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
     /// A compact editorial header can retain the standard Movie backdrop
     /// geometry independently of its own layout height. Nil keeps both heights
     /// coupled, which is the default behavior for every other detail page.
+    var usesCompactMetadata = false
+    var allowsSynopsisFocus = true
+    var qualityVersion: FileVersion? = nil
+    var qualitySummary: OverlaySummary? = nil
+    var metadataHeading: [String] = []
+    var releaseFacts: [String] = []
     var backdropHeight: CGFloat? = nil
     var heroHeight: CGFloat = TVDetailLayout.heroHeight
     var heroTopInset: CGFloat = TVDetailLayout.heroTopInset
@@ -248,7 +254,7 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
 
                 // The episode credit and playback readout are one bottom-locked
                 // disclosure block. Different synopsis lengths can no longer
-                // move Starring, Version, Audio, Subtitles, or the action row.
+                // move Starring or the action row.
                 fixedDisclosureColumn
                     .frame(
                         width: editorialContentWidth,
@@ -276,25 +282,44 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
         .frame(maxWidth: editorialContentWidth, alignment: .leading)
     }
 
+    @ViewBuilder
     private var editorialPrimaryInformationColumn: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let eyebrow, !eyebrow.isEmpty {
-                TVHeroEyebrow(text: eyebrow)
+        if usesCompactMetadata {
+            TVDetailEditorialLayout {
+                titleBlock
+            } metadata: {
+                TVDetailHeading(tokens: metadataHeading, genres: sourceTokens, rating: ratingChip)
+            } synopsis: {
+                VStack(alignment: .leading, spacing: 4) {
+                    synopsisBlock
+                    belowSynopsis()
+                }
             }
-            titleBlock
-                .frame(height: 160, alignment: .bottomLeading)
-                .padding(.top, eyebrow == nil ? 0 : 2)
-            reservedMetadataBlock
-            synopsisBlock
-            belowSynopsis()
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                if let eyebrow, !eyebrow.isEmpty {
+                    TVHeroEyebrow(text: eyebrow)
+                }
+                titleBlock
+                    .frame(height: 160, alignment: .bottomLeading)
+                    .padding(.top, eyebrow == nil ? 0 : 2)
+                reservedMetadataBlock
+                synopsisBlock
+                belowSynopsis()
+            }
+            .frame(maxWidth: editorialContentWidth, alignment: .leading)
         }
-        .frame(maxWidth: editorialContentWidth, alignment: .leading)
     }
 
     private var fixedDisclosureColumn: some View {
         VStack(alignment: .leading, spacing: creditSummarySpacing) {
             creditBlock
-            TVPlaybackSelectionSummaryView(summary: playbackSummary)
+            Group {
+                if usesCompactMetadata {
+                    TVDetailTechnicalRow(facts: releaseFacts, version: qualityVersion, summary: qualitySummary)
+                }
+                else { TVPlaybackSelectionSummaryView(summary: playbackSummary) }
+            }
                 .frame(
                     height: playbackSummaryReservedHeight,
                     alignment: .topLeading
@@ -332,13 +357,15 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
         if synopsisReservedHeight > 0 {
             Group {
                 if let overview, !overview.isEmpty {
-                    TVExpandableSynopsis(overview: overview)
+                    TVExpandableSynopsis(overview: overview, compact: usesCompactMetadata)
+                        .disabled(!allowsSynopsisFocus)
                 }
             }
             .frame(height: synopsisReservedHeight, alignment: .topLeading)
             .clipped()
         } else if let overview, !overview.isEmpty {
-            TVExpandableSynopsis(overview: overview)
+            TVExpandableSynopsis(overview: overview, compact: usesCompactMetadata)
+                        .disabled(!allowsSynopsisFocus)
         }
     }
 
@@ -736,7 +763,7 @@ enum TVHeroMetadata {
             return []
         }
         if let genres = detail.genres, !genres.isEmpty {
-            return [genres.prefix(2).joined(separator: ", ")]
+            return Array(genres.prefix(2))
         }
         return []
     }
@@ -762,7 +789,7 @@ enum TVHeroMetadata {
 
     static func seriesSourceTokens(from detail: ItemDetail) -> [String] {
         if let genres = detail.genres, !genres.isEmpty {
-            return [genres.prefix(2).joined(separator: ", ")]
+            return Array(genres.prefix(2))
         }
         return []
     }
@@ -799,6 +826,123 @@ enum TVHeroMetadata {
             tokens.append(.text("\(count) Season\(count == 1 ? "" : "s")"))
         }
         return tokens
+    }
+
+    /// Source metadata only; output negotiation must not rewrite these labels.
+    static func sourceQualityPills(_ version: FileVersion?) -> [String] {
+        guard let version else { return [] }
+        let resolution = sourceResolutionLabel(version)
+        let video = sourceVideoLabel(version)
+        let audioIndex = version.audioTracks?.firstIndex { $0.isDefault == true } ?? version.audioTracks?.indices.first
+        let audio = DetailPlaybackFormatting.audioTechnicalSummary(version: version, selectedAudioTrackIndex: audioIndex)
+        return [resolution, video, audio].compactMap { $0 }.filter { !$0.isEmpty }
+    }
+
+    static func sourceVideoLabel(_ version: FileVersion) -> String? {
+        let tracks = version.videoTracks ?? []
+        let dvTags = tracks.compactMap(\.dolbyVision).map { $0.lowercased() }
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let ranges = tracks.compactMap(\.videoRange).map { $0.uppercased() }
+        let dv = !dvTags.isEmpty || ranges.contains { $0.contains("DOVI") || $0.contains("DOLBY VISION") || $0 == "DV" }
+        let transfers = tracks.compactMap(\.colorTransfer).map { $0.lowercased().replacingOccurrences(of: "-", with: "") }
+        let hlg = ranges.contains { $0.contains("HLG") } || transfers.contains { $0.contains("hlg") || $0.contains("arib") }
+        // Profile 5 has no HDR10-compatible base layer. Generic DV or HDR
+        // flags alone cannot tell us which compatibility layer a file has.
+        let profile5 = dvTags.contains { $0 == "5" || $0.contains("profile 5") || $0.contains("dvhe.05") || $0.contains("dvh1.05") }
+        let hdr10Base = dvTags.contains { $0 == "7" || $0 == "8.1" || $0.contains("profile 7") || $0.contains("profile 8.1") || $0.contains("hdr10") || $0.contains("dvhe.07") || $0.contains("dvh1.07") }
+        let pq = transfers.contains { $0 == "pq" || $0.contains("2084") }
+        let hdr10 = ranges.contains { $0.contains("HDR10") }
+            || (!profile5 && !hlg && (hdr10Base || pq))
+        var range: [String] = []
+        if dv { range.append("DV") }
+        if hdr10 { range.append(ranges.contains { $0.contains("HDR10+") } ? "HDR10+" : "HDR10") }
+        else if hlg { range.append("HLG") }
+        else if version.hdr == true && !dv { range.append("HDR") }
+        return range.isEmpty ? DetailPlaybackFormatting.normalizedVideoCodec(version.codecVideo) : range.joined(separator: " ")
+    }
+
+    static func sourceResolutionLabel(_ version: FileVersion) -> String? {
+        let raw = version.resolution?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.contains("8k") { return "4320P" }
+        if raw.contains("4k") || raw.contains("uhd") { return "2160P" }
+        // Prefer the file's named tier, which survives cinematic letterbox cropping.
+        for tier in [4320, 2160, 1440, 1080, 720, 576, 480] {
+            if raw == "\(tier)" || raw == "\(tier)p" { return "\(tier)P" }
+        }
+        if raw == "fhd" { return "1080P" }
+        let dimensions = raw.replacingOccurrences(of: "×", with: "x").split(separator: "x")
+        let rawWidth = dimensions.first.flatMap { Int($0) }
+        let rawHeight = dimensions.count == 2 ? Int(dimensions[1]) : nil
+        let track = version.videoTracks?.first
+        let width = track?.width ?? rawWidth ?? 0
+        let height = track?.height ?? rawHeight ?? 0
+        // Width identifies the standard tier for cropped sources such as 3840×1920.
+        let tier: Int?
+        if width >= 7680 || height >= 4320 { tier = 4320 }
+        else if width >= 3840 || height >= 2160 { tier = 2160 }
+        else if width >= 2560 || height >= 1440 { tier = 1440 }
+        else if width >= 1920 || height >= 1080 { tier = 1080 }
+        else if width >= 1280 || height >= 720 { tier = 720 }
+        else if height >= 576 { tier = 576 }
+        else if height > 0 { tier = 480 }
+        else { tier = nil }
+        return tier.map { "\($0)P" }
+    }
+
+    static func isResolutionBadge(_ badge: String) -> Bool {
+        if ["4K", "8K", "UHD", "FHD", "HD", "SD"].contains(badge) { return true }
+        let digits = badge.hasSuffix("P") ? String(badge.dropLast()) : badge
+        return !digits.isEmpty && digits.allSatisfy(\.isNumber)
+    }
+
+    static func sourceBadges(_ version: FileVersion?, summary: OverlaySummary? = nil) -> [String] {
+        var badges: [String] = []
+        let resolution = version.flatMap(sourceResolutionLabel) ?? summary?.resolution?.uppercased()
+        if let resolution, !resolution.isEmpty {
+            badges.append(["2160", "2160P", "4K", "UHD"].contains(resolution) ? "4K"
+                : ["4320", "4320P", "8K"].contains(resolution) ? "8K" : resolution)
+        }
+        // Catalog/card summaries already contain rich dynamic-range metadata.
+        // Keep that information until detailed video tracks arrive.
+        let video = version?.videoTracks?.isEmpty == false
+            ? version.flatMap(sourceVideoLabel)
+            : summary?.hdr ?? version.flatMap(sourceVideoLabel) ?? summary?.videoCodec
+        if let video {
+            badges.append(contentsOf: video.uppercased().split(separator: " ").map(String.init))
+        }
+        let tracks = version?.audioTracks ?? []
+        let audio = tracks.first(where: { $0.isDefault == true }) ?? tracks.first
+        let audioMetadata = [audio?.codec, audio?.channelLayout, audio?.title, audio?.embeddedTitle]
+            .compactMap { $0 }.joined(separator: " ").lowercased()
+        if audioMetadata.contains("atmos") || (tracks.isEmpty && summary?.audio?.lowercased().contains("atmos") == true) {
+            badges.append("ATMOS")
+        }
+        if version?.subtitleTracks?.isEmpty == false || (version?.subtitleTracks == nil && summary?.multiSub == true) {
+            badges.append("CC")
+        }
+        return badges
+    }
+
+    static func releaseFacts(year: Int?, runtime: Int?) -> [String] {
+        var facts: [String] = []
+        if let year, year > 0 { facts.append(String(year)) }
+        if let runtime, runtime > 0 {
+            facts.append(runtime >= 60 ? "\(runtime / 60)h \(runtime % 60)m" : "\(runtime)m")
+        }
+        return facts
+    }
+
+    static func releasedEpisodeCount(_ episodes: [EpisodeListItem], now: Date = Date()) -> Int {
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withFullDate]
+        return Set(episodes.filter { episode in
+            if let raw = episode.airDate,
+               let date = parser.date(from: String(raw.prefix(10))) {
+                return date <= now
+            }
+            // Undated entries are only known to be released when a file exists.
+            return episode.files?.isEmpty == false
+        }.map(\.contentId)).count
     }
 
     // Eyebrow (short editorial line)
@@ -852,6 +996,82 @@ enum TVHeroMetadata {
     }
 }
 
+/// Shared geometry for loaded movie/series details and their skeletons.
+struct TVDetailEditorialLayout<Title: View, Metadata: View, Synopsis: View>: View {
+    @ViewBuilder let title: () -> Title
+    @ViewBuilder let metadata: () -> Metadata
+    @ViewBuilder let synopsis: () -> Synopsis
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            title().frame(height: 160, alignment: .bottomLeading)
+            metadata().frame(height: 36, alignment: .leading).padding(.top, 10)
+            synopsis().frame(height: 140, alignment: .topLeading).padding(.top, 12)
+        }
+        .frame(width: TVDetailLayout.heroContentWidth, height: 350, alignment: .topLeading)
+    }
+}
+
+struct TVDetailTextBadge: View {
+    let text: String
+    var filled = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 18, weight: .bold))
+            .foregroundStyle(filled ? Color.black : Color.white)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(filled ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(.white.opacity(0.85), lineWidth: filled ? 0 : 1.5)
+            }
+            .fixedSize()
+    }
+}
+
+struct TVDetailHeading: View {
+    let tokens: [String]
+    var genres: [String] = []
+    let rating: String?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            (Text(tokens.first ?? "")
+                .foregroundColor(.white.opacity(0.92))
+             + Text((Array(tokens.dropFirst()) + genres).isEmpty ? "" : " · " + (Array(tokens.dropFirst()) + genres).joined(separator: " · "))
+                .foregroundColor(.white.opacity(0.70)))
+                .font(.system(size: 24, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let rating, !rating.isEmpty { TVDetailTextBadge(text: rating) }
+        }
+    }
+}
+
+struct TVDetailTechnicalRow: View {
+    let facts: [String]
+    let version: FileVersion?
+    var summary: OverlaySummary? = nil
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if !facts.isEmpty {
+                Text(facts.joined(separator: " · "))
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.84))
+            }
+            ForEach(Array(TVHeroMetadata.sourceBadges(version, summary: summary).enumerated()), id: \.offset) { _, badge in
+                TVDetailTextBadge(text: badge, filled: TVHeroMetadata.isResolutionBadge(badge))
+            }
+        }
+        .lineLimit(1)
+        .frame(height: 40, alignment: .leading)
+    }
+}
+
 /// Equal-width playback readouts with stable icons while metadata loads.
 struct TVPlaybackSelectionSummaryView: View {
     let summary: TVPlaybackSelectionSummary
@@ -869,12 +1089,6 @@ struct TVPlaybackSelectionSummaryView: View {
                 symbol: "speaker.wave.2",
                 value: summary.audio,
                 placeholderWidth: 84
-            )
-            summaryItem(
-                label: "Subtitles",
-                symbol: "captions.bubble",
-                value: summary.subtitles,
-                placeholderWidth: 77
             )
         }
         // Match the 280-point Play button, four 76-point controls and four 18-point gaps.
