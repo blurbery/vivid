@@ -8,7 +8,7 @@
 
 ---
 
-The app name is **Vivid**. Keep the public byline in the root README only. Use the GitHub username **blurbery** for the maintainer in documentation, contribution rules and approval requests. The logo remains a symbol without text.
+The app name is **Vivid**. Use the GitHub username **blurbery** as the public maintainer identity in documentation, contribution rules and approval requests. Do not add personal names, separate nicknames or private contact details. The logo remains a symbol without text.
 
 Vivid's symbol is a silver V built from two broad pieces with softened angular corners and a diagonal gap. The mark contains no wordmark.
 

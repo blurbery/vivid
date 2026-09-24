@@ -3,7 +3,7 @@
 </p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Vivid Brand &amp; Trademark Policy</h1>
-<p align="center">The Vivid name, byline and logo.</p>
+<p align="center">The Vivid name and logo.</p>
 <p align="center"><a href="README.md">Home</a> · <a href="docs/README.md">Documentation</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="https://github.com/blurbery/vivid/releases">Releases</a></p>
 
 ---

@@ -278,7 +278,7 @@ struct SectionRow: View {
             NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
             return true
         } catch {
-            print("[SectionRow] Failed to update watched state for \(item.contentId): \(error)")
+            print("[SectionRow] Failed to update watched state")
             return false
         }
     }

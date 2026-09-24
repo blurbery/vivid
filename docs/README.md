@@ -26,7 +26,7 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
     <tr><td><a href="release/distribution.md">Device distribution</a></td><td>TestFlight distribution, signing checks and device coverage</td></tr>
     <tr><td><a href="../README.md#licence">Source licence and attribution</a></td><td>GPLv3, Apple distribution permission, Vivid attribution and third-party boundaries</td></tr>
     <tr><td><a href="../THIRD_PARTY_NOTICES.md">Third-party libraries</a></td><td>FFmpeg, subtitle/font libraries, licences and exact source</td></tr>
-    <tr><td><a href="../TRADEMARK.md">Brand policy</a></td><td>Use of the Vivid name, byline and logo</td></tr>
+    <tr><td><a href="../TRADEMARK.md">Brand policy</a></td><td>Use of the Vivid name and logo</td></tr>
   </tbody>
 </table>
 

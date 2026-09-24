@@ -1,4 +1,4 @@
-// Retained tvOS development signing defaults; Vivid distribution is not configured.
+// Registered Vivid tvOS identifiers; signing credentials are configured locally.
 // Override locally with Local.xcconfig; see Local.xcconfig.sample.
 // VIVID_* variables support repository-local signing overrides.
 

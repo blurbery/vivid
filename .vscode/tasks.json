@@ -2,11 +2,13 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Silo: Generate Xcode project",
+      "label": "Vivid: Generate iOS project",
       "type": "shell",
       "command": "xcodegen",
       "args": [
-        "generate"
+        "generate",
+        "--spec",
+        "project-ios.yml"
       ],
       "options": {
         "cwd": "${workspaceFolder}/iosApp"
@@ -14,7 +16,21 @@
       "problemMatcher": []
     },
     {
-      "label": "Silo: Build iOS",
+      "label": "Vivid: Generate tvOS project",
+      "type": "shell",
+      "command": "xcodegen",
+      "args": [
+        "generate",
+        "--spec",
+        "project.yml"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/iosApp"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Vivid: Build iOS",
       "type": "shell",
       "command": "xcodebuild",
       "args": [
@@ -22,7 +38,7 @@
         "-project",
         "Vivid.xcodeproj",
         "-scheme",
-        "Silo",
+        "Vivid",
         "-destination",
         "generic/platform=iOS Simulator",
         "-derivedDataPath",
@@ -33,7 +49,7 @@
       "options": {
         "cwd": "${workspaceFolder}/iosApp"
       },
-      "dependsOn": "Silo: Generate Xcode project",
+      "dependsOn": "Vivid: Generate iOS project",
       "dependsOrder": "sequence",
       "group": {
         "kind": "build",
@@ -44,7 +60,7 @@
       ]
     },
     {
-      "label": "Silo: Build tvOS",
+      "label": "Vivid: Build tvOS",
       "type": "shell",
       "command": "xcodebuild",
       "args": [
@@ -63,7 +79,7 @@
       "options": {
         "cwd": "${workspaceFolder}/iosApp"
       },
-      "dependsOn": "Silo: Generate Xcode project",
+      "dependsOn": "Vivid: Generate tvOS project",
       "dependsOrder": "sequence",
       "group": "build",
       "problemMatcher": [
@@ -71,34 +87,7 @@
       ]
     },
     {
-      "label": "Silo: Build macOS",
-      "type": "shell",
-      "command": "xcodebuild",
-      "args": [
-        "build",
-        "-project",
-        "Vivid.xcodeproj",
-        "-scheme",
-        "VividMac",
-        "-destination",
-        "platform=macOS",
-        "-derivedDataPath",
-        ".deriveddata",
-        "CODE_SIGN_IDENTITY=",
-        "CODE_SIGNING_ALLOWED=NO"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}/iosApp"
-      },
-      "dependsOn": "Silo: Generate Xcode project",
-      "dependsOrder": "sequence",
-      "group": "build",
-      "problemMatcher": [
-        "$swiftc"
-      ]
-    },
-    {
-      "label": "Silo: Test iOS",
+      "label": "Vivid: Test iOS",
       "type": "shell",
       "command": "xcodebuild",
       "args": [
@@ -106,7 +95,7 @@
         "-project",
         "Vivid.xcodeproj",
         "-scheme",
-        "Silo",
+        "Vivid",
         "-destination",
         "${input:iosTestDestination}",
         "-derivedDataPath",
@@ -117,7 +106,7 @@
       "options": {
         "cwd": "${workspaceFolder}/iosApp"
       },
-      "dependsOn": "Silo: Generate Xcode project",
+      "dependsOn": "Vivid: Generate iOS project",
       "dependsOrder": "sequence",
       "group": {
         "kind": "test",

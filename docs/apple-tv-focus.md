@@ -251,15 +251,14 @@ settings; metadata and image cache policies and Spotlight design are unchanged.
 iPhone and iPad row limits are unchanged.
 
 blurbery reported smooth cold launches and repeated fast horizontal/vertical
-traversal on Living Room after manually reducing Home to six media rails plus
+traversal on Apple TV after manually reducing Home to six media rails plus
 Spotlight. This supports the smaller Home configuration on that device, without
 proving that hosting-view count alone caused the earlier lag. Build 43 includes
-the automatic limit and settings controls and was installed in place on Living
-Room. blurbery subsequently confirmed that tvOS works well.
+the automatic limit and settings controls and was installed in place on Apple TV. blurbery subsequently confirmed that tvOS works well.
 
 Validation: the signed Release VividTV device build and the iOS/tvOS CI run for
 `a584044` passed. The later Add Profile loading presentation in `a584044` has not
-yet been installed on Living Room; the owner’s installed-build confirmation does
+yet been installed on Apple TV; the owner’s installed-build confirmation does
 not establish device coverage of that change.
 
 Spotlight retains its existing crop-before-display sequence, readiness gate, six-second rotation timing and native navigation. Shared image transport retries a temporary connection, DNS or timeout failure once, including Silo, and caps each resource transfer at 45 seconds. HTTP, decoding and cancellation failures are not retried. Regression checks cover recovery, persistent failure and cancellation; the subsequent all-poster stall was reproduced even after clearing artwork and Home metadata. Spotlight crop preparation now runs serially on a bounded Core Graphics thumbnail with CPU-only Vision requests, avoiding synchronous UIImage preparation alongside artwork decoding. A physical Apple TV check confirmed Silo → Emby → Silo artwork loading and playback on both providers with this crop change.

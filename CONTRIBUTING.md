@@ -4,7 +4,7 @@ Vivid is an independent Apple media client developed in this repository. Open is
 
 ## Development
 
-Use the local setup below and read [the docs](docs/README.md) and [AGENTS.md](AGENTS.md) for code guidance. Generate the Xcode project from the platform-specific spec: `iosApp/project-ios.yml` for iPhone/iPad or `iosApp/project.yml` for Apple TV. The current Xcode scheme names are listed below.
+Use the local setup below and read [the docs](docs/README.md) and [AGENTS.md](AGENTS.md) for code guidance. Generate the Xcode project from the platform-specific spec: `iosApp/project-ios.yml` for iPhone/iPad or `iosApp/project.yml` for Apple TV. The current Xcode scheme names are listed below. The included VS Code tasks generate the selected platform spec before building or testing; there is no native macOS app target.
 
 Preserve the working browsing, focus and playback behaviour. Validate changes with focused tests, relevant Apple builds and simulator, emulator or physical-device checks appropriate to the change. State exactly what was tested and disclose any gaps; never treat an earlier device benchmark as a measurement of a new revision.
 
@@ -31,7 +31,7 @@ xcodebuild build -project Vivid.xcodeproj -scheme VividTV \
   -destination 'generic/platform=tvOS Simulator' CODE_SIGNING_ALLOWED=NO
 ```
 
-For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample). Keep credentials and personal signing details out of Git. Use a running server for the provider being checked: Silo, Emby or Jellyfin. Keep each provider's integration checks separate and consult its core guide for supported features and device-verification gaps. Generated media fixtures cover focused engine checks without a server.
+For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample). Keep credentials and personal signing details out of Git. Use `blurbery` and its GitHub noreply address for maintainer commits. Public reports should identify the relevant hardware, OS and revision without personal names, private device labels, server addresses, account identifiers or local upload times. Preserve third-party licence and copyright notices. Current-file edits do not remove disclosures from Git history; history changes need separate owner approval. Use a running server for the provider being checked: Silo, Emby or Jellyfin. Keep each provider's integration checks separate and consult its core guide for supported features and device-verification gaps. Generated media fixtures cover focused engine checks without a server.
 
 ## Pull requests and repository control
 

@@ -14,8 +14,9 @@
 // `_ENTITLEMENTS` variables), so
 // you can change one target without affecting the others.
 //
-// After editing, run `xcodegen generate` from `iosApp/` and pick your
-// team in Xcode's Signing & Capabilities tab.
+// After editing, run `xcodegen generate --spec project-ios.yml` for iOS or
+// `xcodegen generate --spec project.yml` for tvOS from `iosApp/`, then pick
+// your team in Xcode's Signing & Capabilities tab.
 //
 // ----- Bundle IDs ---------------------------------------------------------
 //

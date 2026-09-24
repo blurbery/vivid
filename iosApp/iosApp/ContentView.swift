@@ -13,8 +13,10 @@ struct ContentView: View {
     #if os(iOS)
     @State private var pictureInPicture = PictureInPictureCoordinator.shared
     #endif
+    #if DEBUG
     @State private var debugPlayContentId: String?
     @State private var didAttemptDebugAutoPlay = false
+    #endif
     @State private var didStartInitialStateCheck = false
     @State private var initialStateAttempt = 0
     @State private var showsCredentialReadError = false
@@ -92,12 +94,14 @@ struct ContentView: View {
         #if os(tvOS) && DEBUG
         .modifier(TVFocusDebugActivationModifier())
         #endif
+        #if DEBUG
         .modifier(DebugPlayerPresentationModifier(
             contentId: debugPlayContentId,
             isPresented: debugPlayerPresentation,
             router: router,
             overlayPrefs: overlayPrefs
         ))
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .vividDeepLink)) { notification in
             guard let url = notification.userInfo?["url"] as? URL else { return }
             #if os(iOS)
@@ -169,6 +173,7 @@ struct ContentView: View {
             markProfileAwayStartForTermination()
         }
         #endif
+        #if DEBUG
         .task {
             // Debug: auto-play from launch argument -debugPlay <contentId>
             if let idx = CommandLine.arguments.firstIndex(of: "-debugPlay"),
@@ -178,7 +183,6 @@ struct ContentView: View {
                 debugPlayContentId = contentId
             }
         }
-        #if DEBUG
         .task {
             await maybeDebugAutoLogin()
         }
@@ -199,7 +203,9 @@ struct ContentView: View {
                 Task { await TVSavedAccountStore.shared.captureCurrent() }
             }
             #endif
+            #if DEBUG
             await maybeAutoPlayForDebug()
+            #endif
             if router.authState == .authenticated {
                 let hasPendingDeepLink = pendingDeepLink != nil
                 if let pending = pendingDeepLink {
@@ -679,12 +685,14 @@ struct ContentView: View {
         }
     }
 
+    #if DEBUG
     private var debugPlayerPresentation: Binding<Bool> {
         Binding(
             get: { debugPlayContentId != nil },
             set: { if !$0 { debugPlayContentId = nil } }
         )
     }
+    #endif
 
     /// Resolves a `vivid://` URL to a navigation action. Supported
     /// shapes:
@@ -843,7 +851,7 @@ struct ContentView: View {
         #endif
         #if os(tvOS)
         #if DEBUG
-        print("VIVID_SETUP_ENV_" + (ProcessInfo.processInfo.environment["VIVID_RESTART_SETUP"] ?? "absent"))
+        print("VIVID_SETUP_RESET_REQUESTED=\(ProcessInfo.processInfo.environment["VIVID_RESTART_SETUP"] == "1")")
         if ProcessInfo.processInfo.environment["VIVID_RESTART_SETUP"] == "1" {
             if let serverId = ServerRegistry.shared.activeServerId {
                 await TokenStore.shared.retargetActiveServer(serverId: serverId)
@@ -970,6 +978,7 @@ struct ContentView: View {
     }
     #endif
 
+    #if DEBUG
     private func maybeAutoPlayForDebug() async {
         guard router.authState == .authenticated else { return }
         guard !didAttemptDebugAutoPlay else { return }
@@ -980,7 +989,7 @@ struct ContentView: View {
             do {
                 debugPlayContentId = try await resolveDebugSearchContentId(query: searchQuery)
             } catch {
-                print("[DebugPlaySearch] Failed to resolve '\(searchQuery)': \(error)")
+                print("[DebugPlaySearch] Failed to resolve the requested item")
             }
             return
         }
@@ -997,7 +1006,7 @@ struct ContentView: View {
             }
             debugPlayContentId = contentId
         } catch {
-            print("[DebugPlayFirst] Failed to fetch home sections: \(error)")
+            print("[DebugPlayFirst] Failed to fetch home sections")
         }
     }
 
@@ -1009,7 +1018,6 @@ struct ContentView: View {
         return CommandLine.arguments[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    #if DEBUG
     private func debugLaunchArgValue(_ name: String) -> String? {
         guard let index = CommandLine.arguments.firstIndex(of: name),
               index + 1 < CommandLine.arguments.count else {
@@ -1054,10 +1062,9 @@ struct ContentView: View {
             router.resetToHome()
             print("[DebugAutoLogin] signed in and selected profile")
         } catch {
-            print("[DebugAutoLogin] failed: \(error)")
+            print("[DebugAutoLogin] failed")
         }
     }
-    #endif
 
     private func resolveDebugSearchContentId(query: String) async throws -> String {
         let response = try await VividAPI.shared.catalog(query: [
@@ -1095,16 +1102,14 @@ struct ContentView: View {
                 throw DebugAutoPlayError.noPlayableEpisode(seriesTitle: preferredItem.title)
             }
 
-            print(
-                "[DebugPlaySearch] Resolved '\(query)' to series=\(preferredItem.title) " +
-                "season=\(firstSeason.seasonNumber) episode=\(firstEpisode.episodeNumber) contentId=\(firstEpisode.contentId)"
-            )
+            print("[DebugPlaySearch] Resolved an episode")
             return firstEpisode.contentId
         }
 
-        print("[DebugPlaySearch] Resolved '\(query)' to \(preferredItem.type) contentId=\(preferredItem.contentId)")
+        print("[DebugPlaySearch] Resolved an item")
         return preferredItem.contentId
     }
+    #endif
 
     @ViewBuilder
     private func destinationView(for route: Route) -> some View {
@@ -1593,6 +1598,7 @@ private struct FixedPrimarySplitViewWidth: UIViewControllerRepresentable {
 }
 #endif
 
+#if DEBUG
 private struct DebugPlayerPresentationModifier: ViewModifier {
     let contentId: String?
     @Binding var isPresented: Bool
@@ -1634,6 +1640,8 @@ private enum DebugAutoPlayError: LocalizedError {
         }
     }
 }
+
+#endif
 
 // MARK: - Zoom transition namespace
 

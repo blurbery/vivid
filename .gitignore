@@ -36,6 +36,12 @@ iosApp/Signing/Local.xcconfig
 *.p12
 *.mobileprovision
 *.cer
+*.pem
+*.key
+*.xcarchive/
+*.dSYM/
+*.xcresult/
+*.ipa
 
 # Ruby / Fastlane
 vendor/bundle/
@@ -69,6 +75,8 @@ docs/*
 !docs/server-connections.md
 !docs/app-design.md
 !docs/apple-tv-browsing.md
+!docs/cores/
+!docs/cores/*.md
 !docs/playback/
 docs/playback/*
 !docs/playback/README.md

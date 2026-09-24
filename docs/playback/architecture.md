@@ -151,12 +151,13 @@ Automatic session recovery preserves the latest play/pause intent instead of alw
 
 Qualified playback reports every ten seconds and on exit; reports are ordered so an older request cannot overwrite the final position. Final playback progress is reported before session stop/cleanup. A successful write posts the refresh signal immediately so Home and detail views can request current resume state while teardown finishes. Successful watched/unwatched writes from detail pages use the same account/profile-scoped Home refresh signal. Home queues refreshes that arrive during an older fetch and rejects stale results on both iOS and tvOS.
 
-While iPhone/iPad Home is visible, active and not covered by detail/playback navigation, it also refreshes every ten seconds. Apple TV uses entry and item-change refreshes, plus a thirty-minute visible-Home refresh for Silo artwork renewal. This is provider-backed polling, not iCloud watch-state sync or a realtime push guarantee. Preserve the fallback refresh when the final playback write fails, and do not send the same final progress twice.
+While iPhone/iPad Home is visible, active and not covered by detail/playback navigation, it also refreshes every ten seconds. Apple TV uses entry and item-change refreshes, plus a thirty-minute visible-Home refresh for Silo artwork renewal. Jellyfin additionally refreshes on foreground entry and every ten seconds after the previous refresh completes while Home is visible. This is provider-backed polling, not iCloud watch-state sync or a realtime push guarantee. Preserve the fallback refresh when the final playback write fails, and do not send the same final progress twice.
 
 PiP, AirPlay, HDR and audio-format behaviour depend on the exact engine route, device and source. In particular, a receiver cannot be assumed to reproduce the sender's private authentication headers. Do not widen an advertised capability based only on a package upgrade or a successful build.
 
 ## Diagnostics and dependencies
 
+- Debug autoplay launch arguments and their presentation helpers compile only with `DEBUG`; their console messages omit search text, titles, content IDs and raw errors. Setup and login test values come from local launch arguments/environment, not embedded maintainer credentials.
 - Keep development logs local, redacted and bounded. Vivid does not capture or upload in-app diagnostics reports. Do not expose credentials, source URLs, paths or subtitle contents in logs.
 - Classify typed failures using stable kinds, with an unknown fallback, rather than matching localized error text.
 - Read the shared media dependency from [project.yml](../../iosApp/project.yml) and [project-ios.yml](../../iosApp/project-ios.yml), with exact revisions and provenance in the [third-party notices](../../THIRD_PARTY_NOTICES.md).

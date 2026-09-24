@@ -111,7 +111,7 @@ Watched/unwatched changes from details refresh Home after the server write succe
 
 ### Detail pages and validation
 
-On 12 September 2026, blurbery accepted the Settings and profile refinements after testing on iPhone and Bedroom Apple TV. The final mobile account divider and profile selection fixes passed signed device builds. The [download regression run](https://github.com/blurbery/vivid/actions/runs/34677477571) passed before the later visual refinements. This does not establish complete converted-download or offline-playback coverage for Emby.
+On 12 September 2026, blurbery accepted the Settings and profile refinements after testing on iPhone and Apple TV. The final mobile account divider and profile selection fixes passed signed device builds. The [download regression run](https://github.com/blurbery/vivid/actions/runs/34677477571) passed before the later visual refinements. This does not establish complete converted-download or offline-playback coverage for Emby.
 
 Series details expose Episode, Season and Series watched actions in that order. iOS uses the Watched menu; tvOS places them in the three-dot More menu.
 
@@ -127,7 +127,7 @@ Series selectors publish the selected episode’s catalogue file and audio metad
 
 The September 2026 iPhone detail update passed the [iOS test suite and tvOS build](https://github.com/blurbery/vivid/actions/runs/35821654660). After the final series-loading fix was installed on iPhone 16 Pro Max, blurbery reported that media information appeared instantly. This is device feedback, not a guarantee for every server or a new physical iPad check.
 
-On 16 September 2026, blurbery confirmed the installed Lucid playback and subtitle updates worked on iPhone and Living Room Apple TV. The iOS Settings overview was subsequently accepted with separate Profiles and Settings sections and joined native settings rows. Both playback builds and 26 focused language-preference checks passed. These observations do not establish every media format, output route or physical iPad behaviour.
+On 16 September 2026, blurbery confirmed the installed Lucid playback and subtitle updates worked on iPhone and Apple TV. The iOS Settings overview was subsequently accepted with separate Profiles and Settings sections and joined native settings rows. Both playback builds and 26 focused language-preference checks passed. These observations do not establish every media format, output route or physical iPad behaviour.
 
 On iPad, Home’s sharp artwork blends into a soft blur at the carousel dots and into the first row. This preserves the iPhone fade and tvOS presentation. Local signed build `0.14.3 (19)` passed and opened on the Mac as Designed for iPad; Home was visually inspected and the owner accepted the final layout. Adaptive grid arithmetic filled all 22 checked width/spacing combinations. Physical iPad rotation has not been verified. The same application sources were subsequently uploaded as iPhone/iPad TestFlight `0.14.3 (16)`; see the [build record](release/versioning.md#recorded-apple-builds).
 
