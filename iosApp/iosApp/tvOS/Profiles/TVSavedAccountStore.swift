@@ -408,6 +408,11 @@ final class TVSavedAccountStore {
             await PlayerSettings.shared.reloadForCurrentProfile()
             router.dismissItemDetail()
             #endif
+            // Prepare the local snapshot before rebuilding an already-visible
+            // Home for a saved-account switch. Network refresh remains async.
+            if !prepareHome {
+                guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { return }
+            }
             // Server publication precedes the token/profile commit. Rebuild
             // only after restoration so both platforms discard early loads
             // and same-server account state from the outgoing session.
@@ -415,7 +420,6 @@ final class TVSavedAccountStore {
             if prepareHome {
                 await TVLoginPreparation.shared.begin(router: router)
             } else {
-                StartupContentPrefetcher.prefetchAuthenticatedContent()
                 router.resetToHome()
             }
         } else {

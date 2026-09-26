@@ -22,6 +22,8 @@ struct CachedAsyncImage: View {
     var placeholderStyle: ImagePlaceholderStyle = .surface
     var onImageLoaded: (() -> Void)? = nil
     var cacheScope: String? = nil
+    /// Release distant grid images without replacing the card's image view.
+    var isArtworkResident = true
 
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -64,8 +66,8 @@ struct CachedAsyncImage: View {
 
     private func renderedImage(in size: CGSize) -> some View {
         let resolvedSize = targetSize ?? size
-        let imageRequest = request(for: resolvedSize)
-        let warmedImage = prefetchedImage()
+        let imageRequest = isArtworkResident ? request(for: resolvedSize) : nil
+        let warmedImage = isArtworkResident ? prefetchedImage() : nil
         let loadAnimation: Animation? = isHomeShelf || reduceMotion || warmedImage != nil
             ? nil
             : .easeOut(duration: VividTheme.slowDuration)
@@ -74,7 +76,7 @@ struct CachedAsyncImage: View {
         return VividLazyImage(
             request: imageRequest,
             transaction: transaction,
-            isLoadingEnabled: artworkLoadingEnabled
+            isLoadingEnabled: artworkLoadingEnabled && isArtworkResident
         ) { state in
             // Cache fallback and exact-size results share one rendered branch.
             // Changing the source bitmap must not replace the Image subtree.
@@ -90,7 +92,7 @@ struct CachedAsyncImage: View {
                     .clipped()
                     .transition(.opacity)
                     .onAppear(perform: notifyImageLoaded)
-            } else if state.error != nil && artworkLoadingEnabled {
+            } else if state.error != nil && artworkLoadingEnabled && isArtworkResident {
                 placeholder(in: size)
                     .overlay {
                         if placeholderStyle.showsErrorIcon {

@@ -52,7 +52,12 @@ final class TVHomeMetadataCache {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var enrichmentTask: Task<Void, Never>?
     @ObservationIgnored private var warmedURLs = Set<URL>()
-    @ObservationIgnored private let writer = DispatchQueue(label: "vivid.home.metadata", qos: .utility)
+    @ObservationIgnored private let writer: HomeMetadataWriter
+    @ObservationIgnored private let snapshotDirectory: URL?
+    @ObservationIgnored private let currentScope: () -> String?
+    @ObservationIgnored private var persistenceRevision: UInt64 = 0
+    @ObservationIgnored private var preparedSnapshot: (scope: String, value: Snapshot?)?
+    @ObservationIgnored private var preparation: (scope: String, task: Task<Snapshot?, Never>)?
     @ObservationIgnored private let prefetcher = VividImagePrefetcher(
         pipeline: VividImagePipeline.shared, destination: .diskCache, maxConcurrentRequestCount: 2
     )
@@ -60,28 +65,71 @@ final class TVHomeMetadataCache {
     nonisolated private static let maximumSnapshotBytes = 8 * 1024 * 1024
     static let spotlightID = "vivid.cache.spotlight"
 
-    private var activeScope: String? { VividCacheScope.current }
+    init(writer: HomeMetadataWriter = HomeMetadataWriter(), snapshotDirectory: URL? = nil,
+         currentScope: @escaping () -> String? = { VividCacheScope.current }) {
+        self.writer = writer
+        self.snapshotDirectory = snapshotDirectory
+        self.currentScope = currentScope
+    }
+
+    private var activeScope: String? { currentScope() }
 
     private func fileURL(for scope: String) -> URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Vivid/HomeMetadata/v2", isDirectory: true)
+        (snapshotDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Vivid/HomeMetadata/v2", isDirectory: true))
             .appendingPathComponent(scope + ".json")
+    }
+
+    /// The existing launch/profile handoff awaits only local I/O. Home can
+    /// still hydrate synchronously from memory before its first render.
+    func prepare() async {
+        guard let scope = activeScope, scope != loadedScope else { return }
+        let expectedGeneration = generation
+        let task: Task<Snapshot?, Never>
+        if let existing = preparation, existing.scope == scope {
+            task = existing.task
+        } else {
+            preparation?.task.cancel()
+            let url = fileURL(for: scope)
+            task = Task { [writer] in
+                await writer.read { Self.readSnapshot(at: url) }
+            }
+            preparation = (scope, task)
+        }
+        let saved = await task.value
+        guard !Task.isCancelled, !task.isCancelled,
+              generation == expectedGeneration, activeScope == scope,
+              loadedScope != scope else { return }
+        // Activate without another await, so no save/clear can slip between
+        // validating this read and applying it. Other waiters are superseded.
+        preparedSnapshot = (scope, saved)
+        activate()
+    }
+
+    nonisolated private static func readSnapshot(at url: URL) -> Snapshot? {
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= maximumSnapshotBytes,
+              let data = try? Data(contentsOf: url),
+              let value = try? JSONDecoder().decode(Snapshot.self, from: data),
+              value.version == 1 else { return nil }
+        return value
     }
 
     func activate() {
         let scope = activeScope
         guard loadedScope != scope else { return }
+        let prepared = preparedSnapshot
         deactivate()
         loadedScope = scope
         guard let scope else { return }
         let url = fileURL(for: scope)
-        let saved: Snapshot? = writer.sync {
-            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-                  size <= Self.maximumSnapshotBytes,
-                  let data = try? Data(contentsOf: url),
-                  let value = try? JSONDecoder().decode(Snapshot.self, from: data),
-                  value.version == 1 else { return nil }
-            return value
+        let saved: Snapshot?
+        if let prepared, prepared.scope == scope {
+            saved = prepared.value
+        } else {
+            // Preserve first paint for direct callers outside startup. Normal
+            // startup and profile selection prepare on the writer queue.
+            saved = writer.sync { Self.readSnapshot(at: url) }
         }
         guard let saved else { return }
         snapshot = saved
@@ -95,6 +143,9 @@ final class TVHomeMetadataCache {
 
     func deactivate() {
         generation += 1
+        preparation?.task.cancel()
+        preparation = nil
+        preparedSnapshot = nil
         #if os(tvOS)
         cropTasks.values.forEach { $0.cancel() }
         tintTasks.values.forEach { $0.cancel() }
@@ -257,7 +308,7 @@ final class TVHomeMetadataCache {
     func deleteAccountCache(_ account: TVSavedAccount) async throws {
         guard let profileID = account.profile?.id else { return }
         let scope = VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: profileID)
-        if loadedScope == scope { deactivate() }
+        if loadedScope == scope || preparation?.scope == scope { deactivate() }
         let url = fileURL(for: scope)
         let urls: Set<URL> = try await withCheckedThrowingContinuation { continuation in
             writer.async {
@@ -465,21 +516,30 @@ final class TVHomeMetadataCache {
 
     private func persist() {
         guard let scope = loadedScope else { return }
+        persistenceRevision &+= 1
+        let revision = persistenceRevision
+        let expectedGeneration = generation
         var value = snapshot
         value.spotlightPreparation = preparedSpotlight.isEmpty ? nil : preparedSpotlight
         let url = fileURL(for: scope)
-        writer.async {
+        writer.write(scope: scope) {
             do {
                 let data = try JSONEncoder().encode(value)
                 guard data.count <= Self.maximumSnapshotBytes else { throw CocoaError(.fileWriteOutOfSpace) }
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
                 Task { @MainActor [weak self] in
-                    if self?.loadedScope == scope { self?.storageError = nil }
+                    guard let self, self.loadedScope == scope,
+                          self.generation == expectedGeneration,
+                          self.persistenceRevision == revision else { return }
+                    self.storageError = nil
                 }
             } catch {
                 Task { @MainActor [weak self] in
-                    if self?.loadedScope == scope { self?.storageError = "Couldn’t save the Home cache. It will retry on the next refresh." }
+                    guard let self, self.loadedScope == scope,
+                          self.generation == expectedGeneration,
+                          self.persistenceRevision == revision else { return }
+                    self.storageError = "Couldn’t save the Home cache. It will retry on the next refresh."
                 }
             }
         }

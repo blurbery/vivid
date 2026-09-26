@@ -45,15 +45,13 @@ class ProfileSelectionViewModel {
                 profileId: profile.id,
                 requiresPIN: profile.hasPin
             )
+            guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { return }
             #if os(iOS)
-            // Identity is committed at this point, so reveal Home immediately.
-            // Optional settings and content warm-up must never hold the profile
-            // card on screen behind a slow server request.
+            // Only local cached metadata gates first paint. Optional settings
+            // and fresh server content continue independently of navigation.
             router.resetToHome()
-            StartupContentPrefetcher.prefetchAuthenticatedContent()
             Task { await PlayerSettings.shared.reloadForCurrentProfile() }
             #else
-            StartupContentPrefetcher.prefetchAuthenticatedContent()
             await PlayerSettings.shared.reloadForCurrentProfile()
             router.resetToHome()
             #endif
@@ -69,12 +67,11 @@ class ProfileSelectionViewModel {
             pin: pin,
             requiresPIN: profile.hasPin
         )
+        guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { throw CancellationError() }
         #if os(iOS)
         router.resetToHome()
-        StartupContentPrefetcher.prefetchAuthenticatedContent()
         Task { await PlayerSettings.shared.reloadForCurrentProfile() }
         #else
-        StartupContentPrefetcher.prefetchAuthenticatedContent()
         await PlayerSettings.shared.reloadForCurrentProfile()
         router.resetToHome()
         #endif

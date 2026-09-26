@@ -203,7 +203,7 @@ and records for 90 seconds, instead of starting eight seconds after arming.
 It retains outer scrolling, focus, row-body events and frame/resource samples.
 No URLs, media identifiers, headers or account information enter the output.
 The diagnostic helper holds single-use waiter tokens only; it never cancels or
-reprioritises the actual task. Both decoded-image flights and Emby byte flights
+reprioritises the actual task. Both decoded-image flights and shared artwork byte flights
 are observed. Byte-flight awaiters are image jobs or raw-data consumers, so
 an abandoned image job can still remain an active byte-flight waiter.
 
@@ -213,7 +213,7 @@ counters mean zero. `image.flight.active` and `image.dataFlight.active` contain
 [flights, awaiters, flights with no awaiters]. Completed-abandoned means no
 uncancelled waiter remained when the shared task completed, not that its cached
 result can never be useful. Cancellation counters observe caller cancellation;
-underlying shared-task cancellation policy is unchanged. Active-flight thresholds
+a shared byte transfer is cancelled when its final consumer leaves. Decoded-image flights retain their existing cancellation policy. Active-flight thresholds
 are retained for crossings of multiples of 32 and emitted with the next summary.
 
 `image.decode.operations` contains [total, userInitiated, utility, executing].
