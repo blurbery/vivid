@@ -96,6 +96,7 @@ targets:
     sources:
       - path: Tests/ImageDataCoalescingTests.swift
       - path: Tests/VividPlaybackStatsProjectionTests.swift
+      - path: Tests/VividSubtitleCueCursorTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:

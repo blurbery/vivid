@@ -129,7 +129,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var externalTracks: [Int: ExternalSubtitleTrack] = [:]
     private var nextExternalID = 1_000_000
     private var nativeExternalFiles: [Int: URL] = [:]
-    private var externalCues: [Int: [SubtitleCue]] = [:]
+    private var externalCues: [Int: VividSubtitleCueCursor] = [:]
+    private struct CuePublication: Equatable {
+        let trackID: Int?
+        let offsets: [Int]
+        static let empty = CuePublication(trackID: nil, offsets: [])
+    }
+    private var primaryCuePublication = CuePublication.empty
+    private var secondaryCuePublication = CuePublication.empty
     private var subtitleTasks: [Int: Task<Void, Never>] = [:]
     private var trace: PlaybackTrialTrace?
     private var cacheSnapshot: [String: Any] = [:]
@@ -632,12 +639,31 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         core?.setProperty("secondary-sub-delay", value: String(subtitleDelaySeconds - (externalTracks[index]?.nativeTimelineOffsetSeconds ?? 0)))
         updateExternalCues()
     }
-    func clearSubtitle() { activeSubtitleTrackIndex = nil; core?.setProperty("sid", value: "no"); subtitleCues = [] }
-    func clearSecondarySubtitle() { secondarySubtitleID = nil; core?.setProperty("secondary-sid", value: "no"); secondarySubtitleCues = [] }
+    func clearSubtitle() { activeSubtitleTrackIndex = nil; core?.setProperty("sid", value: "no"); updateExternalCues() }
+    func clearSecondarySubtitle() { secondarySubtitleID = nil; core?.setProperty("secondary-sid", value: "no"); updateExternalCues() }
     private func updateExternalCues() {
-        subtitleCues = (externalCues[activeSubtitleTrackIndex ?? -1] ?? []).filter { $0.startTime <= currentTime - subtitleDelaySeconds && currentTime - subtitleDelaySeconds < $0.endTime }
-        secondarySubtitleCues = (externalCues[secondarySubtitleID ?? -1] ?? []).filter { $0.startTime <= currentTime - subtitleDelaySeconds && currentTime - subtitleDelaySeconds < $0.endTime }
+        let time = currentTime - subtitleDelaySeconds
+        let primary = externalCues[activeSubtitleTrackIndex ?? -1]?.selection(at: time) ?? .empty
+        let primaryPublication = CuePublication(
+            trackID: primary.offsets.isEmpty ? nil : activeSubtitleTrackIndex, offsets: primary.offsets)
+        if primaryPublication != primaryCuePublication {
+            primaryCuePublication = primaryPublication
+            subtitleCues = primary.cues
+        }
+        let secondary = externalCues[secondarySubtitleID ?? -1]?.selection(at: time) ?? .empty
+        let secondaryPublication = CuePublication(
+            trackID: secondary.offsets.isEmpty ? nil : secondarySubtitleID, offsets: secondary.offsets)
+        if secondaryPublication != secondaryCuePublication {
+            secondaryCuePublication = secondaryPublication
+            secondarySubtitleCues = secondary.cues
+        }
     }
+    #if DEBUG
+    /// Exercises the same clock event as the media core without opening a source.
+    func debugReceivePlaybackTime(_ seconds: Double) {
+        property("time-pos", value: seconds, token: generation)
+    }
+    #endif
     func addExternalSubtitleTrack(_ track: ExternalSubtitleTrack) -> TrackInfo {
         let id = externalTracks.first(where: { $0.value == track })?.key ?? nextExternalID
         if externalTracks[id] == nil {
@@ -655,7 +681,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                     let document = try await VividSubtitleLoader.load(track)
                     guard let self, generation == token, !Task.isCancelled else { return }
                     switch document {
-                    case .cues(let cues): externalCues[id] = cues
+                    case .cues(let cues): externalCues[id] = VividSubtitleCueCursor(cues)
                     case .ass(let text):
                         let file = FileManager.default.temporaryDirectory
                             .appendingPathComponent("vivid-subtitle-" + UUID().uuidString).appendingPathExtension("ass")
@@ -728,8 +754,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         nativeExternalFiles = [:]
         rawTracks = []; videoTrack = [:]; externalTracks = [:]; externalCues = [:]
         for task in subtitleTasks.values { task.cancel() }; subtitleTasks = [:]
-        isLoadingSubtitles = false; subtitleCues = []; secondarySubtitleCues = []
+        isLoadingSubtitles = false
         activeAudioTrackIndex = nil; activeSubtitleTrackIndex = nil; secondarySubtitleID = nil
+        updateExternalCues()
         sourceVideoWidth = 0; sourceVideoHeight = 0; sourceVideoBitrate = 0; sourceVideoFrameRate = nil
         sourceVideoPixelAspectRatio = 1; sourceDVProfile = nil; sourceVideoFormat = .sdr; videoFormat = .sdr
         outputChannels = nil; outputAudioFormat = nil; videoDecoder = nil; audioDecoder = nil
