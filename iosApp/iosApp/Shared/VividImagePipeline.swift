@@ -100,12 +100,13 @@ final class VividImagePipeline: @unchecked Sendable {
     let cache: VividImageCache
     private let sessionLock = NSLock()
     private var sessions: [String: URLSession] = [:]
+    private let sessionConfiguration: () -> URLSessionConfiguration
     private let decoding = OperationQueue()
     private let flights = VividImageFlights()
-    #if os(tvOS)
-    private let embyDataFlights = VividEmbyImageDataFlights()
-    #endif
-    init(costLimit: Int = 96 * 1024 * 1024, countLimit: Int = 180, diskCapacity: Int = 1_024 * 1024 * 1024) {
+    private let dataFlights = VividImageDataFlights()
+    init(costLimit: Int = 96 * 1024 * 1024, countLimit: Int = 180, diskCapacity: Int = 1_024 * 1024 * 1024,
+         sessionConfiguration: @escaping () -> URLSessionConfiguration = { .default }) {
+        self.sessionConfiguration = sessionConfiguration
         cache = VividImageCache(costLimit: costLimit, countLimit: countLimit, diskCapacity: diskCapacity)
         decoding.maxConcurrentOperationCount = 2
         #if os(tvOS)
@@ -117,7 +118,7 @@ final class VividImagePipeline: @unchecked Sendable {
     private func session(for scope: String) -> URLSession {
         sessionLock.lock(); defer { sessionLock.unlock() }
         if let session = sessions[scope] { return session }
-        let configuration = URLSessionConfiguration.default
+        let configuration = sessionConfiguration()
         configuration.urlCache = cache.responses(for: scope)
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil
@@ -172,9 +173,7 @@ final class VividImagePipeline: @unchecked Sendable {
     func removeCachedArtwork(for urls: Set<URL>, scope: String = VividCacheScope.artwork) async {
         cache.removeAll(caches: .memory)
         await flights.cancel(urls: urls, scope: scope)
-        #if os(tvOS)
-        await embyDataFlights.cancel(urls: urls, scope: scope)
-        #endif
+        await dataFlights.cancel(urls: urls, scope: scope)
         for url in urls { cache.removeCachedData(for: VividImageRequest(url: url, cacheScope: scope)) }
     }
 
@@ -183,9 +182,7 @@ final class VividImagePipeline: @unchecked Sendable {
     func cancelForAccountSwitch() async {
         cache.removeAll(caches: .memory)
         await flights.cancelAll()
-        #if os(tvOS)
-        await embyDataFlights.cancelAll()
-        #endif
+        await dataFlights.cancelAll()
         for session in sessionSnapshot() {
             let tasks = await session.allTasks
             tasks.forEach { $0.cancel() }
@@ -193,17 +190,13 @@ final class VividImagePipeline: @unchecked Sendable {
     }
 
     func data(for request: VividImageRequest) async throws -> Data {
+        try Task.checkCancellation()
         if request.url.isFileURL { return try Data(contentsOf: request.url, options: .mappedIfSafe) }
-        #if os(tvOS)
-        // Emby's generated artwork URLs are shared by display-size, crop and
-        // palette requests. Share their bytes before doing separate decodes.
-        if request.url.path.contains("/emby/Items/"), request.url.path.contains("/Images/") {
-            return try await embyDataFlights.load(request.url, scope: request.cacheScope) { [self] in
-                try await fetchData(for: request)
-            }
+        // Display, crop, palette and disk warming share only identical URLs
+        // in the same account scope. Each requested size keeps its own decode.
+        return try await dataFlights.load(request.url, scope: request.cacheScope) { [self] in
+            try await fetchData(for: request)
         }
-        #endif
-        return try await fetchData(for: request)
     }
 
     private func fetchData(for request: VividImageRequest) async throws -> Data {
@@ -254,45 +247,75 @@ final class VividImagePipeline: @unchecked Sendable {
     }
 }
 
-/// Coalesce Emby artwork independently of thumbnail size. Transport recovery
-/// is shared with Silo in fetchData, so retries are not multiplied here.
-actor VividEmbyImageDataFlights {
+/// Share in-flight artwork bytes across sizes and platforms. Transport retries
+/// remain inside the shared operation; completed bytes use the existing cache.
+actor VividImageDataFlights {
     private struct Key: Hashable { let url: URL; let scope: String }
-    private var tasks: [Key: (UUID, Task<Data, Error>)] = [:]
+    private struct Flight {
+        let id: UUID
+        let task: Task<Data, Error>
+        var waiters: Set<UUID>
+    }
+    private var tasks: [Key: Flight] = [:]
 
     func cancelAll() {
         let outgoing = tasks.values
         tasks.removeAll()
-        for (_, task) in outgoing { task.cancel() }
+        for flight in outgoing { flight.task.cancel() }
     }
 
     func cancel(urls: Set<URL>, scope: String) {
         for key in Array(tasks.keys) where key.scope == scope && urls.contains(key.url) {
-            tasks.removeValue(forKey: key)?.1.cancel()
+            tasks.removeValue(forKey: key)?.task.cancel()
         }
     }
 
     func load(_ url: URL, scope: String = "", operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
+        try Task.checkCancellation()
         let key = Key(url: url, scope: scope)
+        let waiter = UUID()
         let diagnostics = VividImageDiagnostics.shared
-        if let (id, existing) = tasks[key] {
-            if diagnostics.enabled {
-                return try await diagnostics.value(of: existing, id: id, token: diagnostics.join(id, utility: false))
+        let flight: Flight
+        if var existing = tasks[key] {
+            existing.waiters.insert(waiter)
+            flight = existing
+        } else {
+            let id = UUID()
+            diagnostics.created(id, kind: "dataFlight", utility: false)
+            let task = Task {
+                defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
+                let data = try await operation()
+                try Task.checkCancellation()
+                return data
             }
-            return try await existing.value
+            flight = Flight(id: id, task: task, waiters: [waiter])
         }
-        let id = UUID()
-        diagnostics.created(id, kind: "dataFlight", utility: false)
-        let task = Task {
-            defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
-            return try await operation()
+        tasks[key] = flight
+        defer { release(key, id: flight.id, waiter: waiter, cancelled: false) }
+        let data = try await withTaskCancellationHandler {
+            if diagnostics.enabled {
+                return try await diagnostics.value(of: flight.task, id: flight.id,
+                    token: diagnostics.join(flight.id, utility: false))
+            }
+            return try await flight.task.value
+        } onCancel: {
+            Task { await self.release(key, id: flight.id, waiter: waiter, cancelled: true) }
         }
-        tasks[key] = (id, task)
-        defer { if tasks[key]?.0 == id { tasks[key] = nil } }
-        if diagnostics.enabled {
-            return try await diagnostics.value(of: task, id: id, token: diagnostics.join(id, utility: false))
+        try Task.checkCancellation()
+        return data
+    }
+
+    private func release(_ key: Key, id: UUID, waiter: UUID, cancelled: Bool) {
+        guard var flight = tasks[key], flight.id == id,
+              flight.waiters.remove(waiter) != nil else { return }
+        if flight.waiters.isEmpty {
+            tasks.removeValue(forKey: key)
+            // An abandoned disk warmer must not occupy a connection until
+            // timeout. Other sizes keep the transfer alive while they need it.
+            if cancelled { flight.task.cancel() }
+        } else {
+            tasks[key] = flight
         }
-        return try await task.value
     }
 }
 

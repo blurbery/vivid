@@ -930,7 +930,11 @@ struct ContentView: View {
         LaunchTimeline.recordInitialStateResolved(state: targetState.diagnosticsState)
         #endif
 
-        StartupContentPrefetcher.prefetchForInitialRoute(targetState)
+        guard await StartupContentPrefetcher.prefetchForInitialRoute(targetState) else {
+            didStartInitialStateCheck = false
+            if !Task.isCancelled { initialStateAttempt += 1 }
+            return
+        }
         pendingInitialAuthState = targetState
         finishInitialStartupIfReady()
 
@@ -1053,7 +1057,7 @@ struct ContentView: View {
                 profileId: profile.id,
                 requiresPIN: profile.hasPin
             )
-            StartupContentPrefetcher.prefetchAuthenticatedContent()
+            guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { return }
             #if os(iOS)
             DownloadSettings.shared.reloadForCurrentProfile()
                 TVTMDbStore.shared.reloadForCurrentProfile()

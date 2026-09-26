@@ -25,7 +25,7 @@ struct TVCatalogGrid: View {
     var fixedColumnCount: Int? = nil
     @State private var availableWidth: CGFloat = 1760
     @State private var visibleRows: Set<Int> = []
-    @State private var lastFocusedItemId: String?
+    @State private var isVisible = false
     @State private var artworkWindow = TVPosterArtworkWindow()
     @Environment(\.displayScale) private var displayScale
     /// Per-card width. Defaults to the theme poster size; shrink when a
@@ -50,7 +50,7 @@ struct TVCatalogGrid: View {
     /// the end appears. 8 rows of lead time — larger buffer means fast
     /// scrolls that skip `.onAppear` events still hit the trigger
     /// before the user reaches the bottom.
-    private var prefetchRowsRemaining: Int { fixedColumnCount == nil ? 8 : 2 }
+    private var prefetchRowsRemaining: Int { fixedColumnCount == nil ? 8 : 4 }
 
     private var resolvedColumnCount: Int {
         if let fixedColumnCount { return fixedColumnCount }
@@ -62,18 +62,24 @@ struct TVCatalogGrid: View {
 
     private var artworkRange: Range<Int> {
         TVPosterArtworkWindow.range(
-            firstVisible: visibleRows.min() ?? 0,
-            focusedIndex: items.firstIndex { $0.contentId == lastFocusedItemId },
+            firstVisible: visibleRows.min(),
+            focusedIndex: items.firstIndex { $0.contentId == focusedItemId },
             itemCount: items.count,
             columns: resolvedColumnCount
         )
     }
 
-    private var artworkEntries: [TVPosterArtworkEntry] {
+    private func artworkEntries(in range: Range<Int>) -> [TVPosterArtworkEntry] {
         guard let columns = fixedColumnCount else { return [] }
         let width = max(1, (availableWidth - CGFloat(columns - 1) * columnSpacing) / CGFloat(columns)) * displayScale
-        return items[artworkRange].compactMap { item in
-            guard let raw = item.posterUrl, let url = URL(string: raw) else { return nil }
+        // Visible and upcoming rows go first, then the small look-behind.
+        let first = min(max(visibleRows.min() ?? range.lowerBound, range.lowerBound), range.upperBound)
+        let indices = Array(first..<range.upperBound) + Array((range.lowerBound..<first).reversed())
+        let base = MediaServerProvider.active == .silo
+            ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
+        return indices.compactMap { index in
+            guard let raw = items[index].posterUrl,
+                  let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base) else { return nil }
             return TVPosterArtworkEntry(url: url, size: CGSize(width: width, height: width * 1.5))
         }
     }
@@ -83,6 +89,8 @@ struct TVCatalogGrid: View {
     }
 
     var body: some View {
+        let range = artworkRange
+        let entries = artworkEntries(in: range)
         // Rows are explicit full-width focus sections so a D-pad move into a
         // ragged row (fewer cards than columns) still lands: the focus engine
         // resolves moves geometrically, and a partially filled LazyVGrid row
@@ -107,7 +115,8 @@ struct TVCatalogGrid: View {
                                 max(1, (availableWidth - CGFloat($0 - 1) * columnSpacing) / CGFloat($0))
                                     / uiCustomization.cardPresentation.posterSize.scale
                             } ?? cardWidth,
-                            loadsArtwork: fixedColumnCount == nil || artworkRange.contains(rowStart + indexed.index),
+                            loadsArtwork: fixedColumnCount == nil || range.contains(rowStart + indexed.index)
+                                || visibleRows.contains(rowStart) || focusedItemId == item.contentId,
                             prefersDefaultFocus: prefersDefaultFocusOnFirstItem
                                 && rowStart == 0 && indexed.index == 0,
                             defaultFocusNamespace: gridFocusNamespace,
@@ -130,28 +139,40 @@ struct TVCatalogGrid: View {
                 .frame(maxWidth: .infinity)
                 .focusSection()
                 .onScrollVisibilityChange(threshold: 0.01) { isVisible in
-                    if isVisible { visibleRows.insert(rowStart) } else { visibleRows.remove(rowStart) }
-                    onRowVisibilityChange?(
-                        rowStart..<min(rowStart + resolvedColumnCount, items.count),
-                        isVisible
-                    )
+                    setRowVisibility(rowStart, isVisible: isVisible)
                 }
+                .onDisappear { setRowVisibility(rowStart, isVisible: false) }
             }
         }
         .onChange(of: focusedItemId) { _, id in
             guard let id, let index = items.firstIndex(where: { $0.contentId == id }) else { return }
-            lastFocusedItemId = id
             onCellAppear(index: index)
         }
-        .onChange(of: artworkEntries) { _, entries in artworkWindow.update(entries) }
-        .onAppear { artworkWindow.update(artworkEntries) }
-        .onDisappear { artworkWindow.clear() }
+        .onChange(of: entries) { _, entries in
+            if isVisible { artworkWindow.update(entries) }
+        }
+        .onAppear {
+            isVisible = true
+            artworkWindow.update(entries)
+        }
+        .onDisappear {
+            isVisible = false
+            artworkWindow.clear()
+            visibleRows.removeAll()
+        }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
         .focusScope(gridFocusNamespace)
         .focusSection()
         .onAppear { applyFocusRequest(focusRequest) }
         .onChange(of: focusRequest) { _, request in applyFocusRequest(request) }
         .onChange(of: items.map(\.contentId)) { _, _ in applyFocusRequest(focusRequest) }
+        .onChange(of: items.count) { _, _ in
+            // A page may finish while its last visible row is already mounted.
+            // Recheck the viewport instead of waiting for another focus event.
+            if let row = visibleRows.max() {
+                onCellAppear(index: min(row + resolvedColumnCount, items.count) - 1)
+            }
+        }
 
         if isLoading {
             HStack {
@@ -170,6 +191,14 @@ struct TVCatalogGrid: View {
 
     private func emptySlotCount(from rowStart: Int) -> Int {
         resolvedColumnCount - rowItems(from: rowStart).count
+    }
+
+    private func setRowVisibility(_ rowStart: Int, isVisible: Bool) {
+        if isVisible { visibleRows.insert(rowStart) } else { visibleRows.remove(rowStart) }
+        let end = min(rowStart + resolvedColumnCount, items.count)
+        guard rowStart < end else { return }
+        onRowVisibilityChange?(rowStart..<end, isVisible)
+        if isVisible { onCellAppear(index: end - 1) }
     }
 
     private func onCellAppear(index: Int) {
@@ -211,10 +240,12 @@ final class TVPosterArtworkWindow {
     private let prefetcher = VividImagePrefetcher(pipeline: VividImagePipeline.shared, destination: .memoryCache, maxConcurrentRequestCount: 2)
     private var retained: [String: TVPosterArtworkEntry] = [:]
 
-    nonisolated static func range(firstVisible: Int, focusedIndex: Int? = nil, itemCount: Int, columns: Int) -> Range<Int> {
+    nonisolated static func range(firstVisible: Int?, focusedIndex: Int? = nil, itemCount: Int, columns: Int) -> Range<Int> {
         let columns = max(1, columns)
         let count = max(0, itemCount)
-        let anchor = min(max(0, focusedIndex ?? firstVisible), max(0, count - 1))
+        // Scrolling can outlive focus. A remembered off-screen card must not
+        // pin the loading window while new rows enter the viewport.
+        let anchor = min(max(0, firstVisible ?? focusedIndex ?? 0), max(0, count - 1))
         let start = max(0, (anchor / columns - 2) * columns)
         return start..<min(count, start + 10 * columns)
     }
@@ -227,9 +258,12 @@ final class TVPosterArtworkWindow {
             VividImagePipeline.shared.cache.removeCachedImage(for: entry.request, caches: .memory)
             VividImagePipeline.shared.cache.removeCachedImage(for: PosterImageCache.cardWarmRequest(for: entry.url), caches: .memory)
         }
-        let added = entries.filter { retained[$0.key] == nil }
         retained = desired
-        prefetcher.startPrefetching(with: added.map(\.request))
+        // Replace queued work in viewport order, retaining active requests and
+        // refilling images evicted since this window was last visited.
+        prefetcher.replacePendingPrefetching(with: entries.map(\.request).filter {
+            VividImagePipeline.shared.cache[$0] == nil
+        })
     }
 
     func clear() {

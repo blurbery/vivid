@@ -506,21 +506,25 @@ enum StartupContentPrefetcher {
         }
     }
 
-    static func prefetchAuthenticatedContent() {
+    static func prefetchAuthenticatedContent() async -> Bool {
+        let generation = profileScopedGeneration
         #if os(tvOS) || os(iOS)
+        await TVHomeMetadataCache.shared.prepare()
+        guard !Task.isCancelled, generation == profileScopedGeneration else { return false }
         TVHomeMetadataCache.shared.hydrate()
         #endif
         prefetchHomeSections()
         Task {
             await OverlayPrefsStore.shared.hydrateIfNeeded()
         }
+        return true
     }
 
     /// Opens the startup prefetch block. The individual fetches below report
     /// their own outcomes but complete out of order and off the launch chain,
     /// so without this line a reader cannot tell whether a missing outcome
     /// means the fetch failed silently or was never started for this route.
-    static func prefetchForInitialRoute(_ state: AppRouter.AuthState) {
+    static func prefetchForInitialRoute(_ state: AppRouter.AuthState) async -> Bool {
         #if os(iOS) || os(tvOS)
         DiagTrace.breadcrumb(
             .essential,
@@ -535,7 +539,7 @@ enum StartupContentPrefetcher {
         #endif
         switch state {
         case .authenticated:
-            prefetchAuthenticatedContent()
+            guard await prefetchAuthenticatedContent() else { return false }
             // The root top bar renders the active profile's avatar right
             // after launch. Warm the list here (cold launch only) so it
             // doesn't fill in late; sign-in / profile-selection flows have
@@ -546,6 +550,7 @@ enum StartupContentPrefetcher {
         case .loading, .needsServerSetup, .needsLogin:
             break
         }
+        return !Task.isCancelled
     }
 
     private static func prefetchHomeArtwork(for response: SectionsResponse) {

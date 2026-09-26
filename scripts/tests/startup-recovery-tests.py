@@ -102,6 +102,7 @@ actor TokenStore {
 }
 enum Route: Hashable { case serverSetup }
 enum HTTPError: Error { case requestIdentityChanged }
+struct TVAppBackdrop: View { var body: some View { Color.black.ignoresSafeArea() } }
 @MainActor enum StartupContentPrefetcher {
  static func prefetchForInitialRoute(_ state: AppRouter.AuthState) {}
 }
@@ -165,6 +166,11 @@ end=r'''
  var body: some Scene { WindowGroup { Harness() } }
 }
 '''
+if 'guard await StartupContentPrefetcher.prefetchForInitialRoute' in check:
+    preamble = preamble.replace(
+        'static func prefetchForInitialRoute(_ state: AppRouter.AuthState) {}',
+        'static func prefetchForInitialRoute(_ state: AppRouter.AuthState) async -> Bool { true }')
+
 # Use the original task modifier, launch gate, launch resolution and retry helper.
 text=preamble.replace("__STARTUP_TASK__",task if stable_task else "")+("" if stable_task else task)+end.split('@main')[0].replace('\n}\n','\n'+launch+check+finish+'\n}\n',1)+'@main'+end.split('@main')[1]+ '\nstruct KeychainReadFailure:'+retry+'\n'+splash+'\nstruct VividLoadingDots: View {'+dots+'\n'+read('tvOS/Components/VividLogoView.swift')
 (out/'Repro.swift').write_text(text)

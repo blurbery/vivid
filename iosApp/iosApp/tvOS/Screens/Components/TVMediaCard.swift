@@ -147,18 +147,15 @@ struct TVMediaCard: View {
 
     private var posterImage: some View {
         ZStack(alignment: .topTrailing) {
-            if loadsArtwork {
-                CachedAsyncImage(
-                    url: posterUrl,
-                    targetSize: CGSize(width: resolvedCardWidth, height: cardHeight),
-                    thumbhash: posterThumbhash,
-                    contentMode: .fill
-                )
-                .frame(width: resolvedCardWidth, height: cardHeight)
-                .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
-            } else {
-                Color.vividSurface.frame(width: resolvedCardWidth, height: cardHeight)
-            }
+            CachedAsyncImage(
+                url: posterUrl,
+                targetSize: CGSize(width: resolvedCardWidth, height: cardHeight),
+                thumbhash: loadsArtwork ? posterThumbhash : nil,
+                contentMode: .fill,
+                isArtworkResident: loadsArtwork
+            )
+            .frame(width: resolvedCardWidth, height: cardHeight)
+            .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
 
             if let overlayData, overlayStore.enabled {
                 CardOverlays(data: overlayData, prefs: overlayStore.prefs, variant: .poster)

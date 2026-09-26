@@ -53,7 +53,7 @@ final class VividImageRetryTests: XCTestCase {
     }
 
     func testSameURLDoesNotShareInFlightBytesAcrossAccounts() async throws {
-        let flights = VividEmbyImageDataFlights()
+        let flights = VividImageDataFlights()
         let url = URL(string: "https://artwork.example/avatar")!
         let started = expectation(description: "First account request started")
         let outgoing = Task {
@@ -75,7 +75,7 @@ final class VividImageRetryTests: XCTestCase {
     }
 
     func testAccountSwitchCancelsSharedArtworkAndAllowsFreshRequest() async throws {
-        let flights = VividEmbyImageDataFlights()
+        let flights = VividImageDataFlights()
         let url = URL(string: "https://artwork.example/emby/Items/1/Images/Primary")!
         let started = expectation(description: "Outgoing artwork started")
         let outgoing = Task {

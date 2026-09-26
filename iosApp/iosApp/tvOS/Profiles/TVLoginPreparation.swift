@@ -44,7 +44,7 @@ final class TVLoginPreparation {
             // Home hydrates its profile-scoped disk snapshot before its first
             // render. Fresh sections and libraries must not gate the handoff.
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
-            StartupContentPrefetcher.prefetchAuthenticatedContent()
+            guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { throw CancellationError() }
             try Task.checkCancellation()
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
             ready = true
