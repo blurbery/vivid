@@ -199,6 +199,13 @@ final class VividImagePipeline: @unchecked Sendable {
         }
     }
 
+    #if DEBUG
+    /// Read-only synchronisation for tests with a held synthetic response.
+    func debugDataFlightWaiterCount(for request: VividImageRequest) async -> Int {
+        await dataFlights.debugWaiterCount(for: request.url, scope: request.cacheScope)
+    }
+    #endif
+
     private func fetchData(for request: VividImageRequest) async throws -> Data {
         let delegate = VividImageDiagnostics.shared.enabled ? VividImageMetricsDelegate.shared : nil
         let (data, response) = try await VividImageRetry.load {
@@ -257,6 +264,12 @@ actor VividImageDataFlights {
         var waiters: Set<UUID>
     }
     private var tasks: [Key: Flight] = [:]
+
+    #if DEBUG
+    func debugWaiterCount(for url: URL, scope: String) -> Int {
+        tasks[Key(url: url, scope: scope)]?.waiters.count ?? 0
+    }
+    #endif
 
     func cancelAll() {
         let outgoing = tasks.values

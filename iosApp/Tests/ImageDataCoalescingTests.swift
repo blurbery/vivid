@@ -18,6 +18,7 @@ final class ImageDataCoalescingTests: XCTestCase {
 
     func testDifferentDecodesAndDiskWarmingShareOneDownloadForEveryProvider() async throws {
         for path in ["/silo/poster?signature=one", "/emby/Items/1/Images/Primary", "/Items/1/Images/Primary"] {
+            ArtworkProtocol.holdResponses()
             let pipeline = makePipeline()
             let url = URL(string: "https://artwork.invalid" + path)!
             var small = VividImageRequest(url: url, cacheScope: "test")
@@ -25,10 +26,18 @@ final class ImageDataCoalescingTests: XCTestCase {
             var large = small
             large.thumbnail = .init(maxPixelSize: 6)
             let before = ArtworkProtocol.count
-            async let first = pipeline.image(for: small)
-            async let second = pipeline.image(for: large)
-            async let bytes = pipeline.data(for: VividImageRequest(url: url, cacheScope: "test"))
-            let (smallImage, largeImage, data) = try await (first, second, bytes)
+            let first = Task { try await pipeline.image(for: small) }
+            let second = Task { try await pipeline.image(for: large) }
+            let bytes = Task { try await pipeline.data(for: VividImageRequest(url: url, cacheScope: "test")) }
+            defer {
+                first.cancel()
+                second.cancel()
+                bytes.cancel()
+                ArtworkProtocol.releaseResponses()
+            }
+            try await waitForWaiters(3, in: pipeline, request: small)
+            ArtworkProtocol.releaseResponses()
+            let (smallImage, largeImage, data) = try await (first.value, second.value, bytes.value)
             XCTAssertEqual(ArtworkProtocol.count - before, 1)
             XCTAssertEqual(smallImage.cgImage?.height, 3)
             XCTAssertEqual(largeImage.cgImage?.height, 6)
@@ -48,16 +57,21 @@ final class ImageDataCoalescingTests: XCTestCase {
     }
 
     func testCancellingOneWaiterDoesNotCancelAnotherSize() async throws {
+        ArtworkProtocol.holdResponses()
         let pipeline = makePipeline()
         let request = VividImageRequest(url: URL(string: "https://artwork.invalid/poster")!, cacheScope: "test")
-        let started = expectation(description: "Shared transfer started")
-        ArtworkProtocol.onStart = { started.fulfill() }
         let warming = Task { try await pipeline.data(for: request) }
-        await fulfillment(of: [started], timeout: 2)
         let display = Task { try await pipeline.image(for: request) }
-        // The synthetic transfer stays open for 150 ms while display joins it.
-        try await Task.sleep(for: .milliseconds(30))
+        defer {
+            warming.cancel()
+            display.cancel()
+            ArtworkProtocol.releaseResponses()
+        }
+        try await waitForWaiters(2, in: pipeline, request: request)
         warming.cancel()
+        // Confirm cancellation was processed while the response is still held.
+        try await waitForWaiters(1, in: pipeline, request: request)
+        ArtworkProtocol.releaseResponses()
         let image = try await display.value
         XCTAssertNotNil(image.cgImage)
         do {
@@ -65,6 +79,20 @@ final class ImageDataCoalescingTests: XCTestCase {
             XCTFail("The cancelled waiter must not receive data")
         } catch { XCTAssertTrue(error is CancellationError) }
         XCTAssertEqual(ArtworkProtocol.count, 1)
+    }
+
+    private func waitForWaiters(_ count: Int, in pipeline: VividImagePipeline,
+                                request: VividImageRequest, file: StaticString = #filePath,
+                                line: UInt = #line) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await pipeline.debugDataFlightWaiterCount(for: request) != count {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("Shared transfer did not reach \(count) waiters", file: file, line: line)
+                throw URLError(.timedOut)
+            }
+            // Poll only to observe registration; elapsed time never signals readiness.
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     func testCancellingLastWaiterStopsTheTransfer() async throws {
@@ -136,23 +164,35 @@ final class ImageDataCoalescingTests: XCTestCase {
 private final class ArtworkProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     private static var requests = 0
-    private static var started: (() -> Void)?
+    private static var holdingResponses = false
+    private static var pending: [DispatchWorkItem] = []
     private var response: DispatchWorkItem?
     static var count: Int { lock.lock(); defer { lock.unlock() }; return requests }
-    static var onStart: (() -> Void)? {
-        get { lock.lock(); defer { lock.unlock() }; return started }
-        set { lock.lock(); defer { lock.unlock() }; started = newValue }
+    static func holdResponses() {
+        lock.lock(); defer { lock.unlock() }
+        holdingResponses = true
     }
-    static func reset() { lock.lock(); defer { lock.unlock() }; requests = 0; started = nil }
+    static func releaseResponses() {
+        lock.lock()
+        holdingResponses = false
+        let responses = pending
+        pending.removeAll()
+        lock.unlock()
+        responses.forEach { DispatchQueue.global().async(execute: $0) }
+    }
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        requests = 0
+        holdingResponses = false
+        pending.forEach { $0.cancel() }
+        pending.removeAll()
+    }
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "artwork.invalid" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.lock.lock()
         Self.requests += 1
-        let onStart = Self.started
-        Self.started = nil
         Self.lock.unlock()
-        onStart?()
         let response = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let context = CGContext(data: nil, width: 8, height: 12, bitsPerComponent: 8,
@@ -169,7 +209,11 @@ private final class ArtworkProtocol: URLProtocol, @unchecked Sendable {
             self.client?.urlProtocolDidFinishLoading(self)
         }
         self.response = response
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.15, execute: response)
+        Self.lock.lock()
+        let held = Self.holdingResponses
+        if held { Self.pending.append(response) }
+        Self.lock.unlock()
+        if !held { DispatchQueue.global().async(execute: response) }
     }
     override func stopLoading() { response?.cancel() }
 }
