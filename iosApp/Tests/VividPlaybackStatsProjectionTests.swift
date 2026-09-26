@@ -38,9 +38,14 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
         let spec = try VividLoadSpec(directURL: URL(string: "https://example.invalid/video.mp4")!,
                                     headers: [:], startPosition: 0, audioOnly: false)
         model.debugPreparePlaybackStatsLoad(spec)
+        model.debugPlaybackStatsUptime = 100
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 8)
+        let firstSampledAt = model.playbackStats.sampledAt
         for buffer in [8.0, 0.2, 15.0, 0.0] {
             model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: buffer)
             XCTAssertEqual(model.bufferedAheadSeconds, buffer, "Recovery must use the delivered sample")
+            XCTAssertEqual(model.playbackStats.bufferedAheadSeconds, 8, "The projected statistics must remain throttled")
+            XCTAssertEqual(model.playbackStats.sampledAt, firstSampledAt)
             #if os(tvOS)
             XCTAssertEqual(model.timelineBufferedAheadSeconds, buffer, "Timeline must not wait for statistics")
             #endif
@@ -52,6 +57,74 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
         #if os(tvOS)
         XCTAssertEqual(model.timelineBufferedAheadSeconds, 0)
         #endif
+    }
+
+    @MainActor
+    func testFinalTelemetrySampleRefreshesWithoutAnotherEvent() async throws {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        let spec = try VividLoadSpec(directURL: URL(string: "https://example.invalid/video.mp4")!,
+                                    headers: [:], startPosition: 0, audioOnly: false)
+        model.debugPreparePlaybackStatsLoad(spec)
+        model.debugPlaybackStatsUptime = 100
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 8)
+        model.debugPlaybackStatsUptime = 100.85
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 2)
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 3)
+        XCTAssertEqual(model.playbackStats.bufferedAheadSeconds, 8)
+        XCTAssertEqual(model.bufferedAheadSeconds, 3)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while model.playbackStats.bufferedAheadSeconds != 3 && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.playbackStats.bufferedAheadSeconds, 3, "The final sample must publish even while paused")
+        XCTAssertEqual(model.playbackStats.readAheadAvailableSeconds, 3)
+    }
+
+    @MainActor
+    func testPendingStatisticsCannotSurviveNewLoadOrCleanup() async throws {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        let first = try VividLoadSpec(directURL: URL(string: "https://first.example.invalid/video.mp4")!,
+                                     headers: [:], startPosition: 0, audioOnly: false)
+        let second = try VividLoadSpec(directURL: URL(string: "https://second.example.invalid/video.mp4")!,
+                                      headers: [:], startPosition: 0, audioOnly: false)
+        model.debugPreparePlaybackStatsLoad(first)
+        model.debugPlaybackStatsUptime = 100
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 8)
+        model.debugPlaybackStatsUptime = 100.85
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 2)
+        model.debugPreparePlaybackStatsLoad(second)
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 9)
+        let sampledAt = model.playbackStats.sampledAt
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(model.playbackStats.source, "second.example.invalid")
+        XCTAssertEqual(model.playbackStats.bufferedAheadSeconds, 9)
+        XCTAssertEqual(model.playbackStats.sampledAt, sampledAt)
+        model.debugPlaybackStatsUptime = 101.7
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 3)
+        model.cleanup()
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertNil(model.playbackStats.bufferedAheadSeconds)
+        XCTAssertEqual(model.bufferedAheadSeconds, 0)
+    }
+
+    @MainActor
+    func testUnavailableTelemetryCancelsTrailingStatisticsUpdate() async throws {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        let spec = try VividLoadSpec(directURL: URL(string: "https://example.invalid/video.mp4")!,
+                                    headers: [:], startPosition: 0, audioOnly: false)
+        model.debugPreparePlaybackStatsLoad(spec)
+        model.debugPlaybackStatsUptime = 100
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 8)
+        model.debugPlaybackStatsUptime = 100.85
+        model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 2)
+        model.vividEngine.diagnostics.liveTelemetry = nil
+        let sampledAt = model.playbackStats.sampledAt
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertNil(model.playbackStats.bufferedAheadSeconds)
+        XCTAssertEqual(model.playbackStats.sampledAt, sampledAt)
     }
 
     @MainActor
@@ -131,7 +204,12 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
         XCTAssertGreaterThan(controller.engine.currentTime, 0.2, "Synthetic media must actually play")
         controller.pause()
         let result = await controller.seek(toSourceTime: 0.1)
-        XCTAssertEqual(result, .completed(sourceSeconds: 0.1))
+        guard case .completed(let landedSeconds) = result else {
+            return XCTFail("Synthetic playback seek did not complete")
+        }
+        // The reported position is the landed frame, not necessarily the
+        // exact requested timestamp between frames in the synthetic fixture.
+        XCTAssertEqual(landedSeconds, 0.1, accuracy: 0.05)
         XCTAssertFalse(controller.shouldPlayWhenReady)
         XCTAssertEqual(controller.activeLoadEpoch, epoch)
         XCTAssertNil(controller.engine.errorInfo)

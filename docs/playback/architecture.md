@@ -113,7 +113,7 @@ Apple TV scrubbing shows the timeline and target time without a thumbnail overla
 
 iOS scrub previews use the existing bounded request owner and platform engine frame extractor. Late images from an old source or gesture must not paint over a new selection.
 
-Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication. Recovery and the Apple TV timeline receive every buffer update. Routine statistics formatting is limited to once per 0.9 seconds using a monotonic clock; state, track and route changes, unavailable telemetry and new loads still refresh immediately. This does not change playback timing, skip detection or progress reporting.
+Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication. Recovery and the Apple TV timeline receive every buffer update. Routine statistics formatting is limited to once per 0.9 seconds using a monotonic clock; one pending refresh publishes the latest sample when that interval expires, even if playback is paused and no further event arrives. State, track and route changes, unavailable telemetry and new loads still refresh immediately and cancel any pending refresh. This does not change playback timing, skip detection or progress reporting.
 
 ## IntroDB marker timing
 

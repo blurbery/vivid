@@ -388,10 +388,14 @@ struct VividPlaybackStatsCadence {
     private var lastRefreshUptime: TimeInterval?
 
     mutating func shouldRefresh(at uptime: TimeInterval, force: Bool = false) -> Bool {
-        if !force, let lastRefreshUptime, uptime >= lastRefreshUptime,
-           uptime - lastRefreshUptime < 0.9 { return false }
+        if !force, remainingDelay(at: uptime) > 0 { return false }
         lastRefreshUptime = uptime
         return true
+    }
+
+    func remainingDelay(at uptime: TimeInterval) -> TimeInterval {
+        guard let lastRefreshUptime, uptime >= lastRefreshUptime else { return 0 }
+        return max(0, 0.9 - (uptime - lastRefreshUptime))
     }
 
     mutating func reset() { lastRefreshUptime = nil }

@@ -343,6 +343,11 @@ class PlayerViewModel {
     private var playbackReadAheadSeconds: Double?
     @ObservationIgnored private var playbackStatsCadence = VividPlaybackStatsCadence()
     @ObservationIgnored private var playbackStatsEpoch: VividPlaybackController.LoadEpoch?
+    @ObservationIgnored private var playbackStatsRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingPlaybackStatsTelemetry: LiveTelemetry?
+    #if DEBUG
+    @ObservationIgnored var debugPlaybackStatsUptime: TimeInterval?
+    #endif
     #if os(tvOS)
     /// Presentation only: prefer measured contiguous read-ahead, falling back
     /// to the consumer buffer on routes without a cache-frontier measurement.
@@ -1160,8 +1165,22 @@ class PlayerViewModel {
         refreshPlaybackStats(force: force, telemetry: vividPlaybackController.engine.liveTelemetry)
     }
 
+    private func cancelPlaybackStatsRefresh() {
+        playbackStatsRefreshTask?.cancel()
+        playbackStatsRefreshTask = nil
+        pendingPlaybackStatsTelemetry = nil
+    }
+
+    private var playbackStatsUptime: TimeInterval {
+        #if DEBUG
+        if let debugPlaybackStatsUptime { return debugPlaybackStatsUptime }
+        #endif
+        return ProcessInfo.processInfo.systemUptime
+    }
+
     private func refreshPlaybackStats(force: Bool = false, telemetry: LiveTelemetry?) {
         guard let spec = vividPlaybackController.activeSpec else {
+            cancelPlaybackStatsRefresh()
             playbackStats = .empty
             bufferedAheadSeconds = 0
             playbackReadAheadSeconds = nil
@@ -1175,12 +1194,28 @@ class PlayerViewModel {
         bufferedAheadSeconds = max(0, telemetry?.forwardBufferSeconds ?? 0)
         playbackReadAheadSeconds = telemetry?.forwardBufferSeconds
         if playbackStatsEpoch != activeVividLoadEpoch {
+            cancelPlaybackStatsRefresh()
             playbackStatsCadence.reset()
             playbackStatsEpoch = activeVividLoadEpoch
         }
-        guard playbackStatsCadence.shouldRefresh(
-            at: ProcessInfo.processInfo.systemUptime, force: force
-        ) else { return }
+        let uptime = playbackStatsUptime
+        guard playbackStatsCadence.shouldRefresh(at: uptime, force: force) else {
+            pendingPlaybackStatsTelemetry = telemetry
+            if playbackStatsRefreshTask == nil {
+                let epoch = activeVividLoadEpoch
+                let delay = playbackStatsCadence.remainingDelay(at: uptime)
+                playbackStatsRefreshTask = Task { @MainActor [weak self] in
+                    do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                    guard !Task.isCancelled, let self, !isDisposed,
+                          activeVividLoadEpoch == epoch else { return }
+                    let latestTelemetry = pendingPlaybackStatsTelemetry
+                    playbackStatsRefreshTask = nil
+                    refreshPlaybackStats(force: true, telemetry: latestTelemetry)
+                }
+            }
+            return
+        }
+        cancelPlaybackStatsRefresh()
         let sampledAt = Date()
 
         let secondaryLabel = selectedSecondarySubtitleId.flatMap { selectedID in
@@ -3638,6 +3673,7 @@ class PlayerViewModel {
         selectedSecondarySubtitleId = nil
         bufferedAheadSeconds = 0
         playbackReadAheadSeconds = nil
+        cancelPlaybackStatsRefresh()
         playbackStatsCadence.reset()
         playbackStatsEpoch = nil
         playbackStats = .empty
@@ -5716,6 +5752,7 @@ class PlayerViewModel {
         currentSelectedVersion = nil
         bufferedAheadSeconds = 0
         playbackReadAheadSeconds = nil
+        cancelPlaybackStatsRefresh()
         playbackStatsCadence.reset()
         playbackStatsEpoch = nil
         playbackStats = .empty
@@ -5880,6 +5917,7 @@ class PlayerViewModel {
         MainActor.assumeIsolated {
             Self.logger.info("PlayerViewModel.deinit")
             isDisposed = true
+            playbackStatsRefreshTask?.cancel()
             transientRecoveryBudget.cancel()
             if let systemCaptionObserverToken {
                 NotificationCenter.default.removeObserver(systemCaptionObserverToken)
