@@ -340,11 +340,14 @@ class PlayerViewModel {
     /// from the deeper read-ahead cache shown by the Apple TV timeline.
     var bufferedAheadSeconds: Double = 0
     var playbackStats: PlaybackStats = .empty
+    private var playbackReadAheadSeconds: Double?
+    @ObservationIgnored private var playbackStatsCadence = VividPlaybackStatsCadence()
+    @ObservationIgnored private var playbackStatsEpoch: VividPlaybackController.LoadEpoch?
     #if os(tvOS)
     /// Presentation only: prefer measured contiguous read-ahead, falling back
     /// to the consumer buffer on routes without a cache-frontier measurement.
     var timelineBufferedAheadSeconds: Double {
-        if let available = playbackStats.readAheadAvailableSeconds, available.isFinite {
+        if let available = playbackReadAheadSeconds, available.isFinite {
             return max(0, available)
         }
         return bufferedAheadSeconds.isFinite ? max(0, bufferedAheadSeconds) : 0
@@ -1113,8 +1116,8 @@ class PlayerViewModel {
         case .inventoryChanged:
             adoptVividInventory()
             refreshPlaybackStats(force: true)
-        case .telemetryChanged:
-            refreshPlaybackStats(force: true)
+        case .telemetryChanged(let telemetry):
+            refreshPlaybackStats(force: telemetry == nil, telemetry: telemetry)
         case .ended:
             handleEndOfFile()
             refreshPlaybackStats(force: true)
@@ -1146,19 +1149,39 @@ class PlayerViewModel {
         }
     }
 
+    #if DEBUG
+    /// Tests establish a generation without opening media or a server session.
+    func debugPreparePlaybackStatsLoad(_ spec: VividLoadSpec) {
+        activeVividLoadEpoch = vividPlaybackController.beginLoad(spec, shouldPlayWhenReady: false)
+    }
+    #endif
+
     private func refreshPlaybackStats(force: Bool = false) {
+        refreshPlaybackStats(force: force, telemetry: vividPlaybackController.engine.liveTelemetry)
+    }
+
+    private func refreshPlaybackStats(force: Bool = false, telemetry: LiveTelemetry?) {
         guard let spec = vividPlaybackController.activeSpec else {
             playbackStats = .empty
             bufferedAheadSeconds = 0
+            playbackReadAheadSeconds = nil
+            playbackStatsCadence.reset()
+            playbackStatsEpoch = nil
             return
         }
 
-        let sampledAt = Date()
-        if !force,
-           playbackStats.hasRows,
-           sampledAt.timeIntervalSince(playbackStats.sampledAt) < 0.9 {
-            return
+        // The quality fallback and TV timeline must see every buffer sample,
+        // including an unavailable measurement. Only formatting is rate-limited.
+        bufferedAheadSeconds = max(0, telemetry?.forwardBufferSeconds ?? 0)
+        playbackReadAheadSeconds = telemetry?.forwardBufferSeconds
+        if playbackStatsEpoch != activeVividLoadEpoch {
+            playbackStatsCadence.reset()
+            playbackStatsEpoch = activeVividLoadEpoch
         }
+        guard playbackStatsCadence.shouldRefresh(
+            at: ProcessInfo.processInfo.systemUptime, force: force
+        ) else { return }
+        let sampledAt = Date()
 
         let secondaryLabel = selectedSecondarySubtitleId.flatMap { selectedID in
             subtitleTracks.first { $0.trackId == selectedID }?.primaryLabel
@@ -1171,7 +1194,8 @@ class PlayerViewModel {
             secondarySubtitleLabel: secondaryLabel
         )
         let snapshot = VividPlaybackStatsSnapshot(
-            engine: vividPlaybackController.engine
+            engine: vividPlaybackController.engine,
+            telemetry: telemetry
         )
         let projected = VividPlaybackStatsProjection.make(
             snapshot: snapshot,
@@ -1179,7 +1203,6 @@ class PlayerViewModel {
             sampledAt: sampledAt
         )
         playbackStats = projected
-        bufferedAheadSeconds = max(0, projected.bufferedAheadSeconds ?? 0)
     }
 
     @MainActor
@@ -3614,6 +3637,9 @@ class PlayerViewModel {
         selectedSubtitleId = nil
         selectedSecondarySubtitleId = nil
         bufferedAheadSeconds = 0
+        playbackReadAheadSeconds = nil
+        playbackStatsCadence.reset()
+        playbackStatsEpoch = nil
         playbackStats = .empty
         pendingServerRenderedSubtitleTrackId = nil
         // Subtitle `-1` is the explicit "Off" sentinel; Vivid inventory
@@ -5688,6 +5714,10 @@ class PlayerViewModel {
         staleSessionRecoverySessionId = nil
         currentWatchDetail = nil
         currentSelectedVersion = nil
+        bufferedAheadSeconds = 0
+        playbackReadAheadSeconds = nil
+        playbackStatsCadence.reset()
+        playbackStatsEpoch = nil
         playbackStats = .empty
         loadedIntroDBSegments = nil
         introRange = nil

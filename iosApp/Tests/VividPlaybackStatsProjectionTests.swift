@@ -1,8 +1,147 @@
+import AVFoundation
 import Foundation
+import UIKit
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 final class VividPlaybackStatsProjectionTests: XCTestCase {
+    func testTelemetryBurstDoesNotRepeatedlyProjectStatistics() {
+        var cadence = VividPlaybackStatsCadence()
+        let refreshes = (0..<1_000).filter { cadence.shouldRefresh(at: 100 + Double($0) / 1_000) }
+        XCTAssertEqual(refreshes, [0, 900])
+    }
+
+    func testStateChangesRefreshImmediatelyAndRestartRoutineInterval() {
+        var cadence = VividPlaybackStatsCadence()
+        XCTAssertTrue(cadence.shouldRefresh(at: 10))
+        XCTAssertFalse(cadence.shouldRefresh(at: 10.2))
+        XCTAssertTrue(cadence.shouldRefresh(at: 10.2, force: true))
+        XCTAssertFalse(cadence.shouldRefresh(at: 10.9))
+        XCTAssertTrue(cadence.shouldRefresh(at: 11.2))
+    }
+
+    func testNewLoadResetsStatisticsCadence() {
+        var cadence = VividPlaybackStatsCadence()
+        XCTAssertTrue(cadence.shouldRefresh(at: 10))
+        cadence.reset()
+        XCTAssertTrue(cadence.shouldRefresh(at: 10.01))
+    }
+
+    @MainActor
+    func testBufferUpdatesStayImmediateWhenStatisticsAreRateLimited() throws {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        let spec = try VividLoadSpec(directURL: URL(string: "https://example.invalid/video.mp4")!,
+                                    headers: [:], startPosition: 0, audioOnly: false)
+        model.debugPreparePlaybackStatsLoad(spec)
+        for buffer in [8.0, 0.2, 15.0, 0.0] {
+            model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: buffer)
+            XCTAssertEqual(model.bufferedAheadSeconds, buffer, "Recovery must use the delivered sample")
+            #if os(tvOS)
+            XCTAssertEqual(model.timelineBufferedAheadSeconds, buffer, "Timeline must not wait for statistics")
+            #endif
+        }
+        model.vividEngine.diagnostics.liveTelemetry = nil
+        XCTAssertEqual(model.bufferedAheadSeconds, 0)
+        XCTAssertNil(model.playbackStats.bufferedAheadSeconds)
+        XCTAssertNil(model.playbackStats.readAheadAvailableSeconds)
+        #if os(tvOS)
+        XCTAssertEqual(model.timelineBufferedAheadSeconds, 0)
+        #endif
+    }
+
+    @MainActor
+    func testNewLoadUsesNewTelemetryAndClearsOldStatistics() throws {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        for (host, buffer) in [("first.example.invalid", 9.0), ("second.example.invalid", 2.0)] {
+            let spec = try VividLoadSpec(directURL: URL(string: "https://" + host + "/video.mp4")!,
+                                        headers: [:], startPosition: 0, audioOnly: false)
+            model.debugPreparePlaybackStatsLoad(spec)
+            model.vividEngine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: buffer)
+            XCTAssertEqual(model.playbackStats.source, host)
+            XCTAssertEqual(model.playbackStats.bufferedAheadSeconds, buffer)
+            XCTAssertEqual(model.playbackStats.readAheadAvailableSeconds, buffer)
+        }
+    }
+
+    @MainActor
+    func testControllerDeliversCurrentTelemetryIncludingUnavailableSample() throws {
+        let controller = try VividPlaybackController()
+        defer { controller.stop() }
+        let spec = try VividLoadSpec(directURL: URL(string: "https://example.invalid/video.mp4")!,
+                                    headers: [:], startPosition: 0, audioOnly: false)
+        let epoch = controller.beginLoad(spec)
+        var snapshots: [VividPlaybackStatsSnapshot] = []
+        controller.onEvent = { event in
+            guard case .telemetryChanged(let telemetry) = event.event else { return }
+            XCTAssertEqual(event.epoch, epoch)
+            snapshots.append(VividPlaybackStatsSnapshot(engine: controller.engine, telemetry: telemetry))
+        }
+        controller.engine.diagnostics.liveTelemetry = LiveTelemetry(forwardBufferSeconds: 4)
+        controller.engine.diagnostics.liveTelemetry = nil
+        XCTAssertEqual(snapshots.count, 2)
+        XCTAssertEqual(snapshots[0].telemetry?.forwardBufferSeconds, 4)
+        XCTAssertEqual(snapshots[0].readAheadAvailableSeconds, 4)
+        XCTAssertNil(snapshots[1].telemetry)
+        XCTAssertNil(snapshots[1].readAheadAvailableSeconds)
+        controller.onEvent = nil
+    }
+
+    @MainActor
+    func testSimulatorPlaybackKeepsTransportWorkingThroughTelemetryUpdates() async throws {
+        let controller = try VividPlaybackController()
+        controller.setMuted(true)
+        let window: UIWindow
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            window = UIWindow(windowScene: scene)
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        }
+        let host = UIViewController()
+        window.rootViewController = host
+        host.view.addSubview(controller.engine.surface)
+        controller.engine.surface.frame = host.view.bounds
+        controller.engine.surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        defer { controller.onEvent = nil; controller.stop(); window.isHidden = true; window.rootViewController = nil }
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "v3_h264_aac", withExtension: "mp4"))
+        let spec = try VividLoadSpec(directURL: url, headers: [:], startPosition: 0, audioOnly: false)
+        let epoch = controller.beginLoad(spec, shouldPlayWhenReady: false)
+        try await controller.finishLoad(epoch)
+        var samples = 0
+        controller.onEvent = { event in
+            if case .telemetryChanged(let telemetry) = event.event {
+                _ = VividPlaybackStatsProjection.make(
+                    snapshot: VividPlaybackStatsSnapshot(engine: controller.engine, telemetry: telemetry),
+                    source: VividPlaybackStatsSourceMetadata(sourceURL: url, delivery: nil, container: "mp4", playbackRate: 1))
+                samples += 1
+            }
+        }
+        controller.play()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while controller.engine.currentTime <= 0.2 && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(controller.engine.currentTime, 0.2, "Synthetic media must actually play")
+        controller.pause()
+        let result = await controller.seek(toSourceTime: 0.1)
+        XCTAssertEqual(result, .completed(sourceSeconds: 0.1))
+        XCTAssertFalse(controller.shouldPlayWhenReady)
+        XCTAssertEqual(controller.activeLoadEpoch, epoch)
+        XCTAssertNil(controller.engine.errorInfo)
+        XCTAssertGreaterThan(samples, 0)
+        controller.setRate(1.25)
+        controller.play()
+        XCTAssertTrue(controller.shouldPlayWhenReady)
+        XCTAssertEqual(controller.activeLoadEpoch, epoch)
+    }
+
     func testAudioOutputDetailPreservesSourceCodecAndBitrate() {
         for output in ["PCM 5.1", "Not reported"] {
             let track = TrackInfo(id: 2, name: "English", codec: "eac3", language: "eng", channels: 6, bitrate: 768_000, isAtmos: true)

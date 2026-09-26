@@ -148,23 +148,32 @@ final class VividImagePipeline: @unchecked Sendable {
             try Task.checkCancellation()
             let queuedAt = diagnostics.timestamp
             let qos = request.priority == .low ? "utility" : "demand"
-            return try await withCheckedThrowingContinuation { continuation in
-                let operation = BlockOperation { [self] in
-                    diagnostics.duration("decodeQueue.\(qos)", since: queuedAt)
-                    let decodeStart = diagnostics.timestamp
-                    defer { diagnostics.duration("decode.\(qos)", since: decodeStart) }
-                    do {
-                        let image = try Self.decode(data, request: request)
-                        let result = VividImageContainer(image)
-                        cache.store(result, for: request, generation: cacheGeneration)
-                        continuation.resume(returning: result)
-                    } catch { continuation.resume(throwing: error) }
+            let cancellation = VividImageDecodeCancellation()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let operation = BlockOperation { [self] in
+                        diagnostics.duration("decodeQueue.\(qos)", since: queuedAt)
+                        let decodeStart = diagnostics.timestamp
+                        defer { diagnostics.duration("decode.\(qos)", since: decodeStart) }
+                        do {
+                            // A cancelled queued operation still runs this small block
+                            // so its continuation is always resumed, without decoding.
+                            try cancellation.checkCancellation()
+                            let image = try Self.decode(data, request: request)
+                            try cancellation.checkCancellation()
+                            let result = VividImageContainer(image)
+                            cache.store(result, for: request, generation: cacheGeneration)
+                            continuation.resume(returning: result)
+                        } catch { continuation.resume(throwing: error) }
+                    }
+                    #if os(tvOS)
+                    operation.qualityOfService = request.priority == .low ? .utility : .userInitiated
+                    operation.queuePriority = request.priority == .low ? .low : .normal
+                    #endif
+                    decoding.addOperation(operation)
                 }
-                #if os(tvOS)
-                operation.qualityOfService = request.priority == .low ? .utility : .userInitiated
-                operation.queuePriority = request.priority == .low ? .low : .normal
-                #endif
-                decoding.addOperation(operation)
+            } onCancel: {
+                cancellation.cancel()
             }
         }
         try Task.checkCancellation()
@@ -204,6 +213,13 @@ final class VividImagePipeline: @unchecked Sendable {
     func debugDataFlightWaiterCount(for request: VividImageRequest) async -> Int {
         await dataFlights.debugWaiterCount(for: request.url, scope: request.cacheScope)
     }
+
+    func debugImageFlightWaiterCount(for request: VividImageRequest) async -> Int {
+        await flights.debugWaiterCount(for: request)
+    }
+
+    func debugSuspendDecoding(_ suspended: Bool) { decoding.isSuspended = suspended }
+    var debugPendingDecodeCount: Int { decoding.operationCount }
     #endif
 
     private func fetchData(for request: VividImageRequest) async throws -> Data {
@@ -332,42 +348,96 @@ actor VividImageDataFlights {
     }
 }
 
+/// Image-sized consumers share decoding as well as the underlying bytes.
+/// Cancellation reaches the byte flight only after the final image consumer leaves.
 private actor VividImageFlights {
-    private var tasks: [VividImageRequest: (UUID, Task<VividImageContainer, Error>)] = [:]
+    private struct Flight {
+        let id: UUID
+        let task: Task<VividImageContainer, Error>
+        var waiters: Set<UUID>
+    }
+    private var tasks: [VividImageRequest: Flight] = [:]
+
+    #if DEBUG
+    func debugWaiterCount(for request: VividImageRequest) -> Int {
+        tasks[request]?.waiters.count ?? 0
+    }
+    #endif
+
     func cancelAll() {
         let outgoing = tasks.values
         tasks.removeAll()
-        for (_, task) in outgoing { task.cancel() }
+        for flight in outgoing { flight.task.cancel() }
     }
     func cancel(urls: Set<URL>, scope: String) {
         for request in Array(tasks.keys) where request.cacheScope == scope && urls.contains(request.url) {
-            tasks.removeValue(forKey: request)?.1.cancel()
+            tasks.removeValue(forKey: request)?.task.cancel()
         }
     }
 
     func load(_ request: VividImageRequest, operation: @escaping @Sendable () async throws -> VividImageContainer) async throws -> VividImageContainer {
+        try Task.checkCancellation()
+        let waiter = UUID()
         let diagnostics = VividImageDiagnostics.shared
         let utility = request.priority == .low
-        if let (id, existing) = tasks[request] {
-            if diagnostics.enabled {
-                return try await diagnostics.value(of: existing, id: id, token: diagnostics.join(id, utility: utility))
+        let flight: Flight
+        if var existing = tasks[request] {
+            existing.waiters.insert(waiter)
+            flight = existing
+        } else {
+            let id = UUID()
+            diagnostics.created(id, kind: "flight", utility: utility)
+            let createdAt = diagnostics.timestamp
+            let task = Task(priority: utility ? .utility : .userInitiated) {
+                diagnostics.duration("flightStartWait", since: createdAt)
+                defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
+                let result = try await operation()
+                try Task.checkCancellation()
+                return result
             }
-            return try await existing.value
+            flight = Flight(id: id, task: task, waiters: [waiter])
         }
-        let id = UUID()
-        diagnostics.created(id, kind: "flight", utility: utility)
-        let createdAt = diagnostics.timestamp
-        let task = Task(priority: utility ? .utility : .userInitiated) {
-            diagnostics.duration("flightStartWait", since: createdAt)
-            defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
-            return try await operation()
+        tasks[request] = flight
+        defer { release(request, id: flight.id, waiter: waiter, cancelled: false) }
+        let result = try await withTaskCancellationHandler {
+            if diagnostics.enabled {
+                return try await diagnostics.value(of: flight.task, id: flight.id,
+                    token: diagnostics.join(flight.id, utility: utility))
+            }
+            return try await flight.task.value
+        } onCancel: {
+            Task { await self.release(request, id: flight.id, waiter: waiter, cancelled: true) }
         }
-        tasks[request] = (id, task)
-        defer { if tasks[request]?.0 == id { tasks[request] = nil } }
-        if diagnostics.enabled {
-            return try await diagnostics.value(of: task, id: id, token: diagnostics.join(id, utility: utility))
+        try Task.checkCancellation()
+        return result
+    }
+
+    private func release(_ request: VividImageRequest, id: UUID, waiter: UUID, cancelled: Bool) {
+        guard var flight = tasks[request], flight.id == id,
+              flight.waiters.remove(waiter) != nil else { return }
+        if flight.waiters.isEmpty {
+            tasks.removeValue(forKey: request)
+            if cancelled { flight.task.cancel() }
+        } else {
+            tasks[request] = flight
         }
-        return try await task.value
+    }
+}
+
+/// OperationQueue does not inherit Swift task cancellation. This flag lets
+/// queued decodes finish their continuations without doing abandoned image work.
+private final class VividImageDecodeCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock(); defer { lock.unlock() }
+        cancelled = true
+    }
+
+    func checkCancellation() throws {
+        lock.lock(); defer { lock.unlock() }
+        if cancelled { throw CancellationError() }
     }
 }
 

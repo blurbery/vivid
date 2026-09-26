@@ -43,7 +43,7 @@ final class VividPlaybackController {
         case subtitleLoading(Bool)
         case firstFrame
         case inventoryChanged
-        case telemetryChanged
+        case telemetryChanged(LiveTelemetry?)
         case ended
         case failure(PlaybackErrorInfo)
         case transportRestoreFailed(String)
@@ -571,7 +571,9 @@ final class VividPlaybackController {
         .store(in: &subscriptions)
 
         engine.diagnostics.$liveTelemetry
-            .sink { [weak self] _ in self?.publish(.telemetryChanged) }
+            // @Published delivers before storage changes. Forward the delivered
+            // value so recovery and statistics never reread the previous sample.
+            .sink { [weak self] telemetry in self?.publish(.telemetryChanged(telemetry)) }
             .store(in: &subscriptions)
 
         engine.systemCaptionRequest

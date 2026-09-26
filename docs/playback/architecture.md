@@ -113,6 +113,8 @@ Apple TV scrubbing shows the timeline and target time without a thumbnail overla
 
 iOS scrub previews use the existing bounded request owner and platform engine frame extractor. Late images from an old source or gesture must not paint over a new selection.
 
+Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication. Recovery and the Apple TV timeline receive every buffer update. Routine statistics formatting is limited to once per 0.9 seconds using a monotonic clock; state, track and route changes, unavailable telemetry and new loads still refresh immediately. This does not change playback timing, skip detection or progress reporting.
+
 ## IntroDB marker timing
 
 The Intro & Credit Skipper toggle controls both IntroDB and TheIntroDB on iOS and tvOS. Valid markers supplied for the selected file are published first and survive provider failures; item-level markers from another edition are not used. IntroDB fills missing file markers and its results are published immediately. If intro, credits or recap is absent, an independent public TheIntroDB `/v3/media` lookup fills only missing kinds, preserving existing ranges. Errors leave the primary result intact, and cancellation, settings and session/content/file guards apply after each request. Neither lookup blocks playback. Each provider has a bounded one-hour in-memory cache and uses an ephemeral session without media-server credentials or API keys.
