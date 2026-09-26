@@ -22,10 +22,11 @@ async function visit(directory, prefix = '') {
 }
 await visit(publicDir);
 // Give saved-icon caches a new path when artwork changes; retain root fallbacks.
-for (const name of ['favicon.png', 'apple-touch-icon.png']) {
+for (const name of ['favicon.png', 'favicon.svg', 'apple-touch-icon.png']) {
   const asset = assets[`/${name}`];
   const version = asset.etag.slice(1, 11);
-  assets[`/${name.replace('.png', `-${version}.png`)}`] = asset;
+  const extension = extname(name);
+  assets[`/${name.slice(0, -extension.length)}-${version}${extension}`] = asset;
 }
 await mkdir(output,{recursive:true});
 // Immutable site bytes shared across requests; no request data is retained.
