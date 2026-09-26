@@ -109,9 +109,13 @@ The detail menu reuses a five-minute, account/content/file-scoped runtime invent
 
 The optional OpenSubtitles plugin downloads user-selected SRT files to temporary device storage and registers only those files as selectable external tracks. The API key is never forwarded to subtitle download hosts. Downloads are capped at 5 MiB, guarded by playback generation and connection scope, and retained with their selection across successful replacement loads for the same item, including quality changes. They are removed on final player disposal or when another item loads. These temporary track IDs are not persisted as server subtitle preferences. AI translation is not exposed. Lucid Engine uses the media core’s renderer for embedded subtitles and Vivid’s overlay for external text subtitles. Primary and secondary selection, delay and styling remain scoped to the active playback session. Preferences remain device/profile-local.
 
+External text tracks advance through indexed start and end boundaries, rebuilding their active cues after a backward seek or delay change that moves the subtitle clock backwards. Cue order, overlaps and inclusive-start/exclusive-end timing are preserved. The overlay receives updates only when its active cues or selected track change; empty and unchanged selections are not repeatedly published. Parsing, styling and native ASS/embedded rendering remain unchanged.
+
 Apple TV scrubbing shows the timeline and target time without a thumbnail overlay. Its preview provider remains inactive, so scrubbing starts no thumbnail reader, decoder or request worker. Seek commit/cancel behaviour, play/pause intent and the persistent Next Up player surface are unchanged. iOS thumbnail behaviour is unchanged.
 
 iOS scrub previews use the existing bounded request owner and platform engine frame extractor. Late images from an old source or gesture must not paint over a new selection.
+
+Playback statistics use the delivered telemetry sample, including unavailable values, rather than rereading a property during its publication. Recovery and the Apple TV timeline receive every buffer update. Routine statistics formatting is limited to once per 0.9 seconds using a monotonic clock; one pending refresh publishes the latest sample when that interval expires, even if playback is paused and no further event arrives. State, track and route changes, unavailable telemetry and new loads still refresh immediately and cancel any pending refresh. This does not change playback timing, skip detection or progress reporting.
 
 ## IntroDB marker timing
 

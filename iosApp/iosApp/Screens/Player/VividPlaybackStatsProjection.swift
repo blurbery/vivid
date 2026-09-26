@@ -87,11 +87,13 @@ struct VividPlaybackStatsSnapshot: Equatable {
     let isSecondarySubtitleActive: Bool
 
     @MainActor
-    init(engine: VividEngine) {
+    init(engine: VividEngine, telemetry: LiveTelemetry?) {
         route = engine.videoRoute
         phase = engine.playbackPhase
-        telemetry = engine.liveTelemetry
-        readAheadAvailableSeconds = engine.readAheadAvailableSeconds
+        self.telemetry = telemetry
+        // Lucid exposes its contiguous demuxer buffer as read-ahead. Use
+        // the delivered sample, including nil, rather than pre-willSet storage.
+        readAheadAvailableSeconds = telemetry?.forwardBufferSeconds
         activeVideoDecoder = engine.activeVideoDecoder
         activeAudioDecoder = engine.activeAudioDecoder
         audioOutputFormat = engine.activeAudioOutputFormat
@@ -378,4 +380,23 @@ enum VividPlaybackStatsProjection {
             value.range(of: token, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
     }
+}
+
+/// Limits presentation formatting only. Recovery and timeline buffer values
+/// are updated before this gate, and state/track changes can refresh immediately.
+struct VividPlaybackStatsCadence {
+    private var lastRefreshUptime: TimeInterval?
+
+    mutating func shouldRefresh(at uptime: TimeInterval, force: Bool = false) -> Bool {
+        if !force, remainingDelay(at: uptime) > 0 { return false }
+        lastRefreshUptime = uptime
+        return true
+    }
+
+    func remainingDelay(at uptime: TimeInterval) -> TimeInterval {
+        guard let lastRefreshUptime, uptime >= lastRefreshUptime else { return 0 }
+        return max(0, 0.9 - (uptime - lastRefreshUptime))
+    }
+
+    mutating func reset() { lastRefreshUptime = nil }
 }

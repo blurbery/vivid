@@ -52,6 +52,8 @@ Search uses seven posters across the available safe-area width, without the prev
 
 Library requests load seventy items at a time. Artwork retention uses a moving ten-row window that follows visible rows, falling back to current focus before visibility is known. It keeps a small look-behind and releases earlier decoded image references as scrolling advances. Visible and upcoming posters are warmed before the look-behind, with two requests at a time; queue updates can refill evicted images. Visible or focused catalogue cards always remain eligible to load, and distant cards release their image through the same image view without replacing its subtree. Lightweight item metadata remains available for navigation; this is not a fixed total app-memory limit. Seven-column catalogue grids request the next page with four rows remaining and recheck when a row becomes visible or a page arrives. Native card controls, focus styling and layout are unchanged. The owner confirmed that the installed scrolling follow-up resolved the Movies and Series focus/artwork issue.
 
+Shared artwork loads retain a consumer for each visible image or prefetch request. Cancelling one consumer preserves work needed elsewhere; cancelling the last consumer stops the shared transfer and skips any decode still queued. Account changes continue to cancel outgoing work and prevent it from repopulating memory. The same cancellation behaviour applies on iPhone and iPad.
+
 Calendar's client screens, models, requests and navigation entries have been removed. Decoding older saved menus drops the retired Calendar entry while preserving supported destinations. This does not modify any media-server backend.
 
 ## Startup and Settings

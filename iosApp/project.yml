@@ -90,15 +90,43 @@ targets:
       - sdk: TVServices.framework
 
 
+  VividTVTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources:
+      - path: Tests/ImageDataCoalescingTests.swift
+      - path: Tests/VividPlaybackStatsProjectionTests.swift
+      - path: Tests/VividSubtitleCueCursorTests.swift
+      - path: Tests/Fixtures/v3_h264_aac.mp4
+        buildPhase: resources
+    dependencies:
+      - target: VividTV
+    configFiles:
+      Debug: Signing/VividTV.xcconfig
+      Release: Signing/VividTV.xcconfig
+    settings:
+      base:
+        PRODUCT_NAME: VividTVTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.blurbery.vivid.tvtest.PerformanceTests
+        CODE_SIGN_ENTITLEMENTS: ""
+        GENERATE_INFOPLIST_FILE: "YES"
+        SDKROOT: appletvos
+        SUPPORTED_PLATFORMS: "appletvos appletvsimulator"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/VividTV.app/VividTV"
+
 schemes:
   VividTV:
     build:
       targets:
         VividTV: all
+        VividTVTests: [test]
     run:
       config: Debug
     test:
       config: Debug
+      targets:
+        - VividTVTests
     archive:
       config: Release
     analyze:
