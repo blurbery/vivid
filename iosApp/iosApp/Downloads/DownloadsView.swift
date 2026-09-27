@@ -38,7 +38,7 @@ struct DownloadsView: View {
                 content
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(VividAppBackdrop())
         .navigationTitle(isSelecting ? "\(selection.count) Selected" : "Downloads")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.large)

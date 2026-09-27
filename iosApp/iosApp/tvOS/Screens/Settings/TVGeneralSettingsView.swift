@@ -6,6 +6,7 @@ import SwiftUI
 /// directional movement, preserving the stable focus graph described in
 /// `docs/apple-tv-focus.md`.
 struct TVGeneralSettingsPane: View {
+    @AppStorage(VividAppTheme.storageKey, store: .standard) private var theme: VividAppTheme = .graphite
     @State private var homeSections = HomeSectionPreferences.shared
     @State private var preferences = UICustomizationPreferences.shared
     @State private var homeCards = TVHomeCardPreferences.shared
@@ -19,6 +20,20 @@ struct TVGeneralSettingsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            TVSettingsSectionHeader("THEMES")
+            TVSettingsGroup {
+                TVSettingsOptionMenu(
+                    title: "Theme", value: theme.title,
+                    options: VividAppTheme.allCases.map { .init(id: $0.rawValue, label: $0.title) },
+                    selection: Binding(
+                        get: { theme.rawValue },
+                        set: { if let value = VividAppTheme(rawValue: $0) { theme = value } }
+                    )
+                )
+                .focused(detailFocus, equals: .generalTheme)
+            }
+            TVSettingsFooter("Graphite uses the charcoal background, Black uses solid black, and Native removes Vivid’s background and uses the system appearance.")
+
             TVSettingsSectionHeader("HOME SCREEN")
 
             TVSettingsGroup {
@@ -253,7 +268,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
     private var editorControlsCard: some View {
         TVSettingsPageHeader(
             title: "Home Sections",
-            subtitle: isEditing ? "Move rows into your preferred order." : "Choose up to 6 Home rows. Spotlight is separate."
+            subtitle: isEditing ? "Move rows into your preferred order." : "Choose up to 6 Home rows. A seventh slot is reserved for Spotlight, even when hidden."
         ) {
             Button(isEditing ? "Done Editing" : "Edit") {
                 withAnimation(.easeOut(duration: VividTheme.fastDuration)) {
@@ -393,7 +408,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
 
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
             preferences.enforceVisibleRowLimit(in: cached.sections)
-            sections = cached.sections.filter { !$0.items.isEmpty || !preferences.isVisible($0.id) }
+            sections = cached.sections
         }
 
         isLoading = sections.isEmpty
@@ -404,7 +419,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
             let response = try await StartupContentPrefetcher.fetchHomeSections()
             guard !Task.isCancelled else { return }
             preferences.enforceVisibleRowLimit(in: response.sections)
-            sections = response.sections.filter { !$0.items.isEmpty || !preferences.isVisible($0.id) }
+            sections = response.sections
         } catch {
             guard !Task.isCancelled else { return }
             loadFailed = sections.isEmpty

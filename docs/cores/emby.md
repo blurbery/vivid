@@ -38,6 +38,8 @@ Continue Watching and Next Up identify the episode beneath the series title. Con
 
 The Home endpoint listed in the 4.9 API schema is not sufficient evidence that the newer Home workflow is usable. Emby's own client gates it at 4.10.0.4. Legacy library-navigation tiles, audio and live-TV sections are not mapped into this video feed.
 
+Emby media lists explicitly request `ProductionYear` for Home, Search, Movies, Series and For You. Poster cards display the returned year when **Title & Year** is selected; **Title Only** and **Artwork Only** retain their existing behaviour. The year arrives in the existing list response, without additional per-poster metadata requests. Items without a server-provided year have no year caption.
+
 ## Playback and settings
 
 `EmbyPlayback` negotiates through `/Items/{id}/PlaybackInfo`, converts audio ordinals to Emby stream indices, and supplies direct-file or HLS inputs to Lucid Engine. It sends start, progress and stop reports through `/Sessions/Playing`, `/Sessions/Playing/Progress` and `/Sessions/Playing/Stopped`. Positions convert between seconds and Emby ticks. Transcoded-session cleanup uses Emby's active-encoding endpoint.

@@ -82,7 +82,7 @@ struct SearchView: View {
         #if os(tvOS)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #else
-        .background(Color.black.ignoresSafeArea())
+        .background(VividAppBackdrop())
         #endif
         .navigationTitle("Search")
         .vividNavigationTitleDisplayMode(.inline)

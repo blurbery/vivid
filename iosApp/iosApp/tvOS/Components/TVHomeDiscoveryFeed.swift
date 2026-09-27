@@ -578,7 +578,10 @@ private struct TVHomeArtworkWarmupModifier: ViewModifier {
                               height: height * PosterImageCache.displayScale)
             let visibleCount = max(1, Int(ceil((viewportWidth + 40) / (width + 40))))
             let focusedIndex = section.items.firstIndex { $0.contentId == memory.items[section.id] } ?? 0
-            let start = index == current ? max(0, focusedIndex - 1) : 0
+            // Each collection keeps its horizontal offset when another row
+            // takes focus. Warm that destination, including the full final
+            // screenful, instead of decoding card 1 again for a row at card 20.
+            let start = min(max(0, focusedIndex - 1), max(0, section.items.count - visibleCount))
             let end = min(section.items.count, start + visibleCount)
             let rowRequests: [VividImageRequest] = section.items[start..<end].compactMap { item in
                 let value = wide ? (item.backdropUrl.flatMap { $0.isEmpty ? nil : $0 } ?? item.posterUrl) : item.posterUrl

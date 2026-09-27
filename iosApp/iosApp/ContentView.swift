@@ -507,37 +507,33 @@ struct ContentView: View {
 
     }
 
-    // Keep the completed Metal frame mounted while the destination fades in.
-    // Route resolution still owns authentication; this only bridges presentation.
+    // Fade the loading logo out before revealing the destination on the shared
+    // canvas. Route resolution still owns authentication.
     @ViewBuilder
     private var launchContent: some View {
         #if os(iOS) || os(tvOS)
         ZStack {
             authContent
                 .opacity(didFinishStartupSplash ? 1 : 0)
-                .animation(startupHandoffAnimation, value: didFinishStartupSplash)
+                .animation(startupContentRevealAnimation, value: didFinishStartupSplash)
                 .disabled(showsStartupOverlay)
                 .accessibilityHidden(showsStartupOverlay)
             if showsStartupOverlay {
                 startupPresentation
                     .opacity(didFinishStartupSplash ? 0 : 1)
                     .scaleEffect(didFinishStartupSplash && !reduceStartupMotion ? 0.96 : 1)
-                    .animation(startupHandoffAnimation, value: didFinishStartupSplash)
+                    .animation(startupLogoFadeAnimation, value: didFinishStartupSplash)
                     .zIndex(1)
             }
         }
         .background {
-            #if os(tvOS)
-            // Navigation and startup share one persistent canvas.
-            TVAppBackdrop()
-            #else
-            Color.black.ignoresSafeArea()
-            #endif
+            // Navigation and startup use the same saved device theme.
+            VividAppBackdrop()
         }
         .task(id: didFinishStartupSplash) {
             guard didFinishStartupSplash else { return }
             do {
-                try await Task.sleep(for: .seconds(reduceStartupMotion ? 0.2 : 0.55))
+                try await Task.sleep(for: .seconds(startupHandoffDuration))
             } catch { return }
             showsStartupOverlay = false
         }
@@ -546,8 +542,16 @@ struct ContentView: View {
         #endif
     }
 
-    private var startupHandoffAnimation: Animation {
-        .easeInOut(duration: reduceStartupMotion ? 0.2 : 0.55)
+    private var startupHandoffDuration: Double { reduceStartupMotion ? 0.2 : 0.55 }
+
+    private var startupLogoFadeAnimation: Animation {
+        .easeInOut(duration: startupHandoffDuration * 0.4)
+    }
+
+    private var startupContentRevealAnimation: Animation {
+        // Keep the total handoff duration unchanged, with no overlapping logo.
+        .easeInOut(duration: startupHandoffDuration * 0.6)
+            .delay(startupHandoffDuration * 0.4)
     }
 
     private var initialSplashContentReady: Bool {
@@ -600,7 +604,7 @@ struct ContentView: View {
         if TVLoginPreparation.shared.isPresented {
             TVLoginPreparationView()
         } else if TVSavedAccountStore.shared.busy {
-            Color.black.ignoresSafeArea().overlay { VividLoadingDots() }
+            VividAppBackdrop().overlay { VividLoadingDots() }
         } else if router.authState != .loading, router.authState != .needsServerSetup,
                   TVSavedAccountStore.shared.showsSelector {
             PhoneSavedProfilesScreen()
@@ -620,7 +624,7 @@ struct ContentView: View {
                 #if os(tvOS)
                 Color.clear.ignoresSafeArea()
                 #elseif os(iOS)
-                Color.black.ignoresSafeArea()
+                VividAppBackdrop()
                 #else
                 startupPresentation
                 #endif
@@ -667,7 +671,7 @@ struct ContentView: View {
             }
             #elseif os(iOS)
             if !UserDefaults.standard.bool(forKey: "vivid.didCompleteFirstLoginPreparation") {
-                Color.black.ignoresSafeArea()
+                VividAppBackdrop()
                     .task { await TVLoginPreparation.shared.begin(router: router) }
             } else {
                 profileSelectionContent

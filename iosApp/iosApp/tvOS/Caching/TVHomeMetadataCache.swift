@@ -133,6 +133,11 @@ final class TVHomeMetadataCache {
         }
         guard let saved else { return }
         snapshot = saved
+        #if os(tvOS)
+        // Older Home snapshots included destination-page payloads. Do not
+        // retain or hydrate those on Apple TV; the Home response is sufficient.
+        snapshot.details.removeAll()
+        #endif
         preparedSpotlight = saved.spotlightPreparation ?? [:]
         if MediaServerProvider.active == .emby {
             snapshot.rows.removeAll { EmbyAdapter.excludesHomeRow(id:$0.section.id,type:$0.section.sectionType,title:$0.section.title) }
@@ -181,9 +186,11 @@ final class TVHomeMetadataCache {
            ResponseCache.shared.get(CacheKey.userLibraries, as: LibrariesResponse.self) == nil {
             ResponseCache.shared.set(libraries, for: CacheKey.userLibraries)
         }
+        #if os(iOS)
         for (id, detail) in snapshot.details {
             ResponseCache.shared.set(detail, for: CacheKey.itemDetail(id))
         }
+        #endif
     }
 
     static func capped(_ response: SectionsResponse) -> SectionsResponse {
@@ -201,7 +208,9 @@ final class TVHomeMetadataCache {
         activate()
         guard loadedScope != nil else { return }
         let oldURLs = artworkURLs(in: snapshot)
+        #if os(iOS)
         let oldSlides = Dictionary(snapshot.spotlight.map { ($0.id, $0.item) }, uniquingKeysWith: { first, _ in first })
+        #endif
         let now = Date()
         let limited = Self.capped(response)
         HomeSectionPreferences.shared.refresh()
@@ -219,6 +228,7 @@ final class TVHomeMetadataCache {
         snapshot.rows = rows.map { Row(section: $0, updatedAt: now) }
         snapshot.spotlight = slides
         snapshot.spotlightUpdatedAt = now
+        #if os(iOS)
         let slideIDs = Set(snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) })
         snapshot.details = snapshot.details.filter { slideIDs.contains($0.key) }
         for slide in snapshot.spotlight where oldSlides[slide.id] != nil && oldSlides[slide.id] != slide.item {
@@ -232,6 +242,7 @@ final class TVHomeMetadataCache {
                 snapshot.details[id] = detail
             }
         }
+        #endif
         replaceArtwork(previous: oldURLs)
         persist()
         enrichSpotlight()
@@ -344,8 +355,10 @@ final class TVHomeMetadataCache {
             strings += row.section.items.compactMap { wide ? ($0.backdropUrl ?? $0.posterUrl) : $0.posterUrl }
         }
         for slide in value.spotlight {
-            strings += [slide.item.backdropUrl, slide.item.posterUrl, slide.item.logoUrl,
-                        value.details[slide.id]?.backdropUrl].compactMap { $0 }
+            strings += [slide.item.backdropUrl, slide.item.posterUrl, slide.item.logoUrl].compactMap { $0 }
+            #if os(iOS)
+            strings += [value.details[slide.id]?.backdropUrl].compactMap { $0 }
+            #endif
         }
         let base = MediaServerProvider.active == .silo
             ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
@@ -398,10 +411,13 @@ final class TVHomeMetadataCache {
         enrichmentTask?.cancel()
         let expectedGeneration = generation
         let scope = loadedScope
-        var seen = Set<String>()
-        let ids = snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) }
-            .filter { seen.insert($0).inserted }
         enrichmentTask = Task { @MainActor in
+            #if os(iOS)
+            // iOS uses these fields in its Spotlight labels. Apple TV reads
+            // its labels from SectionItem and must not prepare detail pages.
+            var seen = Set<String>()
+            let ids = snapshot.spotlight.flatMap { Self.detailContentIDs(for: $0.item) }
+                .filter { seen.insert($0).inserted }
             for id in ids where snapshot.details[id] == nil {
                 guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
                 let cached: ItemDetail? = ResponseCache.shared.get(CacheKey.itemDetail(id))
@@ -421,6 +437,7 @@ final class TVHomeMetadataCache {
                 replaceArtwork(previous: oldURLs)
                 persist()
             }
+            #endif
             #if os(tvOS)
             // Prepare only current Spotlight art, sequentially, using the same
             // analysis and persistent records as the visible carousel.
@@ -428,7 +445,7 @@ final class TVHomeMetadataCache {
             let base = MediaServerProvider.active == .silo
                 ? URL(string: ServerRegistry.shared.activeServerUrl) : nil
             for slide in snapshot.spotlight {
-                for raw in [slide.item.backdropUrl, snapshot.details[slide.item.contentId]?.backdropUrl].compactMap({ $0 }) {
+                for raw in [slide.item.backdropUrl].compactMap({ $0 }) {
                     guard urls.insert(raw).inserted else { continue }
                     guard !Task.isCancelled, expectedGeneration == generation, scope == activeScope else { return }
                     guard let url = SiloAPICompatibility.artworkURL(raw, relativeTo: base) else { continue }

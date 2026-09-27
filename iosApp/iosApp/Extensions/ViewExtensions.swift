@@ -2,39 +2,12 @@ import SwiftUI
 
 // MARK: - Common View Modifiers
 
-/// The shared signed-in page canvas. On iOS it is a fixed, fully opaque
-/// charcoal wash with static tonal depth; it never samples page artwork.
-/// tvOS inherits the persistent slate canvas behind the app container.
+/// The shared page canvas follows the saved device theme on iOS.
+/// tvOS inherits the selected canvas behind the app container.
 struct VividPageBackdrop: View {
     var body: some View {
         #if os(iOS)
-        ZStack {
-            Color(hex: "#111111")
-
-            RadialGradient(
-                stops: [
-                    .init(color: .white.opacity(0.035), location: 0),
-                    .init(color: .white.opacity(0.018), location: 0.36),
-                    .init(color: .clear, location: 1),
-                ],
-                center: UnitPoint(x: 0.46, y: 0.42),
-                startRadius: 0,
-                endRadius: 520
-            )
-
-            LinearGradient(
-                stops: [
-                    .init(color: .white.opacity(0.012), location: 0),
-                    .init(color: .clear, location: 0.45),
-                    .init(color: .black.opacity(0.045), location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        VividAppBackdrop()
         #elseif os(tvOS)
         Color.clear
             .ignoresSafeArea()
@@ -56,17 +29,17 @@ enum VividNavigationTitleDisplayMode {
 }
 
 extension View {
-    /// Inherit the shared app canvas on tvOS and use the original black canvas elsewhere.
+    /// Inherit the shared app canvas on tvOS and apply it to other pages.
     @ViewBuilder
     func vividBackground() -> some View {
         #if os(tvOS)
         self
         #else
-        self.background(Color.vividBackground.ignoresSafeArea())
+        self.background(VividAppBackdrop())
         #endif
     }
 
-    /// Apply the fixed charcoal page canvas without changing semantic black
+    /// Apply the selected page canvas without changing semantic black
     /// ink used by controls, artwork masks, Settings, or media surfaces.
     func vividPageBackground() -> some View {
         self.background {

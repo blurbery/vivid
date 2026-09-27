@@ -64,10 +64,21 @@ struct CachedAsyncImage: View {
         #endif
     }
 
+    private var retainsArtwork: Bool {
+        #if os(tvOS)
+        isArtworkResident && (!isHomeShelf || homeArtworkGate?.enabled == true)
+        #else
+        isArtworkResident
+        #endif
+    }
+
     private func renderedImage(in size: CGSize) -> some View {
         let resolvedSize = targetSize ?? size
-        let imageRequest = isArtworkResident ? request(for: resolvedSize) : nil
-        let warmedImage = isArtworkResident ? prefetchedImage() : nil
+        // A loading gate alone leaves decoded images held by every visited
+        // shelf. A nil request releases the leaf's image without removing its
+        // button, hosting cell, row geometry or remembered focus position.
+        let imageRequest = retainsArtwork ? request(for: resolvedSize) : nil
+        let warmedImage = retainsArtwork ? prefetchedImage() : nil
         let loadAnimation: Animation? = isHomeShelf || reduceMotion || warmedImage != nil
             ? nil
             : .easeOut(duration: VividTheme.slowDuration)
@@ -76,7 +87,7 @@ struct CachedAsyncImage: View {
         return VividLazyImage(
             request: imageRequest,
             transaction: transaction,
-            isLoadingEnabled: artworkLoadingEnabled && isArtworkResident
+            isLoadingEnabled: artworkLoadingEnabled && retainsArtwork
         ) { state in
             // Cache fallback and exact-size results share one rendered branch.
             // Changing the source bitmap must not replace the Image subtree.
@@ -92,7 +103,7 @@ struct CachedAsyncImage: View {
                     .clipped()
                     .transition(.opacity)
                     .onAppear(perform: notifyImageLoaded)
-            } else if state.error != nil && artworkLoadingEnabled && isArtworkResident {
+            } else if state.error != nil && artworkLoadingEnabled && retainsArtwork {
                 placeholder(in: size)
                     .overlay {
                         if placeholderStyle.showsErrorIcon {
@@ -104,7 +115,29 @@ struct CachedAsyncImage: View {
                 placeholder(in: size)
             }
         }
+        #if os(tvOS)
+        .onChange(of: imageRequest) { previous, current in
+            guard isHomeShelf, previous != current, let previous else { return }
+            releaseHomeDecode(previous)
+        }
+        #endif
     }
+
+    #if os(tvOS)
+    private func releaseHomeDecode(_ request: VividImageRequest) {
+        // Only an explicit request/residency change retires an image.
+        // onDisappear also fires when detail covers Home; clearing there
+        // discards the return viewport and forces every poster to decode again.
+        // Keep compressed disk artwork and profile metadata. Only discard the
+        // exact display decode and its fallback; a closed gate must not retain
+        // the same bitmap indirectly through the fallback closure.
+        let cache = VividImagePipeline.shared.cache
+        cache.removeCachedImage(for: request, caches: .memory)
+        var fallback = VividImageRequest(url: request.url, cacheScope: request.cacheScope)
+        fallback.thumbnail = .init(maxPixelSize: PosterImageCache.cardWarmMaxPixelSize)
+        cache.removeCachedImage(for: fallback, caches: .memory)
+    }
+    #endif
 
     /// Synchronous memory-cache lookup for the card-size decode the
     /// prefetchers warm. Cheap dictionary access — safe to call from `body`.

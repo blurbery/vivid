@@ -190,7 +190,7 @@ struct LibrariesTabView: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(VividAppBackdrop())
         #if !os(macOS)
         .toolbar(.hidden, for: .navigationBar)
         #endif
@@ -547,7 +547,7 @@ private struct LibraryPickerSheet: View {
             .padding(.horizontal, VividTheme.padding)
             .padding(.vertical, VividTheme.padding)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(VividAppBackdrop())
         .navigationTitle("Libraries")
     }
 }

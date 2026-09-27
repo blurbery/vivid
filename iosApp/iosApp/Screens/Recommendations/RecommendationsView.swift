@@ -65,7 +65,7 @@ struct RecommendationsView: View {
         .modifier(MobileTopScrollEdgeModifier())
         .environment(\.forYouScrollHeader, AnyView(mobileSectionTabs))
         .environment(chromeScrollState)
-        .background(Color.black.ignoresSafeArea())
+        .background(VividAppBackdrop())
         .toolbar(.hidden, for: .navigationBar)
     }
     private var mobileSectionTabs: some View {

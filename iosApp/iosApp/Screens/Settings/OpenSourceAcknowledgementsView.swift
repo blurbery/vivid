@@ -121,8 +121,8 @@ struct OpenSourceAcknowledgementsView: View {
 }
 
 #if os(tvOS)
-struct TVOpenSourceAcknowledgementsOverlay: View {
-    let dismiss: () -> Void
+struct TVOpenSourceAcknowledgementsPage: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var blocks: [OpenSourceAcknowledgements.Block] = []
     @FocusState private var focusedBlock: Int?
 
@@ -159,7 +159,7 @@ struct TVOpenSourceAcknowledgementsOverlay: View {
         }
         .tvSettingsPageSurface()
         .defaultFocus($focusedBlock, 0)
-        .onExitCommand(perform: dismiss)
+        .onExitCommand { dismiss() }
         .task {
             let loaded = await Task.detached(priority: .utility) { OpenSourceAcknowledgements.blocks }.value
             guard !Task.isCancelled else { return }

@@ -1,13 +1,10 @@
 import SwiftUI
 
-/// Settings uses the shared charcoal canvas on tvOS. Other platforms
-/// retain their existing page backgrounds.
+/// Settings uses the selected app canvas on iOS and tvOS.
 struct SettingsBackdrop: View {
     var body: some View {
-        #if os(tvOS)
-        TVAppBackdrop()
-        #elseif os(iOS)
-        Color.black.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+        #if os(tvOS) || os(iOS)
+        VividAppBackdrop()
         #else
         ZStack {
             Color.vividBackground
@@ -51,14 +48,7 @@ struct SettingsBackdrop: View {
 /// presentations reuse it because they are hosted outside the app container.
 struct TVAppBackdrop: View {
     var body: some View {
-        LinearGradient(
-            colors: [Color(hex: "#101114"), Color(hex: "#030405")],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        VividAppBackdrop()
     }
 }
 #endif

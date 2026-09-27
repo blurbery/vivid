@@ -4,12 +4,20 @@ import SwiftUI
 /// Device-local startup preferences that do not belong to playback or
 /// interface customization.
 struct GeneralSettingsView: View {
+    @AppStorage(VividAppTheme.storageKey, store: .standard) private var theme: VividAppTheme = .graphite
     @State private var homeSections = HomeSectionPreferences.shared
     @State private var registry = ServerRegistry.shared
     @State private var homeCards = TVHomeCardPreferences.shared
     var body: some View {
         List {
             SettingsPageHeader(title: "General", subtitle: "App-level options for this device.", systemImage: "gearshape").settingsPageHeaderRow()
+            Section {
+                Picker("Theme", selection: $theme) {
+                    ForEach(VividAppTheme.allCases) { Text($0.title).tag($0) }
+                }
+            } header: { PhoneSettingsSectionHeader("Themes") } footer: {
+                Text("Graphite uses the charcoal background, Black uses solid black, and Native removes Vivid’s background and uses the system appearance.")
+            }
             Section {
                 #if os(iOS)
                 NavigationLink { PhoneSpotlightSettingsView() } label: {

@@ -227,9 +227,8 @@ struct SectionRow: View {
     }
 
     #if os(tvOS)
-    /// Match Movie navigation: push the branded route seed immediately while
-    /// the existing marquee warm-up and destination request pool finish the
-    /// authoritative Series payload and hierarchy in parallel.
+    /// Push the branded route seed immediately. The selected destination
+    /// loads its authoritative Series payload and hierarchy after navigation.
     private func navigateToSeriesDetail(
         to seriesContentId: String,
         from item: SectionItem,

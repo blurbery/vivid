@@ -165,7 +165,7 @@ struct EmbyConnection: Sendable {
 struct EmbyAdapter {
     let connection: EmbyConnection
     var userID: String { connection.userID! }
-    static let fields = "Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,UserData,SortName,Taglines,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
+    static let fields = "ProductionYear,Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,UserData,SortName,Taglines,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
 
     static func seconds(_ ticks: Any?) -> Double {
         guard let number = ticks as? NSNumber else { return 0 }
@@ -564,7 +564,7 @@ struct EmbyAdapter {
         var q = ["StartIndex": input["offset"] ?? "0", "Limit": input["limit"] ?? "60", "IncludeItemTypes": "Movie,Series", "SortBy":"SortName", "SortOrder":input["order"] == "desc" ? "Descending" : "Ascending"]
         if let type = input["type"] { q["IncludeItemTypes"] = type == "series" ? "Series" : type == "episode" ? "Episode" : "Movie" }
         for (source,target) in ["search":"SearchTerm", "q":"SearchTerm", "genre":"Genres", "genres":"Genres", "year":"Years", "years":"Years", "content_rating":"OfficialRatings", "studio":"StudioIds"] { if let v = input[source], !v.isEmpty { q[target] = v } }
-        let sorts = ["title":"SortName", "year":"ProductionYear", "added":"DateCreated", "added_at":"DateCreated", "rating":"CommunityRating", "random":"Random", "runtime":"Runtime"]
+        let sorts = ["title":"SortName", "year":"ProductionYear", "release_date":"PremiereDate", "added":"DateCreated", "added_at":"DateCreated", "rating":"CommunityRating", "random":"Random", "runtime":"Runtime"]
         if let sort = input["sort"], let mapped = sorts[sort] { q["SortBy"] = mapped }
         if let library = input["library_id"] { q["ParentId"] = try await libraryID(library) }
         if let prefix = input["name_prefix"], !prefix.isEmpty {

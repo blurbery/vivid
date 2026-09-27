@@ -50,9 +50,12 @@ private let focusScale: CGFloat = 1.05
 struct ProfileTile: View {
     let profile: UserProfile
     var isRemembered: Bool = false
+    var focus: FocusState<String?>.Binding? = nil
     let action: () -> Void
 
-    @FocusState private var isFocused: Bool
+    @FocusState private var localFocusedProfile: String?
+    private var focusBinding: FocusState<String?>.Binding { focus ?? $localFocusedProfile }
+    private var isFocused: Bool { focusBinding.wrappedValue == profile.id }
 
     private var tint: Color {
         ProfileTilePalette.tint(for: profile.id)
@@ -89,7 +92,7 @@ struct ProfileTile: View {
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.32, dampingFraction: 0.72), value: isFocused)
-        .focused($isFocused)
+        .focused(focusBinding, equals: profile.id)
         .accessibilityLabel(profile.name)
         .accessibilityValue(accessibilityValue)
     }

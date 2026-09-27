@@ -5,6 +5,9 @@ struct TVSavedProfilesScreen: View {
     let router: AppRouter
     @State private var store = TVSavedAccountStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isFinishingHandoff = false
+    private var handoffDuration: Double { reduceMotion ? 0.2 : 0.55 }
+
     var body: some View {
         ZStack {
             TVAppBackdrop()
@@ -24,6 +27,7 @@ struct TVSavedProfilesScreen: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background { TVAppBackdrop() }
                 .overlay(alignment: .bottom) {
                     VividCopyrightFooter()
                         .padding(.bottom, 40)
@@ -33,10 +37,17 @@ struct TVSavedProfilesScreen: View {
                     switch route { case .editor(let id): TVSavedAccountEditor(accountID: id) }
                 }
             }
-            .disabled(store.showsAnimation)
+            .opacity(store.showsAnimation ? 0 : 1)
+            .animation(
+                .easeInOut(duration: handoffDuration * 0.6).delay(handoffDuration * 0.4),
+                value: store.showsAnimation
+            )
+            .disabled(store.showsAnimation || isFinishingHandoff)
+            .accessibilityHidden(store.showsAnimation || isFinishingHandoff)
             if store.showsAnimation {
                 VividStartupView(isContentReady: true) {
-                    withAnimation(.easeInOut(duration: reduceMotion ? 0.2 : 0.55)) {
+                    isFinishingHandoff = true
+                    withAnimation(.easeInOut(duration: handoffDuration * 0.4)) {
                         store.showsAnimation = false
                     }
                 }
@@ -45,11 +56,18 @@ struct TVSavedProfilesScreen: View {
             }
         }
         .environment(router)
+        .task(id: isFinishingHandoff) {
+            guard isFinishingHandoff else { return }
+            do { try await Task.sleep(for: .seconds(handoffDuration)) } catch { return }
+            isFinishingHandoff = false
+        }
     }
 }
 
 struct TVSavedAccountCards: View {
     var isSettings = true
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hasRequestedInitialProfileFocus = false
     @Namespace private var profileFocusScope
     @FocusState private var focusedAccount: String?
     @State private var store = TVSavedAccountStore.shared
@@ -100,6 +118,7 @@ struct TVSavedAccountCards: View {
                                 NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
                                     .buttonStyle(TVAccountCircleStyle())
                                     .focused($focusedAccount, equals: account.id)
+                                    .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
 
                             } else {
                                 Button {
@@ -108,6 +127,7 @@ struct TVSavedAccountCards: View {
                                 } label: { tile(account) }
                                 .buttonStyle(TVAccountCircleStyle())
                                     .focused($focusedAccount, equals: account.id)
+                                    .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
 
                             }
                         }
@@ -142,6 +162,20 @@ struct TVSavedAccountCards: View {
         .focusSection()
         .focusScope(profileFocusScope)
         .defaultFocus($focusedAccount, store.accounts.first?.id, priority: .userInitiated)
+        .task(id: initialProfileFocusID) {
+            guard let target = initialProfileFocusID, !hasRequestedInitialProfileFocus else { return }
+            // Enabling the row and removing the splash must reach the native
+            // view tree before assigning focus to its first button.
+            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+            guard !Task.isCancelled, !hasRequestedInitialProfileFocus,
+                  initialProfileFocusID == target else { return }
+            focusedAccount = target
+        }
+        .onChange(of: focusedAccount) { _, accountID in
+            if accountID != nil, initialProfileFocusID != nil {
+                hasRequestedInitialProfileFocus = true
+            }
+        }
         .task(id: scenePhase == .active && !isEditingProfiles) {
             guard scenePhase == .active, !isEditingProfiles else { return }
             while !Task.isCancelled {
@@ -166,6 +200,13 @@ struct TVSavedAccountCards: View {
                 }
             }
         }
+    }
+
+    private var initialProfileFocusID: String? {
+        guard !isSettings, isEnabled, scenePhase == .active, !store.busy, !store.showsAnimation,
+              store.error == nil,
+              pinAccount == nil, !isEditingProfiles else { return nil }
+        return store.accounts.first?.id
     }
 
     private var displayedAccounts: [TVSavedAccount] {
