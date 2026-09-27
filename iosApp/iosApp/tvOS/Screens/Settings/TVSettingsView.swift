@@ -183,7 +183,7 @@ struct TVSettingsView: View {
 
     private func initialDetailFocus(for category: TVSettingsCategory) -> TVSettingsDetailFocus {
         if category == .general {
-            return .generalHomeScreen
+            return .generalTheme
         }
         if category == .subtitles,
            viewModel.subtitleMatchesSystemAppearance {
@@ -321,6 +321,7 @@ struct TVSettingsView: View {
 
 enum TVSettingsDetailFocus: Hashable {
     case top
+    case generalTheme
     case generalHomeSections
     case generalHomeScreen
     case generalTopMenu

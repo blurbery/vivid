@@ -438,7 +438,7 @@ struct HomeSectionsCustomizationView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "Home Sections", subtitle: "Choose which rows appear on Home and arrange their order.", systemImage: "rectangle.3.group").settingsPageHeaderRow()
+            SettingsPageHeader(title: "Home Sections", subtitle: "Choose up to 6 Home rows. A seventh slot is reserved for Spotlight, even when hidden.", systemImage: "rectangle.3.group").settingsPageHeaderRow()
             Section {
                 if arrangedSections.isEmpty, isLoading {
                     HStack {
@@ -465,7 +465,7 @@ struct HomeSectionsCustomizationView: View {
                 }
             } footer: {
                 if !arrangedSections.isEmpty {
-                    Text("Open eye: shown on Home. Closed eye: hidden and dimmed here. Tap Edit to drag rows into a new order. Changes save automatically for this profile on this device.")
+                    Text("\(preferences.visibleRowCount) of 6 rows enabled. Hide a row before showing another when all six are enabled. Open eye: shown on Home. Closed eye: hidden and dimmed here. Tap Edit to drag rows into a new order. Changes save automatically for this profile on this device.")
                 }
             }
         }
@@ -503,6 +503,7 @@ struct HomeSectionsCustomizationView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .disabled(!isVisible && preferences.visibleRowCount >= HomeSectionPreferences.maximumVisibleRows)
             .accessibilityLabel(
                 isVisible ? "Hide \(section.title)" : "Show \(section.title)"
             )
@@ -536,6 +537,7 @@ struct HomeSectionsCustomizationView: View {
         preferences.refresh()
 
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
+            preferences.enforceVisibleRowLimit(in: cached.sections)
             sections = cached.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
         }
 
@@ -553,6 +555,7 @@ struct HomeSectionsCustomizationView: View {
         do {
             let response = try await StartupContentPrefetcher.fetchHomeSections()
             guard !Task.isCancelled else { return }
+            preferences.enforceVisibleRowLimit(in: response.sections)
             sections = response.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
         } catch {
             guard !Task.isCancelled else { return }

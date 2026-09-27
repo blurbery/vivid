@@ -123,7 +123,7 @@ struct PhoneVividPrivacyView: View {
                 policySection("Your controls", "You can clear Home metadata and unused artwork from Settings → Metadata. Manual Sign Out clears the current saved-account session while keeping its profile card for later sign-in, and that signed-out state syncs through iCloud. Deleting a saved account records the deletion in the private vault so another device cannot add it back; signing in again later can restore it. Removing Vivid clears data stored by that installation but does not delete the private iCloud vault, data on another device or records held by your media server. Contact the server operator about information stored there.")
                 policySection("Contact and changes", "For questions about Vivid, contact admin@vividapp.co. Vivid is in development; this information will be updated as its features and data handling change.")
             }.padding(24).frame(maxWidth: 760).frame(maxWidth: .infinity)
-        }.background(Color.black.ignoresSafeArea()).navigationTitle("")
+        }.background(VividAppBackdrop()).navigationTitle("")
             .settingsNavigationChrome()
     }
     private func policySection(_ title: String, _ text: String) -> some View {
@@ -150,7 +150,7 @@ struct PhoneSavedProfilesScreen: View {
                 PhoneSavedAccountCards(isSettings: false, editorRoute: $profileEditorRoute)
                 Spacer()
                 VividCopyrightFooter().padding(.bottom, 24)
-            }.background(Color.black.ignoresSafeArea())
+            }.background(VividAppBackdrop())
                 .navigationDestination(item: $profileEditorRoute) { route in
                     PhoneSavedAccountEditor(accountID: route.accountID)
                 }

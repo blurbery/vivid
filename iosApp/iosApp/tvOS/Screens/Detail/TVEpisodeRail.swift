@@ -624,6 +624,7 @@ struct TVContinuousEpisodeShelf: View {
     let selectedSeason: Season?
     let currentContentId: String?
     var heroEntryEpisode: EpisodeListItem? = nil
+    var isHeroFocused = false
     let favorites: [String: Bool]
     let onSeason: (Season) -> Void
     let onFocus: (EpisodeListItem) -> Void
@@ -639,6 +640,14 @@ struct TVContinuousEpisodeShelf: View {
     @State private var pendingJump: String?
     @State private var pendingEpisodeJump: String?
     @State private var seeded = false
+    /// Own only the entry from the hero. Horizontal season/episode browsing
+    /// releases this preference until the hero receives focus again.
+    @State private var isEnteringFromHero = true
+
+    private var heroEntrySeason: Season? {
+        guard let episode = heroEntryEpisode else { return nil }
+        return seasons.first { $0.seasonNumber == episode.seasonNumber }
+    }
 
     private func items(_ season: Season) -> [EpisodeListItem]? { pages[season.seasonNumber] }
     private var contentKey: [String] { seasons.flatMap { items($0)?.map(\.contentId) ?? [] } }
@@ -694,14 +703,27 @@ struct TVContinuousEpisodeShelf: View {
                 .focusScope(seasonFocusNamespace)
                 .defaultFocus($focusedSeason, highlightedSeason ?? selectedSeason?.id,
                               priority: focusedSeason == nil ? .userInitiated : .automatic)
-                .onChange(of: focusedSeason) { _, id in
+                .onChange(of: focusedSeason) { previous, id in
+                    guard let id else { return }
+                    if previous == nil, isEnteringFromHero, let entrySeason = heroEntrySeason {
+                        // Spatial Down can land on Season 1. Resolve this entry
+                        // before the dwell handler treats it as browsing intent.
+                        prepareHeroEntry(using: proxy)
+                        if id != entrySeason.id {
+                            focusedSeason = entrySeason.id
+                            return
+                        }
+                    }
                     scrollHighlightedSeason = nil
-                    if let id, id != (highlightedSeason ?? selectedSeason?.id) {
+                    if id != (highlightedSeason ?? selectedSeason?.id) {
+                        isEnteringFromHero = false
                         pendingJump = nil
+                        pendingEpisodeJump = nil
                     }
                 }
                 .task(id: focusedSeason) { @MainActor in
                     guard let id = focusedSeason,
+                          !isEnteringFromHero || heroEntrySeason?.id == id,
                           id != (highlightedSeason ?? selectedSeason?.id) else { return }
                     do {
                         try await Task.sleep(for: .milliseconds(120))
@@ -740,14 +762,24 @@ struct TVContinuousEpisodeShelf: View {
                 } action: { _, seasonID in
                     // Accelerated remote scrolling can move the rail before
                     // native episode focus catches up. This only paints selection.
-                    guard heroEntryEpisode == nil, focusedSeason == nil, let seasonID else { return }
+                    guard !isHeroFocused, !isEnteringFromHero, focusedSeason == nil, let seasonID else { return }
                     scrollHighlightedSeason = seasonID
                 }
-                .onChange(of: focusedEpisode) { _, id in
-                    guard let id,
-                          let season = seasons.first(where: { items($0)?.contains { $0.contentId == id } == true }),
+                .onChange(of: focusedEpisode) { previous, id in
+                    guard let id else { return }
+                    if previous == nil, isEnteringFromHero, let entry = heroEntryEpisode,
+                       id != entry.contentId,
+                       pages[entry.seasonNumber]?.contains(where: { $0.contentId == entry.contentId }) == true {
+                        // Seed only the vertical handoff, including a late or
+                        // last episode that cannot scroll to the leading edge.
+                        focusedEpisode = entry.contentId
+                        return
+                    }
+                    guard let season = seasons.first(where: { items($0)?.contains { $0.contentId == id } == true }),
                           let episode = items(season)?.first(where: { $0.contentId == id }) else { return }
+                    isEnteringFromHero = false
                     pendingJump = nil
+                    pendingEpisodeJump = nil
                     scrollHighlightedSeason = nil
                     highlightedSeason = season.id
                     if selectedSeason?.id != season.id { onSeason(season) }
@@ -759,19 +791,22 @@ struct TVContinuousEpisodeShelf: View {
                       let episode = pages.values.lazy.flatMap({ $0 }).first(where: { $0.contentId == id }) else { return }
                 onPlay(episode)
             }
-            .onChange(of: heroEntryEpisode?.contentId, initial: true) { _, id in
-                guard let id, let episode = heroEntryEpisode,
-                      let season = seasons.first(where: { $0.seasonNumber == episode.seasonNumber }) else { return }
-                // Prepare the destination while focus is still in the hero.
-                // Native focus continues to own the downward transition.
-                scrollHighlightedSeason = nil
-                highlightedSeason = season.id
-                pendingJump = season.id
-                pendingEpisodeJump = id
-                if selectedSeason?.id != season.id { onSeason(season) }
-                jumpIfReady(proxy)
+            .onChange(of: heroEntryEpisode?.contentId, initial: true) { _, _ in
+                prepareHeroEntry(using: proxy)
+            }
+            .onChange(of: isHeroFocused) { _, focused in
+                guard focused else { return }
+                isEnteringFromHero = true
+                prepareHeroEntry(using: proxy)
+            }
+            .onChange(of: seasons.map(\.id)) { _, _ in
+                prepareHeroEntry(using: proxy)
             }
             .onChange(of: contentKey, initial: true) { _, _ in
+                if isEnteringFromHero, heroEntryEpisode != nil {
+                    prepareHeroEntry(using: proxy)
+                    return
+                }
                 if !seeded, pendingJump == nil, let season = selectedSeason, items(season) != nil {
                     seeded = true
                     if let id = currentContentId ?? items(season)?.first?.contentId {
@@ -783,7 +818,19 @@ struct TVContinuousEpisodeShelf: View {
         }
     }
 
+    private func prepareHeroEntry(using proxy: ScrollViewProxy) {
+        guard isEnteringFromHero, let episode = heroEntryEpisode,
+              let season = heroEntrySeason else { return }
+        scrollHighlightedSeason = nil
+        highlightedSeason = season.id
+        pendingJump = season.id
+        pendingEpisodeJump = episode.contentId
+        if selectedSeason?.id != season.id { onSeason(season) }
+        jumpIfReady(proxy)
+    }
+
     private func selectSeason(_ season: Season, using proxy: ScrollViewProxy) {
+        isEnteringFromHero = false
         highlightedSeason = season.id
         pendingEpisodeJump = nil
         pendingJump = season.id
@@ -793,9 +840,15 @@ struct TVContinuousEpisodeShelf: View {
 
     private func jumpIfReady(_ proxy: ScrollViewProxy) {
         guard let pendingJump, let season = seasons.first(where: { $0.id == pendingJump }),
-              let episodes = items(season),
-              let id = pendingEpisodeJump.flatMap({ target in episodes.first { $0.contentId == target }?.contentId })
-                ?? episodes.first?.contentId else { return }
+              let episodes = items(season) else { return }
+        let id: String
+        if let target = pendingEpisodeJump {
+            guard episodes.contains(where: { $0.contentId == target }) else { return }
+            id = target
+        } else {
+            guard let first = episodes.first else { return }
+            id = first.contentId
+        }
         withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(id, anchor: .leading) }
         seeded = true
         self.pendingJump = nil

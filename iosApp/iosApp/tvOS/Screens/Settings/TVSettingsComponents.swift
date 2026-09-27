@@ -701,8 +701,8 @@ struct TVSettingsConfirmationOverlay: View {
 
 // MARK: - Vivid privacy policy
 
-struct TVPrivacyPolicyOverlay: View {
-    let dismiss: () -> Void
+struct TVPrivacyPolicyPage: View {
+    @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedSection: String?
 
     var body: some View {
@@ -726,7 +726,7 @@ struct TVPrivacyPolicyOverlay: View {
         }
         .tvSettingsPageSurface()
         .defaultFocus($focusedSection, "Your accounts and media server")
-        .onExitCommand(perform: dismiss)
+        .onExitCommand { dismiss() }
     }
 
     private func policySection(_ title: String, _ text: String) -> some View {

@@ -26,6 +26,8 @@ Vivid owns its interface, browsing behaviour and playback experience. Each media
 > [!NOTE]
 > Silo, Emby and Jellyfin are implemented. See the [Emby core](cores/emby.md) and [Jellyfin core](cores/jellyfin.md) for supported behaviour and verification gaps. Keep each provider’s requests and credentials separate.
 
+Movies and Series offer Release Date in the Sort menu on iPhone, iPad and Apple TV. It starts with Newest; selecting it again switches to Oldest. Movies use their release date and series use their premiere date, rather than the date files were added. Sorting happens on the server before pagination: Silo uses `release_date`, while Emby and Jellyfin use `PremiereDate`. The existing Preserve sort & filters preference also retains this selection.
+
 ## Saved accounts on Apple TV, iPhone and iPad
 
 A fresh iPhone/iPad installation attempts a private iCloud vault restore, falling through to local setup when no usable session is restored. A fresh Apple TV opens the provider selector directly. On iPhone, iPad and Apple TV, Restore from iCloud below the provider cards lets you check for saved accounts manually, retry or go back to server setup. The selector uses Vivid branding and three 16:9 provider cards. Silo opens native server/account setup. Emby opens the same form with native Emby authentication on mobile and Apple TV. Jellyfin opens the same form with its own native authentication.

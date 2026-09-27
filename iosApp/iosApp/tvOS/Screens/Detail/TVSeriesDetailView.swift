@@ -61,7 +61,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                 TVContinuousEpisodeShelf(seasons: seasons, pages: continuousPages,
                     selectedSeason: selectedSeason, currentContentId: activeEpisodeContentId,
-                    heroEntryEpisode: showActionRowFocused ? playbackEpisode : nil,
+                    heroEntryEpisode: playbackEpisode, isHeroFocused: showActionRowFocused,
                     favorites: episodeFavoriteStates, onSeason: onSelectSeason,
                     onFocus: { _ in
                         isShowingSeriesOverview = false

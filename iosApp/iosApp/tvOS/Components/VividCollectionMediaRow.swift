@@ -251,11 +251,8 @@ private struct CollectionMediaCell<Content: View>: View {
 
     var body: some View {
         let _ = VividImageDiagnostics.shared.count("leaf.CollectionMediaCell.body")
+        // Browsing Home never prepares a destination page or playback payload.
         content($focusedID)
-            .task(id: focusedID == itemID) {
-                guard focusedID == itemID else { return }
-                await ItemDetailCache.shared.prepareFocusedDetail(contentId: itemID)
-            }
             .environment(\.tvArtworkLoadingEnabled, parentArtworkEnabled && (artworkGate?.enabled ?? true))
             .onChange(of: focusedID) { _, id in
                 guard id == itemID else { return }

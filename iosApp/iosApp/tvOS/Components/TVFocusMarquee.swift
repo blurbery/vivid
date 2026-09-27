@@ -593,38 +593,14 @@ struct TVMarqueeEnrichment: Equatable {
 final class TVSpotlightArtworkModel {
     /// The fixed slide whose artwork is being prepared.
     private(set) var content: TVMarqueeContent?
-    /// Detail backfill (§9: air date, cast) for the displayed content.
-    /// Uses cached detail immediately; `nil` while an uncached fetch runs.
-    private(set) var enrichment: TVMarqueeEnrichment?
-    /// Dominant-color wash behind the backdrop, sampled per displayed
-    /// backdrop (same palette pipeline the hero carousel used).
+    /// Home renders only its own section artwork. No detail, season or
+    /// playback requests are started to prepare a Spotlight slide.
     private(set) var tintColor: Color = .vividBackground
 
-    /// Backdrop art for the root hero. Episodes need their detail-level series
-    /// backdrop, and any item missing a section backdrop gets one chance to
-    /// obtain the real backdrop from detail. While that request is in flight
-    /// the hero stays artwork-free instead of flashing the poster. Poster/still
-    /// fallback is used only after detail confirms no backdrop exists (or for
-    /// collections, which have no detail lookup).
     private var resolvedArtwork: TVHeroArtwork? {
         guard let content else { return nil }
-        return TVHeroArtworkResolver.resolve(
-            sectionBackdrop: TVHeroArtwork(
-                url: content.backdropUrl,
-                thumbhash: content.backdropThumbhash
-            ),
-            fallback: TVHeroArtwork(
-                url: content.fallbackArtworkUrl,
-                thumbhash: content.fallbackArtworkThumbhash
-            ),
-            prefersEnrichedBackdrop: content.isEpisode || content.backdropUrl?.isEmpty != false,
-            canLoadEnrichment: content.contentId != nil,
-            enrichmentState: enrichmentState,
-            enrichedBackdrop: TVHeroArtwork(
-                url: enrichment?.backdropUrl,
-                thumbhash: enrichment?.backdropThumbhash
-            )
-        )
+        return TVHeroArtwork(url: content.backdropUrl, thumbhash: content.backdropThumbhash)
+            ?? TVHeroArtwork(url: content.fallbackArtworkUrl, thumbhash: content.fallbackArtworkThumbhash)
     }
 
     private var displayedArtwork: TVHeroArtwork?
@@ -633,27 +609,20 @@ final class TVSpotlightArtworkModel {
     var backdropThumbhash: String? { displayedArtwork?.thumbhash }
 
     private var tintTask: Task<Void, Never>?
-    private var enrichTask: Task<Void, Never>?
     /// False while the feed is offscreen; every entry point is a no-op then.
     private var isActive = true
-    private var enrichmentState: TVHeroEnrichmentState = .notStarted
     private var lastSampledTintURL: String?
-    /// Reuse slide metadata when its artwork reappears.
-    private var enrichmentCache: [String: TVMarqueeEnrichment] = [:]
 
     /// Load the fixed slide once when its artwork appears.
     func seed(_ candidate: TVMarqueeContent) {
         guard isActive, content == nil else { return }
         content = candidate
-        loadEnrichment(for: candidate)
         updateBackdropIfReady()
     }
 
     func suspend() {
         isActive = false
-        enrichTask?.cancel()
         tintTask?.cancel()
-        enrichTask = nil
         tintTask = nil
         lastSampledTintURL = nil
     }
@@ -661,8 +630,6 @@ final class TVSpotlightArtworkModel {
     func resume() {
         guard !isActive else { return }
         isActive = true
-        guard let content else { return }
-        loadEnrichment(for: content)
         updateBackdropIfReady()
     }
 
@@ -671,78 +638,11 @@ final class TVSpotlightArtworkModel {
         if let artwork = resolvedArtwork {
             displayedArtwork = artwork
             sampleTintIfNeeded(for: artwork.url)
-        } else if enrichmentState.permitsFallback {
+        } else {
             displayedArtwork = nil
             tintColor = .vividBackground
             tintTask?.cancel()
             lastSampledTintURL = nil
-        }
-    }
-
-    /// Reuse cached detail or load the metadata needed by this spotlight slide.
-    private func loadEnrichment(for candidate: TVMarqueeContent) {
-        enrichTask?.cancel()
-        guard let contentId = candidate.contentId else {
-            enrichment = nil
-            enrichmentState = .completed
-            return
-        }
-        if let cached = enrichmentCache[contentId] {
-            enrichment = cached
-            enrichmentState = .completed
-            updateBackdropIfReady()
-            return
-        }
-
-        // Reuse the current Spotlight detail cache to resolve its artwork.
-        if !candidate.prefersLastUsedPlaybackMetadata || TVHomeMetadataCache.shared.snapshot.details[contentId] != nil,
-           let cachedDetail: ItemDetail = ResponseCache.shared.get(
-               CacheKey.itemDetail(contentId)
-           ) {
-            let cached = TVMarqueeEnrichment(detail: cachedDetail)
-            enrichmentCache[contentId] = cached
-            enrichment = cached
-            enrichmentState = .completed
-            updateBackdropIfReady()
-            return
-        }
-
-        enrichment = nil
-        enrichmentState = .loading
-        enrichTask = Task { [weak self] in
-            guard !Task.isCancelled else { return }
-            let fetchedDetail: ItemDetail?
-            if candidate.prefersLastUsedPlaybackMetadata {
-                fetchedDetail = await TVContinueWatchingPlaybackMetadataStore.shared.load(
-                    contentId: contentId,
-                    progressUpdatedAt: candidate.progressUpdatedAt,
-                    baseOverlayData: candidate.baseOverlayData
-                )
-            } else {
-                fetchedDetail = try? await MetadataRequestPool.shared.itemDetail(
-                    contentId: contentId
-                )
-            }
-
-            if let detail = fetchedDetail {
-                guard !Task.isCancelled, let self else { return }
-                // Retain the fetched detail for Spotlight and subsequent navigation.
-                ResponseCache.shared.set(detail, for: CacheKey.itemDetail(contentId))
-                let enrichment = TVMarqueeEnrichment(detail: detail)
-                self.enrichmentCache[contentId] = enrichment
-                if self.content?.contentId == contentId {
-                    self.enrichment = enrichment
-                    self.enrichmentState = .completed
-                    self.updateBackdropIfReady()
-                }
-            } else {
-                guard !Task.isCancelled, let self,
-                      self.content?.contentId == contentId else { return }
-                self.enrichment = nil
-                self.enrichmentState = .failed
-                self.updateBackdropIfReady()
-            }
-
         }
     }
 

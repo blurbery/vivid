@@ -27,11 +27,6 @@ private enum VividAbout {
 }
 
 struct AboutSettingsView: View {
-    #if os(tvOS)
-    @State private var showsPrivacy = false
-    @State private var showsLicenses = false
-    #endif
-
     var body: some View {
         #if os(tvOS)
         ScrollView {
@@ -39,13 +34,13 @@ struct AboutSettingsView: View {
                 TVSettingsPageHeader(title: "About")
                 brand
                 TVSettingsGroup {
-                    Button { showsLicenses = true } label: {
+                    NavigationLink { TVOpenSourceAcknowledgementsPage() } label: {
                         TVSettingsRowLabel(title: "Open Source Licences")
                     }.buttonStyle(TVSettingsPaneRowStyle())
                     NavigationLink { ServiceAcknowledgementsView() } label: {
                         TVSettingsRowLabel(title: "Acknowledgements")
                     }.buttonStyle(TVSettingsPaneRowStyle())
-                    Button { showsPrivacy = true } label: {
+                    NavigationLink { TVPrivacyPolicyPage() } label: {
                         TVSettingsRowLabel(title: "Privacy Policy")
                     }.buttonStyle(TVSettingsPaneRowStyle())
                     NavigationLink { VividContactSettingsView() } label: {
@@ -57,14 +52,6 @@ struct AboutSettingsView: View {
             .frame(maxWidth: TVSettingsLayout.contentWidth).padding(24).frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
-        .fullScreenCover(isPresented: $showsPrivacy) {
-            TVPrivacyPolicyOverlay { showsPrivacy = false }
-                .presentationBackground { TVAppBackdrop() }
-        }
-        .fullScreenCover(isPresented: $showsLicenses) {
-            TVOpenSourceAcknowledgementsOverlay { showsLicenses = false }
-                .presentationBackground { TVAppBackdrop() }
-        }
         #else
         List {
             SettingsPageHeader(title: "About", subtitle: "Vivid for your Apple devices.",

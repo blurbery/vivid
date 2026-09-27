@@ -98,7 +98,7 @@ struct HomeView: View {
         #else
         ZStack(alignment: .top) {
             #if os(iOS)
-            Color.black.ignoresSafeArea()
+            VividAppBackdrop()
             #else
             homeFeedBackground.ignoresSafeArea()
             #endif

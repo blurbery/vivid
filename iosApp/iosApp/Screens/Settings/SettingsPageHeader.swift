@@ -96,7 +96,7 @@ private struct TabletSettingsWidth: ViewModifier {
             content
                 .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity)
-                .background(Color.black.ignoresSafeArea())
+                .background(VividAppBackdrop())
         } else {
             content
         }

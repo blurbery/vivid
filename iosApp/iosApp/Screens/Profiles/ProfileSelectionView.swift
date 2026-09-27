@@ -13,7 +13,11 @@ struct ProfileSelectionView: View {
     @State private var showSignOutConfirm: Bool = false
     @Namespace private var profileFocusNamespace
     #if os(tvOS)
+    @Environment(\.scenePhase) private var scenePhase
+    @FocusState private var focusedProfile: String?
+    @Environment(\.isEnabled) private var isEnabled
     @FocusState private var isSignOutFocused: Bool
+    @State private var hasRequestedInitialProfileFocus = false
     #endif
 
     private struct PINEntryContext: Identifiable {
@@ -57,12 +61,9 @@ struct ProfileSelectionView: View {
 
     // MARK: - Background
 
-    /// Pure black canvas with a soft radial spotlight behind the row. The
-    /// radial is 8% white at the center fading to transparent, so the
-    /// tiles have somewhere to "sit" without the background reading as a
-    /// gradient card.
+    /// Use the saved appearance before and after the profile list loads.
     private var background: some View {
-        Color.black.ignoresSafeArea()
+        VividAppBackdrop()
     }
 
     // MARK: - Content
@@ -71,8 +72,7 @@ struct ProfileSelectionView: View {
     private var pickerContent: some View {
         if viewModel.isLoading && viewModel.profiles.isEmpty {
             #if os(tvOS)
-            Color.black
-                .ignoresSafeArea()
+            Color.clear
                 .accessibilityLabel("Loading profiles")
             #else
             LoadingView(message: "Loading profiles...")
@@ -230,7 +230,7 @@ struct ProfileSelectionView: View {
         let rememberedProfileID = launchPreferences.rememberedProfile(
             for: ServerRegistry.shared.activeServerId
         )?.profileID
-        let preferredProfileID = rememberedProfileID ?? viewModel.profiles.first?.id
+        let preferredProfileID = viewModel.profiles.first?.id
         let grid = LazyVGrid(
             columns: [GridItem(.adaptive(minimum: tileMinWidth, maximum: tileMaxWidth), spacing: tileSpacing)],
             spacing: rowSpacing
@@ -241,7 +241,8 @@ struct ProfileSelectionView: View {
                     profile: profile,
                     isRemembered: profile.id == rememberedProfileID,
                     prefersDefaultFocus: profile.id == preferredProfileID,
-                    defaultFocusNamespace: profileFocusNamespace
+                    defaultFocusNamespace: profileFocusNamespace,
+                    focus: $focusedProfile
                 ) {
                     handleProfileTap(profile)
                 }
@@ -266,10 +267,30 @@ struct ProfileSelectionView: View {
         return grid
             .focusScope(profileFocusNamespace)
             .focusSection()
+            .task(id: initialProfileFocusID) {
+                guard let target = initialProfileFocusID, !hasRequestedInitialProfileFocus else { return }
+                // Wait for the enabled grid to reach the native view tree.
+                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                guard !Task.isCancelled, !hasRequestedInitialProfileFocus,
+                      initialProfileFocusID == target, !isSignOutFocused else { return }
+                focusedProfile = target
+            }
+            .onChange(of: focusedProfile) { _, profileID in
+                if profileID != nil, initialProfileFocusID != nil {
+                    hasRequestedInitialProfileFocus = true
+                }
+            }
         #else
         return grid
         #endif
     }
+
+    #if os(tvOS)
+    private var initialProfileFocusID: String? {
+        guard isEnabled, scenePhase == .active, !isPINEntryPresented, !showSignOutConfirm else { return nil }
+        return viewModel.profiles.first?.id
+    }
+    #endif
 
     private func handleProfileTap(_ profile: UserProfile) {
         if profile.hasPin {

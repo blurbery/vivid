@@ -7,12 +7,14 @@ struct TVProfileTile: View {
     var isRemembered: Bool = false
     var prefersDefaultFocus: Bool = false
     var defaultFocusNamespace: Namespace.ID? = nil
+    var focus: FocusState<String?>.Binding? = nil
     let action: () -> Void
 
     var body: some View {
         ProfileTile(
             profile: profile,
             isRemembered: isRemembered,
+            focus: focus,
             action: action
         )
         // Lets the first profile tile claim initial focus instead of the

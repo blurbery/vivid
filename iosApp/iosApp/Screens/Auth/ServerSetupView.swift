@@ -163,7 +163,7 @@ struct PhoneProviderSelectionView: View {
             .padding(24)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(VividAppBackdrop())
         .safeAreaInset(edge: .bottom) {
             VividCopyrightFooter().padding(.vertical, 16).frame(maxWidth: .infinity).background(.black)
         }

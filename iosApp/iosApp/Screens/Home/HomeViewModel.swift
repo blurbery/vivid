@@ -3,13 +3,13 @@ import Foundation
 /// Device-local, per-server/profile Home row visibility and order. The server
 /// remains authoritative for which rows exist and what they contain; this
 /// projection only arranges the rows it returns. Unknown/new server rows append
-/// in server order, subject to the Apple TV visible-row limit.
+/// in server order, subject to the shared Home visible-row limit.
 @Observable
 @MainActor
 final class HomeSectionPreferences {
     static let shared = HomeSectionPreferences()
 
-    #if os(tvOS)
+    // Seven Home slots, with one always reserved for Spotlight, even when hidden.
     static let maximumVisibleRows = 6
     @ObservationIgnored private var knownSections: [ResolvedSection] = []
 
@@ -29,7 +29,6 @@ final class HomeSectionPreferences {
         layoutRevision &+= 1
         persist()
     }
-    #endif
 
     private(set) var orderedSectionIds: [String] = []
     private(set) var hiddenSectionIds = Set<String>()
@@ -63,9 +62,7 @@ final class HomeSectionPreferences {
         let key = storageKey()
         guard force || key != loadedStorageKey else { return }
         loadedStorageKey = key
-        #if os(tvOS)
         knownSections = []
-        #endif
 
         guard let key,
               let data = defaults.data(forKey: key),
@@ -90,9 +87,7 @@ final class HomeSectionPreferences {
     }
 
     func setVisible(_ visible: Bool, sectionId: String) {
-        #if os(tvOS)
         if visible && !isVisible(sectionId) && visibleRowCount >= Self.maximumVisibleRows { return }
-        #endif
         let wasVisible = isVisible(sectionId)
         guard wasVisible != visible else { return }
         if visible {
@@ -155,11 +150,7 @@ final class HomeSectionPreferences {
 
         guard !includingHidden else { return arranged }
         let visible = arranged.filter { !hiddenSectionIds.contains($0.id) }
-        #if os(tvOS)
         return Array(visible.prefix(Self.maximumVisibleRows))
-        #else
-        return visible
-        #endif
     }
 
     func setCombineEmbyNextUp(_ enabled: Bool) {
@@ -167,9 +158,7 @@ final class HomeSectionPreferences {
         refresh()
         guard combineEmbyNextUp != enabled else { return }
         combineEmbyNextUp = enabled
-        #if os(tvOS)
         enforceVisibleRowLimit(in: knownSections)
-        #endif
         layoutRevision &+= 1
         persist()
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
@@ -180,9 +169,7 @@ final class HomeSectionPreferences {
         refresh()
         guard combineJellyfinNextUp != enabled else { return }
         combineJellyfinNextUp = enabled
-        #if os(tvOS)
         enforceVisibleRowLimit(in: knownSections)
-        #endif
         layoutRevision &+= 1
         persist()
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
@@ -366,9 +353,7 @@ class HomeViewModel {
         // Hydrate from the shared cache so the first render after a
         // navigation paints last-known data without any network wait.
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
-            #if os(tvOS)
             HomeSectionPreferences.shared.enforceVisibleRowLimit(in: cached.sections)
-            #endif
             sections = cached.sections.filter { !$0.items.isEmpty }
         }
     }
@@ -531,9 +516,7 @@ class HomeViewModel {
         let revision = sectionsRevision
         let response = try await fetchHomeSections()
         guard revision == sectionsRevision else { return }
-        #if os(tvOS)
         HomeSectionPreferences.shared.enforceVisibleRowLimit(in: response.sections)
-        #endif
         let updated = response.sections.filter { !$0.items.isEmpty }
         if sections != updated { sections = updated }
         error = nil

@@ -6,6 +6,7 @@ import SwiftUI
 /// directional movement, preserving the stable focus graph described in
 /// `docs/apple-tv-focus.md`.
 struct TVGeneralSettingsPane: View {
+    @AppStorage(VividAppTheme.storageKey, store: .standard) private var theme: VividAppTheme = .graphite
     @State private var homeSections = HomeSectionPreferences.shared
     @State private var preferences = UICustomizationPreferences.shared
     @State private var homeCards = TVHomeCardPreferences.shared
@@ -19,6 +20,20 @@ struct TVGeneralSettingsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            TVSettingsSectionHeader("THEMES")
+            TVSettingsGroup {
+                TVSettingsOptionMenu(
+                    title: "Theme", value: theme.title,
+                    options: VividAppTheme.allCases.map { .init(id: $0.rawValue, label: $0.title) },
+                    selection: Binding(
+                        get: { theme.rawValue },
+                        set: { if let value = VividAppTheme(rawValue: $0) { theme = value } }
+                    )
+                )
+                .focused(detailFocus, equals: .generalTheme)
+            }
+            TVSettingsFooter("Graphite uses the charcoal background, Black uses solid black, and Native removes Vivid’s background and uses the system appearance.")
+
             TVSettingsSectionHeader("HOME SCREEN")
 
             TVSettingsGroup {
@@ -253,7 +268,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
     private var editorControlsCard: some View {
         TVSettingsPageHeader(
             title: "Home Sections",
-            subtitle: isEditing ? "Move rows into your preferred order." : "Choose up to 6 Home rows. Spotlight is separate."
+            subtitle: isEditing ? "Move rows into your preferred order." : "Choose up to 6 Home rows. A seventh slot is reserved for Spotlight, even when hidden."
         ) {
             Button(isEditing ? "Done Editing" : "Edit") {
                 withAnimation(.easeOut(duration: VividTheme.fastDuration)) {

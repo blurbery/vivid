@@ -103,7 +103,7 @@ struct TVLoginPreparationView: View {
                 Button("Back to sign in") { preparation.cancel() }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             #if os(iOS)
-            .background(Color.black.ignoresSafeArea())
+            .background(VividAppBackdrop())
             #endif
         } else {
             VividStartupView(isContentReady: preparation.ready,

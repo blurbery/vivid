@@ -141,7 +141,8 @@ struct EpisodeThumbCard: View {
             favoriteOverride = nil
         }
         .task(id: continueWatchingMetadataTaskId) {
-            guard onRemoveFromContinueWatching != nil else { return }
+            // Home badges use the section payload; details load on selection.
+            guard !stableHomeRows, onRemoveFromContinueWatching != nil else { return }
             _ = await continueWatchingMetadata.load(item: item)
         }
         #else
@@ -307,7 +308,7 @@ struct EpisodeThumbCard: View {
 
     private var resolvedOverlayData: OverlayData {
         #if os(tvOS)
-        if onRemoveFromContinueWatching != nil,
+        if !stableHomeRows, onRemoveFromContinueWatching != nil,
            let presentation = continueWatchingMetadata.presentation(for: item.contentId) {
             return presentation.overlayData
         }
