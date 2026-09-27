@@ -538,7 +538,7 @@ struct HomeSectionsCustomizationView: View {
 
         if let cached: SectionsResponse = ResponseCache.shared.get(CacheKey.homeSections) {
             preferences.enforceVisibleRowLimit(in: cached.sections)
-            sections = cached.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
+            sections = cached.sections
         }
 
         _ = forceRefresh
@@ -556,7 +556,7 @@ struct HomeSectionsCustomizationView: View {
             let response = try await StartupContentPrefetcher.fetchHomeSections()
             guard !Task.isCancelled else { return }
             preferences.enforceVisibleRowLimit(in: response.sections)
-            sections = response.sections.filter { !$0.items.isEmpty || !HomeSectionPreferences.shared.isVisible($0.id) }
+            sections = response.sections
         } catch {
             guard !Task.isCancelled else { return }
             loadFailed = sections.isEmpty

@@ -134,7 +134,7 @@ Row ownership is observed by the affected rows and a separate artwork worker, wi
 
 Startup warms row artwork without fetching the removed marquee’s first-item backdrop, logo or tint; landscape episode cards and the independent spotlight retain their artwork. tvOS startup no longer prefetches the former Recommendations feed, library-section landings, legacy Browse page or first Series detail. Current Movies, Series and For You pages load through their own caches when opened; Home and profile warmup remain active. Apple TV Spotlight uses the Home section payload and its artwork cache. It does not fetch full item details, seasons, episodes or playback data; a missing backdrop uses the section artwork fallback. Its full Home snapshot also retains versioned subject-crop decisions (including no detected subject) and sampled tint colours by artwork URL. tvOS prepares current Spotlight backdrops sequentially and shares in-flight analysis with visible slides. Preparation updates do not invalidate the Home view; removed artwork and Spotlight cache clearing discard associated records. Existing snapshots remain readable. Image decoding and GPU presentation still occur after a cold launch.
 
-tvOS Home hydrates its snapshot immediately and refreshes existing rows on first entry, after at least 60 seconds away, or when an item-change notification is pending. It does not poll every ten seconds while browsing. Visible Silo Home additionally refreshes every thirty minutes to renew signed artwork URLs. Changes received while Home is hidden are queued until return. Unchanged rows and snapshots are not republished or rewritten. The unused row warmer and unreachable personal-root shell have been removed. The tvOS bar supports Search, Home, Movies, Series, For You and Settings/Profile only. Music, library shortcuts, Recommended library landings and their dropdown focus machinery are removed, including their tvOS customisation options. Shared saved menu data remains compatible with other clients.
+tvOS Home hydrates its snapshot immediately and refreshes existing rows on first entry, after at least 60 seconds away, or when an item-change notification is pending. While visible, Jellyfin Home polls every ten seconds because it has no realtime event subscription; Silo refreshes every thirty minutes to renew signed artwork URLs; Emby has no periodic Home timer. Changes received while Home is hidden are queued until return. Unchanged rows and snapshots are not republished or rewritten. The unused row warmer and unreachable personal-root shell have been removed. The tvOS bar supports Search, Home, Movies, Series, For You and Settings/Profile only. Music, library shortcuts, Recommended library landings and their dropdown focus machinery are removed, including their tvOS customisation options. Shared saved menu data remains compatible with other clients.
 
 Local Home diagnosis can be armed with the `--home-scroll-diagnostics` launch argument. Adding `--home-scroll-diagnostics-autostart` starts one capture eight seconds after the feed arms, without requiring notification delivery. The `com.blurbery.vivid.home-diagnostics.start` Darwin notification starts a 60-second capture; the corresponding `.stop` notification ends it early. The capture records scroll geometry, row positions, collection-row body evaluations, focus indices, Spotlight phases/alignment/recycling, restoration requests/consumption/expiry/cancellation, display-link callback timing, CPU usage and process memory in `Library/Caches/vivid-home-navigation-diagnostics.json`. It does not record media titles, artwork URLs or account details. Display-link timing measures app callbacks, not GPU presentation time. Without the launch argument, the diagnostic observers remain inactive.
 
@@ -239,13 +239,16 @@ cell appearance/disappearance, artwork-gate changes and actual memory-warning
 notifications are counted separately. Their correlation distinguishes possible
 causes without labelling every cancellation as recycling; it is not a guaranteed
 one-to-one classification of gate versus disappearance cancellation.
+
 ### Apple TV Home sections and background work
 
 Home allows six media rows on iOS and tvOS. A seventh slot is always reserved
 for Spotlight, even when Spotlight is hidden. Existing order and hidden choices
 are retained; refresh hides overflow rows after the first six enabled rows.
-Both settings editors block enabling another row until a slot is freed. Hidden
-rows remain available in Settings and can still supply Spotlight. The existing
+Both settings editors block enabling another row until a slot is freed. Empty
+enabled rows remain in the editors so their reserved slots can be freed; Home
+only displays them once they contain items. Hidden rows remain available in
+Settings and can still supply Spotlight. The existing
 per-server-row limit of 20 items is unchanged; combining Continue Watching and
 Next Up can merge two such lists.
 
@@ -269,7 +272,7 @@ These are configured budgets and task limits, not measured total memory use:
 | Shared decoded-image cache | While Home warms artwork, a 192 MiB target on devices with at most 3.5 GB physical memory, otherwise 320 MiB, and a 600-image count target. These NSCache targets exclude images retained directly by views. |
 | Shared artwork disk cache | Up to 256 MiB per account/profile artwork scope. |
 | Image decoding | Two decode operations at once. Visible image loads and Spotlight crop/tint preparation also use the pipeline, so prefetch-worker limits are not a global request limit. |
-| Home refresh while visible | Jellyfin every 10 seconds; Silo every 30 minutes; Emby has no periodic Home timer. Entry and explicit refresh/mutation events can also refresh Home. |
+| tvOS Home refresh while visible | Jellyfin every 10 seconds; Silo every 30 minutes; Emby has no periodic Home timer. Entry and explicit refresh/mutation events can also refresh Home. |
 
 The app shell also loads profiles, library names and presentation preferences for
 the visible navigation and badges. It does not use those library summaries to
