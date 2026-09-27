@@ -39,7 +39,6 @@ enum PhoneDetailScrollCoordinateSpace {
 /// behind the ScrollView. It supplies the colour field that remains visible as
 /// the sharp artwork drifts away more slowly than the foreground content.
 struct PhoneDetailPageSurface<Content: View>: View {
-    @AppStorage(VividAppTheme.storageKey, store: .standard) private var theme: VividAppTheme = .graphite
     let backdropURL: String?
     let backdropThumbhash: String?
     let enablesArtworkGlass: Bool
@@ -51,13 +50,9 @@ struct PhoneDetailPageSurface<Content: View>: View {
 
     var body: some View {
         ZStack {
-            if theme == .graphite {
-                Color.black
-            } else {
-                VividAppBackdrop()
-            }
+            Color.black
 
-            if theme == .graphite, usesArtworkGlass, let backdropURL, !backdropURL.isEmpty {
+            if usesArtworkGlass, let backdropURL, !backdropURL.isEmpty {
                 GeometryReader { geometry in
                     AsyncImageView(
                         url: backdropURL,
@@ -76,15 +71,15 @@ struct PhoneDetailPageSurface<Content: View>: View {
                 Color.black.opacity(0.28)
                 sampledTint.opacity(0.10)
                 PhoneDetailGrainOverlay()
-            } else if theme == .graphite {
+            } else {
                 sampledTint.opacity(0.42)
             }
 
             content()
         }
         .ignoresSafeArea()
-        .task(id: theme == .graphite ? backdropURL : nil) {
-            guard theme == .graphite, let rawURL = backdropURL,
+        .task(id: backdropURL) {
+            guard let rawURL = backdropURL,
                   let url = URL(string: rawURL) else {
                 sampledTint = Color(red: 0.04, green: 0.12, blue: 0.14)
                 return

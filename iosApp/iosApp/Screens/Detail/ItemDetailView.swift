@@ -289,7 +289,9 @@ private struct ItemDetailPhoneContent: View {
         .environment(\.openSubtitleDetailContext, subtitleSearchContext)
         .environment(\.seasonWatchedAction, { id, played in await viewModel.setSeasonWatched(contentId: id, played: played) })
         .environment(\.episodeWatchedAction, { id, played in await viewModel.setEpisodeWatched(contentId: id, played: played) })
-        .vividBackground()
+        // Mobile detail surfaces retain their original canvas independently
+        // of the theme used by browsing and Settings.
+        .background(Color.vividBackground.ignoresSafeArea())
         #if os(iOS)
         // Detail chrome and selector checks stay monochrome over per-title
         // artwork; the app accent blue looked unrelated to this visual system.

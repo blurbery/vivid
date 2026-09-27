@@ -279,7 +279,9 @@ struct HomeView: View {
     private var scrollContent: some View {
         GeometryReader { geometry in
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: HomeFeedMetrics.sectionSpacing) {
+                // Keep the spotlight's overflowing artwork alive until it has
+                // scrolled away. Only the poster rows need lazy materialisation.
+                VStack(alignment: .leading, spacing: HomeFeedMetrics.sectionSpacing) {
                     // Clear runway under the pinned header so the first row
                     // starts below the wordmark and utilities.
                     #if !os(iOS)
@@ -296,13 +298,15 @@ struct HomeView: View {
                         navigateToDetail(item.type == "episode" ? (item.seriesId ?? item.contentId) : item.contentId, item)
                     }
                     #endif
-                    ForEach(displayedSections) { section in
-                        HomeFeedRow(
-                            section: section,
-                            onRemoveFromContinueWatching: dismissContinueWatching,
-                            onSetWatched: setWatched
-                        )
-                        .id(HomeFocusTarget.row(section.id))
+                    LazyVStack(alignment: .leading, spacing: HomeFeedMetrics.sectionSpacing) {
+                        ForEach(displayedSections) { section in
+                            HomeFeedRow(
+                                section: section,
+                                onRemoveFromContinueWatching: dismissContinueWatching,
+                                onSetWatched: setWatched
+                            )
+                            .id(HomeFocusTarget.row(section.id))
+                        }
                     }
                 }
                 .padding(.bottom, HomeFeedMetrics.bottomRunway)
@@ -589,7 +593,8 @@ private struct PhoneDiscoverySpotlight: View {
             }
             .animation(.easeInOut(duration: 0.4), value: selection)
             .padding(.bottom, -56)
-            .onAppear { visible = true; cycleStarted = Date(); preferences.initializeIfNeeded(from: sections) }
+            .onAppear { cycleStarted = Date(); preferences.initializeIfNeeded(from: sections) }
+            .onScrollVisibilityChange(threshold: 0.01) { visible = $0 }
             .onDisappear { visible = false }
             .onChange(of: slides.map(\.id)) { _, _ in selection = 0 }
             .task(id: selection) {
@@ -668,13 +673,15 @@ private struct PhoneSpotlightArtworkSurface: View {
                 fadeEnd: usesTabletFade ? (height + 220) / artworkHeight : 1,
                 smoothFade: true
             )
-            PhoneSpotlightFade(height: height, usesTabletFade: usesTabletFade)
-                .equatable()
-                .allowsHitTesting(false)
-
         }
         .frame(height: height + 360)
         .clipped()
+        // Reveal the actual page backdrop, including its spatial gradient,
+        // rather than painting an opaque black endpoint over every theme.
+        .mask {
+            PhoneSpotlightFade(height: height, usesTabletFade: usesTabletFade)
+                .equatable()
+        }
         .visualEffect { content, proxy in
             // Stretch the complete artwork surface, including its fade, while
             // cancelling the scroll view's pull-down translation. Uniform
@@ -706,7 +713,7 @@ private struct PhoneSpotlightFade: View, Equatable {
     private static let gradient = Gradient(stops: (0...48).map { step in
         let t = Double(step) / 48
         let alpha = t * t * t * (t * (t * 6 - 15) + 10)
-        return .init(color: .black.opacity(alpha), location: t)
+        return .init(color: .white.opacity(1 - alpha), location: t)
     })
 
     var body: some View {

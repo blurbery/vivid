@@ -181,7 +181,7 @@ struct PhoneSavedAccountCards: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             if isSettings {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 88, maximum: 112), spacing: 12, alignment: .top)], alignment: .leading, spacing: 16) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: avatarSize, maximum: 112), spacing: 12, alignment: .top)], alignment: .leading, spacing: 16) {
                     profileCards
                 }
             } else if displayedAccounts.count < 3 {
