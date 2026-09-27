@@ -7,8 +7,8 @@ enum TVSettingsLayout {
 }
 
 enum TVSettingsPalette {
-    static let groupFill = Color(hex: "#3B454C")
-    static let selectedFill = Color(hex: "#4B5963")
+    static let groupFill = Color(hex: "#1C1C1E")
+    static let selectedFill = Color(hex: "#2C2C2E")
     static let iconFill = Color.white.opacity(0.06)
     static let separator = Color.white.opacity(0.08)
     static let sectionText = Color(white: 0.68)
@@ -56,15 +56,16 @@ struct TVSettingsOverview<Profiles: View, Categories: View>: View {
     @ViewBuilder let categories: () -> Categories
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 8) {
             TVSettingsPageHeader(title: "Settings")
+                .padding(.bottom, 16)
             VStack(alignment: .leading, spacing: 8) {
                 TVSettingsSectionHeader("PROFILES", topInset: 0)
                 profiles()
             }
             VStack(alignment: .leading, spacing: 8) {
                 TVSettingsSectionHeader("SETTINGS", topInset: 0)
-                VStack(spacing: 10) { categories() }
+                TVSettingsGroup { categories() }
             }
         }
     }
@@ -96,7 +97,7 @@ struct TVSettingsGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) { content }
             .environment(\.tvSettingsJoinedRows, true)
             .background(TVSettingsPalette.groupFill)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
     }
 }
 

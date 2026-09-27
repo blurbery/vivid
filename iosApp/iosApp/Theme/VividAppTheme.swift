@@ -32,10 +32,10 @@ struct VividAppBackdrop: View {
             case .black:
                 Color.black
             case .native:
-                #if os(iOS)
+                #if os(iOS) || os(tvOS)
                 nativeTVAppearance
                 #else
-                // Preserve the native tvOS hosting/navigation background.
+                // Preserve the system hosting background on other platforms.
                 Color.clear
                 #endif
             }
@@ -46,9 +46,9 @@ struct VividAppBackdrop: View {
         .accessibilityHidden(true)
     }
 
-    #if os(iOS)
-    /// Reproduce the dark tvOS hosting backdrop on iPhone and iPad, where
-    /// transparent content exposes black instead. These sRGB reference colours
+    #if os(iOS) || os(tvOS)
+    /// Use the same approved Native backdrop across iPhone, iPad and Apple TV.
+    /// Transparent system backgrounds vary between hosts. These sRGB reference colours
     /// follow the tvOS 27 backdrop across a normalised grid, so the appearance
     /// fills portrait and landscape without stretching a bundled screenshot.
     /// Keep this static: changing focus or scrolling must not animate the canvas.
