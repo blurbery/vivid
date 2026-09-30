@@ -1,10 +1,12 @@
 #if os(iOS)
+import AVFAudio
 import SwiftUI
 
 /// Touch-driven overlay used on iOS/iPadOS. Layout (see
 /// docs/ios-player-redesign/mockups.html):
 /// - Top strip: close, title block (series eyebrow + episode title)
 /// - Center: skip back 10s, play/pause, skip forward 10s
+/// - Sides: brightness on the left, system volume on the right
 /// - Bottom stack: time row (elapsed / status chips / remaining), capsule
 ///   scrubber with buffered range + intro tint + scrub
 ///   preview bubble, with separate round Quality, Audio, Subtitles and
@@ -12,10 +14,10 @@ import SwiftUI
 ///
 /// Tapping the video toggles the overlay. While playing, controls dismiss five
 /// seconds after interaction; button presses and open menus suspend dismissal.
-/// The view is stateful only for sheet presentation and the
-/// trailing-time display mode; the rest of the state lives on
-/// `PlayerViewModel`. Invisible gestures (double-tap skip, hold-2×, edge
-/// swipes) live in `MobilePlayerGestureLayer` underneath this overlay.
+/// Presentation, screen brightness and system volume are owned here;
+/// playback state lives on `PlayerViewModel`.
+/// Invisible gestures (double-tap skip, hold-2× and pinch)
+/// live in `MobilePlayerGestureLayer` underneath this overlay.
 struct MobilePlayerControls: View {
     let viewModel: PlayerViewModel
     let onDismiss: () -> Void
@@ -32,6 +34,8 @@ struct MobilePlayerControls: View {
     /// it is purely presentation, and kept outside the `showControls` gate
     /// below so the auto-hide takes the transport away without it.
     @State private var showsStats = false
+    @State private var brightness = MobilePlayerBrightness()
+    @State private var systemVolume = MobilePlayerSystemVolume()
 
 
     var body: some View {
@@ -57,6 +61,13 @@ struct MobilePlayerControls: View {
 
                         centerCluster
                             .opacity(recedingOpacity)
+                            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+
+                        levelControls(height: min(176, max(96,
+                            proxy.size.height - 2 * (bottomControlsHeight + 20))))
+                            .padding(.horizontal, 16)
+                            .opacity(recedingOpacity)
+                            .allowsHitTesting(!viewModel.isTimelineScrubbing)
                             .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
 
                         VStack(spacing: 0) {
@@ -98,6 +109,24 @@ struct MobilePlayerControls: View {
         .environment(\.mobilePlayerControlPressChanged) { pressed in
             viewModel.touchControlPressChanged(pressed)
         }
+        .background(MobilePlayerScreenReader { brightness.attach(to: $0) })
+        .background {
+            MobilePlayerSystemVolumeReader(volume: systemVolume)
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)) { _ in
+            brightness.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            brightness.refresh()
+            systemVolume.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
+            systemVolume.refresh()
+        }
+        .onDisappear { brightness.restore() }
         .animation(.easeOut(duration: 0.18), value: showsStats)
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -138,6 +167,31 @@ struct MobilePlayerControls: View {
     /// the user is scrubbing so the preview bubble owns the screen.
     private var recedingOpacity: Double {
         viewModel.isTimelineScrubbing ? 0.12 : 1
+    }
+
+    private func levelControls(height: CGFloat) -> some View {
+        HStack {
+            MobilePlayerLevelControl(
+                title: "Brightness", systemImage: "sun.max.fill",
+                value: Binding(get: { brightness.value }, set: { brightness.set($0) }),
+                height: height
+            )
+            .accessibilityIdentifier("player.brightness")
+
+            Spacer(minLength: 0)
+
+            MobilePlayerLevelControl(
+                title: "Volume",
+                systemImage: systemVolume.value == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                value: Binding(
+                    get: { systemVolume.value },
+                    set: { systemVolume.set($0) }
+                ),
+                height: height
+            )
+            .disabled(!systemVolume.canAdjust)
+            .accessibilityIdentifier("player.volume")
+        }
     }
 
     // MARK: - Top strip
@@ -761,7 +815,7 @@ private struct MobilePlayerControlPressKey: EnvironmentKey {
     static let defaultValue: (Bool) -> Void = { _ in }
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var mobilePlayerControlPressChanged: (Bool) -> Void {
         get { self[MobilePlayerControlPressKey.self] }
         set { self[MobilePlayerControlPressKey.self] = newValue }
