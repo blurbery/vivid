@@ -109,7 +109,7 @@ Fresh iPhone/iPad installs attempt the initial vault fetch and fall through to m
 
 Apple TV Top Shelf shows Continue Watching and Next Up for the current native user’s sole signed-in, unprotected saved account, subject to the existing viewing-profile policy. Multiple saved accounts show static Vivid artwork. Silo uses its existing Home endpoint; Emby and Jellyfin fetch their own native resume and Next Up rows. Native episode cards use the main series poster and retain their exact episode and resume position. Account changes request a system refresh.
 
-Watched/unwatched changes from details refresh Home after the server write succeeds. Home coalesces refreshes that arrive during an older fetch and rejects stale responses. Visible foreground iPhone/iPad Home pages also refresh every ten seconds. Apple TV refreshes on entry when needed and after playback/watched-state notifications; visible Silo Home additionally refreshes every thirty minutes to renew artwork links. This does not use the private iCloud account vault.
+Home reconciles server-owned watched and resume state using the platform/provider rules in [Home refresh](server-connections.md#home-refresh). Successful watched-state and final playback-progress writes request a refresh; this is separate from private iCloud account sync.
 
 ### Detail pages and validation
 

@@ -53,7 +53,7 @@ Quality preferences remain device/profile-local. Vivid sends the selected resolu
 
 Chapters and embedded subtitles come from Lucid’s actual media inventory. The detail and in-player Subtitles menus share track labels, ordering and selection identities. The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
 
-General Settings owns subtitle language and appearance. Automatic selection turns subtitles off when the requested language is absent. Plain-text styling and delay apply to native text rendering and downloaded-text overlays. Authored ASS and bitmap styles remain intact. Device checks of full external ASS styling remain outstanding.
+Settings → Subtitles owns subtitle language, behaviour and appearance. Automatic selection turns subtitles off when the requested language is absent. Plain-text styling and delay apply to native text rendering and downloaded-text overlays. Authored ASS and bitmap styles remain intact. Device checks of full external ASS styling remain outstanding.
 
 Downloaded ASS sidecars retain their authored text and render through Lucid using temporary local files, removed when the load ends. Plain-text sidecars continue to use the app overlay. Full external ASS visual verification on devices remains outstanding. Detail selectors distinguish automatic preference, explicit Off, embedded choices and staged downloads.
 

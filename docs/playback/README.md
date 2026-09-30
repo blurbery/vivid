@@ -88,6 +88,6 @@ IntroDB requests use the series IMDb ID and episode numbering; TheIntroDB prefer
 
 Run `bash scripts/ci/check-introdb-client.sh` for the focused request and range checks. Earlier IntroDB playback was verified on Silo-backed Apple TV. The newer fallback/recap paths and wider provider/device coverage still need verification.
 
-Both subtitle menus use the same embedded-track inventory and ordering. General Settings owns subtitle language and appearance; the menus omit settings shortcuts. Missing automatic subtitle-language matches turn subtitles off. Plain-text appearance and delay reach the native renderer and downloaded-text overlay, while authored ASS and bitmap styles remain intact.
+Both subtitle menus use the same embedded-track inventory and ordering. Settings → Subtitles owns subtitle language, behaviour and appearance; the menus omit settings shortcuts. Missing automatic subtitle-language matches turn subtitles off. Plain-text appearance and delay reach the native renderer and downloaded-text overlay, while authored ASS and bitmap styles remain intact.
 
 Intro, recap and credits buttons use Liquid Glass and retain their clearance above the controls. On Apple TV the focused skip button has a visible highlight, and Up or Down from the standalone prompt reveals the transport controls. Skip prompts are hidden while the settings HUD is open. On iOS they also remain hidden during loading and buffering.

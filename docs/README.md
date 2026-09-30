@@ -30,6 +30,8 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
   </tbody>
 </table>
 
+Use [App Design](app-design.md) for shared appearance and startup, [Server Connections](server-connections.md#home-refresh) for account and Home refresh behaviour, and [Apple TV Focus](apple-tv-focus.md#apple-tv-home-sections-and-background-work) for Home loading and focus boundaries. Other guides summarise or link to these details. Dated validation records apply to their stated revisions; current implementation descriptions do not extend that device coverage.
+
 ## Cores
 
 Vivid is the shared player core. Each server has a separate server core that supplies its connection, data and playback sources. Lucid Engine provides iOS and tvOS playback; the server cores are responsibility boundaries within the app, not separate provider packages.
