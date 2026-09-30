@@ -110,15 +110,24 @@ final class MobilePlayerBrightness {
 
     func refresh() {
         guard let screen else { return }
-        value = Double(screen.brightness)
+        let currentValue = screen.brightness
+        if let lastAppliedValue, abs(currentValue - lastAppliedValue) >= 0.001 {
+            originalValue = nil
+            self.lastAppliedValue = nil
+        }
+        value = Double(currentValue)
     }
 
     func set(_ value: Double) {
         guard let screen else { return }
+        // Catch an external adjustment even if its notification is still pending.
+        refresh()
         if originalValue == nil { originalValue = screen.brightness }
         // Keep touch feedback immediate. Screen updates may lag behind the
         // gesture, and Simulator does not emulate display brightness.
         self.value = min(max(value, 0), 1)
+        // A notification from our own write must retain the restore point.
+        lastAppliedValue = CGFloat(self.value)
         screen.brightness = CGFloat(self.value)
         lastAppliedValue = screen.brightness
     }
