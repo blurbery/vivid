@@ -12,7 +12,7 @@ final class CatalogQueryBuilderTests: XCTestCase {
                        mediaType: BrowseMediaType = .movie,
                        includeType: Bool = false) -> [String: String] {
         CatalogQueryBuilder.build(state, libraryId: libraryId, mediaType: mediaType,
-                                  offset: 0, limit: 60, includeType: includeType)
+                                  offset: 0, limit: 60, includeType: includeType, provider: .silo)
     }
 
     func testNormalisingPersistedEmbyFacetsKeepsSupportedFiltersAndSiloState() throws {
@@ -121,7 +121,7 @@ final class CatalogQueryBuilderTests: XCTestCase {
         let snapshot = "2026-09-05T10:00:00Z"
         let query = CatalogQueryBuilder.build(
             .none, libraryId: 5, mediaType: .series,
-            offset: 100, limit: 100, snapshot: snapshot
+            offset: 100, limit: 100, snapshot: snapshot, provider: .silo
         )
         XCTAssertEqual(query["snapshot"], snapshot)
         XCTAssertNil(query["snapshot_at"])
@@ -225,7 +225,8 @@ final class CatalogQueryBuilderTests: XCTestCase {
 
     func testIncludeTotalFalseEmitsFlag() {
         let q = CatalogQueryBuilder.build(.none, libraryId: 1, mediaType: .movie,
-                                          offset: 0, limit: 1, includeTotal: false, includeType: false)
+                                          offset: 0, limit: 1, includeTotal: false, includeType: false,
+                                          provider: .silo)
         XCTAssertEqual(q["include_total"], "false")
     }
 
