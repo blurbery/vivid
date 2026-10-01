@@ -126,7 +126,10 @@ struct MediaRow: View {
     @Environment(\.tvArtworkLoadingEnabled) private var parentArtworkLoadingEnabled
     @State private var artworkScrollIsActive = false
     @State private var artworkScrollIsInteractive = false
-    @State private var lastArtworkFocusTime: TimeInterval?
+    /// Focus timing for deferred artwork. Kept outside SwiftUI state so each
+    /// focus move doesn't redraw the whole row; only `artworkScrollHasSettled`,
+    /// which the cards read, is observed.
+    @State private var artworkSettleClock = ArtworkSettleClock()
     @State private var artworkScrollHasSettled = true
     @State private var visibleArtworkIds = Set<String>()
     @State private var episodeArtworkWarmer = EpisodeArtworkWarmer()
@@ -137,9 +140,9 @@ struct MediaRow: View {
     }
     @Environment(\.displayScale) private var artworkDisplayScale
 
-    private struct ArtworkActivity: Hashable {
-        let scrolling: Bool
-        let focusTime: TimeInterval?
+    private final class ArtworkSettleClock {
+        var lastFocusTime: TimeInterval?
+        var settleTask: Task<Void, Never>?
     }
 
     private final class EpisodeArtworkWarmer {
@@ -190,6 +193,28 @@ struct MediaRow: View {
         }
     }
 
+    private func setArtworkScrollHasSettled(_ settled: Bool) {
+        if artworkScrollHasSettled != settled { artworkScrollHasSettled = settled }
+    }
+
+    /// Restarts the quiet interval after a focus move or when scrolling stops.
+    /// Native focus keeps moving immediately. Only new image work waits for a
+    /// quiet interval, avoiding decode churn between rapid clicks.
+    private func scheduleArtworkSettle(scrolling: Bool) {
+        artworkSettleClock.settleTask?.cancel()
+        artworkSettleClock.settleTask = nil
+        guard defersOffscreenArtwork, !scrolling else { return }
+        artworkSettleClock.settleTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(160))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            setArtworkScrollHasSettled(true)
+        }
+    }
+
     private var episodeArtworkWarmKey: String {
         "\(parentArtworkLoadingEnabled && artworkScrollHasSettled):\(episodeArtworkPixelSize):"
             + episodeArtworkWarmURLs.map(\.absoluteString).joined(separator: "|")
@@ -216,11 +241,12 @@ struct MediaRow: View {
             guard let item = items.first(where: { $0.contentId == newValue }) else { return }
             if defersOffscreenArtwork, newValue != lastFocusedItemId {
                 let now = ProcessInfo.processInfo.systemUptime
-                let rapid = lastArtworkFocusTime.map { now - $0 < 0.13 } == true
-                lastArtworkFocusTime = now
+                let rapid = artworkSettleClock.lastFocusTime.map { now - $0 < 0.13 } == true
+                artworkSettleClock.lastFocusTime = now
                 // Moderate clicks can keep loading the next cards throughout
                 // their native scroll animation. Only a burst pauses new work.
-                artworkScrollHasSettled = !rapid && !artworkScrollIsInteractive
+                setArtworkScrollHasSettled(!rapid && !artworkScrollIsInteractive)
+                scheduleArtworkSettle(scrolling: artworkScrollIsActive)
             }
             lastFocusedItemId = newValue
             Self.focusLogger.debug("mediaRow.focus changed")
@@ -486,24 +512,15 @@ struct MediaRow: View {
         .scrollClipDisabled()
         .onScrollPhaseChange { _, phase in
             guard defersOffscreenArtwork else { return }
-            artworkScrollIsActive = phase != .idle
-            artworkScrollIsInteractive = phase == .tracking
+            let scrolling = phase != .idle
+            let interactive = phase == .tracking
                 || phase == .interacting || phase == .decelerating
-            if artworkScrollIsInteractive {
-                artworkScrollHasSettled = false
+            if artworkScrollIsActive != scrolling { artworkScrollIsActive = scrolling }
+            if artworkScrollIsInteractive != interactive { artworkScrollIsInteractive = interactive }
+            if interactive {
+                setArtworkScrollHasSettled(false)
             }
-        }
-        .task(id: ArtworkActivity(scrolling: artworkScrollIsActive, focusTime: lastArtworkFocusTime)) {
-            guard defersOffscreenArtwork, !artworkScrollIsActive else { return }
-            // Native focus keeps moving immediately. Only new image work waits
-            // for a quiet interval, avoiding decode churn between rapid clicks.
-            do {
-                try await Task.sleep(for: .milliseconds(160))
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            artworkScrollHasSettled = true
+            scheduleArtworkSettle(scrolling: scrolling)
         }
         .onChange(of: episodeArtworkWarmKey, initial: true) { _, _ in
             guard defersOffscreenArtwork else { return }
@@ -515,7 +532,9 @@ struct MediaRow: View {
         .onDisappear {
             artworkScrollIsActive = false
             artworkScrollIsInteractive = false
-            lastArtworkFocusTime = nil
+            artworkSettleClock.settleTask?.cancel()
+            artworkSettleClock.settleTask = nil
+            artworkSettleClock.lastFocusTime = nil
             artworkScrollHasSettled = true
             visibleArtworkIds.removeAll()
             episodeArtworkWarmer.cancel()

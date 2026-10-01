@@ -121,19 +121,24 @@ private struct EnvironmentPageChromeScrollReporter: ViewModifier {
 @Observable @MainActor
 final class MobileTabBarScrollState {
     private(set) var isHidden = false
-    private var previous: CGFloat?
-    private var movement: CGFloat = 0
-    func reset() { isHidden = false; previous = nil; movement = 0 }
+    // Scroll bookkeeping changes on every tick; only `isHidden` is shown.
+    @ObservationIgnored private var previous: CGFloat?
+    @ObservationIgnored private var movement: CGFloat = 0
+    func reset() { setHidden(false); previous = nil; movement = 0 }
     func update(_ offset: CGFloat) {
         defer { previous = offset }
         guard let previous else { return }
-        if offset <= 2 { isHidden = false; movement = 0; return }
+        if offset <= 2 { setHidden(false); movement = 0; return }
         let delta = offset - previous
         guard abs(delta) < 160 else { movement = 0; return }
         if delta * movement < 0 { movement = 0 }
         movement += delta
-        if movement > 18 { isHidden = true; movement = 0 }
-        else if movement < -12 { isHidden = false; movement = 0 }
+        if movement > 18 { setHidden(true); movement = 0 }
+        else if movement < -12 { setHidden(false); movement = 0 }
+    }
+    /// The tab view reads `isHidden`, so only write it when it changes.
+    private func setHidden(_ hidden: Bool) {
+        if isHidden != hidden { isHidden = hidden }
     }
 }
 

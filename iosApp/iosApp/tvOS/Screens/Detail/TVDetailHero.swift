@@ -932,9 +932,15 @@ enum TVHeroMetadata {
         return facts
     }
 
-    static func releasedEpisodeCount(_ episodes: [EpisodeListItem], now: Date = Date()) -> Int {
+    /// Built once; the series hero recounts released episodes on every redraw.
+    private static let airDateParser: ISO8601DateFormatter = {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withFullDate]
+        return parser
+    }()
+
+    static func releasedEpisodeCount(_ episodes: [EpisodeListItem], now: Date = Date()) -> Int {
+        let parser = airDateParser
         return Set(episodes.filter { episode in
             if let raw = episode.airDate,
                let date = parser.date(from: String(raw.prefix(10))) {
