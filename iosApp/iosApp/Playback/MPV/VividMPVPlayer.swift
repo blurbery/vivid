@@ -194,7 +194,6 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.audioLanguages = options.preferredAudioLanguages
         #if os(tvOS)
         instance.airPlayPCM = session.currentRoute.outputs.contains { $0.portType == .airPlay }
-        instance.airPlayStartGrace = min(30, max(1, 2 + session.outputLatency))
         #endif
         let proxy = VividMPVDelegate(owner: self, generation: token)
         delegateProxy = proxy; instance.delegate = proxy
@@ -849,7 +848,6 @@ private final class VividMPVCore: MpvPlayerCore {
     var initialVolume: Float = 1
     var audioLanguages: [String] = []
     var airPlayPCM = false
-    var airPlayStartGrace: Double = 2
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
                         "ao-avfoundation-manage-audio-session": "no",
@@ -864,10 +862,8 @@ private final class VividMPVCore: MpvPlayerCore {
         #if os(tvOS)
         if airPlayPCM {
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-max-lookahead", "4"))
-            // AirPlay starts AVPlayer's clock only after the route latency. Wait that long
-            // before the stuck-clock seek, and keep video anchored to the parked clock.
-            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-start-grace",
-                                             String(format: "%.3f", airPlayStartGrace)))
+            // AVPlayer's clock stays parked at AirPlay startup until the driver's seek-to-start
+            // recovery. Keep video anchored to the parked clock so it waits for the audio.
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-anchor-start", "yes"))
         }
         #endif
