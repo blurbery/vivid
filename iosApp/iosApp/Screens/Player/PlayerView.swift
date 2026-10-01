@@ -293,7 +293,7 @@ struct PlayerView: View {
                         isLoading: viewModel.isLoading,
                         isBuffering: viewModel.isBuffering,
                         isPlaying: viewModel.isPlaying,
-                        currentTime: viewModel.currentTime
+                        currentTime: { viewModel.currentTime }
                     )
                 }
             }
@@ -611,7 +611,7 @@ struct PlayerView: View {
             .overlay {
                 VividSubtitleOverlay(
                     engine: viewModel.vividEngine,
-                    sourceTime: viewModel.currentTime,
+                    sourceTime: { viewModel.currentTime },
                     primaryUsesMovieTimeline: viewModel.subtitleUsesMovieTimeline(viewModel.selectedSubtitleId),
                     secondaryUsesMovieTimeline: viewModel.subtitleUsesMovieTimeline(viewModel.selectedSecondarySubtitleId, slot: .secondary),
                     appearance: viewModel.settings.effectiveSubtitleAppearance,

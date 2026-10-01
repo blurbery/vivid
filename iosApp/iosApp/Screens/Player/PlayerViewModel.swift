@@ -271,7 +271,9 @@ class PlayerViewModel {
     }
 
     var isPlaying = false
-    var currentTime: Double = 0
+    var currentTime: Double = 0 {
+        didSet { if currentTime != oldValue { refreshSkipWindow() } }
+    }
     var duration: Double = 0 {
         didSet {
             if duration != oldValue { applyLoadedIntroDBSegments() }
@@ -302,9 +304,13 @@ class PlayerViewModel {
     /// language group to the top of the displayed track lists.
     private var subtitleOrderingLanguage: String?
     var chapters: [PlayerChapterInfo] = []
-    var recapRange: TimeRange?
-    var introRange: TimeRange?
-    var creditsRange: TimeRange?
+    var recapRange: TimeRange? { didSet { refreshSkipWindow() } }
+    var introRange: TimeRange? { didSet { refreshSkipWindow() } }
+    var creditsRange: TimeRange? { didSet { refreshSkipWindow() } }
+    /// Which marker range contains the playhead. Stored, and only written
+    /// when playback crosses a range edge, so views showing the skip buttons
+    /// do not depend on `currentTime` and re-render on every time tick.
+    private(set) var skipWindow = PlayerSkipWindow()
     var introAutoSkipCountdownSeconds: Int?
     var selectedAudioId: Int64?
     var selectedSubtitleId: Int64?
@@ -393,23 +399,23 @@ class PlayerViewModel {
     /// on an indirection flag. Driven by `openHUD()` / `closeHUD()`.
     var isHUDPresented = false
 
-    var isRecapSkipActive: Bool {
-        guard let recapRange else { return false }
-        return currentTime >= recapRange.start && currentTime < recapRange.end
-    }
+    var isRecapSkipActive: Bool { skipWindow.inRecap }
 
     var introSkipLabel: String { isRecapSkipActive ? "Skip Recap" : "Skip Intro" }
     var activeIntroSkipRange: TimeRange? { isRecapSkipActive ? recapRange : introRange }
     var openingSkipRanges: [TimeRange] { [recapRange, introRange].compactMap { $0 } }
 
     var showIntroSkip: Bool {
-        guard settings.introDBEnabled, let introRange = activeIntroSkipRange else { return false }
-        return currentTime >= introRange.start && currentTime < introRange.end
+        settings.introDBEnabled && (skipWindow.inRecap || skipWindow.inIntro)
     }
 
     var showCreditsSkip: Bool {
-        guard settings.introDBEnabled, let creditsRange else { return false }
-        return currentTime >= creditsRange.start && currentTime < creditsRange.end
+        settings.introDBEnabled && skipWindow.inCredits
+    }
+
+    private func refreshSkipWindow() {
+        let window = PlayerSkipWindow(time: currentTime, recap: recapRange, intro: introRange, credits: creditsRange)
+        if window != skipWindow { skipWindow = window }
     }
 
     /// Signed rate of an in-flight seek session. Zero when the user isn't
@@ -840,7 +846,7 @@ class PlayerViewModel {
     }
 
     private static let autoplayStartSessionTimeout: TimeInterval = 15
-    private var watchTimeGate = PlaybackWatchTimeGate()
+    @ObservationIgnored private var watchTimeGate = PlaybackWatchTimeGate()
     private var completedPlaybackContentId: String?
     private var progressIsEligible: Bool { watchTimeGate.isEligible || completedPlaybackContentId != nil }
     private var lastLoadRequest: LoadRequest?
@@ -854,7 +860,7 @@ class PlayerViewModel {
     /// window. Cleared when the playhead leaves the window (seek back) or a
     /// new item loads, so the prompt can appear again naturally. Does not
     /// apply to the end-of-playback screen.
-    private var nextUpPromptDismissed = false
+    @ObservationIgnored private var nextUpPromptDismissed = false
     private(set) var contentIdsNeedingDetailRefresh: Set<String> = []
     #if os(iOS) || os(tvOS)
     @ObservationIgnored
@@ -1191,8 +1197,13 @@ class PlayerViewModel {
 
         // The quality fallback and TV timeline must see every buffer sample,
         // including an unavailable measurement. Only formatting is rate-limited.
-        bufferedAheadSeconds = max(0, telemetry?.forwardBufferSeconds ?? 0)
-        playbackReadAheadSeconds = telemetry?.forwardBufferSeconds
+        // Unchanged samples are not rewritten, so the buffer bar only
+        // re-renders when the buffer actually moves.
+        let buffered = max(0, telemetry?.forwardBufferSeconds ?? 0)
+        if bufferedAheadSeconds != buffered { bufferedAheadSeconds = buffered }
+        if playbackReadAheadSeconds != telemetry?.forwardBufferSeconds {
+            playbackReadAheadSeconds = telemetry?.forwardBufferSeconds
+        }
         if playbackStatsEpoch != activeVividLoadEpoch {
             cancelPlaybackStatsRefresh()
             playbackStatsCadence.reset()
@@ -6577,4 +6588,24 @@ class PlayerViewModel {
         }
     }
 
+}
+
+/// Marker ranges containing the playhead. Ranges are start-inclusive and
+/// end-exclusive, matching the skip buttons and auto-skip checks.
+struct PlayerSkipWindow: Equatable {
+    var inRecap = false
+    var inIntro = false
+    var inCredits = false
+
+    init() {}
+
+    init(time: Double, recap: TimeRange?, intro: TimeRange?, credits: TimeRange?) {
+        func contains(_ range: TimeRange?) -> Bool {
+            guard let range else { return false }
+            return time >= range.start && time < range.end
+        }
+        inRecap = contains(recap)
+        inIntro = contains(intro)
+        inCredits = contains(credits)
+    }
 }

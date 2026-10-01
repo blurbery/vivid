@@ -5,7 +5,9 @@ import SwiftUI
 /// It never fetches, parses, demuxes, or selects subtitle media.
 struct VividSubtitleOverlay: View {
     let engine: VividEngine
-    let sourceTime: Double
+    /// Movie-timeline position. Read only while cues are loaded, so playback
+    /// without subtitles never re-renders this overlay on time ticks.
+    let sourceTime: () -> Double
     let primaryUsesMovieTimeline: Bool
     let secondaryUsesMovieTimeline: Bool
     let appearance: SubtitleAppearance
@@ -25,29 +27,43 @@ struct VividSubtitleOverlay: View {
         Double(subtitleSyncMs) / 1_000
     }
 
+    private var hasCues: Bool { !primary.isEmpty || !secondary.isEmpty }
+
     var body: some View {
         GeometryReader { geometry in
-            let videoRect = displayedVideoRect(in: geometry.size)
-            ZStack {
-                cueLayer(activeCues(in: primary, usesMovieTimeline: primaryUsesMovieTimeline), videoRect: videoRect, secondary: false)
-                cueLayer(activeCues(in: secondary, usesMovieTimeline: secondaryUsesMovieTimeline), videoRect: videoRect, secondary: true)
+            if hasCues {
+                let videoRect = displayedVideoRect(in: geometry.size)
+                let movieTime = sourceTime()
+                ZStack {
+                    cueLayer(activeCues(in: primary, usesMovieTimeline: primaryUsesMovieTimeline,
+                                        movieTime: movieTime), videoRect: videoRect, secondary: false)
+                    cueLayer(activeCues(in: secondary, usesMovieTimeline: secondaryUsesMovieTimeline,
+                                        movieTime: movieTime), videoRect: videoRect, secondary: true)
+                }
             }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onReceive(engine.$subtitleCues) { primary = $0 }
-        .onReceive(engine.$secondarySubtitleCues) { secondary = $0 }
-        .onReceive(engine.clock.$currentTime) { vividSourceTime = $0 }
+        .onReceive(engine.$subtitleCues) { primary = $0; syncEngineTime() }
+        .onReceive(engine.$secondarySubtitleCues) { secondary = $0; syncEngineTime() }
+        .onReceive(engine.clock.$currentTime) { time in
+            if hasCues { vividSourceTime = time }
+        }
+    }
+
+    /// Catches the engine clock up when cues arrive after ticks were skipped.
+    private func syncEngineTime() {
+        if hasCues { vividSourceTime = engine.clock.currentTime }
     }
 
     static func renderClock(movieTime: Double, engineTime: Double, usesMovieTimeline: Bool, delaySeconds: Double) -> Double {
         (usesMovieTimeline ? movieTime : engineTime) - delaySeconds
     }
 
-    private func activeCues(in cues: [SubtitleCue], usesMovieTimeline: Bool) -> [SubtitleCue] {
+    private func activeCues(in cues: [SubtitleCue], usesMovieTimeline: Bool, movieTime: Double) -> [SubtitleCue] {
         // Complete sidecars use original movie timestamps; embedded cues use
         // the served stream's clock, which may be rebased by a server remux.
-        let renderClock = Self.renderClock(movieTime: sourceTime, engineTime: vividSourceTime,
+        let renderClock = Self.renderClock(movieTime: movieTime, engineTime: vividSourceTime,
                                           usesMovieTimeline: usesMovieTimeline, delaySeconds: subtitleDelaySeconds)
         return cues.filter { $0.startTime <= renderClock && renderClock < $0.endTime }
     }
