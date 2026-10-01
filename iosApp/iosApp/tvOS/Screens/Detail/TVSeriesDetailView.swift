@@ -64,7 +64,9 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     heroEntryEpisode: playbackEpisode, isHeroFocused: showActionRowFocused,
                     favorites: episodeFavoriteStates, onSeason: onSelectSeason,
                     onFocus: { _ in
-                        isShowingSeriesOverview = false
+                        // Every episode focus move reports here; only write
+                        // when the overview is actually showing.
+                        if isShowingSeriesOverview { isShowingSeriesOverview = false }
                     }, onPlay: { episode in
                         onActivateEpisode(episode.contentId)
                         onPlayEpisode(episode.contentId, selectedFileId(for: episode), false)
@@ -95,7 +97,9 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     }
 
     private func heroView(height: CGFloat) -> some View {
-        TVDetailHero(
+        // Computed once per redraw; it counts released episodes.
+        let factsLine = heroFactsLine
+        return TVDetailHero(
             title: detail.title,
             seriesTitle: nil,
             logoUrl: detail.logoUrl,
@@ -105,7 +109,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             sourceTokens: heroSourceTokens,
             ratingChip: TVHeroMetadata.contentRatingChip(from: detail),
             overview: heroOverview,
-            factsLine: heroFactsLine,
+            factsLine: factsLine,
             starringText: TVHeroMetadata.starringText(from: detail),
             playbackSummary: TVPlaybackSelectionSummary.make(
                 currentVersion: effectiveNextUpVersion,
@@ -121,7 +125,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
             allowsSynopsisFocus: didEstablishPlayFocus,
             qualityVersion: effectiveNextUpVersion,
             qualitySummary: selectedNextUpFileId == nil ? (matchingPlaybackDetail?.overlaySummary ?? detail.overlaySummary) : nil,
-            metadataHeading: ["Series"] + heroFactsLine.compactMap { token in
+            metadataHeading: ["Series"] + factsLine.compactMap { token in
                 guard case .text(let value) = token, value != detail.year.map(String.init) else { return nil }
                 return value
             },
