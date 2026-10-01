@@ -590,6 +590,7 @@ final class TVSavedAccountStore {
         var result = VividCloudApplyResult()
 
         for identity in vault.tombstones.keys {
+            if VividCloudAccountSync.shared.signedInAfterDeletion(identity, in: vault) { continue }
             let matching = accounts.filter { VividCloudAccountIdentity.key(for: $0) == identity }
             var cacheCleanupFailed = false
             for account in matching {
@@ -746,6 +747,21 @@ final class VividCloudAccountSync {
     /// Only an explicit credential entry may revive an account identity that
     /// was previously deleted. Routine capture and stale-device uploads never
     /// create this marker.
+    /// A sync reads deletions before it applies them. If this device signed in
+    /// to the account after the deletion, even while the sync was running,
+    /// the account is kept; the next sync retires the deletion.
+    fileprivate func signedInAfterDeletion(_ identity: String, in vault: VividCloudAccountVault) -> Bool {
+        guard let deletedAt = vault.tombstones[identity]?.deletedAt,
+              let signedInAt = loadResurrections()[identity] else { return false }
+        return !VividCloudDeletionPolicy.tombstoneWins(deletedAt: deletedAt, explicitAuthenticationAt: signedInAt)
+    }
+
+    /// Sign-ins still to upload after a sync: anything recorded or updated
+    /// while it ran. Unchanged entries were carried by the uploaded vault.
+    static func resurrections(_ current: [String: Date], afterUploading synced: [String: Date]) -> [String: Date] {
+        current.filter { identity, date in synced[identity] != date }
+    }
+
     func noteExplicitAuthentication(_ account: TVSavedAccount) {
         noteExplicitAuthentication(serverID: account.serverID, userID: account.userID)
     }
@@ -794,6 +810,9 @@ final class VividCloudAccountSync {
             try? await VividCloudPreferences.shared.captureSharedSettings()
             var activeWasDeleted = false
             var activeSessionWasInvalidated = false
+            // Sign-ins recorded before this sync started. Any recorded while it
+            // runs stay local for the next sync.
+            let syncedResurrections = loadResurrections()
             var savedSuccessfully = false
 
             for _ in 0..<3 {
@@ -838,7 +857,8 @@ final class VividCloudAccountSync {
                 }
 
                 for account in TVSavedAccountStore.shared.accounts
-                where vault.tombstones[VividCloudAccountIdentity.key(for: account)] != nil {
+                where vault.tombstones[VividCloudAccountIdentity.key(for: account)] != nil
+                    && !signedInAfterDeletion(VividCloudAccountIdentity.key(for: account), in: vault) {
                     try VividCloudPreferences.shared.removeAccountPreferences(account)
                 }
                 let applyResult = await TVSavedAccountStore.shared.applyCloudVault(vault)
@@ -881,7 +901,12 @@ final class VividCloudAccountSync {
                 retainedTombstones.removeValue(forKey: identity)
             }
             save(retainedTombstones, key: Self.tombstoneDefaultsKey)
-            defaults.removeObject(forKey: Self.resurrectionDefaultsKey)
+            let pendingResurrections = Self.resurrections(loadResurrections(), afterUploading: syncedResurrections)
+            if pendingResurrections.isEmpty {
+                defaults.removeObject(forKey: Self.resurrectionDefaultsKey)
+            } else {
+                save(pendingResurrections, key: Self.resurrectionDefaultsKey)
+            }
             let restored = await TVSavedAccountStore.shared.restoreActiveCloudSessionIfNeeded()
             if restored { try? await VividCloudPreferences.shared.applySharedSettings() }
 
