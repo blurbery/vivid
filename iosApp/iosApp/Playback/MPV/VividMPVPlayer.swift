@@ -194,6 +194,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.audioLanguages = options.preferredAudioLanguages
         #if os(tvOS)
         instance.airPlayPCM = session.currentRoute.outputs.contains { $0.portType == .airPlay }
+        instance.airPlayStartGrace = min(30, max(1, 2 + session.outputLatency))
         #endif
         let proxy = VividMPVDelegate(owner: self, generation: token)
         delegateProxy = proxy; instance.delegate = proxy
@@ -471,6 +472,15 @@ final class VividMPVPlayer: NSObject, ObservableObject {
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["edge", "clock_s", "fed_s", "latency_s"]
             return "event=audio_edge " + names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        let engagedPattern = #"\Acompressed clock engaged after (-?[0-9]+\.[0-9]+) s, seeked ([01]), anchors ([0-9]+)\z"#
+        if let regex = try? NSRegularExpression(pattern: engagedPattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["after_s", "seeked", "anchors"]
+            return "event=compressed_clock_engaged " + names.enumerated().compactMap { index, name in
                 guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
@@ -839,6 +849,7 @@ private final class VividMPVCore: MpvPlayerCore {
     var initialVolume: Float = 1
     var audioLanguages: [String] = []
     var airPlayPCM = false
+    var airPlayStartGrace: Double = 2
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
                         "ao-avfoundation-manage-audio-session": "no",
@@ -853,6 +864,11 @@ private final class VividMPVCore: MpvPlayerCore {
         #if os(tvOS)
         if airPlayPCM {
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-max-lookahead", "4"))
+            // AirPlay starts AVPlayer's clock only after the route latency. Wait that long
+            // before the stuck-clock seek, and keep video anchored to the parked clock.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-start-grace",
+                                             String(format: "%.3f", airPlayStartGrace)))
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-anchor-start", "yes"))
         }
         #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
