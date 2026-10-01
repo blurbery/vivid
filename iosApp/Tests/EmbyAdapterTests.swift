@@ -24,7 +24,8 @@ final class EmbyAdapterTests: XCTestCase {
     }
 
     func testHiddenHomeRowsSkipLoadingButRemainAvailableForSettingsAndSpotlight() async throws {
-        var loaded: [String] = []
+        // Rows load concurrently, so record them thread-safely and compare as sets.
+        let loaded = LoadedRows()
         let requests = ["visible", "hidden", "spotlight"].map { id in
             EmbyAdapter.HomeSectionRequest(section: adapter.section(id, id, [:])) {
                 loaded.append(id)
@@ -34,15 +35,68 @@ final class EmbyAdapterTests: XCTestCase {
         let rows = try await adapter.loadHomeSections(
             requests, hidden: ["hidden", "spotlight"], spotlight: ["spotlight"], combine: false
         )
-        XCTAssertEqual(loaded, ["visible", "spotlight"])
+        XCTAssertEqual(loaded.take(), ["spotlight", "visible"])
         XCTAssertEqual(rows.compactMap { $0["id"] as? String }, ["visible", "hidden", "spotlight"])
         XCTAssertEqual(rows[1]["title"] as? String, "hidden")
         XCTAssertTrue((rows[1]["items"] as? [Any])?.isEmpty == true)
         XCTAssertNil(rows[1]["totalCount"])
 
-        loaded = []
         _ = try await adapter.loadHomeSections(requests, hidden: [], spotlight: ["spotlight"], combine: false)
-        XCTAssertEqual(loaded, ["visible", "hidden", "spotlight"])
+        XCTAssertEqual(loaded.take(), ["hidden", "spotlight", "visible"])
+    }
+
+    func testHomeRowsLoadConcurrentlyInOrderAndReportTheEarliestFailure() async throws {
+        let tracker = ConcurrencyTracker()
+        let ids = ["a", "b", "c", "d", "e"]
+        let requests = ids.enumerated().map { index, id in
+            EmbyAdapter.HomeSectionRequest(section: adapter.section(id, id, [:])) {
+                tracker.begin()
+                defer { tracker.end() }
+                // Later rows finish first, so ordering can't come from completion.
+                try await Task.sleep(for: .milliseconds(80 - index * 15))
+                return ["items": [["contentId": id]], "total": 1]
+            }
+        }
+        let rows = try await adapter.loadHomeSections(requests, hidden: [], spotlight: [], combine: false)
+        XCTAssertEqual(rows.compactMap { $0["id"] as? String }, ids)
+        XCTAssertEqual(rows.compactMap { (($0["items"] as? [[String: Any]])?.first?["contentId"]) as? String }, ids)
+        XCTAssertGreaterThan(tracker.peak, 1, "Rows should overlap")
+        XCTAssertLessThanOrEqual(tracker.peak, EmbyAdapter.homeRowConcurrency)
+
+        struct RowFailure: Error, Equatable { let id: String }
+        let failing = ids.enumerated().map { index, id in
+            EmbyAdapter.HomeSectionRequest(section: adapter.section(id, id, [:])) {
+                try await Task.sleep(for: .milliseconds(60 - index * 10))
+                if id == "b" || id == "d" { throw RowFailure(id: id) }
+                return ["items": [], "total": 0]
+            }
+        }
+        do {
+            _ = try await adapter.loadHomeSections(failing, hidden: [], spotlight: [], combine: false)
+            XCTFail("A failing row must fail Home")
+        } catch let failure as RowFailure {
+            XCTAssertEqual(failure, RowFailure(id: "b"), "The earliest failing row wins, as when rows loaded in turn")
+        }
+    }
+
+    func testBrowseAndHomeRequestLeanerFieldsThanDetail() async throws {
+        let fields = LoadedRows()
+        let adapter = stubbedAdapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            fields.append(query.first { $0.name == "Fields" }?.value ?? "")
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        _ = try await adapter.catalog(["offset": "0", "limit": "60"])
+        _ = try await adapter.items("/Shows/NextUp", query: ["Limit": "20", "Fields": EmbyAdapter.homeFields])
+        let sent = fields.take(sorted: false)
+        XCTAssertEqual(sent, [EmbyAdapter.browseFields, EmbyAdapter.homeFields])
+        for heavy in ["People", "Chapters", "Taglines"] {
+            XCTAssertFalse(EmbyAdapter.browseFields.contains(heavy))
+            XCTAssertFalse(EmbyAdapter.homeFields.contains(heavy))
+            XCTAssertTrue(EmbyAdapter.fields.contains(heavy), "Detail keeps \(heavy)")
+        }
+        XCTAssertFalse(EmbyAdapter.browseFields.contains("MediaSources"))
+        XCTAssertTrue(EmbyAdapter.homeFields.contains("MediaSources"), "Home rows keep format badges")
     }
 
     func testCombinedHomeFetchRetainsHiddenNextUpOnlyWhenConsumed() {
@@ -571,6 +625,24 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(EmbyAdapter.legacyHomeSectionTypes(settings:settings),["collections","nextup","resume"])
     }
 
+}
+
+private final class LoadedRows: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+    func append(_ value: String) { lock.lock(); values.append(value); lock.unlock() }
+    func take(sorted: Bool = true) -> [String] {
+        lock.lock(); defer { values = []; lock.unlock() }
+        return sorted ? values.sorted() : values
+    }
+}
+
+private final class ConcurrencyTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = 0
+    private(set) var peak = 0
+    func begin() { lock.lock(); active += 1; peak = max(peak, active); lock.unlock() }
+    func end() { lock.lock(); active -= 1; lock.unlock() }
 }
 
 private final class EmbyReviewRequestStub: URLProtocol {
