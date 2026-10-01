@@ -280,6 +280,16 @@ struct JellyfinAdapter {
     }
 
     func item(_ raw: [String: Any]) throws -> [String: Any] {
+        try item(raw, watchlist: Set(watchlistIDs))
+    }
+
+    /// Converts a page of items, reading the watchlist once rather than per item.
+    func convert(_ rows: [[String: Any]]) throws -> [[String: Any]] {
+        let watchlist = Set(watchlistIDs)
+        return try rows.map { try item($0, watchlist: watchlist) }
+    }
+
+    func item(_ raw: [String: Any], watchlist: Set<String>) throws -> [String: Any] {
         guard let id = raw["Id"] as? String, let name = raw["Name"] as? String else { throw JellyfinError.invalidResponse }
         _ = try JellyfinConnection.id(id)
         let kind = (raw["Type"] as? String ?? "Movie").lowercased()
@@ -291,7 +301,7 @@ struct JellyfinAdapter {
         }
         var value: [String: Any] = ["contentId": id, "title": name, "type": kind == "boxset" ? "collection" : kind,
             "status": "available", "runtime": runtime, "durationSeconds": seconds, "positionSeconds": position,
-            "userState": ["played": user["Played"] as? Bool ?? false, "isFavorite": user["IsFavorite"] as? Bool ?? false, "inWatchlist": watchlistIDs.contains(id)],
+            "userState": ["played": user["Played"] as? Bool ?? false, "isFavorite": user["IsFavorite"] as? Bool ?? false, "inWatchlist": watchlist.contains(id)],
             "userData": ["played": user["Played"] as? Bool ?? false, "isInProgress": position > 0, "positionSeconds": position, "durationSeconds": seconds],
             "versions": try (raw["MediaSources"] as? [[String: Any]] ?? []).map { try version($0, chapters: raw["Chapters"] as? [[String: Any]] ?? []) }]
         let pairs = ["ProductionYear":"year", "Overview":"overview", "OfficialRating":"contentRating", "Genres":"genres", "CommunityRating":"ratingTmdb", "CriticRating":"ratingRtCritic", "PremiereDate":"releaseDate", "DateCreated":"addedAt", "SeriesId":"seriesId", "SeriesName":"seriesTitle", "ParentIndexNumber":"seasonNumber", "IndexNumber":"episodeNumber", "ChildCount":"episodeCount", "Status":"showStatus", "SortName":"sortTitle"]
@@ -387,7 +397,7 @@ struct JellyfinAdapter {
         if path == nil { defaults["Recursive"] = "true" }
         let q = defaults.merging(query) { _,new in new }
         let raw = try await connection.object("GET", path ?? "/Items", query: q)
-        let converted = try (raw["Items"] as? [[String: Any]] ?? []).map(item)
+        let converted = try convert(raw["Items"] as? [[String: Any]] ?? [])
         let total = raw["TotalRecordCount"] as? Int ?? converted.count
         return ["items": converted, "total": total, "totalExact": true, "hasMore": (Int(q["StartIndex"] ?? "0") ?? 0) + converted.count < total]
     }
@@ -418,7 +428,7 @@ struct JellyfinAdapter {
             }
         }
         try await connection.validate()
-        return ["episodes": try rows.map(item)]
+        return ["episodes": try convert(rows)]
     }
 
     private func resumeItem(_ id: String?) async throws -> [String: Any]? {
@@ -452,7 +462,7 @@ struct JellyfinAdapter {
     }
 
     func seasonRows(_ rows: [[String:Any]]) throws -> [[String:Any]] {
-        try rows.filter { $0["Type"] as? String == "Season" }.map(item)
+        try convert(rows.filter { $0["Type"] as? String == "Season" })
     }
 
     nonisolated static func excludesHomeRow(id: String, type: String, title: String) -> Bool {
@@ -503,7 +513,7 @@ struct JellyfinAdapter {
     private func latestHomeSection(id: String, name: String) async throws -> [String: Any] {
         let latest = try await connection.request("GET", "/Items/Latest",
             query: ["ParentId":id,"Limit":"20","Fields":Self.homeFields,"EnableUserData":"true"])
-        let rows = try (latest as? [[String:Any]] ?? []).map(item)
+        let rows = try convert(latest as? [[String:Any]] ?? [])
         return section("latestmedia_" + id, "Latest " + name, ["items":rows,"total":rows.count])
     }
 
@@ -536,7 +546,12 @@ struct JellyfinAdapter {
     // this server/user partition so navigation and filmography round-trip.
     private func rememberPerson(_ nativeID: String) -> String {
         let routeID = String(Self.numberID(nativeID))
-        UserDefaults.standard.set(nativeID, forKey: storagePrefix + ".person." + routeID)
+        // Item lists convert every cast and crew member. Only write when the
+        // mapping is new, so repeat loads don't rewrite the defaults file.
+        let key = storagePrefix + ".person." + routeID
+        if UserDefaults.standard.string(forKey: key) != nativeID {
+            UserDefaults.standard.set(nativeID, forKey: key)
+        }
         return routeID
     }
 

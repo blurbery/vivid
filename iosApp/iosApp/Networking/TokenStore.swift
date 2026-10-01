@@ -117,6 +117,11 @@ actor TokenStore {
     /// Server the current cache was loaded for. Nil means the cache is
     /// invalid and must be re-read on next access.
     private var loadedForServerId: String?
+    /// Native Emby/Jellyfin user IDs already read from the Keychain, by key.
+    /// Every request routed to those servers asks for the ID, so reads are
+    /// served from here. Only found values are cached, and every write or
+    /// delete below drops the entry so the next read goes to the Keychain.
+    private var nativeUserIDCache: [String: String] = [:]
 
     /// Last values written to the shared-extension keychain slots. Used to
     /// skip redundant `SecItemUpdate` calls on every launch / refresh —
@@ -524,7 +529,7 @@ actor TokenStore {
             cachedProfileToken = nil
             accountKeychain.delete(Self.accessTokenKey(for: serverId))
             accountKeychain.delete(Self.refreshTokenKey(for: serverId))
-            if MediaServerProvider.forServerID(serverId).usesNativeUser { accountKeychain.delete("vivid.nativeUserID." + serverId) }
+            if MediaServerProvider.forServerID(serverId).usesNativeUser { storeNativeUserID(nil, for: serverId) }
             accountKeychain.delete(Self.accountEpochKey(for: serverId))
             profileKeychain.delete(Self.profileTokenKey(for: serverId))
             defaults.removeObject(forKey: profileIdDefaultsKey)
@@ -579,7 +584,25 @@ actor TokenStore {
     func nativeUserID(expected: RefreshAccountIdentity) -> String? {
         guard MediaServerProvider.forServerID(expected.serverId).usesNativeUser,
               refreshAccountIdentity() == expected else { return nil }
-        return accountKeychain.get("vivid.nativeUserID." + activeServerId)
+        return cachedNativeUserID(for: activeServerId)
+    }
+
+    private static func nativeUserIDKey(for serverId: String) -> String {
+        "vivid.nativeUserID." + serverId
+    }
+
+    private func cachedNativeUserID(for serverId: String) -> String? {
+        let key = Self.nativeUserIDKey(for: serverId)
+        if let cached = nativeUserIDCache[key] { return cached }
+        let value = accountKeychain.get(key)
+        if let value { nativeUserIDCache[key] = value }
+        return value
+    }
+
+    private func storeNativeUserID(_ value: String?, for serverId: String) {
+        let key = Self.nativeUserIDKey(for: serverId)
+        nativeUserIDCache.removeValue(forKey: key)
+        if let value { accountKeychain.set(value, for: key) } else { accountKeychain.delete(key) }
     }
 
     func getAccessToken() -> String? {
@@ -611,8 +634,7 @@ actor TokenStore {
         cachedAccessToken = accessToken
         cachedRefreshToken = refreshToken
         if MediaServerProvider.forServerID(activeServerId).usesNativeUser {
-            if let nativeUserID { accountKeychain.set(nativeUserID, for:"vivid.nativeUserID." + activeServerId) }
-            else { accountKeychain.delete("vivid.nativeUserID." + activeServerId) }
+            storeNativeUserID(nativeUserID, for: activeServerId)
         }
         accountKeychain.set(accessToken, for: accessTokenKey)
         accountKeychain.set(refreshToken, for: refreshTokenKey)
@@ -651,7 +673,7 @@ actor TokenStore {
         )
         accountKeychain.delete(accessTokenKey)
         accountKeychain.delete(refreshTokenKey)
-        if MediaServerProvider.forServerID(activeServerId).usesNativeUser { accountKeychain.delete("vivid.nativeUserID." + activeServerId) }
+        if MediaServerProvider.forServerID(activeServerId).usesNativeUser { storeNativeUserID(nil, for: activeServerId) }
         accountKeychain.delete(accountEpochKey)
         profileKeychain.delete(profileTokenKey)
         defaults.removeObject(forKey: profileIdDefaultsKey)
@@ -664,7 +686,7 @@ actor TokenStore {
         guard !serverId.isEmpty else { return }
         accountKeychain.delete(Self.accessTokenKey(for: serverId))
         accountKeychain.delete(Self.refreshTokenKey(for: serverId))
-        if MediaServerProvider.forServerID(serverId).usesNativeUser { accountKeychain.delete("vivid.nativeUserID." + serverId) }
+        if MediaServerProvider.forServerID(serverId).usesNativeUser { storeNativeUserID(nil, for: serverId) }
         accountKeychain.delete(Self.accountEpochKey(for: serverId))
         profileKeychain.delete(Self.profileTokenKey(for: serverId))
         if serverId == activeServerId {
