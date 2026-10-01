@@ -31,6 +31,24 @@ final class ProfileLaunchPolicyTests: XCTestCase {
         ))
     }
 
+    @MainActor
+    func testSignInRecordedDuringSyncSurvivesForTheNextSync() {
+        let deletion = Date(timeIntervalSinceReferenceDate: 2_000)
+        let uploaded = deletion.addingTimeInterval(-60)
+        let reAdded = deletion.addingTimeInterval(60)
+        let synced = ["kept": uploaded, "updated": uploaded]
+        let current = ["kept": uploaded, "updated": reAdded, "new": reAdded]
+
+        // Entries the sync uploaded are cleared; sign-ins recorded while it
+        // ran stay for the next sync, so a quick re-add can retire a deletion.
+        XCTAssertEqual(
+            VividCloudAccountSync.resurrections(current, afterUploading: synced),
+            ["updated": reAdded, "new": reAdded]
+        )
+        XCTAssertTrue(VividCloudAccountSync.resurrections(synced, afterUploading: synced).isEmpty)
+        XCTAssertFalse(VividCloudDeletionPolicy.tombstoneWins(deletedAt: deletion, explicitAuthenticationAt: reAdded))
+    }
+
     func testProfileDeletionPreservesServersUsedByOtherSavedAccounts() {
         let otherAccount = TVSavedAccount(
             id: "other", serverID: "shared-server", userID: "other-user",

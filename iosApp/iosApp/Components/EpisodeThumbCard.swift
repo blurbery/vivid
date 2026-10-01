@@ -81,11 +81,6 @@ struct EpisodeThumbCard: View {
     #if os(tvOS)
     @FocusState private var standaloneFocused: Bool
     @State private var cardCaptions = TVHomeCardPreferences.shared
-
-    private var isFocused: Bool {
-        guard let focusedItemId else { return standaloneFocused }
-        return focusedItemId.wrappedValue == item.contentId
-    }
     #endif
 
     var body: some View {
@@ -95,17 +90,13 @@ struct EpisodeThumbCard: View {
 
             if cardCaptions.presentation.caption.showsTitle {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(displayTitle)
-                        .font(.vividPosterTitle)
-                        .foregroundStyle(
-                            isFocused
-                                ? Color.vividOnSurface
-                                : Color.vividOnSurface.opacity(0.85)
-                        )
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(width: cardWidth, alignment: .leading)
-                        .clipped()
+                    TVEpisodeCaptionTitle(
+                        title: displayTitle,
+                        cardWidth: cardWidth,
+                        focusedItemId: focusedItemId,
+                        itemId: item.contentId,
+                        standaloneFocused: $standaloneFocused
+                    )
 
 
                     if cardCaptions.presentation.caption.showsMetadata,
@@ -207,11 +198,14 @@ struct EpisodeThumbCard: View {
     private var thumbnailArtwork: some View {
         #if os(tvOS)
         if defersOffscreenArtwork {
-            TVEpisodeArtwork(
+            TVEpisodeFocusAwareArtwork(
                 url: imageUrl,
                 thumbhash: item.backdropThumbhash ?? item.posterThumbhash,
                 size: CGSize(width: cardWidth, height: cardHeight),
-                isVisible: artworkIsVisible || isFocused
+                isScrolledIntoView: artworkIsVisible,
+                focusedItemId: focusedItemId,
+                itemId: item.contentId,
+                standaloneFocused: $standaloneFocused
             )
         } else {
             standardThumbnailArtwork
@@ -571,6 +565,62 @@ private extension View {
         } else {
             self.focused(standaloneBinding)
         }
+    }
+}
+#endif
+
+#if os(tvOS)
+/// Focus is read only in these small views, so a focus move in the row
+/// redraws a caption and an artwork gate rather than every card's body.
+/// Mirrors `TVMediaCardCaption` in `MediaCard`.
+private func episodeCardIsFocused(
+    _ focusedItemId: FocusState<String?>.Binding?,
+    itemId: String,
+    standaloneFocused: FocusState<Bool>.Binding
+) -> Bool {
+    guard let focusedItemId else { return standaloneFocused.wrappedValue }
+    return focusedItemId.wrappedValue == itemId
+}
+
+private struct TVEpisodeCaptionTitle: View {
+    let title: String
+    let cardWidth: CGFloat
+    let focusedItemId: FocusState<String?>.Binding?
+    let itemId: String
+    let standaloneFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        Text(title)
+            .font(.vividPosterTitle)
+            .foregroundStyle(
+                episodeCardIsFocused(focusedItemId, itemId: itemId, standaloneFocused: standaloneFocused)
+                    ? Color.vividOnSurface
+                    : Color.vividOnSurface.opacity(0.85)
+            )
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(width: cardWidth, alignment: .leading)
+            .clipped()
+    }
+}
+
+private struct TVEpisodeFocusAwareArtwork: View {
+    let url: String
+    let thumbhash: String?
+    let size: CGSize
+    let isScrolledIntoView: Bool
+    let focusedItemId: FocusState<String?>.Binding?
+    let itemId: String
+    let standaloneFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        TVEpisodeArtwork(
+            url: url,
+            thumbhash: thumbhash,
+            size: size,
+            isVisible: isScrolledIntoView
+                || episodeCardIsFocused(focusedItemId, itemId: itemId, standaloneFocused: standaloneFocused)
+        )
     }
 }
 #endif

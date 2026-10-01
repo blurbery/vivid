@@ -490,23 +490,6 @@ struct ContentView: View {
     }
     #endif
 
-    private var profileSelectionContent: some View {
-            NavigationStack(path: $router.path) {
-                ProfileSelectionView(
-                    router: router,
-                    journeyLabels: router.profileJourneyLabels ?? ["Server", "Account", "Profile"]
-                )
-                    .navigationDestination(for: Route.self) { route in
-                        profileFlowDestination(for: route)
-                    }
-            }
-            .environment(router)
-            #if os(tvOS)
-            .background { TVAppBackdrop() }
-            #endif
-
-    }
-
     // Fade the loading logo out before revealing the destination on the shared
     // canvas. Route resolution still owns authentication.
     @ViewBuilder
@@ -662,22 +645,17 @@ struct ContentView: View {
             #endif
 
         case .needsProfile:
+            // Login preparation enters the primary (or only) profile and asks
+            // for its PIN when needed. Choosing between several profiles is
+            // handled by the saved-profiles screen, not a server profile picker.
             #if os(tvOS)
-            if TVSavedAccountStore.shared.accounts.isEmpty {
-                Color.clear.ignoresSafeArea()
-                    .onAppear { Task { await TVLoginPreparation.shared.begin(router: router) } }
-            } else {
-                profileSelectionContent
-            }
+            Color.clear.ignoresSafeArea()
+                .onAppear { Task { await TVLoginPreparation.shared.begin(router: router) } }
             #elseif os(iOS)
-            if !UserDefaults.standard.bool(forKey: "vivid.didCompleteFirstLoginPreparation") {
-                VividAppBackdrop()
-                    .task { await TVLoginPreparation.shared.begin(router: router) }
-            } else {
-                profileSelectionContent
-            }
+            VividAppBackdrop()
+                .task { await TVLoginPreparation.shared.begin(router: router) }
             #else
-            profileSelectionContent
+            Color.clear
             #endif
 
         case .authenticated:
@@ -1144,41 +1122,6 @@ struct ContentView: View {
                 subtitle: "This screen is under construction."
             )
             .vividPageBackground()
-        }
-    }
-
-    /// Destinations reachable from the profile-selection stack. The
-    /// "Change Server" chip pushes `.serverList`; from there the user
-    /// can swap active servers or dive into `.serverSetup` to add a
-    /// new one. Auth-flow routes are included so an "Add Server" tap
-    /// on tvOS — which stays inside this stack rather than flipping
-    /// `authState` — still lands on a real view.
-    @ViewBuilder
-    private func profileFlowDestination(for route: Route) -> some View {
-        switch route {
-        case .serverList:
-            ServerListView()
-        case .serverSetup:
-            #if os(tvOS)
-            TVServerSetupView(router: router)
-            #else
-            ServerSetupView(router: router)
-            #endif
-        case .login:
-            #if os(tvOS)
-            TVLoginView(router: router)
-            #else
-            LoginView(router: router)
-            #endif
-        case .serverNeedsSetup:
-            #if os(tvOS)
-            TVServerNeedsSetupView(router: router)
-            #else
-            ServerNeedsSetupView(router: router)
-            #endif
-        default:
-            EmptyStateView(icon: "questionmark.circle", title: "Unknown", subtitle: nil)
-                .vividPageBackground()
         }
     }
 }

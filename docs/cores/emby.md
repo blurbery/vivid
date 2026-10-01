@@ -34,6 +34,8 @@ On iPhone, iPad and Apple TV, the Emby provider card opens the existing native s
   </tbody>
 </table>
 
+Library browsing and search request card metadata without cast, chapters, taglines, media sources or streams; Home rows add media sources and streams for format badges; detail and playback requests retain the full fields. Home rows load up to three at a time and are still shown in the server's order; if a row fails, the earliest failing row's error is reported as before. Native library-ID mappings are reused for five minutes and the server version for ten, partitioned by server, Emby user and login epoch. No benchmark was recorded for these Emby changes.
+
 Continue Watching and Next Up identify the episode beneath the series title. Continue Watching captions use unpadded `S1 E3 – Episode title` on mobile and Apple TV; other shared mobile episode captions can retain `S01E03 · Episode title`. Partly watched cards use the same inset white progress bar as episode cards on series details.
 
 The Home endpoint listed in the 4.9 API schema is not sufficient evidence that the newer Home workflow is usable. Emby's own client gates it at 4.10.0.4. Legacy library-navigation tiles, audio and live-TV sections are not mapped into this video feed.

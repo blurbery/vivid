@@ -6,8 +6,24 @@ enum DetailDateFormatting {
     }
 
     static func abbreviatedDate(_ raw: String?) -> String? {
-        formattedDate(raw, formatter: abbreviatedDisplayFormatter)
+        // Episode cards format the same air dates on every redraw, and each
+        // miss tries up to four parsers. Results are stable for a given
+        // string, so they are cached.
+        guard let raw else { return nil }
+        let key = raw as NSString
+        if let cached = abbreviatedDateCache.object(forKey: key) {
+            return cached.length == 0 ? nil : cached as String
+        }
+        let value = formattedDate(raw, formatter: abbreviatedDisplayFormatter)
+        abbreviatedDateCache.setObject((value ?? "") as NSString, forKey: key)
+        return value
     }
+
+    private static let abbreviatedDateCache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 2_000
+        return cache
+    }()
 
     private static func formattedDate(_ raw: String?, formatter: DateFormatter) -> String? {
         guard let cleaned = raw?.trimmingCharacters(in: .whitespacesAndNewlines),

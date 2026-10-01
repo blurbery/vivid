@@ -162,10 +162,66 @@ struct EmbyConnection: Sendable {
     }
 }
 
+/// Short-lived per-account answers the Emby adapter would otherwise refetch on
+/// every Home load and browse page: library IDs from Views, and the server
+/// version. Keyed by the exact credential owner, so a new sign-in starts fresh.
+actor EmbyServerDirectory {
+    static let shared = EmbyServerDirectory()
+    private struct Key: Hashable {
+        let account: RefreshAccountIdentity
+        let user: String
+    }
+    private struct Entry<Value> {
+        let expires: Date
+        let value: Value
+    }
+    private var libraries: [Key: Entry<[String: String]>] = [:]
+    private var versions: [Key: Entry<String>] = [:]
+
+    private static func key(_ connection: EmbyConnection) -> Key? {
+        guard let account = connection.identity?.account, let user = connection.userID else { return nil }
+        return Key(account: account, user: user)
+    }
+
+    func rememberLibraries(_ rows: [[String: Any]], connection: EmbyConnection, now: Date = Date()) {
+        guard let key = Self.key(connection) else { return }
+        libraries = libraries.filter { $0.value.expires > now }
+        if libraries.count >= 8, libraries[key] == nil { libraries.removeAll() }
+        let pairs = rows.compactMap { row -> (String, String)? in
+            guard let id = row["Id"] as? String else { return nil }
+            return (String(EmbyAdapter.numberID(id)), id)
+        }
+        libraries[key] = Entry(expires: now.addingTimeInterval(300),
+            value: Dictionary(pairs, uniquingKeysWith: { first, _ in first }))
+    }
+
+    func libraryID(_ number: String, connection: EmbyConnection, now: Date = Date()) -> String? {
+        guard let key = Self.key(connection), let entry = libraries[key], entry.expires > now else { return nil }
+        return entry.value[number]
+    }
+
+    func rememberVersion(_ version: String, connection: EmbyConnection, now: Date = Date()) {
+        guard let key = Self.key(connection) else { return }
+        versions = versions.filter { $0.value.expires > now }
+        if versions.count >= 8, versions[key] == nil { versions.removeAll() }
+        versions[key] = Entry(expires: now.addingTimeInterval(600), value: version)
+    }
+
+    func version(connection: EmbyConnection, now: Date = Date()) -> String? {
+        guard let key = Self.key(connection), let entry = versions[key], entry.expires > now else { return nil }
+        return entry.value
+    }
+}
+
 struct EmbyAdapter {
     let connection: EmbyConnection
     var userID: String { connection.userID! }
     static let fields = "ProductionYear,Overview,Genres,Studios,People,ProviderIds,MediaSources,MediaStreams,Chapters,DateCreated,UserData,SortName,Taglines,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
+    /// Grid and search pages never show cast, chapters or file details, so
+    /// they skip the heaviest fields, matching Jellyfin's browse requests.
+    static let browseFields = "ProductionYear,Overview,Genres,Studios,ProviderIds,DateCreated,UserData,SortName,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
+    /// Home rows keep media sources for their format badges.
+    static let homeFields = browseFields + ",MediaSources,MediaStreams"
 
     static func seconds(_ ticks: Any?) -> Double {
         guard let number = ticks as? NSNumber else { return 0 }
@@ -205,6 +261,16 @@ struct EmbyAdapter {
     }
 
     func item(_ raw: [String: Any]) throws -> [String: Any] {
+        try item(raw, watchlist: Set(watchlistIDs))
+    }
+
+    /// Converts a page of items, reading the watchlist once rather than per item.
+    func convert(_ rows: [[String: Any]]) throws -> [[String: Any]] {
+        let watchlist = Set(watchlistIDs)
+        return try rows.map { try item($0, watchlist: watchlist) }
+    }
+
+    func item(_ raw: [String: Any], watchlist: Set<String>) throws -> [String: Any] {
         guard let id = raw["Id"] as? String, let name = raw["Name"] as? String else { throw EmbyError.invalidResponse }
         _ = try EmbyConnection.id(id)
         let kind = (raw["Type"] as? String ?? "Movie").lowercased()
@@ -216,7 +282,7 @@ struct EmbyAdapter {
         }
         var value: [String: Any] = ["contentId": id, "title": name, "type": kind == "boxset" ? "collection" : kind,
             "status": "available", "runtime": runtime, "durationSeconds": seconds, "positionSeconds": position,
-            "userState": ["played": user["Played"] as? Bool ?? false, "isFavorite": user["IsFavorite"] as? Bool ?? false, "inWatchlist": watchlistIDs.contains(id)],
+            "userState": ["played": user["Played"] as? Bool ?? false, "isFavorite": user["IsFavorite"] as? Bool ?? false, "inWatchlist": watchlist.contains(id)],
             "userData": ["played": user["Played"] as? Bool ?? false, "isInProgress": position > 0, "positionSeconds": position, "durationSeconds": seconds],
             "versions": try (raw["MediaSources"] as? [[String: Any]] ?? []).map { try version($0, chapters: raw["Chapters"] as? [[String: Any]] ?? []) }]
         let pairs = ["ProductionYear":"year", "Overview":"overview", "OfficialRating":"contentRating", "Genres":"genres", "CommunityRating":"ratingTmdb", "CriticRating":"ratingRtCritic", "PremiereDate":"releaseDate", "DateCreated":"addedAt", "SeriesId":"seriesId", "SeriesName":"seriesTitle", "ParentIndexNumber":"seasonNumber", "IndexNumber":"episodeNumber", "ChildCount":"episodeCount", "Status":"showStatus", "SortName":"sortTitle"]
@@ -293,19 +359,30 @@ struct EmbyAdapter {
         if path == nil { defaults["Recursive"] = "true" }
         let q = defaults.merging(query) { _,new in new }
         let raw = try await connection.object("GET", path ?? "/Users/\(userID)/Items", query: q)
-        let converted = try (raw["Items"] as? [[String: Any]] ?? []).map(item)
+        let converted = try convert(raw["Items"] as? [[String: Any]] ?? [])
         let total = raw["TotalRecordCount"] as? Int ?? converted.count
         return ["items": converted, "total": total, "totalExact": true, "hasMore": (Int(q["StartIndex"] ?? "0") ?? 0) + converted.count < total]
     }
 
+    func libraryViews() async throws -> [String: Any] {
+        let result = try await connection.object("GET", "/Users/\(userID)/Views")
+        await EmbyServerDirectory.shared.rememberLibraries(result["Items"] as? [[String: Any]] ?? [], connection: connection)
+        try await connection.validate()
+        return result
+    }
+
     func libraryID(_ number: String) async throws -> String {
-        let views = try await connection.object("GET", "/Users/\(userID)/Views")
+        if let cached = await EmbyServerDirectory.shared.libraryID(number, connection: connection) {
+            try await connection.validate()
+            return try EmbyConnection.id(cached)
+        }
+        let views = try await libraryViews()
         guard let id = (views["Items"] as? [[String: Any]] ?? []).compactMap({ $0["Id"] as? String }).first(where: { String(Self.numberID($0)) == number }) else { throw EmbyError.invalidResponse }
         return try EmbyConnection.id(id)
     }
 
     func seasonRows(_ rows: [[String:Any]]) throws -> [[String:Any]] {
-        try rows.filter { $0["Type"] as? String == "Season" }.map(item)
+        try convert(rows.filter { $0["Type"] as? String == "Season" })
     }
 
     nonisolated static func excludesHomeRow(id: String, type: String, title: String) -> Bool {
@@ -347,35 +424,35 @@ struct EmbyAdapter {
             switch type {
             case "resume":
                 requests.append(HomeSectionRequest(section: section("continue_watching", "Continue Watching", [:])) {
-                    try await items("/Users/\(userID)/Items/Resume", query: ["Limit":"20", "MediaTypes":"Video", "IncludeNextUp":types.contains("nextup") ? "false" : "true"])
+                    try await items("/Users/\(userID)/Items/Resume", query: ["Limit":"20", "Fields":Self.homeFields, "MediaTypes":"Video", "IncludeNextUp":types.contains("nextup") ? "false" : "true"])
                 })
             case "nextup":
                 requests.append(HomeSectionRequest(section: section("next_up", "Next Up", [:])) {
-                    try await items("/Shows/NextUp", query: ["Limit":"20", "LegacyNextUp":"true"])
+                    try await items("/Shows/NextUp", query: ["Limit":"20", "Fields":Self.homeFields, "LegacyNextUp":"true"])
                 })
             case "latestmedia":
                 let user = try await connection.object("GET", "/Users/\(userID)")
                 let configuration = user["Configuration"] as? [String:Any] ?? [:]
                 let excluded = Set(configuration["LatestItemsExcludes"] as? [String] ?? [])
-                let views = try await connection.object("GET", "/Users/\(userID)/Views")
+                let views = try await libraryViews()
                 for view in views["Items"] as? [[String:Any]] ?? [] {
                     guard let id = view["Id"] as? String, let name = view["Name"] as? String,
                           ["movies","tvshows","mixed", ""].contains(view["CollectionType"] as? String ?? ""),
                           !excluded.contains(id), !excluded.contains(view["Guid"] as? String ?? "") else { continue }
                     requests.append(HomeSectionRequest(section: section("latestmedia_" + id, "Latest " + name, [:])) {
-                        let latest = try await connection.request("GET", "/Users/\(userID)/Items/Latest", query: ["ParentId":id, "Limit":"20", "Fields":Self.fields, "EnableUserData":"true"])
-                        let rows = try (latest as? [[String:Any]] ?? []).map(item)
+                        let latest = try await connection.request("GET", "/Users/\(userID)/Items/Latest", query: ["ParentId":id, "Limit":"20", "Fields":Self.homeFields, "EnableUserData":"true"])
+                        let rows = try convert(latest as? [[String:Any]] ?? [])
                         return ["items":rows, "total":rows.count]
                     })
                 }
             case "collections":
                 requests.append(HomeSectionRequest(section: section("collections", "Collections", [:])) {
-                    try await items(query: ["IncludeItemTypes":"BoxSet", "Limit":"20", "SortBy":"SortName"])
+                    try await items(query: ["IncludeItemTypes":"BoxSet", "Limit":"20", "Fields":Self.homeFields, "SortBy":"SortName"])
                 })
             case "latestmoviereleases":
                 requests.append(HomeSectionRequest(section: section(type, "Recently Released Movies", [:])) {
                     let since = Calendar(identifier:.gregorian).date(byAdding:.year, value:-1, to:Date()) ?? Date()
-                    return try await items(query: ["IncludeItemTypes":"Movie", "Limit":"20", "SortBy":"ProductionYear,PremiereDate,SortName", "SortOrder":"Descending", "MinPremiereDate":ISO8601DateFormatter().string(from:since)])
+                    return try await items(query: ["IncludeItemTypes":"Movie", "Limit":"20", "Fields":Self.homeFields, "SortBy":"ProductionYear,PremiereDate,SortName", "SortOrder":"Descending", "MinPremiereDate":ISO8601DateFormatter().string(from:since)])
                 })
             default: continue
             }
@@ -387,12 +464,19 @@ struct EmbyAdapter {
         if let library {
             let parent = try await libraryID(library)
             let latest = try await connection.request("GET", "/Users/\(userID)/Items/Latest",
-                query:["ParentId":parent,"Limit":"20","Fields":Self.fields,"EnableUserData":"true"])
-            let rows = try (latest as? [[String:Any]] ?? []).map(item)
+                query:["ParentId":parent,"Limit":"20","Fields":Self.homeFields,"EnableUserData":"true"])
+            let rows = try convert(latest as? [[String:Any]] ?? [])
             return ["sections":[section("latest-" + parent,"Latest",["items":rows,"total":rows.count])]]
         }
-        let system = try await connection.object("GET", "/System/Info/Public")
-        guard Self.usesServerHomeSections(version:system["Version"] as? String ?? "") else { return try await legacyHome() }
+        let version: String
+        if let cached = await EmbyServerDirectory.shared.version(connection: connection) {
+            version = cached
+        } else {
+            let system = try await connection.object("GET", "/System/Info/Public")
+            version = system["Version"] as? String ?? ""
+            await EmbyServerDirectory.shared.rememberVersion(version, connection: connection)
+        }
+        guard Self.usesServerHomeSections(version: version) else { return try await legacyHome() }
         #if os(tvOS)
         let displayMode = "tv"
         #else
@@ -405,11 +489,14 @@ struct EmbyAdapter {
             guard let id = definition["Id"] as? String,
                   !Self.excludesHomeRow(id:id,type:definition["SectionType"] as? String ?? "",title:definition["Name"] as? String ?? "") else { continue }
             requests.append(HomeSectionRequest(section: homeSection(definition, catalog: [:])) {
-                try await items("/Users/\(userID)/Sections/\(EmbyConnection.id(id))/Items", query: ["Limit":"20"])
+                try await items("/Users/\(userID)/Sections/\(EmbyConnection.id(id))/Items", query: ["Limit":"20", "Fields":Self.homeFields])
             })
         }
         return ["sections": try await fetchHomeSections(requests)]
     }
+
+    /// Concurrent Home row requests, small enough not to crowd a home server.
+    static let homeRowConcurrency = 3
 
     struct HomeSectionRequest {
         let section: [String: Any]
@@ -450,12 +537,36 @@ struct EmbyAdapter {
         }
         let definitions = planned.map(\.section)
         let required = Self.requiredHomeSectionIDs(definitions, hidden: hidden, spotlight: spotlight, combine: combine)
+        try Task.checkCancellation()
+        // Rows load a few at a time instead of one after another. Results are
+        // applied in the original order, and the earliest failing row's error
+        // is thrown, as when rows loaded sequentially.
+        let loads: [(index: Int, load: () async throws -> [String: Any])] = planned.enumerated().compactMap { index, request in
+            guard let id = request.section["id"] as? String, required.contains(id) else { return nil }
+            return (index, request.load)
+        }
+        var results: [Int: Result<[String: Any], Error>] = [:]
+        await withTaskGroup(of: (Int, Result<[String: Any], Error>).self) { group in
+            var pending = loads[...]
+            func startNext() {
+                guard let next = pending.popFirst() else { return }
+                group.addTask {
+                    do { return (next.index, .success(try await next.load())) }
+                    catch { return (next.index, .failure(error)) }
+                }
+            }
+            for _ in 0..<Self.homeRowConcurrency { startNext() }
+            while let (index, result) = await group.next() {
+                results[index] = result
+                startNext()
+            }
+        }
+        try Task.checkCancellation()
         var sections: [[String: Any]] = []
-        for request in planned {
-            try Task.checkCancellation()
+        for (index, request) in planned.enumerated() {
             var row = request.section
-            if let id = row["id"] as? String, required.contains(id) {
-                let catalog = try await request.load()
+            if let result = results[index] {
+                let catalog = try result.get()
                 row["items"] = catalog["items"] ?? []
                 row["totalCount"] = catalog["total"]
             } else {
@@ -500,7 +611,7 @@ struct EmbyAdapter {
     func supplyingCombinedNextUp(_ sections: [[String:Any]], enabled: Bool) async throws -> [[String:Any]] {
         guard enabled, !sections.contains(where: { $0["sectionType"] as? String == "next_up" }) else { return sections }
         do {
-            let result = try await items("/Shows/NextUp", query: ["Limit":"20", "LegacyNextUp":"true"])
+            let result = try await items("/Shows/NextUp", query: ["Limit":"20", "Fields":Self.homeFields, "LegacyNextUp":"true"])
             return sections + [section("next_up", "Next Up", result)]
         } catch {
             try Task.checkCancellation()
@@ -559,9 +670,9 @@ struct EmbyAdapter {
 
     func catalog(_ input: [String: String]) async throws -> [String: Any] {
         if let collection = input["collection_id"] {
-            return try await items(query:Self.collectionQuery(id:EmbyConnection.id(collection),offset:input["offset"] ?? "0",limit:input["limit"] ?? "60"))
+            return try await items(query:Self.collectionQuery(id:EmbyConnection.id(collection),offset:input["offset"] ?? "0",limit:input["limit"] ?? "60").merging(["Fields": Self.browseFields]) { _, new in new })
         }
-        var q = ["StartIndex": input["offset"] ?? "0", "Limit": input["limit"] ?? "60", "IncludeItemTypes": "Movie,Series", "SortBy":"SortName", "SortOrder":input["order"] == "desc" ? "Descending" : "Ascending"]
+        var q = ["Fields": Self.browseFields, "StartIndex": input["offset"] ?? "0", "Limit": input["limit"] ?? "60", "IncludeItemTypes": "Movie,Series", "SortBy":"SortName", "SortOrder":input["order"] == "desc" ? "Descending" : "Ascending"]
         if let type = input["type"] { q["IncludeItemTypes"] = type == "series" ? "Series" : type == "episode" ? "Episode" : "Movie" }
         for (source,target) in ["search":"SearchTerm", "q":"SearchTerm", "genre":"Genres", "genres":"Genres", "year":"Years", "years":"Years", "content_rating":"OfficialRatings", "studio":"StudioIds"] { if let v = input[source], !v.isEmpty { q[target] = v } }
         let sorts = ["title":"SortName", "year":"ProductionYear", "release_date":"PremiereDate", "added":"DateCreated", "added_at":"DateCreated", "rating":"CommunityRating", "random":"Random", "runtime":"Runtime"]
@@ -639,7 +750,7 @@ struct EmbyAdapter {
         if path == "/api/v1/home/sections" { return try await home() }
         if p.count == 5, p[2] == "library", p[4] == "sections" { return try await home(library: p[3]) }
         if path == "/api/v1/user/libraries" || path == "/api/v1/libraries" {
-            let result = try await connection.object("GET", "/Users/\(userID)/Views")
+            let result = try await libraryViews()
             return (result["Items"] as? [[String: Any]] ?? []).compactMap { raw -> [String: Any]? in
                 guard let id = raw["Id"] as? String else { return nil }
                 let type = raw["CollectionType"] as? String ?? "mixed"

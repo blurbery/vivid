@@ -166,8 +166,15 @@ final class TVHomeCardPreferences {
               let profile = AuthService.shared.profileId else { return nil }
         return "tvos.homeCards.v1.\(server).\(profile)"
     }
+    /// Cards read `presentation` many times per body. Decode it once per
+    /// profile key and revision instead of on every access.
+    @ObservationIgnored private var cachedPresentation: (key: String?, revision: Int, value: CardPresentationPreference)?
     var presentation: CardPresentationPreference {
-        _ = revision
+        let revision = revision
+        let key = key
+        if let cached = cachedPresentation, cached.key == key, cached.revision == revision {
+            return cached.value
+        }
         var value = Self.profileDefault
         if let key, let data = defaults.data(forKey: key),
            let saved = try? JSONDecoder().decode(CardPresentationPreference.self, from: data) {
@@ -175,6 +182,7 @@ final class TVHomeCardPreferences {
         }
         value.caption = key.flatMap { defaults.string(forKey: $0 + ".captions") }
             .flatMap(CardCaptionStyle.init(rawValue:)) ?? .titleMetadata
+        cachedPresentation = (key, revision, value)
         return value
     }
     func cloudPreferencesChanged() { revision += 1 }

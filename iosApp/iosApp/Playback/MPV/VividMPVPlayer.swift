@@ -301,14 +301,45 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "audio-codec-name": audioDecoder = value as? String
         case "hwdec-current": videoDecoder = (value as? String).map { "Lucid (\($0))" }
         case "container-fps": sourceVideoFrameRate = value as? Double
-        case "demuxer-cache-duration", "avsync", "frame-drop-count":
+        case "avsync": throttleAvSyncGap((value as? Double).map { $0 * 1000 })
+        case "demuxer-cache-duration", "frame-drop-count":
             var stats = diagnostics.liveTelemetry ?? LiveTelemetry()
             if name == "demuxer-cache-duration" { stats.forwardBufferSeconds = value as? Double }
-            if name == "avsync" { stats.avSyncGapMs = (value as? Double).map { $0 * 1000 } }
             if name == "frame-drop-count" { stats.droppedFrameCount = (value as? Double).map(Int.init) }
+            if let gap = pendingAvSyncGapMs { stats.avSyncGapMs = gap; pendingAvSyncGapMs = nil }
             diagnostics.liveTelemetry = stats
         default: break
         }
+    }
+    /// `avsync` changes on almost every presented frame but only feeds the
+    /// statistics overlay, which formats about once a second. Publish it at
+    /// most four times a second and always finish on the latest value, so a
+    /// per-frame property no longer republishes telemetry every frame.
+    private static let avSyncPublishInterval: TimeInterval = 0.25
+    private var pendingAvSyncGapMs: Double??
+    private var lastAvSyncPublishUptime: TimeInterval = 0
+    private var avSyncPublishTask: Task<Void, Never>?
+    private func throttleAvSyncGap(_ gap: Double?) {
+        pendingAvSyncGapMs = .some(gap)
+        let wait = lastAvSyncPublishUptime + Self.avSyncPublishInterval - ProcessInfo.processInfo.systemUptime
+        guard wait > 0 else { publishPendingAvSyncGap(); return }
+        guard avSyncPublishTask == nil else { return }
+        let token = generation
+        avSyncPublishTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard let self, !Task.isCancelled, token == generation else { return }
+            avSyncPublishTask = nil
+            publishPendingAvSyncGap()
+        }
+    }
+    private func publishPendingAvSyncGap() {
+        avSyncPublishTask?.cancel(); avSyncPublishTask = nil
+        guard let gap = pendingAvSyncGapMs else { return }
+        pendingAvSyncGapMs = nil
+        lastAvSyncPublishUptime = ProcessInfo.processInfo.systemUptime
+        var stats = diagnostics.liveTelemetry ?? LiveTelemetry()
+        stats.avSyncGapMs = gap
+        diagnostics.liveTelemetry = stats
     }
     fileprivate func event(_ name: String, data: [String: Any]?, token: UInt64) {
         guard token == generation else { return }
@@ -388,7 +419,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private func recordPipelineSnapshot() {
         guard trace != nil else { return }
         var fields = ["position_s=\(currentTime)", "playing=\(wantsPlay)", "buffering=\(isBuffering)", "seeking=\(isSeeking)"]
-        if let gap = diagnostics.liveTelemetry?.avSyncGapMs, gap.isFinite {
+        if let gap = pendingAvSyncGapMs ?? diagnostics.liveTelemetry?.avSyncGapMs, gap.isFinite {
             fields.append("avsync_ms=\(gap)")
         }
         for key in ["fw-bytes", "total-bytes", "raw-input-rate", "reader-pts", "cache-end", "cache-duration", "eof", "underrun", "idle"] {
@@ -419,6 +450,13 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     #endif
     // Raw mpv messages can contain authenticated URLs. Only fixed fault labels
     // and strictly numeric AVPlayer heartbeat/status fields may enter the device log.
+    // Compiled once rather than for every matching audio log message.
+    private static let pcmTransportRegex = try? NSRegularExpression(pattern: #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)(?:, latency (-?[0-9]+\.[0-9]+), sufficient (-?[0-9]+))?\z"#)
+    private static let audioEdgeRegex = try? NSRegularExpression(pattern: #"\Atrace edge (start|start-fresh|pause|resume|reset|restart): clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), latency (-?[0-9]+\.[0-9]+)\z"#)
+    private static let compressedEngagedRegex = try? NSRegularExpression(pattern: #"\Acompressed clock engaged after (-?[0-9]+\.[0-9]+) s, seeked ([01]), anchors ([0-9]+)\z"#)
+    private static let flushTimeRegex = try? NSRegularExpression(pattern: #"\Anotification flush time (-?[0-9]+\.[0-9]+|nan), current ([01])\z"#)
+    private static let heartbeatRegex = try? NSRegularExpression(pattern: #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#)
+    private static let audioStatusRegex = try? NSRegularExpression(pattern: #"\Aitem status (-?[0-9]+) -> (-?[0-9]+), time control (-?[0-9]+) -> (-?[0-9]+), pos (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s\z"#)
     private static func audioDiagnostic(_ data: [String: Any]?) -> String? {
         guard let prefix = data?["prefix"] as? String,
               let text = data?["text"] as? String else { return nil }
@@ -457,8 +495,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         if message == "pcm renderer failed; requesting audio reload" {
             return "fault=pcm_renderer_failed"
         }
-        let pcmPattern = #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)(?:, latency (-?[0-9]+\.[0-9]+), sufficient (-?[0-9]+))?\z"#
-        if let regex = try? NSRegularExpression(pattern: pcmPattern),
+        if let regex = Self.pcmTransportRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["clock_s", "fed_s", "ahead_s", "rate", "status", "latency_s", "sufficient"]
             return "event=pcm_transport " + names.enumerated().compactMap { index, name in
@@ -466,8 +503,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
         }
-        let edgePattern = #"\Atrace edge (start|start-fresh|pause|resume|reset|restart): clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), latency (-?[0-9]+\.[0-9]+)\z"#
-        if let regex = try? NSRegularExpression(pattern: edgePattern),
+        if let regex = Self.audioEdgeRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["edge", "clock_s", "fed_s", "latency_s"]
             return "event=audio_edge " + names.enumerated().compactMap { index, name in
@@ -475,8 +511,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
         }
-        let engagedPattern = #"\Acompressed clock engaged after (-?[0-9]+\.[0-9]+) s, seeked ([01]), anchors ([0-9]+)\z"#
-        if let regex = try? NSRegularExpression(pattern: engagedPattern),
+        if let regex = Self.compressedEngagedRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["after_s", "seeked", "anchors"]
             return "event=compressed_clock_engaged " + names.enumerated().compactMap { index, name in
@@ -484,14 +519,12 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
         }
-        let flushPattern = #"\Anotification flush time (-?[0-9]+\.[0-9]+|nan), current ([01])\z"#
-        if let regex = try? NSRegularExpression(pattern: flushPattern),
+        if let regex = Self.flushTimeRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)),
            let time = Range(match.range(at: 1), in: message), let current = Range(match.range(at: 2), in: message) {
             return "event=audio_system_flush_time flush_s=\(message[time]) current=\(message[current])"
         }
-        let pattern = #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#
-        if let regex = try? NSRegularExpression(pattern: pattern),
+        if let regex = Self.heartbeatRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["raw_s", "clock_s", "fed_s", "status", "time_control", "reader_gap_bytes"]
             return names.enumerated().compactMap { index, name in
@@ -499,8 +532,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
         }
-        let statusPattern = #"\Aitem status (-?[0-9]+) -> (-?[0-9]+), time control (-?[0-9]+) -> (-?[0-9]+), pos (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s\z"#
-        if let regex = try? NSRegularExpression(pattern: statusPattern),
+        if let regex = Self.audioStatusRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["old_status", "status", "old_time_control", "time_control", "clock_s", "fed_s"]
             return "event=audio_transport " + names.enumerated().compactMap { index, name in
@@ -788,6 +820,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         sourceVideoPixelAspectRatio = 1; sourceDVProfile = nil; sourceVideoFormat = .sdr; videoFormat = .sdr
         outputChannels = nil; outputAudioFormat = nil; videoDecoder = nil; audioDecoder = nil
         diagnostics.liveTelemetry = nil
+        avSyncPublishTask?.cancel(); avSyncPublishTask = nil
+        pendingAvSyncGapMs = nil; lastAvSyncPublishUptime = 0
         cacheSnapshot = [:]
     }
     private func fail(_ error: PlaybackErrorInfo) {
