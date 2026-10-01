@@ -7,9 +7,6 @@ enum Route: Hashable {
     case login
     case serverNeedsSetup
 
-    // Profile selection
-    case profileSelection
-
     // Main tabs
     case home
     case search

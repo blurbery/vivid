@@ -252,9 +252,6 @@ class AppRouter {
     /// without threading a selection binding through the tree.
     var requestedTab: AppTab?
 
-    /// Optional copy for an alternate three-step profile journey. Cleared at
-    /// every auth-state reset so a later normal login uses the default labels.
-    var profileJourneyLabels: [String]?
 
     func switchTab(to tab: AppTab) {
         requestedTab = tab
@@ -524,15 +521,14 @@ class AppRouter {
         #else
         path = NavigationPath()
         #endif
-        profileJourneyLabels = nil
         setAuthState(.needsLogin, reason: "resetToLogin")
     }
 
-    /// Transition to profile selection after successful login.
-    func showProfileSelection(journeyLabels: [String]? = nil) {
+    /// Enter a profile after login when none is active. Login preparation
+    /// picks the primary (or only) profile; there is no server profile picker.
+    func showProfileSelection() {
         recordScreenBreadcrumb(target: "profileSelection", action: "reset")
         path = NavigationPath()
-        profileJourneyLabels = journeyLabels
         setAuthState(.needsProfile, reason: "showProfileSelection")
     }
 
@@ -556,7 +552,6 @@ class AppRouter {
     func resetToHome() {
         recordScreenBreadcrumb(target: "home", action: "reset")
         path = NavigationPath()
-        profileJourneyLabels = nil
         setAuthState(.authenticated, reason: "resetToHome")
     }
 
@@ -568,7 +563,6 @@ class AppRouter {
         #else
         path = NavigationPath()
         #endif
-        profileJourneyLabels = nil
         setAuthState(.needsServerSetup, reason: "resetToServerSetup")
     }
 
@@ -771,8 +765,6 @@ private extension Route {
             return "login"
         case .serverNeedsSetup:
             return "serverNeedsSetup"
-        case .profileSelection:
-            return "profileSelection"
         case .home:
             return "home"
         case .search:
