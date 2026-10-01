@@ -359,8 +359,8 @@ struct MobilePlayerControls: View {
         VStack(spacing: 10) {
             actionRow
                 .opacity(recedingOpacity)
-            progressSlider
-            timeRow
+            PlayerTickIsolated { progressSlider }
+            PlayerTickIsolated { timeRow }
         }
     }
 

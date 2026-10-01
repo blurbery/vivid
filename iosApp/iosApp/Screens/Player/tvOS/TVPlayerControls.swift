@@ -253,8 +253,8 @@ struct TVPlayerControls: View {
         ZStack(alignment: .bottom) {
             bottomGradient.ignoresSafeArea()
             VStack(spacing: 10) {
-                passiveTimelineBar
-                timeRow
+                PlayerTickIsolated { passiveTimelineBar }
+                PlayerTickIsolated { timeRow }
             }
             .padding(.horizontal, Self.transportHorizontalInset)
             .padding(.bottom, 48)
@@ -522,7 +522,7 @@ struct TVPlayerControls: View {
                 resumePlaybackAfterTimelineSelection: $resumePlaybackAfterTimelineSelection,
                 cancelOnBlur: cancelPendingScrub
             )
-            timeRow
+            PlayerTickIsolated { timeRow }
 
         }
     }

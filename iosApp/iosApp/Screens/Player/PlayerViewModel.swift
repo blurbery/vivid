@@ -272,7 +272,11 @@ class PlayerViewModel {
 
     var isPlaying = false
     var currentTime: Double = 0 {
-        didSet { if currentTime != oldValue { refreshSkipWindow() } }
+        didSet {
+            guard currentTime != oldValue else { return }
+            refreshSkipWindow()
+            refreshCurrentChapter()
+        }
     }
     var duration: Double = 0 {
         didSet {
@@ -303,7 +307,11 @@ class PlayerViewModel {
     /// snapshotted at prepare time. Used only to float the matching
     /// language group to the top of the displayed track lists.
     private var subtitleOrderingLanguage: String?
-    var chapters: [PlayerChapterInfo] = []
+    var chapters: [PlayerChapterInfo] = [] { didSet { refreshCurrentChapter() } }
+    /// Index of the chapter containing the playhead. Stored, and only written
+    /// when playback crosses into another chapter, so chapter lists don't
+    /// redraw on every time tick.
+    private(set) var currentChapterIndex: Int?
     var recapRange: TimeRange? { didSet { refreshSkipWindow() } }
     var introRange: TimeRange? { didSet { refreshSkipWindow() } }
     var creditsRange: TimeRange? { didSet { refreshSkipWindow() } }
@@ -411,6 +419,11 @@ class PlayerViewModel {
 
     var showCreditsSkip: Bool {
         settings.introDBEnabled && skipWindow.inCredits
+    }
+
+    private func refreshCurrentChapter() {
+        let index = chapters.lastIndex { $0.time <= currentTime }
+        if index != currentChapterIndex { currentChapterIndex = index }
     }
 
     private func refreshSkipWindow() {
