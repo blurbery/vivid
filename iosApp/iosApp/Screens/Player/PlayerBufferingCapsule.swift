@@ -124,25 +124,38 @@ struct PlayerLoadingIndicator: View {
     let isLoading: Bool
     let isBuffering: Bool
     let isPlaying: Bool
-    let currentTime: Double
-    @State private var lastAdvance = ProcessInfo.processInfo.systemUptime
+    /// Read only while loading or buffering, so steady playback does not
+    /// re-render this view or keep its timeline running on every time tick.
+    let currentTime: () -> Double
 
     static func shouldShow(requested: Bool, isPlaying: Bool, isLoading: Bool, elapsed: TimeInterval) -> Bool {
         requested && (isPlaying || isLoading) && elapsed >= 0.8
     }
 
     var body: some View {
+        if isLoading || isBuffering {
+            PlayerLoadingStallTimer(isLoading: isLoading, isPlaying: isPlaying, currentTime: currentTime)
+        }
+    }
+}
+
+/// Mounted only while loading or buffering. Mounting starts the stall clock,
+/// matching the reset that happens whenever loading or buffering begins.
+private struct PlayerLoadingStallTimer: View {
+    let isLoading: Bool
+    let isPlaying: Bool
+    let currentTime: () -> Double
+    @State private var lastAdvance = ProcessInfo.processInfo.systemUptime
+
+    var body: some View {
         TimelineView(.periodic(from: .now, by: 0.2)) { _ in
-            if Self.shouldShow(requested: isLoading || isBuffering, isPlaying: isPlaying,
-                               isLoading: isLoading, elapsed: ProcessInfo.processInfo.systemUptime - lastAdvance) {
+            if PlayerLoadingIndicator.shouldShow(requested: true, isPlaying: isPlaying, isLoading: isLoading,
+                                                 elapsed: ProcessInfo.processInfo.systemUptime - lastAdvance) {
                 PlayerBufferingCapsule()
             }
         }
-        .onChange(of: currentTime) { old, new in
+        .onChange(of: currentTime()) { old, new in
             if new.isFinite, new != old { lastAdvance = ProcessInfo.processInfo.systemUptime }
-        }
-        .onChange(of: isLoading || isBuffering) { _, _ in
-            lastAdvance = ProcessInfo.processInfo.systemUptime
         }
     }
 }

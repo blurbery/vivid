@@ -1077,6 +1077,48 @@ class MpvPlayerCoreBase: NSObject {
     }
   }
 
+  /// Properties that can change on every presented frame. While one main
+  /// delivery is queued, newer values replace the pending ones instead of
+  /// queuing another block, so a busy main thread receives the latest value
+  /// once rather than replaying a backlog of stale ones.
+  private static let coalescedProperties: Set<String> = [
+    "time-pos", "avsync", "demuxer-cache-state", "demuxer-cache-duration",
+  ]
+
+  private struct PendingProperty {
+    let name: String
+    let value: Any?
+    let sourceId: Int64?
+  }
+
+  private struct PropertyCoalescing {
+    var pending: [PendingProperty] = []
+    /// Identifies the one queued flush allowed to deliver `pending`.
+    var scheduledFlush: UInt64?
+    var nextFlush: UInt64 = 0
+  }
+
+  private let coalescingLock = NSLock()
+  private var coalescing = PropertyCoalescing()
+
+  /// Hands any pending coalesced values to the caller's delivery block and
+  /// retires the queued flush. Every other delivery calls this first, so the
+  /// main thread still observes properties and events in mpv's order.
+  private func takePendingCoalescedProperties() -> [PendingProperty] {
+    coalescingLock.lock()
+    defer { coalescingLock.unlock() }
+    let pending = coalescing.pending
+    coalescing.pending = []
+    coalescing.scheduledFlush = nil
+    return pending
+  }
+
+  private func deliverPendingProperties(_ pending: [PendingProperty]) {
+    for property in pending {
+      delegate?.onPropertyChange(name: property.name, value: property.value, sourceId: property.sourceId)
+    }
+  }
+
   func dispatchDelegateEvent(name: String, data: [String: Any]?, sourceId: Int64? = nil) {
     var sourcedData = data
     if let sourceId {
@@ -1084,16 +1126,55 @@ class MpvPlayerCoreBase: NSObject {
       sourcedData?["sourceId"] = sourceId
     }
     let eventData = sourcedData
+    let pending = takePendingCoalescedProperties()
     DispatchQueue.main.async { [weak self] in
       guard let self, self.isLifecycleActive else { return }
+      self.deliverPendingProperties(pending)
       self.delegate?.onEvent(name: name, data: eventData)
     }
   }
 
   func dispatchDelegateProperty(name: String, value: Any?, sourceId: Int64?) {
+    let property = PendingProperty(name: name, value: value, sourceId: sourceId)
+    guard Self.coalescedProperties.contains(name) else {
+      let pending = takePendingCoalescedProperties()
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.isLifecycleActive else { return }
+        self.deliverPendingProperties(pending)
+        self.delegate?.onPropertyChange(name: name, value: value, sourceId: sourceId)
+      }
+      return
+    }
+
+    coalescingLock.lock()
+    if let index = coalescing.pending.firstIndex(where: { $0.name == name }) {
+      coalescing.pending[index] = property
+    } else {
+      coalescing.pending.append(property)
+    }
+    var flush: UInt64?
+    if coalescing.scheduledFlush == nil {
+      coalescing.nextFlush &+= 1
+      coalescing.scheduledFlush = coalescing.nextFlush
+      flush = coalescing.nextFlush
+    }
+    coalescingLock.unlock()
+
+    guard let flush else { return }
     DispatchQueue.main.async { [weak self] in
-      guard let self, self.isLifecycleActive else { return }
-      self.delegate?.onPropertyChange(name: name, value: value, sourceId: sourceId)
+      guard let self else { return }
+      self.coalescingLock.lock()
+      guard self.coalescing.scheduledFlush == flush else {
+        // A later delivery already carried these values in order.
+        self.coalescingLock.unlock()
+        return
+      }
+      let pending = self.coalescing.pending
+      self.coalescing.pending = []
+      self.coalescing.scheduledFlush = nil
+      self.coalescingLock.unlock()
+      guard self.isLifecycleActive else { return }
+      self.deliverPendingProperties(pending)
     }
   }
 
