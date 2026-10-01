@@ -198,6 +198,39 @@ final class VividImagePipeline: @unchecked Sendable {
         }
     }
 
+    #if os(iOS)
+    /// The iPad app on a Mac is killed with 0xdead10cc if it is suspended while
+    /// an artwork response cache holds its SQLite write lock. On the Mac only,
+    /// stop artwork transfers as the app backgrounds and keep a short window
+    /// for in-flight cache writes to finish. Failed artwork retries on return.
+    @MainActor
+    func prepareForMacSuspension() {
+        guard ProcessInfo.processInfo.isiOSAppOnMac else { return }
+        let window = SuspensionWindow()
+        window.id = UIApplication.shared.beginBackgroundTask(withName: "Vivid artwork cache") {
+            MainActor.assumeIsolated { window.end() }
+        }
+        Task { @MainActor [self] in
+            for session in sessionSnapshot() {
+                let tasks = await session.allTasks
+                tasks.forEach { $0.cancel() }
+            }
+            try? await Task.sleep(for: .seconds(2))
+            window.end()
+        }
+    }
+
+    @MainActor
+    private final class SuspensionWindow {
+        var id = UIBackgroundTaskIdentifier.invalid
+        func end() {
+            guard id != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(id)
+            id = .invalid
+        }
+    }
+    #endif
+
     func data(for request: VividImageRequest) async throws -> Data {
         try Task.checkCancellation()
         if request.url.isFileURL { return try Data(contentsOf: request.url, options: .mappedIfSafe) }
