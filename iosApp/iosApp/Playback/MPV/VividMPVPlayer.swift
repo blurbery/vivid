@@ -337,7 +337,10 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "log-message":
             if let fields = Self.audioDiagnostic(data) {
                 trace?.event("mpv_audio_diagnostic", fields: fields)
-                if fields.hasPrefix("raw_s=") || fields.hasPrefix("event=audio_transport ") { recordPipelineSnapshot() }
+                if fields.hasPrefix("raw_s=") || fields.hasPrefix("event=audio_transport ")
+                    || fields.hasPrefix("event=pcm_transport ") || fields.hasPrefix("event=audio_edge ") {
+                    recordPipelineSnapshot()
+                }
             }
         default: break
         }
@@ -454,14 +457,29 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         if message == "pcm renderer failed; requesting audio reload" {
             return "fault=pcm_renderer_failed"
         }
-        let pcmPattern = #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)\z"#
+        let pcmPattern = #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)(?:, latency (-?[0-9]+\.[0-9]+), sufficient (-?[0-9]+))?\z"#
         if let regex = try? NSRegularExpression(pattern: pcmPattern),
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            let names = ["clock_s", "fed_s", "ahead_s", "rate", "status"]
+            let names = ["clock_s", "fed_s", "ahead_s", "rate", "status", "latency_s", "sufficient"]
             return "event=pcm_transport " + names.enumerated().compactMap { index, name in
                 guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
+        }
+        let edgePattern = #"\Atrace edge (start|start-fresh|pause|resume|reset|restart): clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), latency (-?[0-9]+\.[0-9]+)\z"#
+        if let regex = try? NSRegularExpression(pattern: edgePattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["edge", "clock_s", "fed_s", "latency_s"]
+            return "event=audio_edge " + names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        let flushPattern = #"\Anotification flush time (-?[0-9]+\.[0-9]+|nan), current ([01])\z"#
+        if let regex = try? NSRegularExpression(pattern: flushPattern),
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)),
+           let time = Range(match.range(at: 1), in: message), let current = Range(match.range(at: 2), in: message) {
+            return "event=audio_system_flush_time flush_s=\(message[time]) current=\(message[current])"
         }
         let pattern = #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#
         if let regex = try? NSRegularExpression(pattern: pattern),
