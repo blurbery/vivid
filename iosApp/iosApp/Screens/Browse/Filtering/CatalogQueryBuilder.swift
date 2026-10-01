@@ -47,7 +47,11 @@ enum CatalogQueryBuilder {
         /// Whether to emit the `type` media-scope param. iOS omits it — a
         /// `library_id`-scoped query is already homogeneous. tvOS sends it
         /// because it knows the library type.
-        includeType: Bool = true
+        includeType: Bool = true,
+        /// The server core whose catalog dialect to emit. Defaults to the
+        /// active server; tests pass it explicitly so they do not depend on
+        /// whichever account the app data has active.
+        provider: MediaServerProvider = .active
     ) -> [String: String] {
         var q: [String: String] = [
             "source": "query",
@@ -89,8 +93,11 @@ enum CatalogQueryBuilder {
         if let status = state.watchStatus { groups.addWatchStatus(status) }
         groups.encode(into: &q)
 
-        if MediaServerProvider.active == .jellyfin { return jellyfinQuery(state, base: q) }
-        return MediaServerProvider.active == .emby ? embyQuery(state, base: q) : q
+        switch provider {
+        case .jellyfin: return jellyfinQuery(state, base: q)
+        case .emby: return embyQuery(state, base: q)
+        case .silo: return q
+        }
     }
 }
 

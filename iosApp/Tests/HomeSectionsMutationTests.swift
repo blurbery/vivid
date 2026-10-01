@@ -123,14 +123,14 @@ final class HomeSectionsMutationTests: XCTestCase {
         XCTAssertEqual(model.sections, rows)
         XCTAssertFalse(model.isLoading)
         let hiddenAt = Date(timeIntervalSince1970: 1_000)
-        await model.refreshForHomeEntry(sinceLastHidden: nil, now: hiddenAt)
+        await model.refreshForHomeEntry(sinceLastHidden: nil, now: hiddenAt, provider: .silo)
         XCTAssertEqual(requests, 1)
         await model.refreshForHomeEntry(sinceLastHidden: hiddenAt,
-                                        now: hiddenAt.addingTimeInterval(59))
+                                        now: hiddenAt.addingTimeInterval(59), provider: .silo)
         XCTAssertEqual(requests, 1)
         XCTAssertEqual(model.sections, rows)
         await model.refreshForHomeEntry(sinceLastHidden: hiddenAt,
-                                        now: hiddenAt.addingTimeInterval(60))
+                                        now: hiddenAt.addingTimeInterval(60), provider: .silo)
         XCTAssertEqual(requests, 2)
     }
 
@@ -168,15 +168,15 @@ final class HomeSectionsMutationTests: XCTestCase {
             requests += 1
             return SectionsResponse(sections: requests == 1 ? original : updated)
         })
-        await model.refreshForHomeEntry(sinceLastHidden: nil)
+        await model.refreshForHomeEntry(sinceLastHidden: nil, provider: .silo)
         await model.refreshPlaybackSections(refreshImmediately: false)
         await model.refreshPlaybackSections(refreshImmediately: false)
         XCTAssertEqual(requests, 1)
         XCTAssertEqual(model.sections, original)
-        await model.refreshForHomeEntry(sinceLastHidden: Date())
+        await model.refreshForHomeEntry(sinceLastHidden: Date(), provider: .silo)
         XCTAssertEqual(requests, 2)
         XCTAssertEqual(model.sections, updated)
-        await model.refreshForHomeEntry(sinceLastHidden: Date())
+        await model.refreshForHomeEntry(sinceLastHidden: Date(), provider: .silo)
         XCTAssertEqual(requests, 2)
     }
 
