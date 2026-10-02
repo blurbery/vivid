@@ -13,6 +13,9 @@ final class VividManagedStreamSource: @unchecked Sendable {
     let refresh: @Sendable () async -> [String: String]?
     private let lock = NSLock()
     private var headers: [String: String]
+    private var cancelled = false
+    private var readers: [Weak] = []
+    private struct Weak { weak var reader: VividManagedStreamReader? }
 
     init(url: URL, headers: [String: String],
          refresh: @escaping @Sendable () async -> [String: String]?) {
@@ -29,6 +32,31 @@ final class VividManagedStreamSource: @unchecked Sendable {
     func update(_ headers: [String: String]) {
         lock.lock(); defer { lock.unlock() }
         self.headers = headers
+    }
+
+    var isCancelled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cancelled
+    }
+
+    /// Ends every reader of this source, including one still connecting, so
+    /// a synchronous Lucid teardown never waits on the network. Never blocks.
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let active = readers.compactMap(\.reader)
+        readers = []
+        lock.unlock()
+        for reader in active { reader.cancel() }
+    }
+
+    /// Returns false if the source has already been cancelled.
+    fileprivate func attach(_ reader: VividManagedStreamReader) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled else { return false }
+        readers.removeAll { $0.reader == nil }
+        readers.append(Weak(reader: reader))
+        return true
     }
 
     /// Only HTTPS single-file sources qualify. Plain HTTP stays on Lucid's own
@@ -188,6 +216,7 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
 
     /// Connects at the first byte so the size is known before Lucid asks.
     func open(timeout: Double = 30) -> Bool {
+        guard source.attach(self) else { return false }
         condition.lock(); defer { condition.unlock() }
         let deadline = Date().addingTimeInterval(timeout)
         startTaskLocked(at: 0)
@@ -197,10 +226,9 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
             case .streaming:
                 return true
             case .ended(.authentication):
-                authAttempts += 1
-                guard authAttempts <= retry.maxAuthAttempts,
-                      refreshLocked(deadline: deadline) else { return false }
-                startTaskLocked(at: nextFetchOffset)
+                // The bearer is fresh at load. A refusal here belongs to the
+                // app's load-failure recovery, not a wait inside Lucid's open.
+                return false
             case .ended(.transient):
                 guard Date() < deadline else { return false }
                 transientAttempts += 1

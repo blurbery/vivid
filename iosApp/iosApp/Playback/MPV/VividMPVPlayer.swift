@@ -813,6 +813,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         cancelEndConfirmation()
         rateTask?.cancel(); rateTask = nil
         softwarePiPSource = nil
+        // Unblock any reader before Lucid tears down, which may be synchronous.
+        managedSource?.cancel()
         core?.delegate = nil
         if let core {
             let teardown = Self.audioTeardown

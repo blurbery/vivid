@@ -258,6 +258,32 @@ final class ManagedStreamReaderTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 8)
     }
 
+    func testStoppingThePlayerUnblocksAConnectingOpen() {
+        ScriptedOrigin.respond = { request, _ in var reply = self.ranged(request); reply.delay = 30; return reply }
+        let reader = makeReader()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { reader.source.cancel() }
+        let started = Date()
+        XCTAssertFalse(reader.open(timeout: 30))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
+    }
+
+    func testCancelledSourceRefusesNewReaders() {
+        ScriptedOrigin.respond = { request, _ in self.ranged(request) }
+        let source = VividManagedStreamSource(url: url, headers: [:], refresh: { nil })
+        source.cancel()
+        let reader = VividManagedStreamReader(source: source, session: session)
+        XCTAssertFalse(reader.open(timeout: 1))
+        XCTAssertTrue(ScriptedOrigin.requests.isEmpty)
+    }
+
+    func testRejectedBearerAtOpenFailsFastWithoutRefreshing() {
+        ScriptedOrigin.respond = { _, _ in ScriptedOrigin.Reply(status: 401) }
+        let reader = makeReader(refresh: { XCTFail("Open must not refresh"); return nil })
+        let started = Date()
+        XCTAssertFalse(reader.open(timeout: 30))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+    }
+
     func testOpenFailsForAMissingSession() {
         ScriptedOrigin.respond = { _, _ in ScriptedOrigin.Reply(status: 404) }
         XCTAssertFalse(makeReader().open(timeout: 3))
