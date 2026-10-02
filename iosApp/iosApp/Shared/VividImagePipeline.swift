@@ -95,6 +95,26 @@ final class VividImageCache: @unchecked Sendable {
     func removeCachedImage(for request: VividImageRequest, caches: Caches) { memory.removeObject(forKey: request.key) }
 }
 
+/// On-screen artwork shares two connections per host with prefetching. Give
+/// each transfer a URLSession priority from its request, so visible posters
+/// are scheduled ahead of warm-up work. Also forwards diagnostics metrics.
+final class VividImagePriorityDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private static let low = VividImagePriorityDelegate(URLSessionTask.lowPriority)
+    private static let normal = VividImagePriorityDelegate(URLSessionTask.defaultPriority)
+    private static let high = VividImagePriorityDelegate(URLSessionTask.highPriority)
+    static func delegate(for priority: VividImageRequest.Priority) -> VividImagePriorityDelegate {
+        switch priority { case .low: low; case .normal: normal; case .high: high }
+    }
+    let priority: Float
+    private init(_ priority: Float) { self.priority = priority }
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        task.priority = priority
+    }
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        VividImageMetricsDelegate.shared.urlSession(session, task: task, didFinishCollecting: metrics)
+    }
+}
+
 final class VividImagePipeline: @unchecked Sendable {
     static var shared = VividImagePipeline()
     let cache: VividImageCache
@@ -256,7 +276,7 @@ final class VividImagePipeline: @unchecked Sendable {
     #endif
 
     private func fetchData(for request: VividImageRequest) async throws -> Data {
-        let delegate = VividImageDiagnostics.shared.enabled ? VividImageMetricsDelegate.shared : nil
+        let delegate = VividImagePriorityDelegate.delegate(for: request.priority)
         let (data, response) = try await VividImageRetry.load {
             try await session(for: request.cacheScope).data(from: request.url, delegate: delegate)
         }

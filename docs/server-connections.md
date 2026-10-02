@@ -157,7 +157,7 @@ These shared files retain Silo behaviour and dispatch to the active provider’s
   </tbody>
 </table>
 
-Vivid supports Silo as a third-party media provider. Its transport probes the public `/api/v2/system/info` document for each server base URL. A supported v2 response selects the native v2 API; a missing discovery endpoint or the older HTML fallback retains v1. Authentication, service and network failures do not trigger a downgrade. Discovery sends no saved account or profile credentials.
+Vivid supports Silo as a third-party media provider. Its transport probes the public `/api/v2/system/info` document for each server base URL. A supported v2 response selects the native v2 API; a missing discovery endpoint or the older HTML fallback retains v1. Authentication, service and network failures do not trigger a downgrade. A result is reused for 60 seconds. For up to ten minutes an older result is used straight away while a background check refreshes it; beyond that, requests wait for a fresh check. Discovery sends no saved account or profile credentials.
 
 The adapter preserves Vivid's existing screens and translates renamed endpoints, collection envelopes, decimal identifiers, catalogue cursors and settings capabilities at the networking boundary. New-server catalogue windows retain the server's opaque cursor while Vivid keeps its current scrolling behaviour. Older Silo requests retain their v1 routes, including `/api/v1/auth/setup`, `/api/v1/auth/login` and `/api/v1/theme/branding`. Emby continues through its separate adapter.
 

@@ -11,7 +11,75 @@ final class JellyfinAdapterTests: XCTestCase {
         session?.invalidateAndCancel()
         session = nil
         JellyfinRequestStub.handler = nil
+        JellyfinLegacyRoutes.shared.reset()
         super.tearDown()
+    }
+
+    func testOlderServerRoutesAreRememberedOnlyAfterTheOlderRouteSucceeds() async throws {
+        var paths: [String] = []
+        let adapter = adapter { request in
+            paths.append(request.url!.path)
+            return request.url!.path == "/jellyfin/UserViews" ? (404, [:]) : (200, ["Items": []])
+        }
+        _ = try await adapter.connection.data("GET", "/UserViews")
+        XCTAssertEqual(paths, ["/jellyfin/UserViews", "/jellyfin/Users/\(user)/Views"])
+        paths.removeAll()
+        _ = try await adapter.connection.data("GET", "/UserViews")
+        XCTAssertEqual(paths, ["/jellyfin/Users/\(user)/Views"], "A known older server skips the missing route")
+    }
+
+    func testMissingItemDoesNotMarkTheServerAsOlder() async throws {
+        let adapter = adapter { _ in (404, [:]) }
+        do {
+            _ = try await adapter.connection.data("GET", "/Items/" + item)
+            XCTFail("A missing item must still fail")
+        } catch {}
+        XCTAssertFalse(JellyfinLegacyRoutes.shared.prefersLegacy(adapter.connection.serverURL))
+    }
+
+    func testRememberedOlderServerReturnsToCurrentRoutesAfterAnUpgrade() async throws {
+        var paths: [String] = []
+        let adapter = adapter { request in
+            paths.append(request.url!.path)
+            return request.url!.path.hasPrefix("/jellyfin/Users/") ? (404, [:]) : (200, ["Items": []])
+        }
+        JellyfinLegacyRoutes.shared.remember(adapter.connection.serverURL)
+        _ = try await adapter.connection.data("GET", "/UserViews")
+        XCTAssertEqual(paths, ["/jellyfin/Users/\(user)/Views", "/jellyfin/UserViews"])
+        XCTAssertFalse(JellyfinLegacyRoutes.shared.prefersLegacy(adapter.connection.serverURL))
+    }
+
+    func testPeopleStoreMovesOlderPerPersonKeysIntoOneMap() throws {
+        let suite = "jellyfin-people-test." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("native-one", forKey: "partition.person.101")
+        defaults.set("native-two", forKey: "partition.person.202")
+        defaults.set("other", forKey: "elsewhere.person.303")
+        let store = JellyfinPeopleStore(defaults: defaults)
+        XCTAssertEqual(store.nativeID(routeID: "101", partition: "partition"), "native-one")
+        XCTAssertEqual(store.nativeID(routeID: "202", partition: "partition"), "native-two")
+        XCTAssertNil(defaults.object(forKey: "partition.person.101"))
+        XCTAssertNil(defaults.object(forKey: "partition.person.202"))
+        XCTAssertEqual(defaults.string(forKey: "elsewhere.person.303"), "other", "Other partitions are untouched")
+        XCTAssertEqual(defaults.dictionary(forKey: JellyfinPeopleStore.key("partition")) as? [String: String],
+                       ["101": "native-one", "202": "native-two"])
+        let reloaded = JellyfinPeopleStore(defaults: defaults)
+        XCTAssertEqual(reloaded.nativeID(routeID: "101", partition: "partition"), "native-one")
+    }
+
+    func testPeopleStoreIsBoundedAndKeepsRecentPeople() throws {
+        let suite = "jellyfin-people-test." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["1": "old-one", "2": "old-two"], forKey: JellyfinPeopleStore.key("p"))
+        let store = JellyfinPeopleStore(defaults: defaults, limit: 3)
+        for id in 3...5 { store.remember(routeID: String(id), nativeID: "new-\(id)", partition: "p") }
+        XCTAssertNil(store.nativeID(routeID: "1", partition: "p"))
+        XCTAssertNil(store.nativeID(routeID: "2", partition: "p"))
+        for id in 3...5 { XCTAssertEqual(store.nativeID(routeID: String(id), partition: "p"), "new-\(id)") }
+        store.save("p")
+        XCTAssertEqual((defaults.dictionary(forKey: JellyfinPeopleStore.key("p")) ?? [:]).count, 3)
     }
 
     private func adapter(_ handler: @escaping (URLRequest) throws -> (Int, Any)) -> JellyfinAdapter {
@@ -56,7 +124,7 @@ final class JellyfinAdapterTests: XCTestCase {
             _ = try await other.route(method: "GET", path: "/api/v1/people/" + routeID, query: [:], body: nil)
             XCTFail("A different profile must not inherit the first profile's person mapping")
         } catch JellyfinError.invalidResponse { }
-        UserDefaults.standard.removeObject(forKey: "vivid.jellyfin." + adapter.connection.serverURL + "." + user + ".person." + routeID)
+        UserDefaults.standard.removeObject(forKey: JellyfinPeopleStore.key("vivid.jellyfin." + adapter.connection.serverURL + "." + user))
     }
 
     func testLocalSettingsAreIsolatedAndPersistAcrossReload() async throws {

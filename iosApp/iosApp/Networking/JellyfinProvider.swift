@@ -25,6 +25,92 @@ final class JellyfinRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked
     }
 }
 
+/// Person route IDs mapped to Jellyfin's native IDs, one bounded dictionary
+/// per server and user instead of a defaults key per person. Older per-person
+/// keys move in on first use so existing links keep working.
+final class JellyfinPeopleStore: @unchecked Sendable {
+    static let shared = JellyfinPeopleStore()
+    private let limit: Int
+    private let lock = NSLock()
+    private let defaults: UserDefaults
+    private var partitions: [String: [String: String]] = [:]
+    private var order: [String: [String]] = [:]
+    private var pending = Set<String>()
+    init(defaults: UserDefaults = .standard, limit: Int = 4_000) {
+        self.defaults = defaults
+        self.limit = limit
+    }
+
+    static func key(_ partition: String) -> String { partition + ".people" }
+
+    func remember(routeID: String, nativeID: String, partition: String) {
+        lock.lock(); defer { lock.unlock() }
+        var people = load(partition)
+        guard people[routeID] != nativeID else { return }
+        people[routeID] = nativeID
+        var recent = order[partition, default: []]
+        recent.removeAll { $0 == routeID }
+        recent.append(routeID)
+        // Entries loaded from disk count as oldest, so the cap drops those first.
+        if people.count > limit {
+            let recentSet = Set(recent)
+            var older = people.keys.filter { !recentSet.contains($0) }
+            while people.count > limit {
+                let victim = older.popLast() ?? recent.removeFirst()
+                people[victim] = nil
+            }
+        }
+        partitions[partition] = people
+        order[partition] = recent
+        // A detail page maps its whole cast at once; save once afterwards.
+        guard pending.insert(partition).inserted else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in save(partition) }
+    }
+
+    func nativeID(routeID: String, partition: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return load(partition)[routeID]
+    }
+
+    func save(_ partition: String) {
+        lock.lock()
+        pending.remove(partition)
+        let people = partitions[partition]
+        lock.unlock()
+        if let people { defaults.set(people, forKey: Self.key(partition)) }
+    }
+
+    /// Called with the lock held.
+    private func load(_ partition: String) -> [String: String] {
+        if let people = partitions[partition] { return people }
+        var people = defaults.dictionary(forKey: Self.key(partition)) as? [String: String] ?? [:]
+        let legacyPrefix = partition + ".person."
+        let legacy = defaults.dictionaryRepresentation().filter { $0.key.hasPrefix(legacyPrefix) }
+        if !legacy.isEmpty {
+            for (key, value) in legacy {
+                if let native = value as? String { people[String(key.dropFirst(legacyPrefix.count))] = native }
+            }
+            // Save the merged map before removing anything it replaces.
+            defaults.set(people, forKey: Self.key(partition))
+            for key in legacy.keys { defaults.removeObject(forKey: key) }
+        }
+        partitions[partition] = people
+        return people
+    }
+}
+
+/// Servers seen to need Jellyfin's pre-12 user routes during this launch.
+/// In memory only, so each launch rechecks once.
+final class JellyfinLegacyRoutes: @unchecked Sendable {
+    static let shared = JellyfinLegacyRoutes()
+    private let lock = NSLock()
+    private var servers = Set<String>()
+    func prefersLegacy(_ server: String) -> Bool { lock.lock(); defer { lock.unlock() }; return servers.contains(server) }
+    func remember(_ server: String) { lock.lock(); servers.insert(server); lock.unlock() }
+    func forget(_ server: String) { lock.lock(); servers.remove(server); lock.unlock() }
+    func reset() { lock.lock(); servers.removeAll(); lock.unlock() }
+}
+
 struct JellyfinConnection: Sendable {
     let serverURL: String
     let token: String?
@@ -130,6 +216,28 @@ struct JellyfinConnection: Sendable {
 
     func data(_ method: String = "GET", _ path: String, query: [String: String] = [:], body: Any? = nil) async throws -> Data {
         try await validate()
+        let legacy = legacyPath(for: path)
+        // A server already shown to need the older routes skips the 404 round
+        // trip. If that route is now missing (an in-place upgrade), retry the
+        // current route and forget the preference.
+        if let legacy, JellyfinLegacyRoutes.shared.prefersLegacy(serverURL) {
+            let response = try await send(method, legacy, query: query, body: body)
+            if response.1.statusCode != 404 { return try await handle(response) }
+            JellyfinLegacyRoutes.shared.forget(serverURL)
+            return try await handle(try await send(method, path, query: query, body: body))
+        }
+        let response = try await send(method, path, query: query, body: body)
+        if response.1.statusCode == 404, let legacy {
+            let fallback = try await send(method, legacy, query: query, body: body)
+            // Only a successful older route proves an older server; an
+            // ordinary missing item 404s on both and is not remembered.
+            if (200..<300).contains(fallback.1.statusCode) { JellyfinLegacyRoutes.shared.remember(serverURL) }
+            return try await handle(fallback)
+        }
+        return try await handle(response)
+    }
+
+    private func send(_ method: String, _ path: String, query: [String: String], body: Any?) async throws -> (Data, HTTPURLResponse) {
         let scopedQuery = userID.map { query.merging(["UserId": $0]) { _, captured in captured } } ?? query
         var request = URLRequest(url: try Self.url(serverURL: serverURL, path: path, query: scopedQuery))
         request.httpMethod = method
@@ -142,9 +250,11 @@ struct JellyfinConnection: Sendable {
         let (data, response) = try await (sessionOverride ?? Self.session).data(for: request)
         try await validate()
         guard let response = response as? HTTPURLResponse else { throw JellyfinError.invalidResponse }
-        if response.statusCode == 404, let legacy = legacyPath(for:path) {
-            return try await self.data(method,legacy,query:query,body:body)
-        }
+        return (data, response)
+    }
+
+    private func handle(_ result: (Data, HTTPURLResponse)) async throws -> Data {
+        let (data, response) = result
         guard (200..<300).contains(response.statusCode) else {
             if response.statusCode == 401 {
                 if let identity, let event = await TokenStore.shared.invalidateNativeToken(identity),
@@ -546,17 +656,12 @@ struct JellyfinAdapter {
     // this server/user partition so navigation and filmography round-trip.
     private func rememberPerson(_ nativeID: String) -> String {
         let routeID = String(Self.numberID(nativeID))
-        // Item lists convert every cast and crew member. Only write when the
-        // mapping is new, so repeat loads don't rewrite the defaults file.
-        let key = storagePrefix + ".person." + routeID
-        if UserDefaults.standard.string(forKey: key) != nativeID {
-            UserDefaults.standard.set(nativeID, forKey: key)
-        }
+        JellyfinPeopleStore.shared.remember(routeID: routeID, nativeID: nativeID, partition: storagePrefix)
         return routeID
     }
 
     private func nativePersonID(_ routeID: String) throws -> String {
-        guard let id = UserDefaults.standard.string(forKey: storagePrefix + ".person." + routeID) else {
+        guard let id = JellyfinPeopleStore.shared.nativeID(routeID: routeID, partition: storagePrefix) else {
             throw JellyfinError.invalidResponse
         }
         return try JellyfinConnection.id(id)
@@ -724,11 +829,11 @@ struct JellyfinAdapter {
             return [:]
         }
         if path == "/api/v1/recommendations/discover" {
-            let result = try await items(query:["SortBy":"Random","IncludeItemTypes":"Movie,Series","Limit":"30"])
+            let result = try await items(query:["SortBy":"Random","IncludeItemTypes":"Movie,Series","Limit":"30","Fields":Self.homeFields])
             return ["rows":[["type":"discover","label":"Discover","items":result["items"] ?? []]]]
         }
         if p.count == 5, p[2] == "recommendations", p[3] == "similar" {
-            let result = try await items("/Items/\(JellyfinConnection.id(p[4]))/Similar", query: ["Limit":"12"])
+            let result = try await items("/Items/\(JellyfinConnection.id(p[4]))/Similar", query: ["Limit":"12","Fields":Self.browseFields])
             return ["items": (result["items"] as? [[String: Any]] ?? []).map { ["contentId":$0["contentId"]!, "score":1] }]
         }
         if p.count == 4, p[2] == "watchlist" {
