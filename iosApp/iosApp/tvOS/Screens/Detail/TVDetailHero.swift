@@ -1210,18 +1210,109 @@ struct FoldSnappingScrollTargetBehavior: ScrollTargetBehavior {
 }
 
 
-private struct TVDetailCurvedBlurMask: Shape {
+struct TVDetailCurvedBlurMask: Shape {
     var lift: CGFloat = 0
+    /// Bottom edge as a fraction of the height. The pre-blurred band extends
+    /// it so the band stays solid all the way down.
+    var bottomFraction: CGFloat = 1.2
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 0.48 - lift))
         path.addCurve(to: CGPoint(x: rect.width * 1.1, y: rect.height * 0.48 - lift),
                       control1: CGPoint(x: rect.width * 0.28, y: rect.height * 1.02 - lift),
                       control2: CGPoint(x: rect.width * 0.72, y: rect.height * 1.02 - lift))
-        path.addLine(to: CGPoint(x: rect.width * 1.1, y: rect.height * 1.2))
-        path.addLine(to: CGPoint(x: -rect.width * 0.1, y: rect.height * 1.2))
+        path.addLine(to: CGPoint(x: rect.width * 1.1, y: rect.height * bottomFraction))
+        path.addLine(to: CGPoint(x: -rect.width * 0.1, y: rect.height * bottomFraction))
         path.closeSubpath()
         return path
+    }
+}
+
+/// The material's curved mask, drawn exactly as before but without re-blurring
+/// it on every scroll frame. The lift only translates the curve, so the soft
+/// band around it is blurred once per viewport size and moved into place, with
+/// a solid fill below it. The live blur is used until the band is ready.
+struct TVDetailScrollMaterialMask: View {
+    let viewportSize: CGSize
+    let lift: CGFloat
+    var usesCachedBand = true
+
+    static func blurRadius(for viewportSize: CGSize) -> CGFloat { viewportSize.height * 0.065 }
+
+    var body: some View {
+        if usesCachedBand, let band = TVDetailCurvedBlurBand.band(for: viewportSize) {
+            // Overlap the solid fill with the band's opaque bottom rows so the
+            // join never shows an antialiased seam.
+            let fillTop = band.frame.maxY - lift - 4
+            ZStack(alignment: .topLeading) {
+                Image(decorative: band.image, scale: band.scale)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: band.frame.width, height: band.frame.height)
+                    .offset(x: band.frame.minX, y: band.frame.minY - lift)
+                Rectangle()
+                    .fill(.black)
+                    .frame(width: viewportSize.width, height: max(0, viewportSize.height - fillTop))
+                    .offset(y: fillTop)
+            }
+            .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
+        } else {
+            TVDetailCurvedBlurMask(lift: lift)
+                .fill(.black)
+                .blur(radius: Self.blurRadius(for: viewportSize))
+                .frame(width: viewportSize.width, height: viewportSize.height)
+        }
+    }
+}
+
+@MainActor
+enum TVDetailCurvedBlurBand {
+    struct Band {
+        let image: CGImage
+        let scale: CGFloat
+        /// Position in viewport points with no lift applied.
+        let frame: CGRect
+    }
+
+    private struct Key: Hashable { let width: CGFloat; let height: CGFloat }
+    /// A failed render is remembered too, so the live blur is used without
+    /// retrying the render on every scroll frame.
+    private static var cache: [Key: Band?] = [:]
+
+    /// Viewport-space rect covering the blurred curve with a four-radius
+    /// margin, so the band is clear at the top and opaque at the bottom.
+    nonisolated static func frame(for viewportSize: CGSize) -> CGRect {
+        let radius = TVDetailScrollMaterialMask.blurRadius(for: viewportSize)
+        let margin = radius * 4
+        // The cubic's lowest point is at t = 0.5: 0.25 * 0.48 + 0.75 * 1.02.
+        let top = viewportSize.height * 0.48 - margin
+        let bottom = viewportSize.height * 0.885 + margin
+        return CGRect(x: -margin, y: top, width: viewportSize.width + margin * 2, height: bottom - top)
+    }
+
+    static func band(for viewportSize: CGSize) -> Band? {
+        guard viewportSize.width > 0, viewportSize.height > 0 else { return nil }
+        let key = Key(width: viewportSize.width, height: viewportSize.height)
+        if let cached = cache[key] { return cached }
+        let frame = frame(for: viewportSize)
+        let renderer = ImageRenderer(content:
+            TVDetailCurvedBlurMask(bottomFraction: 2)
+                .fill(.black)
+                .frame(width: viewportSize.width, height: viewportSize.height)
+                .blur(radius: TVDetailScrollMaterialMask.blurRadius(for: viewportSize))
+                .offset(x: -frame.minX, y: -frame.minY)
+                .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+        )
+        // The mask is a 70 pt blur with no fine detail, so point resolution is
+        // plenty and keeps the bitmap small.
+        renderer.scale = 1
+        guard let image = renderer.cgImage else {
+            cache[key] = .some(nil)
+            return nil
+        }
+        let band = Band(image: image, scale: renderer.scale, frame: frame)
+        cache[key] = band
+        return band
     }
 }
 
@@ -1236,10 +1327,9 @@ private struct TVDetailScrollMaterial: ViewModifier {
             .background {
                 ZStack {
                     Rectangle().fill(.regularMaterial)
-                        .mask {
-                            TVDetailCurvedBlurMask(lift: progress * viewportSize.height * 1.2)
-                                .fill(.black)
-                                .blur(radius: viewportSize.height * 0.065)
+                        .mask(alignment: .topLeading) {
+                            TVDetailScrollMaterialMask(viewportSize: viewportSize,
+                                                       lift: progress * viewportSize.height * 1.2)
                         }
                     EllipticalGradient(stops: [
                         .init(color: .black.opacity(0.60), location: 0),
