@@ -98,6 +98,7 @@ targets:
       - path: Tests/VividPlaybackStatsProjectionTests.swift
       - path: Tests/VividSubtitleCueCursorTests.swift
       - path: Tests/TVDetailScrollMaterialMaskTests.swift
+      - path: Tests/TVCatalogGridIndexTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:

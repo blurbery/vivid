@@ -27,6 +27,7 @@ struct TVCatalogGrid: View {
     @State private var visibleRows: Set<Int> = []
     @State private var isVisible = false
     @State private var artworkWindow = TVPosterArtworkWindow()
+    @State private var itemIndex = TVCatalogItemIndex()
     @Environment(\.displayScale) private var displayScale
     /// Per-card width. Defaults to the theme poster size; shrink when a
     /// side-rail squeezes the usable width and the default cards would
@@ -61,11 +62,27 @@ struct TVCatalogGrid: View {
     }
 
     private var artworkRange: Range<Int> {
-        TVPosterArtworkWindow.range(
-            firstVisible: visibleRows.min(),
-            focusedIndex: items.firstIndex { $0.contentId == focusedItemId },
+        let firstVisible = visibleRows.min()
+        return TVPosterArtworkWindow.range(
+            firstVisible: firstVisible,
+            // Focus only anchors the window before any row reports visibility,
+            // so skip the lookup on ordinary focus moves.
+            focusedIndex: firstVisible == nil ? focusedItemId.flatMap { itemIndex.index(of: $0, in: items) } : nil,
             itemCount: items.count,
             columns: resolvedColumnCount
+        )
+    }
+
+    /// Cheap stand-in for the artwork entries so a focus move within the same
+    /// window doesn't rebuild every poster URL just to compare them.
+    private func artworkKey(for range: Range<Int>) -> TVPosterArtworkKey {
+        TVPosterArtworkKey(
+            range: range,
+            firstVisible: visibleRows.min(),
+            columns: fixedColumnCount,
+            width: availableWidth,
+            scale: displayScale,
+            posterUrls: fixedColumnCount == nil ? [] : items[range].map(\.posterUrl)
         )
     }
 
@@ -90,7 +107,7 @@ struct TVCatalogGrid: View {
 
     var body: some View {
         let range = artworkRange
-        let entries = artworkEntries(in: range)
+        let artworkKey = artworkKey(for: range)
         // Rows are explicit full-width focus sections so a D-pad move into a
         // ragged row (fewer cards than columns) still lands: the focus engine
         // resolves moves geometrically, and a partially filled LazyVGrid row
@@ -145,15 +162,15 @@ struct TVCatalogGrid: View {
             }
         }
         .onChange(of: focusedItemId) { _, id in
-            guard let id, let index = items.firstIndex(where: { $0.contentId == id }) else { return }
+            guard let id, let index = itemIndex.index(of: id, in: items) else { return }
             onCellAppear(index: index)
         }
-        .onChange(of: entries) { _, entries in
-            if isVisible { artworkWindow.update(entries) }
+        .onChange(of: artworkKey) { _, key in
+            if isVisible { artworkWindow.update(artworkEntries(in: key.range)) }
         }
         .onAppear {
             isVisible = true
-            artworkWindow.update(entries)
+            artworkWindow.update(artworkEntries(in: range))
         }
         .onDisappear {
             isVisible = false
@@ -165,7 +182,12 @@ struct TVCatalogGrid: View {
         .focusSection()
         .onAppear { applyFocusRequest(focusRequest) }
         .onChange(of: focusRequest) { _, request in applyFocusRequest(request) }
-        .onChange(of: items.map(\.contentId)) { _, _ in applyFocusRequest(focusRequest) }
+        // A pending focus request only waits on an empty list, so the first
+        // item appearing is the only change it needs.
+        .onChange(of: items.first?.contentId) { _, _ in applyFocusRequest(focusRequest) }
+        .onChange(of: TVCatalogItemIndex.Signature(items), initial: true) { _, _ in
+            itemIndex.rebuild(items)
+        }
         .onChange(of: items.count) { _, _ in
             // A page may finish while its last visible row is already mounted.
             // Recheck the viewport instead of waiting for another focus event.
@@ -226,6 +248,47 @@ struct TVCatalogGrid: View {
         lastAppliedFocusRequest = request
         focusedItemId = firstItemId
     }
+}
+
+/// `contentId` to position lookup for focus handling. Rebuilt when the item
+/// list changes shape; every hit is checked against `items`, so a map that
+/// hasn't caught up yet (onChange runs after body) falls back to a scan
+/// instead of returning a wrong or missing index.
+struct TVCatalogItemIndex {
+    struct Signature: Equatable {
+        let count: Int
+        let firstId: String?
+        let lastId: String?
+
+        init(_ items: [BrowseItem]) {
+            count = items.count
+            firstId = items.first?.contentId
+            lastId = items.last?.contentId
+        }
+    }
+
+    private var positions: [String: Int] = [:]
+
+    mutating func rebuild(_ items: [BrowseItem]) {
+        positions = Dictionary(items.enumerated().map { ($1.contentId, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    func index(of contentId: String, in items: [BrowseItem]) -> Int? {
+        if let index = positions[contentId], items.indices.contains(index),
+           items[index].contentId == contentId {
+            return index
+        }
+        return items.firstIndex { $0.contentId == contentId }
+    }
+}
+
+struct TVPosterArtworkKey: Equatable {
+    let range: Range<Int>
+    let firstVisible: Int?
+    let columns: Int?
+    let width: CGFloat
+    let scale: CGFloat
+    let posterUrls: [String?]
 }
 
 struct TVPosterArtworkEntry: Equatable {
