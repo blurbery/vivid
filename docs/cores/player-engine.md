@@ -49,6 +49,8 @@ Stats retain the selected source codec, bitrate and channel description, with th
 
 Lucid uses a 256 MiB forward demux packet limit and a 16 MiB back buffer. These are limits, not startup fill requirements. Settings shows Automatic buffering and omits the unused lossless-audio toggle.
 
+Silo direct-play streams over HTTPS are read by Vivid rather than Lucid's own HTTP reader. Lucid opens a `vividstream://` source through libmpv's stream callbacks, and Vivid serves it with ranged requests that always carry the current login. A token refreshed by progress reporting reaches the live stream without a reload, an expired token is refreshed and the read resumes at the same byte, and a dropped connection reconnects at the first byte not yet received. `If-Range` and size checks refuse a file that changed mid-stream rather than splicing two versions. Stopping the player cancels every read straight away, including one still connecting. Plain HTTP servers, Emby, Jellyfin, server HLS and downloads keep Lucid's own reader. If a stream still ends early, the same-route reopen remains as a fallback. Validated on Apple TV 4K (3rd generation) with a five-minute access token across two token expiries, a long pause and repeated skips; iPhone and iPad share the code but have not been tested on a device.
+
 Quality preferences remain device/profile-local. Vivid sends the selected resolution and bitrate limits to the server, then loads the returned original or transcoded stream through Lucid. Quality changes preserve position and track choices through the existing session boundary. Offline playback uses the downloaded file. See [quality and playback settings](../playback/README.md) for the bounded buffering-fallback modes.
 
 ## Subtitles and chapters
