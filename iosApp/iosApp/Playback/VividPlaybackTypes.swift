@@ -150,6 +150,9 @@ struct LoadOptions: Equatable, Sendable {
     var forwardBufferSegments: Int? = nil
     var autoplay = true
     var audioTrackOrdinal: Int? = nil
+    /// The source is one ranged HTTPS file that Vivid may read for Lucid, so
+    /// refreshed credentials reach the live stream.
+    var managedHTTPReader = false
 }
 struct MediaChapter: Identifiable { let id: Int; let name: String; let startSeconds: Double }
 struct SystemCaptionRequest { let language: String? }

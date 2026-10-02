@@ -395,7 +395,8 @@ struct VividLoadSpec {
             forwardBufferSegments: forwardBufferSegments,
             autoplay: false,
             audioTrackOrdinal: plan.delivery == PlaybackProtocolV3.PlanDelivery.originalHTTP
-                ? plan.selectedTracks.audio?.index : nil
+                ? plan.selectedTracks.audio?.index : nil,
+            managedHTTPReader: plan.delivery == PlaybackProtocolV3.PlanDelivery.originalHTTP
         )
     }
 
