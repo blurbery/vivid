@@ -103,7 +103,7 @@ The tests cover major/minor/patch rules, ordinary commit messages, empty ranges,
 
 Dependencies are pinned in `package-lock.json`; the Node tools do not become app dependencies. The `VIVID_GIT_NOREPLY_EMAIL` repository variable must hold `blurbery`'s GitHub noreply address. The workflow uses its scoped `GITHUB_TOKEN` and does not publish an npm package or comment on issues/PRs.
 
-GitHub currently lists the source-release, player-regression and sideload workflows as active. The source-release workflow runs on main updates; player regression supports pull requests and manual validation. Sideload publishing remains a separate, explicitly requested action and its legacy publishing format needs review before use. Do not enable paid capacity or change distribution settings as part of an ordinary source release. See [App Distribution](distribution.md).
+GitHub currently lists the source-release, player-regression and sideload workflows as active. The source-release workflow runs on main updates; player regression supports pull requests and manual validation. Player regression runs the complete iOS suite twice: once as a normal Debug build and once compiled with the Release optimiser (`-O`, whole-module), because some faults only appear in optimised TestFlight and App Store builds. Sideload publishing remains a separate, explicitly requested action and its legacy publishing format needs review before use. Do not enable paid capacity or change distribution settings as part of an ordinary source release. See [App Distribution](distribution.md).
 
 The repository and its source releases are public. Apple beta distribution remains separate and available through TestFlight invitations or the public beta link, subject to places, eligibility and review.
 
