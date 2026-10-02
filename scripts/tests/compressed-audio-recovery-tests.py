@@ -44,15 +44,21 @@ harness = r'''
 #define S INT64_C(1000000000)
 #define MP_TIME_S_TO_NS(s) ((s)*S)
 #define AVP_START_MIN_NS S
-#define AVP_START_GRACE_NS (2*S)
+#define AVP_START_GRACE_NS(p) ((int64_t)((p)->opt_compressed_start_grace * S))
 #define AVP_START_LEAD_NS(p) (2*(p)->avp_lead_ns)
+#define AVP_ANCHOR_INTERVAL_NS (S/10)
+#define AVP_ANCHOR_SLACK_NS (4*S)
 #define MP_WARN(...) ((void)0)
 #define MP_ERR(...) ((void)0)
+#define MP_VERBOSE(...) ((void)0)
 struct priv {
     bool avp_playing, spdif_reload_requested, avp_rate_applied;
     bool avp_eof, avp_start_seeked;
     void *item, *player;
     int64_t es_pts, avp_start_deadline, avp_primed_pts, avp_lead_ns;
+    double opt_compressed_start_grace;
+    int64_t avp_rate_applied_ns, avp_last_anchor_ns;
+    int avp_anchor_pulls;
 };
 struct ao { struct priv *priv; };
 static int64_t now, clock_pos, feed_pos, queued_samples;
@@ -73,7 +79,8 @@ static void check(bool ok, const char *name) {
 static struct priv p;
 static struct ao ao = { &p };
 static void reset(void) {
-    p = (struct priv){ .avp_playing=true, .item=&p, .avp_lead_ns=8*S };
+    p = (struct priv){ .avp_playing=true, .item=&p, .avp_lead_ns=8*S,
+                       .opt_compressed_start_grace=2 };
     now=clock_pos=feed_pos=queued_samples=rate_calls=seek_calls=reload_calls=0;
 }
 static void tick(int64_t time, int64_t fed) {
@@ -119,6 +126,31 @@ int main(void) {
     check(!seek_calls && p.avp_start_deadline==-1, "normal startup never seeks");
     reset(); tick(0,S); tick(2*S,3*S);
     check(seek_calls==1, "fresh item after user seek gets its own bounded recovery");
+    reset(); p.opt_compressed_start_grace=4.0; tick(0,S); tick(S,16*S);
+    check(rate_calls==1 && p.avp_rate_applied_ns==0 && p.avp_start_deadline==4*S,
+          "AirPlay grace extends the first recovery deadline");
+    tick(3*S,16*S);
+    check(!seek_calls, "parked AirPlay clock is not seeked inside its grace");
+    clock_pos=S/10; tick(3*S+S/2,16*S);
+    check(!seek_calls && p.avp_start_deadline==-1, "late AirPlay engagement needs no seek");
+    clock_pos=0; reset(); p.opt_compressed_start_grace=4.0; tick(0,S); tick(4*S,16*S);
+    check(seek_calls==1, "genuinely parked AirPlay clock still recovers");
+    check(avp_should_anchor(true, true, false, 0, 16*S, 16*S, S/10),
+          "parked clock re-anchors mpv after the lead is full");
+    check(!avp_should_anchor(false, true, false, 0, 16*S, 16*S, S),
+          "anchoring is off by default");
+    check(!avp_should_anchor(true, false, false, 0, 4*S, 16*S, S),
+          "no anchoring before the rate is applied");
+    check(!avp_should_anchor(true, true, false, 1, 16*S, 16*S, S),
+          "moving clock uses the normal lead");
+    check(!avp_should_anchor(true, true, true, 0, 16*S, 16*S, S),
+          "EOF stops anchoring");
+    check(!avp_should_anchor(true, true, false, 0, 16*S, 16*S, S/10-1),
+          "anchoring is paced");
+    check(!avp_should_anchor(true, true, false, 0, 20*S, 16*S, S),
+          "anchoring is bounded above the startup lead");
+    check(avp_should_anchor(true, true, false, 0, 20*S-1, 16*S, S),
+          "anchoring continues up to its cap");
     reset(); p.es_pts=2*S;
     check(avp_wait_for_prefetch(&ao, 4800), "queued audio prevents empty prefetch underrun");
     queued_samples=4799;

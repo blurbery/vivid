@@ -368,7 +368,10 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "log-message":
             if let fields = Self.audioDiagnostic(data) {
                 trace?.event("mpv_audio_diagnostic", fields: fields)
-                if fields.hasPrefix("raw_s=") || fields.hasPrefix("event=audio_transport ") { recordPipelineSnapshot() }
+                if fields.hasPrefix("raw_s=") || fields.hasPrefix("event=audio_transport ")
+                    || fields.hasPrefix("event=pcm_transport ") || fields.hasPrefix("event=audio_edge ") {
+                    recordPipelineSnapshot()
+                }
             }
         default: break
         }
@@ -448,7 +451,10 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     // Raw mpv messages can contain authenticated URLs. Only fixed fault labels
     // and strictly numeric AVPlayer heartbeat/status fields may enter the device log.
     // Compiled once rather than for every matching audio log message.
-    private static let pcmTransportRegex = try? NSRegularExpression(pattern: #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)\z"#)
+    private static let pcmTransportRegex = try? NSRegularExpression(pattern: #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)(?:, latency (-?[0-9]+\.[0-9]+), sufficient (-?[0-9]+))?\z"#)
+    private static let audioEdgeRegex = try? NSRegularExpression(pattern: #"\Atrace edge (start|start-fresh|pause|resume|reset|restart): clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), latency (-?[0-9]+\.[0-9]+)\z"#)
+    private static let compressedEngagedRegex = try? NSRegularExpression(pattern: #"\Acompressed clock engaged after (-?[0-9]+\.[0-9]+) s, seeked ([01]), anchors ([0-9]+)\z"#)
+    private static let flushTimeRegex = try? NSRegularExpression(pattern: #"\Anotification flush time (-?[0-9]+\.[0-9]+|nan), current ([01])\z"#)
     private static let heartbeatRegex = try? NSRegularExpression(pattern: #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#)
     private static let audioStatusRegex = try? NSRegularExpression(pattern: #"\Aitem status (-?[0-9]+) -> (-?[0-9]+), time control (-?[0-9]+) -> (-?[0-9]+), pos (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s\z"#)
     private static func audioDiagnostic(_ data: [String: Any]?) -> String? {
@@ -491,11 +497,32 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         }
         if let regex = Self.pcmTransportRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
-            let names = ["clock_s", "fed_s", "ahead_s", "rate", "status"]
+            let names = ["clock_s", "fed_s", "ahead_s", "rate", "status", "latency_s", "sufficient"]
             return "event=pcm_transport " + names.enumerated().compactMap { index, name in
                 guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
+        }
+        if let regex = Self.audioEdgeRegex,
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["edge", "clock_s", "fed_s", "latency_s"]
+            return "event=audio_edge " + names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        if let regex = Self.compressedEngagedRegex,
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["after_s", "seeked", "anchors"]
+            return "event=compressed_clock_engaged " + names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        if let regex = Self.flushTimeRegex,
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)),
+           let time = Range(match.range(at: 1), in: message), let current = Range(match.range(at: 2), in: message) {
+            return "event=audio_system_flush_time flush_s=\(message[time]) current=\(message[current])"
         }
         if let regex = Self.heartbeatRegex,
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
@@ -869,6 +896,9 @@ private final class VividMPVCore: MpvPlayerCore {
         #if os(tvOS)
         if airPlayPCM {
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-max-lookahead", "4"))
+            // AVPlayer's clock stays parked at AirPlay startup until the driver's seek-to-start
+            // recovery. Keep video anchored to the parked clock so it waits for the audio.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-anchor-start", "yes"))
         }
         #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
