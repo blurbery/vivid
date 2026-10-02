@@ -249,7 +249,10 @@ shown; refresh only hides newly appearing rows that would exceed the free
 slots, and never switches off a row that was already showing. Layouts saved
 before this tracking had their hidden rows reset once, returning to the first
 six rows enabled, because the earlier refresh could hide rows the user never
-switched off.
+switched off. Layout saves are written in a stable order and skipped when
+nothing changed, so iCloud preference sync does not see unchanged layouts as
+new values. Before applying the row limit, Home reloads the stored layout, so
+a save cannot replace a Combine Next Up or row choice made on another device.
 Both settings editors block enabling another row until a slot is freed. Empty
 enabled rows remain in the editors so their reserved slots can be freed; Home
 only displays them once they contain items. Hidden rows remain available in
