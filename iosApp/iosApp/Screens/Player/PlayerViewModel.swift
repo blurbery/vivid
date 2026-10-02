@@ -630,6 +630,7 @@ class PlayerViewModel {
     private var protocolV3ReplanTask: Task<Void, Never>?
     private var authenticationRecoveryBudget = VividAuthenticationRecoveryBudget()
     private var transientRecoveryBudget = VividTransientRecoveryBudget()
+    @ObservationIgnored private var prematureEndRecoveryGate = VividPrematureEndRecoveryGate()
     private var authenticationReloadGeneration: UInt64?
     private var nextUpLookupTask: Task<Void, Never>?
     private var nextUpOnDeckTask: Task<Void, Never>?
@@ -1106,9 +1107,12 @@ class PlayerViewModel {
                 seekFilterTimeoutTask?.cancel()
                 seekFilterTimeoutTask = nil
             }
-            watchTimeGate.observe(position: movieTime, uptime: ProcessInfo.processInfo.systemUptime,
-                                  playing: isPlaying && !isLoading && !isBuffering && seekTargetTime == nil,
-                                  rate: settings.playbackSpeed)
+            let isAdvancing = isPlaying && !isLoading && !isBuffering && seekTargetTime == nil
+            let uptime = ProcessInfo.processInfo.systemUptime
+            watchTimeGate.observe(position: movieTime, uptime: uptime,
+                                  playing: isAdvancing, rate: settings.playbackSpeed)
+            prematureEndRecoveryGate.observe(position: movieTime, uptime: uptime,
+                                             playing: isAdvancing, rate: settings.playbackSpeed)
             currentTime = movieTime
             updatePlaybackCompletion(at: movieTime)
             updateNextUpPresentation(for: movieTime)
@@ -1609,7 +1613,8 @@ class PlayerViewModel {
     private func beginProtocolV3SameRouteReload(
         fallbackClassification: String,
         fallbackMessage: String,
-        transientFailureCode: Int? = nil
+        transientFailureCode: Int? = nil,
+        prematureSourceEnd: Bool = false
     ) -> Bool {
         guard protocolV3ReplanTask == nil,
               let protocolV3 = activePreparedProtocolV3,
@@ -1630,10 +1635,13 @@ class PlayerViewModel {
         let resumePosition = currentTime.isFinite ? max(0, currentTime) : 0
         let failedHeaders = failedSpec.options.httpHeaders
         let recoveryEpisode = freshLoadGeneration
-        if transientFailureCode != nil {
+        if prematureSourceEnd {
+            guard prematureEndRecoveryGate.begin() else { return false }
+        } else if transientFailureCode != nil {
             guard transientRecoveryBudget.beginReload() else { return false }
         }
-        guard transientFailureCode != nil || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
+        guard prematureSourceEnd || transientFailureCode != nil
+                || authenticationRecoveryBudget.begin(generation: recoveryEpisode) else {
             progressTask?.cancel()
             finalizeTerminalPlaybackError(fallbackMessage)
             return true
@@ -1649,7 +1657,9 @@ class PlayerViewModel {
         let recoveryGeneration = streamLoadGeneration
         authenticationReloadGeneration = recoveryGeneration
 
-        if let code = transientFailureCode {
+        if prematureSourceEnd {
+            Self.logger.warning("Stream recovery reason=premature_source_end position=\(resumePosition, privacy: .public) outcome=same_route_reload")
+        } else if let code = transientFailureCode {
             Self.logger.warning("Stream recovery domain=NSURLErrorDomain code=\(code, privacy: .public) outcome=same_route_reload")
         } else {
             Self.logger.warning(
@@ -1699,7 +1709,15 @@ class PlayerViewModel {
             }
 
             do {
-                if transientFailureCode == nil {
+                if prematureSourceEnd {
+                    // Refresh an expired bearer before reopening. A failure here
+                    // still reopens with whatever credential is current.
+                    try? await self.sessionBridge.refreshPlaybackAuthentication(
+                        sessionId: sessionId,
+                        position: self.progressIsEligible ? resumePosition : 0,
+                        isPaused: !self.vividPlaybackController.shouldPlayWhenReady
+                    )
+                } else if transientFailureCode == nil {
                     // This request uses the normal API transport, whose 401 path
                     // refreshes TokenStore before retrying. Its result is otherwise
                     // best-effort; the header comparison below is authoritative.
@@ -1738,7 +1756,9 @@ class PlayerViewModel {
                     throw VividLoadSpec.ValidationError.invalidStreamURL(session.streamUrl)
                 }
                 try self.requireCurrentStreamLoad(recoveryGeneration)
-                guard transientFailureCode != nil || VividAuthenticationRecoveryPolicy.shouldReload(
+                // An early end reopens even with an unchanged bearer: the
+                // connection was lost, not necessarily the credential.
+                guard prematureSourceEnd || transientFailureCode != nil || VividAuthenticationRecoveryPolicy.shouldReload(
                     failedHeaders: failedHeaders,
                     refreshedHeaders: streamRequest.headers
                 ) else {
@@ -3470,7 +3490,24 @@ class PlayerViewModel {
         }
         guard !freshLoadOwnsFailureHandling, protocolV3ReplanTask == nil else { return }
         pendingUnexpectedEndEpoch = nil
-        handlePlaybackError("The media stream ended before playback completion could be confirmed.")
+        if attemptPrematureEndReload() { return }
+        handlePlaybackError(Self.prematureSourceEndMessage)
+    }
+
+    static let prematureSourceEndMessage = "The media stream ended before playback completion could be confirmed."
+
+    /// A stream that ends early has usually lost its connection, and the
+    /// engine's own reconnect is refused once the bearer it opened with has
+    /// expired (it can't swap headers on a live reader). Reopen the same route
+    /// at the current position with current credentials before asking the
+    /// server to adapt, which can fail outright when no remux route exists.
+    private func attemptPrematureEndReload() -> Bool {
+        guard vividPlaybackController.activeSpec?.options.nativeRemoteHLS == false else { return false }
+        return beginProtocolV3SameRouteReload(
+            fallbackClassification: PlaybackErrorKind.softwarePipelineFailed.rawValue,
+            fallbackMessage: Self.prematureSourceEndMessage,
+            prematureSourceEnd: true
+        )
     }
 
     /// Validate terminal timing before completing an item or showing Next Up.
@@ -3505,8 +3542,9 @@ class PlayerViewModel {
                 pendingUnexpectedEndEpoch = activeVividLoadEpoch
                 return
             }
+            if attemptPrematureEndReload() { return }
             handleVividFailure(PlaybackErrorInfo(kind: .softwarePipelineFailed,
-                message: "The media stream ended before playback completion could be confirmed."))
+                message: Self.prematureSourceEndMessage))
             return
         }
         hasReachedEndOfFile = true
@@ -3923,6 +3961,7 @@ class PlayerViewModel {
         freshLoadGeneration &+= 1
         transientRecoveryBudget.cancel()
         transientRecoveryBudget = VividTransientRecoveryBudget()
+        prematureEndRecoveryGate = VividPrematureEndRecoveryGate()
         let currentFreshLoadGeneration = freshLoadGeneration
         streamLoadGeneration &+= 1
         let currentStreamLoadGeneration = streamLoadGeneration

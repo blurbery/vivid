@@ -137,6 +137,41 @@ struct VividAuthenticationRecoveryBudget {
     }
 }
 
+/// Bounds same-route reopening after a stream ends before its real end. The
+/// engine reconnects with the bearer it opened with, so once that access token
+/// expires a dropped connection can't be resumed and reads as an early end. A
+/// long film can outlive several tokens, so recovery is allowed again, but only
+/// after real playback since the previous attempt. A source that is really
+/// truncated ends again straight away and falls through to server recovery.
+struct VividPrematureEndRecoveryGate {
+    static let requiredPlaybackSeconds: Double = 30
+    private var attempted = false
+    private(set) var playedSinceAttempt: Double = 0
+    private var previous: (position: Double, uptime: Double)?
+
+    mutating func observe(position: Double, uptime: Double, playing: Bool, rate: Double) {
+        guard attempted else { return }
+        guard playing, position.isFinite, uptime.isFinite, rate.isFinite, rate > 0 else {
+            previous = nil
+            return
+        }
+        defer { previous = (position, uptime) }
+        guard let previous else { return }
+        let elapsed = uptime - previous.uptime
+        let advanced = position - previous.position
+        guard elapsed > 0, elapsed <= 3, advanced > 0, advanced <= elapsed * rate + 0.5 else { return }
+        playedSinceAttempt += min(elapsed, advanced / rate)
+    }
+
+    mutating func begin() -> Bool {
+        guard !attempted || playedSinceAttempt >= Self.requiredPlaybackSeconds else { return false }
+        attempted = true
+        playedSinceAttempt = 0
+        previous = nil
+        return true
+    }
+}
+
 struct VividAuthenticationRecoveryReadiness {
     private var previousTime: Double?
     private var advancingSeconds: Double = 0
