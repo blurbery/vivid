@@ -69,7 +69,7 @@ App changes released from `main` get a semantic version. Documentation-only and 
 
 Join the [Vivid Discord](https://discord.gg/G45pWmtEEm) to get help, share feedback and follow the project. Feel free to invite anyone who might enjoy Vivid.
 
-I'll add GitHub Sponsors once I've finished setting it up. For now, testing the app, reporting issues and spreading the word helps a lot.
+If you'd like to support Vivid's development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/blurbery). Testing the app, reporting issues and spreading the word helps a lot too.
 
 ## Licence
 
