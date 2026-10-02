@@ -327,13 +327,26 @@ final class ManagedStreamReaderTests: XCTestCase {
     }
 
     func testOriginIgnoringIfRangeCannotSpliceANewFile() {
+        for changed in ["\"v2\"", "W/\"v2\""] {
+            ScriptedOrigin.requests = []
+            ScriptedOrigin.respond = { request, index in
+                if index == 0 { var reply = self.ranged(request); reply.dropAfter = 500_000; return reply }
+                return self.ranged(request, etag: changed)
+            }
+            let reader = makeReader()
+            XCTAssertTrue(reader.open())
+            XCTAssertNil(readAll(reader), "Reconnect tagged \(changed) must be refused")
+        }
+    }
+
+    func testWeakFormOfTheSameTagStillContinues() {
         ScriptedOrigin.respond = { request, index in
             if index == 0 { var reply = self.ranged(request); reply.dropAfter = 500_000; return reply }
-            return self.ranged(request, etag: "\"v2\"")
+            return self.ranged(request, etag: "W/\"v1\"")
         }
         let reader = makeReader()
         XCTAssertTrue(reader.open())
-        XCTAssertNil(readAll(reader))
+        XCTAssertEqual(readAll(reader), file)
     }
 
     func testOpenFailsForAMissingSession() {

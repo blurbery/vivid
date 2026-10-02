@@ -402,13 +402,15 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         case .bytes(let total):
             // Check the entity ourselves too: a restart from the first byte
             // can legitimately get a 200, and not every origin honours If-Range.
-            let tag = http.value(forHTTPHeaderField: "ETag").flatMap { $0.hasPrefix("W/") ? nil : $0 }
-            if let validator, let tag, tag != validator {
+            // Only a strong tag can become the If-Range validator, but once one
+            // is stored, any later tag (weak included) must name the same file.
+            let tag = http.value(forHTTPHeaderField: "ETag")
+            if let validator, let tag, Self.opaqueTag(tag) != Self.opaqueTag(validator) {
                 Self.logger.error("Managed stream refused: the file changed during playback")
                 state = .ended(.fatal)
             } else {
                 totalSize = total
-                if validator == nil { validator = tag }
+                if validator == nil, let tag, !tag.hasPrefix("W/") { validator = tag }
                 state = .streaming
                 return .allow
             }
@@ -435,6 +437,11 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         Self.logger.error("Managed stream refused a redirect to another origin")
         state = .ended(.fatal)
         task = nil
+    }
+
+    static func opaqueTag(_ tag: String) -> String {
+        let trimmed = tag.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("W/") ? String(trimmed.dropFirst(2)) : trimmed
     }
 
     fileprivate func receive(data: Data, generation: Int) {
