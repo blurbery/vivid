@@ -400,12 +400,18 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
             contentLength: http.expectedContentLength, knownTotal: totalSize)
         switch result {
         case .bytes(let total):
-            totalSize = total
-            if validator == nil, let tag = http.value(forHTTPHeaderField: "ETag"), !tag.hasPrefix("W/") {
-                validator = tag
+            // Check the entity ourselves too: a restart from the first byte
+            // can legitimately get a 200, and not every origin honours If-Range.
+            let tag = http.value(forHTTPHeaderField: "ETag").flatMap { $0.hasPrefix("W/") ? nil : $0 }
+            if let validator, let tag, tag != validator {
+                Self.logger.error("Managed stream refused: the file changed during playback")
+                state = .ended(.fatal)
+            } else {
+                totalSize = total
+                if validator == nil { validator = tag }
+                state = .streaming
+                return .allow
             }
-            state = .streaming
-            return .allow
         case .endOfStream:
             state = .ended(.complete)
         case .authentication:
@@ -419,6 +425,16 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         }
         task = nil
         return .cancel
+    }
+
+    /// A redirect to another origin is refused, and retrying the same URL would
+    /// only be redirected again, so the stream fails instead of reconnecting.
+    fileprivate func refuseRedirect(generation: Int) {
+        condition.lock(); defer { condition.broadcast(); condition.unlock() }
+        guard generation == self.generation else { return }
+        Self.logger.error("Managed stream refused a redirect to another origin")
+        state = .ended(.fatal)
+        task = nil
     }
 
     fileprivate func receive(data: Data, generation: Int) {
@@ -539,6 +555,7 @@ private final class TaskDelegate: NSObject, URLSessionDataDelegate, @unchecked S
         let original = task.originalRequest?.url
         let sameOrigin = request.url?.scheme == original?.scheme && request.url?.host == original?.host
             && request.url?.port == original?.port
+        if !sameOrigin { reader?.refuseRedirect(generation: generation) }
         completionHandler(sameOrigin ? request : nil)
     }
 }

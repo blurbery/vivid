@@ -15,6 +15,7 @@ private final class ScriptedOrigin: URLProtocol, @unchecked Sendable {
         var body = Data()
         var dropAfter: Int?
         var delay: TimeInterval = 0
+        var redirect: URL?
     }
 
     nonisolated(unsafe) static var respond: ((URLRequest, Int) -> Reply)?
@@ -33,6 +34,13 @@ private final class ScriptedOrigin: URLProtocol, @unchecked Sendable {
         let reply = Self.respond?(request, index) ?? Reply(status: 500)
         Self.lock.unlock()
         let deliver = { [self] in
+            if let target = reply.redirect, let url = request.url,
+               let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1",
+                                              headerFields: ["Location": target.absoluteString]) {
+                client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: target), redirectResponse: response)
+                client?.urlProtocolDidFinishLoading(self)
+                return
+            }
             guard !stopped, let url = request.url,
                   let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1",
                                                  headerFields: reply.headers) else { return }
@@ -282,6 +290,50 @@ final class ManagedStreamReaderTests: XCTestCase {
         let started = Date()
         XCTAssertFalse(reader.open(timeout: 30))
         XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+    }
+
+    func testRedirectsNeverCarryTheBearerElsewhere() {
+        let targets = [URL(string: "https://other.example/stream")!,
+                       URL(string: "http://silo.example/api/v2/stream/session")!]
+        for target in targets {
+            ScriptedOrigin.requests = []
+            ScriptedOrigin.respond = { request, index in
+                if index == 0 { return ScriptedOrigin.Reply(status: 302, redirect: target) }
+                return self.ranged(request)
+            }
+            let started = Date()
+            XCTAssertFalse(makeReader().open(timeout: 10), "\(target)")
+            XCTAssertLessThan(Date().timeIntervalSince(started), 2, "A refused redirect fails without retrying")
+            XCTAssertEqual(ScriptedOrigin.requests.count, 1)
+            XCTAssertFalse(ScriptedOrigin.requests.contains { $0.url?.host != "silo.example" || $0.url?.scheme != "https" },
+                           "No request may reach \(target)")
+        }
+    }
+
+    func testChangedEntityTagIsRefusedEvenFromTheFirstByte() {
+        ScriptedOrigin.respond = { request, index in
+            if index == 0 { return self.ranged(request) }
+            // A restart from byte 0 gets a 200 with the same size but a new file.
+            return ScriptedOrigin.Reply(status: 200, headers: ["Content-Length": "\(self.file.count)", "ETag": "\"v2\""],
+                                        body: self.file)
+        }
+        let reader = makeReader()
+        XCTAssertTrue(reader.open())
+        var byte: UInt8 = 0
+        XCTAssertEqual(reader.read(into: &byte, count: 1), 1)
+        XCTAssertEqual(reader.seek(to: 2_000_000), 2_000_000)
+        XCTAssertEqual(reader.seek(to: 0), 0)
+        XCTAssertNil(readAll(reader))
+    }
+
+    func testOriginIgnoringIfRangeCannotSpliceANewFile() {
+        ScriptedOrigin.respond = { request, index in
+            if index == 0 { var reply = self.ranged(request); reply.dropAfter = 500_000; return reply }
+            return self.ranged(request, etag: "\"v2\"")
+        }
+        let reader = makeReader()
+        XCTAssertTrue(reader.open())
+        XCTAssertNil(readAll(reader))
     }
 
     func testOpenFailsForAMissingSession() {
