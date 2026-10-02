@@ -49,8 +49,10 @@ jobs:
       matrix:
         include: >-
           ${{ fromJSON(inputs.ios_only &&
-            '[{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test"}]' ||
             '[{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test"},
+              {"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test","build":"optimised"}]' ||
+            '[{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test"},
+              {"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test","build":"optimised"},
               {"scheme":"VividTV","destination":"generic/platform=tvOS Simulator","action":"build"}]') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -121,14 +123,22 @@ jobs:
           SCHEME: ${{ matrix.scheme }}
           DESTINATION: ${{ matrix.destination }}
           ACTION: ${{ matrix.action }}
+          BUILD: ${{ matrix.build }}
         run: |
           set -o pipefail
           if [ "$ACTION" = test ]; then
+            # The optimised entry compiles the same Debug test build with the
+            # Release optimiser, so bugs that only appear in TestFlight and App
+            # Store builds fail here. Debug keeps the test-only hooks available.
+            optimisation=()
+            if [ "$BUILD" = optimised ]; then
+              optimisation=(SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_COMPILATION_MODE=wholemodule)
+            fi
             # Simulator-only ad-hoc signing supplies the application identifier
             # required by Keychain. No certificate or release secret is used.
             xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme Vivid \
               -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
-              CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-build.log
+              CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "${optimisation[@]}" | tee /tmp/player-build.log
           else
             xcodebuild build -project iosApp/Vivid.xcodeproj -scheme "$SCHEME" \
               -destination "$DESTINATION" -derivedDataPath /tmp/vivid-derived \
@@ -136,10 +146,10 @@ jobs:
               CODE_SIGNING_ALLOWED=NO | tee /tmp/player-validation.log
           fi
       - name: Package simulator tests for focused visual verification
-        if: matrix.action == 'test' && !inputs.baseline_ref
+        if: matrix.action == 'test' && matrix.build != 'optimised' && !inputs.baseline_ref
         run: ditto -c -k --keepParent /tmp/vivid-derived/Build/Products /tmp/Vivid-simulator-tests.zip
       - name: Upload compiled simulator tests
-        if: matrix.action == 'test' && !inputs.baseline_ref
+        if: matrix.action == 'test' && matrix.build != 'optimised' && !inputs.baseline_ref
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Vivid-simulator-tests
@@ -158,7 +168,7 @@ jobs:
             -resultBundlePath /tmp/player-validation.xcresult \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-validation.log
       - name: Record synthetic preview expansion and successor playback
-        if: matrix.action == 'test' && !inputs.baseline_ref && steps.build.outcome == 'success' && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.record_preview)
+        if: matrix.action == 'test' && matrix.build != 'optimised' && !inputs.baseline_ref && steps.build.outcome == 'success' && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.record_preview)
         timeout-minutes: 10
         shell: bash
         run: |
@@ -193,7 +203,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: player-validation-${{ matrix.scheme }}
+          name: player-validation-${{ matrix.scheme }}${{ matrix.build == 'optimised' && '-optimised' || '' }}
           path: |
             /tmp/player-build.log
             /tmp/player-validation.log
