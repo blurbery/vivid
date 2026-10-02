@@ -500,6 +500,16 @@ struct EmbyAdapter {
     /// Concurrent Home row requests, small enough not to crowd a home server.
     static let homeRowConcurrency = 3
 
+    struct HomeRowLoad {
+        let index: Int
+        let load: () async throws -> [String: Any]
+    }
+
+    struct HomeRowResult: @unchecked Sendable {
+        let index: Int
+        let result: Result<[String: Any], Error>
+    }
+
     struct HomeSectionRequest {
         let section: [String: Any]
         let load: () async throws -> [String: Any]
@@ -543,24 +553,34 @@ struct EmbyAdapter {
         // Rows load a few at a time instead of one after another. Results are
         // applied in the original order, and the earliest failing row's error
         // is thrown, as when rows loaded sequentially.
-        let loads: [(index: Int, load: () async throws -> [String: Any])] = planned.enumerated().compactMap { index, request in
-            guard let id = request.section["id"] as? String, required.contains(id) else { return nil }
-            return (index, request.load)
+        var loads: [HomeRowLoad] = []
+        for (index, request) in planned.enumerated() {
+            guard let id = request.section["id"] as? String, required.contains(id) else { continue }
+            loads.append(HomeRowLoad(index: index, load: request.load))
         }
         var results: [Int: Result<[String: Any], Error>] = [:]
-        await withTaskGroup(of: (Int, Result<[String: Any], Error>).self) { group in
-            var pending = loads[...]
-            func startNext() {
-                guard let next = pending.popFirst() else { return }
+        // Each row's index travels in a named struct. Optimised (Release)
+        // builds lost the index when it was returned in a tuple, filing every
+        // result under the first row, so Home showed whichever row finished
+        // last in place of Continue Watching and left the other rows empty.
+        await withTaskGroup(of: HomeRowResult.self) { group in
+            var started = 0
+            func start(_ row: HomeRowLoad) {
                 group.addTask {
-                    do { return (next.index, .success(try await next.load())) }
-                    catch { return (next.index, .failure(error)) }
+                    do { return HomeRowResult(index: row.index, result: .success(try await row.load())) }
+                    catch { return HomeRowResult(index: row.index, result: .failure(error)) }
                 }
             }
-            for _ in 0..<Self.homeRowConcurrency { startNext() }
-            while let (index, result) = await group.next() {
-                results[index] = result
-                startNext()
+            while started < loads.count && started < Self.homeRowConcurrency {
+                start(loads[started])
+                started += 1
+            }
+            while let finished = await group.next() {
+                results[finished.index] = finished.result
+                if started < loads.count {
+                    start(loads[started])
+                    started += 1
+                }
             }
         }
         try Task.checkCancellation()
