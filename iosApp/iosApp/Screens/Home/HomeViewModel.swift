@@ -25,6 +25,9 @@ final class HomeSectionPreferences {
     /// were showing. Spotlight reads its sources independently of this preference.
     func enforceVisibleRowLimit(in sections: [ResolvedSection]) {
         refresh()
+        // Another device or Settings may have saved this layout since it was
+        // loaded; build on that version so this save cannot overwrite it.
+        reloadIfStoredLayoutChanged()
         knownSections = sections
         let arranged = arrangedSections(sections, includingHidden: true)
         let newRows = arranged.filter { !seenSectionIds.contains($0.id) }
@@ -68,6 +71,8 @@ final class HomeSectionPreferences {
     @ObservationIgnored private let defaults: SharedDefaults
     @ObservationIgnored private let storageKey: @MainActor () -> String?
     @ObservationIgnored private var loadedStorageKey: String?
+    /// The stored bytes the in-memory layout was last loaded from or saved as.
+    @ObservationIgnored private var loadedData: Data?
 
     private struct StoredLayout: Codable {
         var orderedSectionIds: [String]
@@ -81,6 +86,22 @@ final class HomeSectionPreferences {
 
         var effectiveHiddenSectionIds: Set<String> {
             seenSectionIds == nil ? [] : hiddenSectionIds
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case orderedSectionIds, hiddenSectionIds, combineEmbyNextUp, combineJellyfinNextUp, seenSectionIds
+        }
+
+        /// Sets are written sorted so an unchanged layout always encodes to the
+        /// same bytes. Otherwise every save looks like a new value to iCloud
+        /// preference sync, which then refreshes Home on the user's other devices.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(orderedSectionIds, forKey: .orderedSectionIds)
+            try container.encode(hiddenSectionIds.sorted(), forKey: .hiddenSectionIds)
+            try container.encodeIfPresent(combineEmbyNextUp, forKey: .combineEmbyNextUp)
+            try container.encodeIfPresent(combineJellyfinNextUp, forKey: .combineJellyfinNextUp)
+            try container.encodeIfPresent(seenSectionIds?.sorted(), forKey: .seenSectionIds)
         }
     }
 
@@ -98,9 +119,25 @@ final class HomeSectionPreferences {
         guard force || key != loadedStorageKey else { return }
         loadedStorageKey = key
         knownSections = []
+        applyStoredLayout(key.flatMap { defaults.data(forKey: $0) })
+    }
 
-        guard let key,
-              let data = defaults.data(forKey: key),
+    private func reloadIfStoredLayoutChanged() {
+        guard let key = loadedStorageKey else { return }
+        let data = defaults.data(forKey: key)
+        guard data != loadedData else { return }
+        let previous = (orderedSectionIds, hiddenSectionIds, seenSectionIds, combineEmbyNextUp, combineJellyfinNextUp)
+        let revision = layoutRevision
+        applyStoredLayout(data)
+        // Only a real layout change resets Home's row band.
+        if previous == (orderedSectionIds, hiddenSectionIds, seenSectionIds, combineEmbyNextUp, combineJellyfinNextUp) {
+            layoutRevision = revision
+        }
+    }
+
+    private func applyStoredLayout(_ data: Data?) {
+        loadedData = data
+        guard let data,
               let stored = try? JSONDecoder().decode(StoredLayout.self, from: data) else {
             combineEmbyNextUp = false
             combineJellyfinNextUp = false
@@ -261,9 +298,14 @@ final class HomeSectionPreferences {
             combineJellyfinNextUp: combineJellyfinNextUp,
             seenSectionIds: seenSectionIds
         )
-        guard let data = try? JSONEncoder().encode(stored) else { return }
-        defaults.set(data, forKey: key)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(stored) else { return }
         needsMigrationSave = false
+        loadedData = data
+        // Rewriting identical bytes would still notify iCloud preference sync.
+        guard data != defaults.data(forKey: key) else { return }
+        defaults.set(data, forKey: key)
     }
 
     private static func unique(_ ids: [String]) -> [String] {
