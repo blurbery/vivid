@@ -35,6 +35,15 @@ for name in ['suppressNextUpForPlaybackFailure', 'shouldTreatPlaybackErrorAsNatu
     if 'private func ' + name in vm:
         names.append(name)
 methods = '\n'.join(declaration(vm, 'private func ' + name) for name in names)
+# The same-route reopen itself needs the full player; the harness records
+# whether an early end asks for it and lets each check choose the outcome.
+premature_stub = ''
+if 'private func attemptPrematureEndReload' in vm:
+    premature_stub = '''
+    static let prematureSourceEndMessage = "The media stream ended before playback completion could be confirmed."
+    var prematureReloadAccepted = false, prematureReloads = 0
+    func attemptPrematureEndReload() -> Bool { prematureReloads += 1; return prematureReloadAccepted }
+'''
 if 'private func suppressNextUpForPlaybackFailure' not in vm:
     methods += '\nprivate func suppressNextUpForPlaybackFailure() { cancelNextUpCountdown(); showNextUpScreen = false }\nprivate func recoverPendingUnexpectedEnd() {}'
 engine = source('iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift')
@@ -181,7 +190,7 @@ struct Version { var credits: TimeRange? }
     func showNotice(title: String, message: String, tone: Tone, duration: Double) {}
     enum Tone { case warning, info }
     func seekTo(seconds: Double, revealingControls: Bool) { seeks += 1; currentTime = seconds }
-''' + methods + r'''
+''' + premature_stub + methods + r'''
     func tick() { updateNextUpPresentation(for: currentTime) }
     func countdownTick() { updateNextUpCountdownForActivePlayback(at: currentTime) }
     func end() { handleEndOfFile() }
@@ -266,6 +275,25 @@ struct Version { var credits: TimeRange? }
             h.settleLoad(); h.settleLoad()
             check(h.recoveries == 1 && h.pendingUnexpectedEndEpoch == nil, "Deferred premature EOF recovers exactly once after the owning load settles")
         }
+        // PREMATURE_CHECKS_BEGIN
+        do {
+            for ownedLoad in [false, true] {
+                let reopened = Harness(); reopened.prematureReloadAccepted = true
+                reopened.freshLoadOwnsFailureHandling = ownedLoad
+                reopened.end()
+                if ownedLoad { reopened.settleLoad() }
+                check(reopened.prematureReloads == 1 && reopened.recoveries == 0 && reopened.errors == 0
+                      && reopened.postrolls == 0 && reopened.completions == 0,
+                      "An early end reopens the same route before asking the server to adapt")
+                let refused = Harness()
+                refused.freshLoadOwnsFailureHandling = ownedLoad
+                refused.end()
+                if ownedLoad { refused.settleLoad() }
+                check(refused.prematureReloads == 1 && refused.recoveries == 1 && refused.completions == 0,
+                      "A refused reopen falls through to the existing server recovery")
+            }
+        }
+        // PREMATURE_CHECKS_END
         let replacedLoad = Harness(); replacedLoad.freshLoadOwnsFailureHandling = true
         replacedLoad.end(); replacedLoad.activeVividLoadEpoch = 2; replacedLoad.settleLoad()
         check(replacedLoad.recoveries == 0 && replacedLoad.pendingUnexpectedEndEpoch == nil, "A deferred EOF cannot recover a replacement episode")
@@ -345,6 +373,10 @@ struct Version { var credits: TimeRange? }
 if not engine_methods:
     start = swift.index('        let natural = EndHarness()')
     end = swift.index('        let rewind = SeekHarness()', start)
+    swift = swift[:start] + swift[end:]
+if not premature_stub:
+    start = swift.index('        // PREMATURE_CHECKS_BEGIN')
+    end = swift.index('        // PREMATURE_CHECKS_END', start)
     swift = swift[:start] + swift[end:]
 with tempfile.TemporaryDirectory(prefix='vivid-end-', dir=root.parent) as folder:
     folder = Path(folder)
