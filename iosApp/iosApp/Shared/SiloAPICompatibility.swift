@@ -280,30 +280,66 @@ private extension Dictionary where Key == String, Value == Any {
 
 /// Discovery is scoped to the complete server base URL, never the active account.
 /// Failures do not cache a downgrade. A short cache allows server upgrades in place.
+/// For up to ten minutes an expired answer is returned straight away while a
+/// background check refreshes it, so a request no longer waits on discovery
+/// once a minute. Older answers wait for a fresh check, as before.
 actor SiloAPIDiscovery {
     static let shared = SiloAPIDiscovery()
-    private var cache: [URL: (Bool, Date)] = [:]
+    static let freshFor: TimeInterval = 60
+    static let staleFor: TimeInterval = 600
+    private var cache: [URL: (value: Bool, checked: Date)] = [:]
     private var flights: [URL: Task<Bool, Error>] = [:]
     private let legacyOnly: Bool
-    init(legacyOnly: Bool = false) { self.legacyOnly = legacyOnly }
+    private let now: @Sendable () -> Date
+    init(legacyOnly: Bool = false, now: @escaping @Sendable () -> Date = Date.init) {
+        self.legacyOnly = legacyOnly
+        self.now = now
+    }
 
     func usesV2(for url: URL, session: URLSession) async throws -> Bool {
         guard !legacyOnly, let discovery = SiloAPICompatibility.discoveryURL(for: url) else { return false }
-        if let (value, expiry) = cache[discovery], expiry > Date() { return value }
-        if let flight = flights[discovery] {
-            let result = try await flight.value
-            try Task.checkCancellation()
-            return result
+        if let entry = cache[discovery] {
+            let age = now().timeIntervalSince(entry.checked)
+            if age < Self.freshFor { return entry.value }
+            if age < Self.staleFor {
+                if flights[discovery] == nil {
+                    // A failed refresh keeps the previous answer until it ages out.
+                    let refresh = start(discovery, session: session)
+                    Task { _ = try? await refresh.value }
+                }
+                return entry.value
+            }
         }
-        let flight = Task { try await Self.probe(discovery, session: session) }
-        flights[discovery] = flight
-        defer { flights[discovery] = nil }
+        let flight = flights[discovery] ?? start(discovery, session: session)
         let result = try await flight.value
         try Task.checkCancellation()
-        if cache.count >= 32 { cache.removeAll() }
-        cache[discovery] = (result, Date().addingTimeInterval(60))
         return result
     }
+
+    private func start(_ discovery: URL, session: URLSession) -> Task<Bool, Error> {
+        // Clear the flight before the shared task returns, on success or
+        // failure, so no later request can join a finished check.
+        let flight = Task { [self] in
+            do {
+                let result = try await Self.probe(discovery, session: session)
+                await store(result, for: discovery)
+                await finish(discovery)
+                return result
+            } catch {
+                await finish(discovery)
+                throw error
+            }
+        }
+        flights[discovery] = flight
+        return flight
+    }
+
+    private func store(_ value: Bool, for discovery: URL) {
+        if cache.count >= 32, cache[discovery] == nil { cache.removeAll() }
+        cache[discovery] = (value, now())
+    }
+
+    private func finish(_ discovery: URL) { flights[discovery] = nil }
 
     private static func probe(_ discovery: URL, session: URLSession) async throws -> Bool {
         var request = URLRequest(url: discovery, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)

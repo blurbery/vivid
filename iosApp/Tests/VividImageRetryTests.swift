@@ -57,7 +57,7 @@ final class VividImageRetryTests: XCTestCase {
         let url = URL(string: "https://artwork.example/avatar")!
         let started = expectation(description: "First account request started")
         let outgoing = Task {
-            try await flights.load(url, scope: "first") {
+            try await flights.load(url, scope: "first") { _ in
                 started.fulfill()
                 try await Task.sleep(for: .seconds(30))
                 return Data([1])
@@ -65,7 +65,7 @@ final class VividImageRetryTests: XCTestCase {
         }
         await fulfillment(of: [started], timeout: 2)
         defer { outgoing.cancel() }
-        let other = try await flights.load(url, scope: "second") { Data([2]) }
+        let other = try await flights.load(url, scope: "second") { _ in Data([2]) }
         XCTAssertEqual(other, Data([2]))
         await flights.cancelAll()
         do {
@@ -79,7 +79,7 @@ final class VividImageRetryTests: XCTestCase {
         let url = URL(string: "https://artwork.example/emby/Items/1/Images/Primary")!
         let started = expectation(description: "Outgoing artwork started")
         let outgoing = Task {
-            try await flights.load(url) {
+            try await flights.load(url) { _ in
                 started.fulfill()
                 try await Task.sleep(for: .seconds(30))
                 return Data([1])
@@ -87,7 +87,7 @@ final class VividImageRetryTests: XCTestCase {
         }
         await fulfillment(of: [started], timeout: 2)
         await flights.cancelAll()
-        let fresh = try await flights.load(url) { Data([2]) }
+        let fresh = try await flights.load(url) { _ in Data([2]) }
         XCTAssertEqual(fresh, Data([2]))
         do {
             _ = try await outgoing.value

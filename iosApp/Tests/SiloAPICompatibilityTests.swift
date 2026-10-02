@@ -568,6 +568,91 @@ final class SiloAPICompatibilityTests: XCTestCase {
     }
 }
 
+final class SiloDiscoveryRefreshTests: XCTestCase {
+    func testRecentAnswerIsServedWhileABackgroundCheckRefreshesIt() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SiloDiscoveryCountingStub.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); SiloDiscoveryCountingStub.reset() }
+        let clock = SiloDiscoveryClock()
+        let discovery = SiloAPIDiscovery(now: { clock.now })
+        let url = URL(string: "https://upgrade.example/silo/api/v1/auth/setup")!
+        SiloDiscoveryCountingStub.status = 404
+        let v1 = try await discovery.usesV2(for: url, session: session)
+        XCTAssertFalse(v1)
+        XCTAssertEqual(SiloDiscoveryCountingStub.count, 1)
+
+        clock.advance(30)
+        let v2 = try await discovery.usesV2(for: url, session: session)
+        XCTAssertFalse(v2)
+        XCTAssertEqual(SiloDiscoveryCountingStub.count, 1, "A fresh answer needs no check")
+
+        // The server is upgraded in place. An expired but recent answer is
+        // returned at once, and the background check picks up the upgrade.
+        SiloDiscoveryCountingStub.status = 200
+        clock.advance(90)
+        let v3 = try await discovery.usesV2(for: url, session: session)
+        XCTAssertFalse(v3)
+        // Poll the observable answer: the probe count can reach two before
+        // the refreshed result is stored.
+        var refreshed = false
+        for _ in 0..<200 {
+            refreshed = try await discovery.usesV2(for: url, session: session)
+            if refreshed { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(SiloDiscoveryCountingStub.count, 2)
+
+        // Answers older than ten minutes wait for a fresh check again.
+        SiloDiscoveryCountingStub.status = 404
+        clock.advance(700)
+        let v5 = try await discovery.usesV2(for: url, session: session)
+        XCTAssertFalse(v5)
+        XCTAssertEqual(SiloDiscoveryCountingStub.count, 3)
+    }
+}
+
+extension SiloDiscoveryRefreshTests {
+    func testFailedCheckIsNotReusedByTheNextRequest() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SiloDiscoveryCountingStub.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); SiloDiscoveryCountingStub.reset() }
+        let discovery = SiloAPIDiscovery()
+        let url = URL(string: "https://flaky.example/silo/api/v1/auth/setup")!
+        SiloDiscoveryCountingStub.status = 503
+        do { _ = try await discovery.usesV2(for: url, session: session); XCTFail("A service failure must throw") } catch {}
+        SiloDiscoveryCountingStub.status = 200
+        let recovered = try await discovery.usesV2(for: url, session: session)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(SiloDiscoveryCountingStub.count, 2, "The retry starts a new check")
+    }
+}
+
+private final class SiloDiscoveryClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = Date(timeIntervalSince1970: 1_000_000)
+    var now: Date { lock.lock(); defer { lock.unlock() }; return value }
+    func advance(_ seconds: TimeInterval) { lock.lock(); value += seconds; lock.unlock() }
+}
+
+private final class SiloDiscoveryCountingStub: URLProtocol {
+    nonisolated(unsafe) static var status = 404
+    nonisolated(unsafe) static var count = 0
+    static func reset() { status = 404; count = 0 }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.count += 1
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"api_major":2}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 private final class SiloDiscoveryStub: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
