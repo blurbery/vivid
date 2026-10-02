@@ -44,6 +44,14 @@ final class HomeSectionPreferences {
         persist()
     }
 
+    /// Combining or separating Next Up changes which rows occupy slots, so this
+    /// explicit setting change hides any enabled rows beyond the limit.
+    private func hideRowsBeyondLimit() {
+        let overflow = arrangedSections(knownSections, includingHidden: true)
+            .filter { isVisible($0.id) }.dropFirst(Self.maximumVisibleRows)
+        hiddenSectionIds.formUnion(overflow.map(\.id))
+    }
+
     private(set) var orderedSectionIds: [String] = []
     private(set) var hiddenSectionIds = Set<String>()
     /// Rows this layout has already arranged. Only rows outside this set can be
@@ -190,6 +198,7 @@ final class HomeSectionPreferences {
         guard combineEmbyNextUp != enabled else { return }
         combineEmbyNextUp = enabled
         enforceVisibleRowLimit(in: knownSections)
+        hideRowsBeyondLimit()
         layoutRevision &+= 1
         persist()
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
@@ -201,6 +210,7 @@ final class HomeSectionPreferences {
         guard combineJellyfinNextUp != enabled else { return }
         combineJellyfinNextUp = enabled
         enforceVisibleRowLimit(in: knownSections)
+        hideRowsBeyondLimit()
         layoutRevision &+= 1
         persist()
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
