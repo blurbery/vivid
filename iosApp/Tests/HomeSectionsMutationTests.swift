@@ -52,6 +52,35 @@ final class HomeSectionsMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testRowLimitSavesStableBytesAndKeepsSettingsSavedElsewhere() throws {
+        let key = "test.home-sync.\(UUID().uuidString)"
+        let defaults = SharedDefaults.shared
+        defer { defaults.removeObject(forKey: key) }
+        let item = try makeItem(contentId: "item")
+        let rows = (1...9).map { makeSection(id: "row\($0)", type: "latest", totalCount: 1, items: [item]) }
+        HomeSectionPreferences(defaults: defaults, storageKey: { key }).enforceVisibleRowLimit(in: rows)
+        let saved = try XCTUnwrap(defaults.data(forKey: key))
+
+        // The same layout saved again by another launch has identical bytes.
+        defaults.removeObject(forKey: key)
+        HomeSectionPreferences(defaults: defaults, storageKey: { key }).enforceVisibleRowLimit(in: rows)
+        XCTAssertEqual(defaults.data(forKey: key), saved)
+
+        // Another device turns on Combine Next Up after this one loaded the
+        // layout; a later row-limit save keeps that setting.
+        let preferences = HomeSectionPreferences(defaults: defaults, storageKey: { key })
+        preferences.enforceVisibleRowLimit(in: rows)
+        var other = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        other["combineEmbyNextUp"] = true
+        defaults.set(try JSONSerialization.data(withJSONObject: other), forKey: key)
+        preferences.enforceVisibleRowLimit(in: rows + [makeSection(id: "new", type: "latest", totalCount: 1, items: [item])])
+        let merged = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: key))) as? [String: Any])
+        XCTAssertEqual(merged["combineEmbyNextUp"] as? Bool, true)
+        XCTAssertTrue(preferences.combineEmbyNextUp)
+        XCTAssertTrue((merged["seenSectionIds"] as? [String] ?? []).contains("new"))
+    }
+
+    @MainActor
     func testOldLayoutWithAutoHiddenRowsIsResetOnce() throws {
         let server = "test-server-\(UUID().uuidString)"
         let key = "tvos.homeSections.v1.\(server).profile"
