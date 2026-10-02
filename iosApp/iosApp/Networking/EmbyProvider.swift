@@ -389,7 +389,9 @@ struct EmbyAdapter {
         func normalized(_ value: String) -> String {
             value.lowercased().filter { $0.isLetter || $0.isNumber }
         }
-        let excluded: Set<String> = ["featured","spotlight","recentlyadded","recentlyadd"]
+        // "userviews" is Emby's My Media library tiles section. It lists
+        // libraries rather than items, so it would only occupy an empty row.
+        let excluded: Set<String> = ["featured","spotlight","recentlyadded","recentlyadd","userviews"]
         return [id,type,title].contains { excluded.contains(normalized($0)) }
     }
 

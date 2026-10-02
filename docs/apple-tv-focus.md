@@ -244,7 +244,12 @@ one-to-one classification of gate versus disappearance cancellation.
 
 Home allows six media rows on iOS and tvOS. A seventh slot is always reserved
 for Spotlight, even when Spotlight is hidden. Existing order and hidden choices
-are retained; refresh hides overflow rows after the first six enabled rows.
+are retained. Each server/profile layout remembers which rows it has already
+shown; refresh only hides newly appearing rows that would exceed the free
+slots, and never switches off a row that was already showing. Layouts saved
+before this tracking had their hidden rows reset once, returning to the first
+six rows enabled, because the earlier refresh could hide rows the user never
+switched off.
 Both settings editors block enabling another row until a slot is freed. Empty
 enabled rows remain in the editors so their reserved slots can be freed; Home
 only displays them once they contain items. Hidden rows remain available in

@@ -9,12 +9,82 @@ final class HomeSectionsMutationTests: XCTestCase {
         let defaults = SharedDefaults.shared
         defer { defaults.removeObject(forKey: key) }
         defaults.set(try JSONSerialization.data(withJSONObject: [
-            "orderedSectionIds": ["hidden"], "hiddenSectionIds": ["hidden"]
+            "orderedSectionIds": ["hidden"], "hiddenSectionIds": ["hidden"], "seenSectionIds": ["hidden"]
         ]), forKey: key)
         let preferences = HomeSectionPreferences(defaults: defaults, storageKey: { key })
         let rows = [makeSection(id: "hidden", type: "latest", totalCount: nil, items: [])]
         XCTAssertTrue(preferences.arrangedSections(rows).isEmpty)
         XCTAssertEqual(preferences.arrangedSections(rows, includingHidden: true).map(\.id), ["hidden"])
+    }
+
+    @MainActor
+    func testRowLimitNeverHidesARowThatWasAlreadyShowing() throws {
+        let key = "test.home-limit.\(UUID().uuidString)"
+        let defaults = SharedDefaults.shared
+        defer { defaults.removeObject(forKey: key) }
+        let preferences = HomeSectionPreferences(defaults: defaults, storageKey: { key })
+        let item = try makeItem(contentId: "item")
+        let row = { (id: String) in self.makeSection(id: id, type: "latest", totalCount: 1, items: [item]) }
+        let first = ["a", "b", "c", "d", "e", "f"].map(row)
+        preferences.enforceVisibleRowLimit(in: first)
+        XCTAssertEqual(preferences.arrangedSections(first).map(\.id), ["a", "b", "c", "d", "e", "f"])
+
+        // A refresh brings a new row ahead of the existing ones. The new row
+        // starts hidden; nothing that was already showing is hidden.
+        let refreshed = [row("new")] + first
+        preferences.enforceVisibleRowLimit(in: refreshed)
+        XCTAssertFalse(preferences.isVisible("new"))
+        XCTAssertEqual(preferences.arrangedSections(refreshed).map(\.id), ["a", "b", "c", "d", "e", "f"])
+
+        // Rows that leave and return keep their visibility across refreshes.
+        preferences.enforceVisibleRowLimit(in: Array(first.dropFirst(2)))
+        preferences.enforceVisibleRowLimit(in: refreshed)
+        XCTAssertEqual(preferences.arrangedSections(refreshed).map(\.id), ["a", "b", "c", "d", "e", "f"])
+
+        // The cap still applies to the rows of a first-time layout.
+        let other = "test.home-limit.\(UUID().uuidString)"
+        defer { defaults.removeObject(forKey: other) }
+        let fresh = HomeSectionPreferences(defaults: defaults, storageKey: { other })
+        let many = ["1", "2", "3", "4", "5", "6", "7", "8"].map(row)
+        fresh.enforceVisibleRowLimit(in: many)
+        XCTAssertEqual(fresh.arrangedSections(many).map(\.id), ["1", "2", "3", "4", "5", "6"])
+        XCTAssertFalse(fresh.isVisible("7"))
+    }
+
+    @MainActor
+    func testOldLayoutWithAutoHiddenRowsIsResetOnce() throws {
+        let server = "test-server-\(UUID().uuidString)"
+        let key = "tvos.homeSections.v1.\(server).profile"
+        let defaults = SharedDefaults.shared
+        defer { defaults.removeObject(forKey: key) }
+        // Saved by an earlier build: no seen rows, and rows the old limit hid.
+        let old = """
+        {"orderedSectionIds":["b","a"],"hiddenSectionIds":["a","c","d"],"combineEmbyNextUp":true}
+        """
+        defaults.set(Data(old.utf8), forKey: key)
+        XCTAssertEqual(HomeSectionPreferences.hiddenSections(server: server, profile: "profile"), [])
+
+        let preferences = HomeSectionPreferences(defaults: defaults, storageKey: { key })
+        XCTAssertTrue(preferences.hiddenSectionIds.isEmpty)
+        XCTAssertEqual(preferences.orderedSectionIds, ["b", "a"])
+        XCTAssertTrue(preferences.combineEmbyNextUp)
+
+        let item = try makeItem(contentId: "item")
+        let rows = ["a", "b", "c", "d", "e", "f", "g", "h"].map {
+            makeSection(id: $0, type: "latest", totalCount: 1, items: [item])
+        }
+        preferences.enforceVisibleRowLimit(in: rows)
+        XCTAssertEqual(preferences.arrangedSections(rows).map(\.id), ["b", "a", "c", "d", "e", "f"])
+        XCTAssertEqual(preferences.hiddenSectionIds, ["g", "h"])
+
+        // Rows hidden after the reset stay hidden: the reset happens only once.
+        preferences.setVisible(false, sectionId: "c")
+        let reloaded = HomeSectionPreferences(defaults: defaults, storageKey: { key })
+        reloaded.enforceVisibleRowLimit(in: rows)
+        XCTAssertEqual(reloaded.hiddenSectionIds, ["c", "g", "h"])
+        XCTAssertEqual(reloaded.arrangedSections(rows).map(\.id), ["b", "a", "d", "e", "f"])
+        XCTAssertEqual(HomeSectionPreferences.hiddenSections(server: server, profile: "profile"), ["c", "g", "h"])
+        XCTAssertTrue(reloaded.combineEmbyNextUp)
     }
 
     func testCombinedSpotlightIncludesBothSourcesWithoutChangingHomeOrder() throws {

@@ -3,7 +3,9 @@ import Foundation
 /// Device-local, per-server/profile Home row visibility and order. The server
 /// remains authoritative for which rows exist and what they contain; this
 /// projection only arranges the rows it returns. Unknown/new server rows append
-/// in server order, subject to the shared Home visible-row limit.
+/// in server order, subject to the shared Home visible-row limit. Only rows
+/// this layout has never seen can be hidden by that limit; a row that has
+/// already been shown stays visible until the user hides it.
 @Observable
 @MainActor
 final class HomeSectionPreferences {
@@ -17,21 +19,46 @@ final class HomeSectionPreferences {
         arrangedSections(knownSections, includingHidden: true).filter { isVisible($0.id) }.count
     }
 
-    /// Retain overflow definitions and order while hiding rails beyond the limit.
-    /// Spotlight reads its sources independently of this visibility preference.
+    /// Hide newly appearing rows that would exceed the limit, keeping their
+    /// definitions and order. Rows already seen are never hidden here, so a
+    /// refresh that adds, removes or reorders rows cannot switch off rows that
+    /// were showing. Spotlight reads its sources independently of this preference.
     func enforceVisibleRowLimit(in sections: [ResolvedSection]) {
         refresh()
         knownSections = sections
-        let overflow = arrangedSections(sections, includingHidden: true)
-            .filter { isVisible($0.id) }.dropFirst(Self.maximumVisibleRows)
-        guard !overflow.isEmpty else { return }
-        hiddenSectionIds.formUnion(overflow.map(\.id))
-        layoutRevision &+= 1
+        let arranged = arrangedSections(sections, includingHidden: true)
+        let newRows = arranged.filter { !seenSectionIds.contains($0.id) }
+        let seenVisibleCount = arranged.filter {
+            seenSectionIds.contains($0.id) && isVisible($0.id)
+        }.count
+        let capacity = max(0, Self.maximumVisibleRows - seenVisibleCount)
+        let overflow = newRows.filter { isVisible($0.id) }.dropFirst(capacity).map(\.id)
+        let unseen = Set(arranged.map(\.id)).subtracting(seenSectionIds)
+        guard !overflow.isEmpty || !unseen.isEmpty || needsMigrationSave else { return }
+        seenSectionIds.formUnion(unseen)
+        needsMigrationSave = false
+        if !overflow.isEmpty {
+            hiddenSectionIds.formUnion(overflow)
+            layoutRevision &+= 1
+        }
         persist()
+    }
+
+    /// Combining or separating Next Up changes which rows occupy slots, so this
+    /// explicit setting change hides any enabled rows beyond the limit.
+    private func hideRowsBeyondLimit() {
+        let overflow = arrangedSections(knownSections, includingHidden: true)
+            .filter { isVisible($0.id) }.dropFirst(Self.maximumVisibleRows)
+        hiddenSectionIds.formUnion(overflow.map(\.id))
     }
 
     private(set) var orderedSectionIds: [String] = []
     private(set) var hiddenSectionIds = Set<String>()
+    /// Rows this layout has already arranged. Only rows outside this set can be
+    /// hidden automatically by the visible-row limit.
+    @ObservationIgnored private var seenSectionIds = Set<String>()
+    /// An old-format layout was reset in memory and still needs saving.
+    @ObservationIgnored private var needsMigrationSave = false
     /// Changes only for explicit preference/layout transitions—not ordinary
     /// Home data refreshes—so Home can reset its row band and marquee once.
     private(set) var layoutRevision = 0
@@ -47,6 +74,14 @@ final class HomeSectionPreferences {
         var hiddenSectionIds: Set<String>
         var combineEmbyNextUp: Bool? = nil
         var combineJellyfinNextUp: Bool? = nil
+        /// Missing in layouts saved before rows were tracked. Those layouts
+        /// may contain rows the old limit hid automatically, so their hidden
+        /// rows are reset once and the limit is applied again.
+        var seenSectionIds: Set<String>? = nil
+
+        var effectiveHiddenSectionIds: Set<String> {
+            seenSectionIds == nil ? [] : hiddenSectionIds
+        }
     }
 
     init(
@@ -71,6 +106,8 @@ final class HomeSectionPreferences {
             combineJellyfinNextUp = false
             orderedSectionIds = []
             hiddenSectionIds = []
+            seenSectionIds = []
+            needsMigrationSave = false
             layoutRevision &+= 1
             return
         }
@@ -78,7 +115,9 @@ final class HomeSectionPreferences {
         combineEmbyNextUp = stored.combineEmbyNextUp ?? false
         combineJellyfinNextUp = stored.combineJellyfinNextUp ?? false
         orderedSectionIds = Self.unique(stored.orderedSectionIds)
-        hiddenSectionIds = stored.hiddenSectionIds
+        hiddenSectionIds = stored.effectiveHiddenSectionIds
+        seenSectionIds = stored.seenSectionIds ?? []
+        needsMigrationSave = stored.seenSectionIds == nil
         layoutRevision &+= 1
     }
 
@@ -159,6 +198,7 @@ final class HomeSectionPreferences {
         guard combineEmbyNextUp != enabled else { return }
         combineEmbyNextUp = enabled
         enforceVisibleRowLimit(in: knownSections)
+        hideRowsBeyondLimit()
         layoutRevision &+= 1
         persist()
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
@@ -170,6 +210,7 @@ final class HomeSectionPreferences {
         guard combineJellyfinNextUp != enabled else { return }
         combineJellyfinNextUp = enabled
         enforceVisibleRowLimit(in: knownSections)
+        hideRowsBeyondLimit()
         layoutRevision &+= 1
         persist()
         NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)
@@ -179,7 +220,7 @@ final class HomeSectionPreferences {
         let key = "\(platformStoragePrefix).\(server).\(profile)"
         guard let data = SharedDefaults.shared.data(forKey: key),
               let stored = try? JSONDecoder().decode(StoredLayout.self, from: data) else { return [] }
-        return stored.hiddenSectionIds
+        return stored.effectiveHiddenSectionIds
     }
 
     static func combinesEmbyNextUp(server: String, profile: String) -> Bool {
@@ -217,10 +258,12 @@ final class HomeSectionPreferences {
             orderedSectionIds: orderedSectionIds,
             hiddenSectionIds: hiddenSectionIds,
             combineEmbyNextUp: combineEmbyNextUp,
-            combineJellyfinNextUp: combineJellyfinNextUp
+            combineJellyfinNextUp: combineJellyfinNextUp,
+            seenSectionIds: seenSectionIds
         )
         guard let data = try? JSONEncoder().encode(stored) else { return }
         defaults.set(data, forKey: key)
+        needsMigrationSave = false
     }
 
     private static func unique(_ ids: [String]) -> [String] {
