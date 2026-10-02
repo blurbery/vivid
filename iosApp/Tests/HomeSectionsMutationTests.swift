@@ -17,6 +17,40 @@ final class HomeSectionsMutationTests: XCTestCase {
         XCTAssertEqual(preferences.arrangedSections(rows, includingHidden: true).map(\.id), ["hidden"])
     }
 
+    @MainActor
+    func testRowLimitNeverHidesARowThatWasAlreadyShowing() throws {
+        let key = "test.home-limit.\(UUID().uuidString)"
+        let defaults = SharedDefaults.shared
+        defer { defaults.removeObject(forKey: key) }
+        let preferences = HomeSectionPreferences(defaults: defaults, storageKey: { key })
+        let item = try makeItem(contentId: "item")
+        let row = { (id: String) in self.makeSection(id: id, type: "latest", totalCount: 1, items: [item]) }
+        let first = ["a", "b", "c", "d", "e", "f"].map(row)
+        preferences.enforceVisibleRowLimit(in: first)
+        XCTAssertEqual(preferences.arrangedSections(first).map(\.id), ["a", "b", "c", "d", "e", "f"])
+
+        // A refresh brings a new row ahead of the existing ones. The new row
+        // starts hidden; nothing that was already showing is hidden.
+        let refreshed = [row("new")] + first
+        preferences.enforceVisibleRowLimit(in: refreshed)
+        XCTAssertFalse(preferences.isVisible("new"))
+        XCTAssertEqual(preferences.arrangedSections(refreshed).map(\.id), ["a", "b", "c", "d", "e", "f"])
+
+        // Rows that leave and return keep their visibility across refreshes.
+        preferences.enforceVisibleRowLimit(in: Array(first.dropFirst(2)))
+        preferences.enforceVisibleRowLimit(in: refreshed)
+        XCTAssertEqual(preferences.arrangedSections(refreshed).map(\.id), ["a", "b", "c", "d", "e", "f"])
+
+        // The cap still applies to the rows of a first-time layout.
+        let other = "test.home-limit.\(UUID().uuidString)"
+        defer { defaults.removeObject(forKey: other) }
+        let fresh = HomeSectionPreferences(defaults: defaults, storageKey: { other })
+        let many = ["1", "2", "3", "4", "5", "6", "7", "8"].map(row)
+        fresh.enforceVisibleRowLimit(in: many)
+        XCTAssertEqual(fresh.arrangedSections(many).map(\.id), ["1", "2", "3", "4", "5", "6"])
+        XCTAssertFalse(fresh.isVisible("7"))
+    }
+
     func testCombinedSpotlightIncludesBothSourcesWithoutChangingHomeOrder() throws {
         let resumeItems = try (0..<12).map { try makeItem(contentId: "resume-\($0)") }
         let nextItems = try (0..<12).map { try makeItem(contentId: "next-\($0)") }
