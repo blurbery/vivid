@@ -283,6 +283,7 @@ struct ContentView: View {
                 TVSavedAccountStore.shared.enteredForeground()
             case .background:
                 TVSavedAccountStore.shared.enteredBackground()
+                VividImagePipeline.shared.prepareForMacSuspension()
                 // Keep series monitoring alive while backgrounded; only
                 // worth a wake when the profile can download at all.
                 if DownloadManager.shared.downloadsEnabled {
