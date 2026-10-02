@@ -241,7 +241,7 @@ final class ImageDataCoalescingTests: XCTestCase {
         let started = expectation(description: "Transfer started")
         let stopped = expectation(description: "Transfer cancelled")
         let waiter = Task {
-            try await flights.load(URL(string: "https://artwork.invalid/poster")!) {
+            try await flights.load(URL(string: "https://artwork.invalid/poster")!) { _ in
                 started.fulfill()
                 do {
                     try await Task.sleep(for: .seconds(30))
@@ -265,10 +265,10 @@ final class ImageDataCoalescingTests: XCTestCase {
         let flights = VividImageDataFlights()
         let url = URL(string: "https://artwork.invalid/poster")!
         do {
-            _ = try await flights.load(url) { throw URLError(.badServerResponse) }
+            _ = try await flights.load(url) { _ in throw URLError(.badServerResponse) }
             XCTFail("Expected the shared operation to fail")
         } catch {}
-        let recovered = try await flights.load(url) { Data([2]) }
+        let recovered = try await flights.load(url) { _ in Data([2]) }
         XCTAssertEqual(recovered, Data([2]))
     }
 
@@ -278,7 +278,7 @@ final class ImageDataCoalescingTests: XCTestCase {
         let secondURL = URL(string: "https://artwork.invalid/second")!
         let started = expectation(description: "First artwork started")
         let first = Task {
-            try await flights.load(firstURL, scope: "test") {
+            try await flights.load(firstURL, scope: "test") { _ in
                 started.fulfill()
                 try await Task.sleep(for: .seconds(5))
                 return Data([1])
@@ -286,7 +286,7 @@ final class ImageDataCoalescingTests: XCTestCase {
         }
         await fulfillment(of: [started], timeout: 2)
         let second = Task {
-            try await flights.load(secondURL, scope: "test") {
+            try await flights.load(secondURL, scope: "test") { _ in
                 try await Task.sleep(for: .milliseconds(50))
                 return Data([2])
             }
@@ -363,5 +363,51 @@ private final class ArtworkProtocol: URLProtocol, @unchecked Sendable {
         response?.cancel()
         Self.lock.lock(); defer { Self.lock.unlock() }
         Self.stoppedRequests += 1
+    }
+}
+
+final class VividTransferPriorityTests: XCTestCase {
+    func testPriorityOnlyRisesAndReachesTheTransfer() {
+        let transfer = VividTransferPriority(.low)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: URL(string: "https://artwork.invalid/poster")!)
+        transfer.urlSession(session, didCreateTask: task)
+        XCTAssertEqual(task.priority, URLSessionTask.lowPriority)
+        transfer.raise(to: .high)
+        XCTAssertEqual(task.priority, URLSessionTask.highPriority)
+        transfer.raise(to: .low)
+        XCTAssertEqual(task.priority, URLSessionTask.highPriority, "A later prefetch never lowers a visible poster")
+        task.cancel()
+    }
+
+    func testVisibleRequestPromotesAnInProgressPrefetch() async throws {
+        let flights = VividImageDataFlights()
+        let url = URL(string: "https://artwork.invalid/promoted")!
+        let started = AsyncStream<VividTransferPriority>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        let prefetch = Task {
+            try await flights.load(url, scope: "test", priority: .low) { transfer in
+                started.continuation.yield(transfer)
+                for await _ in release.stream { break }
+                return Data([1])
+            }
+        }
+        var iterator = started.stream.makeAsyncIterator()
+        let next = await iterator.next()
+        let transfer = try XCTUnwrap(next)
+        XCTAssertEqual(transfer.value, URLSessionTask.lowPriority)
+        let visible = Task {
+            try await flights.load(url, scope: "test", priority: .high) { _ in
+                XCTFail("A joining request must reuse the in-progress transfer"); return Data()
+            }
+        }
+        for _ in 0..<200 where transfer.value != URLSessionTask.highPriority { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(transfer.value, URLSessionTask.highPriority)
+        release.continuation.yield(())
+        let first = try await prefetch.value
+        let second = try await visible.value
+        XCTAssertEqual(first, Data([1]))
+        XCTAssertEqual(second, Data([1]))
     }
 }

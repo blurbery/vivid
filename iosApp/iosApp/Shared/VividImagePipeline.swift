@@ -95,21 +95,39 @@ final class VividImageCache: @unchecked Sendable {
     func removeCachedImage(for request: VividImageRequest, caches: Caches) { memory.removeObject(forKey: request.key) }
 }
 
-/// On-screen artwork shares two connections per host with prefetching. Give
-/// each transfer a URLSession priority from its request, so visible posters
-/// are scheduled ahead of warm-up work. Also forwards diagnostics metrics.
-final class VividImagePriorityDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    private static let low = VividImagePriorityDelegate(URLSessionTask.lowPriority)
-    private static let normal = VividImagePriorityDelegate(URLSessionTask.defaultPriority)
-    private static let high = VividImagePriorityDelegate(URLSessionTask.highPriority)
-    static func delegate(for priority: VividImageRequest.Priority) -> VividImagePriorityDelegate {
-        switch priority { case .low: low; case .normal: normal; case .high: high }
+/// On-screen artwork shares two connections per host with prefetching. Each
+/// coalesced transfer holds one priority, taken from its first request and
+/// raised when a more urgent request joins, so a poster that was being
+/// prefetched is promoted once it is visible. Also forwards diagnostics metrics.
+final class VividTransferPriority: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: URLSessionTask?
+    private(set) var value: Float
+
+    init(_ priority: VividImageRequest.Priority) { value = Self.value(for: priority) }
+
+    static func value(for priority: VividImageRequest.Priority) -> Float {
+        switch priority {
+        case .low: URLSessionTask.lowPriority
+        case .normal: URLSessionTask.defaultPriority
+        case .high: URLSessionTask.highPriority
+        }
     }
-    let priority: Float
-    private init(_ priority: Float) { self.priority = priority }
+
+    func raise(to priority: VividImageRequest.Priority) {
+        let wanted = Self.value(for: priority)
+        lock.lock(); defer { lock.unlock() }
+        guard wanted > value else { return }
+        value = wanted
+        task?.priority = wanted
+    }
+
     func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-        task.priority = priority
+        lock.lock(); defer { lock.unlock() }
+        self.task = task
+        task.priority = value
     }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
         VividImageMetricsDelegate.shared.urlSession(session, task: task, didFinishCollecting: metrics)
     }
@@ -256,8 +274,8 @@ final class VividImagePipeline: @unchecked Sendable {
         if request.url.isFileURL { return try Data(contentsOf: request.url, options: .mappedIfSafe) }
         // Display, crop, palette and disk warming share only identical URLs
         // in the same account scope. Each requested size keeps its own decode.
-        return try await dataFlights.load(request.url, scope: request.cacheScope) { [self] in
-            try await fetchData(for: request)
+        return try await dataFlights.load(request.url, scope: request.cacheScope, priority: request.priority) { [self] transfer in
+            try await fetchData(for: request, transfer: transfer)
         }
     }
 
@@ -275,10 +293,9 @@ final class VividImagePipeline: @unchecked Sendable {
     var debugPendingDecodeCount: Int { decoding.operationCount }
     #endif
 
-    private func fetchData(for request: VividImageRequest) async throws -> Data {
-        let delegate = VividImagePriorityDelegate.delegate(for: request.priority)
+    private func fetchData(for request: VividImageRequest, transfer: VividTransferPriority) async throws -> Data {
         let (data, response) = try await VividImageRetry.load {
-            try await session(for: request.cacheScope).data(from: request.url, delegate: delegate)
+            try await session(for: request.cacheScope).data(from: request.url, delegate: transfer)
         }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw VividImageHTTPError(statusCode: http.statusCode)
@@ -330,6 +347,7 @@ actor VividImageDataFlights {
     private struct Flight {
         let id: UUID
         let task: Task<Data, Error>
+        let transfer: VividTransferPriority
         var waiters: Set<UUID>
     }
     private var tasks: [Key: Flight] = [:]
@@ -352,7 +370,8 @@ actor VividImageDataFlights {
         }
     }
 
-    func load(_ url: URL, scope: String = "", operation: @escaping @Sendable () async throws -> Data) async throws -> Data {
+    func load(_ url: URL, scope: String = "", priority: VividImageRequest.Priority = .normal,
+              operation: @escaping @Sendable (VividTransferPriority) async throws -> Data) async throws -> Data {
         try Task.checkCancellation()
         let key = Key(url: url, scope: scope)
         let waiter = UUID()
@@ -360,17 +379,19 @@ actor VividImageDataFlights {
         let flight: Flight
         if var existing = tasks[key] {
             existing.waiters.insert(waiter)
+            existing.transfer.raise(to: priority)
             flight = existing
         } else {
             let id = UUID()
             diagnostics.created(id, kind: "dataFlight", utility: false)
+            let transfer = VividTransferPriority(priority)
             let task = Task {
                 defer { diagnostics.completed(id, cancelled: Task.isCancelled) }
-                let data = try await operation()
+                let data = try await operation(transfer)
                 try Task.checkCancellation()
                 return data
             }
-            flight = Flight(id: id, task: task, waiters: [waiter])
+            flight = Flight(id: id, task: task, transfer: transfer, waiters: [waiter])
         }
         tasks[key] = flight
         defer { release(key, id: flight.id, waiter: waiter, cancelled: false) }

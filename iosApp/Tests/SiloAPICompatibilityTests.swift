@@ -593,10 +593,15 @@ final class SiloDiscoveryRefreshTests: XCTestCase {
         clock.advance(90)
         let v3 = try await discovery.usesV2(for: url, session: session)
         XCTAssertFalse(v3)
-        for _ in 0..<200 where SiloDiscoveryCountingStub.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
-        try await Task.sleep(for: .milliseconds(50))
-        let v4 = try await discovery.usesV2(for: url, session: session)
-        XCTAssertTrue(v4)
+        // Poll the observable answer: the probe count can reach two before
+        // the refreshed result is stored.
+        var refreshed = false
+        for _ in 0..<200 {
+            refreshed = try await discovery.usesV2(for: url, session: session)
+            if refreshed { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(refreshed)
         XCTAssertEqual(SiloDiscoveryCountingStub.count, 2)
 
         // Answers older than ten minutes wait for a fresh check again.
@@ -605,6 +610,23 @@ final class SiloDiscoveryRefreshTests: XCTestCase {
         let v5 = try await discovery.usesV2(for: url, session: session)
         XCTAssertFalse(v5)
         XCTAssertEqual(SiloDiscoveryCountingStub.count, 3)
+    }
+}
+
+extension SiloDiscoveryRefreshTests {
+    func testFailedCheckIsNotReusedByTheNextRequest() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SiloDiscoveryCountingStub.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); SiloDiscoveryCountingStub.reset() }
+        let discovery = SiloAPIDiscovery()
+        let url = URL(string: "https://flaky.example/silo/api/v1/auth/setup")!
+        SiloDiscoveryCountingStub.status = 503
+        do { _ = try await discovery.usesV2(for: url, session: session); XCTFail("A service failure must throw") } catch {}
+        SiloDiscoveryCountingStub.status = 200
+        let recovered = try await discovery.usesV2(for: url, session: session)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(SiloDiscoveryCountingStub.count, 2, "The retry starts a new check")
     }
 }
 

@@ -317,11 +317,18 @@ actor SiloAPIDiscovery {
     }
 
     private func start(_ discovery: URL, session: URLSession) -> Task<Bool, Error> {
+        // Clear the flight before the shared task returns, on success or
+        // failure, so no later request can join a finished check.
         let flight = Task { [self] in
-            defer { Task { await self.finish(discovery) } }
-            let result = try await Self.probe(discovery, session: session)
-            await store(result, for: discovery)
-            return result
+            do {
+                let result = try await Self.probe(discovery, session: session)
+                await store(result, for: discovery)
+                await finish(discovery)
+                return result
+            } catch {
+                await finish(discovery)
+                throw error
+            }
         }
         flights[discovery] = flight
         return flight
