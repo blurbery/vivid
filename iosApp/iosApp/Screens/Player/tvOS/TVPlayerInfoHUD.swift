@@ -644,9 +644,10 @@ private struct InfoPane: View {
     }
 
     private var currentChapterTitle: String? {
-        guard !viewModel.chapters.isEmpty,
-              let current = viewModel.chapters.last(where: { $0.time <= viewModel.currentTime })
+        guard let index = viewModel.currentChapterIndex,
+              viewModel.chapters.indices.contains(index)
         else { return nil }
+        let current = viewModel.chapters[index]
         return current.title ?? "Chapter \(current.index + 1)"
     }
 }
@@ -1835,9 +1836,7 @@ private struct ChaptersPane: View {
     let viewModel: PlayerViewModel
     let onSelect: () -> Void
 
-    private var currentIndex: Int? {
-        viewModel.chapters.lastIndex(where: { $0.time <= viewModel.currentTime })
-    }
+    private var currentIndex: Int? { viewModel.currentChapterIndex }
 
     var body: some View {
         PaneColumn("Chapters") {
