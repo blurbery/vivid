@@ -1275,7 +1275,9 @@ enum TVDetailCurvedBlurBand {
     }
 
     private struct Key: Hashable { let width: CGFloat; let height: CGFloat }
-    private static var cache: [Key: Band] = [:]
+    /// A failed render is remembered too, so the live blur is used without
+    /// retrying the render on every scroll frame.
+    private static var cache: [Key: Band?] = [:]
 
     /// Viewport-space rect covering the blurred curve with a four-radius
     /// margin, so the band is clear at the top and opaque at the bottom.
@@ -1291,7 +1293,7 @@ enum TVDetailCurvedBlurBand {
     static func band(for viewportSize: CGSize) -> Band? {
         guard viewportSize.width > 0, viewportSize.height > 0 else { return nil }
         let key = Key(width: viewportSize.width, height: viewportSize.height)
-        if let band = cache[key] { return band }
+        if let cached = cache[key] { return cached }
         let frame = frame(for: viewportSize)
         let renderer = ImageRenderer(content:
             TVDetailCurvedBlurMask(bottomFraction: 2)
@@ -1304,7 +1306,10 @@ enum TVDetailCurvedBlurBand {
         // The mask is a 70 pt blur with no fine detail, so point resolution is
         // plenty and keeps the bitmap small.
         renderer.scale = 1
-        guard let image = renderer.cgImage else { return nil }
+        guard let image = renderer.cgImage else {
+            cache[key] = .some(nil)
+            return nil
+        }
         let band = Band(image: image, scale: renderer.scale, frame: frame)
         cache[key] = band
         return band

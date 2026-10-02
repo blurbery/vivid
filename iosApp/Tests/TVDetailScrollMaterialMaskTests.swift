@@ -22,6 +22,8 @@ final class TVDetailScrollMaterialMaskTests: XCTestCase {
     }
 
     func testCachedBandMatchesLiveBlurAcrossScroll() throws {
+        // Without a band both masks would render the live fallback and match trivially.
+        _ = try XCTUnwrap(TVDetailCurvedBlurBand.band(for: viewport), "The cached band must render for this comparison")
         let maxLift = viewport.height * 1.2
         var report: [String] = []
         for step in 0...6 {
