@@ -41,19 +41,66 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tvos: ${{ steps.filter.outputs.tvos }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Detect tvOS-relevant changes
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Manual and push runs always include Apple TV. Pull requests skip it
+          # only when every changed file is iOS-only, so new shared paths are
+          # tested by default rather than silently skipped.
+          if [ "$EVENT" != pull_request ]; then
+            echo "tvos=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Test files compiled into VividTVTests, read from the tvOS spec so
+          # this list cannot drift from the target.
+          tv_tests=$(grep -oE 'path: Tests/[^[:space:]]+' iosApp/project.yml | sed 's|^path: |iosApp/|')
+          tvos=false
+          while IFS= read -r file; do
+            case "$file" in
+              iosApp/project-ios.yml|iosApp/NotificationService/*|iosApp/DownloadsActivity/*) continue ;;
+              iosApp/Signing/VividTV*.xcconfig) ;;
+              iosApp/Signing/*.xcconfig|scripts/*) continue ;;
+              iosApp/Tests/*)
+                grep -qxF "$file" <<< "$tv_tests" || continue ;;
+            esac
+            echo "tvOS-relevant: $file"
+            tvos=true
+            break
+          done < <(git diff --name-only "$BASE...$HEAD")
+          echo "tvos=$tvos" >> "$GITHUB_OUTPUT"
+
   validate:
     runs-on: macos-15
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        include: >-
-          ${{ fromJSON(inputs.ios_only &&
-            '[{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test"},
-              {"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test","build":"optimised"}]' ||
-            '[{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test"},
-              {"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test","build":"optimised"},
-              {"scheme":"VividTV","destination":"generic/platform=tvOS Simulator","action":"build"}]') }}
+        # Apple TV runs its own test job below, gated on tvOS-relevant changes.
+        include:
+          - scheme: Vivid
+            destination: platform=iOS Simulator,name=iPhone 17 Pro
+            action: test
+          - scheme: Vivid
+            destination: platform=iOS Simulator,name=iPhone 17 Pro
+            action: test
+            build: optimised
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -116,35 +163,25 @@ jobs:
           # Pin the official 2.43.0 release asset before unpacking/executing it.
           echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
           unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
-          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec ${{ matrix.scheme == 'VividTV' && 'iosApp/project.yml' || 'iosApp/project-ios.yml' }}
+          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project-ios.yml
       - name: Build player
         id: build
         env:
-          SCHEME: ${{ matrix.scheme }}
-          DESTINATION: ${{ matrix.destination }}
-          ACTION: ${{ matrix.action }}
           BUILD: ${{ matrix.build }}
         run: |
           set -o pipefail
-          if [ "$ACTION" = test ]; then
-            # The optimised entry compiles the same Debug test build with the
-            # Release optimiser, so bugs that only appear in TestFlight and App
-            # Store builds fail here. Debug keeps the test-only hooks available.
-            optimisation=()
-            if [ "$BUILD" = optimised ]; then
-              optimisation=(SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_COMPILATION_MODE=wholemodule)
-            fi
-            # Simulator-only ad-hoc signing supplies the application identifier
-            # required by Keychain. No certificate or release secret is used.
-            xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme Vivid \
-              -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
-              CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "${optimisation[@]}" | tee /tmp/player-build.log
-          else
-            xcodebuild build -project iosApp/Vivid.xcodeproj -scheme "$SCHEME" \
-              -destination "$DESTINATION" -derivedDataPath /tmp/vivid-derived \
-              -resultBundlePath /tmp/player-validation.xcresult \
-              CODE_SIGNING_ALLOWED=NO | tee /tmp/player-validation.log
+          # The optimised entry compiles the same Debug test build with the
+          # Release optimiser, so bugs that only appear in TestFlight and App
+          # Store builds fail here. Debug keeps the test-only hooks available.
+          optimisation=()
+          if [ "$BUILD" = optimised ]; then
+            optimisation=(SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_COMPILATION_MODE=wholemodule)
           fi
+          # Simulator-only ad-hoc signing supplies the application identifier
+          # required by Keychain. No certificate or release secret is used.
+          xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme Vivid \
+            -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "${optimisation[@]}" | tee /tmp/player-build.log
       - name: Package simulator tests for focused visual verification
         if: matrix.action == 'test' && matrix.build != 'optimised' && !inputs.baseline_ref
         run: ditto -c -k --keepParent /tmp/vivid-derived/Build/Products /tmp/Vivid-simulator-tests.zip
@@ -210,4 +247,82 @@ jobs:
             /tmp/player-validation.xcresult
             /tmp/preview-transition.mp4
             /tmp/preview-recording.xcresult
+          retention-days: 7
+
+  tvos-tests:
+    needs: changes
+    if: needs.changes.outputs.tvos == 'true' && !inputs.ios_only
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.baseline_ref || github.sha }}
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.3'
+      - name: Prepare tvOS simulator
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same approach as the iOS job: match the selected Xcode SDK and
+          # create one explicit Apple TV destination.
+          runtime_version=$(xcrun --sdk appletvsimulator --show-sdk-version)
+          find_runtime() {
+            xcrun simctl list runtimes --json | jq -r --arg version "$runtime_version" \
+              '[.runtimes[] | select(.isAvailable and .version == $version and
+                (.identifier | startswith("com.apple.CoreSimulator.SimRuntime.tvOS-")))][0].identifier // empty'
+          }
+          runtime_id=$(find_runtime)
+          if [ -z "$runtime_id" ]; then
+            xcodebuild -downloadPlatform tvOS -buildVersion "$runtime_version"
+            runtime_id=$(find_runtime)
+          fi
+          if [ -z "$runtime_id" ]; then
+            echo "::error::No available tvOS $runtime_version simulator runtime"
+            exit 1
+          fi
+          simulator_id=$(xcrun simctl create Vivid-TV-Regression \
+            com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-4K "$runtime_id")
+          echo "VIVID_TEST_DESTINATION=platform=tvOS Simulator,id=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+      - name: Generate Xcode project
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          # Pin the official 2.43.0 release asset before unpacking/executing it.
+          echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project.yml
+      - name: Build Apple TV player and tests
+        run: |
+          set -o pipefail
+          # Simulator-only ad-hoc signing, as in the iOS job. No certificate or
+          # release secret is used.
+          xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme VividTV \
+            -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-build.log
+      - name: Run tvOS suite
+        timeout-minutes: 12
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme VividTV \
+            -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
+            -only-testing:VividTVTests \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES -maximum-test-execution-time-allowance 60 \
+            -resultBundlePath /tmp/player-validation.xcresult \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-validation.log
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: player-validation-VividTV
+          path: |
+            /tmp/player-build.log
+            /tmp/player-validation.log
+            /tmp/player-validation.xcresult
           retention-days: 7
