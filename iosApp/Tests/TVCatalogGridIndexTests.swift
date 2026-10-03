@@ -35,6 +35,23 @@ final class TVCatalogGridIndexTests: XCTestCase {
         XCTAssertNotEqual(base, TVCatalogItemIndex.Signature(try items(["b", "a"])))
     }
 
+    func testLookupPerformanceOnLargeCatalogue() throws {
+        let list = try items((0..<5_000).map { "item-\($0)" })
+        let paged = try items((0..<5_100).map { "item-\($0)" })
+        let targets = stride(from: 0, to: 5_100, by: 7).map { "item-\($0)" } + ["missing"]
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+        var found = 0
+        measure(metrics: [XCTClockMetric()], options: options) {
+            var index = TVCatalogItemIndex()
+            index.rebuild(list)
+            // Current map hits, then a page appended before the rebuild.
+            found = targets.reduce(0) { $0 + (index.index(of: $1, in: list) == nil ? 0 : 1) }
+            found += targets.reduce(0) { $0 + (index.index(of: $1, in: paged) == nil ? 0 : 1) }
+        }
+        XCTAssertEqual(found, 715 + 729)
+    }
+
     func testArtworkRangePrefersVisibleRowOverFocus() {
         XCTAssertEqual(TVPosterArtworkWindow.range(firstVisible: 70, focusedIndex: 7, itemCount: 300, columns: 7), 56..<126)
         XCTAssertEqual(TVPosterArtworkWindow.range(firstVisible: nil, focusedIndex: 70, itemCount: 300, columns: 7), 56..<126)
