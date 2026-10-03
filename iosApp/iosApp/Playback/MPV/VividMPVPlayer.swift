@@ -930,8 +930,7 @@ private final class VividMPVCore: MpvPlayerCore {
         for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value)) }
         #if os(tvOS)
         // Read at most a minute ahead. On a fast link the 256 MiB packet cache
-        // otherwise fills over a long play, the likeliest contributor to Apple TV 4K
-        // playback being closed by the system for low memory 10 to 18 minutes in.
+        // otherwise fills over a long play, a large share of Apple TV's memory.
         checkError(mpv_set_option_string(mpv, "cache-secs", "60"))
         if airPlayPCM {
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-max-lookahead", "4"))

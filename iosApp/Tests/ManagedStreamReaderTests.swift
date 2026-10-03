@@ -200,8 +200,38 @@ final class ManagedStreamReaderTests: XCTestCase {
         XCTAssertTrue(reader.open())
         XCTAssertEqual(reader.seek(to: 2_500_000), 2_500_000)
         XCTAssertEqual(readAll(reader), file.subdata(in: 2_500_000..<file.count))
-        XCTAssertEqual(ScriptedOrigin.requests.map(offset(of:)), [0, 2_500_000])
+        XCTAssertEqual(Array(ScriptedOrigin.requests.map(offset(of:)).prefix(2)), [0, 2_500_000])
         XCTAssertNil(reader.seek(to: Int64(file.count + 1)))
+    }
+
+    /// The origin keeps sending as fast as it can, as URLSession did after
+    /// suspend(). The reader must end the request at the high-water mark and
+    /// continue with a new range, so it never holds anywhere near the whole
+    /// file, and the bytes must still join up exactly. URLSession can merge
+    /// deliveries, so the bound allows for one large delivery.
+    func testBufferStaysBoundedAgainstAFastOrigin() {
+        file = Data((0..<12_000_000).map { UInt8(truncatingIfNeeded: $0 &* 13 &+ 5) })
+        ScriptedOrigin.respond = { request, _ in self.ranged(request) }
+        let highWater = 256 * 1024
+        let reader = makeReader(highWater: highWater, lowWater: 64 * 1024)
+        XCTAssertTrue(reader.open())
+        var output = Data()
+        var buffer = [UInt8](repeating: 0, count: 32 * 1024)
+        var peak = 0
+        while true {
+            // Give the origin time to overrun the buffer if nothing stops it.
+            Thread.sleep(forTimeInterval: 0.002)
+            peak = max(peak, reader.bufferedBytes)
+            let count = buffer.withUnsafeMutableBytes { reader.read(into: $0.baseAddress!, count: 32 * 1024) }
+            XCTAssertGreaterThanOrEqual(count, 0)
+            if count <= 0 { break }
+            output.append(contentsOf: buffer[0..<Int(count)])
+        }
+        XCTAssertEqual(output, file)
+        XCTAssertLessThan(peak, 4_000_000, "the reader held most of the file")
+        let offsets = ScriptedOrigin.requests.map(offset(of:))
+        XCTAssertGreaterThan(offsets.count, 1, "the transfer continues with new ranges")
+        XCTAssertEqual(offsets, offsets.sorted(), "each range continues after the last")
     }
 
     func testSeekToStartAfterOpenDoesNotReconnect() {

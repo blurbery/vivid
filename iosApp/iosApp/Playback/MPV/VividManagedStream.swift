@@ -189,7 +189,9 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
     private var state = TaskState.idle
     private var totalSize: Int64?
     private var validator: String?
-    private var suspended = false
+    /// The request was ended at the high-water mark and continues from the
+    /// next byte once Lucid drains the buffer.
+    private var paused = false
     private var cancelled = false
     private var stallStarted: Double?
     private var transientAttempts = 0
@@ -201,7 +203,7 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
 
     init(source: VividManagedStreamSource, session: URLSession = VividManagedStreamReader.sharedSession,
          retry: VividManagedStreamRetryPolicy = VividManagedStreamRetryPolicy(),
-         highWater: Int = 16 << 20, lowWater: Int = 4 << 20, refreshTimeout: Double = 15) {
+         highWater: Int = 64 << 20, lowWater: Int = 16 << 20, refreshTimeout: Double = 15) {
         self.source = source
         self.session = session
         self.retry = retry
@@ -317,6 +319,12 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         return totalSize
     }
 
+    /// Bytes received and not yet read by Lucid.
+    var bufferedBytes: Int {
+        condition.lock(); defer { condition.unlock() }
+        return buffered
+    }
+
     /// Interrupts current and future reads. Never blocks.
     func cancel() {
         condition.lock()
@@ -351,7 +359,7 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         task = next
         taskStart = offset
         taskReceived = 0
-        suspended = false
+        paused = false
         state = .connecting
         next.resume()
     }
@@ -360,7 +368,7 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         generation += 1
         task?.cancel()
         task = nil
-        suspended = false
+        paused = false
     }
 
     /// Waits, unlocked from the transport, for the app to refresh the bearer.
@@ -453,10 +461,14 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         stallStarted = nil
         transientAttempts = 0
         authAttempts = 0
-        if buffered >= highWater, !suspended, let task {
-            // Back-pressure: Lucid's own demux cache is the real buffer.
-            suspended = true
-            task.suspend()
+        if buffered >= highWater, task != nil {
+            // Back-pressure: Lucid's own demux cache is the real buffer. End
+            // the request rather than suspending it: URLSession keeps
+            // delivering a fast transfer after suspend(), which let one
+            // stream buffer gigabytes and the system close the app.
+            cancelTaskLocked()
+            paused = true
+            state = .idle
         }
         condition.broadcast()
     }
@@ -465,7 +477,6 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
         condition.lock(); defer { condition.broadcast(); condition.unlock() }
         guard generation == self.generation else { return }
         task = nil
-        suspended = false
         guard case .streaming = state else {
             if case .connecting = state { state = .ended(.transient) }
             return
@@ -525,10 +536,12 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
     }
 
     private func resumeIfDrainedLocked() {
-        if suspended, buffered <= lowWater, let task {
-            suspended = false
-            task.resume()
+        guard paused, buffered <= lowWater, !cancelled else { return }
+        if let totalSize, nextFetchOffset >= totalSize {
+            paused = false
+            return
         }
+        startTaskLocked(at: nextFetchOffset)
     }
 }
 
