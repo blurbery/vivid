@@ -297,6 +297,9 @@ struct HomeView: View {
                     PhoneDiscoverySpotlight(sections: displayedSections.isEmpty ? [] : viewModel.sections, height: min(650, max(420, geometry.size.height * 0.68)) - geometry.safeAreaInsets.top, topSafeAreaInset: geometry.safeAreaInsets.top) { item in
                         navigateToDetail(item.type == "episode" ? (item.seriesId ?? item.contentId) : item.contentId, item)
                     }
+                    // PROTOTYPE ONLY: Studios & Networks; re-runs once a TMDb key is connected.
+                    .task(id: TVTMDbStore.shared.isConfigured) { await TVBrandPrototypeStore.shared.loadIfNeeded() }
+                    PhoneHomeBrandRowPrototype() // PROTOTYPE ONLY
                     #endif
                     LazyVStack(alignment: .leading, spacing: HomeFeedMetrics.sectionSpacing) {
                         ForEach(displayedSections) { section in

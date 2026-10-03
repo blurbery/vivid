@@ -83,8 +83,8 @@ enum Route: Hashable {
         subtitle: String?
     )
 
-    // PROTOTYPE ONLY: Studios & Networks brand page (tvOS).
-    case tvBrandPrototype(brandId: String)
+    // PROTOTYPE ONLY: Studios & Networks brand page.
+    case brandPrototype(brandId: String)
 }
 
 /// Card metadata that lets tvOS paint a branded detail frame before the
