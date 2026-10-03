@@ -117,6 +117,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var generation: UInt64 = 0
     private var seekGeneration: UInt64 = 0
     private var source: (URL, LoadOptions, Int32?)?
+    /// The source Vivid reads on Lucid's behalf for this load, if any.
+    private var managedSource: VividManagedStreamSource?
+    private var managedSourceURL: URL?
     private var requestedRate: Float = 1
     private var rateTask: Task<Void, Never>?
     private var endConfirmationTask: Task<Void, Never>?
@@ -184,6 +187,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         #endif
         instance.matchContentEnabled = options.matchContentEnabled
         instance.headers = options.httpHeaders
+        instance.registersManagedStreams = options.managedHTTPReader && VividManagedStreamProtocol.isEnabled
+            && VividManagedStreamSource.isEligible(url)
         instance.startPosition = max(0, startPosition)
         // Keep playback running through content matching. The display core
         // negotiates HDMI independently; it must not add a startup pause.
@@ -229,8 +234,22 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         videoRoute = options.audioOnly ? .audio : .sampleBuffer
         trace?.event("mpv_initialised", fields: "backend=mpv compressed_sink=avplayer pcm_sink=samplebuffer")
         trace?.event("mpv_audio_policy", fields: "airplay_pcm=\(instance.airPlayPCM) layouts=\(instance.airPlayPCM ? "7.1,5.1,stereo" : "auto-safe")")
+        var openURL = url
+        if instance.managedStreamsRegistered {
+            // Read the app's refresh hook when it is needed: it is installed
+            // for each load epoch and may arrive after this point.
+            let managed = VividManagedStreamSource(url: url, headers: options.httpHeaders) { [weak self] in
+                await self?.refreshManagedSourceHeaders()
+            }
+            if let managedURL = VividManagedStreamProtocol.add(managed) {
+                managedSource = managed
+                managedSourceURL = managedURL
+                openURL = managedURL
+                trace?.event("mpv_source_reader", fields: "reader=vivid")
+            }
+        }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            instance.commandAsync(["loadfile", url.absoluteString, "replace"]) { result in
+            instance.commandAsync(["loadfile", openURL.absoluteString, "replace"]) { result in
                 continuation.resume(with: result.map { _ in () })
             }
         }
@@ -768,7 +787,17 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         }
         return subtitleTracks.first { $0.id == id }!
     }
-    func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool { false }
+    private func refreshManagedSourceHeaders() async -> [String: String]? {
+        await refreshSourceHeaders?()
+    }
+
+    /// Only a Vivid-read source can take new headers live; Lucid's own HTTP
+    /// reader keeps the headers it opened with.
+    func updateSourceHeaders(_ headers: [String: String], for url: URL) -> Bool {
+        guard let managedSource, managedSource.url == url else { return false }
+        managedSource.update(headers)
+        return true
+    }
     func reloadAtCurrentPosition() async throws {
         guard let source else { return }
         var options = source.1; options.autoplay = wantsPlay
@@ -784,6 +813,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         cancelEndConfirmation()
         rateTask?.cancel(); rateTask = nil
         softwarePiPSource = nil
+        // Unblock any reader before Lucid tears down, which may be synchronous.
+        managedSource?.cancel()
         core?.delegate = nil
         if let core {
             let teardown = Self.audioTeardown
@@ -803,6 +834,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             }
         }
         core = nil; delegateProxy = nil; surface.core = nil; source = nil
+        VividManagedStreamProtocol.remove(managedSourceURL)
+        managedSource = nil; managedSourceURL = nil
         trace?.event("mpv_stopped"); trace = nil
         state = .idle; playbackPhase = .idle; videoRoute = .none
         isSessionReady = false; isSeeking = false; isBuffering = false
@@ -875,6 +908,8 @@ enum LucidSubtitleStyle {
 
 private final class VividMPVCore: MpvPlayerCore {
     var headers: [String: String] = [:]
+    var registersManagedStreams = false
+    private(set) var managedStreamsRegistered = false
     var startPosition: Double = 0
     var autoplay = true
     var audioOnly = false
@@ -903,6 +938,7 @@ private final class VividMPVCore: MpvPlayerCore {
         #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
         VividMPVHeaders.apply(headers, to: mpv)
+        if registersManagedStreams { managedStreamsRegistered = VividManagedStreamProtocol.register(on: mpv) }
     }
 }
 
