@@ -5,16 +5,13 @@ import UserNotifications
 /// Posts local notifications for download lifecycle events: completion,
 /// terminal failure, and monitoring-queued episodes.
 ///
-/// Authorization is owned by `ApplePushRegistrationCoordinator` — it
-/// requests permission on the first authenticated profile — so this only
-/// checks the current status and stays silent when the user declined,
-/// never re-prompting.
+/// Permission is requested once by `LocalNotificationAuthorization` on the
+/// first signed-in profile, so this only checks the current status and
+/// stays silent when the person declined, never re-prompting.
 @MainActor
 enum DownloadNotifier {
-    /// Tapping any download notification lands on the Downloads screen via
-    /// the same userInfo key the push pipeline uses, so
-    /// `VividAppDelegate.userNotificationCenter(_:didReceive:)` routes both
-    /// kinds through one code path.
+    /// Tapping any download notification lands on the Downloads screen
+    /// through `NotificationDeepLinkCoordinator`.
     private static let downloadsDeepLink = "vivid://downloads"
 
     static func downloadCompleted(_ record: DownloadRecord) {
@@ -75,7 +72,7 @@ enum DownloadNotifier {
             let content = UNMutableNotificationContent()
             content.body = body
             content.sound = .default
-            content.userInfo = [ApplePushDisplayWire.urlUserInfoKey: downloadsDeepLink]
+            content.userInfo = [NotificationDeepLinkCoordinator.urlUserInfoKey: downloadsDeepLink]
             let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
             try? await center.add(request)
         }

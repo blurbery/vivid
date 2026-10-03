@@ -105,7 +105,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .vividDeepLink)) { notification in
             guard let url = notification.userInfo?["url"] as? URL else { return }
             #if os(iOS)
-            ApplePushDeepLinkCoordinator.shared.clearPendingDeepLink(matching: url)
+            NotificationDeepLinkCoordinator.shared.clearPendingDeepLink(matching: url)
             #endif
             handleDeepLink(url)
         }
@@ -118,7 +118,7 @@ struct ContentView: View {
             LaunchTimeline.recordRootViewAppeared()
             #endif
             #if os(iOS)
-            if let url = ApplePushDeepLinkCoordinator.shared.consumePendingDeepLink() {
+            if let url = NotificationDeepLinkCoordinator.shared.consumePendingDeepLink() {
                 handleDeepLink(url)
             }
             #endif
@@ -230,7 +230,7 @@ struct ContentView: View {
                 await CurrentProfileStore.shared.refresh()
                 await uiCustomization.refresh()
                 #if os(iOS)
-                await ApplePushRegistrationCoordinator.shared.prepareForAuthenticatedProfile()
+                await LocalNotificationAuthorization.requestIfNeeded()
                 #endif
                 #if !os(tvOS)
                 await DownloadManager.shared.onAppActive()
@@ -350,10 +350,7 @@ struct ContentView: View {
             Task { await RequestsFeatureStore.shared.refresh() }
             Task { await uiCustomization.refresh() }
             #if os(iOS)
-            Task {
-                await ApplePushRegistrationCoordinator.shared.prepareForAuthenticatedProfile()
-                await ApplePushRegistrationCoordinator.shared.registerCurrentDeviceTokenIfPossible()
-            }
+            Task { await LocalNotificationAuthorization.requestIfNeeded() }
             #endif
             #if os(tvOS)
             NotificationCenter.default.post(name: .homeSectionsShouldRefresh, object: nil)

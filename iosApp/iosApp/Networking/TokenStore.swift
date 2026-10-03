@@ -934,8 +934,9 @@ actor TokenStore {
         }
     }
 
-    /// The display token is bound to one session, server, and profile, so it
-    /// dies with any of them; the next registration mints a fresh one.
+    /// Removes a push display token left by the push registration earlier
+    /// builds shipped. Vivid no longer registers for push, so nothing writes
+    /// it now; this only clears leftovers on the same events as before.
     private func clearApplePushDisplayToken() {
         // Metadata is removed only once the Keychain item is gone, so a
         // failed delete leaves the token paired with its real expiry and

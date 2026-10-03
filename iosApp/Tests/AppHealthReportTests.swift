@@ -171,10 +171,12 @@ final class AppHealthReportTests: XCTestCase {
 
     // MARK: - Store
 
+    /// MetricKit hangs are kept one per report, so these exercise the limits
+    /// without repeat counting.
     private func hangReport(at date: Date, seed: String, padding: Int = 0) -> AppHealthReport {
         AppHealthReport(
             kind: .hang,
-            source: .watchdog,
+            source: .metricKit,
             recordedAt: date,
             app: AppHealthAppInfo(version: "0.14.3", build: "42", os: "iOS 18.1.0", device: "iPhone16,2"),
             details: ["duration_ms": .int(1_500), "padding": .string(String(repeating: "x", count: padding))],
@@ -265,7 +267,9 @@ final class AppHealthReportTests: XCTestCase {
             source: kind == .appError ? .app : .exitMarker,
             recordedAt: date,
             app: AppHealthAppInfo(version: "0.14.3", build: "42", os: "iOS 18.1.0", device: "iPhone16,2"),
-            details: ["tag": .string("HTTP")],
+            // A distinct request per seed, so app errors are not counted as
+            // repeats of one another.
+            details: ["tag": .string("HTTP"), "method": .string("GET"), "path": .string("/api/\(seed)")],
             fingerprintSeed: seed
         )
     }
@@ -412,5 +416,153 @@ final class AppHealthReportTests: XCTestCase {
             )
         }
         XCTAssertEqual(hang(1_200).issueID, hang(4_800).issueID)
+    }
+
+    // MARK: - Repeats and request-specific issue IDs
+
+    private func settingsError(
+        at date: Date,
+        path: String = "/api/v2/settings/values/{id}",
+        method: String = "PUT",
+        app: AppHealthAppInfo = AppHealthAppInfo(version: "0.14.3", build: "54", os: "iOS 26.0", device: "iPhone17,1")
+    ) -> AppHealthReport {
+        AppHealthReport(
+            kind: .appError,
+            source: .app,
+            recordedAt: date,
+            app: app,
+            details: [
+                "category": .string("network"), "tag": .string("HTTP"),
+                "method": .string(method), "path": .string(path), "status": .int(422),
+            ],
+            context: ["phase": .string("launching")],
+            fingerprintSeed: "\(date.timeIntervalSince1970)-\(app.device)-\(method) \(path)"
+        )
+    }
+
+    func testRepeatsWithinADayAreCountedOnOneReport() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 7 * 86_400), now: { now })
+        XCTAssertTrue(store.add(settingsError(at: now.addingTimeInterval(-3_600))))
+        XCTAssertFalse(store.add(settingsError(at: now.addingTimeInterval(-60))), "a repeat does not add a report")
+        XCTAssertFalse(store.add(settingsError(at: now)))
+        let reports = store.reports()
+        XCTAssertEqual(reports.count, 1)
+        XCTAssertEqual(reports[0].occurrenceCount, 3)
+        XCTAssertEqual(reports[0].recordedAt, now.addingTimeInterval(-3_600))
+        XCTAssertEqual(reports[0].lastOccurredAt, now)
+        XCTAssertEqual(AppHealthReportGroup.grouping(reports)[0].occurrenceCount, 3)
+    }
+
+    func testSameReportAddedTwiceIsNotCountedAsARepeat() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 86_400), now: { now })
+        let report = settingsError(at: now)
+        XCTAssertTrue(store.add(report))
+        XCTAssertFalse(store.add(report))
+        XCTAssertEqual(store.reports().map(\.occurrenceCount), [1])
+    }
+
+    func testRepeatAfterADayAddsANewReport() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 7 * 86_400), now: { now })
+        XCTAssertTrue(store.add(settingsError(at: now.addingTimeInterval(-AppHealthStore.repeatWindow - 60))))
+        XCTAssertTrue(store.add(settingsError(at: now)))
+        XCTAssertEqual(store.reports().map(\.occurrenceCount), [1, 1])
+    }
+
+    func testDifferentRequestsGetDifferentIssueIDs() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let settings = settingsError(at: now)
+        let push = settingsError(at: now, path: "/api/v2/devices/push/apple", method: "POST")
+        XCTAssertNotEqual(settings.issueID, push.issueID)
+        XCTAssertNotEqual(settings.groupKey, push.groupKey)
+        XCTAssertEqual(settings.groupSummary, "Server rejected a settings change")
+        XCTAssertEqual(push.groupSummary, "Server rejected a request")
+        XCTAssertEqual(settings.technicalCode, "HTTP · HTTP 422 · PUT /api/v2/settings/values/{id}")
+
+        let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 86_400), now: { now })
+        XCTAssertTrue(store.add(settings))
+        XCTAssertTrue(store.add(push), "a different request is its own report")
+    }
+
+    func testSameRequestGetsTheSameIssueIDAcrossDevicesAndLaunches() {
+        let first = settingsError(at: Date(timeIntervalSince1970: 1_790_000_000))
+        let later = settingsError(
+            at: Date(timeIntervalSince1970: 1_800_000_000),
+            app: AppHealthAppInfo(version: "0.15.0", build: "60", os: "iOS 26.1", device: "iPad16,3")
+        )
+        XCTAssertNotEqual(first.id, later.id)
+        XCTAssertEqual(first.issueID, later.issueID)
+        XCTAssertEqual(first.groupKey, later.groupKey)
+    }
+
+    func testDecodeFailuresKeepTheirTitle() {
+        let report = AppHealthReport(
+            kind: .appError, source: .app, recordedAt: Date(),
+            app: AppHealthAppInfo(version: "0.14.3", build: "54", os: "iOS 26.0", device: "iPhone17,1"),
+            details: ["tag": .string("Decode"), "path": .string("/api/v2/settings/values"), "outcome": .string("decode_failed")],
+            fingerprintSeed: "decode"
+        )
+        XCTAssertEqual(report.groupSummary, "Couldn't read a server response")
+    }
+
+    // MARK: - Settings writes the server refuses
+
+    func testPermanentSettingsRejectionsAreDropped() {
+        let permanent: [Error] = [
+            HTTPError.http(statusCode: 422, body: nil),
+            HTTPError.http(statusCode: 400, body: nil),
+            SettingsAPIError.invalidValue(message: "bad"),
+        ]
+        for error in permanent {
+            XCTAssertTrue(UICustomizationPreferences.isPermanentRejection(error), "\(error)")
+        }
+        let retryable: [Error] = [
+            HTTPError.http(statusCode: 401, body: nil),
+            HTTPError.http(statusCode: 408, body: nil),
+            HTTPError.http(statusCode: 409, body: nil),
+            HTTPError.http(statusCode: 429, body: nil),
+            SettingsAPIError.transport(description: "offline"),
+            SettingsAPIError.serverUpgradeRequired,
+        ]
+        for error in retryable {
+            XCTAssertFalse(UICustomizationPreferences.isPermanentRejection(error), "\(error)")
+        }
+    }
+
+    // MARK: - Notification deep links
+
+    func testNotificationDeepLinksOnlyFollowVividLinks() {
+        let key = NotificationDeepLinkCoordinator.urlUserInfoKey
+        XCTAssertEqual(NotificationDeepLinkCoordinator.deepLinkURL(from: [key: "vivid://downloads"]), URL(string: "vivid://downloads"))
+        XCTAssertEqual(NotificationDeepLinkCoordinator.deepLinkURL(from: [key: " vivid://downloads\n"]), URL(string: "vivid://downloads"))
+        XCTAssertNil(NotificationDeepLinkCoordinator.deepLinkURL(from: [key: "https://example.com/downloads"]))
+        XCTAssertNil(NotificationDeepLinkCoordinator.deepLinkURL(from: [key: "silo://item/1"]))
+        XCTAssertNil(NotificationDeepLinkCoordinator.deepLinkURL(from: [:]))
+    }
+
+    // MARK: - Memory context
+
+    func testExitReportsCarryMemoryUseAndPlaybackLength() {
+        let opened = Date(timeIntervalSince1970: 1_790_000_000)
+        var context = AppHealthContextSnapshot()
+        context.phase = "browsing"
+        context.playerOpen = true
+        context.playerOpenedAt = opened
+        context.memoryWarnings = 2
+        context.memoryMB = 1_480
+        context.peakMemoryMB = 1_510
+        context.memoryAvailableMB = 60
+        context.memorySampledAt = opened.addingTimeInterval(14 * 60 + 20)
+        let attributes = context.attributes
+        XCTAssertEqual(attributes["memory_mb"], .int(1_480))
+        XCTAssertEqual(attributes["peak_memory_mb"], .int(1_510))
+        XCTAssertEqual(attributes["memory_available_mb"], .int(60))
+        XCTAssertEqual(attributes["playing_min"], .int(14))
+
+        context.playerOpen = false
+        XCTAssertNil(context.attributes["playing_min"], "playback length only applies while the player is open")
+        XCTAssertNotNil(AppHealthMemory.footprintMB())
     }
 }

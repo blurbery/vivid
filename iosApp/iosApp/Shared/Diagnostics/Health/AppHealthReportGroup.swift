@@ -12,11 +12,14 @@ struct AppHealthReportGroup: Identifiable, Equatable {
 
     var latest: AppHealthReport { reports[0] }
 
-    /// Groups ordered by their newest report.
+    /// Every time the problem happened, counting repeats kept on one report.
+    var occurrenceCount: Int { reports.reduce(0) { $0 + $1.occurrenceCount } }
+
+    /// Groups ordered by when their problem last happened.
     static func grouping(_ reports: [AppHealthReport]) -> [AppHealthReportGroup] {
         var order: [String] = []
         var members: [String: [AppHealthReport]] = [:]
-        for report in reports.sorted(by: { $0.recordedAt > $1.recordedAt }) {
+        for report in reports.sorted(by: { $0.lastOccurredAt > $1.lastOccurredAt }) {
             let key = report.groupKey
             if members[key] == nil { order.append(key) }
             members[key, default: []].append(report)
@@ -29,10 +32,11 @@ struct AppHealthReportGroup: Identifiable, Equatable {
 }
 
 extension AppHealthReport {
-    /// Kind, source and situation, plus the top frame for MetricKit stacks,
-    /// so different faults of the same kind stay apart.
+    /// Kind, source and situation, plus the top frame for MetricKit stacks
+    /// and the failing request for app errors, so different faults of the
+    /// same kind stay apart.
     var groupKey: String {
-        [kind.rawValue, source.rawValue, groupSummary, topFrame ?? ""].joined(separator: "|")
+        [kind.rawValue, source.rawValue, groupSummary, topFrame ?? "", failingRequest ?? ""].joined(separator: "|")
     }
 
     /// A plain-English title, such as "Crashed: invalid memory access" or
@@ -73,11 +77,13 @@ extension AppHealthReport {
     /// A short ID for the kind of problem, such as `VD-3F9A2C`. The same
     /// problem gets the same ID on any device, day or app version, so reports
     /// from different people can be matched. It is built only from the
-    /// problem itself: type, title, stable code and, when MetricKit supplied a
-    /// stack, the top frame. No time, device or person.
+    /// problem itself: type, title, stable code, the failing request for app
+    /// errors and, when MetricKit supplied a stack, the top frame. No time,
+    /// device or person.
     var issueID: String {
         let stableCode = kind == .hang ? nil : technicalCode
-        let seed = [kind.rawValue, groupSummary, stableCode ?? "", topFrame ?? ""].joined(separator: "|")
+        let seed = [kind.rawValue, groupSummary, stableCode ?? "", topFrame ?? "", failingRequest ?? ""]
+            .joined(separator: "|")
         return "VD-" + DiagnosticsSHA256.shortHex(data: Data(seed.utf8), count: 6).uppercased()
     }
 
@@ -101,6 +107,7 @@ extension AppHealthReport {
             } else if case .string(let outcome) = details["outcome"] {
                 parts.append(outcome)
             }
+            if let failingRequest { parts.append(failingRequest) }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         case .hang:
             if case .int(let ms) = details["duration_ms"] {
@@ -112,14 +119,31 @@ extension AppHealthReport {
         }
     }
 
+    /// The request an app error came from, such as
+    /// `PUT /api/v2/settings/values/{id}`. The path was templated when it was
+    /// logged, so it holds no IDs and matches across devices and launches.
+    var failingRequest: String? {
+        guard kind == .appError, case .string(let path) = details["path"], !path.isEmpty else { return nil }
+        if case .string(let method) = details["method"], !method.isEmpty { return "\(method) \(path)" }
+        return path
+    }
+
     private var appErrorMeaning: String {
         let tag: String? = { if case .string(let tag) = details["tag"] { return tag }; return nil }()
         switch tag {
         case "Decode": return "Couldn't read a server response"
         case "Auth": return "Sign-in problem with the server"
         case "HTTP":
+            if details["outcome"] == .string(HTTPDiagnosticsOutcome.decodeFailed) { return "Couldn't read a server response" }
             if case .int(let status) = details["status"], status >= 500 { return "Server error" }
             if case .int(let status) = details["status"], status == 401 || status == 403 { return "Server refused access" }
+            if case .int(let status) = details["status"], (400..<500).contains(status) {
+                if case .string(let path) = details["path"], path.contains("/settings/"),
+                   details["method"] != .string("GET") {
+                    return "Server rejected a settings change"
+                }
+                return "Server rejected a request"
+            }
             return "Server request failed"
         default:
             if details["category"] == .string("network") { return "Network problem" }

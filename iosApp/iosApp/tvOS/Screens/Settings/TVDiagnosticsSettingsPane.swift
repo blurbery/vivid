@@ -60,9 +60,10 @@ struct TVDiagnosticsSettingsPane: View {
     }
 
     private func groupDetail(_ group: AppHealthReportGroup) -> String {
-        let latest = group.latest.recordedAt.formatted(.relative(presentation: .named))
+        let latest = group.latest.lastOccurredAt.formatted(.relative(presentation: .named))
         let count = group.reports.count == 1 ? "1 report" : "\(group.reports.count) reports"
-        return "\(group.kind.title) · \(count) · latest \(latest) · \(group.latest.issueID)"
+        let times = group.occurrenceCount > group.reports.count ? " · happened \(group.occurrenceCount) times" : ""
+        return "\(group.kind.title) · \(count)\(times) · latest \(latest) · \(group.latest.issueID)"
     }
 
     private func reload() async {
@@ -88,6 +89,7 @@ private struct TVDiagnosticsGroupPage: View {
                             TVSettingsRowLabel(
                                 title: report.recordedAt.formatted(date: .abbreviated, time: .shortened),
                                 detail: "\(report.app.version) (\(report.app.build)) · \(report.app.device)"
+                                    + (report.occurrenceCount > 1 ? " · " + report.repeatSummary : "")
                             )
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
@@ -113,6 +115,9 @@ private struct TVDiagnosticsReportPage: View {
         var summary = [
             "Issue ID: \(report.issueID)",
             "When: \(report.recordedAt.formatted(date: .abbreviated, time: .standard))",
+        ]
+        if report.occurrenceCount > 1 { summary.append(report.repeatSummary) }
+        summary += [
             "App: \(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)",
         ]
         if let code = report.technicalCode { summary.append("Code: \(code)") }
@@ -231,22 +236,76 @@ enum TVDiagnosticsQRCode {
         return Result(image: UIImage(cgImage: cgImage), omittedGroups: omitted)
     }
 
+    /// The most recent app events added for each problem when they fit.
+    static let maxEventLines = 12
+
+    /// Each problem gets its summary line and a line of facts (what was
+    /// happening, memory use, cause). Whatever room is left goes to the
+    /// app events that led up to the newest problems, latest events first.
     static func mailURL(for reports: [AppHealthReport]) -> (URL?, omitted: Int) {
         let groups = AppHealthReportGroup.grouping(reports)
         let app = AppHealthAppInfo.current
         let header = "Vivid diagnostics from Apple TV\nApp \(app.version) (\(app.build)) · \(app.os) · \(app.device)\n"
-        var lines: [String] = []
-        for group in groups {
-            let date = group.latest.recordedAt.formatted(.iso8601.year().month().day())
-            let parts = [group.latest.issueID, group.summary, group.latest.technicalCode, "x\(group.reports.count)", date]
-                .compactMap { $0 }
-            let candidate = lines + [parts.joined(separator: " | ")]
-            guard let url = VividAbout.mailURL(subject: "Vivid Diagnostics", message: header + candidate.joined(separator: "\n"), to: VividAbout.diagnosticsEmail),
-                  url.absoluteString.utf8.count <= maxURLBytes else { break }
-            lines = candidate
+        func url(_ blocks: [[String]]) -> URL? {
+            VividAbout.mailURL(
+                subject: "Vivid Diagnostics",
+                message: header + blocks.map { $0.joined(separator: "\n") }.joined(separator: "\n\n"),
+                to: VividAbout.diagnosticsEmail
+            )
         }
-        let url = VividAbout.mailURL(subject: "Vivid Diagnostics", message: header + lines.joined(separator: "\n"), to: VividAbout.diagnosticsEmail)
-        return (url, groups.count - lines.count)
+        func fits(_ blocks: [[String]]) -> Bool {
+            url(blocks).map { $0.absoluteString.utf8.count <= maxURLBytes } ?? false
+        }
+
+        var blocks: [[String]] = []
+        for group in groups {
+            let summary = summaryLine(for: group)
+            let facts = factsLine(for: group.latest)
+            if let facts, fits(blocks + [[summary, facts]]) {
+                blocks.append([summary, facts])
+            } else if fits(blocks + [[summary]]) {
+                blocks.append([summary])
+            } else {
+                break
+            }
+        }
+        for (index, group) in groups.prefix(blocks.count).enumerated() {
+            let events = Array((group.latest.recentEvents ?? []).suffix(maxEventLines))
+            guard !events.isEmpty else { continue }
+            var count = 0
+            while count < events.count {
+                var candidate = blocks
+                candidate[index] = blocks[index] + ["Events:"] + events.suffix(count + 1)
+                guard fits(candidate) else { break }
+                count += 1
+            }
+            if count > 0 { blocks[index] += ["Events:"] + events.suffix(count) }
+        }
+        return (url(blocks), groups.count - blocks.count)
+    }
+
+    static func summaryLine(for group: AppHealthReportGroup) -> String {
+        let date = group.latest.lastOccurredAt.formatted(.iso8601.year().month().day())
+        return [group.latest.issueID, group.summary, group.latest.technicalCode, "x\(group.occurrenceCount)", date]
+            .compactMap { $0 }
+            .joined(separator: " | ")
+    }
+
+    /// The report's context and details as compact `key=value` pairs, without
+    /// the process ID and timestamps that only matter on the device.
+    static func factsLine(for report: AppHealthReport) -> String? {
+        let skipped: Set<String> = ["pid", "session_started"]
+        let values = (report.context ?? [:]).merging(report.details) { context, _ in context }
+        let pairs = values.keys.sorted().filter { !skipped.contains($0) }.compactMap { key -> String? in
+            switch values[key] {
+            case .string(let text): return "\(key)=\(text)"
+            case .int(let number): return "\(key)=\(number)"
+            case .double(let number): return "\(key)=\(number)"
+            case .bool(let flag): return "\(key)=\(flag)"
+            default: return nil
+            }
+        }
+        return pairs.isEmpty ? nil : pairs.joined(separator: " ")
     }
 }
 #endif
