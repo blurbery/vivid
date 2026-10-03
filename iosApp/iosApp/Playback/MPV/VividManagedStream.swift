@@ -92,7 +92,10 @@ enum VividManagedStreamResponse: Equatable {
             guard requestedOffset == 0 else { return .fatal("200 for a ranged request") }
             return consistent(total: contentLength >= 0 ? contentLength : nil, knownTotal: knownTotal)
         case 416:
-            if let knownTotal, requestedOffset >= knownTotal { return .endOfStream }
+            // A stream of unknown length can be paused right at its last byte,
+            // so the next range starts at the end. `bytes */N` gives the size.
+            let total = knownTotal ?? contentRange.flatMap(ContentRange.unsatisfiedTotal)
+            if let total, requestedOffset >= total { return .endOfStream }
             return .fatal("416 inside the stream")
         case 401, 403:
             return .authentication
@@ -113,6 +116,14 @@ enum VividManagedStreamResponse: Equatable {
     struct ContentRange: Equatable {
         let start: Int64
         let total: Int64?
+
+        /// The size from a 416's `bytes */N`.
+        static func unsatisfiedTotal(_ header: String) -> Int64? {
+            let trimmed = header.trimmingCharacters(in: .whitespaces)
+            guard trimmed.lowercased().hasPrefix("bytes */"), let total = Int64(trimmed.dropFirst(8)),
+                  total >= 0 else { return nil }
+            return total
+        }
 
         init?(_ header: String) {
             let trimmed = header.trimmingCharacters(in: .whitespaces)
@@ -455,9 +466,15 @@ final class VividManagedStreamReader: NSObject, @unchecked Sendable {
     fileprivate func receive(data: Data, generation: Int) {
         condition.lock(); defer { condition.unlock() }
         guard generation == self.generation, !cancelled, !data.isEmpty else { return }
-        chunks.append(data)
-        buffered += data.count
-        taskReceived += Int64(data.count)
+        // URLSession can hand over many megabytes in one delivery when it has
+        // read ahead of us, so keep only what fits; the rest is fetched again
+        // with the next range.
+        let kept = buffered + data.count > highWater ? data.prefix(max(highWater - buffered, 0)) : data
+        if !kept.isEmpty {
+            chunks.append(Data(kept))
+            buffered += kept.count
+            taskReceived += Int64(kept.count)
+        }
         stallStarted = nil
         transientAttempts = 0
         authAttempts = 0
