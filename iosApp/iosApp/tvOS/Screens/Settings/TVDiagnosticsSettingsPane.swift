@@ -60,9 +60,10 @@ struct TVDiagnosticsSettingsPane: View {
     }
 
     private func groupDetail(_ group: AppHealthReportGroup) -> String {
-        let latest = group.latest.recordedAt.formatted(.relative(presentation: .named))
+        let latest = group.latest.lastOccurredAt.formatted(.relative(presentation: .named))
         let count = group.reports.count == 1 ? "1 report" : "\(group.reports.count) reports"
-        return "\(group.kind.title) · \(count) · latest \(latest) · \(group.latest.issueID)"
+        let times = group.occurrenceCount > group.reports.count ? " · happened \(group.occurrenceCount) times" : ""
+        return "\(group.kind.title) · \(count)\(times) · latest \(latest) · \(group.latest.issueID)"
     }
 
     private func reload() async {
@@ -88,6 +89,7 @@ private struct TVDiagnosticsGroupPage: View {
                             TVSettingsRowLabel(
                                 title: report.recordedAt.formatted(date: .abbreviated, time: .shortened),
                                 detail: "\(report.app.version) (\(report.app.build)) · \(report.app.device)"
+                                    + (report.occurrenceCount > 1 ? " · " + report.repeatSummary : "")
                             )
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
@@ -113,6 +115,9 @@ private struct TVDiagnosticsReportPage: View {
         var summary = [
             "Issue ID: \(report.issueID)",
             "When: \(report.recordedAt.formatted(date: .abbreviated, time: .standard))",
+        ]
+        if report.occurrenceCount > 1 { summary.append(report.repeatSummary) }
+        summary += [
             "App: \(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)",
         ]
         if let code = report.technicalCode { summary.append("Code: \(code)") }
@@ -237,8 +242,8 @@ enum TVDiagnosticsQRCode {
         let header = "Vivid diagnostics from Apple TV\nApp \(app.version) (\(app.build)) · \(app.os) · \(app.device)\n"
         var lines: [String] = []
         for group in groups {
-            let date = group.latest.recordedAt.formatted(.iso8601.year().month().day())
-            let parts = [group.latest.issueID, group.summary, group.latest.technicalCode, "x\(group.reports.count)", date]
+            let date = group.latest.lastOccurredAt.formatted(.iso8601.year().month().day())
+            let parts = [group.latest.issueID, group.summary, group.latest.technicalCode, "x\(group.occurrenceCount)", date]
                 .compactMap { $0 }
             let candidate = lines + [parts.joined(separator: " | ")]
             guard let url = VividAbout.mailURL(subject: "Vivid Diagnostics", message: header + candidate.joined(separator: "\n"), to: VividAbout.diagnosticsEmail),

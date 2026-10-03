@@ -38,39 +38,11 @@ targets:
         SDKROOT: iphoneos
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
-      configs:
-        Debug:
-          APS_ENVIRONMENT: development
-        Release:
-          APS_ENVIRONMENT: production
     dependencies:
       - package: MPVKit
         product: MPVKit
-      - target: VividNotificationService
-        embed: true
       - target: VividDownloadsActivity
         embed: true
-
-  VividNotificationService:
-    templates: [ShippableProduct]
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: NotificationService
-      - path: iosApp/Notifications/ApplePushDisplayMetadata.swift
-      - path: iosApp/Shared/KeychainAudience.swift
-      - path: iosApp/Shared/SharedStorage.swift
-    configFiles:
-      Debug: Signing/VividNotificationService.xcconfig
-      Release: Signing/VividNotificationService.xcconfig
-    settings:
-      base:
-        PRODUCT_NAME: VividNotificationService
-        INFOPLIST_FILE: NotificationService/Info.plist
-        SDKROOT: iphoneos
-        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
-    dependencies:
-      - sdk: UserNotifications.framework
 
   # iOS WidgetKit extension hosting the downloads Live Activity: the
   # lock-screen / Dynamic Island progress card for active downloads. The

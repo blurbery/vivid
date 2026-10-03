@@ -66,6 +66,21 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
     let callStackTree: DiagnosticsJSONValue?
     /// Recent app events before the problem, from `AppHealthTrail`.
     let recentEvents: [String]?
+    /// How many times this problem happened within the repeat window. Nil
+    /// means once; repeats update this report instead of adding new ones.
+    let occurrences: Int?
+    /// When the most recent repeat happened.
+    let lastSeenAt: Date?
+
+    var occurrenceCount: Int { max(occurrences ?? 1, 1) }
+    /// When this problem last happened: the latest repeat, or when it was
+    /// first recorded.
+    var lastOccurredAt: Date { lastSeenAt ?? recordedAt }
+    /// "Happened 3 times, last 4 Oct 2026 at 9:12 am", for a report that
+    /// repeated.
+    var repeatSummary: String {
+        "Happened \(occurrenceCount) times, last \(lastOccurredAt.formatted(date: .abbreviated, time: .shortened))"
+    }
 
     init(
         kind: Kind,
@@ -87,6 +102,8 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
         self.context = context
         self.callStackTree = callStackTree
         self.recentEvents = recentEvents?.isEmpty == true ? nil : recentEvents
+        self.occurrences = nil
+        self.lastSeenAt = nil
         // The seed identifies the underlying event, so a payload MetricKit
         // delivers twice (live and again through the past payloads) is stored
         // once.
@@ -111,7 +128,26 @@ extension AppHealthReport {
             details: details.merging(other.details) { _, metricKit in metricKit },
             context: context,
             callStackTree: other.callStackTree,
-            recentEvents: recentEvents
+            recentEvents: recentEvents,
+            occurrences: occurrences,
+            lastSeenAt: lastSeenAt
+        )
+    }
+
+    /// This report counted once more, keeping its first details and events.
+    func repeated(at date: Date) -> AppHealthReport {
+        AppHealthReport(
+            id: id,
+            kind: kind,
+            source: source,
+            recordedAt: recordedAt,
+            app: app,
+            details: details,
+            context: context,
+            callStackTree: callStackTree,
+            recentEvents: recentEvents,
+            occurrences: occurrenceCount + 1,
+            lastSeenAt: max(date, lastSeenAt ?? recordedAt)
         )
     }
 
@@ -124,7 +160,9 @@ extension AppHealthReport {
         details: [String: DiagnosticsJSONValue],
         context: [String: DiagnosticsJSONValue]?,
         callStackTree: DiagnosticsJSONValue?,
-        recentEvents: [String]?
+        recentEvents: [String]?,
+        occurrences: Int?,
+        lastSeenAt: Date?
     ) {
         self.format = Self.formatVersion
         self.id = id
@@ -136,6 +174,8 @@ extension AppHealthReport {
         self.context = context
         self.callStackTree = callStackTree
         self.recentEvents = recentEvents
+        self.occurrences = occurrences
+        self.lastSeenAt = lastSeenAt
     }
 }
 

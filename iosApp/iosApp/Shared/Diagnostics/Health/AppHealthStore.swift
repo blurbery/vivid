@@ -50,8 +50,18 @@ final class AppHealthStore: Sendable {
     /// whether it was added.
     @discardableResult
     func add(_ report: AppHealthReport) -> Bool {
+        var counted = false
         let added: Bool = lock.withLock {
             guard prepareDirectory() else { return false }
+            if Self.countsRepeats(report), let existing = repeatTarget(for: report),
+               existing.report.id != report.id {
+                // The same problem again: count it on the report already kept
+                // rather than listing it once per launch.
+                if let data = try? Self.encoder.encode(existing.report.repeated(at: report.recordedAt)) {
+                    counted = (try? data.write(to: existing.url, options: [.atomic])) != nil
+                }
+                return false
+            }
             let url = fileURL(for: report.id)
             guard !FileManager.default.fileExists(atPath: url.path),
                   let data = try? Self.encoder.encode(report) else { return false }
@@ -63,8 +73,36 @@ final class AppHealthStore: Sendable {
             prune()
             return FileManager.default.fileExists(atPath: url.path)
         }
-        if added { notifyChange() }
+        if added || counted { notifyChange() }
         return added
+    }
+
+    /// Repeats of the same issue within this window update one report.
+    static let repeatWindow: TimeInterval = 24 * 60 * 60
+
+    /// Problems that can recur on every launch or playback. Crashes, exits
+    /// and MetricKit reports stay separate, since each carries its own
+    /// details worth keeping.
+    static func countsRepeats(_ report: AppHealthReport) -> Bool {
+        switch report.kind {
+        case .appError, .playbackFailure:
+            return true
+        case .hang:
+            return report.source == .watchdog
+        default:
+            return false
+        }
+    }
+
+    /// The kept report for the same issue, first seen within the repeat
+    /// window. Caller holds `lock`.
+    private func repeatTarget(for report: AppHealthReport) -> StoredReport? {
+        let issueID = report.issueID
+        return loadAll().first {
+            $0.report.issueID == issueID
+                && $0.report.source == report.source
+                && report.recordedAt.timeIntervalSince($0.report.recordedAt) < Self.repeatWindow
+        }
     }
 
     /// Folds a MetricKit crash into the report the crash capture already made

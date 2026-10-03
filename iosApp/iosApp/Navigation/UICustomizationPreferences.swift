@@ -874,6 +874,18 @@ final class UICustomizationPreferences {
                 setSyncError(nil, for: key)
             } catch {
                 guard contextIsCurrent(context) else { return }
+                if Self.isPermanentRejection(error) {
+                    // The server will never accept this value (for example a
+                    // menu saved by an older build), so retrying it on every
+                    // launch only fails again. Drop it; the next refresh
+                    // shows the server's value instead.
+                    if pendingSyncWrites[key.rawValue]?.mutationId == write.mutationId {
+                        pendingSyncWrites.removeValue(forKey: key.rawValue)
+                        saveCache(for: context.cacheKey)
+                    }
+                    setSyncError(nil, for: key)
+                    return
+                }
                 // Keep the optimistic cache. A later refresh or another edit
                 // retries against the server without making the app unusable
                 // while offline.
@@ -881,6 +893,20 @@ final class UICustomizationPreferences {
             }
         }
         saveTail = save
+    }
+
+    /// Rejections a retry cannot fix: the server refused this key, scope or
+    /// value. Sign-in, timeout, conflict, rate-limit and missing-feature
+    /// responses stay retryable.
+    nonisolated static func isPermanentRejection(_ error: Error) -> Bool {
+        switch SettingsAPIError.from(error) {
+        case .unknownSetting, .clientLocalSetting, .scopeNotAllowed, .invalidValue:
+            return true
+        case .server(let status, _, _):
+            return [400, 410, 413, 415, 422].contains(status)
+        default:
+            return false
+        }
     }
 
     private func scheduleDelete(
