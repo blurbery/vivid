@@ -16,8 +16,9 @@ struct StudioNetworkBrand: Identifiable, Equatable {
     /// Logos printed on a solid block (Marvel) would render as a plain white
     /// box, so their lettering is knocked out of the block instead.
     var knocksOutLogoText = false
-    /// Shows the name as a wordmark instead of the TMDb logo. Apple TV+'s
-    /// logo carries the Apple mark, which apps can't display.
+    /// Shows the name as a wordmark instead of the TMDb logo. Apple TV's
+    /// logo carries the Apple mark, which apps can't display, so it's set in
+    /// the system typeface instead.
     var usesWordmark = false
 }
 
@@ -94,7 +95,7 @@ final class StudiosNetworksStore {
     static let catalogue: [StudioNetworkBrand] = [
         .init(id: "netflix", name: "Netflix", kind: .network, tmdbId: 213, watchProviderId: 8),
         .init(id: "hbo", name: "HBO", kind: .network, tmdbId: 49, watchProviderId: 1899),
-        .init(id: "appletv", name: "Apple TV+", kind: .network, tmdbId: 2552, watchProviderId: 350, usesWordmark: true),
+        .init(id: "appletv", name: "Apple TV", kind: .network, tmdbId: 2552, watchProviderId: 350, usesWordmark: true),
         .init(id: "disneyplus", name: "Disney+", kind: .network, tmdbId: 2739, watchProviderId: 337),
         .init(id: "prime", name: "Prime Video", kind: .network, tmdbId: 1024, watchProviderId: 9),
         .init(id: "hulu", name: "Hulu", kind: .network, tmdbId: 453, watchProviderId: 15),
@@ -523,6 +524,8 @@ struct StudioNetworkLogo: View {
                 } else {
                     image.resizable().renderingMode(.template).scaledToFit().foregroundStyle(.white)
                 }
+            } else if brand?.usesWordmark == true {
+                wordmark
             } else {
                 Text(brand?.name ?? fallbackName)
                     .font(.system(size: 200, weight: .semibold))
@@ -532,5 +535,18 @@ struct StudioNetworkLogo: View {
             }
         }
         .accessibilityHidden(true)
+    }
+
+    /// Drawn large and scaled to fit, so it matches the other logos' weight
+    /// at any tile size, with the slightly tight tracking of a display wordmark.
+    private var wordmark: some View {
+        // Negative tracking also trims after the last letter, which clips it;
+        // a trailing hair space takes that trim instead.
+        Text((brand?.name ?? fallbackName) + "\u{200A}")
+            .font(.system(size: 200, weight: .semibold))
+            .tracking(-3)
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.05)
     }
 }
