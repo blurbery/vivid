@@ -25,8 +25,6 @@ struct TVServerNeedsSetupView: View {
                 HStack {
                     VividLogoView(size: 96)
                     Spacer(minLength: 0)
-                    AuroraJourneyProgress(currentStep: 1)
-                        .frame(width: 430)
                 }
 
                 Spacer(minLength: 48)

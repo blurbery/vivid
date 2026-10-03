@@ -17,11 +17,6 @@ struct ServerNeedsSetupView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 24)
 
-            AuroraJourneyProgress(currentStep: 1)
-                .frame(maxWidth: 330)
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 28)
-
             AuroraEyebrow(text: "Server setup", centered: true)
                 .padding(.bottom, 16)
 

@@ -396,13 +396,13 @@ struct TVSavedAccountEditor: View {
                 TVSettingsGroup {
                     if account == nil {
                         TVSettingsFieldRow(title: "Server address", detail: "The address of your media server.") {
-                            TextField("Server address", text: $serverURL).textContentType(.URL)
+                            TextField("Server address", text: $serverURL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         }
                     } else {
                         TVSettingsInfoRow(title: "Server", value: ServerRegistry.shared.entry(with: account!.serverID)?.displayName ?? serverURL)
                     }
                     TVSettingsFieldRow(title: "Username", detail: "Your username on this server.") {
-                        TextField("Username", text: $username).textContentType(.username)
+                        TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                             .autocorrectionDisabled().textInputAutocapitalization(.never)
                     }
                     TVSettingsFieldRow(title: "Password", detail: "Enter the current password to update your saved login.") {
