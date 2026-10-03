@@ -254,7 +254,17 @@ struct TVStudiosNetworksSettingsView: View {
                         .focused($focus, equals: .reset)
                         .frame(maxWidth: .infinity)
                 } else if store.status == .loading || store.status == .idle {
-                    ProgressView().frame(maxWidth: .infinity)
+                    TVSettingsGroup {
+                        VStack(spacing: 18) {
+                            ProgressView()
+                            if let progress = store.progressText {
+                                Text(progress).font(.system(size: 26, weight: .semibold)).monospacedDigit()
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 28)
+                    }
+                    TVSettingsFooter(TVBrandPrototypeStore.firstLoadNotice)
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)

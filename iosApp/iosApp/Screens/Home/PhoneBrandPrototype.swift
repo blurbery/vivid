@@ -188,7 +188,18 @@ struct PhoneStudiosNetworksSettingsView: View {
                     Text("Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least \(TVBrandPrototypeStore.minimumCount).")
                 }
             } else if store.status == .loading || store.status == .idle {
-                Section { ProgressView().frame(maxWidth: .infinity) }
+                Section {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        if let progress = store.progressText {
+                            Text(progress).font(.subheadline.weight(.semibold)).monospacedDigit()
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                } footer: {
+                    Label(TVBrandPrototypeStore.firstLoadNotice, systemImage: "exclamationmark.triangle.fill")
+                }
             }
         }
         .settingsListChrome()

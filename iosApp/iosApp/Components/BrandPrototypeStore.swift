@@ -80,6 +80,12 @@ final class TVBrandPrototypeStore {
 
     var status: Status = .idle
     var lastError: String?
+    /// Live first-load progress for the setup notice.
+    var progressText: String?
+    private var titlesRead: [String: Int] = [:]
+    private var brandsMatched = 0
+
+    static let firstLoadNotice = "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly."
     var isEnabled = true
     /// nil means automatic: the top brands by library matches.
     var customPicks: [String]?
@@ -250,7 +256,9 @@ final class TVBrandPrototypeStore {
                 print("[BrandPrototype] library index from cache")
                 (movieIndex, seriesIndex) = (cached.movies, cached.series)
             } else {
-                async let movies = libraryIndex(type: "movie")
+                titlesRead = [:]
+            brandsMatched = 0
+            async let movies = libraryIndex(type: "movie")
                 async let series = libraryIndex(type: "series")
                 (movieIndex, seriesIndex) = try await (movies, series)
                 Self.writeIndexCache(movies: movieIndex, series: seriesIndex)
@@ -263,11 +271,16 @@ final class TVBrandPrototypeStore {
                         (brand.id, await Self.result(for: brand, movieIndex: movieIndex, seriesIndex: seriesIndex))
                     }
                 }
-                for await (id, result) in group { loaded[id] = result }
+                for await (id, result) in group {
+                    loaded[id] = result
+                    brandsMatched += 1
+                    progressText = "Matching with TMDb… \(brandsMatched) of \(Self.catalogue.count) brands"
+                }
             }
             print("[BrandPrototype] matches: " + loaded.map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: " "))
             results = loaded
             status = .ready
+            progressText = nil
             Self.writeCache(loaded)
         } catch {
             lastError = String(describing: error)
@@ -286,6 +299,9 @@ final class TVBrandPrototypeStore {
                 "source": "query", "type": type, "offset": String(offset), "limit": String(limit),
                 "sort": "title", "order": "asc", "match": "all", "include_total": "false",
             ])
+            titlesRead[type, default: 0] += page.items.count
+            let total = titlesRead.values.reduce(0, +)
+            progressText = "Reading your library… \(total.formatted()) titles"
             for entry in page.items {
                 if let id = entry.tmdbId, !id.isEmpty, index[id] == nil { index[id] = entry.item }
                 // Servers that omit provider IDs from lists still match on title and year.
