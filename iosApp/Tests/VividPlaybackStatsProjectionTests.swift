@@ -185,8 +185,9 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
         defer { controller.onEvent = nil; controller.stop(); window.isHidden = true; window.rootViewController = nil }
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "v3_h264_aac", withExtension: "mp4"))
         let spec = try VividLoadSpec(directURL: url, headers: [:], startPosition: 0, audioOnly: false)
-        let epoch = controller.beginLoad(spec, shouldPlayWhenReady: false)
-        try await controller.finishLoad(epoch)
+        // Listen before loading. Telemetry follows the demux cache, and this
+        // short fixture can be cached completely while it loads, so a listener
+        // added afterwards may never see an update.
         var samples = 0
         controller.onEvent = { event in
             if case .telemetryChanged(let telemetry) = event.event {
@@ -196,9 +197,11 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
                 samples += 1
             }
         }
+        let epoch = controller.beginLoad(spec, shouldPlayWhenReady: false)
+        try await controller.finishLoad(epoch)
         controller.play()
         let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-        while controller.engine.currentTime <= 0.2 && ContinuousClock.now < deadline {
+        while (controller.engine.currentTime <= 0.2 || samples == 0) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertGreaterThan(controller.engine.currentTime, 0.2, "Synthetic media must actually play")

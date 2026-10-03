@@ -200,8 +200,37 @@ final class ManagedStreamReaderTests: XCTestCase {
         XCTAssertTrue(reader.open())
         XCTAssertEqual(reader.seek(to: 2_500_000), 2_500_000)
         XCTAssertEqual(readAll(reader), file.subdata(in: 2_500_000..<file.count))
-        XCTAssertEqual(ScriptedOrigin.requests.map(offset(of:)), [0, 2_500_000])
+        XCTAssertEqual(Array(ScriptedOrigin.requests.map(offset(of:)).prefix(2)), [0, 2_500_000])
         XCTAssertNil(reader.seek(to: Int64(file.count + 1)))
+    }
+
+    /// The origin keeps sending as fast as it can, as URLSession did after
+    /// suspend(), and URLSession may merge it into very large deliveries. The
+    /// reader must never hold more than the high-water mark, continue with
+    /// new ranges, and still return the bytes exactly.
+    func testBufferStaysBoundedAgainstAFastOrigin() {
+        file = Self.nonRepeating(count: 12_000_000)
+        ScriptedOrigin.respond = { request, _ in self.ranged(request) }
+        let highWater = 256 * 1024
+        let reader = makeReader(highWater: highWater, lowWater: 64 * 1024)
+        XCTAssertTrue(reader.open())
+        var output = Data()
+        var buffer = [UInt8](repeating: 0, count: 32 * 1024)
+        var peak = 0
+        while true {
+            // Give the origin time to overrun the buffer if nothing stops it.
+            Thread.sleep(forTimeInterval: 0.002)
+            peak = max(peak, reader.bufferedBytes)
+            let count = buffer.withUnsafeMutableBytes { reader.read(into: $0.baseAddress!, count: 32 * 1024) }
+            XCTAssertGreaterThanOrEqual(count, 0)
+            if count <= 0 { break }
+            output.append(contentsOf: buffer[0..<Int(count)])
+        }
+        XCTAssertEqual(output, file)
+        XCTAssertLessThanOrEqual(peak, highWater)
+        let offsets = ScriptedOrigin.requests.map(offset(of:))
+        XCTAssertGreaterThan(offsets.count, 1, "the transfer continues with new ranges")
+        XCTAssertEqual(offsets, offsets.sorted(), "each range continues after the last")
     }
 
     func testSeekToStartAfterOpenDoesNotReconnect() {
@@ -354,6 +383,38 @@ final class ManagedStreamReaderTests: XCTestCase {
         XCTAssertFalse(makeReader().open(timeout: 3))
     }
 
+    /// Bytes that never repeat at a short period, so a range continued at the
+    /// wrong offset cannot return the same bytes by coincidence.
+    private static func nonRepeating(count: Int) -> Data {
+        var state: UInt32 = 0x9E37_79B9
+        return Data((0..<count).map { _ in
+            state = state &* 1_664_525 &+ 1_013_904_223
+            return UInt8(truncatingIfNeeded: state >> 24)
+        })
+    }
+
+    /// With no total in Content-Range, a pause on the last delivery leaves the
+    /// next range starting at the end. The 416 that follows must end the
+    /// stream cleanly rather than fail it.
+    func testUnknownLengthEndsCleanlyAfterAPauseAtTheLastByte() {
+        // Exactly 16 high-water windows, so a pause lands on the last byte.
+        file = Self.nonRepeating(count: 16 * 64 * 1024)
+        ScriptedOrigin.respond = { request, _ in
+            let start = self.offset(of: request)
+            guard start < self.file.count else {
+                return ScriptedOrigin.Reply(status: 416, headers: ["Content-Range": "bytes */\(self.file.count)"])
+            }
+            return ScriptedOrigin.Reply(
+                status: 206,
+                headers: ["Content-Range": "bytes \(start)-\(self.file.count - 1)/*", "ETag": "\"v1\""],
+                body: self.file.subdata(in: start..<self.file.count))
+        }
+        let reader = makeReader(highWater: 64 * 1024, lowWater: 0)
+        XCTAssertTrue(reader.open())
+        XCTAssertEqual(readAll(reader), file)
+        XCTAssertEqual(ScriptedOrigin.requests.map(offset(of:)).last, file.count)
+    }
+
     func testResponseClassification() {
         typealias R = VividManagedStreamResponse
         XCTAssertEqual(R.classify(status: 206, requestedOffset: 10, contentRange: "bytes 10-99/100", contentLength: 90, knownTotal: nil), .bytes(total: 100))
@@ -363,6 +424,9 @@ final class ManagedStreamReaderTests: XCTestCase {
         XCTAssertEqual(R.classify(status: 200, requestedOffset: 0, contentRange: nil, contentLength: 100, knownTotal: nil), .bytes(total: 100))
         XCTAssertEqual(R.classify(status: 200, requestedOffset: 5, contentRange: nil, contentLength: 100, knownTotal: 100), .fatal("200 for a ranged request"))
         XCTAssertEqual(R.classify(status: 416, requestedOffset: 100, contentRange: nil, contentLength: 0, knownTotal: 100), .endOfStream)
+        XCTAssertEqual(R.classify(status: 416, requestedOffset: 100, contentRange: "bytes */100", contentLength: 0, knownTotal: nil), .endOfStream)
+        XCTAssertEqual(R.classify(status: 416, requestedOffset: 50, contentRange: "bytes */100", contentLength: 0, knownTotal: nil), .fatal("416 inside the stream"))
+        XCTAssertEqual(R.classify(status: 416, requestedOffset: 100, contentRange: nil, contentLength: 0, knownTotal: nil), .fatal("416 inside the stream"))
         XCTAssertEqual(R.classify(status: 401, requestedOffset: 0, contentRange: nil, contentLength: 0, knownTotal: nil), .authentication)
         XCTAssertEqual(R.classify(status: 503, requestedOffset: 0, contentRange: nil, contentLength: 0, knownTotal: nil), .transient)
         XCTAssertEqual(R.classify(status: 404, requestedOffset: 0, contentRange: nil, contentLength: 0, knownTotal: nil), .fatal("HTTP 404"))
