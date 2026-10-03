@@ -90,7 +90,11 @@ final class HotPathPerformanceTests: XCTestCase {
         var decoded: CatalogResponse?
         let samples = Samples()
         measure(metrics: [XCTClockMetric()], options: options) {
-            samples.time { decoded = try? HTTPClient.makeJSONDecoder().decode(CatalogResponse.self, from: data) }
+            do {
+                try samples.time { decoded = try HTTPClient.makeJSONDecoder().decode(CatalogResponse.self, from: data) }
+            } catch {
+                XCTFail("Decoding failed: \(error)")
+            }
         }
         samples.assertFastest(under: 0.3)
         let response = try XCTUnwrap(decoded)
@@ -165,6 +169,7 @@ final class HotPathPerformanceTests: XCTestCase {
         XCTAssertEqual(lines.count, messages.count)
         XCTAssertFalse(lines.contains { $0.contains("media.example.test") })
         XCTAssertFalse(lines.contains { $0.contains("perf.token.1") })
+        XCTAssertFalse(lines.contains { $0.contains("perf-refresh-") })
         XCTAssertFalse(lines.contains { $0.contains("perf-key") })
     }
 
@@ -172,21 +177,37 @@ final class HotPathPerformanceTests: XCTestCase {
 
     /// One Emby or Jellyfin `/Items` page with the browse fields both providers request.
     private func nativePage(count: Int, id: (Int) -> String) throws -> Data {
+        // Built in typed pieces: one large heterogeneous literal is too slow
+        // for the Xcode 26 type checker that CI uses.
         let items: [[String: Any]] = (0..<count).map { index in
-            [
-                "Id": id(index), "Name": "Synthetic Title \(index)", "SortName": "synthetic title \(index)",
-                "Type": index % 3 == 0 ? "Series" : "Movie", "ProductionYear": 1990 + index % 35,
-                "Overview": String(repeating: "Synthetic overview text. ", count: 6),
-                "OfficialRating": "PG-13", "CommunityRating": 6.8, "CriticRating": 81,
-                "Genres": ["Drama", "Comedy"], "Studios": [["Name": "Example Studio", "Id": "1"]],
-                "ProviderIds": ["Tmdb": String(index), "Imdb": "tt\(1_000_000 + index)"],
-                "DateCreated": "2026-01-02T03:04:05.0000000Z", "PremiereDate": "2020-05-06T00:00:00.0000000Z",
-                "RunTimeTicks": Int64(index % 40 + 90) * 600_000_000, "ChildCount": index % 3 == 0 ? 4 : 0,
-                "PrimaryImageAspectRatio": 0.6667,
-                "ImageTags": ["Primary": "primary-\(index)"], "BackdropImageTags": ["backdrop-\(index)"],
-                "UserData": ["PlaybackPositionTicks": index % 5 == 0 ? 3_000_000_000 : 0,
-                             "Played": index % 4 == 0, "IsFavorite": index % 9 == 0],
+            let ticks: Int64 = Int64(index % 40 + 90) * 600_000_000
+            let position: Int64 = index % 5 == 0 ? 3_000_000_000 : 0
+            let userData: [String: Any] = [
+                "PlaybackPositionTicks": position, "Played": index % 4 == 0, "IsFavorite": index % 9 == 0,
             ]
+            let providers: [String: String] = ["Tmdb": String(index), "Imdb": "tt\(1_000_000 + index)"]
+            let studios: [[String: String]] = [["Name": "Example Studio", "Id": "1"]]
+            var item: [String: Any] = [
+                "Id": id(index), "Name": "Synthetic Title \(index)", "SortName": "synthetic title \(index)",
+                "Type": index % 3 == 0 ? "Series" : "Movie",
+            ]
+            item["ProductionYear"] = 1990 + index % 35
+            item["Overview"] = String(repeating: "Synthetic overview text. ", count: 6)
+            item["OfficialRating"] = "PG-13"
+            item["CommunityRating"] = 6.8
+            item["CriticRating"] = 81
+            item["Genres"] = ["Drama", "Comedy"]
+            item["Studios"] = studios
+            item["ProviderIds"] = providers
+            item["DateCreated"] = "2026-01-02T03:04:05.0000000Z"
+            item["PremiereDate"] = "2020-05-06T00:00:00.0000000Z"
+            item["RunTimeTicks"] = ticks
+            item["ChildCount"] = index % 3 == 0 ? 4 : 0
+            item["PrimaryImageAspectRatio"] = 0.6667
+            item["ImageTags"] = ["Primary": "primary-\(index)"]
+            item["BackdropImageTags"] = ["backdrop-\(index)"]
+            item["UserData"] = userData
+            return item
         }
         return try JSONSerialization.data(withJSONObject: ["Items": items, "TotalRecordCount": count])
     }
