@@ -161,6 +161,39 @@ final class TVTMDbStore {
         return (kind,id)
     }
 
+    // MARK: PROTOTYPE ONLY: Studios & Networks
+
+    struct BrandDiscoverPage: Decodable {
+        struct Result: Decodable {
+            let id: Int
+            let popularity: Double?
+            let title: String?
+            let name: String?
+            let release_date: String?
+            let first_air_date: String?
+        }
+        let results: [Result]
+        let total_pages: Int?
+    }
+    private struct BrandDetail: Decodable { let logo_path: String? }
+
+    /// Popularity-ordered TMDB titles for one studio or network.
+    func brandDiscover(media: String, query: [String: String], page: Int) async throws -> BrandDiscoverPage {
+        guard isConfigured else { throw Failure.unavailable }
+        var q = query
+        q["sort_by"] = "popularity.desc"
+        q["include_adult"] = "false"
+        q["page"] = String(page)
+        return try await request("discover/\(media)", credential: credential, query: q)
+    }
+
+    /// `kind` is "company" or "network". Returns a full image URL.
+    func brandLogoURL(kind: String, id: Int) async throws -> URL? {
+        guard isConfigured else { throw Failure.unavailable }
+        let detail: BrandDetail = try await request("\(kind)/\(id)", credential: credential)
+        return detail.logo_path.flatMap { URL(string: "https://image.tmdb.org/t/p/w500" + $0) }
+    }
+
     private func checkContext(_ expected: String) throws {
         try Task.checkCancellation()
         guard isConfigured, contextKey == expected else { throw CancellationError() }

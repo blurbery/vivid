@@ -82,6 +82,9 @@ enum Route: Hashable {
         filter: TVLibraryFilterPayload,
         subtitle: String?
     )
+
+    // PROTOTYPE ONLY: Studios & Networks brand page (tvOS).
+    case tvBrandPrototype(brandId: String)
 }
 
 /// Card metadata that lets tvOS paint a branded detail frame before the

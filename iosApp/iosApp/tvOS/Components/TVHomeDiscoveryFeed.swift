@@ -21,6 +21,7 @@ struct TVHomeDiscoveryFeed: View {
     @State private var rowArtworkWindow = TVHomeRowArtworkWindow()
     @State private var scrollDiagnostics = TVHomeScrollDiagnostics()
     @State private var firstRowFocusRequest = 0
+    @State private var brandRowFocusRequest = 0 // PROTOTYPE ONLY
     @State private var spotlightOpenedDetail = false
     @State private var appliedFocusRequest = 0
 
@@ -44,7 +45,7 @@ struct TVHomeDiscoveryFeed: View {
                                     rowArtworkWindow.focus(index: 0)
                                 }
                             },
-                            onEnterFirstRow: enterFirstRow,
+                            onEnterFirstRow: enterBrandRow, // PROTOTYPE ONLY
                             onSelect: { slide in
                                 spotlightOpenedDetail = true
                                 rowFocusOwnership.rowID = nil
@@ -52,6 +53,8 @@ struct TVHomeDiscoveryFeed: View {
                             }
                         )
                         .id(Self.spotlightAnchor)
+
+                        brandRowPrototype // PROTOTYPE ONLY
                     }
 
                     VStack(alignment: .leading, spacing: TVHomeRowGeometry.rowSpacing) {
@@ -131,6 +134,8 @@ struct TVHomeDiscoveryFeed: View {
         .environment(\.tvHomeFocusOwnership, rowFocusOwnership)
         .environment(\.tvHomeScrollDiagnostics, scrollDiagnostics.enabled ? scrollDiagnostics : nil)
         .onDisappear { rowArtworkWindow.stopPendingPreparation() }
+        // PROTOTYPE ONLY: load Studios & Networks; re-runs once a TMDb key is connected.
+        .task(id: TVTMDbStore.shared.isConfigured) { await TVBrandPrototypeStore.shared.loadIfNeeded() }
         .ignoresSafeArea()
     }
 
@@ -140,6 +145,23 @@ struct TVHomeDiscoveryFeed: View {
         // own scroll instead of racing a separate ScrollViewReader animation.
         rowFocusOwnership.rowID = nil
         spotlightEnterRequest += 1
+    }
+
+    private var brandRowPrototype: some View { // PROTOTYPE ONLY
+        TVHomeBrandRowPrototype(
+            enterRequest: brandRowFocusRequest,
+            onMoveUp: enterSpotlight,
+            onMoveDown: enterFirstRow,
+            onFocused: { rowFocusOwnership.rowID = nil }
+        )
+    }
+
+    private func enterBrandRow() { // PROTOTYPE ONLY
+        guard TVBrandPrototypeStore.shared.showsRow else {
+            enterFirstRow(); return
+        }
+        rowFocusOwnership.rowID = nil
+        brandRowFocusRequest += 1
     }
 
     private func enterFirstRow() {

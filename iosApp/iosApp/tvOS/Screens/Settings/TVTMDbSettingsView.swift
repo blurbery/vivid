@@ -18,7 +18,7 @@ struct TVTMDbSettingsView: View {
                         .background(TVSettingsPalette.iconFill,
                                     in: RoundedRectangle(cornerRadius: 15.5))
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Trailers")
+                        Text("TMDb")
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("Configure your personal TMDB API to show trailers for your media.")

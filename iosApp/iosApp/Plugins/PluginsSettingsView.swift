@@ -5,7 +5,7 @@ struct PluginsSettingsView: View {
         #if os(tvOS)
         TVSettingsGroup {
             NavigationLink { TVTMDbSettingsView() } label: {
-                TVSettingsRowLabel(title: "Trailers", detail: "Trailers from your personal TMDB connection.")
+                TVSettingsRowLabel(title: "TMDb", detail: "Trailers from your personal TMDb connection.")
             }.buttonStyle(TVSettingsPaneRowStyle())
             NavigationLink { OpenSubtitlesSettingsView() } label: {
                 TVSettingsRowLabel(title: "OpenSubtitles", detail: "Find subtitles while watching.")
@@ -19,7 +19,7 @@ struct PluginsSettingsView: View {
             SettingsPageHeader(title: "Plugins", subtitle: "Trailers, subtitles, watch history and watchlists.", systemImage: "puzzlepiece.extension")
                 .settingsPageHeaderRow()
             Section {
-                NavigationLink("Trailers") { PhoneTMDbSettingsView() }
+                NavigationLink("TMDb") { PhoneTMDbSettingsView() }
                 NavigationLink("OpenSubtitles") { OpenSubtitlesSettingsView() }
                 NavigationLink("MDBList") { MDBListSettingsView() }
             }

@@ -84,7 +84,7 @@ struct PhoneTMDbSettingsView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "Trailers", subtitle: "Configure your personal TMDB API to show trailers for your media.", systemImage: "film.stack")
+            SettingsPageHeader(title: "TMDb", subtitle: "Configure your personal TMDB API to show trailers for your media.", systemImage: "film.stack")
                 .settingsPageHeaderRow()
             Section {
                 LabeledContent("Status") {
