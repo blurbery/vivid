@@ -632,7 +632,9 @@ struct MediaRow: View {
                 onSetWatched: watchedToggleAction(for: item),
                 initialIsFavorite: item.userState?.isFavorite == true,
                 onSetFavorite: favoriteToggleAction(for: item),
-                usesRuntimeStatus: usesRuntimeStatus && item.type.lowercased() == "episode"
+                usesRuntimeStatus: usesRuntimeStatus && MediaRuntimeStatusOverlay.applies(
+                    toType: item.type, inContinueWatching: onRemoveFromContinueWatching != nil
+                )
             )
         }
     }

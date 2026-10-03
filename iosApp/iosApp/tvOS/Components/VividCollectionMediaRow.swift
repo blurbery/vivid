@@ -127,7 +127,9 @@ struct VividCollectionMediaRow: View, Equatable {
                 onRemoveFromContinueWatching: remove,
                 onSetWatched: { played in await onSetWatched(item, played) },
                 initialIsFavorite: item.userState?.isFavorite == true,
-                usesRuntimeStatus: item.type.lowercased() == "episode"
+                usesRuntimeStatus: MediaRuntimeStatusOverlay.applies(
+                    toType: item.type, inContinueWatching: section.isContinueWatchingSection
+                )
             )
         } else {
             MediaCard(

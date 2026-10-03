@@ -386,21 +386,10 @@ struct MediaCard: View {
 
             // Watched indicator
             if isPlayed {
-                HStack {
-                    Spacer()
-                    #if os(tvOS)
-                    TVWatchedBadge()
-                    #else
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 22, height: 22)
-                        .background(Color(red: 0.16, green: 0.62, blue: 0.34), in: Circle())
-                        .shadow(color: .black.opacity(0.3), radius: 3)
-                    #endif
-                }
-                .padding(checkBadgePadding)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                WatchedCheckPill()
+                    .padding(checkBadgePadding)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .allowsHitTesting(false)
             }
 
             #if !os(tvOS)
@@ -780,16 +769,14 @@ struct MediaTypePill: View {
         Text(title)
             .font(.system(size: fontSize, weight: .semibold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 8)
             .padding(.vertical, 4)
+            // Same borderless translucent capsule as `WatchedCheckPill`, tinted.
             .background {
                 Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay(Capsule().fill(Color.black.opacity(0.78)))
-                    .overlay(Capsule().fill(tint.opacity(0.48)))
+                    .fill(Color.black.opacity(0.45))
+                    .overlay(Capsule().fill(tint.opacity(0.35)))
             }
-            .overlay(Capsule().strokeBorder(tint.opacity(0.65), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
             .allowsHitTesting(false)
     }
 }
