@@ -26,6 +26,8 @@ struct VividApp: App {
         #if os(iOS) || os(tvOS)
         // Record local launch timing for development troubleshooting.
         LaunchTimeline.recordProcessStart()
+        // Local crash, hang and exit reports. Nothing is uploaded.
+        AppHealthMonitor.install()
         #endif
 
     }
@@ -161,6 +163,7 @@ enum LaunchTimeline {
         didRecordFirstContent = true
         lock.unlock()
         guard !alreadyRecorded else { return }
+        AppHealthMonitor.firstContentShown()
         record(
             phase: "first_content",
             message: "initial route committed",
@@ -178,6 +181,7 @@ enum LaunchTimeline {
     static func recordScenePhase(_ state: String) {
         switch state {
         case "active":
+            AppHealthMonitor.sceneDidBecomeActive()
             // Consume the background mark: a resume is `.background →
             // .inactive → .active`, and the app stays active until the next
             // real `.background`. Leaving the mark set would relabel every
@@ -210,6 +214,7 @@ enum LaunchTimeline {
                 record(tag: "Scene", phase: "scene", message: "scene became active", state: state)
             }
         case "background":
+            AppHealthMonitor.sessionEndedCleanly()
             lock.lock()
             backgroundedAt = .now()
             lock.unlock()
@@ -223,6 +228,7 @@ enum LaunchTimeline {
     /// kill, which leaves no other trace at all — this line plus a missing
     /// termination line is how that reads in a trace.
     static func recordMemoryWarning(state: String) {
+        AppHealthMonitor.memoryWarningReceived()
         record(
             level: .warning,
             tag: "App",
@@ -236,6 +242,7 @@ enum LaunchTimeline {
     /// trace whose breadcrumbs end without this line did not
     /// shut down through the normal path.
     static func recordTermination(state: String) {
+        AppHealthMonitor.sessionEndedCleanly()
         record(tag: "App", phase: "terminate", message: "app terminating", state: state)
     }
 

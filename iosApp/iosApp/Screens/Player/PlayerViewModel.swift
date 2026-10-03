@@ -3894,6 +3894,7 @@ class PlayerViewModel {
         PlaybackTrialTrace.requestPlay()
         #endif
         #if os(iOS) || os(tvOS)
+        AppHealthMonitor.playerOpened()
         if refreshHomeAfterPlaybackWrite == nil {
             refreshHomeAfterPlaybackWrite = StartupContentPrefetcher.homeRefreshAfterPlaybackWrite()
         }
@@ -4359,6 +4360,8 @@ class PlayerViewModel {
         // Every Vivid recovery path ends either here or in `handleEndOfFile`,
         // so a report always shows how playback finished. Emit before teardown
         // so position and plan still describe the failed session.
+        let failureToken = stablePlaybackFailureToken(for: message)
+        let failurePositionMs = PlaybackSessionBridge.diagnosticsPositionMilliseconds(currentTime)
         DiagTrace.breadcrumb(
             .essential,
             level: .error,
@@ -4366,13 +4369,14 @@ class PlayerViewModel {
             tag: "Player",
             message: "playback ended in failure",
             attrs: [
-                "reason": .string(stablePlaybackFailureToken(for: message)),
+                "reason": .string(failureToken),
                 "play_method": .string(activeRouteLabel),
                 // Shared with the bridge's session breadcrumbs so a report's
                 // positions are all on the same scale and rounding.
-                "position_ms": .int(PlaybackSessionBridge.diagnosticsPositionMilliseconds(currentTime)),
+                "position_ms": .int(failurePositionMs),
             ]
         )
+        AppHealthMonitor.playbackFailed(reason: failureToken, playMethod: activeRouteLabel, positionMs: failurePositionMs)
         #endif
         // Pin the resume point before anything is torn down. The periodic
         // reporter ticks every 10s and is cancelled immediately below, so
@@ -5785,6 +5789,9 @@ class PlayerViewModel {
     @MainActor
     func cleanup() {
         guard !isDisposed else { return }
+        #if os(iOS) || os(tvOS)
+        AppHealthMonitor.playerClosed()
+        #endif
         qualityFallbackTask?.cancel()
         qualityFallbackTask = nil
         Self.logger.info("PlayerViewModel.cleanup()")

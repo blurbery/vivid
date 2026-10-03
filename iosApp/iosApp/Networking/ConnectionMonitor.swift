@@ -87,6 +87,7 @@ final class ConnectionMonitor {
             #endif
         }
         serverStatus = .reachable
+        AppHealthMonitor.serverReachabilityChanged(true)
         stopReprobeLoop()
     }
 
@@ -114,6 +115,7 @@ final class ConnectionMonitor {
         )
         #endif
         serverStatus = .unreachable
+        AppHealthMonitor.serverReachabilityChanged(false)
         startReprobeLoop()
     }
 
@@ -151,6 +153,7 @@ final class ConnectionMonitor {
         // already existed for correctness; diagnostics inherits it.
         guard online != isDeviceOnline else { return }
         isDeviceOnline = online
+        AppHealthMonitor.deviceOnlineChanged(online)
         Self.logger.info("Device network path: \(online ? "online" : "offline", privacy: .public)")
         #if os(iOS) || os(tvOS)
         // Essential. This is the line that separates the two reports that look

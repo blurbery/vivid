@@ -164,7 +164,7 @@ PiP, AirPlay, HDR and audio-format behaviour depend on the exact engine route, d
 ## Diagnostics and dependencies
 
 - Debug autoplay launch arguments and their presentation helpers compile only with `DEBUG`; their console messages omit search text, titles, content IDs and raw errors. Setup and login test values come from local launch arguments/environment, not embedded maintainer credentials.
-- Keep development logs local, redacted and bounded. Vivid does not capture or upload in-app diagnostics reports. Do not expose credentials, source URLs, paths or subtitle contents in logs.
+- Keep development logs local, redacted and bounded. On-device diagnostics reports are described in [App design](../app-design.md#diagnostics-reports); they include playback failures and recent essential events but are never uploaded automatically. Do not expose credentials, source URLs, paths or subtitle contents in logs or report fields.
 - Classify typed failures using stable kinds, with an unknown fallback, rather than matching localized error text.
 - Read the shared media dependency from [project.yml](../../iosApp/project.yml) and [project-ios.yml](../../iosApp/project-ios.yml), with exact revisions and provenance in the [third-party notices](../../THIRD_PARTY_NOTICES.md).
 - Keep the existing package graph and media-framework notices intact during documentation or branding work.

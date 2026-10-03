@@ -266,6 +266,8 @@ struct TVSettingsView: View {
             TVSeerrSettingsPane()
         case .metadata:
             TVHomeMetadataSettingsPane()
+        case .diagnostics:
+            TVDiagnosticsSettingsPane()
         case .about:
             AboutSettingsView()
         }
@@ -348,6 +350,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
     case plugins
     case seerr
     case metadata
+    case diagnostics
     case about
 
     var id: String { rawValue }
@@ -361,6 +364,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .server: return "Servers"
         case .seerr: return "Seerr"
         case .metadata: return "Metadata"
+        case .diagnostics: return "Diagnostics"
         case .about: return "About"
         }
     }
@@ -374,6 +378,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .server: return "server.rack"
         case .seerr: return "sparkles"
         case .metadata: return "internaldrive"
+        case .diagnostics: return "stethoscope"
         case .about: return "info.circle"
         }
     }
@@ -394,6 +399,8 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
             return "Connect Seerr to find and request movies and series."
         case .metadata:
             return "Manage Home content saved on this Apple TV."
+        case .diagnostics:
+            return "Crash and problem reports kept on this Apple TV."
         case .about:
             return "Vivid for your Apple devices."
         }
@@ -408,6 +415,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .server: return "Connection and version"
         case .seerr: return "Media requests"
         case .metadata: return "Home cache and storage"
+        case .diagnostics: return "Crash and hang reports"
         case .about: return "App details and contact"
         }
     }
