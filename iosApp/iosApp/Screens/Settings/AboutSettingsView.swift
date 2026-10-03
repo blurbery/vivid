@@ -8,8 +8,11 @@ import CoreImage.CIFilterBuiltins
 import UIKit
 #endif
 
-private enum VividAbout {
+enum VividAbout {
     static let email = "admin@vividapp.co"
+    /// Diagnostics reports have their own address so they can be filtered,
+    /// or switched off if abused, without touching the contact address.
+    static let diagnosticsEmail = "diagnostics@vividapp.co"
     static let website = URL(string: "https://vividapp.co")!
     static var version: String {
         let info = Bundle.main.infoDictionary
@@ -17,10 +20,10 @@ private enum VividAbout {
         guard let build = info?["CFBundleVersion"] as? String else { return version }
         return "\(version) (\(build))"
     }
-    static func mailURL(subject: String, message: String) -> URL? {
+    static func mailURL(subject: String, message: String, to recipient: String = email) -> URL? {
         var url = URLComponents()
         url.scheme = "mailto"
-        url.path = email
+        url.path = recipient
         url.queryItems = [URLQueryItem(name: "subject", value: subject), URLQueryItem(name: "body", value: message)]
         return url.url
     }
