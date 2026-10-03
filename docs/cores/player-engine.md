@@ -47,7 +47,7 @@ Stats retain the selected source codec, bitrate and channel description, with th
 
 ## Buffering and quality
 
-Lucid uses a 256 MiB forward demux packet limit and a 16 MiB back buffer. These are limits, not startup fill requirements. Settings shows Automatic buffering and omits the unused lossless-audio toggle.
+Lucid uses a 256 MiB forward demux packet limit and a 16 MiB back buffer. On Apple TV it also reads at most 60 seconds ahead (`cache-secs`), because a long play on a fast link otherwise fills the whole 256 MiB, the likeliest contributor to low-memory terminations on Apple TV 4K (3rd generation). These are limits, not startup fill requirements. Settings shows Automatic buffering and omits the unused lossless-audio toggle.
 
 Silo direct-play streams over HTTPS are read by Vivid rather than Lucid's own HTTP reader. Lucid opens a `vividstream://` source through libmpv's stream callbacks, and Vivid serves it with ranged requests that always carry the current login. A token refreshed by progress reporting reaches the live stream without a reload, an expired token is refreshed and the read resumes at the same byte, and a dropped connection reconnects at the first byte not yet received. `If-Range` and size checks refuse a file that changed mid-stream rather than splicing two versions. Stopping the player cancels every read straight away, including one still connecting. Plain HTTP servers, Emby, Jellyfin, server HLS and downloads keep Lucid's own reader. If a stream still ends early, the same-route reopen remains as a fallback. Setting the `vivid.experiment.managedStreamReader` user default to false returns these streams to Lucid's reader.
 
