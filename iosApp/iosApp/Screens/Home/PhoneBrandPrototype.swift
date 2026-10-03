@@ -98,7 +98,8 @@ struct PhoneBrandPagePrototype: View {
             .padding(.bottom, HomeFeedMetrics.bottomRunway)
         }
         .vividBackground()
-        .navigationTitle(info?.name ?? "")
+        // The logo is the title, as on Apple TV.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.loadIfNeeded() }
     }
