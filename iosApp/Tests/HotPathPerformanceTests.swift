@@ -6,6 +6,13 @@ import XCTest
 /// redaction. Every fixture is generated here, so no real library or server
 /// data is involved. Each test asserts its result as well, because a fixture
 /// that silently decodes to nothing would otherwise look fast.
+///
+/// Xcode baselines live in the generated, untracked project and only apply
+/// to the machine that recorded them, so each test also fails when its
+/// fastest iteration exceeds a ceiling. Ceilings are roughly ten times the
+/// fastest Debug run on an iPhone 17 simulator (Apple Silicon Mac), and more
+/// for the sub-millisecond Home path, which leaves room for slower CI runners
+/// while still catching a real regression.
 final class HotPathPerformanceTests: XCTestCase {
     private static let iterations = 5
 
@@ -25,13 +32,28 @@ final class HotPathPerformanceTests: XCTestCase {
         super.tearDown()
     }
 
+    /// Times each measured iteration so the fastest can be checked against a
+    /// ceiling; XCTest does not expose its own measurements to the test.
+    private final class Samples {
+        private(set) var seconds: [Double] = []
+        func time(_ body: () throws -> Void) rethrows {
+            let start = DispatchTime.now().uptimeNanoseconds
+            try body()
+            seconds.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000_000)
+        }
+        func assertFastest(under ceiling: Double, file: StaticString = #filePath, line: UInt = #line) {
+            guard let fastest = seconds.min() else { return XCTFail("No iterations ran", file: file, line: line) }
+            XCTAssertLessThan(fastest, ceiling, "Fastest of \(seconds.count) runs took \(fastest) s", file: file, line: line)
+        }
+    }
+
     // MARK: - Library pages
 
     func testEmbyLibraryPageDecodePerformance() throws {
         let adapter = EmbyAdapter(connection: EmbyConnection(
             serverURL: "https://media.example.test", token: nil, userID: "user-1", identity: nil))
         let page = try nativePage(count: 1_000) { String(100_000 + $0) }
-        try measureCatalog(page, expected: 1_000) { raw in
+        try measureCatalog(page, expected: 1_000, ceiling: 0.5) { raw in
             try ["items": adapter.convert(raw["Items"] as? [[String: Any]] ?? []), "total": raw["TotalRecordCount"] ?? 0]
         }
     }
@@ -41,7 +63,7 @@ final class HotPathPerformanceTests: XCTestCase {
             serverURL: "https://media.example.test/jellyfin", token: "test-token", userID: "user-1",
             identity: nil, sessionOverride: nil))
         let page = try nativePage(count: 1_000) { String(format: "%032x", $0) }
-        try measureCatalog(page, expected: 1_000) { raw in
+        try measureCatalog(page, expected: 1_000, ceiling: 0.6) { raw in
             try ["items": adapter.convert(raw["Items"] as? [[String: Any]] ?? []), "total": raw["TotalRecordCount"] ?? 0]
         }
     }
@@ -66,9 +88,11 @@ final class HotPathPerformanceTests: XCTestCase {
             "total": items.count, "total_exact": true, "has_more": false, "items": items,
         ])
         var decoded: CatalogResponse?
+        let samples = Samples()
         measure(metrics: [XCTClockMetric()], options: options) {
-            decoded = try? HTTPClient.makeJSONDecoder().decode(CatalogResponse.self, from: data)
+            samples.time { decoded = try? HTTPClient.makeJSONDecoder().decode(CatalogResponse.self, from: data) }
         }
+        samples.assertFastest(under: 0.3)
         let response = try XCTUnwrap(decoded)
         XCTAssertEqual(response.items.count, 2_000)
         XCTAssertEqual(response.items[42].contentId, "item-42")
@@ -89,20 +113,24 @@ final class HotPathPerformanceTests: XCTestCase {
 
         let writer = HomeMetadataWriter()
         var sections: [ResolvedSection] = []
+        let samples = Samples()
         let options = self.options
         options.invocationOptions = [.manuallyStart, .manuallyStop]
         measure(metrics: [XCTClockMetric()], options: options) {
             // A fresh cache each time: activate() is a no-op once loaded.
             let cache = TVHomeMetadataCache(writer: writer, snapshotDirectory: directory, currentScope: { scope })
             startMeasuring()
-            cache.activate()
-            let rows = HomeSectionPreferences.combinedSections(
-                cache.snapshot.rows.map(\.section), enabled: true, provider: .emby)
-            sections = rows.filter { !$0.items.isEmpty }
+            samples.time {
+                cache.activate()
+                let rows = HomeSectionPreferences.combinedSections(
+                    cache.snapshot.rows.map(\.section), enabled: true, provider: .emby)
+                sections = rows.filter { !$0.items.isEmpty }
+            }
             stopMeasuring()
             cache.deactivate()
             writer.sync {}
         }
+        samples.assertFastest(under: 0.05)
         XCTAssertEqual(sections.count, 11, "Continue Watching and Next Up merge into one row")
         XCTAssertEqual(sections.first?.items.count, 40)
         XCTAssertEqual(sections.last?.items.last?.contentId, "row-11-item-19")
@@ -122,14 +150,18 @@ final class HotPathPerformanceTests: XCTestCase {
         let timestamp = Date(timeIntervalSince1970: 1_800_000_000)
         let url = try XCTUnwrap(URL(string: "https://media.example.test/Items/1?api_key=perf-key"))
         var lines: [String] = []
+        let samples = Samples()
         measure(metrics: [XCTClockMetric()], options: options) {
-            lines = messages.compactMap { message in
-                DiagLog.renderedLine(
-                    level: .info, category: .network, tag: "Perf", message: message,
-                    attrs: ["path": .url(url), "status": .int(200)],
-                    timestamp: timestamp, captureSessionID: "perf-run")
+            samples.time {
+                lines = messages.compactMap { message in
+                    DiagLog.renderedLine(
+                        level: .info, category: .network, tag: "Perf", message: message,
+                        attrs: ["path": .url(url), "status": .int(200)],
+                        timestamp: timestamp, captureSessionID: "perf-run")
+                }
             }
         }
+        samples.assertFastest(under: 2.0)
         XCTAssertEqual(lines.count, messages.count)
         XCTAssertFalse(lines.contains { $0.contains("media.example.test") })
         XCTAssertFalse(lines.contains { $0.contains("perf.token.1") })
@@ -161,18 +193,23 @@ final class HotPathPerformanceTests: XCTestCase {
 
     /// Server bytes to the decoded page, the same way HTTPClient routes a
     /// native provider response: parse, map, re-encode, then decode.
-    private func measureCatalog(_ data: Data, expected: Int,
-                                map: @escaping ([String: Any]) throws -> [String: Any]) throws {
+    private func measureCatalog(_ data: Data, expected: Int, ceiling: Double,
+                                map: @escaping ([String: Any]) throws -> [String: Any],
+                                file: StaticString = #filePath, line: UInt = #line) throws {
         var decoded: CatalogResponse?
+        let samples = Samples()
         measure(metrics: [XCTClockMetric()], options: options) {
             do {
-                let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-                let mapped = try JSONSerialization.data(withJSONObject: map(raw), options: [.fragmentsAllowed])
-                decoded = try HTTPClient.makeJSONDecoder().decode(CatalogResponse.self, from: mapped)
+                try samples.time {
+                    let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                    let mapped = try JSONSerialization.data(withJSONObject: map(raw), options: [.fragmentsAllowed])
+                    decoded = try HTTPClient.makeJSONDecoder().decode(CatalogResponse.self, from: mapped)
+                }
             } catch {
                 XCTFail("Decoding failed: \(error)")
             }
         }
+        samples.assertFastest(under: ceiling, file: file, line: line)
         let response = try XCTUnwrap(decoded)
         XCTAssertEqual(response.items.count, expected)
         XCTAssertEqual(response.items[42].title, "Synthetic Title 42")
