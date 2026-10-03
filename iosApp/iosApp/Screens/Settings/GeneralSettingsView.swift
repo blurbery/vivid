@@ -26,11 +26,10 @@ struct GeneralSettingsView: View {
                         Text("Choose up to three rows for your discovery spotlight.").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                // PROTOTYPE ONLY
                 NavigationLink { PhoneStudiosNetworksSettingsView() } label: {
                     LabeledContent("Studios & Networks",
                                    value: !TVTMDbStore.shared.isConfigured ? "Needs TMDb"
-                                       : TVBrandPrototypeStore.shared.isEnabled ? "On" : "Off")
+                                       : StudiosNetworksStore.shared.isEnabled ? "On" : "Off")
                 }
                 #endif
                 NavigationLink { HomeSectionsCustomizationView() } label: {

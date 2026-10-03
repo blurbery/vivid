@@ -161,24 +161,39 @@ final class TVTMDbStore {
         return (kind,id)
     }
 
-    // MARK: PROTOTYPE ONLY: Studios & Networks
+    // MARK: Studios & Networks
 
-    struct BrandDiscoverPage: Decodable {
+    struct DiscoverPage: Decodable {
         struct Result: Decodable {
             let id: Int
             let popularity: Double?
             let title: String?
             let name: String?
-            let release_date: String?
-            let first_air_date: String?
+            let releaseDate: String?
+            let firstAirDate: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case id, popularity, title, name
+                case releaseDate = "release_date"
+                case firstAirDate = "first_air_date"
+            }
         }
         let results: [Result]
-        let total_pages: Int?
-    }
-    private struct BrandDetail: Decodable { let logo_path: String? }
+        let totalPages: Int?
 
-    /// Popularity-ordered TMDB titles for one studio or network.
-    func brandDiscover(media: String, query: [String: String], page: Int) async throws -> BrandDiscoverPage {
+        private enum CodingKeys: String, CodingKey {
+            case results
+            case totalPages = "total_pages"
+        }
+    }
+
+    private struct BrandDetail: Decodable {
+        let logoPath: String?
+        private enum CodingKeys: String, CodingKey { case logoPath = "logo_path" }
+    }
+
+    /// One page of popularity-ordered titles from TMDb's discover endpoint.
+    func discover(media: String, query: [String: String], page: Int) async throws -> DiscoverPage {
         guard isConfigured else { throw Failure.unavailable }
         var q = query
         q["sort_by"] = "popularity.desc"
@@ -187,11 +202,11 @@ final class TVTMDbStore {
         return try await request("discover/\(media)", credential: credential, query: q)
     }
 
-    /// `kind` is "company" or "network". Returns a full image URL.
-    func brandLogoURL(kind: String, id: Int) async throws -> URL? {
+    /// The logo for a TMDb company or network. `kind` is "company" or "network".
+    func logoURL(kind: String, id: Int) async throws -> URL? {
         guard isConfigured else { throw Failure.unavailable }
         let detail: BrandDetail = try await request("\(kind)/\(id)", credential: credential)
-        return detail.logo_path.flatMap { URL(string: "https://image.tmdb.org/t/p/w500" + $0) }
+        return detail.logoPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w500" + $0) }
     }
 
     private func checkContext(_ expected: String) throws {

@@ -13,9 +13,9 @@ struct TVGeneralSettingsPane: View {
     @State private var showsHomeSectionsEditor = false
     @State private var showsHomeScreenSettings = false
     @State private var showsMenuEditor = false
-    @State private var showsBrandRowEditor = false // PROTOTYPE ONLY
-    @State private var brandRow = TVBrandPrototypeStore.shared // PROTOTYPE ONLY
-    @State private var tmdb = TVTMDbStore.shared // PROTOTYPE ONLY
+    @State private var showsStudiosNetworksEditor = false
+    @State private var studiosNetworks = StudiosNetworksStore.shared
+    @State private var tmdb = TVTMDbStore.shared
     @State private var registry = ServerRegistry.shared
     @State private var librarySnapshot = MainTabLibrarySnapshot.cachedForCurrentAuthority()
     let detailFocus: FocusState<TVSettingsDetailFocus?>.Binding
@@ -45,11 +45,10 @@ struct TVGeneralSettingsPane: View {
                 }
                 .focused(detailFocus, equals: .generalHomeScreen)
 
-                // PROTOTYPE ONLY
                 TVSettingsPickerRow(
                     title: "Studios & Networks",
-                    value: !tmdb.isConfigured ? "Needs TMDb" : brandRow.isEnabled ? "On" : "Off"
-                ) { showsBrandRowEditor = true }
+                    value: !tmdb.isConfigured ? "Needs TMDb" : studiosNetworks.isEnabled ? "On" : "Off"
+                ) { showsStudiosNetworksEditor = true }
 
                 Button { showsHomeSectionsEditor = true } label: {
                     HStack(spacing: 16) {
@@ -135,13 +134,17 @@ struct TVGeneralSettingsPane: View {
         .navigationDestination(isPresented: $showsHomeSectionsEditor) {
             TVHomeSectionsCustomizationSheet()
         }
-        .navigationDestination(isPresented: $showsBrandRowEditor) { // PROTOTYPE ONLY
+        .navigationDestination(isPresented: $showsStudiosNetworksEditor) {
             TVStudiosNetworksSettingsView()
         }
         .navigationDestination(isPresented: $showsMenuEditor) {
             TVMenuCustomizationSheet(libraries: libraries)
         }
-        .onAppear { homeSections.refresh(); tmdb.reloadForCurrentProfile() } // tmdb: PROTOTYPE ONLY
+        .onAppear {
+            homeSections.refresh()
+            tmdb.reloadForCurrentProfile()
+            studiosNetworks.refresh()
+        }
         .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
         .task {
             await preferences.refresh()

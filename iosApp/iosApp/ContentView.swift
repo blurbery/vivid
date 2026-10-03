@@ -2403,8 +2403,8 @@ struct MainTabView: View {
         case .personDetail(let personId):
             PersonDetailView(personId: personId)
         #if os(iOS)
-        case .brandPrototype(let brandId): // PROTOTYPE ONLY
-            PhoneBrandPagePrototype(brandId: brandId)
+        case .studioNetwork(let brandId):
+            PhoneStudioNetworkPage(brandId: brandId)
         #endif
         case .player(let contentId, let startFromBeginning, let resumePosition, let prefersLastUsedVersion):
             #if os(macOS)

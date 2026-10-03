@@ -615,8 +615,8 @@ struct TVMainTabView: View {
                 initialFilter: payload.toFilterState(),
                 subtitle: subtitle
             )
-        case .brandPrototype(let brandId): // PROTOTYPE ONLY
-            TVBrandPagePrototype(brandId: brandId)
+        case .studioNetwork(let brandId):
+            TVStudioNetworkPage(brandId: brandId)
         default:
             EmptyStateView(icon: "questionmark.circle", title: "Unknown", subtitle: nil)
                 .vividBackground()

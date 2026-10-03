@@ -1,17 +1,14 @@
 #if os(iOS)
 import SwiftUI
 
-// PROTOTYPE ONLY, not for the PR: iPhone and iPad views for Studios &
-// Networks. Data lives in Components/BrandPrototypeStore.swift.
-
-private struct PhoneBrandTileFace: View {
+/// Logo tile shared by the Home row, the settings preview and the pick grid.
+private struct PhoneStudioNetworkTile: View {
     let id: String
     let width: CGFloat
-    @State private var store = TVBrandPrototypeStore.shared
+    @State private var store = StudiosNetworksStore.shared
 
     var body: some View {
-        BrandLogo(url: store.results[id]?.logoURL, name: store.info(id)?.name ?? id,
-                  knocksOutText: store.info(id)?.knocksOutLogoText ?? false)
+        StudioNetworkLogo(brand: store.brand(id), url: store.results[id]?.logoURL, fallbackName: id)
             .frame(maxWidth: width * 0.62, maxHeight: width * 9 / 16 * 0.42)
             .frame(width: width, height: width * 9 / 16)
             .background(Color.white.opacity(0.06),
@@ -25,10 +22,10 @@ private struct PhoneBrandTileFace: View {
 
 // MARK: - Home row
 
-/// No header, scrolls like the other Home rows. Tiles are half the width of a
-/// Continue Watching still.
-struct PhoneHomeBrandRowPrototype: View {
-    @State private var store = TVBrandPrototypeStore.shared
+/// Pinned under the Spotlight with no header. Scrolls like the other Home
+/// rows, with tiles half the width of a Continue Watching still.
+struct PhoneStudiosNetworksRow: View {
+    @State private var store = StudiosNetworksStore.shared
     @Environment(AppRouter.self) private var router
 
     static let tileWidth = HomeFeedMetrics.stillWidth / 2
@@ -38,11 +35,11 @@ struct PhoneHomeBrandRowPrototype: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: HomeFeedMetrics.cardSpacing) {
                     ForEach(store.picks, id: \.self) { id in
-                        Button { router.navigate(to: .brandPrototype(brandId: id)) } label: {
-                            PhoneBrandTileFace(id: id, width: Self.tileWidth)
+                        Button { router.navigate(to: .studioNetwork(brandId: id)) } label: {
+                            PhoneStudioNetworkTile(id: id, width: Self.tileWidth)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(store.info(id)?.name ?? id)
+                        .accessibilityLabel(store.brand(id)?.name ?? id)
                     }
                 }
             }
@@ -53,28 +50,24 @@ struct PhoneHomeBrandRowPrototype: View {
 
 // MARK: - Brand page
 
-struct PhoneBrandPagePrototype: View {
+struct PhoneStudioNetworkPage: View {
     let brandId: String
-    @State private var store = TVBrandPrototypeStore.shared
+    @State private var store = StudiosNetworksStore.shared
     @Environment(AppRouter.self) private var router
 
-    private var info: BrandTileInfo? { store.info(brandId) }
-    private var result: BrandResult { store.results[brandId] ?? BrandResult() }
+    private var brand: StudioNetworkBrand? { store.brand(brandId) }
+    private var result: StudioNetworkResult { store.results[brandId] ?? StudioNetworkResult() }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: HomeFeedMetrics.sectionSpacing) {
-                BrandLogo(url: result.logoURL, name: info?.name ?? brandId,
-                          knocksOutText: info?.knocksOutLogoText ?? false)
+                StudioNetworkLogo(brand: brand, url: result.logoURL, fallbackName: brandId)
                     .frame(maxWidth: 220, maxHeight: 70)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 12)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(info?.name ?? brandId)
-
-                if store.status == .loading {
-                    ProgressView().frame(maxWidth: .infinity)
-                }
+                    .accessibilityElement()
+                    .accessibilityLabel(brand?.name ?? brandId)
+                    .accessibilityAddTraits(.isHeader)
 
                 ForEach(store.pageRows(for: brandId), id: \.title) { row in
                     rail(title: row.title, items: row.items)
@@ -84,7 +77,7 @@ struct PhoneBrandPagePrototype: View {
                     VStack(alignment: .leading, spacing: HomeFeedMetrics.headerGap) {
                         header("All in Your Library")
                         CatalogGrid(
-                            items: Array(result.all.prefix(100)),
+                            items: result.all,
                             isLoading: false,
                             hasMore: false,
                             forcesThreeColumnsOnPhone: true,
@@ -108,6 +101,7 @@ struct PhoneBrandPagePrototype: View {
         Text(title)
             .font(.system(size: 20, weight: .bold))
             .padding(.horizontal, HomeFeedMetrics.gutter)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func rail(title: String, items: [BrowseItem]) -> some View {
@@ -137,7 +131,7 @@ struct PhoneBrandPagePrototype: View {
 // MARK: - Settings editor
 
 struct PhoneStudiosNetworksSettingsView: View {
-    @State private var store = TVBrandPrototypeStore.shared
+    @State private var store = StudiosNetworksStore.shared
     @State private var isArranging = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -145,8 +139,8 @@ struct PhoneStudiosNetworksSettingsView: View {
         switch store.status {
         case .needsTMDB: "Connect TMDb in Settings → Plugins → TMDb to use Studios & Networks."
         case .loading, .idle: "Matching your library with TMDb…"
-        case .failed: "Couldn’t load from TMDb or your server. \(store.lastError ?? "")"
-        case .ready: "Pinned under the hero on Home. \(store.picks.count) of \(TVBrandPrototypeStore.maxPicks) chosen."
+        case .failed: "Couldn’t load from TMDb or your server. Check your connection and try again."
+        case .ready: "Pinned under the Spotlight on Home. \(store.picks.count) of \(StudiosNetworksStore.maxPicks) chosen."
         }
     }
 
@@ -155,39 +149,10 @@ struct PhoneStudiosNetworksSettingsView: View {
             SettingsPageHeader(title: "Studios & Networks", subtitle: statusText, systemImage: "square.grid.3x1.below.line.grid.1x2")
                 .settingsPageHeaderRow()
 
-            if store.status == .ready {
-                Section {
-                    Toggle("Show on Home", isOn: Binding(get: { store.isEnabled }, set: { store.isEnabled = $0 }))
-                }
-
-                Section {
-                    preview
-                        .listRowInsets(EdgeInsets(top: 14, leading: 12, bottom: 14, trailing: 12))
-                } header: {
-                    HStack {
-                        PhoneSettingsSectionHeader("Preview")
-                        Spacer()
-                        if isArranging {
-                            Button("Done") { withAnimation { isArranging = false } }
-                                .font(.subheadline.weight(.semibold))
-                        }
-                    }
-                } footer: {
-                    Text(isArranging
-                         ? "Drag tiles to reorder. Tap − to remove."
-                         : "Touch and hold a tile to rearrange. Changes save automatically.")
-                }
-
-                pickSection(title: "Networks", kind: .network)
-                pickSection(title: "Studios", kind: .studio)
-
-                Section {
-                    Button("Reset to Automatic") { store.resetToAutomatic() }
-                        .frame(maxWidth: .infinity)
-                } footer: {
-                    Text("Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least \(TVBrandPrototypeStore.minimumCount).")
-                }
-            } else if store.status == .loading || store.status == .idle {
+            switch store.status {
+            case .ready:
+                readyContent
+            case .loading, .idle:
                 Section {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -198,8 +163,15 @@ struct PhoneStudiosNetworksSettingsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 } footer: {
-                    Label(TVBrandPrototypeStore.firstLoadNotice, systemImage: "exclamationmark.triangle.fill")
+                    Label(StudiosNetworksStore.firstLoadNotice, systemImage: "exclamationmark.triangle.fill")
                 }
+            case .failed:
+                Section {
+                    Button("Try Again") { Task { await store.loadIfNeeded() } }
+                        .frame(maxWidth: .infinity)
+                }
+            case .needsTMDB:
+                EmptyView()
             }
         }
         .settingsListChrome()
@@ -207,15 +179,50 @@ struct PhoneStudiosNetworksSettingsView: View {
         .task { await store.loadIfNeeded() }
     }
 
+    @ViewBuilder
+    private var readyContent: some View {
+        Section {
+            Toggle("Show on Home", isOn: Binding(get: { store.isEnabled }, set: { store.setEnabled($0) }))
+        }
+
+        Section {
+            preview
+                .listRowInsets(EdgeInsets(top: 14, leading: 12, bottom: 14, trailing: 12))
+        } header: {
+            HStack {
+                PhoneSettingsSectionHeader("Preview")
+                Spacer()
+                if isArranging {
+                    Button("Done") { withAnimation { isArranging = false } }
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+        } footer: {
+            Text(isArranging
+                 ? "Drag tiles to reorder. Tap − to remove."
+                 : "Touch and hold a tile to rearrange. Changes save automatically.")
+        }
+
+        pickSection(title: "Networks", kind: .network)
+        pickSection(title: "Studios", kind: .studio)
+
+        Section {
+            Button("Reset to Automatic") { store.resetToAutomatic() }
+                .frame(maxWidth: .infinity)
+        } footer: {
+            Text("Counts are titles in your library matched with TMDb’s most popular for each. Brands need at least \(StudiosNetworksStore.minimumCount).")
+        }
+    }
+
     // MARK: Preview with wiggle mode
 
     private var preview: some View {
         GeometryReader { proxy in
             let spacing: CGFloat = 8
-            let width = (proxy.size.width - spacing * CGFloat(TVBrandPrototypeStore.maxPicks - 1))
-                / CGFloat(TVBrandPrototypeStore.maxPicks)
+            let width = (proxy.size.width - spacing * CGFloat(StudiosNetworksStore.maxPicks - 1))
+                / CGFloat(StudiosNetworksStore.maxPicks)
             HStack(spacing: spacing) {
-                ForEach(0..<TVBrandPrototypeStore.maxPicks, id: \.self) { index in
+                ForEach(0..<StudiosNetworksStore.maxPicks, id: \.self) { index in
                     if index < store.picks.count {
                         slot(store.picks[index], index: index, width: width)
                     } else {
@@ -229,11 +236,13 @@ struct PhoneStudiosNetworksSettingsView: View {
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.picks)
         }
-        .aspectRatio(CGFloat(TVBrandPrototypeStore.maxPicks) * 16 / 9 * 0.93, contentMode: .fit)
+        // Five 16:9 tiles plus their gaps.
+        .aspectRatio(CGFloat(StudiosNetworksStore.maxPicks) * 16 / 9 * 0.93, contentMode: .fit)
     }
 
     private func slot(_ id: String, index: Int, width: CGFloat) -> some View {
-        PhoneBrandTileFace(id: id, width: width)
+        let name = store.brand(id)?.name ?? id
+        return PhoneStudioNetworkTile(id: id, width: width)
             .modifier(ProfileArrangeWobble(active: isArranging))
             .overlay(alignment: .topLeading) {
                 if isArranging {
@@ -245,33 +254,34 @@ struct PhoneStudiosNetworksSettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .offset(x: -6, y: -6)
-                    .accessibilityLabel("Remove \(store.info(id)?.name ?? id)")
+                    .accessibilityLabel("Remove \(name)")
                 }
             }
             .onLongPressGesture(minimumDuration: 0.35) {
                 withAnimation { isArranging = true }
             }
             .draggable(id) {
-                PhoneBrandTileFace(id: id, width: width)
+                PhoneStudioNetworkTile(id: id, width: width)
             }
             .dropDestination(for: String.self) { dropped, _ in
-                guard let moving = dropped.first else { return false }
+                guard let moving = dropped.first, store.picks.contains(moving) else { return false }
                 withAnimation { store.place(moving, at: index) }
                 return true
             }
-            .accessibilityLabel(store.info(id)?.name ?? id)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(name)
             .accessibilityAction(named: "Move earlier") { store.move(id, by: -1) }
             .accessibilityAction(named: "Move later") { store.move(id, by: 1) }
     }
 
     // MARK: Pick grid
 
-    private func pickSection(title: String, kind: BrandTileInfo.Kind) -> some View {
+    private func pickSection(title: String, kind: StudioNetworkBrand.Kind) -> some View {
         Section {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
                       alignment: .leading, spacing: 16) {
-                ForEach(TVBrandPrototypeStore.catalogue.filter { $0.kind == kind }) { info in
-                    pickTile(info)
+                ForEach(StudiosNetworksStore.catalogue.filter { $0.kind == kind }) { brand in
+                    pickTile(brand)
                 }
             }
             .padding(.vertical, 6)
@@ -280,22 +290,21 @@ struct PhoneStudiosNetworksSettingsView: View {
         }
     }
 
-    private func pickTile(_ info: BrandTileInfo) -> some View {
-        let picked = store.picks.contains(info.id)
-        let count = store.count(info.id)
-        let eligible = store.isEligible(info.id)
-        let full = store.picks.count >= TVBrandPrototypeStore.maxPicks
-        let unavailable = !eligible || (full && !picked)
-        return Button { withAnimation { store.toggle(info.id) } } label: {
+    private func pickTile(_ brand: StudioNetworkBrand) -> some View {
+        let picked = store.picks.contains(brand.id)
+        let count = store.count(brand.id)
+        let eligible = store.isEligible(brand.id)
+        let unavailable = !eligible || (store.picks.count >= StudiosNetworksStore.maxPicks && !picked)
+        return Button { withAnimation { store.toggle(brand.id) } } label: {
             VStack(alignment: .leading, spacing: 4) {
                 GeometryReader { proxy in
-                    PhoneBrandTileFace(id: info.id, width: proxy.size.width)
+                    PhoneStudioNetworkTile(id: brand.id, width: proxy.size.width)
                         .overlay(alignment: .topTrailing) {
                             if picked { WatchedCheckPill().scaleEffect(0.8).padding(4) }
                         }
                 }
                 .aspectRatio(16 / 9, contentMode: .fit)
-                Text(info.name).font(.caption.weight(.semibold)).lineLimit(1)
+                Text(brand.name).font(.caption.weight(.semibold)).lineLimit(1)
                 Text(eligible ? "\(count) titles" : count == 0 ? "None in library" : "Only \(count) titles")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -303,7 +312,7 @@ struct PhoneStudiosNetworksSettingsView: View {
         .buttonStyle(.plain)
         .disabled(unavailable)
         .opacity(unavailable ? 0.4 : 1)
-        .accessibilityLabel("\(info.name), \(count) titles\(picked ? ", chosen" : "")")
+        .accessibilityLabel("\(brand.name), \(count) titles\(picked ? ", chosen" : "")")
     }
 }
 #endif

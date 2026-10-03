@@ -457,6 +457,12 @@ actor VividAPI {
         try await http.get("/api/v1/catalog", query: await withImageSize(query))
     }
 
+    /// A catalog page decoded into a caller-defined shape, for callers that
+    /// need fields `BrowseItem` doesn't keep, such as provider IDs.
+    func catalog<Page: Decodable>(query: [String: String], as _: Page.Type) async throws -> Page {
+        try await http.get("/api/v1/catalog", query: await withImageSize(query))
+    }
+
     func historyCatalog(
         offset: Int,
         limit: Int,
