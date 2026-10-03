@@ -13,6 +13,9 @@ struct DiagnosticsSettingsView: View {
     @State private var shareURL: URL?
     @State private var loaded = false
     @State private var showsDeleteConfirm = false
+    /// Reloads can overlap (on appear and after every store change); only the
+    /// latest may publish its export file, and older ones remove their own.
+    @State private var reloadGeneration = 0
 
     private var groups: [AppHealthReportGroup] { AppHealthReportGroup.grouping(reports) }
     private var unsent: [AppHealthReport] { AppHealthSendState.unsent(in: reports, sentIDs: sentIDs) }
@@ -91,9 +94,12 @@ struct DiagnosticsSettingsView: View {
     }
 
     private func reload() async {
+        reloadGeneration += 1
+        let generation = reloadGeneration
         let (loadedReports, loadedSentIDs) = await Task.detached(priority: .userInitiated) {
             (AppHealthStore.shared.reports(), AppHealthSendState.sentIDs())
         }.value
+        guard generation == reloadGeneration else { return }
         reports = loadedReports
         sentIDs = loadedSentIDs
         loaded = true
@@ -102,8 +108,13 @@ struct DiagnosticsSettingsView: View {
         let url = subset.isEmpty ? nil : await Task.detached(priority: .userInitiated) {
             DiagnosticsExportFile.write(AppHealthStore.shared.exportData(subset))
         }.value
-        DiagnosticsExportFile.remove(shareURL)
+        guard generation == reloadGeneration else {
+            DiagnosticsExportFile.remove(url)
+            return
+        }
+        let previous = shareURL
         shareURL = url
+        if previous != url { DiagnosticsExportFile.remove(previous) }
     }
 }
 

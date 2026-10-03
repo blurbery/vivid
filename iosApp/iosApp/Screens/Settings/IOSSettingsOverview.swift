@@ -54,7 +54,6 @@ struct IOSSettingsOverview: View {
             PhoneSavedAccountEditor(accountID: route.accountID)
         }
         .task { await refreshDiagnosticsCount() }
-        .onAppear { Task { await refreshDiagnosticsCount() } }
         .onReceive(NotificationCenter.default.publisher(for: AppHealthStore.didChange)) { _ in
             Task { await refreshDiagnosticsCount() }
         }
