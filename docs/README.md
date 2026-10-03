@@ -17,7 +17,7 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
   <tbody>
     <tr><td><a href="../CONTRIBUTING.md">Build and contribute</a></td><td>Xcode setup, local signing and validation</td></tr>
     <tr><td><a href="server-connections.md">Server connections</a></td><td>Saved accounts, private iCloud sync and restore troubleshooting, deletion rules, profile PINs, plugins, MDBList completed-watch exports and watchlist sync and server integration status</td></tr>
-    <tr><td><a href="app-design.md">App design</a></td><td>Shared appearance, downloads, components and accessibility</td></tr>
+    <tr><td><a href="app-design.md">App design</a></td><td>Shared appearance, downloads, components, accessibility and diagnostics reports</td></tr>
     <tr><td><a href="apple-tv-browsing.md">Apple TV browsing</a></td><td>Discovery spotlight, native catalog menus, detail pages, trailers, similarity, Settings and startup</td></tr>
     <tr><td><a href="apple-tv-focus.md">Apple TV focus</a></td><td>Focus ownership and navigation rules</td></tr>
     <tr><td><a href="playback/README.md">Playback</a></td><td>Lucid Engine on Apple TV, iPhone and iPad, compatible audio, embedded and OpenSubtitles tracks, chapters, controls, downloads, resume updates and verification</td></tr>
