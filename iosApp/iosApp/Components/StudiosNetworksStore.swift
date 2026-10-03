@@ -185,16 +185,20 @@ final class StudiosNetworksStore {
         savePreferences()
     }
 
-    /// Rows for a brand page. Networks show the past 12 months; studios
-    /// release only a few films a year, so they keep the all-time popular.
+    /// Rows for a brand page. Networks show the past 12 months, falling back
+    /// to all-time popular when the year is too thin to fill a row (Apple
+    /// releases few films); studios always use their all-time popular.
     func pageRows(for id: String) -> [(title: String, items: [BrowseItem])] {
         Self.pageRows(for: brand(id), result: results[id] ?? StudioNetworkResult())
     }
 
     static func pageRows(for brand: StudioNetworkBrand?, result: StudioNetworkResult) -> [(title: String, items: [BrowseItem])] {
         let isStudio = brand?.kind == .studio
-        let series = (title: "Popular Series", items: isStudio ? result.series : result.recentSeries)
-        let movies = (title: "Popular Movies", items: isStudio ? result.movies : result.recentMovies)
+        func pick(recent: [BrowseItem], allTime: [BrowseItem]) -> [BrowseItem] {
+            isStudio || recent.count < minimumCount ? allTime : recent
+        }
+        let series = (title: "Popular Series", items: pick(recent: result.recentSeries, allTime: result.series))
+        let movies = (title: "Popular Movies", items: pick(recent: result.recentMovies, allTime: result.movies))
         return (isStudio ? [movies, series] : [series, movies])
             .filter { $0.items.count >= minimumCount }
             .map { (title: $0.title, items: Array($0.items.prefix(rowLimit))) }

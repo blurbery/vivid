@@ -71,6 +71,16 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertEqual(rows.first?.items.first?.contentId, "m0")
     }
 
+    func testNetworkRowsFallBackToAllTimeWhenTheYearIsThin() throws {
+        let brand = StudiosNetworksStore.catalogue.first { $0.id == "appletv" }
+        var result = StudioNetworkResult()
+        result.recentMovies = try (0..<5).map { try item("r\($0)", "Recent \($0)", year: 2026) }
+        result.movies = try (0..<12).map { try item("a\($0)", "All \($0)", year: 2020) }
+        let rows = StudiosNetworksStore.pageRows(for: brand, result: result)
+        XCTAssertEqual(rows.map(\.title), ["Popular Movies"])
+        XCTAssertEqual(rows.first?.items.first?.contentId, "a0")
+    }
+
     func testRowsBelowTheMinimumAreHidden() throws {
         let brand = StudiosNetworksStore.catalogue.first { $0.id == "hbo" }
         var result = StudioNetworkResult()
