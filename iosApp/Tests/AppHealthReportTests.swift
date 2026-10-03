@@ -541,4 +541,28 @@ final class AppHealthReportTests: XCTestCase {
         XCTAssertNil(NotificationDeepLinkCoordinator.deepLinkURL(from: [key: "silo://item/1"]))
         XCTAssertNil(NotificationDeepLinkCoordinator.deepLinkURL(from: [:]))
     }
+
+    // MARK: - Memory context
+
+    func testExitReportsCarryMemoryUseAndPlaybackLength() {
+        let opened = Date(timeIntervalSince1970: 1_790_000_000)
+        var context = AppHealthContextSnapshot()
+        context.phase = "browsing"
+        context.playerOpen = true
+        context.playerOpenedAt = opened
+        context.memoryWarnings = 2
+        context.memoryMB = 1_480
+        context.peakMemoryMB = 1_510
+        context.memoryAvailableMB = 60
+        context.memorySampledAt = opened.addingTimeInterval(14 * 60 + 20)
+        let attributes = context.attributes
+        XCTAssertEqual(attributes["memory_mb"], .int(1_480))
+        XCTAssertEqual(attributes["peak_memory_mb"], .int(1_510))
+        XCTAssertEqual(attributes["memory_available_mb"], .int(60))
+        XCTAssertEqual(attributes["playing_min"], .int(14))
+
+        context.playerOpen = false
+        XCTAssertNil(context.attributes["playing_min"], "playback length only applies while the player is open")
+        XCTAssertNotNil(AppHealthMemory.footprintMB())
+    }
 }
