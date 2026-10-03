@@ -87,10 +87,11 @@ struct DiagnosticsSettingsView: View {
     }
 
     private func groupDetail(_ group: AppHealthReportGroup) -> String {
-        let latest = group.latest.recordedAt.formatted(.relative(presentation: .named))
+        let latest = group.latest.lastOccurredAt.formatted(.relative(presentation: .named))
         let count = group.reports.count == 1 ? "1 report" : "\(group.reports.count) reports"
+        let times = group.occurrenceCount > group.reports.count ? " · happened \(group.occurrenceCount) times" : ""
         let allSent = group.reports.allSatisfy { sentIDs.contains($0.id) }
-        return "\(group.kind.title) · \(count) · latest \(latest) · \(group.latest.issueID)" + (allSent ? " · Sent" : "")
+        return "\(group.kind.title) · \(count)\(times) · latest \(latest) · \(group.latest.issueID)" + (allSent ? " · Sent" : "")
     }
 
     private func reload() async {
@@ -135,6 +136,7 @@ private struct DiagnosticsReportGroupView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(report.recordedAt.formatted(date: .abbreviated, time: .shortened))
                             Text("\(report.app.version) (\(report.app.build)) · \(report.app.device)"
+                                 + (report.occurrenceCount > 1 ? " · " + report.repeatSummary : "")
                                  + (sentIDs.contains(report.id) ? " · Sent" : ""))
                                 .font(.footnote).foregroundStyle(.secondary)
                         }

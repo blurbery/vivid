@@ -39,6 +39,10 @@ enum AppHealthMonitor {
     ]
     private static let state = OSAllocatedUnfairLock(initialState: State())
     private static let storeQueue = DispatchQueue(label: "com.blurbery.vivid.health.store", qos: .utility)
+    /// How often memory use is written to the exit marker while active, so a
+    /// memory termination report shows how use grew before it.
+    private static let memorySampleInterval: DispatchTimeInterval = .seconds(30)
+    private static let memorySampler = OSAllocatedUnfairLock<DispatchSourceTimer?>(initialState: nil)
     private static let watchdog = MainThreadWatchdog(
         onStall: { stalledMs in AppHealthMonitor.mainThreadStalled(ms: stalledMs) },
         onRecovered: { durationMs in AppHealthMonitor.mainThreadRecovered(durationMs: durationMs) }
@@ -130,12 +134,14 @@ enum AppHealthMonitor {
         }
         writeMarker()
         if watchdogAllowed { watchdog.start() }
+        if state.withLock({ $0.enabled }) { startMemorySampler() }
     }
 
     /// Background and normal termination both end the foreground session
     /// cleanly. Background jetsam kills are routine and are not reported.
     static func sessionEndedCleanly() {
         watchdog.stop()
+        stopMemorySampler()
         state.withLock {
             $0.armed = false
             $0.armedAt = nil
@@ -174,12 +180,14 @@ enum AppHealthMonitor {
 
     static func memoryWarningReceived() {
         contextChanged { $0.memoryWarnings += 1 }
+        storeQueue.async { sampleMemory() }
     }
 
     static func playerOpened() {
         contextChanged {
             $0.playerOpen = true
             $0.playMethod = nil
+            $0.playerOpenedAt = Date()
         }
         AppHealthTrail.flushSoon()
     }
@@ -188,6 +196,7 @@ enum AppHealthMonitor {
         contextChanged {
             $0.playerOpen = false
             $0.playMethod = nil
+            $0.playerOpenedAt = nil
         }
         AppHealthTrail.flushSoon()
     }
@@ -313,6 +322,38 @@ enum AppHealthMonitor {
     private static func contextChanged(_ change: (inout AppHealthContextSnapshot) -> Void) {
         _ = AppHealthContext.update(change)
         writeMarker()
+    }
+
+    // MARK: - Memory
+
+    private static func startMemorySampler() {
+        memorySampler.withLockUnchecked { timer in
+            guard timer == nil else { return }
+            let source = DispatchSource.makeTimerSource(queue: storeQueue)
+            source.schedule(deadline: .now(), repeating: memorySampleInterval, leeway: .seconds(5))
+            source.setEventHandler { sampleMemory() }
+            source.resume()
+            timer = source
+        }
+    }
+
+    private static func stopMemorySampler() {
+        memorySampler.withLockUnchecked { timer in
+            timer?.cancel()
+            timer = nil
+        }
+    }
+
+    private static func sampleMemory() {
+        guard let footprint = AppHealthMemory.footprintMB() else { return }
+        let available = AppHealthMemory.availableMB()
+        let now = Date()
+        contextChanged {
+            $0.memoryMB = footprint
+            $0.peakMemoryMB = max($0.peakMemoryMB ?? 0, footprint)
+            $0.memoryAvailableMB = available
+            $0.memorySampledAt = now
+        }
     }
 
     // MARK: - Watchdog

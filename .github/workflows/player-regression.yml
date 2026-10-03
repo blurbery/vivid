@@ -74,7 +74,7 @@ jobs:
           tvos=false
           while IFS= read -r file; do
             case "$file" in
-              iosApp/project-ios.yml|iosApp/NotificationService/*|iosApp/DownloadsActivity/*) continue ;;
+              iosApp/project-ios.yml|iosApp/DownloadsActivity/*) continue ;;
               iosApp/Signing/VividTV*.xcconfig) ;;
               iosApp/Signing/*.xcconfig|scripts/*) continue ;;
               iosApp/Tests/*)

@@ -12,6 +12,15 @@ struct AppHealthContextSnapshot: Codable, Equatable {
     var memoryWarnings = 0
     var deviceOnline = true
     var serverReachable = true
+    /// When the player opened, so a report says how long playback had run.
+    var playerOpenedAt: Date?
+    /// Memory the system charges the app for, in MB, at the latest sample.
+    var memoryMB: Int?
+    /// The highest sampled memory use this process, in MB.
+    var peakMemoryMB: Int?
+    /// Memory left before the system's limit for the app, in MB.
+    var memoryAvailableMB: Int?
+    var memorySampledAt: Date?
 
     var attributes: [String: DiagnosticsJSONValue] {
         var attributes: [String: DiagnosticsJSONValue] = [
@@ -20,6 +29,12 @@ struct AppHealthContextSnapshot: Codable, Equatable {
             "memory_warnings": .int(memoryWarnings),
         ]
         if let playMethod { attributes["play_method"] = .string(playMethod) }
+        if let memoryMB { attributes["memory_mb"] = .int(memoryMB) }
+        if let peakMemoryMB { attributes["peak_memory_mb"] = .int(peakMemoryMB) }
+        if let memoryAvailableMB { attributes["memory_available_mb"] = .int(memoryAvailableMB) }
+        if playerOpen, let playerOpenedAt, let memorySampledAt {
+            attributes["playing_min"] = .int(max(0, Int(memorySampledAt.timeIntervalSince(playerOpenedAt) / 60)))
+        }
         if !deviceOnline { attributes["device_online"] = .bool(false) }
         if !serverReachable { attributes["server_reachable"] = .bool(false) }
         return attributes
@@ -34,6 +49,25 @@ struct AppHealthContextSnapshot: Codable, Equatable {
         guard !trimmed.isEmpty, trimmed.count <= 32,
               trimmed.unicodeScalars.allSatisfy(allowed.contains) else { return nil }
         return trimmed
+    }
+}
+
+/// The app's memory use as the system counts it against its limit.
+enum AppHealthMemory {
+    static func footprintMB() -> Int? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        return Int(info.phys_footprint / 1_048_576)
+    }
+
+    static func availableMB() -> Int {
+        Int(os_proc_available_memory() / 1_048_576)
     }
 }
 

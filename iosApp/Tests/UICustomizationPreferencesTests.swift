@@ -895,6 +895,51 @@ final class UICustomizationPreferencesTests: XCTestCase {
         XCTAssertNil(restarted.syncErrorMessage)
     }
 
+    func testPermanentlyRejectedWriteShowsTheServerValueAndIsNotReplayed() async throws {
+        let suiteName = "ui-customization-rejected-suite-\(UUID().uuidString)"
+        let standardName = "ui-customization-rejected-standard-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let standard = try XCTUnwrap(UserDefaults(suiteName: standardName))
+        defer {
+            UserDefaults().removePersistentDomain(forName: suiteName)
+            UserDefaults().removePersistentDomain(forName: standardName)
+        }
+
+        let defaults = SharedDefaults(suite: suite, standard: standard)
+        let transport = RejectingWriteProbe()
+        let cacheKey = "vivid.uiCustomization.server.profile.mobile"
+        let preferences = UICustomizationPreferences(
+            defaults: defaults,
+            transport: transport,
+            cacheKey: { cacheKey },
+            requestIdentity: { testRequestIdentity(for: cacheKey) },
+            initialCapabilityState: .supported
+        )
+
+        preferences.setCardPresentation(CardPresentationPreset.artworkOnly.presentation)
+        while preferences.isSaving { await Task.yield() }
+
+        XCTAssertEqual(preferences.cardPresentation, .standard, "the rejected value is replaced by the server's")
+        XCTAssertNil(preferences.syncErrorMessage)
+        var snapshot = await transport.snapshot()
+        XCTAssertEqual(snapshot.putAttempts, 1)
+        XCTAssertEqual(snapshot.readKeys, [[.uiCardPresentation]])
+
+        // A fresh store must not replay the rejected write.
+        let restarted = UICustomizationPreferences(
+            defaults: defaults,
+            transport: transport,
+            cacheKey: { cacheKey },
+            requestIdentity: { testRequestIdentity(for: cacheKey) },
+            initialCapabilityState: .supported
+        )
+        XCTAssertEqual(restarted.cardPresentation, .standard)
+        await restarted.refresh()
+        snapshot = await transport.snapshot()
+        XCTAssertEqual(snapshot.putAttempts, 1)
+        XCTAssertNil(restarted.syncErrorMessage)
+    }
+
     func testUnavailableOrOldCapabilitiesDoNotDrainRevisionFiveOutbox() async throws {
         let suiteName = "ui-customization-capability-gate-suite-\(UUID().uuidString)"
         let standardName = "ui-customization-capability-gate-standard-\(UUID().uuidString)"
@@ -1585,6 +1630,35 @@ private final class UICustomizationTransportStub: CurrentCapabilitiesTransport, 
         mutationId: String,
         requestIdentity: HTTPRequestIdentity
     ) async throws {}
+}
+
+/// The server refuses every write with 422 and reports the contract default.
+private actor RejectingWriteProbe: CurrentCapabilitiesTransport {
+    private var putAttempts = 0
+    private var readKeys: [[SettingKey]] = []
+
+    func effectiveValues(
+        keys: [SettingKey],
+        requestIdentity: HTTPRequestIdentity
+    ) async throws -> EffectiveSettingValuesResponse {
+        readKeys.append(keys)
+        return try completeCustomizationEffectiveResponse(keys: keys, settings: [])
+    }
+
+    func putValue(
+        key: SettingKey,
+        scope: SettingScopeIdentity,
+        value: SettingJSONValue,
+        mutationId: String,
+        requestIdentity: HTTPRequestIdentity
+    ) async throws {
+        putAttempts += 1
+        throw HTTPError.http(statusCode: 422, body: nil)
+    }
+
+    func snapshot() -> (putAttempts: Int, readKeys: [[SettingKey]]) {
+        (putAttempts, readKeys)
+    }
 }
 
 private actor CapabilityGateProbe: UICustomizationTransport {

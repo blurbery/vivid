@@ -46,9 +46,6 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG VIVID_P8_TRIAL"
-          APS_ENVIRONMENT: development
-        Release:
-          APS_ENVIRONMENT: production
     dependencies:
       - package: MPVKit
         product: MPVKit
