@@ -877,13 +877,9 @@ final class UICustomizationPreferences {
                 if Self.isPermanentRejection(error) {
                     // The server will never accept this value (for example a
                     // menu saved by an older build), so retrying it on every
-                    // launch only fails again. Drop it; the next refresh
-                    // shows the server's value instead.
-                    if pendingSyncWrites[key.rawValue]?.mutationId == write.mutationId {
-                        pendingSyncWrites.removeValue(forKey: key.rawValue)
-                        saveCache(for: context.cacheKey)
-                    }
-                    setSyncError(nil, for: key)
+                    // launch only fails again. Drop it and show the server's
+                    // value instead of the rejected one.
+                    await finishRejectedWrite(key: key, write: write, context: context)
                     return
                 }
                 // Keep the optimistic cache. A later refresh or another edit
@@ -893,6 +889,36 @@ final class UICustomizationPreferences {
             }
         }
         saveTail = save
+    }
+
+    /// Reads back the server's value for a key whose write was permanently
+    /// rejected, so the setting stops showing a value that was never saved.
+    /// A newer edit to the same key is left alone, and a failed read keeps a
+    /// sync error until the next refresh reconciles it.
+    private func finishRejectedWrite(
+        key: SettingKey,
+        write: PendingSyncWrite,
+        context: OperationContext
+    ) async {
+        guard pendingSyncWrites[key.rawValue]?.mutationId == write.mutationId else { return }
+        pendingSyncWrites.removeValue(forKey: key.rawValue)
+        saveCache(for: context.cacheKey)
+        do {
+            let response = try await transport.effectiveValues(
+                keys: [key],
+                requestIdentity: context.requestIdentity
+            )
+            guard contextIsCurrent(context), pendingSyncWrites[key.rawValue] == nil else { return }
+            guard let row = response.byKey[key] else {
+                setSyncError(Self.missingEffectiveValueMessage, for: key)
+                return
+            }
+            guard applyEffectiveValue(row, for: key) else { return }
+            saveCache(for: context.cacheKey)
+        } catch {
+            guard contextIsCurrent(context), pendingSyncWrites[key.rawValue] == nil else { return }
+            setSyncError(Self.message(for: error), for: key)
+        }
     }
 
     /// Rejections a retry cannot fix: the server refused this key, scope or
