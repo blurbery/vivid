@@ -91,6 +91,8 @@ final class StudiosNetworksStore {
     /// TMDb discover pages read per list (20 titles each).
     static let pagesPerList = 5
     static let refreshInterval: TimeInterval = 24 * 60 * 60
+    /// Brands matched at once. Each runs up to four lists in parallel.
+    static let concurrentBrands = 3
 
     static let catalogue: [StudioNetworkBrand] = [
         .init(id: "netflix", name: "Netflix", kind: .network, tmdbId: 213, watchProviderId: 8),
@@ -319,15 +321,23 @@ final class StudiosNetworksStore {
                 await Self.write(index, scope.cacheURL("library"))
             }
 
+            // Any TMDb failure throws to the catch below, so a partial result
+            // never replaces good saved results or resets the refresh timer.
+            // Brands load a few at a time to stay well inside TMDb's rate limit.
             var loaded: [String: StudioNetworkResult] = [:]
-            await withTaskGroup(of: (String, StudioNetworkResult).self) { group in
-                for brand in Self.catalogue {
-                    group.addTask { (brand.id, await Self.result(for: brand, index: index)) }
+            var pending = Self.catalogue[...]
+            try await withThrowingTaskGroup(of: (String, StudioNetworkResult).self) { group in
+                for _ in 0..<Self.concurrentBrands {
+                    guard let brand = pending.popFirst() else { break }
+                    group.addTask { (brand.id, try await Self.result(for: brand, index: index)) }
                 }
-                for await (id, result) in group {
+                while let (id, result) = try await group.next() {
                     loaded[id] = result
                     if loadedScope == scope {
                         progressText = "Matching with TMDb… \(loaded.count) of \(Self.catalogue.count)"
+                    }
+                    if let brand = pending.popFirst() {
+                        group.addTask { (brand.id, try await Self.result(for: brand, index: index)) }
                     }
                 }
             }
@@ -403,7 +413,7 @@ final class StudiosNetworksStore {
         return formatter
     }()
 
-    private static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async -> StudioNetworkResult {
+    private static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async throws -> StudioNetworkResult {
         let id = String(brand.tmdbId)
         let today = Date()
         let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
@@ -426,8 +436,8 @@ final class StudiosNetworksStore {
         async let movies = matches("movie", movieQuery, index.movies)
         async let recentMovies = matches("movie", recentMovieQuery, index.movies)
 
-        let allSeries = await series
-        let allMovies = await movies
+        let allSeries = try await series
+        let allMovies = try await movies
         var all: [(item: BrowseItem, popularity: Double)] = []
         var seen = Set<String>()
         for entry in (allMovies + allSeries).sorted(by: { $0.popularity > $1.popularity })
@@ -435,20 +445,34 @@ final class StudiosNetworksStore {
             all.append(entry)
         }
         return StudioNetworkResult(
-            logoURL: await logo,
+            logoURL: try await logo,
             movies: allMovies.map(\.item),
             series: allSeries.map(\.item),
-            recentSeries: await recentSeries.map(\.item),
-            recentMovies: await recentMovies.map(\.item),
+            recentSeries: try await recentSeries.map(\.item),
+            recentMovies: try await recentMovies.map(\.item),
             all: Array(all.prefix(gridLimit)).map(\.item),
             matchCount: all.count
         )
     }
 
-    private static func logoURL(for brand: StudioNetworkBrand) async -> URL? {
+    private static func logoURL(for brand: StudioNetworkBrand) async throws -> URL? {
         guard !brand.usesWordmark else { return nil }
-        return (try? await TVTMDbStore.shared.logoURL(
-            kind: brand.kind == .network ? "network" : "company", id: brand.tmdbId)) ?? nil
+        return try await retryingOnce {
+            try await TVTMDbStore.shared.logoURL(kind: brand.kind == .network ? "network" : "company", id: brand.tmdbId)
+        }
+    }
+
+    /// Retries a TMDb request once after a short pause, for a dropped
+    /// connection or a brief rate limit, then lets the error through.
+    private static func retryingOnce<T>(_ request: () async throws -> T) async throws -> T {
+        do {
+            return try await request()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try await Task.sleep(for: .seconds(1))
+            return try await request()
+        }
     }
 
     /// Library matches for one TMDb discover list, in popularity order.
@@ -456,14 +480,15 @@ final class StudiosNetworksStore {
         _ media: String,
         _ query: [String: String]?,
         _ index: [String: BrowseItem]
-    ) async -> [(item: BrowseItem, popularity: Double)] {
+    ) async throws -> [(item: BrowseItem, popularity: Double)] {
         guard let query else { return [] }
         var found: [(item: BrowseItem, popularity: Double)] = []
         var seen = Set<String>()
         for page in 1...pagesPerList {
-            guard !Task.isCancelled,
-                  let response = try? await TVTMDbStore.shared.discover(media: media, query: query, page: page)
-            else { break }
+            try Task.checkCancellation()
+            let response = try await retryingOnce {
+                try await TVTMDbStore.shared.discover(media: media, query: query, page: page)
+            }
             for result in response.results {
                 if let item = lookup(result, in: index), seen.insert(item.contentId).inserted {
                     found.append((item, result.popularity ?? 0))
