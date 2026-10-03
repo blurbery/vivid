@@ -170,7 +170,7 @@ struct TVMediaCard: View {
             }
 
             if userState?.played == true {
-                watchedBadge
+                WatchedCheckPill()
                     .padding(10)
             }
         }
@@ -205,10 +205,6 @@ struct TVMediaCard: View {
         }
         .multilineTextAlignment(leadingCaption ? .leading : .center)
         .frame(width: resolvedCardWidth, alignment: leadingCaption ? .leading : .center)
-    }
-
-    private var watchedBadge: some View {
-        TVWatchedBadge()
     }
 
     private var accessibilityDescription: String {

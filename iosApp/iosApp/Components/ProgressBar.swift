@@ -45,6 +45,16 @@ struct MediaRuntimeStatusOverlay: View {
 
     var runtimeMinutes: Int? = nil
 
+    /// Episodes always use the capsule; movies only on Continue Watching cards,
+    /// so their watched check sits bottom-left like the series ones.
+    static func applies(toType type: String, inContinueWatching: Bool) -> Bool {
+        switch type.lowercased() {
+        case "episode": return true
+        case "movie": return inContinueWatching
+        default: return false
+        }
+    }
+
     static func displayedRuntime(minutes: Int?, duration: Double?) -> Int? {
         if let minutes, minutes > 0 { return minutes }
         guard let duration, duration.isFinite, duration > 0,
@@ -59,19 +69,7 @@ struct MediaRuntimeStatusOverlay: View {
     var body: some View {
         HStack(spacing: 10) {
             if isPlayed || runtime != nil {
-                HStack(spacing: 4) {
-                    if isPlayed { Image(systemName: "checkmark.circle.fill") }
-                    if let runtime { Text("\(runtime)m") }
-                }
-                #if os(tvOS)
-                .font(.system(size: 18))
-                #else
-                .font(.system(size: 12))
-                #endif
-                .foregroundStyle(.white)
-                .fixedSize()
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(.black.opacity(0.45), in: Capsule())
+                WatchedCheckPill(isPlayed: isPlayed, runtimeMinutes: runtime)
             }
             if let progress, progress > 0 {
                 ResumeProgressBar(value: progress, duration: duration, inset: 0)
@@ -82,6 +80,29 @@ struct MediaRuntimeStatusOverlay: View {
         .padding(12)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// The white watched tick capsule from episode cards. Posters show it
+/// top-trailing without a runtime.
+struct WatchedCheckPill: View {
+    var isPlayed = true
+    var runtimeMinutes: Int? = nil
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if isPlayed { Image(systemName: "checkmark.circle.fill") }
+            if let runtimeMinutes { Text("\(runtimeMinutes)m") }
+        }
+        #if os(tvOS)
+        .font(.system(size: 18))
+        #else
+        .font(.system(size: 12))
+        #endif
+        .foregroundStyle(.white)
+        .fixedSize()
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.black.opacity(0.45), in: Capsule())
     }
 }
 

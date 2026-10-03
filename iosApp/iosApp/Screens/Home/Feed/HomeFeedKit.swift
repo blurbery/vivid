@@ -385,7 +385,7 @@ struct HomePosterCard: View {
         }
         .overlay(alignment: .topTrailing) {
             if isPlayed {
-                HomeWatchedCheck()
+                WatchedCheckPill()
                     .padding(6)
             }
         }
@@ -461,7 +461,7 @@ struct HomeStillCard: View {
 
     private var showsEpisodeRuntimeStatus: Bool {
         #if os(iOS)
-        EpisodeCardCaption.isEpisode(item)
+        MediaRuntimeStatusOverlay.applies(toType: item.type, inContinueWatching: isIOSResumeCard)
         #else
         false
         #endif
