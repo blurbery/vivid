@@ -250,6 +250,7 @@ final class VividCloudPreferences {
             guard keychain.delete(key) else { throw ServerRegistryError.persistenceFailed }
         }
         for key in defaults { SharedDefaults.shared.removeObject(forKey: key) }
+        if !profile.isEmpty { StudiosNetworksStore.removeCache(server: account.serverID, profile: profile) }
         TVHomeCardPreferences.shared.cloudPreferencesChanged()
         try persist()
     }

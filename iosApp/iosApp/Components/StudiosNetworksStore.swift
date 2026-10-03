@@ -30,9 +30,11 @@ struct StudioNetworkResult: Codable, Equatable {
     var recentSeries: [BrowseItem] = []
     /// Movies released in the past 12 months.
     var recentMovies: [BrowseItem] = []
-    /// Movies and series merged by popularity.
+    /// Movies and series merged by popularity, capped for the grid.
     var all: [BrowseItem] = []
-    var count: Int { all.count }
+    /// Every matched title, before the grid cap. Ranks the automatic picks.
+    var matchCount = 0
+    var count: Int { matchCount }
 }
 
 /// Decodes a catalogue item together with the TMDb ID providers attach.
@@ -53,6 +55,19 @@ private struct StudioNetworkIndexedItem: Decodable {
 private struct StudioNetworkIndexPage: Decodable {
     let items: [StudioNetworkIndexedItem]
     let hasMore: Bool?
+}
+
+private struct StudioNetworkResultsFile: Codable, Sendable {
+    let savedAt: Date
+    let results: [String: StudioNetworkResult]
+}
+
+/// The library scan is the slow part, so it's cached on its own and the quick
+/// TMDb step can rerun without it.
+private struct StudioNetworkIndexFile: Codable, Sendable {
+    let savedAt: Date
+    let movies: [String: BrowseItem]
+    let series: [String: BrowseItem]
 }
 
 /// Loads, matches, caches and remembers the pinned Studios & Networks row.
@@ -115,9 +130,19 @@ final class StudiosNetworksStore {
     func isEligible(_ id: String) -> Bool { count(id) >= Self.minimumCount }
 
     var automaticPicks: [String] {
-        Array(Self.catalogue.map(\.id).filter(isEligible)
-            .sorted { count($0) > count($1) }
-            .prefix(Self.maxPicks))
+        Self.automaticPicks(counts: results.mapValues(\.count))
+    }
+
+    /// The brands with the most matches, ties kept in catalogue order.
+    static func automaticPicks(counts: [String: Int]) -> [String] {
+        let eligible = catalogue.enumerated().filter { (counts[$0.element.id] ?? 0) >= minimumCount }
+        return Array(eligible
+            .sorted { lhs, rhs in
+                let (l, r) = (counts[lhs.element.id] ?? 0, counts[rhs.element.id] ?? 0)
+                return l != r ? l > r : lhs.offset < rhs.offset
+            }
+            .prefix(maxPicks)
+            .map(\.element.id))
     }
 
     var picks: [String] { (customPicks ?? automaticPicks).filter(isEligible) }
@@ -245,42 +270,35 @@ final class StudiosNetworksStore {
         }
         if let loadTask { await loadTask.value; return }
         guard status != .ready, let scope = loadedScope else { return }
-
-        if let cached = Self.read(ResultsFile.self, scope.cacheURL("results")) {
-            results = cached.results
-            status = .ready
-            if Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval { startLoad(scope) }
-            return
-        }
-        status = .loading
-        startLoad(scope)
-        await loadTask?.value
-    }
-
-    private func startLoad(_ scope: Scope) {
-        loadTask = Task { [weak self] in
-            await self?.load(scope)
+        // One task covers the cache read and any load, so Home and Settings
+        // asking at the same time share a single load.
+        let task = Task { [weak self] in
+            await self?.prepare(scope)
             if self?.loadedScope == scope { self?.loadTask = nil }
         }
+        loadTask = task
+        await task.value
     }
 
-    private struct ResultsFile: Codable {
-        let savedAt: Date
-        let results: [String: StudioNetworkResult]
-    }
-
-    /// The library scan is the slow part, so it's cached on its own and the
-    /// quick TMDb step can rerun without it.
-    private struct IndexFile: Codable {
-        let savedAt: Date
-        let movies: [String: BrowseItem]
-        let series: [String: BrowseItem]
+    /// Shows saved results straight away when there are any, refreshing them
+    /// in the background once a day; otherwise runs the first load.
+    private func prepare(_ scope: Scope) async {
+        if let cached = await Self.read(StudioNetworkResultsFile.self, scope.cacheURL("results")) {
+            guard loadedScope == scope else { return }
+            results = cached.results
+            status = .ready
+            guard Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else { return }
+        } else {
+            guard loadedScope == scope else { return }
+            status = .loading
+        }
+        await load(scope)
     }
 
     private func load(_ scope: Scope) async {
         do {
-            let index: IndexFile
-            if let cached = Self.read(IndexFile.self, scope.cacheURL("library")),
+            let index: StudioNetworkIndexFile
+            if let cached = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")),
                Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval {
                 index = cached
             } else {
@@ -292,8 +310,8 @@ final class StudiosNetworksStore {
                 }
                 async let movies = Self.libraryIndex(type: "movie", report: report)
                 async let series = Self.libraryIndex(type: "series", report: report)
-                index = IndexFile(savedAt: Date(), movies: try await movies, series: try await series)
-                Self.write(index, scope.cacheURL("library"))
+                index = StudioNetworkIndexFile(savedAt: Date(), movies: try await movies, series: try await series)
+                await Self.write(index, scope.cacheURL("library"))
             }
 
             var loaded: [String: StudioNetworkResult] = [:]
@@ -313,7 +331,7 @@ final class StudiosNetworksStore {
             results = loaded
             status = .ready
             progressText = nil
-            Self.write(ResultsFile(savedAt: Date(), results: loaded), scope.cacheURL("results"))
+            await Self.write(StudioNetworkResultsFile(savedAt: Date(), results: loaded), scope.cacheURL("results"))
         } catch {
             guard loadedScope == scope else { return }
             progressText = nil
@@ -380,7 +398,7 @@ final class StudiosNetworksStore {
         return formatter
     }()
 
-    private static func result(for brand: StudioNetworkBrand, index: IndexFile) async -> StudioNetworkResult {
+    private static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async -> StudioNetworkResult {
         let id = String(brand.tmdbId)
         let today = Date()
         let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
@@ -417,7 +435,8 @@ final class StudiosNetworksStore {
             series: allSeries.map(\.item),
             recentSeries: await recentSeries.map(\.item),
             recentMovies: await recentMovies.map(\.item),
-            all: Array(all.prefix(gridLimit)).map(\.item)
+            all: Array(all.prefix(gridLimit)).map(\.item),
+            matchCount: all.count
         )
     }
 
@@ -452,14 +471,29 @@ final class StudiosNetworksStore {
 
     // MARK: Disk cache
 
-    private static func read<T: Decodable>(_ type: T.Type, _ url: URL?) -> T? {
-        guard let url, let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+    /// The library index runs to tens of megabytes, so reading and writing
+    /// happen off the main actor to keep Home and focus smooth.
+    private nonisolated static func read<T: Decodable & Sendable>(_ type: T.Type, _ url: URL?) async -> T? {
+        await Task.detached(priority: .utility) {
+            guard let url, let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode(type, from: data)
+        }.value
     }
 
-    private static func write<T: Encodable>(_ value: T, _ url: URL?) {
-        guard let url, let data = try? JSONEncoder().encode(value) else { return }
-        try? data.write(to: url, options: .atomic)
+    private nonisolated static func write<T: Encodable & Sendable>(_ value: T, _ url: URL?) async {
+        await Task.detached(priority: .utility) {
+            guard let url, let data = try? JSONEncoder().encode(value) else { return }
+            try? data.write(to: url, options: .atomic)
+        }.value
+    }
+
+    /// Removes this device's cached results and library index for a profile,
+    /// used when its account is removed.
+    nonisolated static func removeCache(server: String, profile: String) {
+        let scope = Scope(server: server, profile: profile)
+        for name in ["results", "library"] {
+            if let url = scope.cacheURL(name) { try? FileManager.default.removeItem(at: url) }
+        }
     }
 }
 

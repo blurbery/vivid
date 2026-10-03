@@ -23,12 +23,16 @@ private struct PhoneStudioNetworkTile: View {
 // MARK: - Home row
 
 /// Pinned under the Spotlight with no header. Scrolls like the other Home
-/// rows, with tiles half the width of a Continue Watching still.
+/// rows, with tiles half the width of a Continue Watching still at the
+/// current Poster Size.
 struct PhoneStudiosNetworksRow: View {
     @State private var store = StudiosNetworksStore.shared
+    @State private var homeCards = TVHomeCardPreferences.shared
     @Environment(AppRouter.self) private var router
 
-    static let tileWidth = HomeFeedMetrics.stillWidth / 2
+    private var tileWidth: CGFloat {
+        HomeFeedMetrics.stillWidth * homeCards.presentation.posterSize.scale / 2
+    }
 
     var body: some View {
         if store.showsRow {
@@ -36,7 +40,7 @@ struct PhoneStudiosNetworksRow: View {
                 LazyHStack(spacing: HomeFeedMetrics.cardSpacing) {
                     ForEach(store.picks, id: \.self) { id in
                         Button { router.navigate(to: .studioNetwork(brandId: id)) } label: {
-                            PhoneStudioNetworkTile(id: id, width: Self.tileWidth)
+                            PhoneStudioNetworkTile(id: id, width: tileWidth)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(store.brand(id)?.name ?? id)

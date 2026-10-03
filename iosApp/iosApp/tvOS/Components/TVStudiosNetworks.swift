@@ -25,6 +25,8 @@ struct TVStudiosNetworksRow: View {
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
     let onFocused: () -> Void
+    /// Called just before a tile opens its page, so Home can return focus here.
+    let onOpen: () -> Void
 
     @State private var store = StudiosNetworksStore.shared
     @FocusState private var focusedTile: String?
@@ -46,7 +48,11 @@ struct TVStudiosNetworksRow: View {
                 let tileWidth = Self.tileWidth(screenWidth: proxy.size.width)
                 HStack(spacing: Self.spacing) {
                     ForEach(store.picks, id: \.self) { id in
-                        Button { router.navigate(to: .studioNetwork(brandId: id)) } label: {
+                        Button {
+                            lastTile = id
+                            onOpen()
+                            router.navigate(to: .studioNetwork(brandId: id))
+                        } label: {
                             TVStudioNetworkTile(id: id, width: tileWidth)
                         }
                         .buttonStyle(.card)

@@ -79,7 +79,7 @@ The whole spotlight slide opens the featured movie or series detail page when ta
 
 ### Studios & Networks
 
-With a TMDb connection, iPhone and iPad Home pin a Studios & Networks row directly under the spotlight, without a heading. Logo tiles are half the width of a Continue Watching still and scroll like the other rows. Each opens a brand page with the logo as its title, Popular Series and Popular Movies rows and an All in Your Library grid, using the same matching, time windows, caching and saved picks as [Apple TV](apple-tv-browsing.md#studios--networks). In Settings → General → Studios & Networks, touch and hold a preview tile to make the tiles wobble, drag to reorder and tap − to remove; VoiceOver offers Move earlier and Move later. The wobble honours Reduce Motion.
+With a TMDb connection, iPhone and iPad Home pin a Studios & Networks row directly under the spotlight, without a heading. Logo tiles are half the width of a Continue Watching still at the current Poster Size and scroll like the other rows. The row stays when the spotlight is turned off. Each opens a brand page with the logo as its title, Popular Series and Popular Movies rows and an All in Your Library grid, using the same matching, time windows, caching and saved picks as [Apple TV](apple-tv-browsing.md#studios--networks). In Settings → General → Studios & Networks, touch and hold a preview tile to make the tiles wobble, drag to reorder and tap − to remove; VoiceOver offers Move earlier and Move later. The wobble honours Reduce Motion.
 
 ### Mobile player
 

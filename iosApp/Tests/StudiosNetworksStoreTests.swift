@@ -80,6 +80,24 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertTrue(StudiosNetworksStore.pageRows(for: brand, result: result).isEmpty)
     }
 
+    func testAutomaticPicksRankByUncappedMatchCount() {
+        let picks = StudiosNetworksStore.automaticPicks(counts: [
+            "netflix": 163, "hbo": 165, "disneyplus": 164, "marvel": 115, "appletv": 150, "pixar": 68, "ghibli": 20,
+        ])
+        XCTAssertEqual(picks, ["hbo", "disneyplus", "netflix", "appletv", "marvel"])
+    }
+
+    func testAutomaticPicksKeepCatalogueOrderForTiesAndSkipSmallBrands() {
+        let picks = StudiosNetworksStore.automaticPicks(counts: ["pixar": 40, "netflix": 40, "a24": 40, "hulu": 3])
+        XCTAssertEqual(picks, ["netflix", "pixar", "a24"])
+    }
+
+    func testResultCountIsTheUncappedMatchCount() {
+        var result = StudioNetworkResult()
+        result.matchCount = 150
+        XCTAssertEqual(result.count, 150)
+    }
+
     func testCatalogueIDsAreUniqueAndAppleTVUsesAWordmark() {
         let ids = StudiosNetworksStore.catalogue.map(\.id)
         XCTAssertEqual(ids.count, Set(ids).count)
