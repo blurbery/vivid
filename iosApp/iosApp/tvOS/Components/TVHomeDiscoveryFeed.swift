@@ -21,10 +21,16 @@ struct TVHomeDiscoveryFeed: View {
     @State private var rowArtworkWindow = TVHomeRowArtworkWindow()
     @State private var scrollDiagnostics = TVHomeScrollDiagnostics()
     @State private var firstRowFocusRequest = 0
+    @State private var studiosNetworksFocusRequest = 0
     @State private var spotlightOpenedDetail = false
+    @State private var studiosNetworksOpenedDetail = false
     @State private var appliedFocusRequest = 0
 
     private static let spotlightAnchor = "vivid.home.discovery.spotlight"
+    /// Focus owner while Studios & Networks has focus. It isn't a Home
+    /// section, so no section restores focus, and the top menu boundary
+    /// knows focus has left the Spotlight.
+    private static let studiosNetworksOwner = "vivid.home.studiosNetworks"
 
     var body: some View {
         let _ = scrollDiagnostics.event("feed.body")
@@ -44,9 +50,10 @@ struct TVHomeDiscoveryFeed: View {
                                     rowArtworkWindow.focus(index: 0)
                                 }
                             },
-                            onEnterFirstRow: enterFirstRow,
+                            onEnterFirstRow: enterStudiosNetworks,
                             onSelect: { slide in
                                 spotlightOpenedDetail = true
+                                studiosNetworksOpenedDetail = false
                                 rowFocusOwnership.rowID = nil
                                 onItemTap(slide.item.contentId, slide.item)
                             }
@@ -54,24 +61,30 @@ struct TVHomeDiscoveryFeed: View {
                         .id(Self.spotlightAnchor)
                     }
 
+                    // Shown with or without the Spotlight; without it, the row
+                    // tops Home and takes focus first.
+                    studiosNetworksRow
+
                     VStack(alignment: .leading, spacing: TVHomeRowGeometry.rowSpacing) {
                         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
                             SectionRow(
                                 section: section,
                                 onItemTap: { id, item in
                                     spotlightOpenedDetail = false
+                                    studiosNetworksOpenedDetail = false
                                     onItemTap(id, item)
                                 },
                                 onRemoveFromContinueWatching: onRemoveFromContinueWatching,
                                 onSetWatched: onSetWatched,
                                 showsHeadingIcon: false,
-                                prefersDefaultFocusOnFirstItem: slides.isEmpty && index == 0,
+                                prefersDefaultFocusOnFirstItem: slides.isEmpty && index == 0 && !StudiosNetworksStore.shared.showsRow,
                                 defaultFocusPriority: .userInitiated,
                                 focusRequest: index == 0 ? firstRowFocusRequest : 0,
                                 defaultFocusItemId: rowFocusMemory.items[section.id],
                                 focusRequestItemId: rowFocusMemory.items[section.id],
-                                detailReturnFocusRequest: spotlightOpenedDetail ? 0 : detailReturnFocusRequest,
-                                onMoveUp: index == 0 && slides.isEmpty ? { onTopMenuFocusRequest?() } : nil,
+                                detailReturnFocusRequest: spotlightOpenedDetail || studiosNetworksOpenedDetail ? 0 : detailReturnFocusRequest,
+                                onMoveUp: index == 0 && slides.isEmpty && !StudiosNetworksStore.shared.showsRow
+                                    ? { onTopMenuFocusRequest?() } : nil,
                                 onItemFocus: { item in
                                     scrollDiagnostics.focus(row: index, card: section.items.firstIndex { $0.contentId == item.contentId } ?? -1)
                                     rowArtworkWindow.focus(index: index)
@@ -109,14 +122,15 @@ struct TVHomeDiscoveryFeed: View {
             .onChange(of: focusRequest, initial: true) { _, request in
                 guard request > appliedFocusRequest, !isTopMenuFocused else { return }
                 appliedFocusRequest = request
-                if slides.isEmpty { enterFirstRow() }
+                if slides.isEmpty { enterStudiosNetworks() }
                 else { enterSpotlight() }
             }
             .onChange(of: detailReturnFocusRequest) { _, _ in
                 if spotlightOpenedDetail { enterSpotlight() }
+                else if studiosNetworksOpenedDetail { enterStudiosNetworks() }
             }
             .onChange(of: slides.isEmpty) { _, empty in
-                if empty && rowFocusMemory.spotlightFocused { enterFirstRow() }
+                if empty && rowFocusMemory.spotlightFocused { enterStudiosNetworks() }
             }
             .onChange(of: isTopMenuFocused) { _, focused in
                 if focused { rowFocusOwnership.rowID = nil }
@@ -131,6 +145,8 @@ struct TVHomeDiscoveryFeed: View {
         .environment(\.tvHomeFocusOwnership, rowFocusOwnership)
         .environment(\.tvHomeScrollDiagnostics, scrollDiagnostics.enabled ? scrollDiagnostics : nil)
         .onDisappear { rowArtworkWindow.stopPendingPreparation() }
+        // Loads Studios & Networks, and again once a TMDb key is connected.
+        .task(id: TVTMDbStore.shared.isConfigured) { await StudiosNetworksStore.shared.loadIfNeeded() }
         .ignoresSafeArea()
     }
 
@@ -140,6 +156,28 @@ struct TVHomeDiscoveryFeed: View {
         // own scroll instead of racing a separate ScrollViewReader animation.
         rowFocusOwnership.rowID = nil
         spotlightEnterRequest += 1
+    }
+
+    /// Pinned between the Spotlight and the first row when it has tiles.
+    private var studiosNetworksRow: some View {
+        TVStudiosNetworksRow(
+            enterRequest: studiosNetworksFocusRequest,
+            onMoveUp: enterSpotlight,
+            onMoveDown: enterFirstRow,
+            onFocused: { rowFocusOwnership.rowID = Self.studiosNetworksOwner },
+            onOpen: {
+                spotlightOpenedDetail = false
+                studiosNetworksOpenedDetail = true
+            }
+        )
+    }
+
+    /// Spotlight Down lands on Studios & Networks when it's showing,
+    /// otherwise on the first row as before.
+    private func enterStudiosNetworks() {
+        guard StudiosNetworksStore.shared.showsRow else { enterFirstRow(); return }
+        rowFocusOwnership.rowID = Self.studiosNetworksOwner
+        studiosNetworksFocusRequest += 1
     }
 
     private func enterFirstRow() {

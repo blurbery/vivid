@@ -815,6 +815,8 @@ private extension Route {
             return "offlineDownloadDetail"
         case .tvLibraryGrid:
             return "tvLibraryGrid"
+        case .studioNetwork:
+            return "studioNetwork"
         }
     }
 }

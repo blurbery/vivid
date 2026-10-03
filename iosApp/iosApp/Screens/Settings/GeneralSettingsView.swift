@@ -26,6 +26,11 @@ struct GeneralSettingsView: View {
                         Text("Choose up to three rows for your discovery spotlight.").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
+                NavigationLink { PhoneStudiosNetworksSettingsView() } label: {
+                    LabeledContent("Studios & Networks",
+                                   value: !TVTMDbStore.shared.isConfigured ? "Needs TMDb"
+                                       : StudiosNetworksStore.shared.isEnabled ? "On" : "Off")
+                }
                 #endif
                 NavigationLink { HomeSectionsCustomizationView() } label: {
                     VStack(alignment: .leading, spacing: 6) {
@@ -84,7 +89,7 @@ struct PhoneTMDbSettingsView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "Trailers", subtitle: "Configure your personal TMDB API to show trailers for your media.", systemImage: "film.stack")
+            SettingsPageHeader(title: "TMDb", subtitle: "Configure your personal TMDB API to show trailers for your media.", systemImage: "film.stack")
                 .settingsPageHeaderRow()
             Section {
                 LabeledContent("Status") {

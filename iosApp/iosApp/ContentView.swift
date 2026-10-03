@@ -2399,6 +2399,10 @@ struct MainTabView: View {
                 // regression (see forums thread 807208).
         case .personDetail(let personId):
             PersonDetailView(personId: personId)
+        #if os(iOS)
+        case .studioNetwork(let brandId):
+            PhoneStudioNetworkPage(brandId: brandId)
+        #endif
         case .player(let contentId, let startFromBeginning, let resumePosition, let prefersLastUsedVersion):
             #if os(macOS)
             PlayerView(

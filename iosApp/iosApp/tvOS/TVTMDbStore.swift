@@ -161,6 +161,54 @@ final class TVTMDbStore {
         return (kind,id)
     }
 
+    // MARK: Studios & Networks
+
+    struct DiscoverPage: Decodable {
+        struct Result: Decodable {
+            let id: Int
+            let popularity: Double?
+            let title: String?
+            let name: String?
+            let releaseDate: String?
+            let firstAirDate: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case id, popularity, title, name
+                case releaseDate = "release_date"
+                case firstAirDate = "first_air_date"
+            }
+        }
+        let results: [Result]
+        let totalPages: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case results
+            case totalPages = "total_pages"
+        }
+    }
+
+    private struct BrandDetail: Decodable {
+        let logoPath: String?
+        private enum CodingKeys: String, CodingKey { case logoPath = "logo_path" }
+    }
+
+    /// One page of popularity-ordered titles from TMDb's discover endpoint.
+    func discover(media: String, query: [String: String], page: Int) async throws -> DiscoverPage {
+        guard isConfigured else { throw Failure.unavailable }
+        var q = query
+        q["sort_by"] = "popularity.desc"
+        q["include_adult"] = "false"
+        q["page"] = String(page)
+        return try await request("discover/\(media)", credential: credential, query: q)
+    }
+
+    /// The logo for a TMDb company or network. `kind` is "company" or "network".
+    func logoURL(kind: String, id: Int) async throws -> URL? {
+        guard isConfigured else { throw Failure.unavailable }
+        let detail: BrandDetail = try await request("\(kind)/\(id)", credential: credential)
+        return detail.logoPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w500" + $0) }
+    }
+
     private func checkContext(_ expected: String) throws {
         try Task.checkCancellation()
         guard isConfigured, contextKey == expected else { throw CancellationError() }
