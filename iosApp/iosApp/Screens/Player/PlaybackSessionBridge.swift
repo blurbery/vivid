@@ -695,6 +695,7 @@ actor PlaybackSessionBridge {
         currentSession = session
         consecutiveProgressFailures = 0
         #if os(iOS) || os(tvOS)
+        AppHealthMonitor.playMethodChanged(session.playMethod)
         DiagTrace.breadcrumb(.essential,
             category: .playback,
             tag: "PlaybackSession",

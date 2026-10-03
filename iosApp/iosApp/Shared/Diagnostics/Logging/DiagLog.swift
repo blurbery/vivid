@@ -30,6 +30,12 @@ enum DiagLog {
         DiagnosticsRedactor.resetSensitiveHostsForTesting()
     }
 
+    /// Free text run through the same redaction as log lines, for callers that
+    /// keep their own records (the on-device health reports).
+    static func sanitizedText(_ value: String, maxLength: Int) -> String {
+        DiagnosticsRedactor.sanitize(value, maxLength: maxLength)
+    }
+
     static func d(_ category: Category, _ tag: String, _ message: String, _ attrs: [String: DiagLogAttributeValue] = [:]) {
         append(level: .debug, category: category, tag: tag, message: message, attrs: attrs)
     }
