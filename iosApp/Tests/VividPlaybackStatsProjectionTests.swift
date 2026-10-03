@@ -197,8 +197,10 @@ final class VividPlaybackStatsProjectionTests: XCTestCase {
             }
         }
         controller.play()
+        // Telemetry is sampled on its own schedule, so wait for the first sample
+        // as well as for playback to move; a busy CI runner can reach 0.2 s first.
         let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-        while controller.engine.currentTime <= 0.2 && ContinuousClock.now < deadline {
+        while (controller.engine.currentTime <= 0.2 || samples == 0) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertGreaterThan(controller.engine.currentTime, 0.2, "Synthetic media must actually play")
