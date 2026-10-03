@@ -333,8 +333,8 @@ final class TVSavedAccountStore {
         busy = true; error = nil
         defer { busy = false; Task { await captureCurrent() } }
         do {
-            let normalized = ServerRegistry.normalize(url: serverURL)
-            guard let url = URL(string: normalized), ["http", "https"].contains(url.scheme ?? ""), url.host != nil else {
+            let normalized = ServerRegistry.shared.normalizedUserAddress(serverURL)
+            guard let url = URL(string: normalized), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
                 error = "Enter a valid server address."; return false
             }
             let selected = id.flatMap { selectedID in accounts.first { $0.id == selectedID } }

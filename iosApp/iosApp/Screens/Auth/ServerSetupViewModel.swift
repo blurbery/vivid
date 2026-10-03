@@ -157,7 +157,7 @@ class ServerSetupViewModel {
         guard let url = components.url?.absoluteString else {
             throw ServerSetupValidationError.invalidHost
         }
-        return ServerRegistry.normalize(url: url)
+        return ServerRegistry.shared.normalizedUserAddress(url)
     }
 
     private func isDefaultPort(_ port: String, for scheme: String) -> Bool {

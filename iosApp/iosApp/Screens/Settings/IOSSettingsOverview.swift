@@ -475,9 +475,9 @@ struct PhoneSavedAccountEditor: View {
                 } header: { PhoneSettingsSectionHeader("Server") }
             }
             Section {
-                if account == nil { TextField("Server address", text: $serverURL).keyboardType(.URL) }
+                if account == nil { TextField("Server address", text: $serverURL).keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled() }
                 else { LabeledContent("Server", value: registry.entry(with: account!.serverID)?.url ?? serverURL) }
-                TextField("Username", text: $username).textContentType(.username)
+                TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Password", text: $password).textContentType(.password)
                 Button(account == nil ? "Add Profile" : store.needsLogin(account!) ? "Sign In" : "Update Login") {
                     Task {

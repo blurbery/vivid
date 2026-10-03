@@ -614,6 +614,29 @@ final class ServerRegistry {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    /// Normalises a server address the user typed or pasted. Schemes and host
+    /// names are case-insensitive, but sign-in checks and server IDs are not,
+    /// so `Https://Media.Example.com` would otherwise be rejected or saved as
+    /// a separate server. The path keeps its case because reverse proxies can
+    /// treat it as case-sensitive. An address matching a saved server reuses
+    /// that server's stored spelling so its ID, and its saved accounts, stay
+    /// the same.
+    func normalizedUserAddress(_ input: String) -> String {
+        let trimmed = Self.normalize(url: input)
+        guard var components = URLComponents(string: trimmed), components.host != nil else { return trimmed }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        guard let lowered = components.string else { return trimmed }
+        let candidate = Self.normalize(url: lowered)
+        // Compare addresses rather than IDs: Jellyfin and Emby IDs carry a
+        // provider prefix that can't be decoded back to a URL.
+        if let canonical = Self.canonicalComparisonURL(for: candidate),
+           let saved = entries.first(where: { Self.canonicalComparisonURL(for: $0.url) == canonical }) {
+            return saved.url
+        }
+        return candidate
+    }
+
     static func normalize(url: String) -> String {
         var s = url.trimmingCharacters(in: .whitespacesAndNewlines)
         while s.hasSuffix("/") { s.removeLast() }

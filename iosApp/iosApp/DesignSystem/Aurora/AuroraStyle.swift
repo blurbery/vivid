@@ -32,11 +32,15 @@ struct AuroraEyebrow: View {
 
     var body: some View {
         HStack(spacing: eyebrowSpacing) {
-            Rectangle()
-                .fill(LinearGradient(
-                    colors: [Color.auroraAccent, Color.auroraAccent.opacity(0)],
-                    startPoint: .leading, endPoint: .trailing))
-                .frame(width: lineWidth, height: 1)
+            // The lead-in line anchors left-aligned text. Centred, it would
+            // push the label off centre, so it is left out.
+            if !centered {
+                Rectangle()
+                    .fill(LinearGradient(
+                        colors: [Color.auroraAccent, Color.auroraAccent.opacity(0)],
+                        startPoint: .leading, endPoint: .trailing))
+                    .frame(width: lineWidth, height: 1)
+            }
             Text(text.uppercased())
                 .font(.system(size: fontSize, weight: .semibold, design: .monospaced))
                 .tracking(tracking)
@@ -56,76 +60,6 @@ struct AuroraEyebrow: View {
     private let tracking: CGFloat = 1.5
     private let lineWidth: CGFloat = 28
     private let eyebrowSpacing: CGFloat = 10
-    #endif
-}
-
-// MARK: - Journey progress
-
-/// Keeps the server → account → profile journey visible without turning
-/// first run into a modal wizard. Completed steps use a checkmark so state is
-/// not communicated by color alone.
-struct AuroraJourneyProgress: View {
-    let currentStep: Int
-    let labels: [String]
-
-    init(currentStep: Int, labels: [String] = ["Server", "Account", "Profile"]) {
-        self.currentStep = currentStep
-        self.labels = labels
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            ForEach(labels.indices, id: \.self) { index in
-                let step = index + 1
-                let label = labels[index]
-
-                if index > 0 {
-                    Rectangle()
-                        .fill(step <= currentStep ? Color.auroraAccent : Color.vividOutline)
-                        .frame(height: 1)
-                        .padding(.top, progressDotSize / 2)
-                        .accessibilityHidden(true)
-                }
-
-                VStack(spacing: 7) {
-                    ZStack {
-                        Circle()
-                            .fill(step <= currentStep ? Color.auroraAccent : Color.vividSurfaceElevated)
-                        Circle()
-                            .stroke(step <= currentStep ? Color.auroraAccent : Color.vividOutline, lineWidth: 1)
-                        if step < currentStep {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: progressGlyphSize, weight: .bold))
-                                .foregroundStyle(Color.vividBackground)
-                        } else {
-                            Text("\(step)")
-                                .font(.system(size: progressGlyphSize, weight: .bold, design: .monospaced))
-                                .foregroundStyle(step == currentStep ? Color.vividBackground : Color.auroraInkSecondary)
-                        }
-                    }
-                    .frame(width: progressDotSize, height: progressDotSize)
-
-                    Text(label.uppercased())
-                        .font(.system(size: progressLabelSize, weight: .semibold, design: .monospaced))
-                        .tracking(1.2)
-                        .foregroundStyle(step == currentStep ? Color.auroraInk : Color.auroraInkTertiary)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(label), step \(step) of \(labels.count)")
-                .accessibilityValue(step < currentStep ? "Completed" : step == currentStep ? "Current" : "Not started")
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    #if os(tvOS)
-    private let progressDotSize: CGFloat = 30
-    private let progressGlyphSize: CGFloat = 13
-    private let progressLabelSize: CGFloat = 13
-    #else
-    private let progressDotSize: CGFloat = 24
-    private let progressGlyphSize: CGFloat = 10
-    private let progressLabelSize: CGFloat = 9
     #endif
 }
 
