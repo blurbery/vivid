@@ -283,8 +283,9 @@ final class PlaybackSessionRecorder {
                 setup.outputLatencyMs = audio.latencyMs
                 setup.renderingMode = audio.renderingMode
                 #if os(iOS)
+                // The same test the player uses to move video to a TV.
                 setup.externalScreen = UIApplication.shared.connectedScenes.contains {
-                    $0.session.role == .windowExternalDisplayNonInteractive
+                    ExternalDisplayManager.isExternalDisplayRole($0.session.role)
                 }
                 #endif
                 if let screen {

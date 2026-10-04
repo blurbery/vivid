@@ -451,7 +451,10 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
 
     private func observeEndOfFile(_ reached: Bool) {
-        guard reached else { cancelEndConfirmation(); return }
+        guard reached else { cancelEndConfirmation(); updatePhase(); return }
+        // The playhead stops at the end, and keep-open holds the last frame
+        // under Next Up; neither is playback for the latest-playback record.
+        PlaybackSessionRecorder.shared.setPlaying(false)
         guard errorInfo == nil, state != .ended, endConfirmationTask == nil else { return }
         let token = generation
         let seekToken = seekGeneration
@@ -619,7 +622,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         // The latest-playback session counts only time with video actually
         // on screen, so opening the file is never mistaken for playback.
         PlaybackSessionRecorder.shared.setPlaying(isSessionReady && hasFirstFrameReadyForDisplay && wantsPlay
-            && !isSeeking && !isBuffering && errorInfo == nil && state != .ended)
+            && !isSeeking && !isBuffering && errorInfo == nil && state != .ended && endConfirmationTask == nil)
         guard isSessionReady, errorInfo == nil, state != .ended else { return }
         if isSeeking { state = .seeking; playbackPhase = .seeking }
         else if !wantsPlay { state = .paused; playbackPhase = .paused }
