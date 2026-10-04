@@ -1080,6 +1080,10 @@ private final class VividMPVCore: MpvPlayerCore {
             // AVPlayer's clock stays parked at AirPlay startup until the driver's seek-to-start
             // recovery. Keep video anchored to the parked clock so it waits for the audio.
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-anchor-start", "yes"))
+            // That recovery is what starts AirPlay's clock, so run it after one
+            // second rather than two. Seeks and resumes engage in about 0.6 s
+            // without it, so they still don't trigger it.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-start-grace", "1"))
         }
         #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
