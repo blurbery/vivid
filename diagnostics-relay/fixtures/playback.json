@@ -1,0 +1,77 @@
+{
+  "app" : {
+    "build" : "57",
+    "device" : "AppleTV14,1",
+    "os" : "tvOS 26.0",
+    "version" : "0.14.3"
+  },
+  "format" : 1,
+  "media" : {
+    "audioCodec" : "eac3",
+    "audioOutputChannels" : 8,
+    "audioOutputFormat" : "floatp",
+    "audioPassthrough" : false,
+    "audioSourceChannels" : 6,
+    "contentFps" : 23.976,
+    "hardwareDecoding" : "videotoolbox",
+    "height" : 2160,
+    "outputDynamicRange" : "hdr10",
+    "sourceDynamicRange" : "dolby_vision",
+    "videoBitrateKbps" : 24500,
+    "videoCodec" : "hevc",
+    "width" : 3840
+  },
+  "notMeasured" : [
+    "network_speed"
+  ],
+  "setup" : {
+    "audioOutput" : "hdmi",
+    "displayHDR" : [
+      "hdr10",
+      "dolby_vision"
+    ],
+    "displayRefreshHz" : 23.976,
+    "hdrPlaybackEligible" : true,
+    "matchContentEnabled" : true,
+    "multichannelSupported" : true,
+    "outputChannelsAvailable" : 8,
+    "playMethod" : "direct_play",
+    "serverType" : "silo",
+    "systemMatchingEnabled" : true
+  },
+  "startedAt" : "2026-10-04T09:12:03Z",
+  "timeline" : [
+    {
+      "decoderDroppedFrames" : 0,
+      "delayedFrames" : 3,
+      "droppedFrames" : 412,
+      "faults" : {
+        "audio_system_restart" : 1
+      },
+      "maxAvSyncMs" : 140,
+      "minute" : 37,
+      "rebufferSeconds" : 0
+    }
+  ],
+  "totals" : {
+    "audioFaults" : {
+      "audio_system_restart" : 1
+    },
+    "audioOutputChanges" : 0,
+    "avSyncOver100msSeconds" : 4,
+    "decoderDroppedFrames" : 0,
+    "delayedFrames" : 3,
+    "displaySwitches" : 1,
+    "droppedFrames" : 412,
+    "endReason" : "stopped",
+    "maxAvSyncMs" : 140,
+    "playedSeconds" : 3120.5,
+    "rebufferSeconds" : 0,
+    "rebuffers" : 0,
+    "reloads" : 0,
+    "seeks" : 2,
+    "warmupDroppedFrames" : 7,
+    "warmupSeconds" : 15
+  },
+  "updatedAt" : "2026-10-04T10:05:11Z"
+}
