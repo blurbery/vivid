@@ -454,6 +454,19 @@ final class AppHealthReportTests: XCTestCase {
         XCTAssertEqual(AppHealthReportGroup.grouping(reports)[0].occurrenceCount, 3)
     }
 
+    func testRepeatAfterSendingMarksTheReportUnsent() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 7 * 86_400), now: { now })
+        AppHealthSendState.clear()
+        defer { AppHealthSendState.clear() }
+        XCTAssertTrue(store.add(settingsError(at: now.addingTimeInterval(-3_600))))
+        AppHealthSendState.markSent(store.reports())
+        XCTAssertTrue(AppHealthSendState.unsent(in: store.reports()).isEmpty)
+        XCTAssertFalse(store.add(settingsError(at: now)))
+        XCTAssertEqual(AppHealthSendState.unsent(in: store.reports()).map(\.occurrenceCount), [2],
+                       "occurrences after sending haven't been sent")
+    }
+
     func testSameReportAddedTwiceIsNotCountedAsARepeat() {
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 86_400), now: { now })
