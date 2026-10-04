@@ -16,6 +16,7 @@ struct DiagnosticsSettingsView: View {
     /// Reloads can overlap (on appear and after every store change); only the
     /// latest may publish its export file, and older ones remove their own.
     @State private var reloadGeneration = 0
+    @State private var latestPlayback: PlaybackSessionReport?
 
     private var groups: [AppHealthReportGroup] { AppHealthReportGroup.grouping(reports) }
     private var unsent: [AppHealthReport] { AppHealthSendState.unsent(in: reports, sentIDs: sentIDs) }
@@ -28,6 +29,24 @@ struct DiagnosticsSettingsView: View {
                                subtitle: "Crash and hang reports kept on this device.",
                                systemImage: "stethoscope")
                 .settingsPageHeaderRow()
+            Section {
+                if let latestPlayback {
+                    NavigationLink { LatestPlaybackView(report: latestPlayback) } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Send Latest Playback")
+                            Text(([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
+                                  + (latestPlayback.headline.isEmpty ? [] : [latestPlayback.headline]))
+                                .joined(separator: " · "))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("No playback recorded yet").foregroundStyle(.secondary)
+                }
+            } header: { PhoneSettingsSectionHeader("Latest Playback") }
+                footer: {
+                    Text("If playback looked choppy, the sound dropped out or something didn't look right, send the latest session so Vivid can see what happened. Only the most recent play is kept.")
+                }
             Section {
                 if reports.isEmpty {
                     Text(loaded ? "No reports" : "Loading…").foregroundStyle(.secondary)
@@ -75,6 +94,10 @@ struct DiagnosticsSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: AppHealthStore.didChange)) { _ in
             Task { await reload() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: PlaybackSessionRecorder.didChange)) { _ in
+            latestPlayback = PlaybackSessionRecorder.shared.latest()
+        }
+        .onAppear { latestPlayback = PlaybackSessionRecorder.shared.latest() }
         .onDisappear { DiagnosticsExportFile.remove(shareURL); shareURL = nil }
     }
 
@@ -190,6 +213,66 @@ private struct DiagnosticsReportDetailView: View {
     }
 }
 
+/// The latest playback session: a readable summary, then exactly what is
+/// sent, then the send action.
+private struct LatestPlaybackView: View {
+    let report: PlaybackSessionReport
+    @State private var attachment: PlaybackAttachment?
+    @State private var shareURL: URL?
+    @State private var mailUnavailable = false
+
+    private struct PlaybackAttachment: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
+
+    var body: some View {
+        List {
+            SettingsPageHeader(title: "Latest Playback",
+                               subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened),
+                               systemImage: "play.rectangle")
+                .settingsPageHeaderRow()
+            Section {
+                ForEach(Array(report.summaryRows.enumerated()), id: \.offset) { _, row in
+                    LabeledContent(row.label, value: row.value)
+                }
+            } header: { PhoneSettingsSectionHeader("Summary") }
+            Section {
+                Button("Send Latest Playback", action: send)
+                if let shareURL { ShareLink(item: shareURL) { Text("Other Options") } }
+            } footer: {
+                Text("Opens Mail addressed to \(VividAbout.diagnosticsEmail) with this session attached. It contains no titles, account details or server addresses.")
+            }
+            Section {
+                Text(json).font(.caption.monospaced()).textSelection(.enabled)
+            } header: { PhoneSettingsSectionHeader("Sent Content") }
+                footer: { Text("This is exactly what is sent.") }
+        }
+        .settingsListChrome().navigationTitle("")
+        .alert("Mail unavailable", isPresented: $mailUnavailable) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Set up Mail, or use Other Options to send the file to \(VividAbout.diagnosticsEmail).")
+        }
+        .sheet(item: $attachment) { item in
+            DiagnosticsMailComposer(attachment: item.url, subject: "Vivid Playback Report") { _ in
+                DiagnosticsExportFile.remove(item.url)
+                attachment = nil
+            }.ignoresSafeArea()
+        }
+        .task { shareURL = data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") } }
+        .onDisappear { DiagnosticsExportFile.remove(shareURL); shareURL = nil }
+    }
+
+    private var data: Data? { PlaybackSessionRecorder.encode(report) }
+    private var json: String { data.map { String(decoding: $0, as: UTF8.self) } ?? "" }
+
+    private func send() {
+        guard MFMailComposeViewController.canSendMail() else { mailUnavailable = true; return }
+        attachment = data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") }.map(PlaybackAttachment.init)
+    }
+}
+
 /// Opens Mail addressed to Vivid with the given reports attached, and marks
 /// them sent only when Mail reports the message as sent.
 private struct DiagnosticsSendButton: View {
@@ -233,12 +316,13 @@ private struct DiagnosticsSendButton: View {
 
 private struct DiagnosticsMailComposer: UIViewControllerRepresentable {
     let attachment: URL
+    var subject = "Vivid Diagnostics"
     let completion: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> MFMailComposeViewController {
         let composer = MFMailComposeViewController()
         composer.setToRecipients([VividAbout.diagnosticsEmail])
-        composer.setSubject("Vivid Diagnostics")
+        composer.setSubject(subject)
         composer.setMessageBody("", isHTML: false)
         if let data = try? Data(contentsOf: attachment) {
             composer.addAttachmentData(data, mimeType: "application/json", fileName: attachment.lastPathComponent)
@@ -262,12 +346,12 @@ private struct DiagnosticsMailComposer: UIViewControllerRepresentable {
 
 /// Temporary files for Mail and the share sheet, removed once used.
 private enum DiagnosticsExportFile {
-    static func write(_ data: Data) -> URL? {
+    static func write(_ data: Data, name: String = "Vivid-Diagnostics") -> URL? {
         let stamp = Date().formatted(.iso8601.year().month().day())
         // A fresh folder per export keeps the attached file name clean.
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("DiagnosticsExport-\(UUID().uuidString)", isDirectory: true)
-        let url = folder.appendingPathComponent("Vivid-Diagnostics-\(stamp)").appendingPathExtension("json")
+        let url = folder.appendingPathComponent("\(name)-\(stamp)").appendingPathExtension("json")
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try data.write(to: url, options: [.atomic])
