@@ -18,11 +18,24 @@ export const limits = Object.freeze({
   maxTimelineMinutes: 240,
 });
 
+// The only address the relay ever sends to.
 const recipient = 'diagnostics@vividapp.co';
-// Sent from the relay's own subdomain, so Email Sending's DNS records live
-// under diagnostics.vividapp.co and the root domain's iCloud+ mail records
-// are never touched.
-const sender = {email: 'reports@diagnostics.vividapp.co', name: 'Vivid Diagnostics'};
+// Mail goes through Resend from the relay's own subdomain, so Resend's DNS
+// records live under diagnostics.vividapp.co and the root domain's iCloud+
+// mail records are never touched. RESEND_FROM can override it.
+const defaultSender = 'Vivid Diagnostics <reports@diagnostics.vividapp.co>';
+
+/// Sends through Resend's API with the RESEND_API_KEY secret.
+async function sendEmail(env, message, fetcher = fetch) {
+  if (!env.RESEND_API_KEY) throw new Error('missing_api_key');
+  const response = await fetcher('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify({from: env.RESEND_FROM || defaultSender, to: [recipient], ...message}),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error(`resend_${response.status}`);
+}
 
 const problemKinds = new Set(['crash', 'hang', 'cpu_exception', 'disk_write_exception', 'slow_launch',
   'unexpected_exit', 'playback_failure', 'app_error']);
@@ -111,7 +124,7 @@ function emailText(kind, report, reference, receivedAt) {
   return lines.join('\n');
 }
 
-// Attachment content as base64, the documented form for the email binding.
+// Attachment content as base64, as Resend expects.
 export function toBase64(bytes) {
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -138,7 +151,7 @@ async function readBody(request, maxBytes) {
   return {bytes};
 }
 
-export async function handle(request, env, {now = () => new Date(), reference = makeReference} = {}) {
+export async function handle(request, env, {now = () => new Date(), reference = makeReference, fetcher = fetch} = {}) {
   const url = new URL(request.url);
   const match = /^\/v1\/reports\/(playback|problems)$/.exec(url.pathname);
   if (!match) return json(404, {error: 'not_found'});
@@ -183,16 +196,14 @@ export async function handle(request, env, {now = () => new Date(), reference = 
 
   let emailed = false;
   try {
-    await env.EMAIL.send({
-      to: recipient,
-      from: sender,
+    await sendEmail(env, {
       subject: describe(kind, report, ref),
       text: emailText(kind, report, ref, receivedAt),
-      attachments: [{content: toBase64(bytes), filename: `Vivid-${kind === 'playback' ? 'Playback' : 'Diagnostics'}-${ref}.json`, type: 'application/json', disposition: 'attachment'}],
-    });
+      attachments: [{content: toBase64(bytes), filename: `Vivid-${kind === 'playback' ? 'Playback' : 'Diagnostics'}-${ref}.json`, content_type: 'application/json'}],
+    }, fetcher);
     emailed = true;
   } catch (error) {
-    console.error('email_failed', ref, error?.code ?? error?.message);
+    console.error('email_failed', ref, error?.message);
   }
 
   // Either copy is enough for the report to be found by its reference.

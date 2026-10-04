@@ -33,37 +33,30 @@ The body must be `application/json` and match the app's format: known fields onl
 
 ## Email
 
-Mail is sent with Cloudflare Email Service through a `send_email` binding that can only send to `diagnostics@vividapp.co`. The subject carries the reference and a short summary, for example `Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames`, and the report is attached as JSON. Replies can't reach the person who sent it; ask them for the reference instead.
-
-Mail is sent from `reports@diagnostics.vividapp.co`, and Email Sending is enabled for the `diagnostics.vividapp.co` subdomain only. Its bounce, SPF, DKIM and DMARC records then all sit under that subdomain, and the root domain's records, which deliver mail to iCloud+, are left alone. Email Routing stays off for vividapp.co.
+Mail is sent through [Resend](https://resend.com) to `diagnostics@vividapp.co` only; the address is fixed in `worker.mjs`. It comes from `reports@diagnostics.vividapp.co`, so Resend's DNS records sit under the `diagnostics.vividapp.co` subdomain and the root domain's records, which deliver mail to iCloud+, are left alone. Set `RESEND_FROM` to use another verified sender. The subject carries the reference and a short summary, for example `Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames`, and the report is attached as JSON. Replies can't reach the person who sent it; ask them for the reference instead.
 
 > [!WARNING]
-> Never enable Email Routing for vividapp.co. It replaces the root MX records and takes incoming mail away from iCloud+.
+> Never enable Cloudflare Email Routing for vividapp.co. It replaces the root MX records and takes incoming mail away from iCloud+.
 
 ## Setup
 
-Each step changes the Cloudflare account and needs blurbery's go-ahead. Run them from `diagnostics-relay/` with Wrangler logged in to the account that holds vividapp.co.
+Run these from `diagnostics-relay/` with Wrangler logged in to the account that holds vividapp.co.
 
-1. Record the root domain's mail records, so you can confirm afterwards that nothing changed:
+1. In Resend, add the domain `diagnostics.vividapp.co` and add the records it lists (Resend can add them to Cloudflare for you). Wait until it shows as verified.
+2. Store the Resend API key as a secret. Wrangler asks for the key; paste it there, never into a file or chat:
    ```sh
-   dig +short MX vividapp.co; dig +short TXT vividapp.co; dig +short TXT _dmarc.vividapp.co
+   npx wrangler secret put RESEND_API_KEY
    ```
-2. Enable sending for the subdomain only, and check its records:
-   ```sh
-   npx wrangler email sending enable diagnostics.vividapp.co
-   npx wrangler email sending dns get diagnostics.vividapp.co
-   ```
-3. Verify `diagnostics@vividapp.co` as a destination address (Cloudflare dashboard, Email, Destination addresses) and confirm the link it sends to the inbox. On the free Workers plan, Email Sending can only send to verified addresses; Workers Paid can send anywhere, but the binding only allows this one address anyway. If Cloudflare asks to turn on Email Routing to verify the address, stop: see the warning above.
-4. The KV namespace `vivid-diagnostics` already exists and its ID is in `wrangler.jsonc`. Each copy is stored with a 30-day expiry, so nothing needs cleaning up. To recreate it on another account, run `npx wrangler kv namespace create vivid-diagnostics` and update the ID.
-5. Deploy. This also creates the `diagnostics.vividapp.co` custom domain:
+3. The KV namespace `vivid-diagnostics` already exists and its ID is in `wrangler.jsonc`. Each copy is stored with a 30-day expiry, so nothing needs cleaning up. To recreate it on another account, run `npx wrangler kv namespace create vivid-diagnostics` and update the ID.
+4. Deploy. This also creates the `diagnostics.vividapp.co` custom domain:
    ```sh
    npx wrangler deploy
    ```
-6. Send a sample report, then check that the email actually arrived in the iCloud inbox. A `200` alone isn't proof: the relay also answers `200` when only the stored copy succeeded. Stored copies can be listed with `npx wrangler kv key list --binding REPORTS --remote --prefix reports/`.
+5. Send a sample report, then check that the email actually arrived in the iCloud inbox. A `200` alone isn't proof: the relay also answers `200` when only the stored copy succeeded. Stored copies can be listed with `npx wrangler kv key list --binding REPORTS --remote --prefix reports/`.
    ```sh
    curl -sS -X POST https://diagnostics.vividapp.co/v1/reports/playback -H 'Content-Type: application/json' --data-binary @fixtures/playback.json
    ```
-7. Run the `dig` commands from step 1 again and check the root records are unchanged.
+6. Check the root mail records haven't changed: `dig +short MX vividapp.co` should still list `mx01.mail.icloud.com` and `mx02.mail.icloud.com`.
 
 The app's Send button must only ship after the relay is live and the privacy text describes it.
 

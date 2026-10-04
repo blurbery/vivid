@@ -8,10 +8,9 @@
   "routes": [
     {"pattern": "diagnostics.vividapp.co", "custom_domain": true}
   ],
-  // Can only ever send to this one inbox.
-  "send_email": [
-    {"name": "EMAIL", "destination_address": "diagnostics@vividapp.co"}
-  ],
+  // Email goes through Resend to diagnostics@vividapp.co only (fixed in
+  // worker.mjs). Its API key is the RESEND_API_KEY secret, set with
+  // `npx wrangler secret put RESEND_API_KEY`, never committed.
   // Copies expire after 30 days (set per key).
   "kv_namespaces": [
     {"binding": "REPORTS", "id": "3f880d478a1b4cacb5ef3fa1b36fbbd2"}

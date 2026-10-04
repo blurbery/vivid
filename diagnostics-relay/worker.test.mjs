@@ -17,10 +17,20 @@ function makeEnv({allow = true, existing = 0, failStore = false, failEmail = fal
         if (!key.startsWith('count/')) env.stored.push({key, body, options});
       },
     },
-    EMAIL: {send: async message => { if (failEmail) throw Object.assign(new Error('nope'), {code: 'E_X'}); env.sent.push(message); return {messageId: 'm1'}; }},
+    RESEND_API_KEY: 're_test',
+    calls: [],
+  };
+  // Stands in for Resend's API.
+  env.fetcher = async (url, init) => {
+    env.calls.push({url, init});
+    if (failEmail) return new Response('{"message":"nope"}', {status: 500});
+    env.sent.push(JSON.parse(init.body));
+    return new Response('{"id":"m1"}', {status: 200});
   };
   return env;
 }
+
+const run = (request, env, options = {}) => handle(request, env, {fetcher: env.fetcher, ...options});
 
 const post = (kind, body, headers = {}) => new Request(`https://diagnostics.vividapp.co/v1/reports/${kind}`, {
   method: 'POST', body, headers: {'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9', ...headers},
@@ -29,14 +39,17 @@ const post = (kind, body, headers = {}) => new Request(`https://diagnostics.vivi
 test('a playback report is stored, emailed and gets a reference', async () => {
   const env = makeEnv();
   const body = await fixture('playback');
-  const response = await handle(post('playback', body), env, {now: fixedNow, reference: () => 'VR-7K2M9Q'});
+  const response = await run(post('playback', body), env, {now: fixedNow, reference: () => 'VR-7K2M9Q'});
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {reference: 'VR-7K2M9Q'});
   assert.equal(env.stored[0].key, 'reports/2026-10-04/VR-7K2M9Q-playback.json');
   assert.equal(env.stored[0].options.expirationTtl, 30 * 24 * 60 * 60, 'copies expire after 30 days');
   assert.equal(new TextDecoder().decode(env.stored[0].body), body, 'the copy is exactly what was sent');
   const email = env.sent[0];
-  assert.equal(email.to, 'diagnostics@vividapp.co');
+  assert.deepEqual(email.to, ['diagnostics@vividapp.co']);
+  assert.equal(email.from, 'Vivid Diagnostics <reports@diagnostics.vividapp.co>');
+  assert.equal(env.calls[0].url, 'https://api.resend.com/emails');
+  assert.equal(env.calls[0].init.headers.Authorization, 'Bearer re_test');
   assert.equal(email.subject, 'Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames');
   assert.equal(email.attachments[0].filename, 'Vivid-Playback-VR-7K2M9Q.json');
   assert.equal(Buffer.from(email.attachments[0].content, 'base64').toString('utf8'), body);
@@ -44,7 +57,7 @@ test('a playback report is stored, emailed and gets a reference', async () => {
 
 test('problem reports are accepted and listed in the email', async () => {
   const env = makeEnv();
-  const response = await handle(post('problems', await fixture('problems')), env, {now: fixedNow, reference: () => 'VR-AAAAAA'});
+  const response = await run(post('problems', await fixture('problems')), env, {now: fixedNow, reference: () => 'VR-AAAAAA'});
   assert.equal(response.status, 200);
   assert.equal(env.sent[0].subject, 'Problem report VR-AAAAAA · 1 report · iOS 26.0 · iPhone17,1 · Playback failed: source refused');
   assert.match(env.sent[0].text, /VD-3F9A2C {2}Playback failed: source refused/);
@@ -52,7 +65,7 @@ test('problem reports are accepted and listed in the email', async () => {
 
 test('the client address is only used for rate limiting', async () => {
   const env = makeEnv();
-  await handle(post('playback', await fixture('playback')), env, {now: fixedNow});
+  await run(post('playback', await fixture('playback')), env, {now: fixedNow});
   assert.deepEqual(env.limited, ['203.0.113.9']);
   const everything = JSON.stringify(env.stored.map(s => s.options)) + JSON.stringify(env.sent.map(({attachments, ...rest}) => rest));
   assert.ok(!everything.includes('203.0.113.9'));
@@ -72,7 +85,7 @@ test('rejects anything that is not a Vivid report', async () => {
     ['problems', JSON.stringify({format: 3, exportedAt: '2026-10-04T10:20:00Z', reports: [{issueID: 'nope', title: 'x', report: {}}]}), 400],
   ];
   for (const [kind, body, status] of cases) {
-    const response = await handle(post(kind, body), env, {now: fixedNow});
+    const response = await run(post(kind, body), env, {now: fixedNow});
     assert.equal(response.status, status, body.slice(0, 60));
   }
   assert.equal(env.sent.length, 0);
@@ -81,32 +94,32 @@ test('rejects anything that is not a Vivid report', async () => {
 
 test('wrong paths, methods and content types are refused', async () => {
   const env = makeEnv();
-  assert.equal((await handle(new Request('https://diagnostics.vividapp.co/'), env)).status, 404);
-  assert.equal((await handle(new Request('https://diagnostics.vividapp.co/v1/reports/other', {method: 'POST'}), env)).status, 404);
-  assert.equal((await handle(new Request('https://diagnostics.vividapp.co/v1/reports/playback'), env)).status, 405);
-  assert.equal((await handle(post('playback', '{}', {'Content-Type': 'text/plain'}), env)).status, 415);
+  assert.equal((await run(new Request('https://diagnostics.vividapp.co/'), env)).status, 404);
+  assert.equal((await run(new Request('https://diagnostics.vividapp.co/v1/reports/other', {method: 'POST'}), env)).status, 404);
+  assert.equal((await run(new Request('https://diagnostics.vividapp.co/v1/reports/playback'), env)).status, 405);
+  assert.equal((await run(post('playback', '{}', {'Content-Type': 'text/plain'}), env)).status, 415);
 });
 
 test('oversized bodies are refused before parsing', async () => {
   const env = makeEnv();
   const big = 'x'.repeat(limits.playbackBytes + 1);
-  assert.equal((await handle(post('playback', big), env)).status, 413);
+  assert.equal((await run(post('playback', big), env)).status, 413);
 });
 
 test('rate limited and daily capped requests are refused', async () => {
   const body = await fixture('playback');
-  const limited = await handle(post('playback', body), makeEnv({allow: false}), {now: fixedNow});
+  const limited = await run(post('playback', body), makeEnv({allow: false}), {now: fixedNow});
   assert.equal(limited.status, 429);
   assert.equal(limited.headers.get('Retry-After'), '60');
-  const capped = await handle(post('playback', body), makeEnv({existing: limits.perDay}), {now: fixedNow});
+  const capped = await run(post('playback', body), makeEnv({existing: limits.perDay}), {now: fixedNow});
   assert.equal(capped.status, 503);
 });
 
 test('one working copy is enough; both failing asks the app to retry', async () => {
   const body = await fixture('playback');
-  assert.equal((await handle(post('playback', body), makeEnv({failEmail: true}), {now: fixedNow})).status, 200);
-  assert.equal((await handle(post('playback', body), makeEnv({failStore: true}), {now: fixedNow})).status, 200);
-  assert.equal((await handle(post('playback', body), makeEnv({failStore: true, failEmail: true}), {now: fixedNow})).status, 503);
+  assert.equal((await run(post('playback', body), makeEnv({failEmail: true}), {now: fixedNow})).status, 200);
+  assert.equal((await run(post('playback', body), makeEnv({failStore: true}), {now: fixedNow})).status, 200);
+  assert.equal((await run(post('playback', body), makeEnv({failStore: true, failEmail: true}), {now: fixedNow})).status, 503);
 });
 
 test('references are short, unambiguous and random', () => {
@@ -126,7 +139,16 @@ test('titles with typographic characters are accepted and kept in the subject', 
   const env = makeEnv();
   const report = JSON.parse(await fixture('problems'));
   report.reports[0].title = 'Server rejected a settings change · HTTP 422 · Vivid’s queue…';
-  const response = await handle(post('problems', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-BBBBBB'});
+  const response = await run(post('problems', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-BBBBBB'});
   assert.equal(response.status, 200);
   assert.match(env.sent[0].subject, /Vivid’s queue…$/);
+});
+
+test('a missing API key still keeps the stored copy', async () => {
+  const env = makeEnv();
+  delete env.RESEND_API_KEY;
+  const response = await run(post('playback', await fixture('playback')), env, {now: fixedNow});
+  assert.equal(response.status, 200);
+  assert.equal(env.calls.length, 0);
+  assert.equal(env.stored.length, 1);
 });
