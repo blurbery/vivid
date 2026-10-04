@@ -152,3 +152,11 @@ test('a missing API key still keeps the stored copy', async () => {
   assert.equal(env.calls.length, 0);
   assert.equal(env.stored.length, 1);
 });
+
+test('stalls appear in the playback subject', async () => {
+  const env = makeEnv();
+  const report = JSON.parse(await fixture('playback'));
+  report.totals.stalls = 2;
+  await run(post('playback', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-CCCCCC'});
+  assert.match(env.sent[0].subject, /412 dropped frames · 2 stalls$/);
+});

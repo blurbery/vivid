@@ -105,6 +105,7 @@ export function describe(kind, report, reference) {
     if (Number.isInteger(media.audioOutputChannels)) parts.push(`${media.audioOutputChannels} ch`);
     if (Number.isInteger(totals.droppedFrames) && totals.droppedFrames > 0) parts.push(`${totals.droppedFrames} dropped frames`);
     if (Number.isInteger(totals.rebuffers) && totals.rebuffers > 0) parts.push(`${totals.rebuffers} rebuffers`);
+    if (Number.isInteger(totals.stalls) && totals.stalls > 0) parts.push(`${totals.stalls} stalls`);
     if (isToken(totals.endReason) && totals.endReason.startsWith('failed')) parts.push(totals.endReason);
     return parts.map(clean).filter(Boolean).join(' · ').slice(0, 200);
   }
