@@ -16,8 +16,24 @@ on:
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
       - '.github/workflows/player-regression.yml'
+  # After merge, main runs only the Release-optimiser iOS build. The normal
+  # iOS and Apple TV suites already passed on the pull request.
   push:
-    branches: [fix/next-up-persistent-surface]
+    branches: [main]
+    paths:
+      - 'iosApp/iosApp/**'
+      - 'iosApp/Tests/**'
+      - 'iosApp/project*.yml'
+      - 'iosApp/**/Package.resolved'
+      - 'scripts/tests/playback-auth-refresh-tests.py'
+      - 'scripts/tests/playback-end-recovery-tests.py'
+      - 'scripts/tests/native-profile-restoration-tests.py'
+      - 'scripts/tests/jellyfin-replacement-tests.py'
+      - 'scripts/tests/topshelf-native-tests.py'
+      - 'iosApp/TopShelf/**'
+      - 'scripts/ci/check-introdb-client.sh'
+      - 'scripts/ci/check-mdblist-sync.sh'
+      - '.github/workflows/player-regression.yml'
   workflow_dispatch:
     inputs:
       baseline_ref:
@@ -32,13 +48,20 @@ on:
         description: Build and validate only the iOS simulator app for an iOS-only change
         type: boolean
         default: false
+      optimised:
+        description: Also run the iOS suite compiled with the Release optimiser
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: player-regression-${{ github.ref }}-${{ inputs.baseline_ref || 'head' }}
-  cancel-in-progress: true
+  group: player-regression-${{ github.event_name }}-${{ github.ref }}-${{ inputs.baseline_ref || 'head' }}
+  # Runs on main are not cancelled mid-build: a newer merge queues behind the
+  # current run, and only the newest queued run is kept. Pull requests still
+  # cancel superseded runs.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   changes:
@@ -46,12 +69,34 @@ jobs:
     timeout-minutes: 5
     outputs:
       tvos: ${{ steps.filter.outputs.tvos }}
+      ios: ${{ steps.matrix.outputs.ios }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: github.event_name == 'pull_request'
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Choose iOS builds
+        id: matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          OPTIMISED: ${{ inputs.optimised }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pull requests run the normal Debug suite. Pushes to main run only
+          # the Release-optimiser suite, after the pull request has passed.
+          # Manual runs add the optimised build when requested.
+          normal='{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test"}'
+          optimised='{"scheme":"Vivid","destination":"platform=iOS Simulator,name=iPhone 17 Pro","action":"test","build":"optimised"}'
+          case "$EVENT" in
+            push) ios="[$optimised]" ;;
+            workflow_dispatch)
+              if [ "$OPTIMISED" = true ]; then ios="[$normal,$optimised]"; else ios="[$normal]"; fi ;;
+            *) ios="[$normal]" ;;
+          esac
+          jq -e 'length > 0' <<< "$ios" > /dev/null
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
       - name: Detect tvOS-relevant changes
         id: filter
         env:
@@ -61,9 +106,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Manual and push runs always include Apple TV. Pull requests skip it
-          # only when every changed file is iOS-only, so new shared paths are
-          # tested by default rather than silently skipped.
+          # Pushes to main skip Apple TV because it passed on the pull request.
+          # Manual runs always include it. Pull requests skip it only when
+          # every changed file is iOS-only, so new shared paths are tested by
+          # default rather than silently skipped.
+          if [ "$EVENT" = push ]; then
+            echo "tvos=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$EVENT" != pull_request ]; then
             echo "tvos=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -87,20 +137,16 @@ jobs:
           echo "tvos=$tvos" >> "$GITHUB_OUTPUT"
 
   validate:
+    needs: changes
     runs-on: macos-15
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        # Apple TV runs its own test job below, gated on tvOS-relevant changes.
-        include:
-          - scheme: Vivid
-            destination: platform=iOS Simulator,name=iPhone 17 Pro
-            action: test
-          - scheme: Vivid
-            destination: platform=iOS Simulator,name=iPhone 17 Pro
-            action: test
-            build: optimised
+        # The changes job chooses the normal and/or optimised iOS entries for
+        # this event. Apple TV runs its own test job below, gated on
+        # tvOS-relevant changes.
+        include: ${{ fromJSON(needs.changes.outputs.ios) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
