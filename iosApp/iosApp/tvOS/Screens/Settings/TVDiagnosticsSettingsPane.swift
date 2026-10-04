@@ -306,12 +306,12 @@ private struct TVDiagnosticsSendRow: View {
         Button(action: action) {
             TVSettingsRowLabel(title: retryable ? "Try Again" : title, detail: status.detail)
         }
+        // Stays enabled while sending: a disabled control can't hold focus on
+        // tvOS, so focus would jump away. The send actions ignore repeats.
         .buttonStyle(TVSettingsPaneRowStyle())
-        .disabled(status.isSending || rejected)
     }
 
     private var retryable: Bool { if case .failed(let failure) = status { return failure.canRetry } else { return false } }
-    private var rejected: Bool { if case .failed(let failure) = status { return !failure.canRetry } else { return false } }
 }
 
 /// What will be sent, the Send button, and the QR code as a fallback.

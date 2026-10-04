@@ -307,14 +307,14 @@ private struct DiagnosticsSendRow: View {
                 if status.isSending { ProgressView() }
             }
         }
-        .disabled(disabled || status.isSending || failedPermanently)
+        // Enabled while sending, matching Apple TV; the send actions ignore repeats.
+        .disabled(disabled)
         if let detail = status.detail, !status.isSending {
             Text(detail).font(.footnote).foregroundStyle(.secondary)
         }
     }
 
     private var failedRetryable: Bool { if case .failed(let failure) = status { return failure.canRetry } else { return false } }
-    private var failedPermanently: Bool { if case .failed(let failure) = status { return !failure.canRetry } else { return false } }
 }
 
 /// Mail and the share sheet, for anyone who would rather send the file
