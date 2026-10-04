@@ -385,10 +385,6 @@ extension PlayerViewModel {
         scrubPreviewProvider.endInteraction()
     }
 
-    // MARK: - Track selection
-    //
-    // Lucid Engine owns embedded subtitle selection.
-
     func seekToAdjacentChapter(forward: Bool) {
         guard !chapters.isEmpty else { return }
         let sorted = chapters.sorted { $0.time < $1.time }

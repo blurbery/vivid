@@ -10,6 +10,10 @@ import AppKit
 #endif
 
 extension PlayerViewModel {
+    // MARK: - Track selection
+    //
+    // Lucid Engine owns embedded subtitle selection.
+
     func selectAudio(_ track: PlayerTrack) {
         if activePreparedProtocolV3 != nil {
             // The server owns the switch on this path, so the track must not
