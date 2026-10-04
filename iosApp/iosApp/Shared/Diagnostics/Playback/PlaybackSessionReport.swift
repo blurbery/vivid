@@ -70,8 +70,9 @@ struct PlaybackSessionReport: Codable, Equatable {
         var decoderDroppedFrames: Int?
         /// Frames shown later than their due time.
         var delayedFrames: Int?
-        /// Drops during start, seek, resume and display switches, which are
-        /// normal and not counted above.
+        /// Frames the video output dropped during start, seek, resume and
+        /// display switches, which are normal and not counted above. Late
+        /// and decoder drops during warm-up aren't kept.
         var warmupDroppedFrames: Int?
         var maxAvSyncMs: Double?
         /// Seconds with audio/video drift over 100 ms outside warm-up.

@@ -121,6 +121,38 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         XCTAssertLessThan(size, 64 * 1024, "the report stays small however long or big the movie")
     }
 
+    func testWarmupOnlyCountsDroppedFrames() {
+        var session = playing()
+        session.counter(.dropped, value: 2, at: 0.5)
+        session.counter(.delayed, value: 9, at: 0.5)
+        session.counter(.dropped, value: 5, at: 2)
+        session.counter(.delayed, value: 30, at: 2)
+        session.counter(.decoderDropped, value: 0, at: 2)
+        session.counter(.decoderDropped, value: 4, at: 3)
+        XCTAssertEqual(session.totals.warmupDroppedFrames, 5)
+        XCTAssertEqual(session.totals.delayedFrames, 0)
+        XCTAssertEqual(session.totals.decoderDroppedFrames, 0)
+    }
+
+    @MainActor
+    func testWorstCaseFaultTimelineIsTrimmedToFit() throws {
+        var session = playing()
+        for minute in 0..<PlaybackSessionAccumulator.maxTimelineMinutes {
+            let second = 10 + Double(minute) * 60
+            for seconds in stride(from: second - 59, through: second, by: 1) where seconds > 0 { session.tick(at: seconds) }
+            for kind in 0..<PlaybackSessionAccumulator.maxFaultKinds + 4 { session.audioFault("audio_fault_kind_\(kind)", at: second) }
+        }
+        let report = PlaybackSessionRecorder.finish(
+            PlaybackSessionReport(startedAt: Date(), updatedAt: Date(),
+                                  app: AppHealthAppInfo(version: "0.14.3", build: "57", os: "tvOS 27.0", device: "AppleTV14,1"),
+                                  setup: .init(), media: .init(), totals: .init(), timeline: [], notMeasured: []),
+            session)
+        let size = try XCTUnwrap(PlaybackSessionRecorder.encode(report)).count
+        XCTAssertLessThanOrEqual(size, PlaybackSessionRecorder.maxEncodedBytes)
+        XCTAssertFalse(report.timeline.isEmpty, "the newest problem minutes are kept")
+        XCTAssertEqual(report.timeline.last?.minute, PlaybackSessionAccumulator.maxTimelineMinutes - 1)
+    }
+
     func testPausedTimeIsNotPlayedTime() {
         var session = playing()
         for second in 1...10 { session.tick(at: TimeInterval(second)) }
