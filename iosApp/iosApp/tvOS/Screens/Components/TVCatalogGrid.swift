@@ -115,46 +115,35 @@ struct TVCatalogGrid: View {
         // frame is the catchment; the engine snaps to its nearest card.
         LazyVStack(alignment: .leading, spacing: rowSpacing) {
             ForEach(rowStartIndices, id: \.self) { rowStart in
-                HStack(alignment: .top, spacing: columnSpacing) {
-                    ForEach(IndexedItems(rowItems(from: rowStart))) { indexed in
-                        let item = indexed.element
-                        TVMediaCard(
-                            title: item.title,
-                            posterUrl: item.posterUrl ?? "",
-                            posterThumbhash: item.posterThumbhash,
-                            year: item.year,
-                            userState: item.userState,
-                            overlayData: OverlayData.from(item),
-                            mediaTypeLabel: showsMediaTypePills ? (VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series") : nil,
-                            action: { onItemTap(item) },
-                            playAction: playAction(for: item),
-                            cardWidth: fixedColumnCount.map {
-                                max(1, (availableWidth - CGFloat($0 - 1) * columnSpacing) / CGFloat($0))
-                                    / uiCustomization.cardPresentation.posterSize.scale
-                            } ?? cardWidth,
-                            loadsArtwork: fixedColumnCount == nil || range.contains(rowStart + indexed.index)
-                                || visibleRows.contains(rowStart) || focusedItemId == item.contentId,
-                            prefersDefaultFocus: prefersDefaultFocusOnFirstItem
-                                && rowStart == 0 && indexed.index == 0,
-                            defaultFocusNamespace: gridFocusNamespace,
-                            focusBinding: $focusedItemId,
-                            focusContentId: item.contentId,
-                            contentId: item.contentId
-                        )
-                        .frame(maxWidth: .infinity)
-                        .onAppear { onCellAppear(index: rowStart + indexed.index) }
-                        .modifier(TVCatalogFirstRowBoundary(onMoveUp: rowStart == 0 ? onFirstRowMoveUp : nil))
-                    }
-                    // Keep ragged-row cards in their column positions by
-                    // filling the empty slots with equally flexible spacers.
-                    ForEach(0..<emptySlotCount(from: rowStart), id: \.self) { _ in
-                        Color.clear
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 1)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .focusSection()
+                let rowItems = rowItems(from: rowStart)
+                // Each row redraws only when its own items or artwork gates
+                // change. Without this, every row-visibility or focus change
+                // rebuilt every mounted card and dropped frames while scrolling.
+                TVCatalogGridRow(
+                    rowStart: rowStart,
+                    items: rowItems,
+                    loadsArtwork: rowItems.indices.map { offset in
+                        fixedColumnCount == nil || range.contains(rowStart + offset)
+                            || visibleRows.contains(rowStart) || focusedItemId == rowItems[offset].contentId
+                    },
+                    emptySlots: emptySlotCount(from: rowStart),
+                    pagingKey: TVCatalogGridRow.PagingKey(itemCount: items.count, hasMore: hasMore),
+                    cardWidth: fixedColumnCount.map {
+                        max(1, (availableWidth - CGFloat($0 - 1) * columnSpacing) / CGFloat($0))
+                            / uiCustomization.cardPresentation.posterSize.scale
+                    } ?? cardWidth,
+                    columnSpacing: columnSpacing,
+                    showsMediaTypePills: showsMediaTypePills,
+                    prefersDefaultFocusOnFirst: prefersDefaultFocusOnFirstItem && rowStart == 0,
+                    hasFirstRowMoveUp: rowStart == 0 && onFirstRowMoveUp != nil,
+                    focusNamespace: gridFocusNamespace,
+                    focusBinding: $focusedItemId,
+                    onItemTap: onItemTap,
+                    playAction: playAction(for:),
+                    onCellAppear: onCellAppear(index:),
+                    onFirstRowMoveUp: rowStart == 0 ? onFirstRowMoveUp : nil
+                )
+                .equatable()
                 .onScrollVisibilityChange(threshold: 0.01) { isVisible in
                     setRowVisibility(rowStart, isVisible: isVisible)
                 }
@@ -332,6 +321,86 @@ final class TVPosterArtworkWindow {
     func clear() {
         prefetcher.stopPrefetching()
         update([])
+    }
+}
+
+/// One grid row. Equatable on its visible inputs, so a change elsewhere in
+/// the grid skips this row's body and its cards.
+///
+/// Callbacks aren't compared, so a skipped row keeps the ones it was built
+/// with. Callers must pass callbacks that read current state when they run
+/// (view state, bindings, view models or the router), not values captured
+/// when the grid was built. The grid's own end-of-list check depends on the
+/// item count and `hasMore`, which `pagingKey` covers.
+private struct TVCatalogGridRow: View, Equatable {
+    let rowStart: Int
+    let items: [BrowseItem]
+    let loadsArtwork: [Bool]
+    let emptySlots: Int
+    /// `onCellAppear` reads the grid's item count and `hasMore`. A new page
+    /// changes this key, so every row picks up the current closure once
+    /// instead of keeping a stale end-of-list check.
+    struct PagingKey: Equatable {
+        let itemCount: Int
+        let hasMore: Bool
+    }
+    let pagingKey: PagingKey
+    let cardWidth: CGFloat
+    let columnSpacing: CGFloat
+    let showsMediaTypePills: Bool
+    let prefersDefaultFocusOnFirst: Bool
+    let hasFirstRowMoveUp: Bool
+    let focusNamespace: Namespace.ID
+    let focusBinding: FocusState<String?>.Binding
+    let onItemTap: (BrowseItem) -> Void
+    let playAction: (BrowseItem) -> (() -> Void)?
+    let onCellAppear: (Int) -> Void
+    let onFirstRowMoveUp: (() -> Void)?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rowStart == rhs.rowStart && lhs.items == rhs.items && lhs.loadsArtwork == rhs.loadsArtwork
+            && lhs.emptySlots == rhs.emptySlots && lhs.pagingKey == rhs.pagingKey && lhs.cardWidth == rhs.cardWidth
+            && lhs.showsMediaTypePills == rhs.showsMediaTypePills
+            && lhs.prefersDefaultFocusOnFirst == rhs.prefersDefaultFocusOnFirst
+            && lhs.hasFirstRowMoveUp == rhs.hasFirstRowMoveUp && lhs.focusNamespace == rhs.focusNamespace
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: columnSpacing) {
+            ForEach(IndexedItems(items)) { indexed in
+                let item = indexed.element
+                TVMediaCard(
+                    title: item.title,
+                    posterUrl: item.posterUrl ?? "",
+                    posterThumbhash: item.posterThumbhash,
+                    year: item.year,
+                    userState: item.userState,
+                    overlayData: OverlayData.from(item),
+                    mediaTypeLabel: showsMediaTypePills ? (VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series") : nil,
+                    action: { onItemTap(item) },
+                    playAction: playAction(item),
+                    cardWidth: cardWidth,
+                    loadsArtwork: loadsArtwork[indexed.index],
+                    prefersDefaultFocus: prefersDefaultFocusOnFirst && indexed.index == 0,
+                    defaultFocusNamespace: focusNamespace,
+                    focusBinding: focusBinding,
+                    focusContentId: item.contentId,
+                    contentId: item.contentId
+                )
+                .frame(maxWidth: .infinity)
+                .onAppear { onCellAppear(rowStart + indexed.index) }
+                .modifier(TVCatalogFirstRowBoundary(onMoveUp: onFirstRowMoveUp))
+            }
+            // Keep ragged-row cards in their column positions by
+            // filling the empty slots with equally flexible spacers.
+            ForEach(0..<emptySlots, id: \.self) { _ in
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .focusSection()
     }
 }
 

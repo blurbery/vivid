@@ -244,7 +244,7 @@ one-to-one classification of gate versus disappearance cancellation.
 
 Home allows six media rows on iOS and tvOS. A seventh slot is always reserved
 for Spotlight, even when Spotlight is hidden. The pinned Studios & Networks row
-sits outside this limit: at most five fixed logo tiles in one focus section,
+sits outside this limit: at most six fixed logo tiles in one focus section,
 with no poster artwork or prefetch window. It has not yet been measured on a
 physical Apple TV alongside six media rows. Existing order and hidden choices
 are retained. Each server/profile layout remembers which rows it has already

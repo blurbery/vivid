@@ -1,4 +1,5 @@
 #if os(tvOS)
+import CollectionHStack
 import SwiftUI
 
 /// Logo tile shared by the Home row, the settings preview and the pick grid.
@@ -17,13 +18,14 @@ private struct TVStudioNetworkTile: View {
 
 // MARK: - Home row
 
-/// Pinned under the Spotlight with no header. Five tiles span the hero's
-/// width, so every tile is one left or right press away.
+/// Pinned under the Spotlight with no header. Six tiles span the hero's
+/// width, so the row never scrolls.
 struct TVStudiosNetworksRow: View {
     /// Increments when the Spotlight hands focus down to this row.
     let enterRequest: Int
-    let onMoveUp: () -> Void
-    let onMoveDown: () -> Void
+    /// Only when the row tops Home: Up returns to the top menu, as from
+    /// the first Home row without a Spotlight.
+    var onMoveUp: (() -> Void)? = nil
     let onFocused: () -> Void
     /// Called just before a tile opens its page, so Home can return focus here.
     let onOpen: () -> Void
@@ -61,13 +63,13 @@ struct TVStudiosNetworksRow: View {
                     }
                 }
                 .padding(.horizontal, Self.heroInset)
+                // Up and Down are native, like moving between other Home
+                // rows. A manual claim here raced the focus engine on swipes
+                // and pulled focus to the remembered Continue Watching card.
                 .focusSection()
-                // Mirrors the Spotlight: this row makes the single focus claim
-                // when moving to its neighbours.
                 .onMoveCommand { direction in
-                    guard focusedTile != nil else { return }
-                    if direction == .down { onMoveDown() }
-                    if direction == .up { onMoveUp() }
+                    guard let onMoveUp, direction == .up, focusedTile != nil else { return }
+                    onMoveUp()
                 }
                 .onChange(of: focusedTile) { _, tile in
                     guard let tile else { return }
@@ -88,19 +90,63 @@ struct TVStudiosNetworksRow: View {
 struct TVStudioNetworkPage: View {
     let brandId: String
     @State private var store = StudiosNetworksStore.shared
+    @State private var homeCards = TVHomeCardPreferences.shared
+    @State private var uiCustomization = UICustomizationPreferences.shared
+
+    var body: some View {
+        // The store changes while other brands load or refresh. Only this
+        // brand's rows reach the content, so those changes don't rebuild
+        // every card on the page.
+        let result = store.results[brandId] ?? StudioNetworkResult()
+        TVStudioNetworkPageContent(
+            brandId: brandId,
+            brand: store.brand(brandId),
+            logoURL: result.logoURL,
+            rows: store.pageRows(for: brandId).map { TVStudioNetworkPageContent.Row(title: $0.title, items: $0.items) },
+            all: result.all,
+            railPosterSize: homeCards.presentation.posterSize,
+            gridPosterSize: uiCustomization.cardPresentation.posterSize
+        )
+        .equatable()
+        .task { await store.loadIfNeeded() }
+    }
+}
+
+private struct TVStudioNetworkPageContent: View, Equatable {
+    struct Row: Equatable {
+        let title: String
+        let items: [BrowseItem]
+    }
+
+    let brandId: String
+    let brand: StudioNetworkBrand?
+    let logoURL: URL?
+    let rows: [Row]
+    let all: [BrowseItem]
+    let railPosterSize: CardPosterSize
+    /// The grid's poster size, so the first row resizes with the rest of the
+    /// grid when the setting changes.
+    let gridPosterSize: CardPosterSize
+
     @Environment(AppRouter.self) private var router
+    @EnvironmentObject private var overlayStore: OverlayPrefsStore
 
     private static let inset: CGFloat = 80
     private static let columns = 7
     private static let columnSpacing: CGFloat = 40
+    /// Matches TVCatalogGrid's row spacing.
+    private static let gridRowSpacing: CGFloat = 60
 
-    private var brand: StudioNetworkBrand? { store.brand(brandId) }
-    private var result: StudioNetworkResult { store.results[brandId] ?? StudioNetworkResult() }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.brandId == rhs.brandId && lhs.brand == rhs.brand && lhs.logoURL == rhs.logoURL
+            && lhs.rows == rhs.rows && lhs.all == rhs.all && lhs.railPosterSize == rhs.railPosterSize
+            && lhs.gridPosterSize == rhs.gridPosterSize
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 48) {
-                StudioNetworkLogo(brand: brand, url: result.logoURL, fallbackName: brandId)
+                StudioNetworkLogo(brand: brand, url: logoURL, fallbackName: brandId)
                     .frame(maxWidth: 480, maxHeight: 150)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 110)
@@ -109,15 +155,31 @@ struct TVStudioNetworkPage: View {
                     .accessibilityLabel(brand?.name ?? brandId)
                     .accessibilityAddTraits(.isHeader)
 
-                ForEach(store.pageRows(for: brandId), id: \.title) { row in
+                ForEach(rows, id: \.title) { row in
                     rail(title: row.title, items: row.items)
                 }
 
-                if !result.all.isEmpty {
+                if !all.isEmpty {
                     VStack(alignment: .leading, spacing: 24) {
                         sectionTitle("All in Your Library")
-                        libraryGrid(result.all)
-                            .padding(.horizontal, Self.inset)
+                        // The first row is built up front so Down from the
+                        // last rail always has somewhere to land. The rest is
+                        // the For You and library grid, which builds rows as
+                        // they near the screen and prefetches their artwork.
+                        VStack(alignment: .leading, spacing: Self.gridRowSpacing) {
+                            firstGridRow(Array(all.prefix(Self.columns)))
+                            if all.count > Self.columns {
+                                TVCatalogGrid(
+                                    items: Array(all.dropFirst(Self.columns)),
+                                    isLoading: false,
+                                    hasMore: false,
+                                    onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
+                                    onNearEnd: { _ in },
+                                    fixedColumnCount: Self.columns
+                                )
+                            }
+                        }
+                        .padding(.horizontal, Self.inset)
                     }
                 }
             }
@@ -128,7 +190,6 @@ struct TVStudioNetworkPage: View {
         // Owns the 80pt inset itself, like the Home feed, instead of stacking
         // it on the system safe area.
         .ignoresSafeArea()
-        .task { await store.loadIfNeeded() }
     }
 
     private func sectionTitle(_ title: String) -> some View {
@@ -138,60 +199,60 @@ struct TVStudioNetworkPage: View {
             .accessibilityAddTraits(.isHeader)
     }
 
+    /// Uses the same collection row as Home, which keeps left and right
+    /// movement smooth by reusing cells instead of building SwiftUI cards.
     private func rail(title: String, items: [BrowseItem]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle(title)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: Self.columnSpacing) {
-                    ForEach(items) { item in
-                        TVMediaCard(
-                            title: item.title,
-                            posterUrl: item.posterUrl ?? "",
-                            posterThumbhash: item.posterThumbhash,
-                            year: item.year,
-                            userState: item.userState,
-                            action: { router.navigate(to: .itemDetail(browseItem: item)) },
-                            contentId: item.contentId
-                        )
-                    }
-                }
-                .padding(.horizontal, Self.inset)
-                .padding(.vertical, 30)
+            CollectionHStack(uniqueElements: items, layout: .selfSizingSameSize(rows: 1)) { item in
+                TVMediaCard(
+                    title: item.title,
+                    posterUrl: item.posterUrl ?? "",
+                    posterThumbhash: item.posterThumbhash,
+                    year: item.year,
+                    userState: item.userState,
+                    action: { router.navigate(to: .itemDetail(browseItem: item)) },
+                    // Same size as Home posters, like More Like This.
+                    cardWidth: VividTheme.Skyline.densePosterCardWidth,
+                    posterSize: railPosterSize,
+                    contentId: item.contentId
+                )
+                .environmentObject(overlayStore)
             }
-            .scrollClipDisabled()
+            .clipsToBounds(false)
+            .insets(horizontal: Self.inset, vertical: 30)
+            .itemSpacing(Self.columnSpacing)
+            .scrollBehavior(.continuousLeadingEdge)
             .focusSection()
         }
     }
 
-    /// Built eagerly (at most 100 posters) so a Down press from the last rail
-    /// always finds the first grid row before it has scrolled on screen.
-    private func libraryGrid(_ items: [BrowseItem]) -> some View {
-        let columns = Self.columns
-        // TVMediaCard scales by the Poster Size setting, so divide it back out
-        // to keep seven columns inside the screen.
-        let cardWidth = (1920 - Self.inset * 2 - Self.columnSpacing * CGFloat(columns - 1)) / CGFloat(columns)
-            / UICustomizationPreferences.shared.cardPresentation.posterSize.scale
-        let rows = stride(from: 0, to: items.count, by: columns).map { Array(items[$0..<min($0 + columns, items.count)]) }
-        return VStack(alignment: .leading, spacing: 60) {
-            ForEach(rows.indices, id: \.self) { index in
-                HStack(alignment: .top, spacing: Self.columnSpacing) {
-                    ForEach(rows[index]) { item in
-                        TVMediaCard(
-                            title: item.title,
-                            posterUrl: item.posterUrl ?? "",
-                            posterThumbhash: item.posterThumbhash,
-                            year: item.year,
-                            userState: item.userState,
-                            action: { router.navigate(to: .itemDetail(browseItem: item)) },
-                            cardWidth: cardWidth,
-                            contentId: item.contentId
-                        )
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .focusSection()
+    /// Laid out like a TVCatalogGrid row: seven equal columns across the
+    /// inset width, cards sized to fill them.
+    private func firstGridRow(_ items: [BrowseItem]) -> some View {
+        let width = (1920 - Self.inset * 2 - Self.columnSpacing * CGFloat(Self.columns - 1)) / CGFloat(Self.columns)
+            / gridPosterSize.scale
+        return HStack(alignment: .top, spacing: Self.columnSpacing) {
+            ForEach(items) { item in
+                TVMediaCard(
+                    title: item.title,
+                    posterUrl: item.posterUrl ?? "",
+                    posterThumbhash: item.posterThumbhash,
+                    year: item.year,
+                    userState: item.userState,
+                    overlayData: OverlayData.from(item),
+                    action: { router.navigate(to: .itemDetail(browseItem: item)) },
+                    cardWidth: width,
+                    contentId: item.contentId
+                )
+                .frame(maxWidth: .infinity)
+            }
+            ForEach(items.count..<Self.columns, id: \.self) { _ in
+                Color.clear.frame(maxWidth: .infinity).frame(height: 1)
             }
         }
+        .frame(maxWidth: .infinity)
+        .focusSection()
     }
 }
 
@@ -216,6 +277,8 @@ struct TVStudiosNetworksSettingsView: View {
         case .needsTMDB: "Connect TMDb in Settings → Plugins → TMDb to use Studios & Networks."
         case .loading, .idle: "Matching your library with TMDb…"
         case .failed: "Couldn’t load from TMDb or your server. Check your connection and try again."
+        case .ready where store.needsMorePicks:
+            "Choose \(store.missingPicks) more to finish, or turn off Show on Home."
         case .ready: "Pinned under the Spotlight on Home. \(store.picks.count) of \(StudiosNetworksStore.maxPicks) chosen."
         }
     }
@@ -227,6 +290,7 @@ struct TVStudiosNetworksSettingsView: View {
                     Button("Done") { dismiss() }
                         .buttonStyle(TVHomeSectionsControlButtonStyle())
                         .focused($focus, equals: .done)
+                        .disabled(store.needsMorePicks)
                 }
 
                 switch store.status {
@@ -259,8 +323,10 @@ struct TVStudiosNetworksSettingsView: View {
         .defaultFocus($focus, .done)
         .task { await store.loadIfNeeded() }
         .onExitCommand {
-            if movingID != nil { movingID = nil } else { dismiss() }
+            if movingID != nil { movingID = nil } else if !store.needsMorePicks { dismiss() }
         }
+        .onAppear { store.beginEditing() }
+        .onDisappear { store.endEditing() }
     }
 
     @ViewBuilder
@@ -291,12 +357,13 @@ struct TVStudiosNetworksSettingsView: View {
 
     private var preview: some View {
         HStack(spacing: previewSpacing) {
-            ForEach(0..<StudiosNetworksStore.maxPicks, id: \.self) { index in
-                if index < store.picks.count {
-                    slot(store.picks[index])
-                } else {
-                    emptySlot
-                }
+            // Keyed by brand so the picked-up tile keeps its identity, and
+            // its focus, as it moves between slots.
+            ForEach(store.picks, id: \.self) { id in
+                slot(id)
+            }
+            ForEach(store.picks.count..<StudiosNetworksStore.maxPicks, id: \.self) { _ in
+                emptySlot
             }
         }
         .focusSection()
@@ -311,43 +378,37 @@ struct TVStudiosNetworksSettingsView: View {
     @ViewBuilder
     private func slot(_ id: String) -> some View {
         let name = store.brand(id)?.name ?? id
-        if let moving = movingID {
-            if moving == id {
-                Button { movingID = nil } label: {
-                    tileFace(id)
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white, lineWidth: 3))
-                        .scaleEffect(1.08)
-                        .modifier(ProfileArrangeWobble(active: true))
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .focused($focus, equals: .slot(id))
-                .onAppear { focus = .slot(id) }
-                .onMoveCommand { direction in
-                    switch direction {
-                    case .left: store.move(id, by: -1)
-                    case .right: store.move(id, by: 1)
-                    default: break
-                    }
-                }
-                .onPlayPauseCommand {
-                    store.toggle(id)
-                    movingID = nil
-                }
-                .accessibilityLabel("Move \(name). Move left or right, then press centre to drop.")
-            } else {
-                tileFace(id)
-                    .opacity(0.8)
-                    .modifier(ProfileArrangeWobble(active: true))
-            }
-        } else {
-            Button {} label: { tileFace(id) }
-                .buttonStyle(.card)
-                .focused($focus, equals: .slot(id))
-                .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in movingID = id })
-                .accessibilityLabel(name)
-                .accessibilityAction(named: "Rearrange") { movingID = id }
+        let isMoving = movingID == id
+        // One button for both states. Swapping it for another view when the
+        // tile is picked up tears down the focused view, and focus falls back
+        // to Done before the tile can move. The picked-up tile keeps the
+        // normal card focus look and wobbles; centre places it.
+        Button { if isMoving { movingID = nil } } label: {
+            tileFace(id)
+                .opacity(movingID != nil && !isMoving ? 0.8 : 1)
+                .modifier(ProfileArrangeWobble(active: movingID != nil))
         }
+        .buttonStyle(.card)
+        .focused($focus, equals: .slot(id))
+        .disabled(movingID != nil && !isMoving)
+        .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+            if movingID == nil { movingID = id }
+        })
+        .onMoveCommand { direction in
+            guard isMoving else { return }
+            switch direction {
+            case .left: store.move(id, by: -1)
+            case .right: store.move(id, by: 1)
+            default: break
+            }
+        }
+        .onPlayPauseCommand {
+            guard isMoving else { return }
+            store.toggle(id)
+            movingID = nil
+        }
+        .accessibilityLabel(isMoving ? "Move \(name). Move left or right, then press centre to drop." : name)
+        .accessibilityAction(named: "Rearrange") { movingID = id }
     }
 
     private var emptySlot: some View {

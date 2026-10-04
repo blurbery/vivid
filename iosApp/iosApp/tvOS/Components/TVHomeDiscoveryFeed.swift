@@ -162,8 +162,7 @@ struct TVHomeDiscoveryFeed: View {
     private var studiosNetworksRow: some View {
         TVStudiosNetworksRow(
             enterRequest: studiosNetworksFocusRequest,
-            onMoveUp: enterSpotlight,
-            onMoveDown: enterFirstRow,
+            onMoveUp: slides.isEmpty ? { onTopMenuFocusRequest?() } : nil,
             onFocused: { rowFocusOwnership.rowID = Self.studiosNetworksOwner },
             onOpen: {
                 spotlightOpenedDetail = false

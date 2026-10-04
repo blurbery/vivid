@@ -83,13 +83,13 @@ private struct StudioNetworkIndexFile: Codable, Sendable {
 final class StudiosNetworksStore {
     static let shared = StudiosNetworksStore()
 
-    static let maxPicks = 5
+    static let maxPicks = 6
     /// Below this a tile or page row would look empty, so it's hidden.
     static let minimumCount = 6
     static let rowLimit = 20
-    static let gridLimit = 100
+    nonisolated static let gridLimit = 100
     /// TMDb discover pages read per list (20 titles each).
-    static let pagesPerList = 5
+    nonisolated static let pagesPerList = 5
     static let refreshInterval: TimeInterval = 24 * 60 * 60
     /// Brands matched at once. Each runs up to four lists in parallel.
     static let concurrentBrands = 3
@@ -120,6 +120,9 @@ final class StudiosNetworksStore {
     private(set) var isEnabled = true
     /// nil means automatic: the top brands by library matches.
     private(set) var customPicks: [String]?
+    /// While a settings editor is open, picks can drop below the required
+    /// six so a brand can be swapped. Elsewhere they're always filled.
+    private(set) var isEditing = false
 
     private var loadedScope: Scope?
     private var titlesRead: [String: Int] = [:]
@@ -148,7 +151,47 @@ final class StudiosNetworksStore {
             .map(\.element.id))
     }
 
-    var picks: [String] { (customPicks ?? automaticPicks).filter(isEligible) }
+    /// Fills `chosen` up to six with the most-matched brands not already
+    /// chosen, so Home always shows a full row.
+    static func filled(_ chosen: [String], counts: [String: Int]) -> [String] {
+        let eligible = chosen.filter { (counts[$0] ?? 0) >= minimumCount }
+        let extra = automaticPicks(counts: counts).filter { !eligible.contains($0) }
+        return Array((eligible + extra).prefix(maxPicks))
+    }
+
+    var picks: [String] {
+        let chosen = (customPicks ?? automaticPicks).filter(isEligible)
+        return isEditing ? chosen : Self.filled(chosen, counts: results.mapValues(\.count))
+    }
+
+    /// Six, or every eligible brand when a small library has fewer.
+    var requiredPicks: Int {
+        min(Self.maxPicks, Self.catalogue.filter { isEligible($0.id) }.count)
+    }
+
+    /// The editor can't be closed until this is false, unless the row is
+    /// turned off.
+    var needsMorePicks: Bool { isEnabled && picks.count < requiredPicks }
+
+    var missingPicks: Int { max(0, requiredPicks - picks.count) }
+
+    /// Starts editing with a full set, saving any top-up of older choices
+    /// made before six were required.
+    func beginEditing() {
+        isEditing = true
+        topUpForEditing()
+    }
+
+    /// Waits for match counts, so a partial set is never saved.
+    private func topUpForEditing() {
+        guard isEditing, status == .ready, let custom = customPicks else { return }
+        let full = Self.filled(custom, counts: results.mapValues(\.count))
+        if full != custom { setPicks(full) }
+    }
+
+    func endEditing() {
+        isEditing = false
+    }
 
     var showsRow: Bool { isEnabled && status == .ready && !picks.isEmpty }
 
@@ -294,6 +337,7 @@ final class StudiosNetworksStore {
             guard loadedScope == scope else { return }
             results = cached.results
             status = .ready
+            topUpForEditing()
             guard Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else { return }
         } else {
             guard loadedScope == scope else { return }
@@ -345,6 +389,7 @@ final class StudiosNetworksStore {
             guard loadedScope == scope else { return }
             results = loaded
             status = .ready
+            topUpForEditing()
             progressText = nil
             await Self.write(StudioNetworkResultsFile(savedAt: Date(), results: loaded), scope.cacheURL("results"))
         } catch {
@@ -358,7 +403,9 @@ final class StudiosNetworksStore {
     // MARK: Library index
 
     /// Every library title of one type, keyed by TMDb ID and by title + year.
-    private static func libraryIndex(
+    /// Runs off the main actor: building the index folds every library
+    /// title, which would stall scrolling during the daily refresh.
+    private nonisolated static func libraryIndex(
         type: String,
         report: @MainActor (String, Int) -> Void
     ) async throws -> [String: BrowseItem] {
@@ -380,14 +427,14 @@ final class StudiosNetworksStore {
                 }
             }
             offset += page.items.count
-            report(type, offset)
+            await report(type, offset)
             if page.hasMore != true || page.items.isEmpty { break }
         }
         return index
     }
 
     /// Case, accent and punctuation insensitive key for title + year matching.
-    static func titleKey(_ title: String, year: Int) -> String {
+    nonisolated static func titleKey(_ title: String, year: Int) -> String {
         let folded = title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
         let simple = String(folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
         return "t:\(simple)|\(year)"
@@ -395,7 +442,7 @@ final class StudiosNetworksStore {
 
     /// TMDb ID first, then exact title and year. A year either side matched
     /// unrelated titles that share a name in large libraries.
-    static func lookup(_ result: TVTMDbStore.DiscoverPage.Result, in index: [String: BrowseItem]) -> BrowseItem? {
+    nonisolated static func lookup(_ result: TVTMDbStore.DiscoverPage.Result, in index: [String: BrowseItem]) -> BrowseItem? {
         if let item = index[String(result.id)] { return item }
         guard let title = result.title ?? result.name,
               let date = result.releaseDate ?? result.firstAirDate,
@@ -405,7 +452,7 @@ final class StudiosNetworksStore {
 
     // MARK: TMDb matching
 
-    private static let dayFormatter: DateFormatter = {
+    private nonisolated static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
@@ -413,7 +460,9 @@ final class StudiosNetworksStore {
         return formatter
     }()
 
-    private static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async throws -> StudioNetworkResult {
+    /// Off the main actor, like the library index, so matching never
+    /// competes with drawing.
+    private nonisolated static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async throws -> StudioNetworkResult {
         let id = String(brand.tmdbId)
         let today = Date()
         let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
@@ -455,7 +504,7 @@ final class StudiosNetworksStore {
         )
     }
 
-    private static func logoURL(for brand: StudioNetworkBrand) async throws -> URL? {
+    private nonisolated static func logoURL(for brand: StudioNetworkBrand) async throws -> URL? {
         guard !brand.usesWordmark else { return nil }
         return try await retryingOnce {
             try await TVTMDbStore.shared.logoURL(kind: brand.kind == .network ? "network" : "company", id: brand.tmdbId)
@@ -464,7 +513,7 @@ final class StudiosNetworksStore {
 
     /// Retries a TMDb request once after a short pause, for a dropped
     /// connection or a brief rate limit, then lets the error through.
-    private static func retryingOnce<T>(_ request: () async throws -> T) async throws -> T {
+    private nonisolated static func retryingOnce<T>(_ request: () async throws -> T) async throws -> T {
         do {
             return try await request()
         } catch is CancellationError {
@@ -476,7 +525,7 @@ final class StudiosNetworksStore {
     }
 
     /// Library matches for one TMDb discover list, in popularity order.
-    private static func matches(
+    private nonisolated static func matches(
         _ media: String,
         _ query: [String: String]?,
         _ index: [String: BrowseItem]
