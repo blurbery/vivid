@@ -326,6 +326,12 @@ final class TVPosterArtworkWindow {
 
 /// One grid row. Equatable on its visible inputs, so a change elsewhere in
 /// the grid skips this row's body and its cards.
+///
+/// Callbacks aren't compared, so a skipped row keeps the ones it was built
+/// with. Callers must pass callbacks that read current state when they run
+/// (view state, bindings, view models or the router), not values captured
+/// when the grid was built. The grid's own end-of-list check depends on the
+/// item count and `hasMore`, which `pagingKey` covers.
 private struct TVCatalogGridRow: View, Equatable {
     let rowStart: Int
     let items: [BrowseItem]

@@ -334,9 +334,13 @@ struct PhoneStudiosNetworksSettingsView: View {
                 dragOffset = drag.translation
                 previewReorder(at: drag.location, moving: id)
             }
-            .onEnded { _ in
+            .onEnded { value in
                 defer { resetDrag() }
-                guard movingID == id, let index = draftOrder.firstIndex(of: id),
+                // Letting go away from the tiles cancels, as with saved
+                // profile cards.
+                guard movingID == id, case .second(true, let drag?) = value,
+                      tileFrames.values.contains(where: { $0.insetBy(dx: -6, dy: -6).contains(drag.location) }),
+                      let index = draftOrder.firstIndex(of: id),
                       draftOrder != store.picks else { return }
                 store.place(id, at: index)
             }

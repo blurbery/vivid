@@ -91,6 +91,7 @@ struct TVStudioNetworkPage: View {
     let brandId: String
     @State private var store = StudiosNetworksStore.shared
     @State private var homeCards = TVHomeCardPreferences.shared
+    @State private var uiCustomization = UICustomizationPreferences.shared
 
     var body: some View {
         // The store changes while other brands load or refresh. Only this
@@ -103,7 +104,8 @@ struct TVStudioNetworkPage: View {
             logoURL: result.logoURL,
             rows: store.pageRows(for: brandId).map { TVStudioNetworkPageContent.Row(title: $0.title, items: $0.items) },
             all: result.all,
-            railPosterSize: homeCards.presentation.posterSize
+            railPosterSize: homeCards.presentation.posterSize,
+            gridPosterSize: uiCustomization.cardPresentation.posterSize
         )
         .equatable()
         .task { await store.loadIfNeeded() }
@@ -122,6 +124,9 @@ private struct TVStudioNetworkPageContent: View, Equatable {
     let rows: [Row]
     let all: [BrowseItem]
     let railPosterSize: CardPosterSize
+    /// The grid's poster size, so the first row resizes with the rest of the
+    /// grid when the setting changes.
+    let gridPosterSize: CardPosterSize
 
     @Environment(AppRouter.self) private var router
     @EnvironmentObject private var overlayStore: OverlayPrefsStore
@@ -135,6 +140,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.brandId == rhs.brandId && lhs.brand == rhs.brand && lhs.logoURL == rhs.logoURL
             && lhs.rows == rhs.rows && lhs.all == rhs.all && lhs.railPosterSize == rhs.railPosterSize
+            && lhs.gridPosterSize == rhs.gridPosterSize
     }
 
     var body: some View {
@@ -225,7 +231,7 @@ private struct TVStudioNetworkPageContent: View, Equatable {
     /// inset width, cards sized to fill them.
     private func firstGridRow(_ items: [BrowseItem]) -> some View {
         let width = (1920 - Self.inset * 2 - Self.columnSpacing * CGFloat(Self.columns - 1)) / CGFloat(Self.columns)
-            / UICustomizationPreferences.shared.cardPresentation.posterSize.scale
+            / gridPosterSize.scale
         return HStack(alignment: .top, spacing: Self.columnSpacing) {
             ForEach(items) { item in
                 TVMediaCard(
