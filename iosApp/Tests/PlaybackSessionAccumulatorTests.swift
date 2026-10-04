@@ -219,6 +219,19 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         XCTAssertEqual(session.totals.stalls, 0)
     }
 
+    func testFrameRateMatchFlagsJudder() {
+        var report = PlaybackSessionReport(
+            startedAt: Date(), updatedAt: Date(),
+            app: AppHealthAppInfo(version: "0.14.3", build: "57", os: "tvOS 27.0", device: "AppleTV14,1"),
+            setup: .init(), media: .init(), totals: .init(), timeline: [], notMeasured: [])
+        XCTAssertNil(report.frameRateMatched)
+        for (fps, hz, matched) in [(23.976, 59.94, false), (24, 60, false), (23.976, 23.976, true), (25, 50, true), (29.97, 59.94, true)] {
+            report.media.contentFps = fps
+            report.setup.displayRefreshHz = hz
+            XCTAssertEqual(report.frameRateMatched, matched, "\(fps) fps on \(hz) Hz")
+        }
+    }
+
     func testPausedTimeIsNotPlayedTime() {
         var session = playing()
         for second in 1...10 { session.tick(at: TimeInterval(second)) }

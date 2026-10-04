@@ -145,6 +145,15 @@ extension PlaybackSessionReport {
         return parts.joined(separator: " · ")
     }
 
+    /// Whether the display refresh is a whole multiple of the video's frame
+    /// rate. If not, frames are shown for uneven times, which looks like
+    /// judder even with nothing dropped. Nil when either rate is unknown.
+    var frameRateMatched: Bool? {
+        guard let fps = media.contentFps, fps > 1, let refresh = setup.displayRefreshHz, refresh > 1 else { return nil }
+        let ratio = refresh / fps
+        return abs(ratio - ratio.rounded()) < 0.01 && ratio.rounded() >= 1
+    }
+
     /// Plain-language rows for the preview. Values that weren't measured
     /// say so rather than showing zero.
     var summaryRows: [(label: String, value: String)] {
@@ -160,6 +169,9 @@ extension PlaybackSessionReport {
         let hdr = setup.displayHDR.map { $0.isEmpty ? "SDR only" : $0.map(Self.dynamicRangeLabel).joined(separator: ", ") } ?? missing
         rows.append(("Display HDR", hdr))
         if let refresh = setup.displayRefreshHz { rows.append(("Display refresh", String(format: "%.3g Hz", refresh))) }
+        if let matched = frameRateMatched {
+            rows.append(("Frame rate matched", matched ? "Yes" : "No, uneven motion (judder) is likely"))
+        }
         if let matching = setup.systemMatchingEnabled { rows.append(("Match content (Apple TV)", matching ? "On" : "Off")) }
         var video = [media.videoCodec?.uppercased(), media.height.map { "\($0)p" },
                      media.sourceDynamicRange.map(Self.dynamicRangeLabel),

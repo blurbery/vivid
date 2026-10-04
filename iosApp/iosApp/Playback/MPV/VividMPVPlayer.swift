@@ -915,20 +915,25 @@ final class VividMPVPlayer: NSObject, ObservableObject {
 
     private var sessionSampler: Task<Void, Never>?
 
-    /// Reads the cumulative frame counters about once a second, off the
-    /// render path, for the latest-playback report. Properties the output
+    /// Reads two cumulative frame counters once a second, and bitrate and
+    /// display rate every 10 seconds, off the render path, for the
+    /// latest-playback report. Properties the output
     /// doesn't support come back as nil and are reported as not measured.
     private func startSessionSampler(token: UInt64) {
         sessionSampler?.cancel()
         guard PlaybackSessionRecorder.isEnabled else { return }
         sessionSampler = Task { @MainActor [weak self] in
+            var tick = 0
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
                 guard let self, self.generation == token, let core = self.core else { return }
+                // Bitrate and display rate change rarely; read them every 10 s.
+                let slow = tick % 10 == 0
+                tick &+= 1
                 async let decoder = Self.readNumber(core, "decoder-frame-drop-count")
                 async let delayed = Self.readNumber(core, "vo-delayed-frame-count")
-                async let bitrate = Self.readNumber(core, "video-bitrate")
-                async let displayFps = Self.readNumber(core, "display-fps")
+                async let bitrate: Double? = slow ? await Self.readNumber(core, "video-bitrate") : nil
+                async let displayFps: Double? = slow ? await Self.readNumber(core, "display-fps") : nil
                 let values = await (decoder, delayed, bitrate, displayFps)
                 guard !Task.isCancelled, self.generation == token else { return }
                 if let bitrate = values.2, bitrate > 0 {
