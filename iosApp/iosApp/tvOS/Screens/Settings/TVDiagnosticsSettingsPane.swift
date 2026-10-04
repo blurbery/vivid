@@ -4,15 +4,19 @@ import SwiftUI
 import UIKit
 
 /// Settings → Diagnostics on Apple TV. Lists the reports kept on this Apple
-/// TV, shows each one, and sends a short summary by QR code: Apple TV has no
-/// Mail or share sheet, so a phone scans the code to open an email to Vivid.
+/// TV, shows each one, and sends them to Vivid's diagnostics service when the
+/// person chooses to. A QR code with a short summary remains as a fallback.
 struct TVDiagnosticsSettingsPane: View {
     @State private var reports: [AppHealthReport] = []
+    @State private var sentIDs: Set<String> = []
     @State private var loaded = false
     @State private var showsDeleteConfirm = false
     @State private var latestPlayback: PlaybackSessionReport?
 
     private var groups: [AppHealthReportGroup] { AppHealthReportGroup.grouping(reports) }
+    private var unsent: [AppHealthReport] { AppHealthSendState.unsent(in: reports, sentIDs: sentIDs) }
+    /// New reports only, or everything again once all have been sent.
+    private var toSend: [AppHealthReport] { unsent.isEmpty ? reports : unsent }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -48,8 +52,10 @@ struct TVDiagnosticsSettingsPane: View {
             TVSettingsFooter("Reports stay on this Apple TV for up to 14 days and are never uploaded automatically. They contain no titles, account details or server addresses.")
             if !reports.isEmpty {
                 TVSettingsGroup {
-                    NavigationLink { TVDiagnosticsSendPage(reports: reports) } label: {
-                        TVSettingsRowLabel(title: "Send to Vivid", detail: "Scan a code with your phone to email a summary to \(VividAbout.diagnosticsEmail).")
+                    NavigationLink { TVDiagnosticsSendPage(reports: toSend) } label: {
+                        TVSettingsRowLabel(title: "Send to Vivid", detail: unsent.isEmpty
+                            ? "All reports have been sent. Send them again to \(VividAbout.diagnosticsEmail)."
+                            : "Send \(unsent.count == 1 ? "1 new report" : "\(unsent.count) new reports") to \(VividAbout.diagnosticsEmail).")
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                     Button { showsDeleteConfirm = true } label: {
@@ -84,11 +90,14 @@ struct TVDiagnosticsSettingsPane: View {
         let latest = group.latest.lastOccurredAt.formatted(.relative(presentation: .named))
         let count = group.reports.count == 1 ? "1 report" : "\(group.reports.count) reports"
         let times = group.occurrenceCount > group.reports.count ? " · happened \(group.occurrenceCount) times" : ""
-        return "\(group.kind.title) · \(count)\(times) · latest \(latest) · \(group.latest.issueID)"
+        let allSent = group.reports.allSatisfy { sentIDs.contains($0.id) }
+        return "\(group.kind.title) · \(count)\(times) · latest \(latest) · \(group.latest.issueID)" + (allSent ? " · Sent" : "")
     }
 
     private func reload() async {
-        reports = await Task.detached(priority: .userInitiated) { AppHealthStore.shared.reports() }.value
+        (reports, sentIDs) = await Task.detached(priority: .userInitiated) {
+            (AppHealthStore.shared.reports(), AppHealthSendState.sentIDs())
+        }.value
         loaded = true
     }
 }
@@ -211,6 +220,8 @@ private struct TVDiagnosticsReportPage: View {
 private struct TVLatestPlaybackPage: View {
     let report: PlaybackSessionReport
     @FocusState private var focusedSection: Int?
+    @FocusState private var sendFocused: Bool
+    @State private var status: DiagnosticsSendStatus = .idle
 
     private var sections: [(title: String, lines: [String])] {
         var sections: [(String, [String])] = [
@@ -239,6 +250,11 @@ private struct TVLatestPlaybackPage: View {
             VStack(alignment: .leading, spacing: 20) {
                 TVSettingsPageHeader(title: "Latest Playback",
                                      subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened))
+                TVSettingsGroup {
+                    TVDiagnosticsSendRow(title: "Send Latest Playback", status: status, action: send)
+                        .focused($sendFocused)
+                }
+                TVSettingsFooter("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses.")
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                     VStack(alignment: .leading, spacing: 10) {
                         Text(section.title).font(.system(size: 27, weight: .semibold))
@@ -264,17 +280,105 @@ private struct TVLatestPlaybackPage: View {
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
-        .defaultFocus($focusedSection, 0)
+        .defaultFocus($sendFocused, true)
+    }
+
+    private func send() {
+        guard !status.isSending, let data = PlaybackSessionRecorder.encode(report) else { return }
+        status = .sending
+        Task {
+            do {
+                status = .sent(reference: try await DiagnosticsUploader.send(data, kind: .playback))
+            } catch {
+                status = .failed(error as? DiagnosticsUploader.Failure ?? .unavailable)
+            }
+        }
     }
 }
 
+/// A send row whose detail shows progress and the result.
+private struct TVDiagnosticsSendRow: View {
+    let title: String
+    let status: DiagnosticsSendStatus
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            TVSettingsRowLabel(title: retryable ? "Try Again" : title, detail: status.detail)
+        }
+        .buttonStyle(TVSettingsPaneRowStyle())
+        .disabled(status.isSending || rejected)
+    }
+
+    private var retryable: Bool { if case .failed(let failure) = status { return failure.canRetry } else { return false } }
+    private var rejected: Bool { if case .failed(let failure) = status { return !failure.canRetry } else { return false } }
+}
+
+/// What will be sent, the Send button, and the QR code as a fallback.
 private struct TVDiagnosticsSendPage: View {
+    /// Fixed when the page opens, so marking them sent can't swap the list.
+    @State private var reports: [AppHealthReport]
+    @State private var status: DiagnosticsSendStatus = .idle
+    @FocusState private var sendFocused: Bool
+
+    init(reports: [AppHealthReport]) { _reports = State(initialValue: reports) }
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                TVSettingsPageHeader(title: "Send to Vivid",
+                                     subtitle: reports.count == 1 ? "1 report" : "\(reports.count) reports")
+                TVSettingsGroup {
+                    TVDiagnosticsSendRow(title: "Send", status: status, action: send)
+                        .focused($sendFocused)
+                    NavigationLink { TVDiagnosticsQRPage(reports: reports) } label: {
+                        TVSettingsRowLabel(title: "Show QR Code", detail: "Scan with your phone to email a short summary instead.")
+                    }
+                    .buttonStyle(TVSettingsPaneRowStyle())
+                }
+                TVSettingsFooter("Sends these reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Open a report in Diagnostics to see exactly what it contains.")
+                TVSettingsSectionHeader("WHAT IS SENT")
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(AppHealthReportGroup.grouping(reports)) { group in
+                        Text(TVDiagnosticsQRCode.summaryLine(for: group))
+                            .font(.system(size: 20, design: .monospaced)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, 24).padding(.vertical, 48)
+            .frame(maxWidth: .infinity)
+        }
+        .tvSettingsPageSurface()
+        .defaultFocus($sendFocused, true)
+    }
+
+    private func send() {
+        guard !status.isSending, !reports.isEmpty else { return }
+        status = .sending
+        let reports = reports
+        Task {
+            let data = await Task.detached(priority: .userInitiated) { AppHealthStore.shared.exportData(reports) }.value
+            do {
+                let reference = try await DiagnosticsUploader.send(data, kind: .problems)
+                AppHealthSendState.markSent(reports)
+                status = .sent(reference: reference)
+            } catch {
+                status = .failed(error as? DiagnosticsUploader.Failure ?? .unavailable)
+            }
+        }
+    }
+}
+
+private struct TVDiagnosticsQRPage: View {
     let reports: [AppHealthReport]
 
     var body: some View {
         let code = TVDiagnosticsQRCode.make(for: reports)
         VStack(spacing: 28) {
-            Text("Send to Vivid").font(.system(size: 42, weight: .bold, design: .rounded))
+            Text("Send by QR Code").font(.system(size: 42, weight: .bold, design: .rounded))
             if let image = code.image {
                 Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
                     .frame(width: 420, height: 420).padding(24)
