@@ -125,13 +125,15 @@ struct PlaybackSessionAccumulator {
         guard let previous = lastCounters[counter] else {
             // The first sample is a baseline. Anything counted before the
             // recorder started belongs to startup.
-            if value > 0 { totals.warmupDroppedFrames = (totals.warmupDroppedFrames ?? 0) + value }
+            if counter == .dropped, value > 0 { totals.warmupDroppedFrames = (totals.warmupDroppedFrames ?? 0) + value }
             return
         }
         guard value > previous else { return } // reset after a reload or seek
         let delta = value - previous
         if inWarmup(now) || !playing || buffering {
-            totals.warmupDroppedFrames = (totals.warmupDroppedFrames ?? 0) + delta
+            // Only dropped frames are kept for warm-up; late and decoder
+            // drops there are normal and not reported.
+            if counter == .dropped { totals.warmupDroppedFrames = (totals.warmupDroppedFrames ?? 0) + delta }
             return
         }
         setTotal(counter, (totalValue(counter) ?? 0) + delta)

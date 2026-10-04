@@ -31,7 +31,7 @@ struct TVDiagnosticsSettingsPane: View {
             } else {
                 TVSettingsFooter("No playback recorded yet.")
             }
-            TVSettingsFooter("If playback looked choppy, the sound dropped out or something didn't look right, send the latest session so Vivid can see what happened. Only the most recent play is kept.")
+            TVSettingsFooter("If playback looked choppy, the sound dropped out or something didn't look right, the latest session shows what happened. Only the most recent play is kept.")
             TVSettingsSectionHeader("REPORTS")
             if reports.isEmpty {
                 TVSettingsFooter(loaded ? "No reports." : "Loading…")

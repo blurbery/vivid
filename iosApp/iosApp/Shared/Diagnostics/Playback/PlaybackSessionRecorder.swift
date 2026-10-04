@@ -114,12 +114,6 @@ final class PlaybackSessionRecorder {
         return Self.load()
     }
 
-    func deleteLatest() {
-        if accumulator == nil { report = nil }
-        try? FileManager.default.removeItem(at: Self.fileURL)
-        NotificationCenter.default.post(name: Self.didChange, object: nil)
-    }
-
     /// The exact JSON that is sent.
     nonisolated static func encode(_ report: PlaybackSessionReport) -> Data? {
         let encoder = JSONEncoder()
@@ -130,12 +124,25 @@ final class PlaybackSessionRecorder {
 
     // MARK: Building the report
 
+    /// The diagnostics relay accepts up to 128 KB; stay well inside it.
+    static let maxEncodedBytes = 60 * 1024
+
     static func finish(_ report: PlaybackSessionReport, _ accumulator: PlaybackSessionAccumulator) -> PlaybackSessionReport {
         var result = report
         result.updatedAt = Date()
         result.totals = accumulator.totals
         result.timeline = accumulator.timeline
         result.notMeasured = notMeasured(result)
+        return bounded(result)
+    }
+
+    /// Drops the oldest problem minutes until the record fits. Only a very
+    /// long session with many kinds of fault every minute gets near this.
+    static func bounded(_ report: PlaybackSessionReport) -> PlaybackSessionReport {
+        var result = report
+        while !result.timeline.isEmpty, (encode(result)?.count ?? 0) > maxEncodedBytes {
+            result.timeline.removeFirst(max(1, result.timeline.count / 8))
+        }
         return result
     }
 
