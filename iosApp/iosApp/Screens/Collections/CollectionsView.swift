@@ -695,6 +695,18 @@ struct LibraryCollectionDetailView: View {
                     .font(.vividCaption)
                     .foregroundColor(.vividSecondaryText)
 
+                #if os(tvOS)
+                // The For You and library grid, so posters match their size
+                // and seven columns fit the page edges.
+                TVCatalogGrid(
+                    items: items,
+                    isLoading: isLoading,
+                    hasMore: hasMore,
+                    onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
+                    onNearEnd: { _ in Task { await loadMoreIfNeeded() } },
+                    fixedColumnCount: 7
+                )
+                #else
                 CatalogGrid(
                     items: items,
                     isLoading: isLoading,
@@ -707,8 +719,13 @@ struct LibraryCollectionDetailView: View {
                         Task { await loadMoreIfNeeded() }
                     }
                 )
+                #endif
             }
+            #if os(tvOS)
+            .padding(.horizontal, VividTheme.safePadding)
+            #else
             .padding(.horizontal, VividTheme.padding)
+            #endif
             .padding(.top, VividTheme.smallPadding)
             .padding(.bottom, VividTheme.largePadding)
         }

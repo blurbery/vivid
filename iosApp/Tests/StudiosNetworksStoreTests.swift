@@ -94,12 +94,21 @@ final class StudiosNetworksStoreTests: XCTestCase {
         let picks = StudiosNetworksStore.automaticPicks(counts: [
             "netflix": 163, "hbo": 165, "disneyplus": 164, "marvel": 115, "appletv": 150, "pixar": 68, "ghibli": 20,
         ])
-        XCTAssertEqual(picks, ["hbo", "disneyplus", "netflix", "appletv", "marvel"])
+        XCTAssertEqual(picks, ["hbo", "disneyplus", "netflix", "appletv", "marvel", "pixar"])
     }
 
     func testAutomaticPicksKeepCatalogueOrderForTiesAndSkipSmallBrands() {
         let picks = StudiosNetworksStore.automaticPicks(counts: ["pixar": 40, "netflix": 40, "a24": 40, "hulu": 3])
         XCTAssertEqual(picks, ["netflix", "pixar", "a24"])
+    }
+
+    func testFilledTopsUpOlderChoicesToSixKeepingTheirOrder() {
+        let counts = ["netflix": 163, "hbo": 165, "disneyplus": 164, "marvel": 115, "appletv": 150, "pixar": 68, "ghibli": 20]
+        XCTAssertEqual(StudiosNetworksStore.filled(["marvel", "netflix", "ghibli"], counts: counts),
+                       ["marvel", "netflix", "ghibli", "hbo", "disneyplus", "appletv"])
+        // Ineligible brands drop out before topping up.
+        XCTAssertEqual(StudiosNetworksStore.filled(["hulu", "pixar"], counts: counts),
+                       ["pixar", "hbo", "disneyplus", "netflix", "appletv", "marvel"])
     }
 
     func testResultCountIsTheUncappedMatchCount() {

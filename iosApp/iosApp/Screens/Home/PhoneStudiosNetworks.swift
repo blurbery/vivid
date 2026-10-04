@@ -137,13 +137,25 @@ struct PhoneStudioNetworkPage: View {
 struct PhoneStudiosNetworksSettingsView: View {
     @State private var store = StudiosNetworksStore.shared
     @State private var isArranging = false
+    // Drag state, as in the saved profile cards: a floating copy follows the
+    // finger while a draft order previews the drop and saves on release.
+    @State private var tileFrames: [String: CGRect] = [:]
+    @State private var draftOrder: [String] = []
+    @State private var movingID: String?
+    @State private var dragStartFrame: CGRect = .zero
+    @State private var dragOffset: CGSize = .zero
+    @GestureState private var reorderGestureActive = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let previewSpace = "studiosNetworksPreview"
 
     private var statusText: String {
         switch store.status {
         case .needsTMDB: "Connect TMDb in Settings → Plugins → TMDb to use Studios & Networks."
         case .loading, .idle: "Matching your library with TMDb…"
         case .failed: "Couldn’t load from TMDb or your server. Check your connection and try again."
+        case .ready where store.needsMorePicks:
+            "Choose \(store.missingPicks) more to finish, or turn off Show on Home."
         case .ready: "Pinned under the Spotlight on Home. \(store.picks.count) of \(StudiosNetworksStore.maxPicks) chosen."
         }
     }
@@ -180,6 +192,10 @@ struct PhoneStudiosNetworksSettingsView: View {
         }
         .settingsListChrome()
         .navigationTitle("")
+        // Six are required while the row shows on Home.
+        .navigationBarBackButtonHidden(store.needsMorePicks)
+        .onAppear { store.beginEditing() }
+        .onDisappear { store.endEditing() }
         .task { await store.loadIfNeeded() }
     }
 
@@ -226,30 +242,53 @@ struct PhoneStudiosNetworksSettingsView: View {
             let width = (proxy.size.width - spacing * CGFloat(StudiosNetworksStore.maxPicks - 1))
                 / CGFloat(StudiosNetworksStore.maxPicks)
             HStack(spacing: spacing) {
-                ForEach(0..<StudiosNetworksStore.maxPicks, id: \.self) { index in
-                    if index < store.picks.count {
-                        slot(store.picks[index], index: index, width: width)
-                    } else {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .frame(width: width, height: width * 9 / 16)
-                            .overlay(Image(systemName: "plus").font(.caption.weight(.semibold)).opacity(0.45))
-                            .accessibilityLabel("Empty slot")
-                    }
+                // Keyed by brand so a tile keeps its gesture while the draft
+                // order moves it between slots.
+                ForEach(displayedPicks, id: \.self) { id in
+                    slot(id, width: width)
+                }
+                ForEach(displayedPicks.count..<StudiosNetworksStore.maxPicks, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .frame(width: width, height: width * 9 / 16)
+                        .overlay(Image(systemName: "plus").font(.caption.weight(.semibold)).opacity(0.45))
+                        .accessibilityLabel("Empty slot")
                 }
             }
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.picks)
+            .coordinateSpace(name: Self.previewSpace)
+            .onPreferenceChange(StudioNetworkTileFrames.self) { tileFrames = $0 }
+            .overlay(alignment: .topLeading) {
+                if let movingID {
+                    PhoneStudioNetworkTile(id: movingID, width: dragStartFrame.width)
+                        .scaleEffect(reduceMotion ? 1 : 1.08)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                        .position(x: dragStartFrame.midX + dragOffset.width,
+                                  y: dragStartFrame.midY + dragOffset.height)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
         }
         // Five 16:9 tiles plus their gaps.
         .aspectRatio(CGFloat(StudiosNetworksStore.maxPicks) * 16 / 9 * 0.93, contentMode: .fit)
+        .onChange(of: reorderGestureActive) { _, active in
+            if !active { resetDrag() }
+        }
+        .onDisappear { resetDrag() }
     }
 
-    private func slot(_ id: String, index: Int, width: CGFloat) -> some View {
+    private var displayedPicks: [String] {
+        movingID == nil ? store.picks : draftOrder
+    }
+
+    private func slot(_ id: String, width: CGFloat) -> some View {
         let name = store.brand(id)?.name ?? id
         return PhoneStudioNetworkTile(id: id, width: width)
             .modifier(ProfileArrangeWobble(active: isArranging))
+            .opacity(movingID == id ? 0 : 1)
             .overlay(alignment: .topLeading) {
-                if isArranging {
+                if isArranging && movingID == nil {
                     Button { withAnimation { store.toggle(id) } } label: {
                         Image(systemName: "minus.circle.fill")
                             .symbolRenderingMode(.palette)
@@ -261,21 +300,64 @@ struct PhoneStudiosNetworksSettingsView: View {
                     .accessibilityLabel("Remove \(name)")
                 }
             }
-            .onLongPressGesture(minimumDuration: 0.35) {
-                withAnimation { isArranging = true }
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: StudioNetworkTileFrames.self,
+                        value: [id: geometry.frame(in: .named(Self.previewSpace))])
+                }
             }
-            .draggable(id) {
-                PhoneStudioNetworkTile(id: id, width: width)
-            }
-            .dropDestination(for: String.self) { dropped, _ in
-                guard let moving = dropped.first, store.picks.contains(moving) else { return false }
-                withAnimation { store.place(moving, at: index) }
-                return true
-            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(reorderGesture(for: id))
             .accessibilityElement(children: .contain)
             .accessibilityLabel(name)
             .accessibilityAction(named: "Move earlier") { store.move(id, by: -1) }
             .accessibilityAction(named: "Move later") { store.move(id, by: 1) }
+    }
+
+    /// Hold to start wiggling, then keep dragging to move the tile. Once
+    /// wiggling, a shorter hold picks a tile up so it can be dragged again.
+    private func reorderGesture(for id: String) -> some Gesture {
+        LongPressGesture(minimumDuration: isArranging ? 0.15 : 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.previewSpace)))
+            .updating($reorderGestureActive) { value, active, _ in
+                if case .second(true, _) = value { active = true }
+            }
+            .onChanged { value in
+                guard case .second(true, let drag) = value else { return }
+                if !isArranging { withAnimation { isArranging = true } }
+                if movingID == nil {
+                    dragStartFrame = tileFrames[id] ?? .zero
+                    draftOrder = store.picks
+                    movingID = id
+                }
+                guard movingID == id, let drag else { return }
+                dragOffset = drag.translation
+                previewReorder(at: drag.location, moving: id)
+            }
+            .onEnded { _ in
+                defer { resetDrag() }
+                guard movingID == id, let index = draftOrder.firstIndex(of: id),
+                      draftOrder != store.picks else { return }
+                store.place(id, at: index)
+            }
+    }
+
+    private func previewReorder(at point: CGPoint, moving id: String) {
+        guard let target = draftOrder.first(where: {
+            $0 != id && tileFrames[$0]?.contains(point) == true
+        }), let from = draftOrder.firstIndex(of: id),
+              let to = draftOrder.firstIndex(of: target) else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+            draftOrder.remove(at: from)
+            draftOrder.insert(id, at: to)
+        }
+    }
+
+    private func resetDrag() {
+        movingID = nil
+        draftOrder = []
+        dragOffset = .zero
+        dragStartFrame = .zero
     }
 
     // MARK: Pick grid
@@ -317,6 +399,13 @@ struct PhoneStudiosNetworksSettingsView: View {
         .disabled(unavailable)
         .opacity(unavailable ? 0.4 : 1)
         .accessibilityLabel("\(brand.name), \(count) titles\(picked ? ", chosen" : "")")
+    }
+}
+
+private struct StudioNetworkTileFrames: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 #endif
