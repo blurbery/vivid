@@ -149,7 +149,17 @@ final class VividMPVPlayer: NSObject, ObservableObject {
 
     func load(url: URL, startPosition: Double = 0, options: LoadOptions = LoadOptions(),
               audioSourceStreamIndex: Int32? = nil) async throws {
-        stop(resetDisplayCriteria: false)
+        // A reload of the same source (audio recovery, header refresh)
+        // continues the latest-playback session; a different source starts
+        // a new one and replaces the previous session.
+        let continuesSession = source?.0 == url && PlaybackSessionRecorder.shared.isRecording
+        stop(resetDisplayCriteria: false, endsSessionRecording: false)
+        if continuesSession {
+            PlaybackSessionRecorder.shared.reloaded()
+        } else {
+            PlaybackSessionRecorder.shared.end(reason: "replaced")
+            PlaybackSessionRecorder.shared.begin(matchContentEnabled: options.matchContentEnabled)
+        }
         let token = generation
         state = .loading; playbackPhase = .loading; isBuffering = true
         startupProgress = StartupProgress(checkpoint: "opening")
@@ -231,6 +241,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.setLogLevel("warn")
         #endif
         for (name, format) in Self.observations { instance.observeProperty(name, format: format) }
+        startSessionSampler(token: token)
         videoRoute = options.audioOnly ? .audio : .sampleBuffer
         trace?.event("mpv_initialised", fields: "backend=mpv compressed_sink=avplayer pcm_sink=samplebuffer")
         trace?.event("mpv_audio_policy", fields: "airplay_pcm=\(instance.airPlayPCM) layouts=\(instance.airPlayPCM ? "7.1,5.1,stereo" : "auto-safe")")
@@ -288,10 +299,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "demuxer-cache-state": cacheSnapshot = value as? [String: Any] ?? [:]
         case "paused-for-cache":
             isBuffering = value as? Bool ?? false
+            PlaybackSessionRecorder.shared.setBuffering(isBuffering)
             trace?.event("mpv_buffering", fields: "active=\(isBuffering)")
             recordPipelineSnapshot()
             updatePhase()
-        case "seeking": isSeeking = value as? Bool ?? false; updatePhase()
+        case "seeking":
+            isSeeking = value as? Bool ?? false
+            if isSeeking { PlaybackSessionRecorder.shared.seeked() }
+            updatePhase()
         case "pause": wantsPlay = !(value as? Bool ?? true); updatePhase()
         case "eof-reached": observeEndOfFile(value as? Bool ?? false)
         case "track-list": rawTracks = value as? [[String: Any]] ?? []; readTracks()
@@ -309,17 +324,35 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             sourceVideoHeight = Int32(clamping: info["h"] as? Int64 ?? 0)
             sourceVideoPixelAspectRatio = info["par"] as? Double ?? 1
             sourceVideoFormat = Self.format(info, dv: sourceDVProfile != nil)
+            recordSourceVideo()
         case "video-out-params":
             let info = value as? [String: Any] ?? [:]
             videoFormat = Self.format(info, dv: sourceDVProfile != nil && core?.hdrEnabled == true)
+            let output = Self.dynamicRangeToken(videoFormat)
+            PlaybackSessionRecorder.shared.updateMedia { $0.outputDynamicRange = output }
         case "audio-out-params":
             let info = value as? [String: Any] ?? [:]
             outputChannels = (info["channel-count"] as? Int64).map(Int.init)
             outputAudioFormat = info["format"] as? String
+            let (format, channels) = (outputAudioFormat, outputChannels)
+            PlaybackSessionRecorder.shared.updateMedia {
+                $0.audioOutputFormat = format.flatMap(Self.formatToken)
+                $0.audioOutputChannels = channels
+                $0.audioPassthrough = format.map { $0.hasPrefix("spdif") }
+            }
             trace?.event("mpv_audio_output", fields: "format=\(outputAudioFormat ?? "unknown") channels=\(outputChannels ?? 0) apple_mode=\(Self.appleRenderingMode)")
-        case "audio-codec-name": audioDecoder = value as? String
-        case "hwdec-current": videoDecoder = (value as? String).map { "Lucid (\($0))" }
-        case "container-fps": sourceVideoFrameRate = value as? Double
+        case "audio-codec-name":
+            audioDecoder = value as? String
+            let codec = audioDecoder.flatMap(Self.formatToken)
+            PlaybackSessionRecorder.shared.updateMedia { $0.audioCodec = codec }
+        case "hwdec-current":
+            videoDecoder = (value as? String).map { "Lucid (\($0))" }
+            let hwdec = (value as? String).flatMap(Self.formatToken)
+            PlaybackSessionRecorder.shared.updateMedia { $0.hardwareDecoding = hwdec }
+        case "container-fps":
+            sourceVideoFrameRate = value as? Double
+            let fps = sourceVideoFrameRate
+            PlaybackSessionRecorder.shared.updateMedia { $0.contentFps = fps }
         case "avsync": throttleAvSyncGap((value as? Double).map { $0 * 1000 })
         case "demuxer-cache-duration", "frame-drop-count":
             var stats = diagnostics.liveTelemetry ?? LiveTelemetry()
@@ -356,6 +389,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         guard let gap = pendingAvSyncGapMs else { return }
         pendingAvSyncGapMs = nil
         lastAvSyncPublishUptime = ProcessInfo.processInfo.systemUptime
+        PlaybackSessionRecorder.shared.avSync(ms: gap)
         var stats = diagnostics.liveTelemetry ?? LiveTelemetry()
         stats.avSyncGapMs = gap
         diagnostics.liveTelemetry = stats
@@ -373,6 +407,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "display-criteria-prepared":
             trace?.mark("mpv_display_criteria_prepared")
         case "display-switch-started", "display-switch-ended":
+            if name == "display-switch-ended" { PlaybackSessionRecorder.shared.displaySwitched() }
             trace?.event(name == "display-switch-started" ? "mpv_display_switch_started" : "mpv_display_switch_ended")
             recordPipelineSnapshot()
         case "file-loaded":
@@ -386,6 +421,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             handleEndFile(data)
         case "log-message":
             if let fields = Self.audioDiagnostic(data) {
+                if fields.hasPrefix("fault=") {
+                    PlaybackSessionRecorder.shared.audioFault(String(fields.dropFirst("fault=".count)))
+                }
                 trace?.event("mpv_audio_diagnostic", fields: fields)
                 if fields.hasPrefix("raw_s=") || fields.hasPrefix("event=audio_transport ")
                     || fields.hasPrefix("event=pcm_transport ") || fields.hasPrefix("event=audio_edge ") {
@@ -576,6 +614,10 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         return "fault=\(fault.1)"
     }
     private func updatePhase() {
+        // The latest-playback session counts only time with video actually
+        // on screen, so opening the file is never mistaken for playback.
+        PlaybackSessionRecorder.shared.setPlaying(isSessionReady && hasFirstFrameReadyForDisplay && wantsPlay
+            && !isSeeking && !isBuffering && errorInfo == nil && state != .ended)
         guard isSessionReady, errorInfo == nil, state != .ended else { return }
         if isSeeking { state = .seeking; playbackPhase = .seeking }
         else if !wantsPlay { state = .paused; playbackPhase = .paused }
@@ -607,6 +649,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         videoTrack = rawTracks.first { $0["type"] as? String == "video" } ?? [:]
         sourceDVProfile = (videoTrack["dolby-vision-profile"] as? Int64).flatMap { $0 > 0 ? Int($0) : nil }
         if sourceDVProfile != nil { sourceVideoFormat = .dolbyVision }
+        recordSourceVideo()
         if let selected = rawTracks.first(where: { $0["type"] as? String == "audio" && $0["selected"] as? Bool == true }) {
             activeAudioTrackIndex = sourceTrackID(mpvID: (selected["id"] as? Int64).map(Int.init), type: "audio")
         }
@@ -806,6 +849,13 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
     func prepareForItemReplacement() { pause(); hasFirstFrameReadyForDisplay = false }
     func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil) {
+        stop(resetDisplayCriteria: resetDisplayCriteria, endsSessionRecording: true)
+    }
+    private func stop(resetDisplayCriteria: Bool, endsSessionRecording: Bool) {
+        if endsSessionRecording {
+            PlaybackSessionRecorder.shared.end(reason: state == .ended ? "ended" : "stopped")
+        }
+        sessionSampler?.cancel(); sessionSampler = nil
         generation &+= 1
         #if VIVID_P8_TRIAL
         audioTraceTask?.cancel(); audioTraceTask = nil
@@ -857,10 +907,90 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         pendingAvSyncGapMs = nil; lastAvSyncPublishUptime = 0
         cacheSnapshot = [:]
     }
+    // MARK: Latest playback session
+
+    private var sessionSampler: Task<Void, Never>?
+
+    /// Reads the cumulative frame counters about once a second, off the
+    /// render path, for the latest-playback report. Properties the output
+    /// doesn't support come back as nil and are reported as not measured.
+    private func startSessionSampler(token: UInt64) {
+        sessionSampler?.cancel()
+        guard PlaybackSessionRecorder.isEnabled else { return }
+        sessionSampler = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                guard let self, self.generation == token, let core = self.core else { return }
+                async let decoder = Self.readNumber(core, "decoder-frame-drop-count")
+                async let delayed = Self.readNumber(core, "vo-delayed-frame-count")
+                async let bitrate = Self.readNumber(core, "video-bitrate")
+                async let displayFps = Self.readNumber(core, "display-fps")
+                let values = await (decoder, delayed, bitrate, displayFps)
+                guard !Task.isCancelled, self.generation == token else { return }
+                if let bitrate = values.2, bitrate > 0 {
+                    PlaybackSessionRecorder.shared.updateMedia { $0.videoBitrateKbps = Int(bitrate / 1000) }
+                }
+                let inputRate = (self.cacheSnapshot["raw-input-rate"] as? NSNumber)?.doubleValue
+                PlaybackSessionRecorder.shared.sample(
+                    dropped: self.diagnostics.liveTelemetry?.droppedFrameCount,
+                    decoderDropped: values.0.map(Int.init),
+                    delayed: values.1.map(Int.init),
+                    networkKbps: inputRate.flatMap { $0 > 0 && $0.isFinite ? Int($0 * 8 / 1000) : nil },
+                    displayFps: values.3)
+            }
+        }
+    }
+
+    private static func readNumber(_ core: VividMPVCore, _ name: String) async -> Double? {
+        await withCheckedContinuation { continuation in
+            core.getPropertyAsync(name) { result in
+                let value = (try? result.get()).flatMap { $0 }.flatMap(Double.init)
+                continuation.resume(returning: value.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil })
+            }
+        }
+    }
+
+    private func recordSourceVideo() {
+        let codec = (videoTrack["codec"] as? String).flatMap(Self.formatToken)
+        let (width, height) = (Int(sourceVideoWidth), Int(sourceVideoHeight))
+        let range = Self.dynamicRangeToken(sourceVideoFormat)
+        let profile = sourceDVProfile
+        let selectedAudio = rawTracks.first { $0["type"] as? String == "audio" && $0["selected"] as? Bool == true }
+        let audioChannels = (selectedAudio?["demux-channel-count"] as? Int64).map(Int.init)
+        PlaybackSessionRecorder.shared.updateMedia {
+            if let codec { $0.videoCodec = codec }
+            if width > 0, height > 0 { $0.width = width; $0.height = height }
+            $0.sourceDynamicRange = range
+            $0.dolbyVisionProfile = profile
+            if let audioChannels, audioChannels > 0 { $0.audioSourceChannels = audioChannels }
+        }
+    }
+
+    private static func dynamicRangeToken(_ format: VideoFormat) -> String {
+        switch format {
+        case .dolbyVision: "dolby_vision"
+        case .hdr10: "hdr10"
+        case .hdr10Plus: "hdr10_plus"
+        case .hlg: "hlg"
+        case .sdr: "sdr"
+        }
+    }
+
+    /// Codec and format names from mpv are short identifiers. Anything else,
+    /// including dotted values that could be an address or hostname, is
+    /// dropped so free text can never reach a report.
+    nonisolated static func formatToken(_ value: String) -> String? {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed.count <= 24, trimmed.unicodeScalars.allSatisfy(allowed.contains) else { return nil }
+        return trimmed.lowercased()
+    }
+
     private func fail(_ error: PlaybackErrorInfo) {
         cancelEndConfirmation()
         core?.setProperty("pause", value: "yes")
         errorInfo = error; state = .error(error.message); playbackPhase = .error(error.message)
+        PlaybackSessionRecorder.shared.end(reason: "failed_\(error.kind.rawValue)")
         isBuffering = false; isSeeking = false; trace?.event("mpv_failed", fields: "kind=\(error.kind.rawValue)")
     }
     func setNativeSubtitleRendering(_ active: Bool) {}

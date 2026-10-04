@@ -10,11 +10,28 @@ struct TVDiagnosticsSettingsPane: View {
     @State private var reports: [AppHealthReport] = []
     @State private var loaded = false
     @State private var showsDeleteConfirm = false
+    @State private var latestPlayback: PlaybackSessionReport?
 
     private var groups: [AppHealthReportGroup] { AppHealthReportGroup.grouping(reports) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            TVSettingsSectionHeader("LATEST PLAYBACK")
+            if let latestPlayback {
+                TVSettingsGroup {
+                    NavigationLink { TVLatestPlaybackPage(report: latestPlayback) } label: {
+                        TVSettingsRowLabel(
+                            title: "Latest Playback",
+                            detail: ([latestPlayback.startedAt.formatted(date: .abbreviated, time: .shortened)]
+                                     + (latestPlayback.headline.isEmpty ? [] : [latestPlayback.headline]))
+                                .joined(separator: " · "))
+                    }
+                    .buttonStyle(TVSettingsPaneRowStyle())
+                }
+            } else {
+                TVSettingsFooter("No playback recorded yet.")
+            }
+            TVSettingsFooter("If playback looked choppy, the sound dropped out or something didn't look right, send the latest session so Vivid can see what happened. Only the most recent play is kept.")
             TVSettingsSectionHeader("REPORTS")
             if reports.isEmpty {
                 TVSettingsFooter(loaded ? "No reports." : "Loading…")
@@ -56,6 +73,10 @@ struct TVDiagnosticsSettingsPane: View {
         .task { await reload() }
         .onReceive(NotificationCenter.default.publisher(for: AppHealthStore.didChange)) { _ in
             Task { await reload() }
+        }
+        .onAppear { latestPlayback = PlaybackSessionRecorder.shared.latest() }
+        .onReceive(NotificationCenter.default.publisher(for: PlaybackSessionRecorder.didChange)) { _ in
+            latestPlayback = PlaybackSessionRecorder.shared.latest()
         }
     }
 
@@ -182,6 +203,68 @@ private struct TVDiagnosticsReportPage: View {
             default: return nil
             }
         }
+    }
+}
+
+/// The latest playback session as a reading page: summary, the minutes
+/// that had problems, and what couldn't be measured.
+private struct TVLatestPlaybackPage: View {
+    let report: PlaybackSessionReport
+    @FocusState private var focusedSection: Int?
+
+    private var sections: [(title: String, lines: [String])] {
+        var sections: [(String, [String])] = [
+            ("Summary", report.summaryRows.map { "\($0.label): \($0.value)" }),
+            ("App", ["\(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)"]),
+        ]
+        let minutes = report.timeline.map { minute -> String in
+            var parts: [String] = []
+            if minute.droppedFrames > 0 { parts.append("\(minute.droppedFrames) dropped") }
+            if minute.decoderDroppedFrames > 0 { parts.append("\(minute.decoderDroppedFrames) decoder dropped") }
+            if minute.delayedFrames > 0 { parts.append("\(minute.delayedFrames) late") }
+            if let sync = minute.maxAvSyncMs, sync > 100 { parts.append("A/V sync \(Int(sync)) ms") }
+            if minute.rebufferSeconds > 0 { parts.append("rebuffering \(Int(minute.rebufferSeconds)) s") }
+            for (fault, count) in minute.faults.sorted(by: { $0.key < $1.key }) { parts.append("\(fault) ×\(count)") }
+            return "Minute \(minute.minute): " + parts.joined(separator: ", ")
+        }
+        stride(from: 0, to: minutes.count, by: 8).forEach { start in
+            sections.append((start == 0 ? "When it happened" : "When it happened (continued)",
+                             Array(minutes[start..<min(start + 8, minutes.count)])))
+        }
+        return sections
+    }
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                TVSettingsPageHeader(title: "Latest Playback",
+                                     subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened))
+                ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(section.title).font(.system(size: 27, weight: .semibold))
+                        ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.system(size: 20, design: .monospaced)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(.white.opacity(focusedSection == index ? 0.85 : 0), lineWidth: 2)
+                    }
+                    .focusable()
+                    .focused($focusedSection, equals: index)
+                    .focusEffectDisabled()
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, 24).padding(.vertical, 48)
+            .frame(maxWidth: .infinity)
+        }
+        .tvSettingsPageSurface()
+        .defaultFocus($focusedSection, 0)
     }
 }
 
