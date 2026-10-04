@@ -72,7 +72,7 @@ When qualified playback closes, Vivid sends the final resume position before the
 - [VividPlaybackController](../../iosApp/iosApp/Screens/Player/VividPlaybackController.swift): video engine ownership, loads, transport and events.
 - [VividLoadSpec](../../iosApp/iosApp/Screens/Player/VividLoadSpec.swift): prepared online/offline source inputs.
 - [PlaybackTimelineMapper](../../iosApp/iosApp/Screens/Player/ProtocolV3/PlaybackTimelineMapper.swift): server, source and presentation clocks.
-- [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): app-facing playback state and behaviour.
+- [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): app-facing playback state. Its behaviour is grouped by area in the `PlayerViewModel+<Area>.swift` extensions beside it, such as `+SessionLoad`, `+Recovery`, `+TrackSelection` and `+NextUp`.
 
 Silo uses its existing playback protocol. The [Emby core](../cores/emby.md) and [Jellyfin core](../cores/jellyfin.md) each map their own authentication, PlaybackInfo and session reports into Vivid’s shared player on mobile and Apple TV. Jellyfin does not use Emby’s adapter or Silo Protocol V3. The media engine and shared controls retain their existing behaviour; provider-specific features and verification limits are listed in each core guide.
 

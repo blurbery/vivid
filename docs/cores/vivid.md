@@ -34,7 +34,7 @@ See [marker timing](../playback/architecture.md#introdb-marker-timing) for order
 - [Player engine core](player-engine.md): Lucid execution, output boundaries and audio/video support.
 - [Playback architecture](../playback/architecture.md): engine ownership, lifecycle and source/session boundaries.
 - [Playback guide](../playback/README.md): controls, IntroDB behaviour and validation.
-- [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): shared playback state and marker application.
+- [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): shared playback state, with marker application in [PlayerViewModel+SkipMarkers](../../iosApp/iosApp/Screens/Player/PlayerViewModel+SkipMarkers.swift).
 - [PlayerSettings](../../iosApp/iosApp/Screens/Player/PlayerSettings.swift): settings and the current Vivid IntroDB client.
 - [Silo server core](silo.md): the implemented server connection.
 - [Emby server core](emby.md): native integration and verification limits.
