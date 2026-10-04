@@ -36,6 +36,18 @@ struct PlaybackSessionReport: Codable, Equatable {
         /// tvOS: whether the system's Match Dynamic Range / Frame Rate is on.
         var systemMatchingEnabled: Bool?
         var displayRefreshHz: Double?
+        /// The audio route's reported output latency. AirPlay speakers
+        /// report about 2 s; Apple's audio clocks already allow for it.
+        var outputLatencyMs: Int?
+        /// Apple's reported rendering mode: not_applicable, mono_stereo,
+        /// surround, spatial_audio, dolby_audio or dolby_atmos. A read-only
+        /// result; not_applicable has been seen while Atmos was audible.
+        var renderingMode: String?
+        /// Channels the active output port negotiated.
+        var routeOutputChannels: Int?
+        /// iPhone and iPad: video is also on an external screen (AirPlay
+        /// video or a cable), where these frame counts are the phone's own.
+        var externalScreen: Bool?
         var serverType: String?
         var playMethod: String?
     }
@@ -79,6 +91,15 @@ struct PlaybackSessionReport: Codable, Equatable {
         var avSyncOver100msSeconds: Double = 0
         var rebuffers = 0
         var rebufferSeconds: Double = 0
+        /// The playhead stopping for 2 s or more in steady playback without
+        /// buffering, such as a stalled audio clock.
+        var stalls = 0
+        var stallSeconds: Double = 0
+        /// Seconds from opening to the first frame on screen, and to the
+        /// playhead first moving. The gap is the audio output starting; on
+        /// AirPlay, the speakers engaging.
+        var firstFrameSeconds: Double?
+        var playbackStartSeconds: Double?
         var seeks = 0
         var displaySwitches = 0
         /// Same-video reloads, for example to recover audio or after a
@@ -99,11 +120,12 @@ struct PlaybackSessionReport: Codable, Equatable {
         var delayedFrames = 0
         var maxAvSyncMs: Double?
         var rebufferSeconds: Double = 0
+        var stallSeconds: Double = 0
         var faults: [String: Int] = [:]
 
         var isQuiet: Bool {
             droppedFrames == 0 && decoderDroppedFrames == 0 && delayedFrames == 0
-                && (maxAvSyncMs ?? 0) <= 100 && rebufferSeconds == 0 && faults.isEmpty
+                && (maxAvSyncMs ?? 0) <= 100 && rebufferSeconds == 0 && stallSeconds == 0 && faults.isEmpty
         }
     }
 }
@@ -117,6 +139,7 @@ extension PlaybackSessionReport {
         if let range = media.sourceDynamicRange, range != "sdr" { parts.append(Self.dynamicRangeLabel(range)) }
         if let dropped = totals.droppedFrames, dropped > 0 { parts.append("\(dropped) dropped frames") }
         if totals.rebuffers > 0 { parts.append("\(totals.rebuffers) rebuffers") }
+        if totals.stalls > 0 { parts.append("\(totals.stalls) stalls") }
         let faults = totals.audioFaults.values.reduce(0, +)
         if faults > 0 { parts.append("\(faults) audio faults") }
         return parts.joined(separator: " · ")
@@ -129,8 +152,11 @@ extension PlaybackSessionReport {
         func count(_ value: Int?) -> String { value.map { "\($0)" } ?? missing }
         var rows: [(String, String)] = []
         var output = setup.audioOutput.map { $0 == "hdmi" ? "HDMI" : $0 == "airplay" ? "AirPlay" : $0.capitalized } ?? missing
-        if let channels = setup.outputChannelsAvailable { output += " · up to \(channels) channels" }
+        if let channels = setup.routeOutputChannels ?? setup.outputChannelsAvailable { output += " · \(channels) channels" }
+        if let latency = setup.outputLatencyMs { output += " · \(String(format: "%.2g", Double(latency) / 1000)) s latency" }
         rows.append(("Audio output", output))
+        if let mode = setup.renderingMode { rows.append(("Apple rendering", Self.renderingModeLabel(mode))) }
+        if setup.externalScreen == true { rows.append(("External screen", "Yes")) }
         let hdr = setup.displayHDR.map { $0.isEmpty ? "SDR only" : $0.map(Self.dynamicRangeLabel).joined(separator: ", ") } ?? missing
         rows.append(("Display HDR", hdr))
         if let refresh = setup.displayRefreshHz { rows.append(("Display refresh", String(format: "%.3g Hz", refresh))) }
@@ -151,6 +177,10 @@ extension PlaybackSessionReport {
         rows.append(("Late frames", count(totals.delayedFrames)))
         rows.append(("Worst A/V sync", totals.maxAvSyncMs.map { "\(Int($0)) ms" } ?? missing))
         rows.append(("Rebuffering", totals.rebuffers == 0 ? "None" : "\(totals.rebuffers) times, \(Int(totals.rebufferSeconds)) s"))
+        rows.append(("Stalls", totals.stalls == 0 ? "None" : "\(totals.stalls) times, \(Int(totals.stallSeconds)) s"))
+        let startup = [totals.firstFrameSeconds.map { "first frame \($0) s" }, totals.playbackStartSeconds.map { "playing \($0) s" }]
+            .compactMap { $0 }.joined(separator: ", ")
+        rows.append(("Startup", startup.isEmpty ? missing : startup))
         let faults = totals.audioFaults.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }
         rows.append(("Audio faults", faults.isEmpty ? "None" : faults.joined(separator: ", ")))
         if !notMeasured.isEmpty { rows.append(("Not measured", notMeasured.joined(separator: ", "))) }
@@ -172,6 +202,17 @@ extension PlaybackSessionReport {
                 text += character == "_" ? " " : String(character).lowercased()
             }
             return "Failed (\(words))"
+        }
+    }
+
+    static func renderingModeLabel(_ token: String) -> String {
+        switch token {
+        case "mono_stereo": return "Stereo"
+        case "surround": return "Surround"
+        case "spatial_audio": return "Spatial Audio"
+        case "dolby_audio": return "Dolby Audio"
+        case "dolby_atmos": return "Dolby Atmos"
+        default: return "Not reported"
         }
     }
 

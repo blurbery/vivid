@@ -21,6 +21,7 @@ final class PlaybackSessionRecorder {
     private var report: PlaybackSessionReport?
     private var lastSave: TimeInterval = 0
     private var routeObserver: NSObjectProtocol?
+    private var renderingModeObserver: NSObjectProtocol?
     private var backgroundObserver: NSObjectProtocol?
     private var foregroundObserver: NSObjectProtocol?
     private var inForeground = true
@@ -88,7 +89,9 @@ final class PlaybackSessionRecorder {
         guard accumulator != nil else { return }
         accumulator?.ended(reason: reason, at: now)
         if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
+        if let renderingModeObserver { NotificationCenter.default.removeObserver(renderingModeObserver) }
         routeObserver = nil
+        renderingModeObserver = nil
         save(force: true)
         accumulator = nil
     }
@@ -113,6 +116,14 @@ final class PlaybackSessionRecorder {
     /// a display switch starting, a speed change or an audio track switch.
     func settling() { accumulator?.markWarmup(at: now) }
 
+    /// Re-reads the audio route once output has started; at the start of a
+    /// session the latency and rendering mode can still be the old route's.
+    func refreshAudioRoute() {
+        guard accumulator != nil, var setup = report?.setup else { return }
+        Self.readAudio(into: &setup)
+        report?.setup = setup
+    }
+
     func displaySwitched() {
         accumulator?.displaySwitched(at: now)
         if var setup = report?.setup {
@@ -125,9 +136,11 @@ final class PlaybackSessionRecorder {
 
     /// A once-a-second sample of the player's cumulative counters. Nil means
     /// the player didn't report that counter.
-    func sample(dropped: Int?, decoderDropped: Int?, delayed: Int?, networkKbps: Int?, displayFps: Double?) {
+    func sample(dropped: Int?, decoderDropped: Int?, delayed: Int?, networkKbps: Int?, displayFps: Double?,
+                position: Double?) {
         guard accumulator != nil else { return }
         let time = now
+        accumulator?.position(position, at: time)
         accumulator?.counter(.dropped, value: dropped, at: time)
         accumulator?.counter(.decoderDropped, value: decoderDropped, at: time)
         accumulator?.counter(.delayed, value: delayed, at: time)
@@ -195,6 +208,8 @@ final class PlaybackSessionRecorder {
             ("delayed_frames", report.totals.delayedFrames == nil),
             ("av_sync", report.totals.maxAvSyncMs == nil),
             ("network_speed", report.totals.lowestNetworkKbps == nil),
+            ("output_latency", report.setup.outputLatencyMs == nil),
+            ("playback_start", report.totals.firstFrameSeconds != nil && report.totals.playbackStartSeconds == nil),
         ]
         for (name, isMissing) in checks where isMissing { missing.append(name) }
         if report.setup.audioOutput == "airplay" {
@@ -224,6 +239,12 @@ final class PlaybackSessionRecorder {
                 recorder.report?.setup = setup
             }
         }
+        if let renderingModeObserver { NotificationCenter.default.removeObserver(renderingModeObserver) }
+        renderingModeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.renderingModeChangeNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in PlaybackSessionRecorder.shared.refreshAudioRoute() }
+        }
     }
 
     private static func readEnvironment(into setup: inout PlaybackSessionReport.Setup) {
@@ -238,6 +259,28 @@ final class PlaybackSessionRecorder {
         setup.outputChannelsAvailable = session.maximumOutputNumberOfChannels > 0
             ? session.maximumOutputNumberOfChannels : nil
         setup.multichannelSupported = session.supportsMultichannelContent
+        // Counts and tokens only: port and channel names can carry room or
+        // device names.
+        setup.routeOutputChannels = session.currentRoute.outputs.first?.channels.map(\.count).flatMap { $0 > 0 ? $0 : nil }
+        let latency = session.outputLatency
+        setup.outputLatencyMs = latency.isFinite && latency > 0 ? Int((latency * 1000).rounded()) : nil
+        setup.renderingMode = renderingModeToken(session.renderingMode)
+        #if os(iOS)
+        setup.externalScreen = UIApplication.shared.connectedScenes.contains {
+            $0.session.role == .windowExternalDisplayNonInteractive
+        }
+        #endif
+    }
+
+    nonisolated static func renderingModeToken(_ mode: AVAudioSession.RenderingMode) -> String {
+        switch mode {
+        case .monoStereo: "mono_stereo"
+        case .surround: "surround"
+        case .spatialAudio: "spatial_audio"
+        case .dolbyAudio: "dolby_audio"
+        case .dolbyAtmos: "dolby_atmos"
+        default: "not_applicable"
+        }
     }
 
     private static func readDisplay(into setup: inout PlaybackSessionReport.Setup) {

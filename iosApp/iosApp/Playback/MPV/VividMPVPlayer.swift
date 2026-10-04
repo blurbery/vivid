@@ -341,6 +341,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                 $0.audioOutputChannels = channels
                 $0.audioPassthrough = format.map { $0.hasPrefix("spdif") }
             }
+            PlaybackSessionRecorder.shared.refreshAudioRoute()
             trace?.event("mpv_audio_output", fields: "format=\(outputAudioFormat ?? "unknown") channels=\(outputChannels ?? 0) apple_mode=\(Self.appleRenderingMode)")
         case "audio-codec-name":
             audioDecoder = value as? String
@@ -939,7 +940,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
                     decoderDropped: values.0.map(Int.init),
                     delayed: values.1.map(Int.init),
                     networkKbps: inputRate.flatMap { $0 > 0 && $0.isFinite ? Int($0 * 8 / 1000) : nil },
-                    displayFps: values.3)
+                    displayFps: values.3,
+                    position: self.currentTime)
             }
         }
     }

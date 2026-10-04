@@ -19,6 +19,10 @@ struct PlaybackSessionAccumulator {
     /// Fault names come from a fixed list, but cap the distinct names anyway
     /// so the session can never grow with the length of the movie.
     static let maxFaultKinds = 16
+    /// The playhead not moving this long in steady playback, without
+    /// buffering, is a stall. On AirPlay this is how a parked speaker clock
+    /// shows: video waits for it, so A/V sync stays near zero.
+    static let stallSeconds: TimeInterval = 2
 
     private(set) var totals = PlaybackSessionReport.Totals()
     private(set) var minutes: [Int: PlaybackSessionReport.Minute] = [:]
@@ -35,10 +39,18 @@ struct PlaybackSessionAccumulator {
     private var bufferingIsRebuffer = false
     private var lastAvSyncMs: Double?
     private var lastCounters: [Counter: Int] = [:]
+    private let startedAt: TimeInterval
+    /// Until the playhead first moves, a shown first frame is held (on
+    /// AirPlay, until the speakers start), so that time isn't playback.
+    private var playheadStarted = false
+    private var lastPosition: Double?
+    private var lastMoveAt: TimeInterval?
+    private var stalled = false
 
     enum Counter: CaseIterable { case dropped, decoderDropped, delayed }
 
     init(startedAt now: TimeInterval) {
+        startedAt = now
         warmupUntil = now + Self.warmupSeconds
         lastTick = now
     }
@@ -65,6 +77,10 @@ struct PlaybackSessionAccumulator {
             return
         }
         guard playing else { return }
+        guard playheadStarted else {
+            totals.warmupSeconds += elapsed
+            return
+        }
         totals.playedSeconds += elapsed
         if inWarmup(now) {
             totals.warmupSeconds += elapsed
@@ -75,9 +91,57 @@ struct PlaybackSessionAccumulator {
 
     mutating func setPlaying(_ isPlaying: Bool, at now: TimeInterval) {
         tick(at: now)
-        if isPlaying && !playing { markWarmup(at: now) }
+        if isPlaying && !playing {
+            markWarmup(at: now)
+            if totals.firstFrameSeconds == nil { totals.firstFrameSeconds = Self.rounded(now - startedAt) }
+        }
         playing = isPlaying
     }
+
+    /// The playhead position, read once a second. Nil when the player
+    /// didn't report one; then the playhead is assumed to be moving.
+    mutating func position(_ seconds: Double?, at now: TimeInterval) {
+        let previousTick = lastTick ?? now
+        tick(at: now)
+        guard let seconds, seconds.isFinite else {
+            if playing, !playheadStarted { startPlayhead(at: now) }
+            return
+        }
+        defer { lastPosition = seconds }
+        let moved = lastPosition.map { abs(seconds - $0) >= 0.05 } ?? false
+        if moved, playing, !playheadStarted { startPlayhead(at: now) }
+        // Only steady playback can stall; anything else restarts the timer.
+        guard playing, playheadStarted, !buffering, !inWarmup(now) else {
+            lastMoveAt = now
+            stalled = false
+            return
+        }
+        if moved || lastMoveAt == nil {
+            lastMoveAt = now
+            stalled = false
+            return
+        }
+        guard let since = lastMoveAt, now - since >= Self.stallSeconds else { return }
+        let index = minuteIndex
+        if !stalled {
+            stalled = true
+            totals.stalls += 1
+            totals.stallSeconds += now - since
+            minutes[index, default: .init(minute: index)].stallSeconds += now - since
+        } else {
+            let elapsed = min(now - previousTick, 5)
+            totals.stallSeconds += elapsed
+            minutes[index, default: .init(minute: index)].stallSeconds += elapsed
+        }
+    }
+
+    private mutating func startPlayhead(at now: TimeInterval) {
+        playheadStarted = true
+        totals.playbackStartSeconds = Self.rounded(now - startedAt)
+        lastMoveAt = now
+    }
+
+    private static func rounded(_ seconds: TimeInterval) -> Double { (seconds * 10).rounded() / 10 }
 
     mutating func setBuffering(_ isBuffering: Bool, at now: TimeInterval) {
         tick(at: now)

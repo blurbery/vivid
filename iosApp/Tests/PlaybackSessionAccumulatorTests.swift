@@ -5,6 +5,7 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
     private func playing(at start: TimeInterval = 0) -> PlaybackSessionAccumulator {
         var accumulator = PlaybackSessionAccumulator(startedAt: start)
         accumulator.setPlaying(true, at: start)
+        accumulator.position(nil, at: start) // the playhead is moving
         return accumulator
     }
 
@@ -52,6 +53,7 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         session.setBuffering(true, at: 0)
         session.setBuffering(false, at: 3)
         session.setPlaying(true, at: 3)
+        session.position(nil, at: 3)
         session.tick(at: 40)
         session.setBuffering(true, at: 40)
         session.setBuffering(false, at: 44)
@@ -68,6 +70,7 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         session.counter(.dropped, value: 10, at: 7)
         session.setBuffering(false, at: 8)
         session.setPlaying(true, at: 8)
+        session.position(nil, at: 8)
         for second in 9...20 { session.tick(at: TimeInterval(second)) } // the player ticks once a second
         XCTAssertEqual(session.totals.playedSeconds, 12, accuracy: 0.001)
         XCTAssertEqual(session.totals.rebuffers, 0)
@@ -176,6 +179,44 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         session.counter(.dropped, value: 503, at: 50)
         XCTAssertEqual(session.totals.droppedFrames, 3)
         XCTAssertNil(session.totals.maxAvSyncMs)
+    }
+
+    /// On AirPlay the first frame is held until the speakers start; that
+    /// wait is startup, not playback.
+    func testHeldFirstFrameIsStartupNotPlayback() {
+        var session = PlaybackSessionAccumulator(startedAt: 0)
+        session.setPlaying(true, at: 1)
+        for second in 1...4 { session.position(0, at: TimeInterval(second)) }
+        for second in 5...10 { session.position(Double(second - 4), at: TimeInterval(second)) }
+        XCTAssertEqual(session.totals.firstFrameSeconds, 1)
+        XCTAssertEqual(session.totals.playbackStartSeconds, 5)
+        XCTAssertEqual(session.totals.playedSeconds, 5, accuracy: 0.001)
+        XCTAssertEqual(session.totals.stalls, 0)
+    }
+
+    /// A stopped playhead with no buffering is how a parked audio clock
+    /// shows, since video waits for it and A/V sync stays near zero.
+    func testStoppedPlayheadInSteadyPlaybackIsAStall() {
+        var session = playing()
+        for second in 1...20 { session.position(Double(second), at: TimeInterval(second)) }
+        for second in 21...25 { session.position(20, at: TimeInterval(second)) }
+        for second in 26...30 { session.position(Double(second - 5), at: TimeInterval(second)) }
+        XCTAssertEqual(session.totals.stalls, 1)
+        XCTAssertEqual(session.totals.stallSeconds, 5, accuracy: 0.001)
+        XCTAssertEqual(session.timeline.map(\.minute), [0])
+    }
+
+    func testHoldsDuringWarmupBufferingOrPauseAreNotStalls() {
+        var session = playing()
+        for second in 1...20 { session.position(Double(second), at: TimeInterval(second)) }
+        session.seeked(at: 20)
+        for second in 21...24 { session.position(100, at: TimeInterval(second)) } // AirPlay engaging after a seek
+        session.setBuffering(true, at: 30)
+        for second in 31...40 { session.position(100, at: TimeInterval(second)) }
+        session.setBuffering(false, at: 40)
+        session.setPlaying(false, at: 41)
+        for second in 42...60 { session.position(100, at: TimeInterval(second)) }
+        XCTAssertEqual(session.totals.stalls, 0)
     }
 
     func testPausedTimeIsNotPlayedTime() {
