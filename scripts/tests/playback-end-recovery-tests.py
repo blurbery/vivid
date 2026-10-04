@@ -115,6 +115,7 @@ import Foundation
 enum PlaybackErrorKind: String { case audioTrackSwitchFailed, sourceRefused, vodSourceFailed, nativeItemFailed, noPlayableTrackWithinBudget, masterPlaylistRejected, softwarePipelineFailed, audioBridgeProducedNoOutput, dolbyVisionRequiresHardware, demuxedAudioLiveUnsupported, sourceRateLimited }
 struct PlaybackErrorInfo { var kind: PlaybackErrorKind; var message: String; var transientSourceCode: Int? = nil }
 enum MediaLogRedactor { static func sanitize(_ s: String) -> String { s } }
+@MainActor final class PlaybackSessionRecorder { static let shared = PlaybackSessionRecorder(); func end(reason: String) {} }
 struct Logger { func info(_ s: String) {}; func warning(_ s: String) {}; func error(_ s: String) {} }
 struct Settings { var playbackSpeed = 1.0; var nextUpPromptSeconds = 30; var autoPlayNextEpisode = true }
 struct NowPlaying { func update(title: String, duration: Double, position: Double, isPlaying: Bool, playbackRate: Double) {} }
