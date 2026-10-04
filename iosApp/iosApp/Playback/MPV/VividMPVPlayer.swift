@@ -1065,12 +1065,12 @@ private final class VividMPVCore: MpvPlayerCore {
                         "ao-avfoundation-manage-audio-session": "no",
                         "audio-exclusive": "yes", "audio-channels": airPlayPCM ? "7.1,5.1,stereo" : "auto-safe",
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
-                        "osc": "no", "osd-level": "0", "pause": autoplay ? "no" : "yes",
+                        "osd-level": "0", "pause": autoplay ? "no" : "yes",
                         "start": String(startPosition), "speed": String(initialRate),
                         "volume": String(initialVolume * 100), "sid": "no", "secondary-sid": "no",
                         "cache": "yes", "demuxer-max-bytes": "268435456", "demuxer-max-back-bytes": "16777216",
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
-        for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value)) }
+        for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value), option: name) }
         #if os(tvOS)
         // Read at most a minute ahead. On a fast link the 256 MiB packet cache
         // otherwise fills over a long play, a large share of Apple TV's memory.

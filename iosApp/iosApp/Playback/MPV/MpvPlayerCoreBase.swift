@@ -1766,9 +1766,12 @@ class MpvPlayerCoreBase: NSObject {
     }
   }
 
-  func checkError(_ status: CInt) {
+  /// Logs a failed mpv call with where it came from, and the option name
+  /// when one is given, so a rejected option can be identified from the log.
+  func checkError(_ status: CInt, option: String? = nil, file: StaticString = #fileID, line: UInt = #line) {
     if status < 0 {
-      MpvLog.error("[MpvPlayerCore] MPV error: \(safeString(mpv_error_string(status)))")
+      let detail = option.map { " option=\($0)" } ?? ""
+      MpvLog.error("[MpvPlayerCore] MPV error: \(safeString(mpv_error_string(status)))\(detail) at \(file):\(line)")
     }
   }
 }
