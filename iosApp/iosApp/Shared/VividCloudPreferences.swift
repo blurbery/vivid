@@ -170,10 +170,23 @@ final class VividCloudPreferences {
             case .profileClient: scope = .profileClient
             case .account: scope = .account
             case .profileLibrary, .profileSeries: continue
-            default: scope = .profile
+            default: scope = Self.defaultWriteScope(for: key)
             }
-            _ = try await VividAPI.shared.putValue(key: key, scope: scope, value: value,
-                                                  mutationId: UUID().uuidString, requestIdentity: identity)
+            do {
+                _ = try await VividAPI.shared.putValue(key: key, scope: scope, value: value,
+                                                      mutationId: UUID().uuidString, requestIdentity: identity)
+            } catch {
+                guard activeSettingsIdentity() == identity else { throw CancellationError() }
+                guard UICustomizationPreferences.isPermanentRejection(error) else { continue }
+                // The server will never accept this value at this scope, so
+                // keep the server's value instead of sending it again on every
+                // launch and foreground.
+                let serverValue = try Self.encoder.encode(row.value)
+                entries[name] = VividCloudPreference(value: serverValue, modifiedAt: Date(), writer: writer)
+                UserDefaults.standard.set(serverValue, forKey: "vivid.cloud.observed." + name)
+                try persist()
+                continue
+            }
             guard activeSettingsIdentity() == identity else { throw CancellationError() }
             UserDefaults.standard.set(data, forKey: "vivid.cloud.observed." + name)
             changed = true
@@ -181,6 +194,18 @@ final class VividCloudPreferences {
         if changed {
             await UICustomizationPreferences.shared.refresh()
             await OverlayPrefsStore.shared.refresh()
+        }
+    }
+
+    /// Scope for a value that hasn't been saved on the server yet. The top
+    /// menu and card presentation belong to each device family, matching
+    /// UICustomizationPreferences, and library page state to each device. The
+    /// server rejects all of these at profile scope.
+    static func defaultWriteScope(for key: SettingKey) -> SettingScopeIdentity {
+        switch key {
+        case .navPrimaryMenu, .uiCardPresentation: return .profileClient
+        case .uiLibraryPageState, .uiRememberLibraryPageState: return .profileDevice
+        default: return .profile
         }
     }
 

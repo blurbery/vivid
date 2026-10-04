@@ -245,6 +245,14 @@ enum AppHealthSendState {
         }
     }
 
+    /// Called when a sent report happens again, so its new occurrences are
+    /// sent next time.
+    static func markUnsent(id: String) {
+        guard var ids = UserDefaults.standard.stringArray(forKey: sentIDsKey), ids.contains(id) else { return }
+        ids.removeAll { $0 == id }
+        UserDefaults.standard.set(ids, forKey: sentIDsKey)
+    }
+
     static func clear() {
         UserDefaults.standard.removeObject(forKey: sentIDsKey)
     }

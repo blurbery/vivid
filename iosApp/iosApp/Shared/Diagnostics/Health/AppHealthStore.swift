@@ -51,6 +51,7 @@ final class AppHealthStore: Sendable {
     @discardableResult
     func add(_ report: AppHealthReport) -> Bool {
         var counted = false
+        var repeatedID: String?
         let added: Bool = lock.withLock {
             guard prepareDirectory() else { return false }
             if Self.countsRepeats(report), let existing = repeatTarget(for: report),
@@ -59,6 +60,7 @@ final class AppHealthStore: Sendable {
                 // rather than listing it once per launch.
                 if let data = try? Self.encoder.encode(existing.report.repeated(at: report.recordedAt)) {
                     counted = (try? data.write(to: existing.url, options: [.atomic])) != nil
+                    if counted { repeatedID = existing.report.id }
                 }
                 return false
             }
@@ -73,6 +75,9 @@ final class AppHealthStore: Sendable {
             prune()
             return FileManager.default.fileExists(atPath: url.path)
         }
+        // A repeat after the report was sent hasn't been sent itself, so the
+        // report counts as new again instead of still showing Sent.
+        if let repeatedID { AppHealthSendState.markUnsent(id: repeatedID) }
         if added || counted { notifyChange() }
         return added
     }
