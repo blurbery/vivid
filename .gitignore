@@ -92,3 +92,6 @@ docs/playback/*
 
 # Local device test results
 /work/
+
+# Wrangler local state (account details, build caches)
+.wrangler/
