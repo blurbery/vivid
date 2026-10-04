@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise production EOF/error handlers with instrumented playback boundaries."""
 import argparse
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -27,24 +28,44 @@ def declaration(text, marker):
         end += 1
     return text[start:end].replace(', privacy: .public', '')
 
-vm = source('iosApp/iosApp/Screens/Player/PlayerViewModel.swift')
+
+def player_view_model_source():
+    # PlayerViewModel is split across PlayerViewModel.swift and its
+    # PlayerViewModel+*.swift extensions; older revisions have only the first.
+    folder = 'iosApp/iosApp/Screens/Player/'
+    if args.source_ref:
+        listing = subprocess.check_output(['git', 'ls-tree', '--name-only', args.source_ref, folder],
+                                          cwd=root, text=True).split()
+    else:
+        listing = [folder + p.name for p in (root / folder).glob('PlayerViewModel+*.swift')]
+    paths = [folder + 'PlayerViewModel.swift']
+    paths += sorted(p for p in listing if Path(p).name.startswith('PlayerViewModel+'))
+    return '\n'.join(source(p) for p in paths)
+
+
+def func_marker(text, name):
+    # Members moved into extensions are internal, so accept either access level.
+    match = re.search(r'(?:private )?func ' + re.escape(name) + r'(?![A-Za-z0-9_])', text)
+    return match.group(0) if match else 'private func ' + name
+
+vm = player_view_model_source()
 policy = source('iosApp/iosApp/Screens/Player/PlayerNextUpCompletionPolicy.swift')
 policy += '\n' + declaration(source('iosApp/iosApp/Screens/Player/PlayerSettings.swift'), 'enum PlaybackCompletionPolicy')
 names = ['handleEndOfFile', 'handlePlaybackError', 'performCreditsSkip', 'updateNextUpPresentation', 'shouldShowNextUpBeforeEnd', 'handleVividFailure', 'attemptProtocolV3Recovery', 'updateNextUpCountdownForActivePlayback', 'updatePlaybackCompletion']
 for name in ['suppressNextUpForPlaybackFailure', 'shouldTreatPlaybackErrorAsNaturalEnd', 'recoverPendingUnexpectedEnd']:
-    if 'private func ' + name in vm:
+    if re.search(r'func ' + name + r'(?![A-Za-z0-9_])', vm):
         names.append(name)
-methods = '\n'.join(declaration(vm, 'private func ' + name) for name in names)
+methods = '\n'.join(declaration(vm, func_marker(vm, name)) for name in names)
 # The same-route reopen itself needs the full player; the harness records
 # whether an early end asks for it and lets each check choose the outcome.
 premature_stub = ''
-if 'private func attemptPrematureEndReload' in vm:
+if re.search(r'func attemptPrematureEndReload(?![A-Za-z0-9_])', vm):
     premature_stub = '''
     static let prematureSourceEndMessage = "The media stream ended before playback completion could be confirmed."
     var prematureReloadAccepted = false, prematureReloads = 0
     func attemptPrematureEndReload() -> Bool { prematureReloads += 1; return prematureReloadAccepted }
 '''
-if 'private func suppressNextUpForPlaybackFailure' not in vm:
+if not re.search(r'func suppressNextUpForPlaybackFailure(?![A-Za-z0-9_])', vm):
     methods += '\nprivate func suppressNextUpForPlaybackFailure() { cancelNextUpCountdown(); showNextUpScreen = false }\nprivate func recoverPendingUnexpectedEnd() {}'
 engine = source('iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift')
 engine_methods = '\n'.join(declaration(engine, 'private func ' + name) for name in

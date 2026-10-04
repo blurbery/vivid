@@ -2,6 +2,7 @@
 """Run the production progress-refresh method with an instrumented player boundary."""
 from pathlib import Path
 import argparse
+import re
 import subprocess
 import tempfile
 
@@ -27,11 +28,31 @@ def declaration(text, marker):
     return text[start:end]
 
 
-view_model = source('iosApp/iosApp/Screens/Player/PlayerViewModel.swift')
+def player_view_model_source():
+    # PlayerViewModel is split across PlayerViewModel.swift and its
+    # PlayerViewModel+*.swift extensions; older revisions have only the first.
+    folder = 'iosApp/iosApp/Screens/Player/'
+    if args.source_ref:
+        listing = subprocess.check_output(['git', 'ls-tree', '--name-only', args.source_ref, folder],
+                                          cwd=root, text=True).split()
+    else:
+        listing = [folder + p.name for p in (root / folder).glob('PlayerViewModel+*.swift')]
+    paths = [folder + 'PlayerViewModel.swift']
+    paths += sorted(p for p in listing if Path(p).name.startswith('PlayerViewModel+'))
+    return '\n'.join(source(p) for p in paths)
+
+
+def func_marker(text, name):
+    # Members moved into extensions are internal, so accept either access level.
+    match = re.search(r'(?:private )?func ' + re.escape(name) + r'(?![A-Za-z0-9_])', text)
+    return match.group(0) if match else 'private func ' + name
+
+
+view_model = player_view_model_source()
 method_name = ('updateProtocolV3AuthenticationAfterProgress' if
                'updateProtocolV3AuthenticationAfterProgress' in view_model else
                'attemptProtocolV3AuthenticationReloadAfterProgress')
-method = declaration(view_model, 'private func ' + method_name)
+method = declaration(view_model, func_marker(view_model, method_name))
 policy = source('iosApp/iosApp/Screens/Player/VividLoadSpec.swift')
 policy_methods = '\n'.join(declaration(policy, marker) for marker in [
     'static func shouldReload(',
