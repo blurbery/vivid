@@ -18,7 +18,10 @@ export const limits = Object.freeze({
 });
 
 const recipient = 'diagnostics@vividapp.co';
-const sender = {email: 'reports@vividapp.co', name: 'Vivid Diagnostics'};
+// Sent from the relay's own subdomain, so Email Sending's DNS records live
+// under diagnostics.vividapp.co and the root domain's iCloud+ mail records
+// are never touched.
+const sender = {email: 'reports@diagnostics.vividapp.co', name: 'Vivid Diagnostics'};
 
 const problemKinds = new Set(['crash', 'hang', 'cpu_exception', 'disk_write_exception', 'slow_launch',
   'unexpected_exit', 'playback_failure', 'app_error']);
@@ -39,8 +42,9 @@ const json = (status, body, extra = {}) => new Response(JSON.stringify(body), {
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isDate = value => typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
-// Version, build, OS and model strings: short, printable, no line breaks.
-const isShortText = (value, max = 64) => typeof value === 'string' && value.length > 0 && value.length <= max && /^[\x20-\x7E]+$/.test(value);
+// Short text with no control characters such as line breaks. Titles and
+// codes can contain characters like · and ’, so this isn't ASCII-only.
+const isShortText = (value, max = 64) => typeof value === 'string' && value.length > 0 && value.length <= max && !/\p{Cc}/u.test(value);
 const isToken = value => typeof value === 'string' && /^[a-z0-9_-]{1,32}$/.test(value);
 
 function validApp(app) {
@@ -77,7 +81,7 @@ export function validateProblems(report) {
 
 // Subject parts come from validated fields, but strip anything that could
 // break the header anyway.
-const clean = value => String(value).replace(/[^\x20-\x7E]/g, '').trim();
+const clean = value => String(value).replace(/[\p{Cc}\u2028\u2029]/gu, '').trim();
 
 export function describe(kind, report, reference) {
   if (kind === 'playback') {
@@ -104,6 +108,13 @@ function emailText(kind, report, reference, receivedAt) {
   }
   lines.push('', 'The full report is attached as JSON.');
   return lines.join('\n');
+}
+
+// Attachment content as base64, the documented form for the email binding.
+export function toBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
 
 async function readBody(request, maxBytes) {
@@ -171,7 +182,7 @@ export async function handle(request, env, {now = () => new Date(), reference = 
       from: sender,
       subject: describe(kind, report, ref),
       text: emailText(kind, report, ref, receivedAt),
-      attachments: [{content: bytes, filename: `Vivid-${kind === 'playback' ? 'Playback' : 'Diagnostics'}-${ref}.json`, type: 'application/json', disposition: 'attachment'}],
+      attachments: [{content: toBase64(bytes), filename: `Vivid-${kind === 'playback' ? 'Playback' : 'Diagnostics'}-${ref}.json`, type: 'application/json', disposition: 'attachment'}],
     });
     emailed = true;
   } catch (error) {

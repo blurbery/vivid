@@ -35,31 +35,39 @@ The body must be `application/json` and match the app's format: known fields onl
 
 Mail is sent with Cloudflare Email Service through a `send_email` binding that can only send to `diagnostics@vividapp.co`. The subject carries the reference and a short summary, for example `Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames`, and the report is attached as JSON. Replies can't reach the person who sent it; ask them for the reference instead.
 
-Receiving mail stays with iCloud+. Email Sending puts its records on `cf-bounce.vividapp.co` and `cf-bounce._domainkey.vividapp.co` and leaves the root MX and SPF records alone. It also adds a DMARC record at `_dmarc.vividapp.co`, which the domain doesn't have today; check its policy before enabling, because DMARC applies to iCloud mail sent from the domain too.
+Mail is sent from `reports@diagnostics.vividapp.co`, and Email Sending is enabled for the `diagnostics.vividapp.co` subdomain only. Its bounce, SPF, DKIM and DMARC records then all sit under that subdomain, and the root domain's records, which deliver mail to iCloud+, are left alone. Email Routing stays off for vividapp.co.
+
+> [!WARNING]
+> Never enable Email Routing for vividapp.co. It replaces the root MX records and takes incoming mail away from iCloud+.
 
 ## Setup
 
 Each step changes the Cloudflare account and needs blurbery's go-ahead. Run them from `diagnostics-relay/` with Wrangler logged in to the account that holds vividapp.co.
 
-1. Onboard the domain for sending and check the records:
+1. Record the root domain's mail records, so you can confirm afterwards that nothing changed:
    ```sh
-   npx wrangler email sending enable vividapp.co
-   npx wrangler email sending dns get vividapp.co
+   dig +short MX vividapp.co; dig +short TXT vividapp.co; dig +short TXT _dmarc.vividapp.co
    ```
-2. Verify `diagnostics@vividapp.co` as a destination address in the Cloudflare dashboard (Email → Destination addresses) and confirm the link it sends to the inbox. Sending to a verified address is free on every Workers plan; sending to other addresses would need Workers Paid, and the binding doesn't allow it anyway.
-3. Create the bucket and its 30-day expiry:
+2. Enable sending for the subdomain only, and check its records:
+   ```sh
+   npx wrangler email sending enable diagnostics.vividapp.co
+   npx wrangler email sending dns get diagnostics.vividapp.co
+   ```
+3. Verify `diagnostics@vividapp.co` as a destination address (Cloudflare dashboard, Email, Destination addresses) and confirm the link it sends to the inbox. On the free Workers plan, Email Sending can only send to verified addresses; Workers Paid can send anywhere, but the binding only allows this one address anyway. If Cloudflare asks to turn on Email Routing to verify the address, stop: see the warning above.
+4. Create the bucket and its 30-day expiry:
    ```sh
    npx wrangler r2 bucket create vivid-diagnostics
    npx wrangler r2 bucket lifecycle add vivid-diagnostics expire-reports reports/ --expire-days 30
    ```
-4. Deploy. This also creates the `diagnostics.vividapp.co` custom domain:
+5. Deploy. This also creates the `diagnostics.vividapp.co` custom domain:
    ```sh
    npx wrangler deploy
    ```
-5. Send the sample reports and check the inbox:
+6. Send a sample report, then check that the email actually arrived in the iCloud inbox. A `200` alone isn't proof: the relay also answers `200` when only the stored copy succeeded.
    ```sh
    curl -sS -X POST https://diagnostics.vividapp.co/v1/reports/playback -H 'Content-Type: application/json' --data-binary @fixtures/playback.json
    ```
+7. Run the `dig` commands from step 1 again and check the root records are unchanged.
 
 The app's Send button must only ship after the relay is live and the privacy text describes it.
 

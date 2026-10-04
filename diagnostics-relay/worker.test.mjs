@@ -35,7 +35,7 @@ test('a playback report is stored, emailed and gets a reference', async () => {
   assert.equal(email.to, 'diagnostics@vividapp.co');
   assert.equal(email.subject, 'Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames');
   assert.equal(email.attachments[0].filename, 'Vivid-Playback-VR-7K2M9Q.json');
-  assert.equal(new TextDecoder().decode(email.attachments[0].content), body);
+  assert.equal(Buffer.from(email.attachments[0].content, 'base64').toString('utf8'), body);
 });
 
 test('problem reports are accepted and listed in the email', async () => {
@@ -116,4 +116,13 @@ test('subjects never contain line breaks or control characters', () => {
   const report = {reports: [{issueID: 'VD-000000', title: 'Bad\r\nBcc: someone', report: {app: {os: 'iOS 26', device: 'iPhone'}}}]};
   const subject = describe('problems', report, 'VR-222222');
   assert.ok(!/[\r\n]/.test(subject));
+});
+
+test('titles with typographic characters are accepted and kept in the subject', async () => {
+  const env = makeEnv();
+  const report = JSON.parse(await fixture('problems'));
+  report.reports[0].title = 'Server rejected a settings change · HTTP 422 · Vivid’s queue…';
+  const response = await handle(post('problems', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-BBBBBB'});
+  assert.equal(response.status, 200);
+  assert.match(env.sent[0].subject, /Vivid’s queue…$/);
 });
