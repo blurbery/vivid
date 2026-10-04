@@ -235,6 +235,7 @@ private struct TVLatestPlaybackPage: View {
             if minute.delayedFrames > 0 { parts.append("\(minute.delayedFrames) late") }
             if let sync = minute.maxAvSyncMs, sync > 100 { parts.append("A/V sync \(Int(sync)) ms") }
             if minute.rebufferSeconds > 0 { parts.append("rebuffering \(Int(minute.rebufferSeconds)) s") }
+            if minute.stallSeconds > 0 { parts.append("stalled \(Int(minute.stallSeconds)) s") }
             for (fault, count) in minute.faults.sorted(by: { $0.key < $1.key }) { parts.append("\(fault) ×\(count)") }
             return "Minute \(minute.minute): " + parts.joined(separator: ", ")
         }
