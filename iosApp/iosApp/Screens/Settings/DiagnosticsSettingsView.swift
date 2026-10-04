@@ -6,7 +6,7 @@ import SwiftUI
 
 /// Settings → Diagnostics. Lists the crash, hang and exit reports kept on
 /// this device, grouped by problem, shows exactly what is sent, and sends
-/// them to Vivid by email only when the person chooses to.
+/// them to Vivid only when the person chooses to.
 struct DiagnosticsSettingsView: View {
     @State private var reports: [AppHealthReport] = []
     @State private var sentIDs: Set<String> = []
@@ -67,11 +67,11 @@ struct DiagnosticsSettingsView: View {
             if !reports.isEmpty {
                 Section {
                     DiagnosticsSendButton(title: sendTitle, reports: toSend)
-                    if let shareURL {
-                        ShareLink(item: shareURL) { Text("Other Options") }
-                    }
+                    DiagnosticsOtherOptions(subject: "Vivid Diagnostics", shareURL: shareURL,
+                                            file: { [reports = toSend] in DiagnosticsExportFile.write(AppHealthStore.shared.exportData(reports)) },
+                                            onMailSent: { [reports = toSend] in AppHealthSendState.markSent(reports) })
                 } footer: {
-                    Text("Send to Vivid opens Mail with the reports attached, addressed to \(VividAbout.diagnosticsEmail). Review the message before sending. Open a report to send it on its own.")
+                    Text("Sends the reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Other Options sends them with Mail or the share sheet instead. Open a report to send it on its own.")
                 }
                 Section {
                     Button("Delete All Reports", role: .destructive) { showsDeleteConfirm = true }
@@ -213,18 +213,12 @@ private struct DiagnosticsReportDetailView: View {
     }
 }
 
-/// The latest playback session: a readable summary, then exactly what is
-/// sent, then the send action.
+/// The latest playback session: a readable summary, then the send actions,
+/// then exactly what is sent.
 private struct LatestPlaybackView: View {
     let report: PlaybackSessionReport
-    @State private var attachment: PlaybackAttachment?
     @State private var shareURL: URL?
-    @State private var mailUnavailable = false
-
-    private struct PlaybackAttachment: Identifiable {
-        let url: URL
-        var id: URL { url }
-    }
+    @State private var status: DiagnosticsSendStatus = .idle
 
     var body: some View {
         List {
@@ -238,10 +232,11 @@ private struct LatestPlaybackView: View {
                 }
             } header: { PhoneSettingsSectionHeader("Summary") }
             Section {
-                Button("Send Latest Playback", action: send)
-                if let shareURL { ShareLink(item: shareURL) { Text("Other Options") } }
+                DiagnosticsSendRow(title: "Send Latest Playback", status: status, disabled: data == nil, action: send)
+                DiagnosticsOtherOptions(subject: "Vivid Playback Report", shareURL: shareURL,
+                                        file: { [data = data] in data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") } })
             } footer: {
-                Text("Opens Mail addressed to \(VividAbout.diagnosticsEmail) with this session attached. It contains no titles, account details or server addresses.")
+                Text("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses.")
             }
             Section {
                 Text(json).font(.caption.monospaced()).textSelection(.enabled)
@@ -249,17 +244,6 @@ private struct LatestPlaybackView: View {
                 footer: { Text("This is exactly what is sent.") }
         }
         .settingsListChrome().navigationTitle("")
-        .alert("Mail unavailable", isPresented: $mailUnavailable) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Set up Mail, or use Other Options to send the file to \(VividAbout.diagnosticsEmail).")
-        }
-        .sheet(item: $attachment) { item in
-            DiagnosticsMailComposer(attachment: item.url, subject: "Vivid Playback Report") { _ in
-                DiagnosticsExportFile.remove(item.url)
-                attachment = nil
-            }.ignoresSafeArea()
-        }
         .task { shareURL = data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") } }
         .onDisappear { DiagnosticsExportFile.remove(shareURL); shareURL = nil }
     }
@@ -268,49 +252,110 @@ private struct LatestPlaybackView: View {
     private var json: String { data.map { String(decoding: $0, as: UTF8.self) } ?? "" }
 
     private func send() {
-        guard MFMailComposeViewController.canSendMail() else { mailUnavailable = true; return }
-        attachment = data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") }.map(PlaybackAttachment.init)
+        guard let data, !status.isSending else { return }
+        status = .sending
+        Task {
+            do {
+                status = .sent(reference: try await DiagnosticsUploader.send(data, kind: .playback))
+            } catch {
+                status = .failed(error as? DiagnosticsUploader.Failure ?? .unavailable)
+            }
+        }
     }
 }
 
-/// Opens Mail addressed to Vivid with the given reports attached, and marks
-/// them sent only when Mail reports the message as sent.
+/// Sends the given reports to Vivid and marks them sent only when the
+/// diagnostics service confirms it has them.
 private struct DiagnosticsSendButton: View {
     let title: String
     let reports: [AppHealthReport]
-    @State private var attachment: MailAttachment?
-    @State private var mailUnavailable = false
+    @State private var status: DiagnosticsSendStatus = .idle
 
     var body: some View {
-        Button(title, action: send)
-            .disabled(reports.isEmpty)
-            .alert("Mail unavailable", isPresented: $mailUnavailable) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Set up Mail, or use Other Options on the Diagnostics page to send the reports file to \(VividAbout.diagnosticsEmail).")
-            }
-            .sheet(item: $attachment) { attachment in
-                DiagnosticsMailComposer(attachment: attachment.url) { sent in
-                    if sent { AppHealthSendState.markSent(attachment.reports) }
-                    DiagnosticsExportFile.remove(attachment.url)
-                    self.attachment = nil
-                }.ignoresSafeArea()
-            }
+        DiagnosticsSendRow(title: title, status: status, disabled: reports.isEmpty, action: send)
     }
 
     private func send() {
-        guard MFMailComposeViewController.canSendMail() else {
-            mailUnavailable = true
-            return
+        guard !reports.isEmpty, !status.isSending else { return }
+        status = .sending
+        let reports = reports
+        Task {
+            let data = await Task.detached(priority: .userInitiated) { AppHealthStore.shared.exportData(reports) }.value
+            do {
+                let reference = try await DiagnosticsUploader.send(data, kind: .problems)
+                AppHealthSendState.markSent(reports)
+                status = .sent(reference: reference)
+            } catch {
+                status = .failed(error as? DiagnosticsUploader.Failure ?? .unavailable)
+            }
         }
-        guard let url = DiagnosticsExportFile.write(AppHealthStore.shared.exportData(reports)) else { return }
-        attachment = MailAttachment(url: url, reports: reports)
     }
+}
+
+/// A send button with its progress and result underneath.
+private struct DiagnosticsSendRow: View {
+    let title: String
+    let status: DiagnosticsSendStatus
+    let disabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(failedRetryable ? "Try Again" : title)
+                Spacer()
+                if status.isSending { ProgressView() }
+            }
+        }
+        // Enabled while sending, matching Apple TV; the send actions ignore repeats.
+        .disabled(disabled)
+        if let detail = status.detail, !status.isSending {
+            Text(detail).font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    private var failedRetryable: Bool { if case .failed(let failure) = status { return failure.canRetry } else { return false } }
+}
+
+/// Mail and the share sheet, for anyone who would rather send the file
+/// themselves.
+private struct DiagnosticsOtherOptions: View {
+    let subject: String
+    let shareURL: URL?
+    let file: () -> URL?
+    var onMailSent: () -> Void = {}
+    @State private var attachment: MailAttachment?
+    @State private var mailUnavailable = false
 
     private struct MailAttachment: Identifiable {
         let url: URL
-        let reports: [AppHealthReport]
         var id: URL { url }
+    }
+
+    var body: some View {
+        Menu {
+            Button("Send with Mail", action: mail)
+            if let shareURL { ShareLink(item: shareURL) { Text("Share File") } }
+        } label: {
+            Text("Other Options")
+        }
+        .alert("Mail unavailable", isPresented: $mailUnavailable) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Set up Mail, or use Share File to send it to \(VividAbout.diagnosticsEmail).")
+        }
+        .sheet(item: $attachment) { item in
+            DiagnosticsMailComposer(attachment: item.url, subject: subject) { sent in
+                if sent { onMailSent() }
+                DiagnosticsExportFile.remove(item.url)
+                attachment = nil
+            }.ignoresSafeArea()
+        }
+    }
+
+    private func mail() {
+        guard MFMailComposeViewController.canSendMail() else { mailUnavailable = true; return }
+        attachment = file().map(MailAttachment.init)
     }
 }
 
