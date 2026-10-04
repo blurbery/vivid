@@ -68,7 +68,7 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         session.counter(.dropped, value: 10, at: 7)
         session.setBuffering(false, at: 8)
         session.setPlaying(true, at: 8)
-        session.tick(at: 20)
+        for second in 9...20 { session.tick(at: TimeInterval(second)) } // the player ticks once a second
         XCTAssertEqual(session.totals.playedSeconds, 12, accuracy: 0.001)
         XCTAssertEqual(session.totals.rebuffers, 0)
         XCTAssertEqual(session.totals.droppedFrames, 0)
