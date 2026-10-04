@@ -93,6 +93,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     var pictureInPictureActive = false {
         didSet {
             core?.isPipActive = pictureInPictureActive
+            PlaybackSessionRecorder.shared.setPictureInPicture(pictureInPictureActive)
             core?.setPipSubtitleCompositing(pictureInPictureActive)
             core?.externalDisplayDidChange()
             core?.updateFrame()
@@ -407,7 +408,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         case "display-criteria-prepared":
             trace?.mark("mpv_display_criteria_prepared")
         case "display-switch-started", "display-switch-ended":
-            if name == "display-switch-ended" { PlaybackSessionRecorder.shared.displaySwitched() }
+            if name == "display-switch-ended" { PlaybackSessionRecorder.shared.displaySwitched() } else { PlaybackSessionRecorder.shared.settling() }
             trace?.event(name == "display-switch-started" ? "mpv_display_switch_started" : "mpv_display_switch_ended")
             recordPipelineSnapshot()
         case "file-loaded":
@@ -682,6 +683,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func play() { wantsPlay = true; core?.setProperty("pause", value: "no"); updatePhase() }
     func pause() { wantsPlay = false; core?.setProperty("pause", value: "yes"); updatePhase() }
     func setRate(_ rate: Float) {
+        PlaybackSessionRecorder.shared.settling()
         guard rate.isFinite, rate > 0 else { return }
         trace?.event("mpv_rate_requested", fields: "rate=\(rate) previous=\(requestedRate)")
         requestedRate = rate
@@ -725,6 +727,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     }
     func selectAudioTrack(index: Int) {
         guard let id = mpvTrackID(sourceID: index, type: "audio") else { return }
+        PlaybackSessionRecorder.shared.settling()
         core?.setProperty("aid", value: String(id))
     }
     private var subtitleDelaySeconds: Double = 0

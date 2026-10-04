@@ -27,6 +27,9 @@ struct PlaybackSessionAccumulator {
     private var warmupUntil: TimeInterval
     private var playing = false
     private var buffering = false
+    /// False while the app is in the background playing audio only, when
+    /// video frame counts and A/V sync mean nothing.
+    private var videoVisible = true
     private var bufferingSince: TimeInterval?
     /// Buffering before the first played second is startup, not a rebuffer.
     private var bufferingIsRebuffer = false
@@ -81,7 +84,9 @@ struct PlaybackSessionAccumulator {
         guard isBuffering != buffering else { return }
         buffering = isBuffering
         if isBuffering {
-            bufferingIsRebuffer = totals.playedSeconds > 0
+            // Refilling just after starting, seeking, resuming or a display
+            // switch is expected; only a stall in steady playback counts.
+            bufferingIsRebuffer = totals.playedSeconds > 0 && !inWarmup(now)
             if bufferingIsRebuffer { totals.rebuffers += 1 }
             bufferingSince = now
         } else {
@@ -95,6 +100,15 @@ struct PlaybackSessionAccumulator {
         totals.seeks += 1
         markWarmup(at: now)
         lastAvSyncMs = nil
+    }
+
+    /// Video went out of view (background audio) or came back.
+    mutating func setVideoVisible(_ visible: Bool, at now: TimeInterval) {
+        tick(at: now)
+        guard visible != videoVisible else { return }
+        videoVisible = visible
+        lastAvSyncMs = nil
+        markWarmup(at: now)
     }
 
     mutating func displaySwitched(at now: TimeInterval) {
@@ -130,6 +144,7 @@ struct PlaybackSessionAccumulator {
         }
         guard value > previous else { return } // reset after a reload or seek
         let delta = value - previous
+        guard videoVisible else { return }
         if inWarmup(now) || !playing || buffering {
             // Only dropped frames are kept for warm-up; late and decoder
             // drops there are normal and not reported.
@@ -149,7 +164,7 @@ struct PlaybackSessionAccumulator {
     mutating func avSync(ms: Double?, at now: TimeInterval) {
         tick(at: now)
         // A reading from warm-up mustn't count as drift once warm-up ends.
-        guard let ms, ms.isFinite, playing, !buffering, !inWarmup(now) else { lastAvSyncMs = nil; return }
+        guard let ms, ms.isFinite, playing, !buffering, videoVisible, !inWarmup(now) else { lastAvSyncMs = nil; return }
         lastAvSyncMs = ms
         let drift = abs(ms)
         totals.maxAvSyncMs = max(totals.maxAvSyncMs ?? 0, drift)

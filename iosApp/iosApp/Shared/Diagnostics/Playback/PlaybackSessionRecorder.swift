@@ -22,6 +22,9 @@ final class PlaybackSessionRecorder {
     private var lastSave: TimeInterval = 0
     private var routeObserver: NSObjectProtocol?
     private var backgroundObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
+    private var inForeground = true
+    private var pictureInPicture = false
     private static let saveInterval: TimeInterval = 60
 
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
@@ -34,8 +37,31 @@ final class PlaybackSessionRecorder {
         backgroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { _ in
-            Task { @MainActor in PlaybackSessionRecorder.shared.save() }
+            Task { @MainActor in
+                let recorder = PlaybackSessionRecorder.shared
+                recorder.inForeground = false
+                recorder.updateVideoVisible()
+                recorder.save()
+            }
         }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in
+                PlaybackSessionRecorder.shared.inForeground = true
+                PlaybackSessionRecorder.shared.updateVideoVisible()
+            }
+        }
+    }
+
+    /// Video counts while the app is on screen or in picture in picture.
+    private func updateVideoVisible() {
+        accumulator?.setVideoVisible(inForeground || pictureInPicture, at: now)
+    }
+
+    func setPictureInPicture(_ active: Bool) {
+        pictureInPicture = active
+        updateVideoVisible()
     }
 
     // MARK: Session lifecycle
@@ -54,6 +80,7 @@ final class PlaybackSessionRecorder {
             media: .init(), totals: .init(), timeline: [], notMeasured: []
         )
         observeAudioRoute()
+        updateVideoVisible()
         save(force: true)
     }
 
@@ -82,6 +109,10 @@ final class PlaybackSessionRecorder {
     func seeked() { accumulator?.seeked(at: now) }
     func reloaded() { accumulator?.reloaded(at: now) }
     var isRecording: Bool { accumulator != nil }
+    /// Starts a short warm-up for changes that briefly disturb playback:
+    /// a display switch starting, a speed change or an audio track switch.
+    func settling() { accumulator?.markWarmup(at: now) }
+
     func displaySwitched() {
         accumulator?.displaySwitched(at: now)
         if var setup = report?.setup {

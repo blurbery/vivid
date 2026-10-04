@@ -153,6 +153,31 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         XCTAssertEqual(report.timeline.last?.minute, PlaybackSessionAccumulator.maxTimelineMinutes - 1)
     }
 
+    func testRefillingRightAfterASeekIsNotARebuffer() {
+        var session = playing()
+        for second in 1...30 { session.tick(at: TimeInterval(second)) }
+        session.seeked(at: 30)
+        session.setBuffering(true, at: 31)
+        session.setBuffering(false, at: 33)
+        XCTAssertEqual(session.totals.rebuffers, 0)
+        for second in 34...60 { session.tick(at: TimeInterval(second)) }
+        session.setBuffering(true, at: 60) // a stall in steady playback
+        session.setBuffering(false, at: 62)
+        XCTAssertEqual(session.totals.rebuffers, 1)
+    }
+
+    func testHiddenVideoDoesNotCountDropsOrSync() {
+        var session = playing()
+        session.counter(.dropped, value: 0, at: 6)
+        session.setVideoVisible(false, at: 10)
+        session.counter(.dropped, value: 500, at: 30)
+        session.avSync(ms: 900, at: 30)
+        session.setVideoVisible(true, at: 40)
+        session.counter(.dropped, value: 503, at: 50)
+        XCTAssertEqual(session.totals.droppedFrames, 3)
+        XCTAssertNil(session.totals.maxAvSyncMs)
+    }
+
     func testPausedTimeIsNotPlayedTime() {
         var session = playing()
         for second in 1...10 { session.tick(at: TimeInterval(second)) }
