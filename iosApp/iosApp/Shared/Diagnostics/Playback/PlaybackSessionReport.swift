@@ -45,8 +45,9 @@ struct PlaybackSessionReport: Codable, Equatable {
         var renderingMode: String?
         /// Channels the active output port negotiated.
         var routeOutputChannels: Int?
-        /// iPhone and iPad: video is also on an external screen (AirPlay
+        /// iPhone and iPad: Vivid has an external-display scene (AirPlay
         /// video or a cable), where these frame counts are the phone's own.
+        /// Plain screen mirroring without that scene isn't detected.
         var externalScreen: Bool?
         var serverType: String?
         var playMethod: String?
@@ -168,14 +169,14 @@ extension PlaybackSessionReport {
         if setup.externalScreen == true { rows.append(("External screen", "Yes")) }
         let hdr = setup.displayHDR.map { $0.isEmpty ? "SDR only" : $0.map(Self.dynamicRangeLabel).joined(separator: ", ") } ?? missing
         rows.append(("Display HDR", hdr))
-        if let refresh = setup.displayRefreshHz { rows.append(("Display refresh", String(format: "%.3g Hz", refresh))) }
-        if let matched = frameRateMatched {
-            rows.append(("Frame rate matched", matched ? "Yes" : "No, uneven motion (judder) is likely"))
+        if let refresh = setup.displayRefreshHz { rows.append(("Display refresh", String(format: "%.5g Hz", refresh))) }
+        if let matched = frameRateMatched, let fps = media.contentFps, let refresh = setup.displayRefreshHz {
+            rows.append(("Frame rate matched", (matched ? "Yes" : "No") + String(format: " (%.5g fps on %.5g Hz)", fps, refresh)))
         }
         if let matching = setup.systemMatchingEnabled { rows.append(("Match content (Apple TV)", matching ? "On" : "Off")) }
         var video = [media.videoCodec?.uppercased(), media.height.map { "\($0)p" },
                      media.sourceDynamicRange.map(Self.dynamicRangeLabel),
-                     media.contentFps.map { String(format: "%.3g fps", $0) }].compactMap { $0 }.joined(separator: " · ")
+                     media.contentFps.map { String(format: "%.5g fps", $0) }].compactMap { $0 }.joined(separator: " · ")
         if let out = media.outputDynamicRange, out != media.sourceDynamicRange { video += " → shown as \(Self.dynamicRangeLabel(out))" }
         rows.append(("Video", video.isEmpty ? missing : video))
         var audio = [media.audioCodec?.uppercased(), media.audioSourceChannels.map { "\($0) ch" }].compactMap { $0 }.joined(separator: " · ")

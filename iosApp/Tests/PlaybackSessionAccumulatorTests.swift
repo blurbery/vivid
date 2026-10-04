@@ -232,6 +232,18 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         }
     }
 
+    /// At the end the player stops counting playback; the last frame held
+    /// under Next Up isn't a stall or played time.
+    func testHeldLastFrameAfterTheEndIsNotAStallOrPlayback() {
+        var session = playing()
+        for second in 1...30 { session.position(Double(second), at: TimeInterval(second)) }
+        session.setPlaying(false, at: 30)
+        for second in 31...90 { session.position(30, at: TimeInterval(second)) }
+        session.ended(reason: "ended", at: 90)
+        XCTAssertEqual(session.totals.stalls, 0)
+        XCTAssertEqual(session.totals.playedSeconds, 30, accuracy: 0.001)
+    }
+
     func testPausedTimeIsNotPlayedTime() {
         var session = playing()
         for second in 1...10 { session.tick(at: TimeInterval(second)) }
