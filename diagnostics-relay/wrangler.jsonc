@@ -12,9 +12,9 @@
   "send_email": [
     {"name": "EMAIL", "destination_address": "diagnostics@vividapp.co"}
   ],
-  // Copies kept for 30 days by the bucket's lifecycle rule (see the setup guide).
-  "r2_buckets": [
-    {"binding": "REPORTS", "bucket_name": "vivid-diagnostics"}
+  // Copies expire after 30 days (set per key).
+  "kv_namespaces": [
+    {"binding": "REPORTS", "id": "3f880d478a1b4cacb5ef3fa1b36fbbd2"}
   ],
   // Five sends a minute from one address.
   "ratelimits": [

@@ -1,5 +1,5 @@
 // Receives diagnostics that someone chose to send from Vivid, keeps a copy
-// for 30 days and emails it to diagnostics@vividapp.co.
+// in Workers KV for 30 days and emails it to diagnostics@vividapp.co.
 //
 // POST /v1/reports/playback  the latest playback record
 // POST /v1/reports/problems  problem reports (crashes, freezes, failures)
@@ -13,6 +13,7 @@ export const limits = Object.freeze({
   // after base64, so this leaves room.
   problemsBytes: Math.floor(2.5 * 1024 * 1024),
   perDay: 300,
+  keepSeconds: 30 * 24 * 60 * 60,
   maxProblemReports: 50,
   maxTimelineMinutes: 240,
 });
@@ -161,16 +162,21 @@ export async function handle(request, env, {now = () => new Date(), reference = 
 
   const received = now();
   const day = received.toISOString().slice(0, 10);
-  const listed = await env.REPORTS.list({prefix: `reports/${day}/`, limit: limits.perDay});
-  if (listed.objects.length >= limits.perDay) return json(503, {error: 'daily_limit'}, {'Retry-After': '3600'});
+  // An approximate daily count: KV is eventually consistent, which is fine
+  // for a safety cap.
+  const countKey = `count/${day}`;
+  let count = 0;
+  try { count = Number(await env.REPORTS.get(countKey)) || 0; } catch {}
+  if (count >= limits.perDay) return json(503, {error: 'daily_limit'}, {'Retry-After': '3600'});
 
   const ref = reference();
   const receivedAt = received.toISOString();
   const key = `reports/${day}/${ref}-${kind}.json`;
   let stored = false;
   try {
-    await env.REPORTS.put(key, bytes, {httpMetadata: {contentType: 'application/json'}, customMetadata: {kind, reference: ref, receivedAt}});
+    await env.REPORTS.put(key, bytes, {expirationTtl: limits.keepSeconds, metadata: {kind, reference: ref, receivedAt}});
     stored = true;
+    await env.REPORTS.put(countKey, String(count + 1), {expirationTtl: 2 * 24 * 60 * 60});
   } catch (error) {
     console.error('store_failed', ref, error?.message);
   }

@@ -8,7 +8,7 @@
 
 ---
 
-Apple TV has no Mail app, and an app can't safely hold an email login. So when someone presses Send in Settings → Diagnostics, Vivid posts the report to a small Cloudflare Worker at `diagnostics.vividapp.co`. The Worker keeps a copy for 30 days and emails it to `diagnostics@vividapp.co`, which is delivered to the iCloud Mail inbox like any other mail to the domain.
+Apple TV has no Mail app, and an app can't safely hold an email login. So when someone presses Send in Settings → Diagnostics, Vivid posts the report to a small Cloudflare Worker at `diagnostics.vividapp.co`. The Worker keeps a copy in Workers KV for 30 days and emails it to `diagnostics@vividapp.co`, which is delivered to the iCloud Mail inbox like any other mail to the domain.
 
 The source is in [`diagnostics-relay/`](../diagnostics-relay). It is separate from the website Worker.
 
@@ -54,16 +54,12 @@ Each step changes the Cloudflare account and needs blurbery's go-ahead. Run them
    npx wrangler email sending dns get diagnostics.vividapp.co
    ```
 3. Verify `diagnostics@vividapp.co` as a destination address (Cloudflare dashboard, Email, Destination addresses) and confirm the link it sends to the inbox. On the free Workers plan, Email Sending can only send to verified addresses; Workers Paid can send anywhere, but the binding only allows this one address anyway. If Cloudflare asks to turn on Email Routing to verify the address, stop: see the warning above.
-4. Create the bucket and its 30-day expiry:
-   ```sh
-   npx wrangler r2 bucket create vivid-diagnostics
-   npx wrangler r2 bucket lifecycle add vivid-diagnostics expire-reports reports/ --expire-days 30
-   ```
+4. The KV namespace `vivid-diagnostics` already exists and its ID is in `wrangler.jsonc`. Each copy is stored with a 30-day expiry, so nothing needs cleaning up. To recreate it on another account, run `npx wrangler kv namespace create vivid-diagnostics` and update the ID.
 5. Deploy. This also creates the `diagnostics.vividapp.co` custom domain:
    ```sh
    npx wrangler deploy
    ```
-6. Send a sample report, then check that the email actually arrived in the iCloud inbox. A `200` alone isn't proof: the relay also answers `200` when only the stored copy succeeded.
+6. Send a sample report, then check that the email actually arrived in the iCloud inbox. A `200` alone isn't proof: the relay also answers `200` when only the stored copy succeeded. Stored copies can be listed with `npx wrangler kv key list --binding REPORTS --remote --prefix reports/`.
    ```sh
    curl -sS -X POST https://diagnostics.vividapp.co/v1/reports/playback -H 'Content-Type: application/json' --data-binary @fixtures/playback.json
    ```

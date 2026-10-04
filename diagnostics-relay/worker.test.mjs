@@ -11,8 +11,11 @@ function makeEnv({allow = true, existing = 0, failStore = false, failEmail = fal
     sent: [], stored: [], limited: [],
     RATE_LIMITER: {limit: async ({key}) => { env.limited.push(key); return {success: allow}; }},
     REPORTS: {
-      list: async () => ({objects: Array.from({length: existing}, (_, i) => ({key: `x${i}`}))}),
-      put: async (key, body, options) => { if (failStore) throw new Error('r2 down'); env.stored.push({key, body, options}); },
+      get: async key => (key.startsWith('count/') && existing ? String(existing) : null),
+      put: async (key, body, options) => {
+        if (failStore) throw new Error('kv down');
+        if (!key.startsWith('count/')) env.stored.push({key, body, options});
+      },
     },
     EMAIL: {send: async message => { if (failEmail) throw Object.assign(new Error('nope'), {code: 'E_X'}); env.sent.push(message); return {messageId: 'm1'}; }},
   };
@@ -30,6 +33,7 @@ test('a playback report is stored, emailed and gets a reference', async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {reference: 'VR-7K2M9Q'});
   assert.equal(env.stored[0].key, 'reports/2026-10-04/VR-7K2M9Q-playback.json');
+  assert.equal(env.stored[0].options.expirationTtl, 30 * 24 * 60 * 60, 'copies expire after 30 days');
   assert.equal(new TextDecoder().decode(env.stored[0].body), body, 'the copy is exactly what was sent');
   const email = env.sent[0];
   assert.equal(email.to, 'diagnostics@vividapp.co');
