@@ -22,6 +22,7 @@ Guides for building Vivid, connecting media servers and maintaining the app on A
     <tr><td><a href="apple-tv-focus.md">Apple TV focus</a></td><td>Focus ownership and navigation rules</td></tr>
     <tr><td><a href="playback/README.md">Playback</a></td><td>Lucid Engine on Apple TV, iPhone and iPad, compatible audio, embedded and OpenSubtitles tracks, chapters, controls, downloads, resume updates and verification</td></tr>
     <tr><td><a href="branding/README.md">Branding</a></td><td>Vivid&#x27;s silver logo, documentation headers and Apple app icons</td></tr>
+    <tr><td><a href="diagnostics-relay.md">Diagnostics relay</a></td><td>The Cloudflare Worker that receives reports sent from Settings → Diagnostics and emails them to the diagnostics inbox, with setup and tests</td></tr>
     <tr><td><a href="release/versioning.md">Releases</a></td><td>GitHub version rules, independent Apple build numbers, current distribution policy and historical build records</td></tr>
     <tr><td><a href="release/distribution.md">Device distribution</a></td><td>TestFlight distribution, signing checks and device coverage</td></tr>
     <tr><td><a href="../README.md#licence">Source licence and attribution</a></td><td>GPLv3, Apple distribution permission, Vivid attribution and third-party boundaries</td></tr>

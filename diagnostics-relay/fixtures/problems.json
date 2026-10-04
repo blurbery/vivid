@@ -1,0 +1,20 @@
+{
+  "exportedAt" : "2026-10-04T10:20:00Z",
+  "format" : 3,
+  "reports" : [
+    {
+      "issueID" : "VD-3F9A2C",
+      "report" : {
+        "app" : {
+          "build" : "57",
+          "device" : "iPhone17,1",
+          "os" : "iOS 26.0",
+          "version" : "0.14.3"
+        },
+        "kind" : "playback_failure",
+        "recordedAt" : "2026-10-04T09:58:41Z"
+      },
+      "title" : "Playback failed: source refused"
+    }
+  ]
+}
