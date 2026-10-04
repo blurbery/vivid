@@ -7,7 +7,9 @@ import UIKit
 /// Latest Playback. Each new play replaces the previous session.
 ///
 /// Recording never adds work to the player's render path: inputs are values
-/// the player already receives, plus a once-a-second read of a few counters.
+/// the player already receives, plus a once-a-second read of two counters.
+/// The main thread only updates counts. Apple's audio-route and HDR
+/// queries, JSON encoding and file writes all run on a background queue.
 /// The session lives in memory and is written to one small file when
 /// playback stops, when the app goes to the background and once a minute.
 @MainActor
@@ -26,6 +28,9 @@ final class PlaybackSessionRecorder {
     private var foregroundObserver: NSObjectProtocol?
     private var inForeground = true
     private var pictureInPicture = false
+    /// Changes with each session, so a late background read can't land on
+    /// the next video's record.
+    private var sessionID = 0
     private static let saveInterval: TimeInterval = 60
 
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
@@ -71,17 +76,18 @@ final class PlaybackSessionRecorder {
     func begin(matchContentEnabled: Bool) {
         guard Self.isEnabled else { return }
         let started = Date()
+        sessionID &+= 1
         accumulator = PlaybackSessionAccumulator(startedAt: now)
         var setup = PlaybackSessionReport.Setup()
         setup.matchContentEnabled = matchContentEnabled
         setup.serverType = MediaServerProvider.active.rawValue
-        Self.readEnvironment(into: &setup)
         report = PlaybackSessionReport(
             startedAt: started, updatedAt: started, app: .current, setup: setup,
             media: .init(), totals: .init(), timeline: [], notMeasured: []
         )
         observeAudioRoute()
         updateVideoVisible()
+        refreshEnvironment(display: true)
         save(force: true)
     }
 
@@ -118,18 +124,11 @@ final class PlaybackSessionRecorder {
 
     /// Re-reads the audio route once output has started; at the start of a
     /// session the latency and rendering mode can still be the old route's.
-    func refreshAudioRoute() {
-        guard accumulator != nil, var setup = report?.setup else { return }
-        Self.readAudio(into: &setup)
-        report?.setup = setup
-    }
+    func refreshAudioRoute() { refreshEnvironment(display: false) }
 
     func displaySwitched() {
         accumulator?.displaySwitched(at: now)
-        if var setup = report?.setup {
-            Self.readDisplay(into: &setup)
-            report?.setup = setup
-        }
+        refreshEnvironment(display: true)
     }
     func avSync(ms: Double?) { accumulator?.avSync(ms: ms, at: now) }
     func audioFault(_ token: String) { accumulator?.audioFault(token, at: now) }
@@ -169,20 +168,25 @@ final class PlaybackSessionRecorder {
     // MARK: Building the report
 
     /// The diagnostics relay accepts up to 128 KB; stay well inside it.
-    static let maxEncodedBytes = 60 * 1024
+    nonisolated static let maxEncodedBytes = 60 * 1024
 
     static func finish(_ report: PlaybackSessionReport, _ accumulator: PlaybackSessionAccumulator) -> PlaybackSessionReport {
+        bounded(snapshot(report, accumulator))
+    }
+
+    /// The current values, without the size check, which encodes.
+    private static func snapshot(_ report: PlaybackSessionReport, _ accumulator: PlaybackSessionAccumulator) -> PlaybackSessionReport {
         var result = report
         result.updatedAt = Date()
         result.totals = accumulator.totals
         result.timeline = accumulator.timeline
         result.notMeasured = notMeasured(result)
-        return bounded(result)
+        return result
     }
 
     /// Drops the oldest problem minutes until the record fits. Only a very
     /// long session with many kinds of fault every minute gets near this.
-    static func bounded(_ report: PlaybackSessionReport) -> PlaybackSessionReport {
+    nonisolated static func bounded(_ report: PlaybackSessionReport) -> PlaybackSessionReport {
         var result = report
         while !result.timeline.isEmpty, (encode(result)?.count ?? 0) > maxEncodedBytes {
             result.timeline.removeFirst(max(1, result.timeline.count / 8))
@@ -192,7 +196,7 @@ final class PlaybackSessionRecorder {
 
     /// Everything the report couldn't measure, by name, so a missing value
     /// is never mistaken for zero.
-    static func notMeasured(_ report: PlaybackSessionReport) -> [String] {
+    nonisolated static func notMeasured(_ report: PlaybackSessionReport) -> [String] {
         var missing: [String] = []
         let checks: [(String, Bool)] = [
             ("audio_output", report.setup.audioOutput == nil),
@@ -230,13 +234,12 @@ final class PlaybackSessionRecorder {
                 .flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
             Task { @MainActor in
                 let recorder = PlaybackSessionRecorder.shared
-                guard recorder.accumulator != nil, var setup = recorder.report?.setup else { return }
+                guard recorder.accumulator != nil else { return }
                 // Category changes are Vivid's own; only count real output changes.
                 if reason == .newDeviceAvailable || reason == .oldDeviceUnavailable || reason == .override {
                     recorder.accumulator?.audioOutputChanged(at: recorder.now)
                 }
-                Self.readAudio(into: &setup)
-                recorder.report?.setup = setup
+                recorder.refreshEnvironment(display: false)
             }
         }
         if let renderingModeObserver { NotificationCenter.default.removeObserver(renderingModeObserver) }
@@ -247,29 +250,77 @@ final class PlaybackSessionRecorder {
         }
     }
 
-    private static func readEnvironment(into setup: inout PlaybackSessionReport.Setup) {
-        readAudio(into: &setup)
-        readDisplay(into: &setup)
+    /// Facts from Apple's audio session and AVPlayer. These calls go to
+    /// system services and can block briefly, so they're made off the main
+    /// thread and applied only if the same session is still recording.
+    private struct AudioFacts: Sendable {
+        var output: String?
+        var channelsAvailable: Int?
+        var multichannel: Bool
+        var routeChannels: Int?
+        var latencyMs: Int?
+        var renderingMode: String
     }
 
-    private static func readAudio(into setup: inout PlaybackSessionReport.Setup) {
+    private struct DisplayFacts: Sendable {
+        var eligible: Bool
+        var formats: [String]
+    }
+
+    private func refreshEnvironment(display: Bool) {
+        guard accumulator != nil else { return }
+        let id = sessionID
+        Task.detached(priority: .utility) {
+            let audio = Self.readAudio()
+            let screen = display ? Self.readDisplay() : nil
+            await MainActor.run {
+                let recorder = PlaybackSessionRecorder.shared
+                guard recorder.sessionID == id, recorder.accumulator != nil, var setup = recorder.report?.setup else { return }
+                setup.audioOutput = audio.output
+                setup.outputChannelsAvailable = audio.channelsAvailable
+                setup.multichannelSupported = audio.multichannel
+                setup.routeOutputChannels = audio.routeChannels
+                setup.outputLatencyMs = audio.latencyMs
+                setup.renderingMode = audio.renderingMode
+                #if os(iOS)
+                setup.externalScreen = UIApplication.shared.connectedScenes.contains {
+                    $0.session.role == .windowExternalDisplayNonInteractive
+                }
+                #endif
+                if let screen {
+                    setup.hdrPlaybackEligible = screen.eligible
+                    setup.displayHDR = screen.formats
+                    #if os(tvOS)
+                    setup.systemMatchingEnabled = VividDisplayContext.matchContentEnabled
+                    #endif
+                }
+                recorder.report?.setup = setup
+            }
+        }
+    }
+
+    nonisolated private static func readAudio() -> AudioFacts {
         let session = AVAudioSession.sharedInstance()
-        let ports = session.currentRoute.outputs.map(\.portType)
-        setup.audioOutput = ports.first.map(audioOutputToken)
-        setup.outputChannelsAvailable = session.maximumOutputNumberOfChannels > 0
-            ? session.maximumOutputNumberOfChannels : nil
-        setup.multichannelSupported = session.supportsMultichannelContent
+        let outputs = session.currentRoute.outputs
+        let latency = session.outputLatency
         // Counts and tokens only: port and channel names can carry room or
         // device names.
-        setup.routeOutputChannels = session.currentRoute.outputs.first?.channels.map(\.count).flatMap { $0 > 0 ? $0 : nil }
-        let latency = session.outputLatency
-        setup.outputLatencyMs = latency.isFinite && latency > 0 ? Int((latency * 1000).rounded()) : nil
-        setup.renderingMode = renderingModeToken(session.renderingMode)
-        #if os(iOS)
-        setup.externalScreen = UIApplication.shared.connectedScenes.contains {
-            $0.session.role == .windowExternalDisplayNonInteractive
-        }
-        #endif
+        return AudioFacts(
+            output: outputs.first.map { audioOutputToken($0.portType) },
+            channelsAvailable: session.maximumOutputNumberOfChannels > 0 ? session.maximumOutputNumberOfChannels : nil,
+            multichannel: session.supportsMultichannelContent,
+            routeChannels: outputs.first?.channels.map(\.count).flatMap { $0 > 0 ? $0 : nil },
+            latencyMs: latency.isFinite && latency > 0 ? Int((latency * 1000).rounded()) : nil,
+            renderingMode: renderingModeToken(session.renderingMode))
+    }
+
+    nonisolated private static func readDisplay() -> DisplayFacts {
+        let hdr = ApplePlaybackHDRAvailability.probe()
+        var formats: [String] = []
+        if hdr.supportsHDR10 { formats.append("hdr10") }
+        if hdr.supportsDolbyVision { formats.append("dolby_vision") }
+        if hdr.supportsHLG { formats.append("hlg") }
+        return DisplayFacts(eligible: hdr.hdrPlaybackEligible, formats: formats)
     }
 
     nonisolated static func renderingModeToken(_ mode: AVAudioSession.RenderingMode) -> String {
@@ -281,19 +332,6 @@ final class PlaybackSessionRecorder {
         case .dolbyAtmos: "dolby_atmos"
         default: "not_applicable"
         }
-    }
-
-    private static func readDisplay(into setup: inout PlaybackSessionReport.Setup) {
-        let hdr = ApplePlaybackHDRAvailability.probe()
-        setup.hdrPlaybackEligible = hdr.hdrPlaybackEligible
-        var formats: [String] = []
-        if hdr.supportsHDR10 { formats.append("hdr10") }
-        if hdr.supportsDolbyVision { formats.append("dolby_vision") }
-        if hdr.supportsHLG { formats.append("hlg") }
-        setup.displayHDR = formats
-        #if os(tvOS)
-        setup.systemMatchingEnabled = VividDisplayContext.matchContentEnabled
-        #endif
     }
 
     nonisolated static func audioOutputToken(_ port: AVAudioSession.Port) -> String {
@@ -311,16 +349,20 @@ final class PlaybackSessionRecorder {
 
     // MARK: Storage
 
+    /// One serial queue: saves land in order, so an older snapshot can't
+    /// overwrite a newer one, and encoding stays off the main thread.
+    nonisolated private static let ioQueue = DispatchQueue(label: "vivid.playback-session.io", qos: .utility)
+
     private func save(force: Bool = false) {
         guard let report else { return }
-        let current = accumulator.map { Self.finish(report, $0) } ?? report
         if accumulator == nil, !force { return }
+        let current = accumulator.map { Self.snapshot(report, $0) } ?? report
         lastSave = now
-        guard let data = Self.encode(current) else { return }
         let url = Self.fileURL
-        Task.detached(priority: .utility) {
+        Self.ioQueue.async {
+            guard let data = Self.encode(Self.bounded(current)) else { return }
             Self.write(data, to: url)
-            await MainActor.run { NotificationCenter.default.post(name: Self.didChange, object: nil) }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: Self.didChange, object: nil) }
         }
     }
 
