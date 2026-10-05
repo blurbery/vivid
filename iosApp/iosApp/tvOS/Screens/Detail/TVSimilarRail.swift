@@ -137,6 +137,81 @@ struct TVSimilarRail: View {
 
 }
 
+// MARK: - Collection rail
+
+/// "<Name> Collection" rail under More Like This on movie pages: the
+/// library titles from the movie's TMDb collection, in release order.
+/// Hidden without a TMDb connection, when the movie isn't in a
+/// collection, or when it's the only one from it in the library.
+struct TVCollectionRail: View {
+    let detail: ItemDetail
+    let onSelect: (String) -> Void
+
+    @State private var row: MovieCollectionRowStore.Row?
+    @State private var resultContext = ""
+    @State private var homeCards = TVHomeCardPreferences.shared
+    @State private var tmdb = TVTMDbStore.shared
+    @FocusState private var focusedItemId: String?
+
+    private let store = MovieCollectionRowStore.shared
+    private let cardWidth: CGFloat = VividTheme.Skyline.densePosterCardWidth
+    private let cardSpacing: CGFloat = 44
+    private let railVerticalPadding: CGFloat = 12
+
+    var body: some View {
+        // Keep a mounted container even before results exist so the task runs.
+        VStack(alignment: .leading, spacing: 0) {
+            if let row, resultContext == store.contextKey {
+                VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
+                    TVSectionHeader(title: row.name)
+                    rail(row.items)
+                }
+            }
+        }
+        .task(id: detail.contentId + tmdb.contextKey, priority: .utility) { await load() }
+    }
+
+    private func rail(_ items: [SimilarPosterItem]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: cardSpacing) {
+                ForEach(items) { item in
+                    TVMediaCard(
+                        title: item.title,
+                        posterUrl: item.posterUrl ?? "",
+                        posterThumbhash: item.posterThumbhash,
+                        year: item.year,
+                        action: {
+                            // The movie being viewed still gets the press
+                            // animation, but stays on this page.
+                            guard item.contentId != detail.contentId else { return }
+                            onSelect(item.contentId)
+                        },
+                        cardWidth: cardWidth,
+                        posterSize: homeCards.presentation.posterSize,
+                        leadingCaption: true,
+                        focusBinding: $focusedItemId,
+                        focusContentId: item.contentId
+                    )
+                }
+            }
+            .padding(.vertical, railVerticalPadding)
+        }
+        .focusSection()
+        .applySimilarRailDefaultFocus(items.first?.contentId, binding: $focusedItemId)
+        .scrollClipDisabled()
+    }
+
+    private func load() async {
+        row = nil
+        guard detail.type == "movie", tmdb.isConfigured else { return }
+        let context = store.contextKey
+        let result = try? await store.row(for: detail)
+        guard !Task.isCancelled, store.contextKey == context else { return }
+        row = result
+        resultContext = context
+    }
+}
+
 private extension View {
     /// When focus enters the Recommended rail, land on the first card rather
     /// than the geometrically-nearest one. `.userInitiated` priority is what

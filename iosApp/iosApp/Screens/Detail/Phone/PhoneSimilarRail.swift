@@ -107,6 +107,64 @@ struct PhoneSimilarRail: View {
     }
 }
 
+// MARK: - Collection rail
+
+/// "<Name> Collection" rail under More Like This on movie pages: the
+/// library titles from the movie's TMDb collection, in release order.
+/// Hidden without a TMDb connection, when the movie isn't in a
+/// collection, or when it's the only one from it in the library.
+struct PhoneCollectionRail: View {
+    let detail: ItemDetail
+    let onSelect: (String) -> Void
+
+    @State private var row: MovieCollectionRowStore.Row?
+    @State private var tmdb = TVTMDbStore.shared
+
+    var body: some View {
+        Group {
+            if let row {
+                VStack(alignment: .leading, spacing: 14) {
+                    PhoneSectionHeader(title: row.name)
+                        .padding(.horizontal, VividTheme.safePadding)
+                    rail(row.items)
+                }
+            }
+        }
+        .task(id: detail.contentId + "|" + tmdb.contextKey) { await load() }
+    }
+
+    private func rail(_ items: [SimilarPosterItem]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: HorizontalMediaRailLayout.cardAlignment, spacing: 12) {
+                ForEach(items) { item in
+                    Button {
+                        // The movie being viewed stays on this page.
+                        guard item.contentId != detail.contentId else { return }
+                        onSelect(item.contentId)
+                    } label: {
+                        PhoneSimilarCard(item: item)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(item.accessibilityDescription)
+                }
+            }
+            .padding(.horizontal, VividTheme.safePadding)
+            .padding(.vertical, 4)
+            .phoneMediaRailBounds()
+        }
+    }
+
+    private func load() async {
+        row = nil
+        guard detail.type == "movie", tmdb.isConfigured else { return }
+        let context = MovieCollectionRowStore.shared.contextKey
+        let result = try? await MovieCollectionRowStore.shared.row(for: detail)
+        guard !Task.isCancelled, MovieCollectionRowStore.shared.contextKey == context else { return }
+        row = result
+    }
+}
+
 // MARK: - Card model
 
 /// View-side projection of an `ItemDetail` containing only what the

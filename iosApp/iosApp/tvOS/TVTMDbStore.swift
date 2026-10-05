@@ -29,6 +29,7 @@ final class TVTMDbStore {
     private var credential = ""
     private let session: URLSession
     private var videoCache: [String: (Date, [ItemVideo])] = [:]
+    private var collectionCache: [String: (Date, MovieCollection?)] = [:]
 
     private var accountContext: String {
         #if os(tvOS)
@@ -104,6 +105,7 @@ final class TVTMDbStore {
     private func invalidate() {
         revision += 1
         videoCache.removeAll()
+        collectionCache.removeAll()
     }
 
     func videos(contentId: String) async throws -> [ItemVideo] {
@@ -152,13 +154,77 @@ final class TVTMDbStore {
         if detail.type == "movie" { kind = "movie" }
         else if VividMediaType.isSeries(detail.type) { kind = "tv" }
         else { return nil }
-        if let id = Int(detail.tmdbId ?? ""), id > 0 { return (kind,id) }
+        guard let id = try await tmdbID(kind: kind, detail: detail, context: context) else { return nil }
+        return (kind,id)
+    }
+
+    /// The item's own TMDb ID, or a lookup by IMDb ID on servers that
+    /// leave TMDb out of their provider IDs.
+    private func tmdbID(kind: String, detail: ItemDetail, context: String) async throws -> Int? {
+        if let id = Int(detail.tmdbId ?? ""), id > 0 { return id }
         guard MediaServerProvider.active.usesNativeUser, let imdb = detail.imdbId, imdb.range(of:"^tt[0-9]{7,10}$",options:.regularExpression) != nil else { return nil }
         let result: ExternalMatches = try await request("find/" + imdb,credential:credential,query:["external_source":"imdb_id"])
         try checkContext(context)
         let matches = kind == "movie" ? result.movie_results : result.tv_results
         guard let id = matches.first?.id, id > 0 else { return nil }
-        return (kind,id)
+        return id
+    }
+
+    // MARK: Collections
+
+    /// A TMDb movie collection (Scream Collection, …) with its films in
+    /// release order. `movieId` is the TMDb ID of the movie it was looked
+    /// up from.
+    struct MovieCollection: Equatable, Sendable {
+        struct Part: Equatable, Sendable {
+            let id: Int
+            let title: String
+            let originalTitle: String?
+            let year: Int?
+        }
+        let id: Int
+        let name: String
+        let movieId: Int
+        let parts: [Part]
+    }
+
+    /// The collection a library movie belongs to, or nil when it has none.
+    func collection(for detail: ItemDetail) async throws -> MovieCollection? {
+        reloadForCurrentProfile()
+        guard isConfigured, detail.type == "movie" else { return nil }
+        let context = contextKey
+        let cacheKey = context + "|" + detail.contentId
+        if let cached = collectionCache[cacheKey], Date().timeIntervalSince(cached.0) < 1800 { return cached.1 }
+        guard let movieID = try await tmdbID(kind: "movie", detail: detail, context: context) else { return nil }
+        let movie: MovieSummary = try await request("movie/\(movieID)", credential: credential)
+        try checkContext(context)
+        var result: MovieCollection?
+        if let collectionID = movie.belongs_to_collection?.id {
+            let response: CollectionDetail = try await request("collection/\(collectionID)", credential: credential)
+            try checkContext(context)
+            let date: (CollectionPart) -> String? = { part in
+                part.release_date.flatMap { $0.isEmpty ? nil : $0 }
+            }
+            let parts = response.parts.enumerated().sorted {
+                // Unreleased films without a date go last, keeping TMDb's order.
+                switch (date($0.element), date($1.element)) {
+                case let (first?, second?) where first != second: return first < second
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: return $0.offset < $1.offset
+                }
+            }.map { entry in
+                let part = entry.element
+                return MovieCollection.Part(
+                    id: part.id, title: part.title ?? part.original_title ?? "",
+                    originalTitle: part.original_title,
+                    year: part.release_date.flatMap { Int($0.prefix(4)) })
+            }
+            result = MovieCollection(id: response.id, name: response.name, movieId: movieID, parts: parts)
+        }
+        if collectionCache.count >= 40 { collectionCache.removeAll() }
+        collectionCache[cacheKey] = (Date(), result)
+        return result
     }
 
     // MARK: Studios & Networks
@@ -257,6 +323,12 @@ final class TVTMDbStore {
             return ($0.published_at ?? "") > ($1.published_at ?? "")
         }
     }
+    private struct MovieSummary: Decodable { let belongs_to_collection: CollectionReference? }
+    private struct CollectionReference: Decodable { let id: Int }
+    private struct CollectionDetail: Decodable { let id: Int; let name: String; let parts: [CollectionPart] }
+    private struct CollectionPart: Decodable {
+        let id: Int; let title: String?; let original_title: String?; let release_date: String?
+    }
     private struct ExternalMatches: Decodable { let movie_results: [ExternalMatch]; let tv_results: [ExternalMatch] }
     private struct ExternalMatch: Decodable { let id: Int }
     private struct Series: Decodable { let seasons: [Season] }
@@ -266,5 +338,139 @@ final class TVTMDbStore {
     private struct Video: Decodable {
         let key: String; let name: String?; let site: String; let type: String
         let official: Bool?; let iso_639_1: String?; let published_at: String?
+    }
+}
+
+// MARK: - Collection row
+
+/// Library titles from the TMDb collection a movie belongs to, for the
+/// "<Name> Collection" row under More Like This on movie detail pages.
+/// Only titles in the library are shown, in release order, including the
+/// movie being viewed. The row is skipped when that movie is the only one.
+@MainActor
+final class MovieCollectionRowStore {
+    static let shared = MovieCollectionRowStore()
+
+    struct Row: Equatable {
+        let name: String
+        let items: [SimilarPosterItem]
+    }
+
+    private var cache: [String: (Date, Row?)] = [:]
+
+    var contextKey: String { TVTMDbStore.shared.contextKey }
+
+    func row(for detail: ItemDetail) async throws -> Row? {
+        let context = contextKey
+        let key = context + "|" + detail.contentId
+        if let cached = cache[key], Date().timeIntervalSince(cached.0) < 1800 { return cached.1 }
+        guard let collection = try await TVTMDbStore.shared.collection(for: detail) else {
+            try checkContext(context)
+            store(nil, for: key)
+            return nil
+        }
+        try checkContext(context)
+
+        let others = collection.parts.filter { $0.id != collection.movieId }
+        let (matches, complete) = await Self.libraryMatches(for: others)
+        try checkContext(context)
+
+        var seen = Set<String>()
+        let items: [SimilarPosterItem] = collection.parts.compactMap { part in
+            let item = part.id == collection.movieId
+                ? SimilarPosterItem(detail: detail)
+                : matches[part.id].map { SimilarPosterItem(item: $0) }
+            guard let item, seen.insert(item.contentId).inserted else { return nil }
+            return item
+        }
+        let row = items.count > 1 ? Row(name: collection.name, items: items) : nil
+        // A failed search might have hidden a title, so try again next time.
+        if complete { store(row, for: key) }
+        return row
+    }
+
+    private func store(_ row: Row?, for key: String) {
+        if cache.count >= 40 { cache.removeAll() }
+        cache[key] = (Date(), row)
+    }
+
+    private func checkContext(_ expected: String) throws {
+        try Task.checkCancellation()
+        guard contextKey == expected else { throw CancellationError() }
+    }
+
+    /// Searches the library for each film, four at a time. Returns the
+    /// matches by TMDb ID and whether every search succeeded.
+    private nonisolated static func libraryMatches(
+        for parts: [TVTMDbStore.MovieCollection.Part]
+    ) async -> ([Int: BrowseItem], Bool) {
+        await withTaskGroup(of: (Int, BrowseItem?, Bool).self) { group in
+            var pending = parts[...]
+            for _ in 0..<4 {
+                guard let part = pending.popFirst() else { break }
+                group.addTask { await match(part) }
+            }
+            var matches: [Int: BrowseItem] = [:]
+            var complete = true
+            for await (id, item, succeeded) in group {
+                if let item { matches[id] = item }
+                if !succeeded { complete = false }
+                if let part = pending.popFirst() {
+                    group.addTask { await match(part) }
+                }
+            }
+            return (matches, complete)
+        }
+    }
+
+    private nonisolated static func match(_ part: TVTMDbStore.MovieCollection.Part) async -> (Int, BrowseItem?, Bool) {
+        guard !part.title.isEmpty else { return (part.id, nil, true) }
+        do {
+            let page = try await VividAPI.shared.catalog(query: [
+                "source": "query", "q": part.title, "type": "movie",
+                "offset": "0", "limit": "20",
+            ], as: CandidatePage.self)
+            return (part.id, bestMatch(for: part, in: page.items), true)
+        } catch {
+            return (part.id, nil, false)
+        }
+    }
+
+    /// TMDb ID first, then a single exact title + year match among titles
+    /// that don't carry a different TMDb ID.
+    nonisolated static func bestMatch(
+        for part: TVTMDbStore.MovieCollection.Part,
+        in candidates: [Candidate]
+    ) -> BrowseItem? {
+        let id = String(part.id)
+        if let hit = candidates.first(where: { $0.tmdbId == id }) { return hit.item }
+        guard let year = part.year else { return nil }
+        let keys = Set([part.title, part.originalTitle].compactMap { $0 }.map {
+            StudiosNetworksStore.titleKey($0, year: year)
+        })
+        let hits = candidates.filter { candidate in
+            guard candidate.tmdbId?.isEmpty ?? true, let itemYear = candidate.item.year else { return false }
+            return keys.contains(StudiosNetworksStore.titleKey(candidate.item.title, year: itemYear))
+        }
+        return hits.count == 1 ? hits[0].item : nil
+    }
+
+    /// A catalogue item together with the TMDb ID providers attach.
+    struct Candidate: Decodable {
+        let item: BrowseItem
+        let tmdbId: String?
+        private enum Keys: String, CodingKey { case tmdbId }
+
+        init(from decoder: Decoder) throws {
+            item = try BrowseItem(from: decoder)
+            let c = try decoder.container(keyedBy: Keys.self)
+            if let text = try? c.decode(String.self, forKey: .tmdbId) { tmdbId = text }
+            else if let number = try? c.decode(Int.self, forKey: .tmdbId) { tmdbId = String(number) }
+            else { tmdbId = nil }
+        }
+    }
+
+    private struct CandidatePage: Decodable {
+        let items: [Candidate]
     }
 }

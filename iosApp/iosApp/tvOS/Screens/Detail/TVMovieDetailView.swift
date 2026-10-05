@@ -149,6 +149,9 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                     .focused($similarRailFocused)
                                     .id(similarSectionScrollId)
                             }
+                            if detail.type == "movie" {
+                                TVCollectionRail(detail: detail, onSelect: onNavigateToItem)
+                            }
                             detailsSection
                         }
     }
@@ -199,6 +202,9 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                 similarSection
                                     .focused($similarRailFocused)
                                     .id(similarSectionScrollId)
+                            }
+                            if detail.type == "movie" {
+                                TVCollectionRail(detail: detail, onSelect: onNavigateToItem)
                             }
                             detailsSection
                         }

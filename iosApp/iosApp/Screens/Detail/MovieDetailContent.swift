@@ -293,6 +293,9 @@ struct MovieDetailContent<BelowOverview: View>: View {
             if showsSimilarRail {
                 similarSection
             }
+            if detail.type == "movie" {
+                PhoneCollectionRail(detail: detail, onSelect: onNavigateToItem)
+            }
             detailsSection
                 .padding(.horizontal, VividTheme.safePadding)
         }
