@@ -517,6 +517,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private static let pcmTransportRegex = try? NSRegularExpression(pattern: #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)(?:, latency (-?[0-9]+\.[0-9]+), sufficient (-?[0-9]+))?\z"#)
     private static let audioEdgeRegex = try? NSRegularExpression(pattern: #"\Atrace edge (start|start-fresh|pause|resume|reset|restart): clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), latency (-?[0-9]+\.[0-9]+)\z"#)
     private static let compressedEngagedRegex = try? NSRegularExpression(pattern: #"\Acompressed clock engaged after (-?[0-9]+\.[0-9]+) s, seeked ([01]), anchors ([0-9]+)\z"#)
+    private static let compressedResumedRegex = try? NSRegularExpression(pattern: #"\Acompressed clock resumed after (-?[0-9]+\.[0-9]+) s, anchors ([0-9]+)\z"#)
     private static let flushTimeRegex = try? NSRegularExpression(pattern: #"\Anotification flush time (-?[0-9]+\.[0-9]+|nan), current ([01])\z"#)
     private static let heartbeatRegex = try? NSRegularExpression(pattern: #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#)
     private static let audioStatusRegex = try? NSRegularExpression(pattern: #"\Aitem status (-?[0-9]+) -> (-?[0-9]+), time control (-?[0-9]+) -> (-?[0-9]+), pos (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s\z"#)
@@ -578,6 +579,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["after_s", "seeked", "anchors"]
             return "event=compressed_clock_engaged " + names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        if let regex = Self.compressedResumedRegex,
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["after_s", "anchors"]
+            return "event=compressed_clock_resumed " + names.enumerated().compactMap { index, name in
                 guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
@@ -1103,6 +1112,21 @@ private final class VividMPVCore: MpvPlayerCore {
             // second rather than two. Seeks and resumes engage in about 0.6 s
             // without it, so they still don't trigger it.
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-start-grace", "1"))
+            // A title's first start never engages without that recovery, so
+            // run it as soon as AVPlayer's item is ready rather than after the
+            // full second. Later seeks and resumes keep the one-second grace.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-first-start-grace", "0.25"))
+            // After a pause AirPlay's clock can stay on the paused playhead for
+            // most of a second. Anchor mpv to it, as at startup, so video waits
+            // for the audio instead of running ahead and then stopping to resync.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-anchor-resume", "yes"))
+            // Start with 1.25 s of audio queued instead of two. While the
+            // stream is still ramping up, the extra audio can take over a
+            // second to arrive, and the picture holds until it does. Keep it
+            // above the driver's one-second priming reserve: at exactly one
+            // second, the driver's next read can come up short and mpv
+            // rebuffers straight after starting.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-buffer", "1.25"))
         }
         #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
