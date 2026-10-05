@@ -472,6 +472,30 @@ final class TVSavedAccountStore {
         router.resetToLogin()
         await VividCloudAccountSync.shared.synchronize(router: router)
     }
+    /// The server behind `serverID` refused the active session, which
+    /// TokenStore has already dropped. Without this the app lands on the bare
+    /// sign-in form with no saved profiles until a relaunch recomputes the
+    /// selector.
+    ///
+    /// The active account needs a fresh sign-in, so it is marked like an
+    /// explicit sign-out marks it. That one flag stops every automatic
+    /// restore path (launch, cloud sync, the selector's periodic sync) from
+    /// reinstalling the refused session and looping back here. It is not
+    /// recorded as an account change, so it isn't pushed to other devices
+    /// whose sessions may be fine, though an upload already pending for this
+    /// account can still carry it. A newer sign-in synced from another device
+    /// still replaces it. `activeID` is kept so cloud sync does not pick and
+    /// restore a different saved account on its own.
+    func sessionExpired(serverID: String) {
+        if let index = accounts.firstIndex(where: { $0.id == activeID && $0.serverID == serverID }),
+           !accounts[index].requiresLogin {
+            accounts[index].requiresLogin = true
+            persist()
+        }
+        unlockedID = nil
+        showsSelector = !accounts.isEmpty
+    }
+
     @discardableResult
     func deleteAccount(_ id: String, router: AppRouter) async -> Bool {
         guard let account = accounts.first(where: { $0.id == id }) else { return false }

@@ -69,6 +69,8 @@ struct HTTPIdentityTransitionLease: Hashable, Sendable {
 ///   in-flight `Task`; retry the original request once with the refreshed
 ///   token. Semantics mirror `AuthInterceptorImpl.kt` in the shared Kotlin
 ///   module, which used a `Mutex` + double-check for the same purpose.
+///   A refused refresh is sent again twice, a few seconds apart, inside the
+///   same flight before the session is treated as expired.
 /// - Serialize bodies and decode responses via snake_case-aware JSON
 ///   coders. The decoder uses `.convertFromSnakeCase` and the encoder uses
 ///   `.convertToSnakeCase`, so Swift models can use plain camelCase
@@ -94,6 +96,9 @@ actor HTTPClient {
     private let tokenStore: TokenStore
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
+    /// Pauses before re-sending a refresh the server refused. See
+    /// ``refreshFailureDecision(statusCode:retriesSent:retryDelays:)``.
+    private let refusedRefreshRetryDelays: [Duration]
     private let refreshFlightJoinObserver: (@Sendable (RefreshFlightJoinKind) -> Void)?
     /// Test barrier used to make overlapping cancellation attempts
     /// deterministic. Production passes nil.
@@ -151,6 +156,7 @@ actor HTTPClient {
         apiDiscovery: SiloAPIDiscovery = SiloAPIDiscovery(),
         session: URLSession? = nil,
         tokenStore: TokenStore = .shared,
+        refusedRefreshRetryDelays: [Duration] = HTTPClient.defaultRefusedRefreshRetryDelays,
         refreshFlightJoinObserver: (@Sendable (RefreshFlightJoinKind) -> Void)? = nil,
         cancellationPassBarrier: (@Sendable () async -> Void)? = nil,
         cancellationSessionBarrier: (@Sendable (Int) async -> Void)? = nil,
@@ -164,6 +170,7 @@ actor HTTPClient {
         self.session = session ?? Self.makeSession(requestTimeout: 15)
         self.longWaitSession = session ?? Self.makeSession(requestTimeout: 90)
         self.tokenStore = tokenStore
+        self.refusedRefreshRetryDelays = refusedRefreshRetryDelays
         self.refreshFlightJoinObserver = refreshFlightJoinObserver
         self.cancellationPassBarrier = cancellationPassBarrier
         self.cancellationSessionBarrier = cancellationSessionBarrier
@@ -1697,9 +1704,10 @@ actor HTTPClient {
         // the status is consumed here and by
         // ``shouldInvalidateSessionAfterRefreshFailure(_:)`` — so this line has
         // to carry the verdict itself or a rejected refresh stays unclassified.
-        // Tiering follows: a rejected refresh is rare and terminal for the
-        // session, so it is essential, while the successful case is bounded but
-        // uninteresting and stays verbose alongside `perform`'s response line.
+        // Tiering follows: a rejected refresh is rare and can end the session
+        // once its retries run out, so it is essential, while the successful
+        // case is bounded but uninteresting and stays verbose alongside
+        // `perform`'s response line.
         let status = (response as? HTTPURLResponse)?.statusCode
         let isSuccess = status.map { (200..<300).contains($0) } ?? false
         let message: String = if status == nil {
@@ -1887,14 +1895,15 @@ actor HTTPClient {
             return await scopedCredentialsChanged(since: auth, expected: expected)
         }
 
-        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder, apiDiscovery] in
+        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder, apiDiscovery, refusedRefreshRetryDelays] in
             await Self.performScopedRefresh(
                 auth: auth,
                 tokenStore: tokenStore,
                 session: session,
                 decoder: decoder,
                 encoder: encoder,
-                apiDiscovery: apiDiscovery
+                apiDiscovery: apiDiscovery,
+                retryDelays: refusedRefreshRetryDelays
             )
         }
         let flightId = UUID()
@@ -1924,7 +1933,8 @@ actor HTTPClient {
         session: URLSession,
         decoder: JSONDecoder,
         encoder: JSONEncoder,
-        apiDiscovery: SiloAPIDiscovery
+        apiDiscovery: SiloAPIDiscovery,
+        retryDelays: [Duration]
     ) async -> Bool {
         guard let refreshValue = auth.refreshToken,
               let url = URL(string: auth.serverURL + "/api/v1/auth/refresh") else {
@@ -1944,52 +1954,70 @@ actor HTTPClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             request.httpBody = try encoder.encode(RefreshRequest(refreshValue))
-            let (data, response) = try await performRefreshTransport(
-                request: request,
-                session: session,
-                apiDiscovery: apiDiscovery
-            )
-            guard !Task.isCancelled else { return false }
-            guard let http = response as? HTTPURLResponse else {
-                Self.logger.error("Scoped refresh: non-HTTP response")
-                return false
-            }
-            await MainActor.run {
-                ConnectionMonitor.shared.noteServerResponded()
-            }
-            if (200..<300).contains(http.statusCode) {
-                let tokens = try decoder.decode(RefreshResponse.self, from: data)
-                return await tokenStore.saveRefreshedTokens(
-                    tokens.accessToken,
-                    tokens.refreshToken,
-                    replacing: captured
+            var retriesSent = 0
+            while true {
+                let (data, response) = try await performRefreshTransport(
+                    request: request,
+                    session: session,
+                    apiDiscovery: apiDiscovery
                 )
-            }
-
-            let body = String(data: data, encoding: .utf8) ?? ""
-            Self.logger.error(
-                "Scoped refresh failed: status=\(http.statusCode, privacy: .public) body=\(body, privacy: .private)"
-            )
-            guard shouldInvalidateSessionAfterRefreshFailure(http.statusCode) else {
-                return false
-            }
-            let disposition = await tokenStore.invalidateRejectedRefresh(captured)
-            if let disposition,
-               !Task.isCancelled,
-               await tokenStore.shouldConsumeSessionExpiryEvent(
-                   SessionExpiryEvent(account: captured.account, disposition: disposition)
-               ),
-               !Task.isCancelled {
-                let event = SessionExpiryEvent(
-                    account: captured.account,
-                    disposition: disposition
-                )
-                await MainActor.run {
-                    guard !Task.isCancelled else { return }
-                    NotificationCenter.default.post(name: .vividSessionExpired, object: event)
+                guard !Task.isCancelled else { return false }
+                guard let http = response as? HTTPURLResponse else {
+                    Self.logger.error("Scoped refresh: non-HTTP response")
+                    return false
                 }
+                await MainActor.run {
+                    ConnectionMonitor.shared.noteServerResponded()
+                }
+                if (200..<300).contains(http.statusCode) {
+                    let tokens = try decoder.decode(RefreshResponse.self, from: data)
+                    return await tokenStore.saveRefreshedTokens(
+                        tokens.accessToken,
+                        tokens.refreshToken,
+                        replacing: captured
+                    )
+                }
+
+                let body = String(data: data, encoding: .utf8) ?? ""
+                Self.logger.error(
+                    "Scoped refresh failed: status=\(http.statusCode, privacy: .public) body=\(body, privacy: .private)"
+                )
+                let decision = refreshFailureDecision(
+                    statusCode: http.statusCode,
+                    retriesSent: retriesSent,
+                    retryDelays: retryDelays
+                )
+                if case .retry(let delay) = decision {
+                    guard await waitToRetryRefusedRefresh(
+                        captured,
+                        after: delay,
+                        request: request,
+                        status: http.statusCode,
+                        nextAttempt: retriesSent + 2,
+                        tokenStore: tokenStore
+                    ) else { return false }
+                    retriesSent += 1
+                    continue
+                }
+                guard decision == .invalidate else { return false }
+                let disposition = await tokenStore.invalidateRejectedRefresh(captured)
+                if let disposition,
+                   !Task.isCancelled,
+                   await tokenStore.shouldConsumeSessionExpiryEvent(
+                       SessionExpiryEvent(account: captured.account, disposition: disposition)
+                   ),
+                   !Task.isCancelled {
+                    let event = SessionExpiryEvent(
+                        account: captured.account,
+                        disposition: disposition
+                    )
+                    await MainActor.run {
+                        guard !Task.isCancelled else { return }
+                        NotificationCenter.default.post(name: .vividSessionExpired, object: event)
+                    }
+                }
+                return false
             }
-            return false
         } catch {
             await noteServerUnreachable(for: error)
             Self.logger.error("Scoped refresh threw: \(String(describing: error), privacy: .public)")
@@ -2046,14 +2074,15 @@ actor HTTPClient {
             return nil
         }
 
-        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder, apiDiscovery] in
+        let task = Task<Bool, Never> { [tokenStore, session, decoder, encoder, apiDiscovery, refusedRefreshRetryDelays] in
             await Self.performRefresh(
                 expected: key,
                 tokenStore: tokenStore,
                 session: session,
                 decoder: decoder,
                 encoder: encoder,
-                apiDiscovery: apiDiscovery
+                apiDiscovery: apiDiscovery,
+                retryDelays: refusedRefreshRetryDelays
             )
         }
         let flightId = UUID()
@@ -2077,7 +2106,8 @@ actor HTTPClient {
         session: URLSession,
         decoder: JSONDecoder,
         encoder: JSONEncoder,
-        apiDiscovery: SiloAPIDiscovery
+        apiDiscovery: SiloAPIDiscovery,
+        retryDelays: [Duration]
     ) async -> Bool {
         guard let captured = await tokenStore.captureRefreshCredential(expected: expected) else {
             Self.logger.error("Refresh skipped: no refresh token stored")
@@ -2101,40 +2131,57 @@ actor HTTPClient {
         }
 
         do {
-            let (data, response) = try await performRefreshTransport(
-                request: request,
-                session: session,
-                apiDiscovery: apiDiscovery
-            )
-            // If the surrounding registry switch cancelled us while the
-            // network call was in flight, drop the response on the floor
-            // rather than writing tokens into what may now be a different
-            // server's Keychain slot.
-            if Task.isCancelled {
-                Self.logger.info("Refresh cancelled post-response; skipping token save")
-                return false
-            }
-            guard let http = response as? HTTPURLResponse else {
-                Self.logger.error("Refresh: non-HTTP response")
-                return false
-            }
-            // Refresh bypasses perform(), so feed reachability from here too.
-            await MainActor.run {
-                ConnectionMonitor.shared.noteServerResponded()
-            }
-            if (200..<300).contains(http.statusCode) {
-                let tokens = try decoder.decode(RefreshResponse.self, from: data)
-                return await tokenStore.saveRefreshedTokens(
-                    tokens.accessToken,
-                    tokens.refreshToken,
-                    replacing: captured
+            var retriesSent = 0
+            while true {
+                let (data, response) = try await performRefreshTransport(
+                    request: request,
+                    session: session,
+                    apiDiscovery: apiDiscovery
                 )
-            } else {
-                let body = String(data: data, encoding: .utf8) ?? ""
-                Self.logger.error("Refresh failed: status=\(http.statusCode, privacy: .public) body=\(body, privacy: .private)")
-                guard shouldInvalidateSessionAfterRefreshFailure(http.statusCode) else {
+                // If the surrounding registry switch cancelled us while the
+                // network call was in flight, drop the response on the floor
+                // rather than writing tokens into what may now be a different
+                // server's Keychain slot.
+                if Task.isCancelled {
+                    Self.logger.info("Refresh cancelled post-response; skipping token save")
                     return false
                 }
+                guard let http = response as? HTTPURLResponse else {
+                    Self.logger.error("Refresh: non-HTTP response")
+                    return false
+                }
+                // Refresh bypasses perform(), so feed reachability from here too.
+                await MainActor.run {
+                    ConnectionMonitor.shared.noteServerResponded()
+                }
+                if (200..<300).contains(http.statusCode) {
+                    let tokens = try decoder.decode(RefreshResponse.self, from: data)
+                    return await tokenStore.saveRefreshedTokens(
+                        tokens.accessToken,
+                        tokens.refreshToken,
+                        replacing: captured
+                    )
+                }
+                let body = String(data: data, encoding: .utf8) ?? ""
+                Self.logger.error("Refresh failed: status=\(http.statusCode, privacy: .public) body=\(body, privacy: .private)")
+                let decision = refreshFailureDecision(
+                    statusCode: http.statusCode,
+                    retriesSent: retriesSent,
+                    retryDelays: retryDelays
+                )
+                if case .retry(let delay) = decision {
+                    guard await waitToRetryRefusedRefresh(
+                        captured,
+                        after: delay,
+                        request: request,
+                        status: http.statusCode,
+                        nextAttempt: retriesSent + 2,
+                        tokenStore: tokenStore
+                    ) else { return false }
+                    retriesSent += 1
+                    continue
+                }
+                guard decision == .invalidate else { return false }
                 let disposition = await tokenStore.invalidateRejectedRefresh(captured)
                 let event = disposition.map {
                     SessionExpiryEvent(account: captured.account, disposition: $0)
@@ -2164,6 +2211,94 @@ actor HTTPClient {
     /// retryable and must preserve the current credential snapshot.
     static func shouldInvalidateSessionAfterRefreshFailure(_ statusCode: Int) -> Bool {
         statusCode == 400 || statusCode == 401 || statusCode == 403
+    }
+
+    /// What a failed refresh response means for the stored credential.
+    enum RefreshFailureDecision: Equatable {
+        /// Not a refusal: keep the credential for the next 401 wave.
+        case preserveCredentials
+        /// A refusal that may not last: wait, then send the same token again.
+        case retry(after: Duration)
+        /// The refusal outlasted every retry: drop the session.
+        case invalidate
+    }
+
+    /// Two retries: three seconds after the first refusal, then six seconds
+    /// after the second. A Silo server whose database was briefly unavailable
+    /// answered a perfectly good refresh token with 401 for about six seconds
+    /// while Postgres ran crash recovery, so the wait needs to outlast that. The nine seconds of waiting must also leave room
+    /// for the round trips inside the managed stream reader's 15-second
+    /// refresh wait, or a stream that hit the same refusal gives up first.
+    static let defaultRefusedRefreshRetryDelays: [Duration] = [.seconds(3), .seconds(6)]
+
+    /// Layers a bounded confirmation over the classifier above. A refusal it
+    /// treats as terminal only ends the session once the same refresh token
+    /// has been refused again after each of `retryDelays`; one refusal on its
+    /// own can be the server failing to look the token up rather than the
+    /// token being dead. Anything the classifier treats as retryable keeps the
+    /// credential straight away, exactly as before, including a 5xx or 429
+    /// that arrives on a retry. `retriesSent` counts the retries already sent
+    /// for this refresh, so the first refusal passes 0.
+    static func refreshFailureDecision(
+        statusCode: Int,
+        retriesSent: Int,
+        retryDelays: [Duration]
+    ) -> RefreshFailureDecision {
+        guard shouldInvalidateSessionAfterRefreshFailure(statusCode) else {
+            return .preserveCredentials
+        }
+        guard retryDelays.indices.contains(retriesSent) else { return .invalidate }
+        return .retry(after: retryDelays[retriesSent])
+    }
+
+    /// Waits out one delay before a refused refresh is sent again. Runs inside
+    /// the account's refresh flight, so every 401 that arrives meanwhile
+    /// (progress reports, the managed stream reader, settings) joins this one
+    /// refresh rather than starting another.
+    ///
+    /// Returns false, leaving the credential alone, when the flight is
+    /// cancelled (an identity switch tears it down) or the stored refresh
+    /// token is no longer the one the server refused (sign-out, a new login or
+    /// a replacement session). A stale refusal must neither be sent again nor
+    /// invalidate newer credentials, so this is checked before and after the
+    /// wait.
+    private static func waitToRetryRefusedRefresh(
+        _ captured: CapturedRefreshCredential,
+        after delay: Duration,
+        request: URLRequest,
+        status: Int,
+        nextAttempt: Int,
+        tokenStore: TokenStore
+    ) async -> Bool {
+        guard !Task.isCancelled,
+              await tokenStore.captureRefreshCredential(expected: captured.account) == captured else {
+            return false
+        }
+        Self.logger.notice(
+            "Refresh refused: status=\(status, privacy: .public); retrying in \(String(describing: delay), privacy: .public) (attempt \(nextAttempt, privacy: .public))"
+        )
+        #if os(iOS) || os(tvOS)
+        DiagTrace.log(
+            .essential,
+            level: .warning,
+            category: .network,
+            tag: "Auth",
+            message: "refresh refusal retry scheduled",
+            attrs: [
+                "method": .string(request.httpMethod ?? "POST"),
+                "path": .string(HTTPDiagnosticsPath.attribute(for: request.url)),
+                "status": .int(status),
+                "attempt": .int(nextAttempt),
+            ]
+        )
+        #endif
+        do {
+            try await Task.sleep(for: delay)
+        } catch {
+            return false
+        }
+        guard !Task.isCancelled else { return false }
+        return await tokenStore.captureRefreshCredential(expected: captured.account) == captured
     }
 }
 
