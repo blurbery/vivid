@@ -201,6 +201,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.registersManagedStreams = options.managedHTTPReader && VividManagedStreamProtocol.isEnabled
             && VividManagedStreamSource.isEligible(url)
         instance.startPosition = max(0, startPosition)
+        keyframeResumePending = startPosition > 0
         // Keep playback running through content matching. The display core
         // negotiates HDMI independently; it must not add a startup pause.
         instance.autoplay = options.autoplay
@@ -292,6 +293,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         ("avsync", "double"), ("frame-drop-count", "double")
     ]
     private var rawTracks: [[String: Any]] = []
+    /// The resume starts on the keyframe at or before the saved position.
+    private var keyframeResumePending = false
     private var initialAudioApplied = false
     fileprivate func property(_ name: String, value: Any?, token: UInt64) {
         guard token == generation else { return }
@@ -417,6 +420,11 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             isSessionReady = true; startupProgress = nil; applyInitialAudioSelection(); updatePhase()
             trace?.mark("mpv_file_loaded")
         case "playback-restart":
+            if keyframeResumePending {
+                // Later seeks without an explicit precision are exact again.
+                keyframeResumePending = false
+                core?.setProperty("hr-seek", value: "default")
+            }
             hasFirstFrameReadyForDisplay = true; isSeeking = false; isBuffering = false
             updatePhase(); trace?.mark("mpv_playback_restart")
             trace?.seekPicture()
@@ -1095,6 +1103,11 @@ private final class VividMPVCore: MpvPlayerCore {
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osd-level": "0", "pause": autoplay ? "no" : "yes",
                         "start": String(startPosition), "speed": String(initialRate),
+                        // Resume on the keyframe at or before the saved position. An exact
+                        // resume first downloads and decodes everything from that keyframe
+                        // up to the position, about 5 MB for a 4K remux, before the first
+                        // picture. Vivid's own seeks ask for exact positions explicitly.
+                        "hr-seek": startPosition > 0 ? "no" : "default",
                         "volume": String(initialVolume * 100), "sid": "no", "secondary-sid": "no",
                         "cache": "yes", "demuxer-max-bytes": "268435456", "demuxer-max-back-bytes": "16777216",
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
