@@ -233,6 +233,10 @@ class PlayerViewModel {
     /// milestone twice.
     @ObservationIgnored
     var startedVividLoadEpoch: VividPlaybackController.LoadEpoch?
+    /// Next Up and On Deck for the current item are fetched at its startup
+    /// milestone, not while the stream is still opening.
+    @ObservationIgnored
+    var nextUpPrefetchPending = false
     /// A user track change that arrived while a replan was already in flight.
     /// Re-issued when the in-flight replan settles so the local selection the
     /// UI already shows is actually applied by the server. Position is
