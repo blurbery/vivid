@@ -7,8 +7,8 @@ import tempfile
 root = Path(__file__).resolve().parents[2]
 source = (root / 'iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift').read_text()
 
-def method(name):
-    start = source.index('    private func ' + name + '(')
+def method(name, prefix='    private func '):
+    start = source.index(prefix + name + '(')
     brace = source.index('{', start)
     depth = 1
     end = brace + 1
@@ -20,7 +20,7 @@ def method(name):
 swift = '''import Foundation
 final class Mapping {
     var rawTracks: [[String: Any]] = []
-''' + method('sourceTrackID') + '\n' + method('mpvTrackID') + '''
+''' + method('sourceTrackID') + '\n' + method('mpvTrackID') + '\n' + method('plannedAudioTrackID', '    nonisolated static func ').replace('nonisolated ', '') + '''
     func run() {
         rawTracks = [
             ["type": "video", "id": Int64(1), "ff-index": Int64(0)],
@@ -40,13 +40,22 @@ final class Mapping {
         precondition(sourceTrackID(mpvID: nil, type: "audio") == nil)
         precondition(sourceTrackID(mpvID: 99, type: "audio") == nil)
         precondition(mpvTrackID(sourceID: 99, type: "sub") == nil)
+        // The track selected before mpv starts must be the one the
+        // file-loaded pass would pick: by stream index, else by audio order.
+        precondition(Self.plannedAudioTrackID(in: rawTracks, streamIndex: 3, ordinal: nil) == 2)
+        precondition(Self.plannedAudioTrackID(in: rawTracks, streamIndex: 3, ordinal: 0) == 2)
+        precondition(Self.plannedAudioTrackID(in: rawTracks, streamIndex: 2, ordinal: 0) == nil)
+        precondition(Self.plannedAudioTrackID(in: rawTracks, streamIndex: nil, ordinal: 1) == 2)
+        precondition(Self.plannedAudioTrackID(in: rawTracks, streamIndex: nil, ordinal: 0) == 1)
+        precondition(Self.plannedAudioTrackID(in: rawTracks, streamIndex: nil, ordinal: 2) == nil)
+        precondition(Self.plannedAudioTrackID(in: rawTracks, streamIndex: nil, ordinal: nil) == nil)
         rawTracks = [["type": "audio", "id": Int64(8)]]
         precondition(sourceTrackID(mpvID: 8, type: "audio") == 8)
         precondition(mpvTrackID(sourceID: 8, type: "audio") == 8)
         rawTracks = []
         precondition(sourceTrackID(mpvID: 8, type: "audio") == nil)
         precondition(mpvTrackID(sourceID: 8, type: "audio") == nil)
-        print("15 production track-mapping checks passed")
+        print("22 production track-mapping checks passed")
     }
 }
 Mapping().run()
