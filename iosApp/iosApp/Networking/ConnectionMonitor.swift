@@ -85,9 +85,14 @@ final class ConnectionMonitor {
                 attrs: ["outcome": .string("reachable")]
             )
             #endif
+            // Only the edge, like the trace above. Every health update
+            // rewrites the exit marker in UserDefaults, and any defaults
+            // write makes iCloud preference sync re-read the server's
+            // settings, whose response came straight back here: a settings
+            // request every two to three seconds, playback included.
+            AppHealthMonitor.serverReachabilityChanged(true)
         }
         serverStatus = .reachable
-        AppHealthMonitor.serverReachabilityChanged(true)
         stopReprobeLoop()
     }
 

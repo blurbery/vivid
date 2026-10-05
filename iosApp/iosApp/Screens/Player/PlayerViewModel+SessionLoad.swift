@@ -26,6 +26,7 @@ extension PlayerViewModel {
         activeNotice = nil
         remoteDismissToken = nil
         hideControlsTask?.cancel()
+        nextUpPrefetchPending = false
         skipDebounceTask?.cancel()
         skipDebounceTask = nil
         seekFilterTimeoutTask?.cancel()
@@ -465,10 +466,10 @@ extension PlayerViewModel {
                     // The panel still describes the successor being loaded.
                     // Fetch its following episode only once it has a picture,
                     // otherwise the visible Play Now target can jump again.
-                    if !self.isNextUpTransitioning {
-                        self.loadNextUpCandidate(for: prepared.watchDetail)
-                        self.loadNextUpOnDeckItems(for: prepared.watchDetail)
-                    }
+                    // Ordinary loads wait for the picture too: On Deck reads
+                    // the whole Home payload plus up to a dozen items, which
+                    // would compete with the stream opening.
+                    self.nextUpPrefetchPending = !self.isNextUpTransitioning
                 }
                 self.qualityOptions = prepared.nativeQualityOptions ?? ApplePlaybackQuality.playbackOptions(
                     serverQualities: prepared.protocolV3?.plan.availableQualities ?? [],

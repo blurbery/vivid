@@ -393,6 +393,10 @@ extension PlayerViewModel {
                 loadNextUpCandidate(for: detail)
                 loadNextUpOnDeckItems(for: detail)
             }
+        } else if nextUpPrefetchPending, let detail = currentWatchDetail {
+            nextUpPrefetchPending = false
+            loadNextUpCandidate(for: detail)
+            loadNextUpOnDeckItems(for: detail)
         }
         if activePreparedProtocolV3 != nil {
             pendingProtocolV3FirstFrameEpoch = epoch
