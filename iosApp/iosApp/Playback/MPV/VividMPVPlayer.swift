@@ -1084,6 +1084,14 @@ private final class VividMPVCore: MpvPlayerCore {
             // second rather than two. Seeks and resumes engage in about 0.6 s
             // without it, so they still don't trigger it.
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-start-grace", "1"))
+            // A title's first start never engages without that recovery, so
+            // run it as soon as AVPlayer's item is ready rather than after the
+            // full second. Later seeks and resumes keep the one-second grace.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-first-start-grace", "0.25"))
+            // Start once one second of audio is queued instead of two. While
+            // the stream is still ramping up, the second second can take over
+            // a second to arrive, and the picture holds until it does.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-buffer", "1"))
         }
         #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }
