@@ -51,6 +51,7 @@ harness = r'''
 #define AVP_START_LEAD_NS(p) (2*(p)->avp_lead_ns)
 #define AVP_ANCHOR_INTERVAL_NS (S/10)
 #define AVP_ANCHOR_SLACK_NS (4*S)
+#define AVP_RESUME_ANCHOR_CAP_NS (2*S)
 #define MP_WARN(...) ((void)0)
 #define MP_ERR(...) ((void)0)
 #define MP_VERBOSE(...) ((void)0)
@@ -182,6 +183,23 @@ int main(void) {
           "anchoring is bounded above the startup lead");
     check(avp_should_anchor(true, true, false, 0, 20*S-1, 16*S, S),
           "anchoring continues up to its cap");
+    // After a resume, anchor while the clock is still on the paused playhead.
+    check(avp_should_anchor_resume(true, false, 50*S, 50*S, S/2, S/10),
+          "resume anchors while the clock is parked");
+    check(!avp_should_anchor_resume(false, false, 50*S, 50*S, S/2, S/10),
+          "resume anchoring is off by default");
+    check(!avp_should_anchor_resume(true, false, -1, 50*S, S/2, S/10),
+          "no anchoring without a pending resume");
+    check(!avp_should_anchor_resume(true, false, 50*S, 50*S+1, S/2, S/10),
+          "a moving clock ends resume anchoring");
+    check(avp_should_anchor_resume(true, false, 50*S, 50*S, 2*S-1, S/10),
+          "resume anchoring runs up to its cap");
+    check(!avp_should_anchor_resume(true, false, 50*S, 50*S, 2*S, S/10),
+          "resume anchoring is bounded in time");
+    check(!avp_should_anchor_resume(true, false, 50*S, 50*S, S/2, S/10-1),
+          "resume anchoring is paced");
+    check(!avp_should_anchor_resume(true, true, 50*S, 50*S, S/2, S/10),
+          "EOF stops resume anchoring");
     reset(); p.es_pts=2*S;
     check(avp_wait_for_prefetch(&ao, 4800), "queued audio prevents empty prefetch underrun");
     queued_samples=4799;
