@@ -27,7 +27,7 @@ The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordi
 
 ## Audio support
 
-At normal speed, AC-3 and E-AC-3 use compressed output through the Apple AVPlayer resource loader. Other formats use decoded PCM through sample-buffer audio. Lucid owns scheduling; Vivid adds no second audio clock, fixed synchronisation offset or local HLS producer. Non-unit playback speed switches to PCM before applying the tempo change and restores compressed output on return to 1x.
+At normal speed, AC-3 and E-AC-3 use compressed output through the Apple AVPlayer resource loader. Other formats use decoded PCM through sample-buffer audio. Lucid owns scheduling; Vivid adds no second audio clock, fixed synchronisation offset or local HLS producer. Non-unit playback speed switches to PCM before applying the tempo change and restores compressed output on return to 1x. On AC-3 and E-AC-3 tracks each switch first seeks in place, so Lucid drops the audio already queued for the old output. Otherwise it plays that queue out, several seconds over AirPlay, with the picture held, then shows the picture without sound until it catches up.
 
 When tvOS playback starts with AirPlay selected, the PCM layout list permits 7.1, 5.1 and stereo, choosing the closest source layout instead of forcing stereo or upmixing. DTS remains locally decoded; Vivid does not request DTS-to-AAC server conversion. Other outputs retain `auto-safe`. Apple’s output API may negotiate a different layout, so an eight-channel player request does not prove eight-channel HomePod delivery.
 

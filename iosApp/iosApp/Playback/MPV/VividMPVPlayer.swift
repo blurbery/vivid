@@ -690,6 +690,10 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         PlaybackSessionRecorder.shared.settling()
         guard rate.isFinite, rate > 0 else { return }
         trace?.event("mpv_rate_requested", fields: "rate=\(rate) previous=\(requestedRate)")
+        // Crossing 1x on an AC-3 or E-AC-3 track swaps compressed output for
+        // PCM, or back, which replaces the audio output.
+        let codec = audioTracks.first { $0.id == activeAudioTrackIndex }?.codec ?? ""
+        let swapsAudioOutput = (rate == 1) != (requestedRate == 1) && ["ac3", "eac3"].contains(codec)
         requestedRate = rate
         guard let core else { return }
         let token = generation
@@ -704,6 +708,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             do {
                 for (name, value) in changes {
                     guard generation == token, !Task.isCancelled else { return }
+                    if name == "audio-spdif", swapsAudioOutput {
+                        // Otherwise mpv plays out the old output's queue (about seven
+                        // seconds over AirPlay) with the picture held, then shows the
+                        // picture silent until it reaches the audio. Seeking in place
+                        // drops that queue and restarts both together. Queue the seek
+                        // just before the option so mpv takes both before decoding again.
+                        core.command(["seek", "0", "relative+exact"])
+                    }
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                         core.setPropertyAsync(name, value: value) { continuation.resume(with: $0) }
                     }
