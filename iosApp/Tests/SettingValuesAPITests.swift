@@ -966,6 +966,122 @@ final class SettingValuesAPITests: XCTestCase {
         XCTAssertLessThanOrEqual(defaultWait, .seconds(10))
     }
 
+    func testRefusedRefreshIsSentAgainUntilTheServerAcceptsIt() async throws {
+        for scoped in [false, true] {
+            let harness = try await makeRefreshHarness(
+                testName: "RefusedThenAccepted\(scoped ? "Scoped" : "Ordinary")",
+                refusedRefreshRetryDelays: [.milliseconds(10), .milliseconds(10)]
+            )
+            SettingsStubProtocol.reset(mode: .refreshRefusedThen(refusals: 2, thenStatus: 200))
+            let sessionExpiredCount = LockedCounter()
+            let observer = NotificationCenter.default.addObserver(
+                forName: .vividSessionExpired,
+                object: nil,
+                queue: nil
+            ) { _ in
+                sessionExpiredCount.increment()
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            let response = try await harness.http.requestData(
+                method: "GET",
+                path: "/api/v1/settings/contract/capabilities",
+                requestIdentity: scoped ? harness.identity : nil
+            )
+
+            XCTAssertEqual(response.statusCode, 200, "scoped: \(scoped)")
+            XCTAssertEqual(
+                SettingsStubProtocol.state().requestCounts["/api/v1/auth/refresh"], 3,
+                "two refusals, then the accepted retry (scoped: \(scoped))"
+            )
+            let accessToken = await harness.tokenStore.getAccessToken()
+            let refreshToken = await harness.tokenStore.getRefreshToken()
+            XCTAssertEqual(accessToken, "placeholder", "scoped: \(scoped)")
+            XCTAssertEqual(refreshToken, "redacted", "scoped: \(scoped)")
+            XCTAssertEqual(sessionExpiredCount.value, 0, "scoped: \(scoped)")
+        }
+    }
+
+    func testRefreshRefusedOnEveryRetryEndsTheSessionOnce() async throws {
+        for scoped in [false, true] {
+            let harness = try await makeRefreshHarness(
+                testName: "RefusedThroughout\(scoped ? "Scoped" : "Ordinary")",
+                refusedRefreshRetryDelays: [.milliseconds(10), .milliseconds(10)]
+            )
+            SettingsStubProtocol.reset(mode: .refreshRefusedThen(refusals: 2, thenStatus: 401))
+            let sessionExpiredCount = LockedCounter()
+            let observer = NotificationCenter.default.addObserver(
+                forName: .vividSessionExpired,
+                object: nil,
+                queue: nil
+            ) { _ in
+                sessionExpiredCount.increment()
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            do {
+                _ = try await harness.http.requestData(
+                    method: "GET",
+                    path: "/api/v1/settings/contract/capabilities",
+                    requestIdentity: scoped ? harness.identity : nil
+                )
+                XCTFail("A refresh refused on every retry must fail the request (scoped: \(scoped))")
+            } catch {
+                XCTAssertEqual((error as? HTTPError)?.statusCode, 401, "scoped: \(scoped)")
+            }
+
+            XCTAssertEqual(
+                SettingsStubProtocol.state().requestCounts["/api/v1/auth/refresh"], 3,
+                "the first refusal and both retries (scoped: \(scoped))"
+            )
+            let accessToken = await harness.tokenStore.getAccessToken()
+            let refreshToken = await harness.tokenStore.getRefreshToken()
+            XCTAssertNil(accessToken, "scoped: \(scoped)")
+            XCTAssertNil(refreshToken, "scoped: \(scoped)")
+            XCTAssertEqual(sessionExpiredCount.value, 1, "scoped: \(scoped)")
+        }
+    }
+
+    func testServerFaultOnARefusedRefreshRetryKeepsTheSession() async throws {
+        for scoped in [false, true] {
+            let harness = try await makeRefreshHarness(
+                testName: "RefusedThenFault\(scoped ? "Scoped" : "Ordinary")",
+                refusedRefreshRetryDelays: [.milliseconds(10), .milliseconds(10)]
+            )
+            SettingsStubProtocol.reset(mode: .refreshRefusedThen(refusals: 1, thenStatus: 503))
+            let sessionExpiredCount = LockedCounter()
+            let observer = NotificationCenter.default.addObserver(
+                forName: .vividSessionExpired,
+                object: nil,
+                queue: nil
+            ) { _ in
+                sessionExpiredCount.increment()
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            do {
+                _ = try await harness.http.requestData(
+                    method: "GET",
+                    path: "/api/v1/settings/contract/capabilities",
+                    requestIdentity: scoped ? harness.identity : nil
+                )
+                XCTFail("The request must keep its 401 when the retry hits a server fault (scoped: \(scoped))")
+            } catch {
+                XCTAssertEqual((error as? HTTPError)?.statusCode, 401, "scoped: \(scoped)")
+            }
+
+            XCTAssertEqual(
+                SettingsStubProtocol.state().requestCounts["/api/v1/auth/refresh"], 2,
+                "one refusal, then the 503 retry (scoped: \(scoped))"
+            )
+            let accessToken = await harness.tokenStore.getAccessToken()
+            let refreshToken = await harness.tokenStore.getRefreshToken()
+            XCTAssertEqual(accessToken, "fake", "scoped: \(scoped)")
+            XCTAssertEqual(refreshToken, "dummy", "scoped: \(scoped)")
+            XCTAssertEqual(sessionExpiredCount.value, 0, "scoped: \(scoped)")
+        }
+    }
+
     func testOrdinaryUnauthorizedResponseCannotRefreshAccountSelectedAfterRequestWasSent() async throws {
         SettingsStubProtocol.reset(mode: .ordinaryUnauthorizedDelayed)
         let harness = try await makeRefreshHarness(testName: "UnauthorizedServerSwitch")
@@ -2001,7 +2117,10 @@ final class SettingValuesAPITests: XCTestCase {
         return VividAPI(http: http, tokenStore: tokenStore)
     }
 
-    private func makeRefreshHarness(testName: String) async throws -> (
+    private func makeRefreshHarness(
+        testName: String,
+        refusedRefreshRetryDelays: [Duration] = HTTPClient.defaultRefusedRefreshRetryDelays
+    ) async throws -> (
         tokenStore: TokenStore,
         identity: HTTPRequestIdentity,
         http: HTTPClient
@@ -2031,7 +2150,12 @@ final class SettingValuesAPITests: XCTestCase {
 
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsStubProtocol.self]
-        let http = HTTPClient(apiDiscovery: SiloAPIDiscovery(legacyOnly: true), session: URLSession(configuration: config), tokenStore: tokenStore)
+        let http = HTTPClient(
+            apiDiscovery: SiloAPIDiscovery(legacyOnly: true),
+            session: URLSession(configuration: config),
+            tokenStore: tokenStore,
+            refusedRefreshRetryDelays: refusedRefreshRetryDelays
+        )
         return (tokenStore, identity, http)
     }
 
@@ -2134,6 +2258,9 @@ final class SettingsStubProtocol: URLProtocol {
         case ordinaryRefreshDelayed
         /// An ordinary request's initial 401 waits across a server switch.
         case ordinaryUnauthorizedDelayed
+        /// Refresh is refused with HTTP 401 `refusals` times, then answered
+        /// with `thenStatus`. Requests without the rotated token get 401.
+        case refreshRefusedThen(refusals: Int, thenStatus: Int)
     }
 
     struct RecordedRequest {
@@ -2334,6 +2461,9 @@ final class SettingsStubProtocol: URLProtocol {
                 refreshBody: #"{"access_token":"placeholder"}"#
             )
             return
+        case .refreshRefusedThen(let refusals, let thenStatus):
+            handleRefusedRefresh(recorded, refusals: refusals, thenStatus: thenStatus)
+            return
         default:
             break
         }
@@ -2405,6 +2535,42 @@ final class SettingsStubProtocol: URLProtocol {
 
         for pending in ready {
             pending.respond(status: 401, body: #"{"error":"unauthorized"}"#)
+        }
+    }
+
+    private func handleRefusedRefresh(_ recorded: RecordedRequest, refusals: Int, thenStatus: Int) {
+        switch (recorded.method, recorded.path) {
+        case ("GET", "/api/v1/settings/contract/capabilities"):
+            guard recorded.header("Authorization") == "Bearer placeholder" else {
+                respond(status: 401, body: #"{"error":"unauthorized"}"#)
+                return
+            }
+            respond(
+                status: 200,
+                body: """
+                {"api_version":1,"revision":\(SettingKey.revision),"contract_etag":"\\"etag\\"","definition_count":48,
+                 "scopes":["account","profile","profile_device","profile_library","profile_series"],
+                 "supports_batched_effective":true,"supports_idempotent_writes":true,
+                 "supports_atomic_shortcuts":true}
+                """
+            )
+
+        case ("POST", "/api/v1/auth/refresh"):
+            // startLoading has already counted this request.
+            let attempt = Self.state().requestCounts[recorded.path, default: 0]
+            if attempt <= refusals {
+                respond(status: 401, body: #"{"error":"invalid_token"}"#)
+            } else if (200..<300).contains(thenStatus) {
+                respond(
+                    status: thenStatus,
+                    body: #"{"access_token":"placeholder","refresh_token":"redacted","expires_in":3600}"#
+                )
+            } else {
+                respond(status: thenStatus, body: #"{"error":"temporarily_unavailable"}"#)
+            }
+
+        default:
+            respond(status: 404, body: #"{"error":"not_found"}"#)
         }
     }
 
