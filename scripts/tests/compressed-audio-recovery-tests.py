@@ -45,24 +45,30 @@ harness = r'''
 #define MP_TIME_S_TO_NS(s) ((s)*S)
 #define AVP_START_MIN_NS S
 #define AVP_START_GRACE_NS(p) ((int64_t)((p)->opt_compressed_start_grace * S))
+#define MPMIN(a, b) ((a) > (b) ? (b) : (a))
+#define AVP_FIRST_START_GRACE_NS(p) ((int64_t)(MPMIN((p)->opt_compressed_first_start_grace, \
+                                                      (p)->opt_compressed_start_grace) * S))
 #define AVP_START_LEAD_NS(p) (2*(p)->avp_lead_ns)
 #define AVP_ANCHOR_INTERVAL_NS (S/10)
 #define AVP_ANCHOR_SLACK_NS (4*S)
+#define AVP_RESUME_ANCHOR_CAP_NS (2*S)
 #define MP_WARN(...) ((void)0)
 #define MP_ERR(...) ((void)0)
 #define MP_VERBOSE(...) ((void)0)
 struct priv {
     bool avp_playing, spdif_reload_requested, avp_rate_applied;
-    bool avp_eof, avp_start_seeked;
+    bool avp_eof, avp_start_seeked, avp_first_start;
     void *item, *player;
     int64_t es_pts, avp_start_deadline, avp_primed_pts, avp_lead_ns;
-    double opt_compressed_start_grace;
+    double opt_compressed_start_grace, opt_compressed_first_start_grace;
     int64_t avp_rate_applied_ns, avp_last_anchor_ns;
     int avp_anchor_pulls;
 };
 struct ao { struct priv *priv; };
 static int64_t now, clock_pos, feed_pos, queued_samples;
 static int rate_calls, seek_calls, reload_calls, checks;
+static bool item_ready = true;
+static bool avp_item_ready(struct ao *ao) { return item_ready; }
 static int64_t mp_time_ns(void) { return now; }
 static int64_t avp_feed_position_ns(struct ao *ao) { return feed_pos; }
 static void *ao_get_queue(struct ao *ao) { return ao; }
@@ -80,8 +86,9 @@ static struct priv p;
 static struct ao ao = { &p };
 static void reset(void) {
     p = (struct priv){ .avp_playing=true, .item=&p, .avp_lead_ns=8*S,
-                       .opt_compressed_start_grace=2 };
+                       .opt_compressed_start_grace=2, .opt_compressed_first_start_grace=2 };
     now=clock_pos=feed_pos=queued_samples=rate_calls=seek_calls=reload_calls=0;
+    item_ready=true;
 }
 static void tick(int64_t time, int64_t fed) {
     now=time; p.es_pts=fed; avp_update_transport(&ao);
@@ -135,6 +142,31 @@ int main(void) {
     check(!seek_calls && p.avp_start_deadline==-1, "late AirPlay engagement needs no seek");
     clock_pos=0; reset(); p.opt_compressed_start_grace=4.0; tick(0,S); tick(4*S,16*S);
     check(seek_calls==1, "genuinely parked AirPlay clock still recovers");
+    // The first start since the output opened can recover early, once its
+    // item is ready; every later start keeps the ordinary grace.
+    reset(); p.avp_first_start=true; p.opt_compressed_start_grace=1;
+    p.opt_compressed_first_start_grace=0.25; tick(0,S);
+    check(rate_calls==1 && p.avp_start_deadline==S/4, "first start uses its shorter grace");
+    tick(S/5,2*S);
+    check(!seek_calls, "first start still waits for its grace");
+    tick(S/4,2*S);
+    check(seek_calls==1, "first start recovers once its grace ends");
+    reset(); p.avp_first_start=true; p.opt_compressed_start_grace=1;
+    p.opt_compressed_first_start_grace=0.25; item_ready=false; tick(0,S); tick(S/2,2*S);
+    check(!seek_calls, "first-start recovery waits for the item");
+    item_ready=true; tick(S/2+S/20,2*S);
+    check(seek_calls==1, "first-start recovery follows item readiness");
+    reset(); p.avp_first_start=true; p.opt_compressed_start_grace=1;
+    p.opt_compressed_first_start_grace=0.25; item_ready=false; tick(0,S); tick(S,2*S);
+    check(seek_calls==1, "an unready item still recovers at the ordinary grace");
+    reset(); p.opt_compressed_start_grace=1; p.opt_compressed_first_start_grace=0.25; tick(0,S);
+    check(p.avp_start_deadline==S, "later starts keep the ordinary grace");
+    reset(); p.avp_first_start=true; p.opt_compressed_start_grace=1; tick(0,S);
+    check(p.avp_start_deadline==S, "first-start grace never exceeds the ordinary one");
+    reset(); p.avp_first_start=true; p.opt_compressed_first_start_grace=0.25; tick(0,S);
+    clock_pos=S/10; tick(S/10,2*S);
+    check(!seek_calls && !p.avp_first_start, "engaging ends the first start");
+    clock_pos=0;
     check(avp_should_anchor(true, true, false, 0, 16*S, 16*S, S/10),
           "parked clock re-anchors mpv after the lead is full");
     check(!avp_should_anchor(false, true, false, 0, 16*S, 16*S, S),
@@ -151,6 +183,23 @@ int main(void) {
           "anchoring is bounded above the startup lead");
     check(avp_should_anchor(true, true, false, 0, 20*S-1, 16*S, S),
           "anchoring continues up to its cap");
+    // After a resume, anchor while the clock is still on the paused playhead.
+    check(avp_should_anchor_resume(true, false, 50*S, 50*S, S/2, S/10),
+          "resume anchors while the clock is parked");
+    check(!avp_should_anchor_resume(false, false, 50*S, 50*S, S/2, S/10),
+          "resume anchoring is off by default");
+    check(!avp_should_anchor_resume(true, false, -1, 50*S, S/2, S/10),
+          "no anchoring without a pending resume");
+    check(!avp_should_anchor_resume(true, false, 50*S, 50*S+1, S/2, S/10),
+          "a moving clock ends resume anchoring");
+    check(avp_should_anchor_resume(true, false, 50*S, 50*S, 2*S-1, S/10),
+          "resume anchoring runs up to its cap");
+    check(!avp_should_anchor_resume(true, false, 50*S, 50*S, 2*S, S/10),
+          "resume anchoring is bounded in time");
+    check(!avp_should_anchor_resume(true, false, 50*S, 50*S, S/2, S/10-1),
+          "resume anchoring is paced");
+    check(!avp_should_anchor_resume(true, true, 50*S, 50*S, S/2, S/10),
+          "EOF stops resume anchoring");
     reset(); p.es_pts=2*S;
     check(avp_wait_for_prefetch(&ao, 4800), "queued audio prevents empty prefetch underrun");
     queued_samples=4799;

@@ -22,7 +22,7 @@ workflow="mpv-audio-driver.yml"
 # Strings that exist only in the patched driver. Vivid's Swift code also
 # names some driver options and log lines, so those cannot prove the patch
 # was linked.
-markers=("compressed-start-grace" "trace edge %s")
+markers=("first start recovery after" "trace edge %s")
 
 work=""
 trap '[ -z "$work" ] || rm -rf "$work"' EXIT

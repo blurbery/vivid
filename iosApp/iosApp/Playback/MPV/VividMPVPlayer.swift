@@ -201,6 +201,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.registersManagedStreams = options.managedHTTPReader && VividManagedStreamProtocol.isEnabled
             && VividManagedStreamSource.isEligible(url)
         instance.startPosition = max(0, startPosition)
+        keyframeResumePending = startPosition > 0
         // Keep playback running through content matching. The display core
         // negotiates HDMI independently; it must not add a startup pause.
         instance.autoplay = options.autoplay
@@ -208,6 +209,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.initialRate = requestedRate
         instance.initialVolume = volume
         instance.audioLanguages = options.preferredAudioLanguages
+        instance.plannedAudio = (audioSourceStreamIndex, options.audioTrackOrdinal)
         #if os(tvOS)
         instance.airPlayPCM = session.currentRoute.outputs.contains { $0.portType == .airPlay }
         #endif
@@ -291,6 +293,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         ("avsync", "double"), ("frame-drop-count", "double")
     ]
     private var rawTracks: [[String: Any]] = []
+    /// The resume starts on the keyframe at or before the saved position.
+    private var keyframeResumePending = false
     private var initialAudioApplied = false
     fileprivate func property(_ name: String, value: Any?, token: UInt64) {
         guard token == generation else { return }
@@ -416,6 +420,11 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             isSessionReady = true; startupProgress = nil; applyInitialAudioSelection(); updatePhase()
             trace?.mark("mpv_file_loaded")
         case "playback-restart":
+            if keyframeResumePending {
+                // Later seeks without an explicit precision are exact again.
+                keyframeResumePending = false
+                core?.setProperty("hr-seek", value: "default")
+            }
             hasFirstFrameReadyForDisplay = true; isSeeking = false; isBuffering = false
             updatePhase(); trace?.mark("mpv_playback_restart")
             trace?.seekPicture()
@@ -516,6 +525,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private static let pcmTransportRegex = try? NSRegularExpression(pattern: #"\Apcm: clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), ahead (-?[0-9]+\.[0-9]+), rate (-?[0-9]+\.[0-9]+), status ([0-9]+)(?:, latency (-?[0-9]+\.[0-9]+), sufficient (-?[0-9]+))?\z"#)
     private static let audioEdgeRegex = try? NSRegularExpression(pattern: #"\Atrace edge (start|start-fresh|pause|resume|reset|restart): clock (-?[0-9]+\.[0-9]+), fed (-?[0-9]+\.[0-9]+), latency (-?[0-9]+\.[0-9]+)\z"#)
     private static let compressedEngagedRegex = try? NSRegularExpression(pattern: #"\Acompressed clock engaged after (-?[0-9]+\.[0-9]+) s, seeked ([01]), anchors ([0-9]+)\z"#)
+    private static let compressedResumedRegex = try? NSRegularExpression(pattern: #"\Acompressed clock resumed after (-?[0-9]+\.[0-9]+) s, anchors ([0-9]+)\z"#)
     private static let flushTimeRegex = try? NSRegularExpression(pattern: #"\Anotification flush time (-?[0-9]+\.[0-9]+|nan), current ([01])\z"#)
     private static let heartbeatRegex = try? NSRegularExpression(pattern: #"\Aheartbeat: raw pos (-?[0-9]+\.[0-9]+)s, clamped (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s, status ([0-9]+), tc ([0-9]+)(?:, reader gap (-?[0-9]+) B)?\z"#)
     private static let audioStatusRegex = try? NSRegularExpression(pattern: #"\Aitem status (-?[0-9]+) -> (-?[0-9]+), time control (-?[0-9]+) -> (-?[0-9]+), pos (-?[0-9]+\.[0-9]+)s, fed (-?[0-9]+\.[0-9]+)s\z"#)
@@ -577,6 +587,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
            let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
             let names = ["after_s", "seeked", "anchors"]
             return "event=compressed_clock_engaged " + names.enumerated().compactMap { index, name in
+                guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
+                return "\(name)=\(message[range])"
+            }.joined(separator: " ")
+        }
+        if let regex = Self.compressedResumedRegex,
+           let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+            let names = ["after_s", "anchors"]
+            return "event=compressed_clock_resumed " + names.enumerated().compactMap { index, name in
                 guard let range = Range(match.range(at: index + 1), in: message) else { return nil }
                 return "\(name)=\(message[range])"
             }.joined(separator: " ")
@@ -673,6 +691,19 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         }) else { return nil }
         return (track["id"] as? Int64).map(Int.init)
     }
+    /// The mpv id of the audio track the plan chose (usually the one this
+    /// device can play or pass through): by source stream index when known,
+    /// otherwise by position among the file's audio tracks. The core selects
+    /// it before mpv starts; `applyInitialAudioSelection` makes the same
+    /// choice after load, where it is then already selected.
+    nonisolated static func plannedAudioTrackID(in tracks: [[String: Any]], streamIndex: Int32?, ordinal: Int?) -> Int64? {
+        let audio = tracks.filter { $0["type"] as? String == "audio" }
+        if let streamIndex {
+            return audio.first { $0["ff-index"] as? Int64 == Int64(streamIndex) }?["id"] as? Int64
+        }
+        guard let ordinal, audio.indices.contains(ordinal) else { return nil }
+        return audio[ordinal]["id"] as? Int64
+    }
     private func applyInitialAudioSelection() {
         guard isSessionReady, !initialAudioApplied, !audioTracks.isEmpty, let source else { return }
         if let streamIndex = source.2 {
@@ -690,6 +721,10 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         PlaybackSessionRecorder.shared.settling()
         guard rate.isFinite, rate > 0 else { return }
         trace?.event("mpv_rate_requested", fields: "rate=\(rate) previous=\(requestedRate)")
+        // Crossing 1x on an AC-3 or E-AC-3 track swaps compressed output for
+        // PCM, or back, which replaces the audio output.
+        let codec = audioTracks.first { $0.id == activeAudioTrackIndex }?.codec ?? ""
+        let swapsAudioOutput = (rate == 1) != (requestedRate == 1) && ["ac3", "eac3"].contains(codec)
         requestedRate = rate
         guard let core else { return }
         let token = generation
@@ -704,6 +739,14 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             do {
                 for (name, value) in changes {
                     guard generation == token, !Task.isCancelled else { return }
+                    if name == "audio-spdif", swapsAudioOutput {
+                        // Otherwise mpv plays out the old output's queue (about seven
+                        // seconds over AirPlay) with the picture held, then shows the
+                        // picture silent until it reaches the audio. Seeking in place
+                        // drops that queue and restarts both together. Queue the seek
+                        // just before the option so mpv takes both before decoding again.
+                        core.command(["seek", "0", "relative+exact"])
+                    }
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                         core.setPropertyAsync(name, value: value) { continuation.resume(with: $0) }
                     }
@@ -1059,7 +1102,12 @@ private final class VividMPVCore: MpvPlayerCore {
     var initialRate: Float = 1
     var initialVolume: Float = 1
     var audioLanguages: [String] = []
+    var plannedAudio: (streamIndex: Int32?, ordinal: Int?) = (nil, nil)
     var airPlayPCM = false
+    override var selectsAudioWhilePreloading: Bool { plannedAudio.streamIndex != nil || plannedAudio.ordinal != nil }
+    override func preloadedAudioTrackID(tracks: [[String: Any]]) -> Int64? {
+        VividMPVPlayer.plannedAudioTrackID(in: tracks, streamIndex: plannedAudio.streamIndex, ordinal: plannedAudio.ordinal)
+    }
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
                         "ao-avfoundation-manage-audio-session": "no",
@@ -1067,6 +1115,11 @@ private final class VividMPVCore: MpvPlayerCore {
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
                         "osd-level": "0", "pause": autoplay ? "no" : "yes",
                         "start": String(startPosition), "speed": String(initialRate),
+                        // Resume on the keyframe at or before the saved position. An exact
+                        // resume first downloads and decodes everything from that keyframe
+                        // up to the position, about 5 MB for a 4K remux, before the first
+                        // picture. Vivid's own seeks ask for exact positions explicitly.
+                        "hr-seek": startPosition > 0 ? "no" : "default",
                         "volume": String(initialVolume * 100), "sid": "no", "secondary-sid": "no",
                         "cache": "yes", "demuxer-max-bytes": "268435456", "demuxer-max-back-bytes": "16777216",
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
@@ -1084,6 +1137,21 @@ private final class VividMPVCore: MpvPlayerCore {
             // second rather than two. Seeks and resumes engage in about 0.6 s
             // without it, so they still don't trigger it.
             checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-start-grace", "1"))
+            // A title's first start never engages without that recovery, so
+            // run it as soon as AVPlayer's item is ready rather than after the
+            // full second. Later seeks and resumes keep the one-second grace.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-first-start-grace", "0.25"))
+            // After a pause AirPlay's clock can stay on the paused playhead for
+            // most of a second. Anchor mpv to it, as at startup, so video waits
+            // for the audio instead of running ahead and then stopping to resync.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-anchor-resume", "yes"))
+            // Start with 1.25 s of audio queued instead of two. While the
+            // stream is still ramping up, the extra audio can take over a
+            // second to arrive, and the picture holds until it does. Keep it
+            // above the driver's one-second priming reserve: at exactly one
+            // second, the driver's next read can come up short and mpv
+            // rebuffers straight after starting.
+            checkError(mpv_set_option_string(mpv, "ao-avfoundation-compressed-buffer", "1.25"))
         }
         #endif
         if audioOnly { checkError(mpv_set_option_string(mpv, "vid", "no")) }

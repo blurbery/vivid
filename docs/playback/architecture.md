@@ -54,6 +54,8 @@ Final playback teardown releases shared audio only when that controller actually
 - Renew or replan through the current session bridge and load-spec path. Cancellation is not a playback failure; rate limiting must not trigger an immediate retry loop.
 - Preserve pause intent, resume position, seek completion and exactly-once end/episode-handover work across recovery.
 
+The following episode and the On Deck items shown with Next Up are fetched once the current item shows its first picture, not while its stream is opening. On Deck reads the whole Home payload plus up to a dozen items, which would otherwise compete with startup.
+
 Unexpected or uncertain end-of-stream events must not open Next Up or mark the
 item completed. A terminal event needs finite, positive source timing within
 eight seconds of the known duration. Earlier endings and missing timing use the

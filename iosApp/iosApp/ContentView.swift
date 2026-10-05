@@ -134,6 +134,9 @@ struct ContentView: View {
                 #if !os(tvOS)
                 DownloadManager.shared.clearForSignOut()
                 #endif
+                #if os(iOS) || os(tvOS)
+                TVSavedAccountStore.shared.sessionExpired(serverID: event.account.serverId)
+                #endif
                 router.expiredSession()
             }
         }
