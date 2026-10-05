@@ -208,6 +208,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.initialRate = requestedRate
         instance.initialVolume = volume
         instance.audioLanguages = options.preferredAudioLanguages
+        instance.plannedAudio = (audioSourceStreamIndex, options.audioTrackOrdinal)
         #if os(tvOS)
         instance.airPlayPCM = session.currentRoute.outputs.contains { $0.portType == .airPlay }
         #endif
@@ -673,6 +674,19 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         }) else { return nil }
         return (track["id"] as? Int64).map(Int.init)
     }
+    /// The mpv id of the audio track the plan chose (usually the one this
+    /// device can play or pass through): by source stream index when known,
+    /// otherwise by position among the file's audio tracks. The core selects
+    /// it before mpv starts; `applyInitialAudioSelection` makes the same
+    /// choice after load, where it is then already selected.
+    nonisolated static func plannedAudioTrackID(in tracks: [[String: Any]], streamIndex: Int32?, ordinal: Int?) -> Int64? {
+        let audio = tracks.filter { $0["type"] as? String == "audio" }
+        if let streamIndex {
+            return audio.first { $0["ff-index"] as? Int64 == Int64(streamIndex) }?["id"] as? Int64
+        }
+        guard let ordinal, audio.indices.contains(ordinal) else { return nil }
+        return audio[ordinal]["id"] as? Int64
+    }
     private func applyInitialAudioSelection() {
         guard isSessionReady, !initialAudioApplied, !audioTracks.isEmpty, let source else { return }
         if let streamIndex = source.2 {
@@ -1059,7 +1073,12 @@ private final class VividMPVCore: MpvPlayerCore {
     var initialRate: Float = 1
     var initialVolume: Float = 1
     var audioLanguages: [String] = []
+    var plannedAudio: (streamIndex: Int32?, ordinal: Int?) = (nil, nil)
     var airPlayPCM = false
+    override var selectsAudioWhilePreloading: Bool { plannedAudio.streamIndex != nil || plannedAudio.ordinal != nil }
+    override func preloadedAudioTrackID(tracks: [[String: Any]]) -> Int64? {
+        VividMPVPlayer.plannedAudioTrackID(in: tracks, streamIndex: plannedAudio.streamIndex, ordinal: plannedAudio.ordinal)
+    }
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
         let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
                         "ao-avfoundation-manage-audio-session": "no",

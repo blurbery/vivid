@@ -304,6 +304,16 @@ class MpvPlayerCoreBase: NSObject {
 
   func configurePlatformMpvOptions(mpv: OpaquePointer) {}
 
+  /// Whether to choose the audio track in mpv's `on_preloaded` hook. There
+  /// the file's tracks are known, but mpv has not yet made its own default
+  /// pick or run the initial seek, so a resume seeks once on the chosen
+  /// track. Switching after `file-loaded` makes mpv seek a second time.
+  var selectsAudioWhilePreloading: Bool { false }
+
+  /// The mpv `aid` to select while preloading, from the file's `track-list`.
+  /// Nil keeps mpv's own pick. Runs on `queue` while mpv waits.
+  func preloadedAudioTrackID(tracks: [[String: Any]]) -> Int64? { nil }
+
   var preparesDisplayCriteriaEarly: Bool { false }
 
   func updateEDRMode(sigPeak: Double) {}
@@ -476,6 +486,9 @@ class MpvPlayerCoreBase: NSObject {
       mpv_observe_property(
         mpv, Self.internalVideoColorMatrixObserverId,
         "video-params/colormatrix", MPV_FORMAT_STRING)
+      if selectsAudioWhilePreloading {
+        checkError(mpv_hook_add(mpv, 0, "on_preloaded", 0))
+      }
     }
     return observed != nil
   }
@@ -1235,6 +1248,14 @@ class MpvPlayerCoreBase: NSObject {
         dispatchDelegateEvent(name: "end-file", data: nil)
       }
 
+    case MPV_EVENT_HOOK:
+      guard let hook = event.data?.assumingMemoryBound(to: mpv_event_hook.self).pointee else { break }
+      if safeString(hook.name) == "on_preloaded" {
+        selectAudioWhilePreloading()
+      }
+      // mpv waits for every hook to be continued, so always continue.
+      _ = withActiveMpv { mpv_hook_continue($0, hook.id) }
+
     case MPV_EVENT_SHUTDOWN:
       MpvLog.debug("[MpvPlayerCore] MPV shutdown event")
 
@@ -1428,6 +1449,27 @@ class MpvPlayerCoreBase: NSObject {
     guard status >= 0 else { return nil }
     defer { mpv_free_node_contents(&node) }
     return convertNode(node) as? [String: Any]
+  }
+
+  /// Synchronous node-list read for the `on_preloaded` hook; same constraints
+  /// as `readDoubleProperty`. mpv serves the read while it waits in the hook.
+  private func readListProperty(_ name: String) -> [[String: Any]]? {
+    dispatchPrecondition(condition: .onQueue(queue))
+    guard let mpv = withActiveMpv({ $0 }) else { return nil }
+    var node = mpv_node()
+    let status = mpv_get_property(mpv, name, MPV_FORMAT_NODE, &node)
+    guard status >= 0 else { return nil }
+    defer { mpv_free_node_contents(&node) }
+    return convertNode(node) as? [[String: Any]]
+  }
+
+  /// Before mpv's default track pick, an `aid` set here is the selection mpv
+  /// starts with, rather than a switch that needs another seek.
+  private func selectAudioWhilePreloading() {
+    guard let tracks = readListProperty("track-list"),
+          let id = preloadedAudioTrackID(tracks: tracks),
+          let mpv = withActiveMpv({ $0 }) else { return }
+    checkError(mpv_set_property_string(mpv, "aid", String(id)), option: "aid")
   }
 
   private func handlePropertyChange(
