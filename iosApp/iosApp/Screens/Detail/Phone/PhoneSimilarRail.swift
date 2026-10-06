@@ -16,6 +16,8 @@ import SwiftUI
 /// empty, an orphaned "More Like This" title must vanish with the cards.
 struct PhoneSimilarRail: View {
     let contentId: String
+    /// The page's own detail, so suggestions don't fetch it again.
+    var sourceDetail: ItemDetail? = nil
     let onSelect: (String) -> Void
 
     @State private var items: [SimilarPosterItem] = []
@@ -99,7 +101,7 @@ struct PhoneSimilarRail: View {
         items = []
 
         do {
-            items = try await TVLibrarySimilarityStore.shared.suggestions(contentId: contentId)
+            items = try await TVLibrarySimilarityStore.shared.suggestions(contentId: contentId, sourceDetail: sourceDetail)
         } catch {
             items = []
         }

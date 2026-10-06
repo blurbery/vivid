@@ -406,6 +406,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
         // recommendations are disabled or empty.
         PhoneSimilarRail(
             contentId: detail.contentId,
+            sourceDetail: detail,
             onSelect: onNavigateToItem
         )
     }
