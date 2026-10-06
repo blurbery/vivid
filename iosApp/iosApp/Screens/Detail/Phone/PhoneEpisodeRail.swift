@@ -188,11 +188,15 @@ private struct PhoneEpisodeCard: View {
             AsyncImageView(
                 url: episode.stillUrl ?? "",
                 thumbhash: episode.stillThumbhash,
-                targetSize: CGSize(width: cardWidth, height: stillHeight),
-                contentMode: .fill
+                targetSize: episode.hidesSpoilers
+                    ? EpisodeSpoilerPolicy.coveredStillDecodeSize
+                    : CGSize(width: cardWidth, height: stillHeight),
+                contentMode: .fill,
+                softening: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillSoftening : nil
             )
             .frame(width: cardWidth, height: stillHeight)
             .clipped()
+            .spoilerCovered(episode.hidesSpoilers)
 
             PhoneEpisodeStatusOverlay(episode: episode)
                 .padding(12)

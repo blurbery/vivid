@@ -666,7 +666,16 @@ struct EpisodeListItem: Codable, Identifiable, Hashable {
     let stillThumbhash: String?
     var userData: LeafItemUserData?
     let files: [EpisodeFile]?
+    /// Set on the covered copy that `EpisodeSpoilerPolicy` makes for an
+    /// episode the viewer hasn't reached: cards blur the still. Never
+    /// decoded or encoded.
+    var hidesSpoilers = false
     var id: String { contentId }
+
+    enum CodingKeys: String, CodingKey {
+        case contentId, seasonNumber, episodeNumber, title, overview, airDate, runtime
+        case imdbId, tmdbId, tvdbId, stillUrl, stillThumbhash, userData, files
+    }
 }
 
 struct EpisodeFile: Codable, Hashable {

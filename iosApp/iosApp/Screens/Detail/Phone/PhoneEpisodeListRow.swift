@@ -57,11 +57,15 @@ struct PhoneEpisodeListRow: View {
             AsyncImageView(
                 url: episode.stillUrl ?? "",
                 thumbhash: episode.stillThumbhash,
-                targetSize: CGSize(width: thumbnailWidth, height: thumbnailHeight),
-                contentMode: .fill
+                targetSize: episode.hidesSpoilers
+                    ? EpisodeSpoilerPolicy.coveredStillDecodeSize
+                    : CGSize(width: thumbnailWidth, height: thumbnailHeight),
+                contentMode: .fill,
+                softening: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillSoftening : nil
             )
             .frame(width: thumbnailWidth, height: thumbnailHeight)
             .clipped()
+            .spoilerCovered(episode.hidesSpoilers, symbolSize: 18)
             .accessibilityHidden(true)
 
             PhoneEpisodeStatusOverlay(episode: episode, compact: true)

@@ -290,6 +290,12 @@ final class PlayerSettings {
         didSet { defaults.set(autoPlayNextEpisode, forKey: Self.cacheKey(Keys.autoPlayNextEpisode)) }
     }
 
+    /// Blur the still and scramble the title and overview of episodes after
+    /// the viewer's current position. See `EpisodeSpoilerPolicy`.
+    var hideFutureEpisodeSpoilers: Bool {
+        didSet { defaults.set(hideFutureEpisodeSpoilers, forKey: Self.cacheKey(Keys.hideFutureEpisodeSpoilers)) }
+    }
+
     var nextUpPromptSeconds: Int {
         didSet { defaults.set(nextUpPromptSeconds, forKey: Self.cacheKey(Keys.nextUpPromptSeconds)) }
     }
@@ -321,6 +327,7 @@ final class PlayerSettings {
             Keys.videoGravity: VideoGravity.fit.rawValue,
             Keys.playerOrientationMode: PlayerOrientationMode.landscapeLocked.rawValue,
             Keys.autoPlayNextEpisode: true,
+            Keys.hideFutureEpisodeSpoilers: false,
             Keys.nextUpPromptSeconds: 30,
         ])
 
@@ -360,6 +367,7 @@ final class PlayerSettings {
             legacyKey: Keys.legacyAutoPlayNextEpisode,
             defaultValue: true
         )
+        hideFutureEpisodeSpoilers = Self.cachedBool(defaults, key: Keys.hideFutureEpisodeSpoilers, defaultValue: false)
         nextUpPromptSeconds = Self.clampNextUpPromptSeconds(
             Self.cachedInt(defaults, key: Keys.nextUpPromptSeconds, defaultValue: 30)
         )
@@ -536,6 +544,7 @@ final class PlayerSettings {
             legacyKey: Keys.legacyAutoPlayNextEpisode,
             defaultValue: true
         )
+        hideFutureEpisodeSpoilers = Self.cachedBool(defaults, key: Keys.hideFutureEpisodeSpoilers, defaultValue: false)
         nextUpPromptSeconds = Self.clampNextUpPromptSeconds(
             Self.cachedInt(defaults, key: Keys.nextUpPromptSeconds, defaultValue: 30)
         )
@@ -597,6 +606,7 @@ final class PlayerSettings {
         defaults.set(false, forKey: key(Keys.autoSkipIntro))
         defaults.set(false, forKey: key(Keys.autoSkipCredits))
         defaults.set(true, forKey: key(Keys.autoPlayNextEpisode))
+        defaults.set(false, forKey: key(Keys.hideFutureEpisodeSpoilers))
         defaults.set(30, forKey: key(Keys.nextUpPromptSeconds))
         defaults.set(1.0, forKey: key(Keys.playbackSpeed))
         defaults.set(0, forKey: key(Keys.subtitleSyncMs))
@@ -728,6 +738,7 @@ final class PlayerSettings {
         static let playerOrientationMode = "player.playerOrientationMode"
         static let autoPlayNextEpisode = "autoPlayNext"
         static let legacyAutoPlayNextEpisode = "player.autoPlayNextEpisode"
+        static let hideFutureEpisodeSpoilers = "player.hideFutureEpisodeSpoilers"
         static let nextUpPromptSeconds = "player.nextUpPromptSeconds"
     }
 }

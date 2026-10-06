@@ -614,7 +614,13 @@ private final class JellyfinRequestStub: URLProtocol {
                 }
                 request.httpBody = data
             }
-            let (status, body) = try XCTUnwrap(Self.handler)(request)
+            // A request still in flight after its test's tearDown cleared the
+            // handler fails on its own instead of asserting into the next test.
+            guard let handler = Self.handler else {
+                client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+                return
+            }
+            let (status, body) = try handler(request)
             let response = HTTPURLResponse(url:request.url!,statusCode:status,httpVersion:nil,headerFields:nil)!
             client?.urlProtocol(self,didReceive:response,cacheStoragePolicy:.notAllowed)
             client?.urlProtocol(self,didLoad:try JSONSerialization.data(withJSONObject:body))

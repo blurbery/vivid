@@ -94,6 +94,14 @@ struct TVPlaybackSettingsPane: View {
                 Task { await viewModel.setSkipCredits(value) }
             }
             .disabled(!PlayerSettings.shared.introDBEnabled)
+
+            TVSettingsToggleRow(
+                title: "Hide Episode Spoilers",
+                isOn: PlayerSettings.shared.hideFutureEpisodeSpoilers,
+                detail: "Blur the preview and scramble the description of episodes you haven’t reached yet."
+            ) {
+                PlayerSettings.shared.hideFutureEpisodeSpoilers.toggle()
+            }
         }
     }
 

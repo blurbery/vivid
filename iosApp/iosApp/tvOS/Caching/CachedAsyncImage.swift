@@ -22,6 +22,8 @@ struct CachedAsyncImage: View {
     var placeholderStyle: ImagePlaceholderStyle = .surface
     var onImageLoaded: (() -> Void)? = nil
     var cacheScope: String? = nil
+    /// Blur applied once at decode; see `VividImageRequest.softening`.
+    var softening: Float? = nil
     /// Release distant grid images without replacing the card's image view.
     var isArtworkResident = true
 
@@ -78,7 +80,9 @@ struct CachedAsyncImage: View {
         // shelf. A nil request releases the leaf's image without removing its
         // button, hosting cell, row geometry or remembered focus position.
         let imageRequest = retainsArtwork ? request(for: resolvedSize) : nil
-        let warmedImage = retainsArtwork ? prefetchedImage() : nil
+        // A warmed card image is the sharp still, so a softened request never
+        // falls back to it, even for a frame.
+        let warmedImage = retainsArtwork && softening == nil ? prefetchedImage() : nil
         let loadAnimation: Animation? = isHomeShelf || reduceMotion || warmedImage != nil
             ? nil
             : .easeOut(duration: VividTheme.slowDuration)
@@ -160,7 +164,7 @@ struct CachedAsyncImage: View {
             width: size.width * displayScale,
             height: size.height * displayScale
         )
-        return PosterImageCache.displayRequest(url: url, pixelSize: pixelSize, cacheScope: cacheScope ?? VividCacheScope.artwork)
+        return PosterImageCache.displayRequest(url: url, pixelSize: pixelSize, cacheScope: cacheScope ?? VividCacheScope.artwork, softening: softening)
     }
 
     private var resolvedURL: URL? {

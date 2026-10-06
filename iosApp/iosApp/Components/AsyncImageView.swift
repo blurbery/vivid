@@ -10,6 +10,7 @@ struct AsyncImageView: View {
     var placeholderStyle: ImagePlaceholderStyle = .surface
     var onImageLoaded: (() -> Void)? = nil
     var cacheScope: String? = nil
+    var softening: Float? = nil
 
     var body: some View {
         CachedAsyncImage(
@@ -19,7 +20,8 @@ struct AsyncImageView: View {
             contentMode: contentMode,
             placeholderStyle: placeholderStyle,
             onImageLoaded: onImageLoaded,
-            cacheScope: cacheScope
+            cacheScope: cacheScope,
+            softening: softening
         )
     }
 }

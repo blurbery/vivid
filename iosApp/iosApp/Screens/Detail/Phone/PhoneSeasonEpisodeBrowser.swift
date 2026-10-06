@@ -37,7 +37,21 @@ struct PhoneSeasonEpisodeBrowser: View {
         !forcesEpisodeCarousel && availableWidth >= 640
     }
 
+    @State private var playerSettings = PlayerSettings.shared
+
+    /// The viewer's current position when Hide Episode Spoilers is on; the
+    /// selected season's live list counts as a loaded page.
+    private var spoilerPosition: EpisodeSpoilerPolicy.Position? {
+        guard playerSettings.hideFutureEpisodeSpoilers else { return nil }
+        var pages = episodesBySeason
+        if let selectedSeason, !isLoadingEpisodes { pages[selectedSeason.seasonNumber] = episodes }
+        return EpisodeSpoilerPolicy.currentPosition(seasons: seasons, pages: pages)
+    }
+
     var body: some View {
+        let position = spoilerPosition
+        let shownEpisodes = EpisodeSpoilerPolicy.cover(episodes, after: position)
+        let shownEpisodesBySeason = EpisodeSpoilerPolicy.cover(episodesBySeason, after: position)
         Group {
             if selectedSeason == nil,
                seasons.isEmpty,
@@ -48,8 +62,8 @@ struct PhoneSeasonEpisodeBrowser: View {
                 PhoneSeasonEpisodePager(
                     seasons: seasons,
                     selectedSeason: selectedSeason,
-                    episodes: episodes,
-                    episodesBySeason: episodesBySeason,
+                    episodes: shownEpisodes,
+                    episodesBySeason: shownEpisodesBySeason,
                     isLoadingEpisodes: isLoadingEpisodes,
                     onSelectSeason: onSelectSeason,
                     onSelectEpisode: onSelectEpisode,
@@ -70,7 +84,7 @@ struct PhoneSeasonEpisodeBrowser: View {
                     }
 
                     PhoneEpisodePage(
-                        episodes: episodes,
+                        episodes: shownEpisodes,
                         isLoading: isLoadingEpisodes,
                         usesExpandedList: usesExpandedList,
                         onSelect: onSelectEpisode,

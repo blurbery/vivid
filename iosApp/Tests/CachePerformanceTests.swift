@@ -107,10 +107,10 @@ final class CachePerformanceTests: XCTestCase {
         let events = Events()
         writer.write(scope: "account") {
             started.signal()
-            XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+            XCTAssertEqual(release.wait(timeout: .now() + 30), .success)
             events.append("running")
         }
-        XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(started.wait(timeout: .now() + 30), .success)
         for value in 1...100 {
             writer.write(scope: "account") { events.append("pending:\(value)") }
         }
@@ -199,11 +199,13 @@ final class CachePerformanceTests: XCTestCase {
     private func block(_ writer: HomeMetadataWriter) -> DispatchSemaphore {
         let started = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
+        // Generous waits: a busy CI runner can take several seconds to start a
+        // fresh queue's first block, and the tests signal promptly in practice.
         writer.async {
             started.signal()
-            XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+            XCTAssertEqual(release.wait(timeout: .now() + 30), .success)
         }
-        XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(started.wait(timeout: .now() + 30), .success)
         return release
     }
 

@@ -13,6 +13,10 @@ import SwiftUI
 struct TVEpisodeRail: View {
     let episodes: [EpisodeListItem]
     let onSelect: (String) -> Void
+    /// Seasons of the series, so Hide Episode Spoilers can place the viewer's
+    /// position from their watched counts. Without them the rail's own list
+    /// decides.
+    var spoilerSeasons: [Season] = []
     /// Optional Play action surfaced by the long-press context menu. Series
     /// supplies this even though its normal Select action also plays, keeping
     /// the context menu explicit and useful alongside watched-state actions.
@@ -45,6 +49,17 @@ struct TVEpisodeRail: View {
 
     @FocusState private var focusedCardId: String?
     @State private var uiCustomization = UICustomizationPreferences.shared
+    @State private var playerSettings = PlayerSettings.shared
+
+    /// The rail's episodes with the ones after the viewer's position covered
+    /// when Hide Episode Spoilers is on. This rail only knows one season's
+    /// list, so that list is the loaded page.
+    private var shownEpisodes: [EpisodeListItem] {
+        guard playerSettings.hideFutureEpisodeSpoilers,
+              let seasonNumber = episodes.first?.seasonNumber else { return episodes }
+        let position = EpisodeSpoilerPolicy.currentPosition(seasons: spoilerSeasons, pages: [seasonNumber: episodes])
+        return EpisodeSpoilerPolicy.cover(episodes, after: position)
+    }
 
     @ViewBuilder
     var body: some View {
@@ -132,7 +147,7 @@ struct TVEpisodeRail: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: cardSpacing) {
-                    ForEach(episodes) { episode in
+                    ForEach(shownEpisodes) { episode in
                         TVEpisodeCard(
                             episode: episode,
                             focusedEpisode: $focusedCardId,
@@ -297,8 +312,12 @@ struct TVEpisodeCard: View {
         if usesNativeShelf {
             VStack(alignment: .leading, spacing: 14) {
                 episodeButton {
-                    CachedAsyncImage(url: episode.stillUrl ?? "", targetSize: CGSize(width: cardWidth, height: stillHeight), contentMode: .fill)
+                    CachedAsyncImage(url: episode.stillUrl ?? "",
+                        targetSize: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillDecodeSize : CGSize(width: cardWidth, height: stillHeight),
+                        contentMode: .fill,
+                        softening: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillSoftening : nil)
                         .frame(width: cardWidth, height: stillHeight)
+                        .spoilerCovered(episode.hidesSpoilers, symbolSize: 40)
                         .clipShape(RoundedRectangle(cornerRadius: 18))
                         .overlay(alignment: .bottomLeading) {
                                     HStack(spacing: 6) {
@@ -550,11 +569,15 @@ private struct EpisodeCardLabel: View {
             if let url = episode.stillUrl, !url.isEmpty {
                 CachedAsyncImage(
                     url: url,
-                    targetSize: CGSize(width: cardWidth, height: stillHeight),
+                    targetSize: episode.hidesSpoilers
+                        ? EpisodeSpoilerPolicy.coveredStillDecodeSize
+                        : CGSize(width: cardWidth, height: stillHeight),
                     thumbhash: episode.stillThumbhash,
-                    contentMode: .fill
+                    contentMode: .fill,
+                    softening: episode.hidesSpoilers ? EpisodeSpoilerPolicy.coveredStillSoftening : nil
                 )
                 .frame(width: cardWidth, height: stillHeight)
+                .spoilerCovered(episode.hidesSpoilers, symbolSize: 40)
             } else {
                 Image(systemName: "film")
                     .font(.system(size: 48))
