@@ -824,6 +824,12 @@ struct MobileForYouCollections: View {
     @State private var entries: [Entry] = []
     @State private var isLoading = true
     @State private var error: ErrorState?
+    /// Emby and Jellyfin loads are numbered so an older response never
+    /// replaces a newer one after a pull-to-refresh, while still filling the
+    /// screen if the newer load fails.
+    @State private var nativeLoadGeneration = 0
+    /// The newest load whose response is on screen.
+    @State private var nativeAppliedGeneration = 0
     @State private var gridWidth: CGFloat = 0
     @Environment(AppRouter.self) private var router
 
@@ -894,11 +900,33 @@ struct MobileForYouCollections: View {
         isLoading = true
         error = nil
         if MediaServerProvider.active.usesNativeUser {
+            // Paint the last list straight away, like the library path below,
+            // so a return visit doesn't wait for the server.
+            nativeLoadGeneration += 1
+            let generation = nativeLoadGeneration
+            if let cached = ResponseCache.shared.get(CacheKey.nativeCollections, as: [LibraryCollection].self) {
+                entries = cached.map { Entry(libraryID:0,collection:$0) }
+                isLoading = false
+            }
             do {
                 let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
-                entries = response.collections.map { Entry(libraryID:0,collection:$0) }
-            } catch { self.error = ErrorState(error) }
-            isLoading = false
+                if generation > nativeAppliedGeneration {
+                    nativeAppliedGeneration = generation
+                    ResponseCache.shared.set(response.collections, for: CacheKey.nativeCollections)
+                    entries = response.collections.map { Entry(libraryID:0,collection:$0) }
+                    self.error = nil
+                }
+            } catch {
+                // Only the newest load reports a failure, and only if nothing newer
+                // has succeeded. A list on screen stays up; with nothing to show,
+                // report the failure rather than an empty state that reads as
+                // "no collections".
+                if generation == nativeLoadGeneration, generation > nativeAppliedGeneration, entries.isEmpty {
+                    self.error = ErrorState(error)
+                }
+            }
+            // An older load finishing doesn't end the loading state of a newer one.
+            if generation == nativeLoadGeneration { isLoading = false }
             return
         }
 

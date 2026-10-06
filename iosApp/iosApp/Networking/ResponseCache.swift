@@ -77,6 +77,8 @@ enum CacheKey {
     static let homeSections = "home:sections"
     static let recommendations = "recommendations:discover"
     static let collections = "collections:list"
+    /// Emby and Jellyfin collections shown in For You.
+    static let nativeCollections = "collections:native"
     static let profiles = "profiles:list"
     static let favorites = "personal:favorites"
     static let history = "personal:history"
