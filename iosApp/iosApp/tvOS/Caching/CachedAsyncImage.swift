@@ -22,6 +22,8 @@ struct CachedAsyncImage: View {
     var placeholderStyle: ImagePlaceholderStyle = .surface
     var onImageLoaded: (() -> Void)? = nil
     var cacheScope: String? = nil
+    /// Blur applied once at decode; see `VividImageRequest.softening`.
+    var softening: Float? = nil
     /// Release distant grid images without replacing the card's image view.
     var isArtworkResident = true
 
@@ -160,7 +162,7 @@ struct CachedAsyncImage: View {
             width: size.width * displayScale,
             height: size.height * displayScale
         )
-        return PosterImageCache.displayRequest(url: url, pixelSize: pixelSize, cacheScope: cacheScope ?? VividCacheScope.artwork)
+        return PosterImageCache.displayRequest(url: url, pixelSize: pixelSize, cacheScope: cacheScope ?? VividCacheScope.artwork, softening: softening)
     }
 
     private var resolvedURL: URL? {

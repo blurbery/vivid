@@ -294,6 +294,7 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                 TVEpisodeRail(
                     episodes: episodes,
                     onSelect: onEpisodeTap,
+                    spoilerSeasons: seasons,
                     onSetWatched: onSetEpisodeWatched,
                     onSetFavorite: onSetEpisodeFavorite,
                     currentContentId: nextUpEpisode?.contentId,

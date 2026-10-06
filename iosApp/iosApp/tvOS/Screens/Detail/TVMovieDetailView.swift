@@ -432,6 +432,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                 TVEpisodeRail(
                     episodes: seasonEpisodes,
                     onSelect: onEpisodeTap,
+                    spoilerSeasons: seasons,
                     onFocusedEpisodeChange: { focusedEpisodeContentId = $0 },
                     onSetWatched: onSetEpisodeWatched,
                     onSetFavorite: onSetEpisodeFavorite,

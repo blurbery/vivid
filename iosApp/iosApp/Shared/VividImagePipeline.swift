@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional permission: LICENSE-APPLE-EXCEPTION at the repository root.
+import CoreImage
 import Foundation
 import ImageIO
 import SwiftUI
@@ -24,11 +25,16 @@ struct VividImageRequest: Hashable, Sendable {
     let cacheScope: String
     var priority: Priority
     var thumbnail: ThumbnailOptions?
+    /// Gaussian blur applied once at decode, as a fraction of the decoded
+    /// width, so the cached image is already soft and nothing runs per frame.
+    var softening: Float?
     init(url: URL, priority: Priority = .normal, cacheScope: String = VividCacheScope.artwork) { self.url = url; self.priority = priority; self.cacheScope = cacheScope }
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.url == rhs.url && lhs.cacheScope == rhs.cacheScope && lhs.thumbnail == rhs.thumbnail }
-    func hash(into hasher: inout Hasher) { hasher.combine(url); hasher.combine(cacheScope); hasher.combine(thumbnail) }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.url == rhs.url && lhs.cacheScope == rhs.cacheScope && lhs.thumbnail == rhs.thumbnail && lhs.softening == rhs.softening
+    }
+    func hash(into hasher: inout Hasher) { hasher.combine(url); hasher.combine(cacheScope); hasher.combine(thumbnail); hasher.combine(softening) }
     var key: NSString {
-        "\(cacheScope)|\(url.absoluteString)|\(thumbnail?.width ?? 0)x\(thumbnail?.height ?? 0)|\(thumbnail?.fill ?? false)" as NSString
+        "\(cacheScope)|\(url.absoluteString)|\(thumbnail?.width ?? 0)x\(thumbnail?.height ?? 0)|\(thumbnail?.fill ?? false)|\(softening ?? 0)" as NSString
     }
 }
 
@@ -336,7 +342,21 @@ final class VividImagePipeline: @unchecked Sendable {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw URLError(.cannotDecodeContentData)
         }
+        if let softening = request.softening, softening > 0, let softened = soften(image, fraction: softening) {
+            return UIImage(cgImage: softened)
+        }
         return UIImage(cgImage: image)
+    }
+
+    private static let softeningContext = CIContext(options: [.cacheIntermediates: false])
+
+    /// One Gaussian blur over the decoded bitmap. Callers pair it with a small
+    /// thumbnail, so the work is a few thousand pixels, done once per image.
+    private static func soften(_ image: CGImage, fraction: Float) -> CGImage? {
+        let input = CIImage(cgImage: image)
+        let sigma = Double(Float(image.width) * fraction)
+        let blurred = input.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: input.extent)
+        return softeningContext.createCGImage(blurred, from: input.extent)
     }
 }
 

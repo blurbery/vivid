@@ -201,6 +201,20 @@ struct PlaybackSettingsView: View {
             .foregroundStyle(Color.vividOnSurface)
             .tint(.green)
             .disabled(!PlayerSettings.shared.introDBEnabled)
+
+            Toggle(isOn: Binding(
+                get: { PlayerSettings.shared.hideFutureEpisodeSpoilers },
+                set: { PlayerSettings.shared.hideFutureEpisodeSpoilers = $0 }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Hide Episode Spoilers")
+                    Text("Blur the preview and scramble the description of episodes you haven’t reached yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            .tint(.green)
         } header: {
             PhoneSettingsSectionHeader("Episodes")
         }

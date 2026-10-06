@@ -314,6 +314,8 @@ final class PlayerSettingsTests: XCTestCase {
         settings.setBufferAhead(.seconds30)
         settings.setBackgroundPlaybackEnabled(false)
         settings.setAutoPlayNextEpisode(false)
+        XCTAssertFalse(settings.hideFutureEpisodeSpoilers)
+        settings.hideFutureEpisodeSpoilers = true
         settings.setPlaybackSpeed(1.33)
         settings.preferredSubtitleLanguage = "ja"
         settings.preferredSubtitleMode = "always"
@@ -324,6 +326,7 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertEqual(restored.bufferAhead, .seconds30)
         XCTAssertFalse(restored.backgroundPlaybackEnabled)
         XCTAssertFalse(restored.autoPlayNextEpisode)
+        XCTAssertTrue(restored.hideFutureEpisodeSpoilers)
         XCTAssertEqual(restored.playbackSpeed, 1.35, accuracy: 0.001)
         XCTAssertEqual(restored.preferredSubtitleLanguage, "ja")
         XCTAssertEqual(restored.preferredSubtitleMode, "always")
@@ -337,9 +340,11 @@ final class PlayerSettingsTests: XCTestCase {
         harness.settings.setPlaybackSpeed(2)
         harness.settings.preferredSubtitleLanguage = "ja"
         harness.settings.setSubtitleMatchesSystemAppearance(true)
+        harness.settings.hideFutureEpisodeSpoilers = true
         await harness.settings.resetAllDeviceSettings()
         let restored = PlayerSettings(defaults: harness.defaults)
         XCTAssertFalse(restored.preferLosslessAudio)
+        XCTAssertFalse(restored.hideFutureEpisodeSpoilers)
         XCTAssertEqual(restored.bufferAhead, .automatic)
         XCTAssertEqual(restored.playbackSpeed, 1)
         XCTAssertEqual(restored.preferredSubtitleLanguage, PlaybackPrefSentinel.none)

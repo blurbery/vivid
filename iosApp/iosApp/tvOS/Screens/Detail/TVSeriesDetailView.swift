@@ -48,6 +48,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
 
 
     @Namespace private var detailFocusNamespace
+    @State private var playerSettings = PlayerSettings.shared
     @State private var didEstablishPlayFocus = false
     @FocusState private var playFocused: Bool
     @FocusState private var showActionRowFocused: Bool
@@ -90,10 +91,15 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
         .onAppear { isShowingSeriesOverview = activeEpisodeContentId == nil }
     }
 
+    /// Covered here, once per page draw, rather than in the shelf, whose body
+    /// re-evaluates on every focus move. Identifiers are unchanged, so focus,
+    /// the current-episode anchor and season jumps keep working.
     private var continuousPages: [Int: [EpisodeListItem]] {
         var pages = episodesBySeason
         if let selectedSeason, !isLoadingEpisodes { pages[selectedSeason.seasonNumber] = episodes }
-        return pages
+        guard playerSettings.hideFutureEpisodeSpoilers else { return pages }
+        let position = EpisodeSpoilerPolicy.currentPosition(seasons: seasons, pages: pages)
+        return EpisodeSpoilerPolicy.cover(pages, after: position)
     }
 
     private func heroView(height: CGFloat) -> some View {
