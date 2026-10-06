@@ -386,7 +386,7 @@ struct MovieDetailContent<BelowOverview: View>: View {
         VStack(alignment: .leading, spacing: 14) {
             PhoneSectionHeader(title: "Cast & Crew")
                 .padding(.horizontal, VividTheme.safePadding)
-            PhoneCastRail(cast: cast, onTap: onPersonTap)
+            PhoneCastRail(cast: cast, crew: detail.crew ?? [], onTap: onPersonTap)
         }
     }
 

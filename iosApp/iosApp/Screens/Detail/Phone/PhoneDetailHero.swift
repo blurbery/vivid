@@ -343,7 +343,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
             compactArtwork
 
             VStack(spacing: 16) {
-                metadataBlock(alignment: .center, textAlignment: .center)
+                metadataPills
 
                 actions()
                     .padding(.top, 2)
@@ -405,7 +405,7 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                 titleBlock(textAlignment: .leading, logoHeight: 122)
                     .frame(maxWidth: 430, alignment: .leading)
 
-                metadataBlock(alignment: .leading, textAlignment: .leading)
+                inlineMetadataPills
                 overviewBlock
                 creditBlock(alignment: .leading)
                 belowOverview()
@@ -543,54 +543,63 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
 
     // MARK: - Metadata
 
+    /// Compact layout: the year, runtime and genres each get their own pill on
+    /// a single line, with the age rating chip and TMDb score beneath them.
     @ViewBuilder
-    private func metadataBlock(
-        alignment: Alignment,
-        textAlignment: TextAlignment
-    ) -> some View {
-        if !metadataTokens.isEmpty || ratingChip != nil || tmdbRating != nil {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    metadataText(textAlignment: textAlignment)
-                    ratingView
-                    tmdbRatingView
+    private var metadataPills: some View {
+        let tokens = pillTokens
+        if !tokens.isEmpty || hasRatingRow {
+            VStack(spacing: 8) {
+                if !tokens.isEmpty {
+                    MetadataPillRow(tokens: tokens)
                 }
-                .frame(maxWidth: .infinity, alignment: alignment)
-
-                VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
-                    metadataText(textAlignment: textAlignment)
+                if hasRatingRow {
                     HStack(spacing: 8) {
                         ratingView
                         tmdbRatingView
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: alignment)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Wide iPad layout: there is room for the pills, age rating chip and TMDb
+    /// score to share one line.
+    @ViewBuilder
+    private var inlineMetadataPills: some View {
+        let tokens = pillTokens
+        if !tokens.isEmpty || hasRatingRow {
+            MetadataPillRow(tokens: tokens) {
+                ratingView
+                tmdbRatingView
             }
         }
     }
 
-    private func metadataText(textAlignment: TextAlignment) -> some View {
-        Text(metadataTokens.joined(separator: "  ·  "))
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(Color.vividOnSurface.opacity(0.84))
-            .multilineTextAlignment(textAlignment)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
+    private var hasRatingRow: Bool {
+        ratingChip?.isEmpty == false || tmdbRating != nil
+    }
+
+    /// Genres arrive as one comma-joined source token, so split them out to
+    /// give each genre its own pill.
+    private var pillTokens: [String] {
+        var values = factsLine.compactMap { token -> String? in
+            guard case .text(let value) = token else { return nil }
+            return value
+        }
+        for token in sourceTokens {
+            for part in token.components(separatedBy: ", ") where !values.contains(part) {
+                values.append(part)
+            }
+        }
+        return values
     }
 
     @ViewBuilder
     private var ratingView: some View {
         if let ratingChip, !ratingChip.isEmpty {
-            Text(ratingChip)
-                .font(.system(size: 11, weight: .heavy))
-                .tracking(0.7)
-                .foregroundStyle(Color.vividOnSurface)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.vividOnSurface.opacity(0.55), lineWidth: 1)
-                )
+            ContentRatingChip(rating: ratingChip)
         }
     }
 
@@ -600,15 +609,6 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
             TMDbRatingBadge(rating: tmdbRating, logoHeight: 14,
                             font: .system(size: 14, weight: .semibold), color: Color.vividOnSurface.opacity(0.92))
         }
-    }
-
-    private var metadataTokens: [String] {
-        var values = factsLine.compactMap { token -> String? in
-            guard case .text(let value) = token else { return nil }
-            return value
-        }
-        values.append(contentsOf: sourceTokens.filter { !values.contains($0) })
-        return values
     }
 
     // MARK: - Editorial copy

@@ -269,7 +269,7 @@ also skip per-item detail enrichment. Spotlight no longer fetches or persists
 full detail payloads, and older tvOS snapshots discard those payloads when read.
 Detail navigation and explicit Play/Resume retain their normal loading paths.
 Other screens keep their own caches and loading behaviour. iOS Spotlight retains
-the metadata enrichment it uses for its visible year and rating labels.
+the metadata enrichment it uses for its visible year, genre and age rating labels.
 
 These are configured budgets and task limits, not measured total memory use:
 
