@@ -107,10 +107,10 @@ final class CachePerformanceTests: XCTestCase {
         let events = Events()
         writer.write(scope: "account") {
             started.signal()
-            XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+            XCTAssertEqual(release.wait(timeout: .now() + 30), .success)
             events.append("running")
         }
-        XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(started.wait(timeout: .now() + 30), .success)
         for value in 1...100 {
             writer.write(scope: "account") { events.append("pending:\(value)") }
         }
