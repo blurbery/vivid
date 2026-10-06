@@ -79,7 +79,8 @@ Home first presents its account-scoped cached content, then reconciles it with t
 <table width="100%">
   <thead><tr><th align="left">Platform/provider</th><th align="left" width="10000">Refresh behaviour</th></tr></thead>
   <tbody>
-    <tr><td>iPhone/iPad, all providers</td><td>Refresh on visible foreground entry, then every ten seconds.</td></tr>
+    <tr><td>iPhone/iPad, Silo and Jellyfin</td><td>Refresh on visible foreground entry, then every ten seconds.</td></tr>
+    <tr><td>iPhone/iPad, Emby</td><td>Refresh on visible foreground entry, with no periodic Home timer, as on Apple TV. A failed refresh retries every ten seconds until one succeeds. Emby Home rows carry media sources for format badges, which makes each refresh too heavy to repeat every ten seconds.</td></tr>
     <tr><td>Apple TV, Jellyfin</td><td>Refresh on every visible foreground entry, then every ten seconds. Jellyfin has no realtime Home event subscription.</td></tr>
     <tr><td>Apple TV, Silo</td><td>Refresh on first entry, after at least sixty seconds away, or when a queued change or previous error needs reconciliation. While visible, refresh every thirty minutes to renew signed artwork URLs.</td></tr>
     <tr><td>Apple TV, Emby</td><td>Use the same conditional entry refresh as Silo, with no periodic Home timer.</td></tr>

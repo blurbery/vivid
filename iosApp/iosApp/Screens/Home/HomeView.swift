@@ -238,6 +238,9 @@ struct HomeView: View {
             #else
             guard shouldSyncHome else { return }
             await viewModel.loadSections()
+            // As on Apple TV, Emby Home refreshes on entry and after playback
+            // rather than re-downloading every row every 10 seconds.
+            guard MediaServerProvider.active != .emby else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
                 guard !Task.isCancelled, shouldSyncHome else { return }
@@ -245,6 +248,18 @@ struct HomeView: View {
             }
             #endif
         }
+        #if os(iOS)
+        // Without a Home timer, any failed Emby refresh (on entry, after
+        // playback or from a pull) retries every 10 seconds until one succeeds.
+        .task(id: shouldSyncHome && viewModel.lastRefreshFailed && MediaServerProvider.active == .emby) {
+            guard shouldSyncHome, viewModel.lastRefreshFailed, MediaServerProvider.active == .emby else { return }
+            while !Task.isCancelled, viewModel.lastRefreshFailed {
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                guard !Task.isCancelled, shouldSyncHome else { return }
+                await viewModel.loadSections()
+            }
+        }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .homeSectionsShouldRefresh)) { _ in
             Task {
                 #if os(tvOS)

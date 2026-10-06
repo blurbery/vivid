@@ -362,6 +362,9 @@ class HomeViewModel {
     private let updateWatchedState: SetWatched
     private let fetchHomeSections: FetchHomeSections
     private var needsSectionsRefresh = false
+    /// True when the last refresh failed, including while older rows stayed
+    /// on screen, so Home can retry without a fixed timer.
+    private(set) var lastRefreshFailed = false
     private var sectionsRevision = 0
 
     private var hasEnteredHome = false
@@ -462,7 +465,9 @@ class HomeViewModel {
 
         do {
             try await fetchAndApplySections()
+            lastRefreshFailed = false
         } catch let err {
+            lastRefreshFailed = true
             // Don't blow away painted content on a transient failure —
             // surface the error only when there's nothing to show.
             if sections.isEmpty {
@@ -613,6 +618,7 @@ class HomeViewModel {
 
         do {
             try await fetchAndApplySections()
+            lastRefreshFailed = false
         } catch {
             self.error = ErrorState(error)
         }

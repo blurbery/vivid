@@ -220,8 +220,9 @@ struct EmbyAdapter {
     /// Grid and search pages never show cast, chapters or file details, so
     /// they skip the heaviest fields, matching Jellyfin's browse requests.
     static let browseFields = "ProductionYear,Overview,Genres,Studios,ProviderIds,DateCreated,UserData,SortName,ChildCount,RecursiveItemCount,PrimaryImageAspectRatio"
-    /// Home rows keep media sources for their format badges.
-    static let homeFields = browseFields + ",MediaSources,MediaStreams"
+    /// Home rows keep media sources for their format badges. Each source
+    /// already carries its streams, so the item-level copy isn't requested.
+    static let homeFields = browseFields + ",MediaSources"
 
     static func seconds(_ ticks: Any?) -> Double {
         guard let number = ticks as? NSNumber else { return 0 }
