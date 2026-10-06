@@ -896,7 +896,8 @@ struct MobileForYouCollections: View {
         if MediaServerProvider.active.usesNativeUser {
             // Paint the last list straight away, like the library path below,
             // so a return visit doesn't wait for the server.
-            if let cached: [LibraryCollection] = ResponseCache.shared.get(CacheKey.nativeCollections) {
+            let cached = ResponseCache.shared.get(CacheKey.nativeCollections, as: [LibraryCollection].self)
+            if let cached {
                 entries = cached.map { Entry(libraryID:0,collection:$0) }
                 isLoading = false
             }
@@ -905,7 +906,8 @@ struct MobileForYouCollections: View {
                 ResponseCache.shared.set(response.collections, for: CacheKey.nativeCollections)
                 entries = response.collections.map { Entry(libraryID:0,collection:$0) }
             } catch {
-                if entries.isEmpty { self.error = ErrorState(error) }
+                // A cached list, even an empty one, stays up when the refresh fails.
+                if cached == nil { self.error = ErrorState(error) }
             }
             isLoading = false
             return
