@@ -151,7 +151,7 @@ private struct TVCastCard: View {
             }
             .buttonStyle(.card)
             .focused(focusedCastId, equals: person.id)
-            .accessibilityLabel(person.name)
+            .accessibilityLabel(accessibilityLabel)
             VStack(spacing: 4) {
                 Text(person.name)
                     .font(.system(size: 20, weight: .semibold))
@@ -169,6 +169,13 @@ private struct TVCastCard: View {
 
         }
         .frame(width: photoSize.width)
+    }
+
+    /// The focusable poster carries the role too, since the caption beneath
+    /// it isn't part of the button.
+    private var accessibilityLabel: String {
+        guard let role = person.role, !role.isEmpty else { return person.name }
+        return "\(person.name), \(role)"
     }
 
     @ViewBuilder
