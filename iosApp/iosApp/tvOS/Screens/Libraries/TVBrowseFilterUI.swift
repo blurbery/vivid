@@ -14,8 +14,9 @@ struct TVBrowseControlRow: View {
     var focusRequest: Int = 0
     var returnControl: TVBrowseControlFocus = .sort
     var onFocus: ((TVBrowseControlFocus) -> Void)? = nil
+    /// Boundary hand-up to the top menu, which stays disabled while content
+    /// owns focus. Nil when a native target sits above the row.
     var onMoveUp: (() -> Void)? = nil
-    var onMoveDown: (() -> Void)? = nil
     let onSort: (CatalogSortKey) -> Void
     let onFilterChange: (CatalogFilterState) -> Void
     let onPreserveChange: (Bool) -> Void
@@ -113,15 +114,15 @@ struct TVBrowseControlRow: View {
             }
         }
         .font(.system(size: 24, weight: .medium))
+        // Up and Down are native, so Siri Remote swipes and clicks both move
+        // between the row, the library tabs and the grid. Entering the row
+        // lands on the last control used.
+        .defaultFocus($focusedControl, returnControl, priority: .userInitiated)
         .focusSection()
         .onMoveCommand { direction in
-            switch direction {
-            case .up:
-                if let onMoveUp { focusedControl = nil; onMoveUp() }
-            case .down:
-                if let onMoveDown { focusedControl = nil; onMoveDown() }
-            default: break
-            }
+            guard direction == .up, let onMoveUp, focusedControl != nil else { return }
+            focusedControl = nil
+            onMoveUp()
         }
         .onAppear {
             preserve = preserveEnabled

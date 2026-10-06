@@ -17,8 +17,8 @@ struct TVLibraryGridView: View {
     /// pill embeds hide it — the top bar + pill row already say where the
     /// user is.
     let showsHeader: Bool
-    /// The A–Z jump rail only makes sense for title-sorted browsing; the
-    /// Recently Added pill turns it off.
+    /// Shows the A–Z menu. Choosing a letter switches to title order, so it is
+    /// available whatever the saved sort is.
     let showsAlphabetRail: Bool
     /// Top inset before the first content. Pushed entries keep the compact
     /// default; pill embeds pass the Skyline chrome clearance.
@@ -40,11 +40,8 @@ struct TVLibraryGridView: View {
     @State private var viewModel: TVLibraryGridViewModel
     @State private var loadedLibraryId: Int
     @State private var selectedPrefix: String? = nil
-    @State private var controlsOwnFocus = false
     @State private var returnControl: TVBrowseControlFocus = .sort
     @State private var controlFocusRequest = 0
-    @State private var gridFocusRequest = 0
-    @State private var gridOwnsFocus = false
     @State private var lastShellFocusRequest = 0
 
     @Environment(AppRouter.self) private var router
@@ -139,7 +136,7 @@ struct TVLibraryGridView: View {
                 }
 
                 if !libraryTabs.isEmpty {
-                    libraryTabRow.disabled(controlsOwnFocus)
+                    libraryTabRow
                 }
 
                 TVBrowseControlRow(
@@ -149,21 +146,12 @@ struct TVLibraryGridView: View {
                     isLoadingFacets: viewModel.isLoadingFacets,
                     facetsLoadFailed: viewModel.facetsLoadFailed,
                     facetsFailureReason: viewModel.facetsFailureReason,
-                    showsAlphabetMenu: showsAlphabetRail && viewModel.filter.sort == .title,
+                    showsAlphabetMenu: showsAlphabetRail,
                     preserveEnabled: viewModel.preserveEnabled,
                     focusRequest: controlFocusRequest,
                     returnControl: returnControl,
-                    onFocus: { control in
-                        controlsOwnFocus = true
-                        returnControl = control
-                        gridOwnsFocus = false
-                    },
-                    onMoveUp: {
-                        controlsOwnFocus = false
-                        if libraryTabs.isEmpty { onTopMenuFocusRequest?() }
-                        else { focusedLibraryId = libraryId }
-                    },
-                    onMoveDown: claimGridFocus,
+                    onFocus: { control in returnControl = control },
+                    onMoveUp: libraryTabs.isEmpty ? onTopMenuFocusRequest : nil,
                     onSort: { key in Task { await viewModel.setSort(key) } },
                     onFilterChange: { filter in Task { await viewModel.applyFilter(filter) } },
                     onPreserveChange: viewModel.setPreserveEnabled,
@@ -196,13 +184,10 @@ struct TVLibraryGridView: View {
                             Task { await viewModel.loadMoreIfNeeded() }
                         },
                         fixedColumnCount: libraryTabs.isEmpty ? nil : 7,
-                        focusRequest: gridOwnsFocus && !isTopMenuFocused ? gridFocusRequest : 0,
-                        onFirstRowMoveUp: { gridOwnsFocus = false; controlFocusRequest += 1 },
                         onRowVisibilityChange: { range, isVisible in
                             if libraryTabs.isEmpty { viewModel.setPosterRowVisibility(range, isVisible: isVisible) }
                         }
                     )
-                    .disabled(controlsOwnFocus)
                     .padding(.horizontal, VividTheme.safePadding)
                 }
             }
@@ -240,10 +225,12 @@ struct TVLibraryGridView: View {
             .onChange(of: focusedLibraryId) { _, id in
                 if let id { proxy.scrollTo("\(libraryType):\(id)", anchor: .center) }
             }
+            // Down is native into the control row. Up stays a boundary hand-up
+            // because the top menu is disabled while content owns focus.
             .onMoveCommand { direction in
                 if direction == .up { onTopMenuFocusRequest?() }
-                else if direction == .down { controlFocusRequest += 1 }
             }
+            .defaultFocus($focusedLibraryId, libraryId, priority: .userInitiated)
             .focusSection()
         }
         .padding(.horizontal, VividTheme.safePadding)
@@ -263,21 +250,12 @@ struct TVLibraryGridView: View {
     private func noteShellFocusRequest(_ request: Int) {
         guard request > 0, request != lastShellFocusRequest else { return }
         guard !isTopMenuFocused else { return }
-        controlsOwnFocus = false
-        gridOwnsFocus = false
         lastShellFocusRequest = request
         if libraryTabs.isEmpty {
             controlFocusRequest += 1
         } else {
             focusedLibraryId = libraryId
         }
-    }
-
-    private func claimGridFocus() {
-        guard !viewModel.items.isEmpty else { return }
-        controlsOwnFocus = false
-        gridOwnsFocus = true
-        gridFocusRequest += 1
     }
 
     private var emptyGridIcon: String {
