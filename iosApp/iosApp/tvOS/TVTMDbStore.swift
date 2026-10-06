@@ -398,9 +398,18 @@ final class MovieCollectionRowStore {
     struct Row: Equatable {
         let name: String
         let items: [SimilarPosterItem]
+        /// The server, account, profile and TMDb revision it was loaded for.
+        let context: String
     }
 
     var contextKey: String { TVTMDbStore.shared.contextKey }
+
+    /// Whether a shown row can stay up while it refreshes: the same movie,
+    /// loaded for the same server, account, profile and TMDb revision.
+    func canKeep(_ row: Row?, for detail: ItemDetail) -> Bool {
+        guard let row, row.context == contextKey else { return false }
+        return row.items.contains { $0.contentId == detail.contentId }
+    }
 
     /// The row for a movie page, or nil to keep it hidden. Movie pages add
     /// the rail only once there is a row, so a hidden row leaves no gap.
@@ -428,7 +437,7 @@ final class MovieCollectionRowStore {
             guard let item, seen.insert(item.contentId).inserted else { return nil }
             return item
         }
-        return items.count > 1 ? Row(name: collection.name, items: items) : nil
+        return items.count > 1 ? Row(name: collection.name, items: items, context: context) : nil
     }
 
     private func checkContext(_ expected: String) throws {

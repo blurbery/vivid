@@ -302,8 +302,8 @@ struct MovieDetailContent<BelowOverview: View>: View {
                 .padding(.horizontal, VividTheme.safePadding)
         }
         .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
-            // Keep this movie's row while it refreshes, so coming back to the page doesn't flicker.
-            if collectionRow?.items.contains(where: { $0.contentId == detail.contentId }) != true {
+            // Keep this movie's row while it refreshes in the same context, so coming back to the page doesn't flicker.
+            if !MovieCollectionRowStore.shared.canKeep(collectionRow, for: detail) {
                 collectionRow = nil
             }
             let row = await MovieCollectionRowStore.shared.loadRow(for: detail)
