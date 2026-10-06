@@ -47,6 +47,37 @@ enum SiloAPICompatibility {
         return (p, verb)
     }
 
+    private static let booleanRuleFields: Set<String> = [
+        "watched", "favorited", "in_watchlist", "in_progress", "hdr", "dolby_vision"
+    ]
+    private static let numericRuleFields: Set<String> = ["year", "rating_imdb", "bitrate"]
+
+    /// v1 types query-string rule values on the server, but v2 takes the JSON
+    /// type as sent and rejects a quoted "false" for watched or Dolby Vision.
+    /// Type only the fields the server compares as booleans or numbers, so
+    /// text values such as a "15" content rating stay strings.
+    static func typedRule(_ rule: [String: Any]) -> [String: Any] {
+        guard let field = rule["field"] as? String, let value = rule["value"] else { return rule }
+        func typed(_ raw: Any) -> Any {
+            guard let text = (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return raw }
+            if booleanRuleFields.contains(field) {
+                switch text.lowercased() {
+                case "true": return true
+                case "false": return false
+                default: return raw
+                }
+            }
+            if numericRuleFields.contains(field) {
+                if let integer = Int(text) { return integer }
+                if let decimal = Double(text), decimal.isFinite { return decimal }
+            }
+            return raw
+        }
+        var result = rule
+        result["value"] = (value as? [Any])?.map(typed) ?? typed(value)
+        return result
+    }
+
     static func request(_ original: URLRequest) throws -> URLRequest {
         guard let url = original.url, let path = legacyPath(url),
               var c = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -88,7 +119,7 @@ enum SiloAPICompatibility {
                         } else { rules[g, default: [:]][r, default: [:]][tokens[4]] = value }
                     }
                 }
-                for g in rules.keys { groups[g, default: [:]]["rules"] = rules[g]!.keys.sorted().map { rules[g]![$0]! } }
+                for g in rules.keys { groups[g, default: [:]]["rules"] = rules[g]!.keys.sorted().map { typedRule(rules[g]![$0]!) } }
                 q["groups"] = String(data: try JSONSerialization.data(withJSONObject: groups.keys.sorted().map { groups[$0]! }, options: [.sortedKeys]), encoding: .utf8)
             }
             c.queryItems = q.keys.sorted().map { URLQueryItem(name: $0, value: q[$0]) }

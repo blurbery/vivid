@@ -83,6 +83,34 @@ final class SiloAPICompatibilityTests: XCTestCase {
         XCTAssertEqual((groups.first?["rules"] as? [[String: Any]])?.first?["value"] as? String, "Drama")
     }
 
+    func testBuiltFiltersReachV2WithTheTypesTheServerCompares() throws {
+        var state = CatalogFilterState()
+        state.genres = ["Horror"]
+        state.contentRatings = ["15"]
+        state.decades = [2010]
+        state.dolbyVision = true
+        state.watchStatus = .unwatched
+        let query = CatalogQueryBuilder.build(
+            state, libraryId: 7, mediaType: .movie, offset: 0, limit: 60, provider: .silo
+        )
+        var components = URLComponents(string: "https://server.example/silo/api/v1/catalog")!
+        components.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        let mapped = try SiloAPICompatibility.request(URLRequest(url: components.url!))
+        let items = URLComponents(url: mapped.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        let groupsJSON = try XCTUnwrap(items.first { $0.name == "groups" }?.value)
+        let groups = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(groupsJSON.utf8)) as? [[String: Any]])
+        let rules = groups.flatMap { $0["rules"] as? [[String: Any]] ?? [] }
+        func value(_ field: String) -> Any? { rules.first { $0["field"] as? String == field }?["value"] }
+
+        XCTAssertEqual(value("genre") as? String, "Horror")
+        XCTAssertEqual(value("content_rating") as? String, "15")
+        XCTAssertEqual(value("year") as? [Int], [2010, 2019])
+        XCTAssertEqual(value("dolby_vision") as? Bool, true)
+        XCTAssertEqual(value("watched") as? Bool, false)
+        XCTAssertTrue(groupsJSON.contains(#""value":false"#))
+        XCTAssertTrue(groupsJSON.contains(#""value":[2010,2019]"#))
+    }
+
     func testPersonalListsUseHydratedCataloguePagination() throws {
         let mapped = try request("/api/v1/watchlist?offset=60&limit=60")
         let query = URLComponents(url: mapped.url!, resolvingAgainstBaseURL: false)!.queryItems!

@@ -166,6 +166,16 @@ final class CatalogQueryBuilderTests: XCTestCase {
         XCTAssertEqual(q["groups[1][rules][0][value]"], "Drama")
     }
 
+    func testChoosingAnotherGenreReplacesThePreviousOne() {
+        var s = CatalogFilterState()
+        s.toggle(.genre, value: "Horror")
+        XCTAssertEqual(s.genres, ["Horror"])
+        s.toggle(.genre, value: "Comedy")
+        XCTAssertEqual(s.genres, ["Comedy"])
+        s.toggle(.genre, value: "Comedy")
+        XCTAssertTrue(s.genres.isEmpty)
+    }
+
     func testMultiGenreBecomesOneAnyGroup() {
         var s = CatalogFilterState(); s.genres = ["Drama", "Action"]
         let q = build(s)
