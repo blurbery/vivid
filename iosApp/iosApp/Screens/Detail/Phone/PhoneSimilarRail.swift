@@ -109,12 +109,58 @@ struct PhoneSimilarRail: View {
     }
 }
 
+// MARK: - Collection rail
+
+/// "<Name> Collection" rail under More Like This on movie pages: the
+/// library titles from the movie's TMDb collection, in release order.
+/// Hidden without a TMDb connection, when the movie isn't in a
+/// collection, or when it's the only one from it in the library.
+///
+/// The movie page loads the row and only adds this view once there is
+/// one, so a hidden row leaves no gap.
+struct PhoneCollectionRail: View {
+    let detail: ItemDetail
+    let row: MovieCollectionRowStore.Row
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PhoneSectionHeader(title: row.name)
+                .padding(.horizontal, VividTheme.safePadding)
+            rail(row.items)
+        }
+    }
+
+
+    private func rail(_ items: [SimilarPosterItem]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: HorizontalMediaRailLayout.cardAlignment, spacing: 12) {
+                ForEach(items) { item in
+                    Button {
+                        // The movie being viewed stays on this page.
+                        guard item.contentId != detail.contentId else { return }
+                        onSelect(item.contentId)
+                    } label: {
+                        PhoneSimilarCard(item: item)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(item.accessibilityDescription)
+                }
+            }
+            .padding(.horizontal, VividTheme.safePadding)
+            .padding(.vertical, 4)
+            .phoneMediaRailBounds()
+        }
+    }
+}
+
 // MARK: - Card model
 
 /// View-side projection of an `ItemDetail` containing only what the
 /// poster card needs. Decoupled so the card never re-renders when
 /// unrelated detail fields change.
-struct SimilarPosterItem: Identifiable, Hashable {
+struct SimilarPosterItem: Identifiable, Hashable, Codable {
     let contentId: String
     let title: String
     let posterUrl: String?

@@ -137,6 +137,66 @@ struct TVSimilarRail: View {
 
 }
 
+// MARK: - Collection rail
+
+/// "<Name> Collection" rail under More Like This on movie pages: the
+/// library titles from the movie's TMDb collection, in release order.
+/// Hidden without a TMDb connection, when the movie isn't in a
+/// collection, or when it's the only one from it in the library.
+///
+/// The movie page loads the row and only adds this view once there is
+/// one, so a hidden row leaves no gap.
+struct TVCollectionRail: View {
+    let detail: ItemDetail
+    let row: MovieCollectionRowStore.Row
+    let onSelect: (String) -> Void
+
+    @State private var homeCards = TVHomeCardPreferences.shared
+    @FocusState private var focusedItemId: String?
+
+    private let cardWidth: CGFloat = VividTheme.Skyline.densePosterCardWidth
+    private let cardSpacing: CGFloat = 44
+    private let railVerticalPadding: CGFloat = 12
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
+            TVSectionHeader(title: row.name)
+            rail(row.items)
+        }
+    }
+
+    private func rail(_ items: [SimilarPosterItem]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: cardSpacing) {
+                ForEach(items) { item in
+                    TVMediaCard(
+                        title: item.title,
+                        posterUrl: item.posterUrl ?? "",
+                        posterThumbhash: item.posterThumbhash,
+                        year: item.year,
+                        action: {
+                            // The movie being viewed still gets the press
+                            // animation, but stays on this page.
+                            guard item.contentId != detail.contentId else { return }
+                            onSelect(item.contentId)
+                        },
+                        cardWidth: cardWidth,
+                        posterSize: homeCards.presentation.posterSize,
+                        leadingCaption: true,
+                        focusBinding: $focusedItemId,
+                        focusContentId: item.contentId
+                    )
+                }
+            }
+            .padding(.vertical, railVerticalPadding)
+        }
+        .focusSection()
+        .applySimilarRailDefaultFocus(items.first?.contentId, binding: $focusedItemId)
+        .scrollClipDisabled()
+    }
+
+}
+
 private extension View {
     /// When focus enters the Recommended rail, land on the first card rather
     /// than the geometrically-nearest one. `.userInitiated` priority is what
@@ -161,7 +221,7 @@ private extension View {
 /// View-side projection of an `ItemDetail` containing only what the
 /// poster card needs. Decoupled so the card never re-renders when
 /// unrelated detail fields change.
-struct SimilarPosterItem: Identifiable, Hashable {
+struct SimilarPosterItem: Identifiable, Hashable, Codable {
     let contentId: String
     let title: String
     let posterUrl: String?

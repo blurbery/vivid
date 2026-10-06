@@ -74,6 +74,8 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
     private let heroScrollId = "detail-hero"
     private let similarSectionScrollId = "detail-similar-section"
     @State private var focusedEpisodeContentId: String?
+    /// The TMDb collection row under More Like This, once loaded.
+    @State private var collectionRow: MovieCollectionRowStore.Row?
     @ObservedObject private var profilePrefsStore = ProfilePrefsStore.shared
 
     @ViewBuilder
@@ -134,6 +136,16 @@ TVDetailHero(
                         )
     }
 
+    private func loadCollectionRow() async {
+        // Keep this movie's row while it refreshes in the same context, so coming back to the page doesn't flicker.
+        if !MovieCollectionRowStore.shared.canKeep(collectionRow, for: detail) {
+            collectionRow = nil
+        }
+        let row = await MovieCollectionRowStore.shared.loadRow(for: detail)
+        guard !Task.isCancelled else { return }
+        collectionRow = row
+    }
+
     private var nativeMovieShelves: some View {
 VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                             if showsEpisodeRail {
@@ -149,7 +161,13 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                     .focused($similarRailFocused)
                                     .id(similarSectionScrollId)
                             }
+                            if let collectionRow {
+                                TVCollectionRail(detail: detail, row: collectionRow, onSelect: onNavigateToItem)
+                            }
                             detailsSection
+                        }
+                        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey + "|" + String(StudiosNetworksStore.shared.movieLookupRevision), priority: .utility) {
+                            await loadCollectionRow()
                         }
     }
 
@@ -200,7 +218,13 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                     .focused($similarRailFocused)
                                     .id(similarSectionScrollId)
                             }
+                            if let collectionRow {
+                                TVCollectionRail(detail: detail, row: collectionRow, onSelect: onNavigateToItem)
+                            }
                             detailsSection
+                        }
+                        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey + "|" + String(StudiosNetworksStore.shared.movieLookupRevision), priority: .utility) {
+                            await loadCollectionRow()
                         }
                         .padding(.horizontal, TVDetailLayout.horizontalInset)
                         .padding(.bottom, TVDetailLayout.pageBottomPadding)

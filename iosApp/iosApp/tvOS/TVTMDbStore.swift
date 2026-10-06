@@ -29,6 +29,8 @@ final class TVTMDbStore {
     private var credential = ""
     private let session: URLSession
     private var videoCache: [String: (Date, [ItemVideo])] = [:]
+    private var membershipCache: [String: (Date, CollectionMembership?)] = [:]
+    private var collectionCache: [String: (Date, CollectionFilms)] = [:]
 
     private var accountContext: String {
         #if os(tvOS)
@@ -104,6 +106,8 @@ final class TVTMDbStore {
     private func invalidate() {
         revision += 1
         videoCache.removeAll()
+        membershipCache.removeAll()
+        collectionCache.removeAll()
     }
 
     func videos(contentId: String) async throws -> [ItemVideo] {
@@ -152,13 +156,115 @@ final class TVTMDbStore {
         if detail.type == "movie" { kind = "movie" }
         else if VividMediaType.isSeries(detail.type) { kind = "tv" }
         else { return nil }
-        if let id = Int(detail.tmdbId ?? ""), id > 0 { return (kind,id) }
+        guard let id = try await tmdbID(kind: kind, detail: detail, context: context) else { return nil }
+        return (kind,id)
+    }
+
+    /// The item's own TMDb ID, or a lookup by IMDb ID on servers that
+    /// leave TMDb out of their provider IDs.
+    private func tmdbID(kind: String, detail: ItemDetail, context: String) async throws -> Int? {
+        if let id = Int(detail.tmdbId ?? ""), id > 0 { return id }
         guard MediaServerProvider.active.usesNativeUser, let imdb = detail.imdbId, imdb.range(of:"^tt[0-9]{7,10}$",options:.regularExpression) != nil else { return nil }
         let result: ExternalMatches = try await request("find/" + imdb,credential:credential,query:["external_source":"imdb_id"])
         try checkContext(context)
         let matches = kind == "movie" ? result.movie_results : result.tv_results
         guard let id = matches.first?.id, id > 0 else { return nil }
-        return (kind,id)
+        return id
+    }
+
+    // MARK: Collections
+
+    /// A TMDb movie collection (Scream Collection, …) with its films in
+    /// release order. `movieId` is the TMDb ID of the movie it was looked
+    /// up from.
+    struct MovieCollection: Equatable, Sendable {
+        struct Part: Equatable, Sendable {
+            let id: Int
+            let title: String
+            let originalTitle: String?
+            let year: Int?
+        }
+        let id: Int
+        let name: String
+        let movieId: Int
+        let parts: [Part]
+    }
+
+    /// A movie's TMDb ID and the TMDb collection it belongs to, if any.
+    private struct CollectionMembership {
+        let movieId: Int
+        let collectionId: Int?
+    }
+
+    /// A collection's name and films, shared by every movie in it.
+    private struct CollectionFilms {
+        let id: Int
+        let name: String
+        let parts: [MovieCollection.Part]
+    }
+
+    /// Collections rarely change, so lookups are kept for a day. The films of
+    /// a collection are cached once for every movie in it.
+    private static let collectionLifetime: TimeInterval = 24 * 60 * 60
+
+    /// The collection a library movie belongs to, or nil when it has none.
+    func collection(for detail: ItemDetail) async throws -> MovieCollection? {
+        reloadForCurrentProfile()
+        guard isConfigured, detail.type == "movie" else { return nil }
+        let context = contextKey
+        guard let membership = try await collectionMembership(for: detail, context: context),
+              let collectionID = membership.collectionId else { return nil }
+        let collection = try await collection(id: collectionID, context: context)
+        return MovieCollection(id: collection.id, name: collection.name, movieId: membership.movieId, parts: collection.parts)
+    }
+
+    private func collectionMembership(for detail: ItemDetail, context: String) async throws -> CollectionMembership? {
+        let cacheKey = context + "|" + detail.contentId
+        if let cached = membershipCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
+        guard let movieID = try await tmdbID(kind: "movie", detail: detail, context: context) else {
+            // No TMDb match is cached too, so the IMDb lookup isn't repeated on every visit.
+            storeMembership(nil, for: cacheKey)
+            return nil
+        }
+        let movie: MovieSummary = try await request("movie/\(movieID)", credential: credential)
+        try checkContext(context)
+        let membership = CollectionMembership(movieId: movieID, collectionId: movie.belongs_to_collection?.id)
+        storeMembership(membership, for: cacheKey)
+        return membership
+    }
+
+    private func storeMembership(_ membership: CollectionMembership?, for cacheKey: String) {
+        if membershipCache.count >= 200 { membershipCache.removeAll() }
+        membershipCache[cacheKey] = (Date(), membership)
+    }
+
+    private func collection(id collectionID: Int, context: String) async throws -> CollectionFilms {
+        let cacheKey = context + "|" + String(collectionID)
+        if let cached = collectionCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
+        let response: CollectionDetail = try await request("collection/\(collectionID)", credential: credential)
+        try checkContext(context)
+        let date: (CollectionPart) -> String? = { part in
+            part.release_date.flatMap { $0.isEmpty ? nil : $0 }
+        }
+        let parts = response.parts.enumerated().sorted {
+            // Unreleased films without a date go last, keeping TMDb's order.
+            switch (date($0.element), date($1.element)) {
+            case let (first?, second?) where first != second: return first < second
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return $0.offset < $1.offset
+            }
+        }.map { entry in
+            let part = entry.element
+            return MovieCollection.Part(
+                id: part.id, title: part.title ?? part.original_title ?? "",
+                originalTitle: part.original_title,
+                year: part.release_date.flatMap { Int($0.prefix(4)) })
+        }
+        let films = CollectionFilms(id: response.id, name: response.name, parts: parts)
+        if collectionCache.count >= 200 { collectionCache.removeAll() }
+        collectionCache[cacheKey] = (Date(), films)
+        return films
     }
 
     // MARK: Studios & Networks
@@ -257,6 +363,12 @@ final class TVTMDbStore {
             return ($0.published_at ?? "") > ($1.published_at ?? "")
         }
     }
+    private struct MovieSummary: Decodable { let belongs_to_collection: CollectionReference? }
+    private struct CollectionReference: Decodable { let id: Int }
+    private struct CollectionDetail: Decodable { let id: Int; let name: String; let parts: [CollectionPart] }
+    private struct CollectionPart: Decodable {
+        let id: Int; let title: String?; let original_title: String?; let release_date: String?
+    }
     private struct ExternalMatches: Decodable { let movie_results: [ExternalMatch]; let tv_results: [ExternalMatch] }
     private struct ExternalMatch: Decodable { let id: Int }
     private struct Series: Decodable { let seasons: [Season] }
@@ -266,5 +378,70 @@ final class TVTMDbStore {
     private struct Video: Decodable {
         let key: String; let name: String?; let site: String; let type: String
         let official: Bool?; let iso_639_1: String?; let published_at: String?
+    }
+}
+
+// MARK: - Collection row
+
+/// Library titles from the TMDb collection a movie belongs to, for the
+/// "<Name> Collection" row under More Like This on movie detail pages.
+/// Only titles in the library are shown, in release order, including the
+/// movie being viewed. The row is skipped when that movie is the only one.
+///
+/// Titles are matched against the library movies Studios & Networks saves
+/// each day, so the row never searches the server. Until that lookup is
+/// saved, the row stays hidden.
+@MainActor
+final class MovieCollectionRowStore {
+    static let shared = MovieCollectionRowStore()
+
+    struct Row: Equatable {
+        let name: String
+        let items: [SimilarPosterItem]
+        /// The server, account, profile and TMDb revision it was loaded for.
+        let context: String
+    }
+
+    var contextKey: String { TVTMDbStore.shared.contextKey }
+
+    /// Whether a shown row can stay up while it refreshes: the same movie,
+    /// loaded for the same server, account, profile and TMDb revision.
+    func canKeep(_ row: Row?, for detail: ItemDetail) -> Bool {
+        guard let row, row.context == contextKey else { return false }
+        return row.items.contains { $0.contentId == detail.contentId }
+    }
+
+    /// The row for a movie page, or nil to keep it hidden. Movie pages add
+    /// the rail only once there is a row, so a hidden row leaves no gap.
+    func loadRow(for detail: ItemDetail) async -> Row? {
+        guard detail.type == "movie", TVTMDbStore.shared.isConfigured else { return nil }
+        let context = contextKey
+        let result = try? await row(for: detail)
+        guard contextKey == context else { return nil }
+        return result
+    }
+
+    func row(for detail: ItemDetail) async throws -> Row? {
+        let context = contextKey
+        guard let collection = try await TVTMDbStore.shared.collection(for: detail) else { return nil }
+        try checkContext(context)
+        guard let library = await StudiosNetworksStore.shared.movieLookup() else { return nil }
+        try checkContext(context)
+
+        var seen = Set<String>()
+        let items: [SimilarPosterItem] = collection.parts.compactMap { part in
+            let item = part.id == collection.movieId
+                ? SimilarPosterItem(detail: detail)
+                : library.movie(tmdbId: part.id, titles: [part.title, part.originalTitle].compactMap { $0 }, year: part.year)
+                    .flatMap { $0.contentId == detail.contentId ? nil : $0 }
+            guard let item, seen.insert(item.contentId).inserted else { return nil }
+            return item
+        }
+        return items.count > 1 ? Row(name: collection.name, items: items, context: context) : nil
+    }
+
+    private func checkContext(_ expected: String) throws {
+        try Task.checkCancellation()
+        guard contextKey == expected else { throw CancellationError() }
     }
 }

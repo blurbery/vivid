@@ -71,6 +71,72 @@ private struct StudioNetworkIndexFile: Codable, Sendable {
     let series: [String: BrowseItem]
 }
 
+/// Only the movie cards from a saved library index. Decoding this skips the
+/// series and every field a poster card doesn't use.
+private struct StudioNetworkIndexMovieCards: Decodable, Sendable {
+    let savedAt: Date
+    let movies: [String: SimilarPosterItem]
+}
+
+/// Library movies with just what a poster card needs, keyed like the library
+/// index. Saved beside it so a movie page can find the rest of its TMDb
+/// collection without searching the server.
+struct LibraryMovieLookup: Codable, Sendable {
+    struct Movie: Codable, Sendable {
+        let card: SimilarPosterItem
+        var tmdbId: String?
+    }
+
+    let savedAt: Date
+    let movies: [Movie]
+    /// TMDb ID or title + year key, to a position in `movies`.
+    let keys: [String: Int]
+
+    init(index: [String: BrowseItem], savedAt: Date) {
+        self.init(cards: index.mapValues(SimilarPosterItem.init(item:)), savedAt: savedAt)
+    }
+
+    init(cards: [String: SimilarPosterItem], savedAt: Date) {
+        var movies: [Movie] = []
+        var positions: [String: Int] = [:]
+        var keys: [String: Int] = [:]
+        for (key, card) in cards {
+            let position: Int
+            if let existing = positions[card.contentId] {
+                position = existing
+            } else {
+                position = movies.count
+                positions[card.contentId] = position
+                movies.append(Movie(card: card))
+            }
+            keys[key] = position
+            // Title + year keys are never plain numbers.
+            if Int(key) != nil { movies[position].tmdbId = key }
+        }
+        self.savedAt = savedAt
+        self.movies = movies
+        self.keys = keys
+    }
+
+    /// TMDb ID first, then exact title and year from a movie that doesn't
+    /// carry a different TMDb ID.
+    func movie(tmdbId: Int, titles: [String], year: Int?) -> SimilarPosterItem? {
+        if let movie = movie(forKey: String(tmdbId)) { return movie.card }
+        guard let year else { return nil }
+        for title in titles {
+            if let movie = movie(forKey: StudiosNetworksStore.titleKey(title, year: year)), movie.tmdbId == nil {
+                return movie.card
+            }
+        }
+        return nil
+    }
+
+    private func movie(forKey key: String) -> Movie? {
+        guard let position = keys[key], movies.indices.contains(position) else { return nil }
+        return movies[position]
+    }
+}
+
 /// Loads, matches, caches and remembers the pinned Studios & Networks row.
 ///
 /// Uses the profile's own TMDb key. TMDb supplies each brand's logo and its
@@ -128,6 +194,10 @@ final class StudiosNetworksStore {
     private var titlesRead: [String: Int] = [:]
     private var loadTask: Task<Void, Never>?
     private let defaults = SharedDefaults.shared
+    @ObservationIgnored private var movieLookupCache: (scope: Scope, modified: Date, lookup: LibraryMovieLookup)?
+    /// Changes whenever a movie lookup is saved, so open movie pages load
+    /// their collection row again once the lookup exists.
+    private(set) var movieLookupRevision = 0
 
     // MARK: Picks
 
@@ -338,7 +408,10 @@ final class StudiosNetworksStore {
             results = cached.results
             status = .ready
             topUpForEditing()
-            guard Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else { return }
+            guard Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else {
+                Self.saveMissingMovieLookup(library: scope.cacheURL("library"), lookup: scope.cacheURL("movies"))
+                return
+            }
         } else {
             guard loadedScope == scope else { return }
             status = .loading
@@ -364,6 +437,7 @@ final class StudiosNetworksStore {
                 index = StudioNetworkIndexFile(savedAt: Date(), movies: try await movies, series: try await series)
                 await Self.write(index, scope.cacheURL("library"))
             }
+            await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
 
             // Any TMDb failure throws to the catch below, so a partial result
             // never replaces good saved results or resets the refresh timer.
@@ -566,11 +640,62 @@ final class StudiosNetworksStore {
         }.value
     }
 
-    /// Removes this device's cached results and library index for a profile,
-    /// used when its account is removed.
+    // MARK: Movie lookup
+
+    /// The saved movie lookup for this server and profile, read once in the
+    /// background and kept until a newer one is saved. Nil until the library
+    /// has been indexed with a TMDb connection.
+    func movieLookup() async -> LibraryMovieLookup? {
+        guard let scope = Scope.current, let url = scope.cacheURL("movies"),
+              let modified = Self.modificationDate(url) else { return nil }
+        if let cache = movieLookupCache, cache.scope == scope, cache.modified == modified { return cache.lookup }
+        guard let lookup = await Self.read(LibraryMovieLookup.self, url), Scope.current == scope else { return nil }
+        movieLookupCache = (scope, modified, lookup)
+        return lookup
+    }
+
+    /// Saves the movie lookup unless one from this index is already saved.
+    private nonisolated static func saveMovieLookup(_ index: StudioNetworkIndexFile, to url: URL?) async {
+        guard let url else { return }
+        if let modified = modificationDate(url), modified >= index.savedAt { return }
+        let saved = await Task.detached(priority: .utility) { () -> Bool in
+            let lookup = LibraryMovieLookup(index: index.movies, savedAt: index.savedAt)
+            guard let data = try? JSONEncoder().encode(lookup) else { return false }
+            return (try? data.write(to: url, options: .atomic)) != nil
+        }.value
+        if saved { await movieLookupSaved() }
+    }
+
+    private static func movieLookupSaved() {
+        shared.movieLookupRevision &+= 1
+    }
+
+    /// A library indexed before movie pages used the lookup gets one from its
+    /// saved index, once. It waits for Home to settle, runs at the lowest
+    /// priority and reads only the movie cards.
+    private nonisolated static func saveMissingMovieLookup(library: URL?, lookup: URL?) {
+        guard let library, let lookup, modificationDate(lookup) == nil else { return }
+        Task.detached(priority: .background) {
+            do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            guard StudiosNetworksStore.modificationDate(lookup) == nil,
+                  let data = try? Data(contentsOf: library),
+                  let index = try? JSONDecoder().decode(StudioNetworkIndexMovieCards.self, from: data),
+                  let encoded = try? JSONEncoder().encode(LibraryMovieLookup(cards: index.movies, savedAt: index.savedAt))
+            else { return }
+            guard (try? encoded.write(to: lookup, options: .atomic)) != nil else { return }
+            await StudiosNetworksStore.movieLookupSaved()
+        }
+    }
+
+    private nonisolated static func modificationDate(_ url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    /// Removes this device's cached results, library index and movie lookup
+    /// for a profile, used when its account is removed.
     nonisolated static func removeCache(server: String, profile: String) {
         let scope = Scope(server: server, profile: profile)
-        for name in ["results", "library"] {
+        for name in ["results", "library", "movies"] {
             if let url = scope.cacheURL(name) { try? FileManager.default.removeItem(at: url) }
         }
     }
