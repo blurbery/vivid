@@ -128,6 +128,7 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
     var qualitySummary: OverlaySummary? = nil
     var metadataHeading: [String] = []
     var releaseFacts: [String] = []
+    var tmdbRating: Double? = nil
     var backdropHeight: CGFloat? = nil
     var heroHeight: CGFloat = TVDetailLayout.heroHeight
     var heroTopInset: CGFloat = TVDetailLayout.heroTopInset
@@ -316,7 +317,7 @@ struct TVDetailHero<Actions: View, BelowSynopsis: View>: View {
             creditBlock
             Group {
                 if usesCompactMetadata {
-                    TVDetailTechnicalRow(facts: releaseFacts, version: qualityVersion, summary: qualitySummary)
+                    TVDetailTechnicalRow(facts: releaseFacts, version: qualityVersion, summary: qualitySummary, tmdbRating: tmdbRating)
                 }
                 else { TVPlaybackSelectionSummaryView(summary: playbackSummary) }
             }
@@ -1061,6 +1062,9 @@ struct TVDetailTechnicalRow: View {
     let facts: [String]
     let version: FileVersion?
     var summary: OverlaySummary? = nil
+    /// TMDb's user score, shown last, after the CC badge, when the viewer has
+    /// a personal TMDb connection.
+    var tmdbRating: Double? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1071,6 +1075,11 @@ struct TVDetailTechnicalRow: View {
             }
             ForEach(Array(TVHeroMetadata.sourceBadges(version, summary: summary).enumerated()), id: \.offset) { _, badge in
                 TVDetailTextBadge(text: badge, filled: TVHeroMetadata.isResolutionBadge(badge))
+            }
+            if let tmdbRating {
+                TMDbRatingBadge(rating: tmdbRating, logoHeight: 24,
+                                font: .system(size: 24, weight: .semibold), color: .white.opacity(0.92))
+                    .padding(.leading, 4)
             }
         }
         .lineLimit(1)

@@ -65,6 +65,9 @@ struct MovieDetailContent<BelowOverview: View>: View {
     @State private var showDownloadOptions = false
     /// The TMDb collection row under More Like This, once loaded.
     @State private var collectionRow: MovieCollectionRowStore.Row?
+    /// TMDb's user score for this movie, with the movie it belongs to so a
+    /// reused view never shows another title's score.
+    @State private var tmdbRating: (contentId: String, value: Double)?
 
     var body: some View {
         PhoneDetailPageSurface(
@@ -125,6 +128,7 @@ struct MovieDetailContent<BelowOverview: View>: View {
             creditText: PhoneHeroMetadata.creditText(from: detail),
             overlayData: OverlayData.from(detail),
             enablesArtworkParallax: VividMediaType.isMovieLibrary(detail.type),
+            tmdbRating: tmdbRating?.contentId == detail.contentId ? tmdbRating?.value : nil,
             actions: { actionStack },
             belowOverview: {
                 VStack(spacing: 14) {
@@ -135,6 +139,12 @@ struct MovieDetailContent<BelowOverview: View>: View {
                 }
             }
         )
+        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+            guard detail.type == "movie" else { return }
+            let rating = try? await TVTMDbStore.shared.rating(for: detail)
+            guard !Task.isCancelled else { return }
+            tmdbRating = rating.map { (detail.contentId, $0) }
+        }
     }
 
     /// Episodes carry wide stills as their own artwork. The portrait slot

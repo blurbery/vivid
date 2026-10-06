@@ -50,7 +50,7 @@ Saved server accounts, login sessions, optional Vivid PINs, profile order, share
 
 ## Apple TV
 
-I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Search uses seven posters across the available width, and TV cards share consistent title and year captions. Detail pages include optional personal-TMDb trailers, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
+I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Search uses seven posters across the available width, and TV cards share consistent title and year captions. Detail pages include optional personal-TMDb trailers and ratings, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
 
 ## iPhone and iPad
 

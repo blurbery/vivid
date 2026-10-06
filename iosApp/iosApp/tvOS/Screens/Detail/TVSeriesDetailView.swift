@@ -52,6 +52,9 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     @FocusState private var playFocused: Bool
     @FocusState private var showActionRowFocused: Bool
     @State private var isShowingSeriesOverview = true
+    /// TMDb's user score for this series, with the series it belongs to so a
+    /// reused view never shows another title's score.
+    @State private var tmdbRating: (contentId: String, value: Double)?
     @ObservedObject private var profilePrefsStore = ProfilePrefsStore.shared
 
     var body: some View {
@@ -130,6 +133,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                 return value
             },
             releaseFacts: TVHeroMetadata.releaseFacts(year: detail.year, runtime: playbackEpisode?.runtime ?? detail.runtime),
+            tmdbRating: tmdbRating?.contentId == detail.contentId ? tmdbRating?.value : nil,
             backdropHeight: TVDetailLayout.heroHeight,
             heroHeight: height,
             heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),
@@ -150,6 +154,11 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                 }
             }
         )
+        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+            let rating = try? await TVTMDbStore.shared.rating(for: detail)
+            guard !Task.isCancelled else { return }
+            tmdbRating = rating.map { (detail.contentId, $0) }
+        }
     }
 
     private var heroOverview: String? { detail.overview }

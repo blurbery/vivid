@@ -297,6 +297,9 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
     /// intentionally renders no card-overlay badges in this redesigned surface.
     var overlayData: OverlayData? = nil
     var enablesArtworkParallax = false
+    /// TMDb's user score, shown last in the metadata line when the viewer has
+    /// a personal TMDb connection.
+    var tmdbRating: Double? = nil
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let belowOverview: () -> BelowOverview
 
@@ -545,17 +548,21 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
         alignment: Alignment,
         textAlignment: TextAlignment
     ) -> some View {
-        if !metadataTokens.isEmpty || ratingChip != nil {
+        if !metadataTokens.isEmpty || ratingChip != nil || tmdbRating != nil {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     metadataText(textAlignment: textAlignment)
                     ratingView
+                    tmdbRatingView
                 }
                 .frame(maxWidth: .infinity, alignment: alignment)
 
                 VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
                     metadataText(textAlignment: textAlignment)
-                    ratingView
+                    HStack(spacing: 8) {
+                        ratingView
+                        tmdbRatingView
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: alignment)
             }
@@ -584,6 +591,14 @@ struct PhoneDetailHero<Actions: View, BelowOverview: View>: View {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(Color.vividOnSurface.opacity(0.55), lineWidth: 1)
                 )
+        }
+    }
+
+    @ViewBuilder
+    private var tmdbRatingView: some View {
+        if let tmdbRating {
+            TMDbRatingBadge(rating: tmdbRating, logoHeight: 14,
+                            font: .system(size: 14, weight: .semibold), color: Color.vividOnSurface.opacity(0.92))
         }
     }
 
