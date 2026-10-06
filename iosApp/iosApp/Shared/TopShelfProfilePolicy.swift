@@ -43,21 +43,6 @@ enum TopShelfProfilePolicy {
         return recorded.count == 1
     }
 
-    /// Records the latest count and reports whether the stored value changed,
-    /// so the caller can ask tvOS to reload the shelf.
-    @discardableResult
-    static func recordViewingProfileCount(
-        _ count: Int, serverID: String, accountEpoch: String, defaults: SharedDefaults
-    ) -> Bool {
-        var counts = defaults.data(forKey: SharedStorage.viewingProfileCountsKey)
-            .flatMap { try? JSONDecoder().decode([String: ViewingProfileCount].self, from: $0) } ?? [:]
-        let entry = ViewingProfileCount(count: count, accountEpoch: accountEpoch)
-        guard counts[serverID] != entry else { return false }
-        counts[serverID] = entry
-        guard let data = try? JSONEncoder().encode(counts) else { return false }
-        defaults.set(data, forKey: SharedStorage.viewingProfileCountsKey)
-        return true
-    }
 
     static func allowsPersonalizedContent(
         state: ProfileLaunchState,

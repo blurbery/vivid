@@ -472,16 +472,16 @@ final class ProfileLaunchPolicyTests: XCTestCase {
         XCTAssertTrue(allowed(server: "emby:server"))
         XCTAssertTrue(allowed(server: "jellyfin:server", epoch: nil))
 
-        XCTAssertTrue(TopShelfProfilePolicy.recordViewingProfileCount(
+        XCTAssertTrue(TopShelfProfileCounts.record(
             1, serverID: "server-a", accountEpoch: "account-a", defaults: defaults))
         XCTAssertTrue(allowed())
         XCTAssertFalse(allowed(epoch: "account-b"))
         XCTAssertFalse(allowed(epoch: nil))
         XCTAssertFalse(allowed(server: "server-b"))
-        XCTAssertFalse(TopShelfProfilePolicy.recordViewingProfileCount(
+        XCTAssertFalse(TopShelfProfileCounts.record(
             1, serverID: "server-a", accountEpoch: "account-a", defaults: defaults))
 
-        XCTAssertTrue(TopShelfProfilePolicy.recordViewingProfileCount(
+        XCTAssertTrue(TopShelfProfileCounts.record(
             2, serverID: "server-a", accountEpoch: "account-a", defaults: defaults))
         XCTAssertFalse(allowed())
 
