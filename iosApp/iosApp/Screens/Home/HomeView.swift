@@ -239,9 +239,10 @@ struct HomeView: View {
             guard shouldSyncHome else { return }
             await viewModel.loadSections()
             // As on Apple TV, Emby Home refreshes on entry and after playback
-            // rather than re-downloading every row every 10 seconds.
-            guard MediaServerProvider.active != .emby else { return }
-            while !Task.isCancelled {
+            // rather than re-downloading every row every 10 seconds. A failed
+            // refresh still retries every 10 seconds until one succeeds.
+            let pollsWhileVisible = MediaServerProvider.active != .emby
+            while !Task.isCancelled, pollsWhileVisible || viewModel.lastRefreshFailed {
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
                 guard !Task.isCancelled, shouldSyncHome else { return }
                 await viewModel.loadSections()
