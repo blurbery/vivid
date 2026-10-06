@@ -645,7 +645,6 @@ private struct TVForYouView: View {
     @State private var error: ErrorState?
     @State private var nextOffset = 0
     @State private var generation = 0
-    @State private var gridFocusRequest = 0
     @FocusState private var focusedTab: TVPersonalRootDestination?
     @Environment(AppRouter.self) private var router
 
@@ -660,9 +659,8 @@ private struct TVForYouView: View {
                     suppressesEdgeShading: true,
                     topContentInset: 0,
                     fixedColumnCount: 7,
-                    focusRequest: focusedTab == nil && !alphabetFocused && !isTopMenuFocused ? gridFocusRequest : 0,
                     isTopMenuFocused: isTopMenuFocused || focusedTab != nil || alphabetFocused,
-                    onMoveUp: { focusedTab = selection }
+                    onMoveUp: nil
                 )
                 .environment(\.forYouScrollHeader, AnyView(sectionTabs))
             } else {
@@ -679,7 +677,6 @@ private struct TVForYouView: View {
                         )
                         .frame(maxWidth: .infinity, minHeight: 360)
                         .focusable()
-                        .onMoveCommand { if $0 == .up { focusedTab = selection } }
                     } else {
                         TVCatalogGrid(
                             items: items,
@@ -688,9 +685,7 @@ private struct TVForYouView: View {
                             onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
                             onNearEnd: { _ in Task { await loadMore() } },
                             showsMediaTypePills: true,
-                            fixedColumnCount: 7,
-                            focusRequest: focusedTab == nil && !alphabetFocused && !isTopMenuFocused ? gridFocusRequest : 0,
-                            onFirstRowMoveUp: { focusedTab = selection }
+                            fixedColumnCount: 7
                         )
                         .padding(.horizontal, VividTheme.safePadding)
                         .padding(.bottom, 48)
@@ -741,14 +736,14 @@ private struct TVForYouView: View {
                 .focused($alphabetFocused)
             }
             .padding(.horizontal, VividTheme.safePadding)
+            // Up and Down between the tabs and the posters are native, so a
+            // click no longer moves focus twice. Entering the row lands on the
+            // current tab. Up to the top menu stays a boundary hand-up because
+            // the menu is disabled while content owns focus.
+            .defaultFocus($focusedTab, selection, priority: .userInitiated)
             .focusSection()
             .onMoveCommand { direction in
                 if direction == .up { alphabetFocused = false; focusedTab = nil; onTopMenuFocusRequest() }
-                if direction == .down {
-                    alphabetFocused = false
-                    focusedTab = nil
-                    gridFocusRequest += 1
-                }
             }
     }
 

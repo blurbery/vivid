@@ -17,8 +17,8 @@ struct TVLibraryGridView: View {
     /// pill embeds hide it — the top bar + pill row already say where the
     /// user is.
     let showsHeader: Bool
-    /// The A–Z jump rail only makes sense for title-sorted browsing; the
-    /// Recently Added pill turns it off.
+    /// Shows the A–Z menu. Choosing a letter switches to title order, so it is
+    /// available whatever the saved sort is.
     let showsAlphabetRail: Bool
     /// Top inset before the first content. Pushed entries keep the compact
     /// default; pill embeds pass the Skyline chrome clearance.
@@ -146,7 +146,7 @@ struct TVLibraryGridView: View {
                     isLoadingFacets: viewModel.isLoadingFacets,
                     facetsLoadFailed: viewModel.facetsLoadFailed,
                     facetsFailureReason: viewModel.facetsFailureReason,
-                    showsAlphabetMenu: showsAlphabetRail && viewModel.filter.sort == .title,
+                    showsAlphabetMenu: showsAlphabetRail,
                     preserveEnabled: viewModel.preserveEnabled,
                     focusRequest: controlFocusRequest,
                     returnControl: returnControl,

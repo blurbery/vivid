@@ -102,8 +102,15 @@ final class TVLibraryGridViewModel {
         await fetchPage(reset: false)
     }
 
-    /// Jump to a name prefix (A–Z + "#"). Resets pagination.
+    /// Jump to a name prefix (A–Z + "#"). Resets pagination. Like iPhone and
+    /// iPad, a letter browses titles A to Z, so the saved sort switches to
+    /// Title when it was anything else.
     func jumpToPrefix(_ letter: String?) async {
+        if letter != nil, filter.sort != .title || filter.effectiveOrder != .asc {
+            filter.sort = .title
+            filter.order = nil
+            BrowsePrefsStore.shared.saveState(filter, libraryId: libraryId, mediaScope: mediaType.catalogTypeParam)
+        }
         filter.namePrefix = letter
         await reload()
     }
