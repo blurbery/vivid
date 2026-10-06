@@ -189,7 +189,11 @@ final class ProfileLaunchPreferences {
         }
         do {
             let data = try JSONEncoder().encode(state)
-            let changed = defaults.data(forKey: SharedStorage.profileLaunchStateKey) != data
+            // Compare decoded values: the encoded bytes of a dictionary or set
+            // can differ between launches without the preferences changing.
+            let previous = defaults.data(forKey: SharedStorage.profileLaunchStateKey)
+                .flatMap { try? JSONDecoder().decode(ProfileLaunchState.self, from: $0) }
+            let changed = previous != state
             defaults.set(data, forKey: SharedStorage.profileLaunchStateKey)
             let persisted = defaults.data(forKey: SharedStorage.profileLaunchStateKey) == data
             #if os(tvOS)

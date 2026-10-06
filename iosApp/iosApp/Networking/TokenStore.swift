@@ -537,6 +537,7 @@ actor TokenStore {
             profileKeychain.delete(Self.profileTokenKey(for: serverId))
             defaults.removeObject(forKey: profileIdDefaultsKey)
             clearMirroredTokensForExtension()
+            requestTopShelfReload()
             return .persistentSessionCleared
         }
     }
@@ -681,6 +682,7 @@ actor TokenStore {
         profileKeychain.delete(profileTokenKey)
         defaults.removeObject(forKey: profileIdDefaultsKey)
         clearMirroredTokensForExtension()
+        requestTopShelfReload()
     }
 
     /// Delete tokens for an arbitrary server. Used by the registry when
@@ -911,7 +913,7 @@ actor TokenStore {
     /// Keychain slots used by notification display and diagnostics.
     /// Top Shelf reads the server-scoped accounts instead.
     /// Top Shelf shows the active viewing profile's rows, so ask tvOS to
-    /// reload it whenever that profile changes.
+    /// reload it whenever that profile changes or the session is cleared.
     private func requestTopShelfReload() {
         #if os(tvOS)
         TVTopShelfContentProvider.topShelfContentDidChange()
