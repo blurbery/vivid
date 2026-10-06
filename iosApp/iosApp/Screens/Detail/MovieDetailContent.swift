@@ -301,7 +301,7 @@ struct MovieDetailContent<BelowOverview: View>: View {
             detailsSection
                 .padding(.horizontal, VividTheme.safePadding)
         }
-        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey + "|" + String(StudiosNetworksStore.shared.movieLookupRevision), priority: .utility) {
             // Keep this movie's row while it refreshes in the same context, so coming back to the page doesn't flicker.
             if !MovieCollectionRowStore.shared.canKeep(collectionRow, for: detail) {
                 collectionRow = nil

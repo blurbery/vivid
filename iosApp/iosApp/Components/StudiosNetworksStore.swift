@@ -195,6 +195,9 @@ final class StudiosNetworksStore {
     private var loadTask: Task<Void, Never>?
     private let defaults = SharedDefaults.shared
     @ObservationIgnored private var movieLookupCache: (scope: Scope, modified: Date, lookup: LibraryMovieLookup)?
+    /// Changes whenever a movie lookup is saved, so open movie pages load
+    /// their collection row again once the lookup exists.
+    private(set) var movieLookupRevision = 0
 
     // MARK: Picks
 
@@ -655,11 +658,16 @@ final class StudiosNetworksStore {
     private nonisolated static func saveMovieLookup(_ index: StudioNetworkIndexFile, to url: URL?) async {
         guard let url else { return }
         if let modified = modificationDate(url), modified >= index.savedAt { return }
-        await Task.detached(priority: .utility) {
+        let saved = await Task.detached(priority: .utility) { () -> Bool in
             let lookup = LibraryMovieLookup(index: index.movies, savedAt: index.savedAt)
-            guard let data = try? JSONEncoder().encode(lookup) else { return }
-            try? data.write(to: url, options: .atomic)
+            guard let data = try? JSONEncoder().encode(lookup) else { return false }
+            return (try? data.write(to: url, options: .atomic)) != nil
         }.value
+        if saved { await movieLookupSaved() }
+    }
+
+    private static func movieLookupSaved() {
+        shared.movieLookupRevision &+= 1
     }
 
     /// A library indexed before movie pages used the lookup gets one from its
@@ -674,7 +682,8 @@ final class StudiosNetworksStore {
                   let index = try? JSONDecoder().decode(StudioNetworkIndexMovieCards.self, from: data),
                   let encoded = try? JSONEncoder().encode(LibraryMovieLookup(cards: index.movies, savedAt: index.savedAt))
             else { return }
-            try? encoded.write(to: lookup, options: .atomic)
+            guard (try? encoded.write(to: lookup, options: .atomic)) != nil else { return }
+            await StudiosNetworksStore.movieLookupSaved()
         }
     }
 

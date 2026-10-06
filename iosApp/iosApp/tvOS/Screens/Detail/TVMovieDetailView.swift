@@ -166,7 +166,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                             }
                             detailsSection
                         }
-                        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+                        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey + "|" + String(StudiosNetworksStore.shared.movieLookupRevision), priority: .utility) {
                             await loadCollectionRow()
                         }
     }
@@ -223,7 +223,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                             }
                             detailsSection
                         }
-                        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+                        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey + "|" + String(StudiosNetworksStore.shared.movieLookupRevision), priority: .utility) {
                             await loadCollectionRow()
                         }
                         .padding(.horizontal, TVDetailLayout.horizontalInset)
