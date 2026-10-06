@@ -1,10 +1,13 @@
 #if os(tvOS)
 import SwiftUI
 
-/// Horizontal cast rail used on the tvOS item detail screen. Each card is
-/// a focus-liftable portrait with the actor's name and character label.
+/// Horizontal cast and crew rail used on the tvOS item detail screen. Each
+/// card is a focus-liftable portrait poster with the person's name and role,
+/// grouped as directors, writers and cast with a labelled divider between
+/// groups.
 struct TVDetailCastRail: View {
     let cast: [CastMember]
+    let crew: [CrewMember]
     let onTap: (String) -> Void
     /// Non-zero changes explicitly hand focus into the first cast card from
     /// the composite Series episode carousel.
@@ -13,24 +16,36 @@ struct TVDetailCastRail: View {
     var onFocusRequestFailed: (() -> Void)? = nil
     var onFocus: (() -> Void)? = nil
 
-    private let photoWidth: CGFloat = 200
-    private let photoHeight: CGFloat = 200
-    private let cardSpacing: CGFloat = 60
+    // Same poster size and spacing as More Like This, following Home's
+    // poster size preference.
+    @State private var homeCards = TVHomeCardPreferences.shared
+    private var photoWidth: CGFloat {
+        VividTheme.Skyline.densePosterCardWidth * homeCards.presentation.posterSize.scale
+    }
+    private var photoHeight: CGFloat { photoWidth * 1.5 }
+    private let cardSpacing: CGFloat = 44
     private let maxEntries = 24
+    private let maxCrewPerGroup = 6
     @FocusState private var focusedCastId: String?
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: cardSpacing) {
-                    ForEach(cast.prefix(maxEntries)) { member in
-                        TVCastCard(
-                            member: member,
-                            photoSize: CGSize(width: photoWidth, height: photoHeight),
-                            focusedCastId: $focusedCastId,
-                            onTap: onTap
-                        )
-                        .id(member.id)
+                // Top-aligned so posters line up when a name wraps.
+                LazyHStack(alignment: .top, spacing: cardSpacing) {
+                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                        if index > 0 {
+                            TVCastGroupDivider(label: group.label, height: photoHeight)
+                        }
+                        ForEach(group.people) { person in
+                            TVCastCard(
+                                person: person,
+                                photoSize: CGSize(width: photoWidth, height: photoHeight),
+                                focusedCastId: $focusedCastId,
+                                onTap: onTap
+                            )
+                            .id(person.id)
+                        }
                     }
                 }
                 .padding(.vertical, 12)
@@ -69,8 +84,12 @@ struct TVDetailCastRail: View {
         }
     }
 
+    private var groups: [CastCrewGroup] {
+        CastCrewGrouping.groups(cast: cast, crew: crew, maxCast: maxEntries, maxCrewPerGroup: maxCrewPerGroup)
+    }
+
     private var defaultFocusId: String? {
-        cast.prefix(maxEntries).first?.id
+        groups.first?.people.first?.id
     }
 }
 
@@ -90,33 +109,57 @@ private extension View {
     }
 }
 
+/// Non-focusable divider between groups: a rotated label beside a thin
+/// line, the height of the posters.
+private struct TVCastGroupDivider: View {
+    let label: String
+    let height: CGFloat
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(label.uppercased())
+                .font(.system(size: 17, weight: .semibold))
+                .tracking(2.4)
+                .foregroundStyle(Color.vividSecondaryText)
+                .fixedSize()
+                .rotationEffect(.degrees(-90))
+                .frame(width: 20, height: height)
+            Rectangle()
+                .fill(Color.white.opacity(0.15))
+                .frame(width: 2, height: height)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 private struct TVCastCard: View {
-    let member: CastMember
+    let person: CastCrewPerson
     let photoSize: CGSize
     let focusedCastId: FocusState<String?>.Binding
     let onTap: (String) -> Void
 
-    private var isFocused: Bool { focusedCastId.wrappedValue == member.id }
+    private var isFocused: Bool { focusedCastId.wrappedValue == person.id }
 
     var body: some View {
         VStack(spacing: 12) {
             Button {
-                if let personId = member.personId { onTap(personId) }
+                if let personId = person.personId { onTap(personId) }
             } label: {
                 photo
             }
             .buttonStyle(.card)
-            .buttonBorderShape(.circle)
-            .focused(focusedCastId, equals: member.id)
-            .accessibilityLabel(member.name)
+            .focused(focusedCastId, equals: person.id)
+            .accessibilityLabel(person.name)
             VStack(spacing: 4) {
-                Text(member.name)
+                Text(person.name)
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(isFocused ? .vividOnSurface : Color.vividOnSurface.opacity(0.88))
-                    .lineLimit(2, reservesSpace: true)
+                    .lineLimit(2)
                     .multilineTextAlignment(.center)
-                if let character = member.character, !character.isEmpty {
-                    Text(character)
+                if let role = person.role, !role.isEmpty {
+                    Text(role)
                         .font(.system(size: 17, weight: .regular))
                         .foregroundColor(.vividSecondaryText)
                         .lineLimit(1)
@@ -132,11 +175,11 @@ private struct TVCastCard: View {
     private var photo: some View {
         ZStack {
             Color.vividSurfaceElevated
-            if let url = member.photoUrl, !url.isEmpty {
+            if let url = person.photoUrl, !url.isEmpty {
                 CachedAsyncImage(
                     url: url,
                     targetSize: photoSize,
-                    thumbhash: member.photoThumbhash,
+                    thumbhash: person.photoThumbhash,
                     contentMode: .fill
                 )
             } else {
@@ -146,7 +189,7 @@ private struct TVCastCard: View {
             }
         }
         .frame(width: photoSize.width, height: photoSize.height)
-        .clipShape(Circle())
+        .clipShape(RoundedRectangle(cornerRadius: VividTheme.cornerRadius))
     }
 }
 

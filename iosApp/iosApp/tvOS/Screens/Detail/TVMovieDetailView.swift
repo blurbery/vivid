@@ -519,7 +519,7 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
     private func castSection(cast: [CastMember]) -> some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
             TVSectionHeader(title: "Cast & Crew")
-            TVDetailCastRail(cast: cast, onTap: onPersonTap)
+            TVDetailCastRail(cast: cast, crew: detail.crew ?? [], onTap: onPersonTap)
         }
     }
 

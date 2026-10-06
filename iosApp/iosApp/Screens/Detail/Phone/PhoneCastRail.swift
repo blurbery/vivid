@@ -25,7 +25,8 @@ struct PhoneCastRail: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: HorizontalMediaRailLayout.cardAlignment, spacing: cardSpacing) {
+            // Top-aligned on iPad too, so posters line up when a name wraps.
+            LazyHStack(alignment: .top, spacing: cardSpacing) {
                 ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                     if index > 0 {
                         divider(label: group.label)
@@ -41,64 +42,8 @@ struct PhoneCastRail: View {
         }
     }
 
-    // MARK: - Groups
-
-    private struct RailPerson: Identifiable {
-        let id: String
-        let personId: String?
-        let name: String
-        let role: String?
-        let photoUrl: String?
-    }
-
-    private struct RailGroup: Identifiable {
-        let id: String
-        let label: String
-        let people: [RailPerson]
-    }
-
-    private var groups: [RailGroup] {
-        // A person credited more than once (a writer-director, or both
-        // screenplay and story) only appears in their first group.
-        var seen = Set<String>()
-        func crewGroup(_ id: String, label: String, role: (String?) -> String?) -> RailGroup {
-            var people: [RailPerson] = []
-            for member in crew {
-                guard people.count < maxCrewPerGroup, let title = role(member.job),
-                      seen.insert(member.personId ?? member.name.lowercased()).inserted else { continue }
-                people.append(RailPerson(id: "\(id)-\(people.count)", personId: member.personId,
-                                         name: member.name, role: title, photoUrl: member.photoUrl))
-            }
-            return RailGroup(id: id, label: label, people: people)
-        }
-
-        let directors = crewGroup("directors", label: "Directors") { job in
-            Self.normalised(job) == "director" ? "Director" : nil
-        }
-        let writers = crewGroup("writers", label: "Writers") { job in
-            let job = Self.normalised(job)
-            guard Self.writerJobs.contains(job) else { return nil }
-            return job == "creator" ? "Creator" : "Writer"
-        }
-        let castGroup = RailGroup(
-            id: "cast",
-            label: "Cast",
-            people: cast.prefix(maxEntries).enumerated().map { index, member in
-                RailPerson(id: "cast-\(index)", personId: member.personId, name: member.name,
-                           role: member.character, photoUrl: member.photoUrl)
-            }
-        )
-        return [directors, writers, castGroup].filter { !$0.people.isEmpty }
-    }
-
-    /// Writing credits as Silo (Writer) and Jellyfin's TMDb data (Screenplay,
-    /// Story, Creator and so on) name them.
-    private static let writerJobs: Set<String> = [
-        "writer", "screenplay", "story", "teleplay", "novel", "creator",
-    ]
-
-    private static func normalised(_ job: String?) -> String {
-        (job ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    private var groups: [CastCrewGroup] {
+        CastCrewGrouping.groups(cast: cast, crew: crew, maxCast: maxEntries, maxCrewPerGroup: maxCrewPerGroup)
     }
 
     // MARK: - Views
@@ -122,7 +67,7 @@ struct PhoneCastRail: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    private func card(for person: RailPerson) -> some View {
+    private func card(for person: CastCrewPerson) -> some View {
         Button {
             if let personId = person.personId { onTap(personId) }
         } label: {
