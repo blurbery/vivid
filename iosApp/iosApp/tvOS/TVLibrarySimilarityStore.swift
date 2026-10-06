@@ -53,12 +53,12 @@ final class TVLibrarySimilarityStore {
             cache[key] = (Date(), result)
             return result
         }
-        #if os(tvOS)
         if MediaServerProvider.active == .emby {
             let connection = try await EmbyConnection.current()
             let sourceID = try EmbyConnection.id(source.contentId)
+            // Poster cards only need browse fields, not cast, chapters or file details.
             let catalog = try await EmbyAdapter(connection: connection).items(
-                "/Items/\(sourceID)/Similar", query: ["Limit": "12"]
+                "/Items/\(sourceID)/Similar", query: ["Limit": "12", "Fields": EmbyAdapter.browseFields]
             )
             let response: CatalogResponse = try EmbyAdapter.decode(catalog)
             try checkContext(context)
@@ -70,7 +70,6 @@ final class TVLibrarySimilarityStore {
             cache[key] = (Date(), result)
             return result
         }
-        #endif
         Self.logger.notice("source metadata genres=\(source.genres?.count ?? 0) studios=\(source.studios?.count ?? 0) networks=\(source.networks?.count ?? 0)")
         var filters = CatalogFilterState()
         filters.genres = Set(source.genres ?? [])
