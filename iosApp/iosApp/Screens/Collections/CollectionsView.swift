@@ -824,6 +824,9 @@ struct MobileForYouCollections: View {
     @State private var entries: [Entry] = []
     @State private var isLoading = true
     @State private var error: ErrorState?
+    /// Only the newest Emby or Jellyfin load applies its result, so an older
+    /// response can't replace a newer one after a pull-to-refresh.
+    @State private var nativeLoadGeneration = 0
     @State private var gridWidth: CGFloat = 0
     @Environment(AppRouter.self) private var router
 
@@ -896,22 +899,24 @@ struct MobileForYouCollections: View {
         if MediaServerProvider.active.usesNativeUser {
             // Paint the last list straight away, like the library path below,
             // so a return visit doesn't wait for the server.
-            let cached = ResponseCache.shared.get(CacheKey.nativeCollections, as: [LibraryCollection].self)
-            if let cached {
+            nativeLoadGeneration += 1
+            let generation = nativeLoadGeneration
+            if let cached = ResponseCache.shared.get(CacheKey.nativeCollections, as: [LibraryCollection].self) {
                 entries = cached.map { Entry(libraryID:0,collection:$0) }
                 isLoading = false
             }
             do {
                 let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
+                guard generation == nativeLoadGeneration else { return }
                 ResponseCache.shared.set(response.collections, for: CacheKey.nativeCollections)
                 entries = response.collections.map { Entry(libraryID:0,collection:$0) }
                 self.error = nil
             } catch {
-                // Any cached list stays up when the refresh fails: an empty one,
-                // or one an overlapping refresh has just saved.
-                if ResponseCache.shared.get(CacheKey.nativeCollections, as: [LibraryCollection].self) == nil {
-                    self.error = ErrorState(error)
-                }
+                guard generation == nativeLoadGeneration else { return }
+                // A list on screen stays up when the refresh fails. With nothing
+                // to show, report the failure rather than an empty state that
+                // reads as "no collections".
+                if entries.isEmpty { self.error = ErrorState(error) }
             }
             isLoading = false
             return

@@ -661,7 +661,7 @@ struct EmbyAdapter {
     func collection(_ raw: [String:Any]) -> [String:Any]? {
         guard raw["Type"] as? String == "BoxSet", let id = raw["Id"] as? String, let name = raw["Name"] as? String else { return nil }
         var result: [String:Any] = ["id":id,"name":name,"title":name,"collectionType":"collection","kind":"regular"]
-        result["itemCount"] = raw["ChildCount"] ?? raw["RecursiveItemCount"]
+        result["itemCount"] = raw["ChildCount"]
         result["posterUrl"] = image(raw,kind:"Primary")
         return result
     }
