@@ -894,10 +894,19 @@ struct MobileForYouCollections: View {
         isLoading = true
         error = nil
         if MediaServerProvider.active.usesNativeUser {
+            // Paint the last list straight away, like the library path below,
+            // so a return visit doesn't wait for the server.
+            if let cached: [LibraryCollection] = ResponseCache.shared.get(CacheKey.nativeCollections) {
+                entries = cached.map { Entry(libraryID:0,collection:$0) }
+                isLoading = false
+            }
             do {
                 let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
+                ResponseCache.shared.set(response.collections, for: CacheKey.nativeCollections)
                 entries = response.collections.map { Entry(libraryID:0,collection:$0) }
-            } catch { self.error = ErrorState(error) }
+            } catch {
+                if entries.isEmpty { self.error = ErrorState(error) }
+            }
             isLoading = false
             return
         }

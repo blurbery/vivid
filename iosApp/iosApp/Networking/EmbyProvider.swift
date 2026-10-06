@@ -673,6 +673,13 @@ struct EmbyAdapter {
     private var storagePrefix: String { "vivid.emby." + (connection.identity?.account.serverId ?? connection.serverURL) + "." + userID }
     private var watchlistIDs: [String] { UserDefaults.standard.stringArray(forKey: storagePrefix + ".watchlist") ?? [] }
 
+    /// Collection cards only show a name, poster and item count. Recursive
+    /// counts and overviews made Emby take many seconds to answer.
+    nonisolated static let collectionListQuery: [String: String] = [
+        "Recursive":"true", "IncludeItemTypes":"BoxSet", "Fields":"ChildCount",
+        "EnableUserData":"false", "EnableImageTypes":"Primary", "ImageTypeLimit":"1",
+    ]
+
     nonisolated static func collectionQuery(id: String, offset: String, limit: String) -> [String:String] {
         ["ParentId":id,"Recursive":"false","GroupItemsIntoCollections":"false",
          "StartIndex":offset,"Limit":limit,"SortBy":"SortName","SortOrder":"Ascending"]
@@ -846,11 +853,11 @@ struct EmbyAdapter {
             return [:]
         }
         if path == "/api/v1/collections", method == "GET" {
-            let raw = try await connection.object("GET", "/Users/\(userID)/Items", query:["Recursive":"true", "IncludeItemTypes":"BoxSet", "Fields":"Overview,ChildCount,RecursiveItemCount", "SortBy":"SortName", "SortOrder":"Ascending"])
+            let raw = try await connection.object("GET", "/Users/\(userID)/Items", query:Self.collectionListQuery.merging(["SortBy":"SortName", "SortOrder":"Ascending"]) { _, new in new })
             return ["collections":(raw["Items"] as? [[String:Any]] ?? []).compactMap(collection),"groups":[]]
         }
         if p.count == 5, p[2] == "library", p[4] == "collections" {
-            let raw = try await connection.object("GET", "/Users/\(userID)/Items", query:["Recursive":"true", "IncludeItemTypes":"BoxSet", "Fields":"ChildCount,RecursiveItemCount", "ParentId":try await libraryID(p[3])])
+            let raw = try await connection.object("GET", "/Users/\(userID)/Items", query:Self.collectionListQuery.merging(["ParentId":try await libraryID(p[3])]) { _, new in new })
             return ["collections":(raw["Items"] as? [[String:Any]] ?? []).compactMap(collection),"sections":[]]
         }
         if p.count == 5, p[2] == "collections", p[4] == "items", method == "GET" {
