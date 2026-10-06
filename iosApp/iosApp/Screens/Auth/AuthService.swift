@@ -256,7 +256,15 @@ final class AuthService: @unchecked Sendable {
     // MARK: - Profiles
 
     func getProfiles() async throws -> [UserProfile] {
-        try await VividAPI.shared.listProfiles()
+        #if os(tvOS)
+        let requestIdentity = await TokenStore.shared.refreshAccountIdentity()
+        #endif
+        let profiles = try await VividAPI.shared.listProfiles()
+        #if os(tvOS)
+        // Top Shelf only personalises a Silo account with one viewing profile.
+        await TopShelfProfileCounts.record(profiles.count, for: requestIdentity)
+        #endif
+        return profiles
     }
 
     func selectProfile(

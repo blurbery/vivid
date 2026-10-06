@@ -34,14 +34,18 @@ struct TopShelfHTTPClient {
             serverID: serverID,
             hasStoredPIN: { profileKeychain.get("vivid.account." + $0 + ".pin.v1") != nil }
         ) else { return false }
+        let accountEpoch = accountKeychain.get(SharedStorage.accountEpochAccount(for: serverID))
+        guard TopShelfProfilePolicy.allowsViewingProfileCount(
+            countsData: defaults.data(forKey: SharedStorage.viewingProfileCountsKey),
+            serverID: serverID,
+            accountEpoch: accountEpoch
+        ) else { return false }
         let state = ProfileLaunchState.load(from: defaults)
         return TopShelfProfilePolicy.allowsPersonalizedContent(
             state: state,
             serverID: serverID,
             activeProfileID: defaults.string(forKey: SharedStorage.profileIdKey),
-            accountEpoch: accountKeychain.get(
-                SharedStorage.accountEpochAccount(for: serverID)
-            ),
+            accountEpoch: accountEpoch,
             hasStoredProfileToken: profileKeychain.get(
                 SharedStorage.profileTokenAccount(for: serverID)
             ) != nil
@@ -185,7 +189,11 @@ struct TopShelfHTTPClient {
             throw Error.unexpectedStatus(http.statusCode)
         }
 
-        let data = usesV2 ? try SiloAPICompatibility.response(rawData, path: path) : rawData
+        // Silo v2 signs artwork with root-relative URLs. tvOS loads Top Shelf
+        // images itself, so resolve them against the server that answered.
+        let data = usesV2
+            ? try SiloAPICompatibility.response(rawData, path: path, requestURL: request.url)
+            : rawData
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(T.self, from: data)

@@ -21,6 +21,29 @@ enum TopShelfProfilePolicy {
         return true
     }
 
+    struct ViewingProfileCount: Codable, Equatable {
+        let count: Int
+        let accountEpoch: String
+    }
+
+    /// A Silo account with several viewing profiles has no single owner for
+    /// the shelf, so only a recorded count of one, for the current account
+    /// session, allows personalised rows. Emby and Jellyfin sign in as one
+    /// native user, which is already the profile.
+    static func allowsViewingProfileCount(
+        countsData: Data?, serverID: String?, accountEpoch: String?
+    ) -> Bool {
+        guard let serverID else { return false }
+        if serverID.hasPrefix("emby:") || serverID.hasPrefix("jellyfin:") { return true }
+        guard let accountEpoch,
+              let countsData,
+              let counts = try? JSONDecoder().decode([String: ViewingProfileCount].self, from: countsData),
+              let recorded = counts[serverID],
+              recorded.accountEpoch == accountEpoch else { return false }
+        return recorded.count == 1
+    }
+
+
     static func allowsPersonalizedContent(
         state: ProfileLaunchState,
         serverID: String?,

@@ -456,6 +456,39 @@ final class ProfileLaunchPolicyTests: XCTestCase {
         }
     }
 
+    func testTopShelfOnlyPersonalisesASiloAccountWithOneViewingProfile() throws {
+        let name = "ProfileLaunchPolicyTests.viewingProfiles.\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { suite.removePersistentDomain(forName: name) }
+        let defaults = SharedDefaults(suite: suite, standard: suite)
+        func allowed(server: String = "server-a", epoch: String? = "account-a") -> Bool {
+            TopShelfProfilePolicy.allowsViewingProfileCount(
+                countsData: defaults.data(forKey: SharedStorage.viewingProfileCountsKey),
+                serverID: server, accountEpoch: epoch)
+        }
+
+        // Unknown counts stay static until the app has read the profile list.
+        XCTAssertFalse(allowed())
+        XCTAssertTrue(allowed(server: "emby:server"))
+        XCTAssertTrue(allowed(server: "jellyfin:server", epoch: nil))
+
+        XCTAssertTrue(TopShelfProfileCounts.record(
+            1, serverID: "server-a", accountEpoch: "account-a", defaults: defaults))
+        XCTAssertTrue(allowed())
+        XCTAssertFalse(allowed(epoch: "account-b"))
+        XCTAssertFalse(allowed(epoch: nil))
+        XCTAssertFalse(allowed(server: "server-b"))
+        XCTAssertFalse(TopShelfProfileCounts.record(
+            1, serverID: "server-a", accountEpoch: "account-a", defaults: defaults))
+
+        XCTAssertTrue(TopShelfProfileCounts.record(
+            2, serverID: "server-a", accountEpoch: "account-a", defaults: defaults))
+        XCTAssertFalse(allowed())
+
+        suite.set(Data("invalid".utf8), forKey: SharedStorage.viewingProfileCountsKey)
+        XCTAssertFalse(allowed())
+    }
+
     func testTopShelfRequiresCurrentUserProofForProtectedProfile() {
         let protected = RememberedProfile(
             profileID: "profile-a",
