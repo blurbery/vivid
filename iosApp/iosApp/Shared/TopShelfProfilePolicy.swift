@@ -21,6 +21,44 @@ enum TopShelfProfilePolicy {
         return true
     }
 
+    struct ViewingProfileCount: Codable, Equatable {
+        let count: Int
+        let accountEpoch: String
+    }
+
+    /// A Silo account with several viewing profiles has no single owner for
+    /// the shelf, so only a recorded count of one, for the current account
+    /// session, allows personalised rows. Emby and Jellyfin sign in as one
+    /// native user, which is already the profile.
+    static func allowsViewingProfileCount(
+        countsData: Data?, serverID: String?, accountEpoch: String?
+    ) -> Bool {
+        guard let serverID else { return false }
+        if serverID.hasPrefix("emby:") || serverID.hasPrefix("jellyfin:") { return true }
+        guard let accountEpoch,
+              let countsData,
+              let counts = try? JSONDecoder().decode([String: ViewingProfileCount].self, from: countsData),
+              let recorded = counts[serverID],
+              recorded.accountEpoch == accountEpoch else { return false }
+        return recorded.count == 1
+    }
+
+    /// Records the latest count and reports whether the stored value changed,
+    /// so the caller can ask tvOS to reload the shelf.
+    @discardableResult
+    static func recordViewingProfileCount(
+        _ count: Int, serverID: String, accountEpoch: String, defaults: SharedDefaults
+    ) -> Bool {
+        var counts = defaults.data(forKey: SharedStorage.viewingProfileCountsKey)
+            .flatMap { try? JSONDecoder().decode([String: ViewingProfileCount].self, from: $0) } ?? [:]
+        let entry = ViewingProfileCount(count: count, accountEpoch: accountEpoch)
+        guard counts[serverID] != entry else { return false }
+        counts[serverID] = entry
+        guard let data = try? JSONEncoder().encode(counts) else { return false }
+        defaults.set(data, forKey: SharedStorage.viewingProfileCountsKey)
+        return true
+    }
+
     static func allowsPersonalizedContent(
         state: ProfileLaunchState,
         serverID: String?,

@@ -1,5 +1,8 @@
 import Foundation
 import OSLog
+#if os(tvOS)
+import TVServices
+#endif
 
 @Observable
 final class ProfileLaunchPreferences {
@@ -186,8 +189,14 @@ final class ProfileLaunchPreferences {
         }
         do {
             let data = try JSONEncoder().encode(state)
+            let changed = defaults.data(forKey: SharedStorage.profileLaunchStateKey) != data
             defaults.set(data, forKey: SharedStorage.profileLaunchStateKey)
-            return defaults.data(forKey: SharedStorage.profileLaunchStateKey) == data
+            let persisted = defaults.data(forKey: SharedStorage.profileLaunchStateKey) == data
+            #if os(tvOS)
+            // Top Shelf follows the remembered profile and launch behaviour.
+            if changed && persisted { TVTopShelfContentProvider.topShelfContentDidChange() }
+            #endif
+            return persisted
         } catch {
             Self.logger.error("Profile launch state encode failed: \(error.localizedDescription, privacy: .public)")
             return false

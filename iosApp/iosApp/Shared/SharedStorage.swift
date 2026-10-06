@@ -66,6 +66,9 @@ enum SharedStorage {
     static let profileLaunchStateKey = "profileLaunchState.v1"
     static let savedAccountsKey = "vivid.accounts.v1"
     static let activeSavedAccountKey = "vivid.activeAccount.v1"
+    /// Silo viewing-profile counts by server, recorded by the app whenever it
+    /// reads the profile list. Top Shelf stays static unless there is one.
+    static let viewingProfileCountsKey = "vivid.viewingProfileCounts.v1"
 
     /// Breadcrumb keys the Top Shelf extension writes after each run.
     /// The main app prints these on launch so device builds without a log

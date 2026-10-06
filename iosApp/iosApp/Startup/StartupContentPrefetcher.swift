@@ -1,5 +1,6 @@
 import Foundation
 #if os(tvOS)
+import TVServices
 import UIKit
 #endif
 
@@ -91,6 +92,9 @@ enum StartupContentPrefetcher {
             probe.finish(error: nil)
             #endif
             ResponseCache.shared.set(profiles, for: CacheKey.profiles)
+            #if os(tvOS)
+            await recordViewingProfileCount(profiles.count)
+            #endif
             await AuthService.shared.reconcileAvailableProfiles(profiles)
             prefetchProfileArtwork(for: profiles)
             return profiles
@@ -104,6 +108,21 @@ enum StartupContentPrefetcher {
             throw error
         }
     }
+
+    #if os(tvOS)
+    /// Top Shelf only personalises a Silo account with one viewing profile,
+    /// so keep its count current whenever the profile list is read.
+    private static func recordViewingProfileCount(_ count: Int) async {
+        guard let serverID = await TokenStore.shared.refreshAccountIdentity()?.serverId,
+              !serverID.hasPrefix("emby:"), !serverID.hasPrefix("jellyfin:"),
+              let accountEpoch = await TokenStore.shared.getOrCreateAccountEpoch(for: serverID) else { return }
+        if TopShelfProfilePolicy.recordViewingProfileCount(
+            count, serverID: serverID, accountEpoch: accountEpoch, defaults: .shared
+        ) {
+            TVTopShelfContentProvider.topShelfContentDidChange()
+        }
+    }
+    #endif
 
     static func prefetchHomeSections() {
         Task {

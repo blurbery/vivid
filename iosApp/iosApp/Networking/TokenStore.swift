@@ -1,4 +1,7 @@
 import Foundation
+#if os(tvOS)
+import TVServices
+#endif
 
 struct RefreshAccountIdentity: Hashable, Sendable {
     let serverId: String
@@ -706,7 +709,9 @@ actor TokenStore {
     }
 
     func setProfileId(_ profileId: String?) {
+        let changed = defaults.string(forKey: profileIdDefaultsKey) != profileId
         defaults.set(profileId, forKey: profileIdDefaultsKey)
+        if changed { requestTopShelfReload() }
     }
 
     func getProfileToken() -> String? {
@@ -780,11 +785,13 @@ actor TokenStore {
         // before the new profile id is visible so the extension cannot pair
         // the new context with the old credential; the next registration
         // mints a replacement.
-        if defaults.string(forKey: profileIdDefaultsKey) != profileID {
+        let profileChanged = defaults.string(forKey: profileIdDefaultsKey) != profileID
+        if profileChanged {
             clearApplePushDisplayToken()
         }
         defaults.set(profileID, forKey: profileIdDefaultsKey)
         mirrorActiveTokensForExtension()
+        if profileChanged { requestTopShelfReload() }
         return true
     }
 
@@ -812,6 +819,7 @@ actor TokenStore {
         cachedProfileToken = nil
         clearApplePushDisplayToken()
         mirrorActiveTokensForExtension()
+        requestTopShelfReload()
         return true
     }
 
@@ -902,6 +910,14 @@ actor TokenStore {
     /// Mirror the current active access + profile tokens to fixed-name
     /// Keychain slots used by notification display and diagnostics.
     /// Top Shelf reads the server-scoped accounts instead.
+    /// Top Shelf shows the active viewing profile's rows, so ask tvOS to
+    /// reload it whenever that profile changes.
+    private func requestTopShelfReload() {
+        #if os(tvOS)
+        TVTopShelfContentProvider.topShelfContentDidChange()
+        #endif
+    }
+
     private func mirrorActiveTokensForExtension() {
         guard loadedForServerId == activeServerId else { return }
         if cachedAccessToken != lastMirroredAccessToken {
