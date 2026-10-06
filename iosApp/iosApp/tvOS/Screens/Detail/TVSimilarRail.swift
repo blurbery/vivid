@@ -143,32 +143,26 @@ struct TVSimilarRail: View {
 /// library titles from the movie's TMDb collection, in release order.
 /// Hidden without a TMDb connection, when the movie isn't in a
 /// collection, or when it's the only one from it in the library.
+///
+/// The movie page loads the row and only adds this view once there is
+/// one, so a hidden row leaves no gap.
 struct TVCollectionRail: View {
     let detail: ItemDetail
+    let row: MovieCollectionRowStore.Row
     let onSelect: (String) -> Void
 
-    @State private var row: MovieCollectionRowStore.Row?
-    @State private var resultContext = ""
     @State private var homeCards = TVHomeCardPreferences.shared
-    @State private var tmdb = TVTMDbStore.shared
     @FocusState private var focusedItemId: String?
 
-    private let store = MovieCollectionRowStore.shared
     private let cardWidth: CGFloat = VividTheme.Skyline.densePosterCardWidth
     private let cardSpacing: CGFloat = 44
     private let railVerticalPadding: CGFloat = 12
 
     var body: some View {
-        // Keep a mounted container even before results exist so the task runs.
-        VStack(alignment: .leading, spacing: 0) {
-            if let row, resultContext == store.contextKey {
-                VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
-                    TVSectionHeader(title: row.name)
-                    rail(row.items)
-                }
-            }
+        VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
+            TVSectionHeader(title: row.name)
+            rail(row.items)
         }
-        .task(id: detail.contentId + tmdb.contextKey, priority: .utility) { await load() }
     }
 
     private func rail(_ items: [SimilarPosterItem]) -> some View {
@@ -201,15 +195,6 @@ struct TVCollectionRail: View {
         .scrollClipDisabled()
     }
 
-    private func load() async {
-        row = nil
-        guard detail.type == "movie", tmdb.isConfigured else { return }
-        let context = store.contextKey
-        let result = try? await store.row(for: detail)
-        guard !Task.isCancelled, store.contextKey == context else { return }
-        row = result
-        resultContext = context
-    }
 }
 
 private extension View {
@@ -236,7 +221,7 @@ private extension View {
 /// View-side projection of an `ItemDetail` containing only what the
 /// poster card needs. Decoupled so the card never re-renders when
 /// unrelated detail fields change.
-struct SimilarPosterItem: Identifiable, Hashable {
+struct SimilarPosterItem: Identifiable, Hashable, Codable {
     let contentId: String
     let title: String
     let posterUrl: String?

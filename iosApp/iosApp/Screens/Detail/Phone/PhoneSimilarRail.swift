@@ -113,25 +113,22 @@ struct PhoneSimilarRail: View {
 /// library titles from the movie's TMDb collection, in release order.
 /// Hidden without a TMDb connection, when the movie isn't in a
 /// collection, or when it's the only one from it in the library.
+///
+/// The movie page loads the row and only adds this view once there is
+/// one, so a hidden row leaves no gap.
 struct PhoneCollectionRail: View {
     let detail: ItemDetail
+    let row: MovieCollectionRowStore.Row
     let onSelect: (String) -> Void
 
-    @State private var row: MovieCollectionRowStore.Row?
-    @State private var tmdb = TVTMDbStore.shared
-
     var body: some View {
-        Group {
-            if let row {
-                VStack(alignment: .leading, spacing: 14) {
-                    PhoneSectionHeader(title: row.name)
-                        .padding(.horizontal, VividTheme.safePadding)
-                    rail(row.items)
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            PhoneSectionHeader(title: row.name)
+                .padding(.horizontal, VividTheme.safePadding)
+            rail(row.items)
         }
-        .task(id: detail.contentId + "|" + tmdb.contextKey) { await load() }
     }
+
 
     private func rail(_ items: [SimilarPosterItem]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -154,15 +151,6 @@ struct PhoneCollectionRail: View {
             .phoneMediaRailBounds()
         }
     }
-
-    private func load() async {
-        row = nil
-        guard detail.type == "movie", tmdb.isConfigured else { return }
-        let context = MovieCollectionRowStore.shared.contextKey
-        let result = try? await MovieCollectionRowStore.shared.row(for: detail)
-        guard !Task.isCancelled, MovieCollectionRowStore.shared.contextKey == context else { return }
-        row = result
-    }
 }
 
 // MARK: - Card model
@@ -170,7 +158,7 @@ struct PhoneCollectionRail: View {
 /// View-side projection of an `ItemDetail` containing only what the
 /// poster card needs. Decoupled so the card never re-renders when
 /// unrelated detail fields change.
-struct SimilarPosterItem: Identifiable, Hashable {
+struct SimilarPosterItem: Identifiable, Hashable, Codable {
     let contentId: String
     let title: String
     let posterUrl: String?

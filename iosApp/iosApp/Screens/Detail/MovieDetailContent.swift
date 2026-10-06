@@ -63,6 +63,8 @@ struct MovieDetailContent<BelowOverview: View>: View {
     /// Presents the DownloadActionButton's options sheet; lives here so the
     /// overflow menu can open it now that a plain tap downloads directly.
     @State private var showDownloadOptions = false
+    /// The TMDb collection row under More Like This, once loaded.
+    @State private var collectionRow: MovieCollectionRowStore.Row?
 
     var body: some View {
         PhoneDetailPageSurface(
@@ -293,11 +295,20 @@ struct MovieDetailContent<BelowOverview: View>: View {
             if showsSimilarRail {
                 similarSection
             }
-            if detail.type == "movie" {
-                PhoneCollectionRail(detail: detail, onSelect: onNavigateToItem)
+            if let collectionRow {
+                PhoneCollectionRail(detail: detail, row: collectionRow, onSelect: onNavigateToItem)
             }
             detailsSection
                 .padding(.horizontal, VividTheme.safePadding)
+        }
+        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+            // Keep this movie's row while it refreshes, so coming back to the page doesn't flicker.
+            if collectionRow?.items.contains(where: { $0.contentId == detail.contentId }) != true {
+                collectionRow = nil
+            }
+            let row = await MovieCollectionRowStore.shared.loadRow(for: detail)
+            guard !Task.isCancelled else { return }
+            collectionRow = row
         }
     }
 
