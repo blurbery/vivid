@@ -618,6 +618,7 @@ class HomeViewModel {
 
         do {
             try await fetchAndApplySections()
+            lastRefreshFailed = false
         } catch {
             self.error = ErrorState(error)
         }
