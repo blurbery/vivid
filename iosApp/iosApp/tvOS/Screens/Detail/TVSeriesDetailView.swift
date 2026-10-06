@@ -75,7 +75,9 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                         onPlayEpisode(episode.contentId, selectedFileId(for: episode), false)
                     }, onWatched: onSetEpisodeWatched, onFavorite: onSetEpisodeFavorite)
                 trailersSection
-                if let cast = detail.cast, !cast.isEmpty { castSection(cast: cast) }
+                if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
+                    castSection(cast: detail.cast ?? [])
+                }
                 similarSection
                 detailsSection
             }
@@ -360,7 +362,7 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     private func castSection(cast: [CastMember]) -> some View {
         VStack(alignment: .leading, spacing: TVDetailLayout.sectionHeaderSpacing) {
             TVSectionHeader(title: "Cast & Crew")
-            TVDetailCastRail(cast: cast, onTap: onPersonTap)
+            TVDetailCastRail(cast: cast, crew: detail.crew ?? [], onTap: onPersonTap)
         }
     }
 }

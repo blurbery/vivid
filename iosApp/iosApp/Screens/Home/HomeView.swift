@@ -523,15 +523,21 @@ private struct PhoneDiscoverySpotlight: View {
         visible && scenePhase == .active && !reduceMotion && !router.isItemDetailPresentationActive
     }
     private var slides: [TVHomeSpotlightSlide] { preferences.slides(from: sections) }
-    private func spotlightMetadata(for item: SectionItem) -> String {
+    @ViewBuilder
+    private func spotlightMetadata(for item: SectionItem) -> some View {
         let metadata = TVHomeMetadataCache.shared.spotlightMetadata(for: item)
-        let classification = metadata?.contentRating ?? item.contentRating
+        let classification = (metadata?.contentRating ?? item.contentRating)?
+            .trimmingCharacters(in: .whitespaces)
         let year = metadata?.year ?? item.year
-        let genre = metadata?.genres?.first ?? item.genres?.first
-        let detailRating = metadata?.ratingImdb ?? metadata?.ratingTmdb
-        let rating = detailRating ?? item.ratingImdb ?? item.ratingTmdb
-        let parts: [String?] = [classification, year.map(String.init), genre, rating.map { String(format: "★ %.1f", $0) }]
-        return parts.compactMap { $0 }.joined(separator: " · ")
+        let genres = [metadata?.genres, item.genres].compactMap { $0 }.first { !$0.isEmpty } ?? []
+        let tokens = [year.map(String.init)].compactMap { $0 } + genres.prefix(2)
+        if !tokens.isEmpty || classification?.isEmpty == false {
+            MetadataPillRow(tokens: tokens) {
+                if let classification, !classification.isEmpty {
+                    ContentRatingChip(rating: classification)
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -553,8 +559,7 @@ private struct PhoneDiscoverySpotlight: View {
                                     } else {
                                         Text(slide.item.title).font(.title2.bold()).lineLimit(2)
                                     }
-                                    Text(spotlightMetadata(for: slide.item))
-                                        .font(.caption).foregroundStyle(.white.opacity(0.8))
+                                    spotlightMetadata(for: slide.item)
                                 }
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: .infinity)

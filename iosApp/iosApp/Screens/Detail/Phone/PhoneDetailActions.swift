@@ -36,8 +36,8 @@ struct PhonePrimaryPillButton: View {
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, fullWidth ? 24 : 24)
             .frame(height: 52)
-            .vividGlass(in: Capsule(), tint: .black.opacity(0.26), interactive: true)
-            .overlay { Capsule().strokeBorder(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.14), .white.opacity(0.38)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1) }
+            .vividGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), tint: .black.opacity(0.26), interactive: true)
+            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.65), .white.opacity(0.14), .white.opacity(0.38)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1) }
         }
         .buttonStyle(.plain)
     }
