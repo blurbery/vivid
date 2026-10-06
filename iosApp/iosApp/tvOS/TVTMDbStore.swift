@@ -32,7 +32,12 @@ final class TVTMDbStore {
     private var membershipCache: [String: (Date, CollectionMembership?)] = [:]
     private var collectionCache: [String: (Date, CollectionFilms)] = [:]
     private var movieCache: [String: (Date, MovieSummary)] = [:]
+    private var seriesCache: [String: (Date, Series)] = [:]
     private var ratingCache: [String: (Date, Double?)] = [:]
+    /// Concurrent readers of the same title share one request, so the rating
+    /// and the collection row never both fetch `movie/{id}` before it's cached.
+    private let movieFlights = MetadataSingleFlight<String, MovieSummary>()
+    private let seriesFlights = MetadataSingleFlight<String, Series>()
 
     private var accountContext: String {
         #if os(tvOS)
@@ -111,6 +116,7 @@ final class TVTMDbStore {
         membershipCache.removeAll()
         collectionCache.removeAll()
         movieCache.removeAll()
+        seriesCache.removeAll()
         ratingCache.removeAll()
     }
 
@@ -128,8 +134,7 @@ final class TVTMDbStore {
         var candidates = main
         if source.kind == "tv" {
             do {
-                let series: Series = try await request("tv/\(source.id)", credential: credential)
-                try checkContext(context)
+                let series = try await seriesSummary(id: source.id, context: context)
                 if let latest = series.seasons.filter({ $0.season_number > 0 }).max(by: { $0.season_number < $1.season_number }) {
                     let season: Videos = try await request("tv/\(source.id)/season/\(latest.season_number)/videos", credential: credential)
                     try checkContext(context)
@@ -240,11 +245,28 @@ final class TVTMDbStore {
     private func movieSummary(id: Int, context: String) async throws -> MovieSummary {
         let cacheKey = context + "|movie|" + String(id)
         if let cached = movieCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        let movie: MovieSummary = try await request("movie/\(id)", credential: credential)
+        let credential = credential
+        let movie = try await movieFlights.value(for: cacheKey) { [self] in
+            try await request("movie/\(id)", credential: credential) as MovieSummary
+        }
         try checkContext(context)
         if movieCache.count >= 200 { movieCache.removeAll() }
         movieCache[cacheKey] = (Date(), movie)
         return movie
+    }
+
+    /// One `tv/{id}` read serves trailers and the rating.
+    private func seriesSummary(id: Int, context: String) async throws -> Series {
+        let cacheKey = context + "|tv|" + String(id)
+        if let cached = seriesCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
+        let credential = credential
+        let series = try await seriesFlights.value(for: cacheKey) { [self] in
+            try await request("tv/\(id)", credential: credential) as Series
+        }
+        try checkContext(context)
+        if seriesCache.count >= 200 { seriesCache.removeAll() }
+        seriesCache[cacheKey] = (Date(), series)
+        return series
     }
 
     private func storeMembership(_ membership: CollectionMembership?, for cacheKey: String) {
@@ -302,8 +324,7 @@ final class TVTMDbStore {
                 let movie = try await movieSummary(id: id, context: context)
                 rating = Self.displayRating(average: movie.vote_average, count: movie.vote_count)
             } else {
-                let series: Series = try await request("tv/\(id)", credential: credential)
-                try checkContext(context)
+                let series = try await seriesSummary(id: id, context: context)
                 rating = Self.displayRating(average: series.vote_average, count: series.vote_count)
             }
         } else {
