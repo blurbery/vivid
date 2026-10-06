@@ -219,13 +219,14 @@ struct CatalogFilterState: Equatable, Codable, Hashable {
         selectedValues(facet).contains(value)
     }
 
-    /// Toggle a value within a facet. Watch status is single-select
-    /// (toggling the active value clears it); everything else is multi-select.
+    /// Toggle a value within a facet. Genre and watch status are single-select
+    /// (choosing another value replaces the previous one, and toggling the
+    /// active value clears it); everything else is multi-select.
     mutating func toggle(_ facet: CatalogFacet, value: String) {
         switch facet {
         case .itemType:
             mediaScope = (mediaScope == value) ? nil : value
-        case .genre: Self.toggle(&genres, value)
+        case .genre: genres = genres == [value] ? [] : [value]
         case .contentRating: Self.toggle(&contentRatings, value)
         case .studio: Self.toggle(&studios, value)
         case .network: Self.toggle(&networks, value)
