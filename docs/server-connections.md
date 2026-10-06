@@ -26,7 +26,7 @@ Vivid owns its interface, browsing behaviour and playback experience. Each media
 > [!NOTE]
 > Silo, Emby and Jellyfin are implemented. See the [Emby core](cores/emby.md) and [Jellyfin core](cores/jellyfin.md) for supported behaviour and verification gaps. Keep each provider’s requests and credentials separate.
 
-Movies and Series offer Release Date in the Sort menu on iPhone, iPad and Apple TV. It starts with Newest; selecting it again switches to Oldest. Movies use their release date and series use their premiere date, rather than the date files were added. Sorting happens on the server before pagination: Silo uses `release_date`, while Emby and Jellyfin use `PremiereDate`. The existing Preserve sort & filters preference also retains this selection. Genre is single-select on every provider: choosing another genre replaces the previous one, and choosing the ticked genre clears it.
+Movies and Series offer Release Date in the Sort menu on iPhone, iPad and Apple TV. It starts with Newest; selecting it again switches to Oldest. Movies use their release date and series use their premiere date, rather than the date files were added. Sorting happens on the server before pagination: Silo uses `release_date`, while Emby and Jellyfin use `PremiereDate`. The existing Preserve sort & filters preference also retains this selection. Genre is single-select on every provider: choosing another genre replaces the previous one, and choosing the only ticked genre clears it. A filter saved earlier with several genres still loads, and collapses to the next genre chosen.
 
 ## Saved accounts on Apple TV, iPhone and iPad
 
