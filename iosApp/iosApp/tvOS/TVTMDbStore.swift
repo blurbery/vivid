@@ -29,7 +29,7 @@ final class TVTMDbStore {
     private var credential = ""
     private let session: URLSession
     private var videoCache: [String: (Date, [ItemVideo])] = [:]
-    private var membershipCache: [String: (Date, CollectionMembership)] = [:]
+    private var membershipCache: [String: (Date, CollectionMembership?)] = [:]
     private var collectionCache: [String: (Date, CollectionFilms)] = [:]
 
     private var accountContext: String {
@@ -221,13 +221,21 @@ final class TVTMDbStore {
     private func collectionMembership(for detail: ItemDetail, context: String) async throws -> CollectionMembership? {
         let cacheKey = context + "|" + detail.contentId
         if let cached = membershipCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        guard let movieID = try await tmdbID(kind: "movie", detail: detail, context: context) else { return nil }
+        guard let movieID = try await tmdbID(kind: "movie", detail: detail, context: context) else {
+            // No TMDb match is cached too, so the IMDb lookup isn't repeated on every visit.
+            storeMembership(nil, for: cacheKey)
+            return nil
+        }
         let movie: MovieSummary = try await request("movie/\(movieID)", credential: credential)
         try checkContext(context)
         let membership = CollectionMembership(movieId: movieID, collectionId: movie.belongs_to_collection?.id)
+        storeMembership(membership, for: cacheKey)
+        return membership
+    }
+
+    private func storeMembership(_ membership: CollectionMembership?, for cacheKey: String) {
         if membershipCache.count >= 200 { membershipCache.removeAll() }
         membershipCache[cacheKey] = (Date(), membership)
-        return membership
     }
 
     private func collection(id collectionID: Int, context: String) async throws -> CollectionFilms {
