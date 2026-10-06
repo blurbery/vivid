@@ -917,14 +917,16 @@ struct MobileForYouCollections: View {
                     self.error = nil
                 }
             } catch {
-                // A failure only matters if nothing newer has succeeded. A list on
-                // screen stays up; with nothing to show, report the failure rather
-                // than an empty state that reads as "no collections".
-                if generation > nativeAppliedGeneration, entries.isEmpty {
+                // Only the newest load reports a failure, and only if nothing newer
+                // has succeeded. A list on screen stays up; with nothing to show,
+                // report the failure rather than an empty state that reads as
+                // "no collections".
+                if generation == nativeLoadGeneration, generation > nativeAppliedGeneration, entries.isEmpty {
                     self.error = ErrorState(error)
                 }
             }
-            isLoading = false
+            // An older load finishing doesn't end the loading state of a newer one.
+            if generation == nativeLoadGeneration { isLoading = false }
             return
         }
 
