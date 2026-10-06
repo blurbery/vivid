@@ -905,9 +905,13 @@ struct MobileForYouCollections: View {
                 let response: LibraryCollectionsWireResponse = try await HTTPClient.shared.get("/api/v1/collections")
                 ResponseCache.shared.set(response.collections, for: CacheKey.nativeCollections)
                 entries = response.collections.map { Entry(libraryID:0,collection:$0) }
+                self.error = nil
             } catch {
-                // A cached list, even an empty one, stays up when the refresh fails.
-                if cached == nil { self.error = ErrorState(error) }
+                // Any cached list stays up when the refresh fails: an empty one,
+                // or one an overlapping refresh has just saved.
+                if ResponseCache.shared.get(CacheKey.nativeCollections, as: [LibraryCollection].self) == nil {
+                    self.error = ErrorState(error)
+                }
             }
             isLoading = false
             return
