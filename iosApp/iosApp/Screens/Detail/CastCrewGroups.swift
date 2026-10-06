@@ -65,6 +65,12 @@ enum CastCrewGrouping {
         return [directors, writers, castGroup].filter { !$0.people.isEmpty }
     }
 
+    /// Whether the rail has anyone to show, so titles credited with only a
+    /// director or writers still get a Cast & Crew section.
+    static func hasPeople(cast: [CastMember]?, crew: [CrewMember]?) -> Bool {
+        !groups(cast: cast ?? [], crew: crew ?? []).isEmpty
+    }
+
     /// Writing credits as Silo (Writer) and Jellyfin's TMDb data (Screenplay,
     /// Story, Creator and so on) name them.
     private static let writerJobs: Set<String> = [

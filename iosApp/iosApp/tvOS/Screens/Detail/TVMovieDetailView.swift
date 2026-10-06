@@ -167,8 +167,8 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                     .id(episodeSectionScrollId)
                             }
                             trailersSection
-                            if let cast = supportingCast, !cast.isEmpty {
-                                castSection(cast: cast)
+                            if CastCrewGrouping.hasPeople(cast: supportingCast, crew: detail.crew) {
+                                castSection(cast: supportingCast ?? [])
                             }
                             if showsSimilarRail {
                                 similarSection
@@ -224,8 +224,8 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                     .id(episodeSectionScrollId)
                             }
                             trailersSection
-                            if let cast = supportingCast, !cast.isEmpty {
-                                castSection(cast: cast)
+                            if CastCrewGrouping.hasPeople(cast: supportingCast, crew: detail.crew) {
+                                castSection(cast: supportingCast ?? [])
                             }
                             if showsSimilarRail {
                                 similarSection

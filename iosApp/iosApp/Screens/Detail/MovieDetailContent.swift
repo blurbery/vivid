@@ -298,8 +298,8 @@ struct MovieDetailContent<BelowOverview: View>: View {
 
             trailersSection
 
-            if let cast = detail.cast, !cast.isEmpty {
-                castSection(cast: cast)
+            if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
+                castSection(cast: detail.cast ?? [])
             }
 
             if showsSimilarRail {

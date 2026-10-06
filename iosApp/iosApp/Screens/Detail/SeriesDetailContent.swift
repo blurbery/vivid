@@ -387,8 +387,8 @@ struct SeriesDetailContent<BelowOverview: View>: View {
         VStack(alignment: .leading, spacing: 36) {
             episodesSection
             trailersSection
-            if let cast = detail.cast, !cast.isEmpty {
-                castSection(cast: cast)
+            if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
+                castSection(cast: detail.cast ?? [])
             }
             similarSection
             detailsSection

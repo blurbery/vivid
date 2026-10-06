@@ -232,8 +232,8 @@ struct SeasonDetailContent<BelowOverview: View>: View {
     private var belowFold: some View {
         VStack(alignment: .leading, spacing: 36) {
             episodesSection
-            if let cast = detail.cast, !cast.isEmpty {
-                castSection(cast: cast)
+            if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
+                castSection(cast: detail.cast ?? [])
             }
             detailsSection.padding(.horizontal, VividTheme.safePadding)
         }

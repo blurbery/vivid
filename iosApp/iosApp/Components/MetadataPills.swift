@@ -23,15 +23,16 @@ struct MetadataPill: View {
 }
 
 /// One line of metadata pills that never wraps. When the line is too wide,
-/// trailing pills (the last genre first) are left off until it fits. Any
-/// trailing content, such as the age rating chip, always stays at the end.
+/// trailing pills (the last genre first) are left off until it fits, down to
+/// none. Any trailing content, such as the age rating chip, always stays at
+/// the end.
 struct MetadataPillRow<Trailing: View>: View {
     let tokens: [String]
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            ForEach(Array(stride(from: tokens.count, through: tokens.isEmpty ? 0 : 1, by: -1)), id: \.self) { count in
+            ForEach(Array(stride(from: tokens.count, through: 0, by: -1)), id: \.self) { count in
                 row(Array(tokens.prefix(count)))
             }
         }

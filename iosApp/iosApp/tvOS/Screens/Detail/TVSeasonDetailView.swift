@@ -95,8 +95,8 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                     VStack(alignment: .leading, spacing: 72) {
                         episodeSection
                             .id(episodeSectionScrollId)
-                        if let cast = detail.cast, !cast.isEmpty {
-                            castSection(cast: cast)
+                        if CastCrewGrouping.hasPeople(cast: detail.cast, crew: detail.crew) {
+                            castSection(cast: detail.cast ?? [])
                         }
                         detailsSection
                     }
