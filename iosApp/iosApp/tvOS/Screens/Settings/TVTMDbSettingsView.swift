@@ -21,7 +21,7 @@ struct TVTMDbSettingsView: View {
                         Text("TMDb")
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
-                        Text("Configure your personal TMDB API to show trailers for your media.")
+                        Text("Configure your personal TMDB API to show trailers and TMDB ratings for your media.")
                             .font(.system(size: 20)).foregroundStyle(.secondary)
                     }
                 }.padding(.horizontal, 24).padding(.bottom, 18)
@@ -49,7 +49,7 @@ struct TVTMDbSettingsView: View {
                             do {
                                 try await store.connect(candidate)
                                 credential = ""
-                                message = "Connected. TMDB trailers are enabled."
+                                message = "Connected. TMDB trailers and ratings are enabled."
                             } catch is CancellationError {
                                 message = "Connection interrupted. Please try saving again."
                             } catch { message = error.localizedDescription }
@@ -58,14 +58,14 @@ struct TVTMDbSettingsView: View {
                     .buttonStyle(TVSettingsPaneRowStyle())
                     if store.isConfigured {
                         Button {
-                            do { try store.disconnect(); credential = ""; message = "Disconnected. Trailers are hidden; More Like This still uses your library." }
+                            do { try store.disconnect(); credential = ""; message = "Disconnected. Trailers and ratings are hidden; More Like This still uses your library." }
                             catch { message = error.localizedDescription }
                         } label: { TVSettingsRowLabel(title: "Disconnect") }
                         .buttonStyle(TVSettingsPaneRowStyle())
                         .disabled(busy)
                     }
                 }
-                TVSettingsFooter("More Like This works without a key, using genres, studios and networks from your server library. Trailers require a TMDB connection and open in the YouTube app, which must be installed on your Apple TV.")
+                TVSettingsFooter("More Like This works without a key, using genres, studios and networks from your server library. Trailers and the TMDB rating on movie and series pages require a TMDB connection. Trailers open in the YouTube app, which must be installed on your Apple TV.")
                 TVSettingsFooter("Your key is saved in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Requests use it only with TMDB. Get your personal key at themoviedb.org. TMDB attribution is required.")
                 TVSettingsSectionHeader("ABOUT TMDB")
                 TVTMDbAttribution()

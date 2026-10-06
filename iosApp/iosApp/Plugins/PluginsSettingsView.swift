@@ -5,7 +5,7 @@ struct PluginsSettingsView: View {
         #if os(tvOS)
         TVSettingsGroup {
             NavigationLink { TVTMDbSettingsView() } label: {
-                TVSettingsRowLabel(title: "TMDb", detail: "Trailers from your personal TMDb connection.")
+                TVSettingsRowLabel(title: "TMDb", detail: "Trailers and ratings from your personal TMDb connection.")
             }.buttonStyle(TVSettingsPaneRowStyle())
             NavigationLink { OpenSubtitlesSettingsView() } label: {
                 TVSettingsRowLabel(title: "OpenSubtitles", detail: "Find subtitles while watching.")

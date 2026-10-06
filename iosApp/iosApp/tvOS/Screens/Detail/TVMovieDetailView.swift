@@ -76,6 +76,8 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
     @State private var focusedEpisodeContentId: String?
     /// The TMDb collection row under More Like This, once loaded.
     @State private var collectionRow: MovieCollectionRowStore.Row?
+    /// TMDb's user score for this movie, tied to the title and TMDb connection.
+    @State private var tmdbRating: TMDbRatingResult?
     @ObservedObject private var profilePrefsStore = ProfilePrefsStore.shared
 
     @ViewBuilder
@@ -126,6 +128,7 @@ TVDetailHero(
                             qualitySummary: selectedVersionFileId == nil ? detail.overlaySummary : nil,
                             metadataHeading: ["Movie"],
                             releaseFacts: TVHeroMetadata.releaseFacts(year: detail.year, runtime: detail.runtime),
+                            tmdbRating: tmdbRating?.value(for: detail.contentId),
                             heroHeight: height,
                             heroTopInset: TVDetailLayout.browsingHeroTopInset(for: height),
                             synopsisReservedHeight: 112,
@@ -134,6 +137,17 @@ TVDetailHero(
                             actions: { actionColumn },
                             belowSynopsis: belowSynopsis
                         )
+                        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+                            await loadTMDbRating()
+                        }
+    }
+
+    private func loadTMDbRating() async {
+        guard detail.type == "movie" else { return }
+        let context = TVTMDbStore.shared.contextKey
+        let rating = try? await TVTMDbStore.shared.rating(for: detail)
+        guard !Task.isCancelled else { return }
+        tmdbRating = rating.map { TMDbRatingResult(contentId: detail.contentId, context: context, value: $0) }
     }
 
     private func loadCollectionRow() async {

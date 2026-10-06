@@ -66,6 +66,8 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     /// Keep the primary control interactive from frame one and fulfill that
     /// intent as soon as the target episode is known.
     @State private var pendingEpisodePlayRequest: PendingEpisodePlayRequest?
+    /// TMDb's user score for this series, tied to the title and TMDb connection.
+    @State private var tmdbRating: TMDbRatingResult?
 
     var body: some View {
         PhoneDetailPageSurface(
@@ -143,6 +145,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
             creditText: PhoneHeroMetadata.creditText(from: detail),
             overlayData: OverlayData.from(detail),
             enablesArtworkParallax: true,
+            tmdbRating: tmdbRating?.value(for: detail.contentId),
             actions: { actionStack },
             // Match MovieDetailContent exactly through the playback controls:
             // Play/actions, show overview and credits, translation affordance,
@@ -157,6 +160,12 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                 }
             }
         )
+        .task(id: detail.contentId + "|" + TVTMDbStore.shared.contextKey, priority: .utility) {
+            let context = TVTMDbStore.shared.contextKey
+            let rating = try? await TVTMDbStore.shared.rating(for: detail)
+            guard !Task.isCancelled else { return }
+            tmdbRating = rating.map { TMDbRatingResult(contentId: detail.contentId, context: context, value: $0) }
+        }
     }
 
     @ViewBuilder

@@ -30,7 +30,7 @@ The separate Acknowledgements page contains service credits, with library licenc
 
 - IntroDB: `https://introdb.app/favicon.svg`
 - TheIntroDB: `https://theintrodb.org/logo-small.svg`
-- TMDB: the existing `TMDbAttributionLogo` asset.
+- TMDB: the existing `TMDbAttributionLogo` asset, and the Primary Short logo from `https://www.themoviedb.org/about/logos-attribution` as the `TMDbRatingMark` asset shown beside TMDB ratings on detail pages.
 
 The logos identify their respective projects and are not presented as Vivid-owned artwork.
 
