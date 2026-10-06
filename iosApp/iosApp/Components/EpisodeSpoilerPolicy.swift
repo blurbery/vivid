@@ -30,7 +30,9 @@ enum EpisodeSpoilerPolicy {
     /// Where the viewer is up to, or nil when nothing is left to watch.
     /// `pages` holds the loaded episode lists by season number.
     static func currentPosition(seasons: [Season], pages: [Int: [EpisodeListItem]]) -> Position? {
+        // Specials neither anchor the position nor get covered.
         let loaded = pages.keys.sorted().flatMap { pages[$0] ?? [] }
+            .filter { $0.seasonNumber > 0 }
             .sorted { Position($0) < Position($1) }
         if let inProgress = loaded.first(where: { isInProgress($0) }) {
             return Position(inProgress)
@@ -60,7 +62,7 @@ enum EpisodeSpoilerPolicy {
     }
 
     static func isFuture(_ episode: EpisodeListItem, after position: Position?) -> Bool {
-        guard let position, !isPlayed(episode), !isInProgress(episode) else { return false }
+        guard let position, episode.seasonNumber > 0, !isPlayed(episode), !isInProgress(episode) else { return false }
         return Position(episode) > position
     }
 
@@ -88,11 +90,13 @@ enum EpisodeSpoilerPolicy {
         season.isSpecials == true || season.seasonNumber == 0
     }
 
-    /// Nil when the server sent no user data for the season.
+    /// Nil when the server sent no user data for the season. No unplayed
+    /// episodes means finished, including an empty season with nothing to
+    /// watch, so it never places the position at its start.
     private static func isWatched(_ season: Season) -> Bool? {
         guard let userData = season.userData else { return nil }
         if userData.played { return true }
-        if let unplayed = userData.unplayedCount { return unplayed == 0 && (userData.watchedCount ?? 0) > 0 }
+        if let unplayed = userData.unplayedCount { return unplayed == 0 }
         return false
     }
 }

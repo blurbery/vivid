@@ -85,6 +85,33 @@ final class EpisodeSpoilerPolicyTests: XCTestCase {
         XCTAssertEqual(EpisodeSpoilerPolicy.cover(pages, after: position)[3]?.map(\.hidesSpoilers), [false, false, true])
     }
 
+    func testSpecialsNeverAnchorOrGetCoveredWithoutSeasonMetadata() throws {
+        let pages = [
+            0: [try episode(0, 1), try episode(0, 2)],
+            1: [try episode(1, 1, played: true), try episode(1, 2), try episode(1, 3)],
+        ]
+        let position = EpisodeSpoilerPolicy.currentPosition(seasons: [], pages: pages)
+        XCTAssertEqual(position, Position(season: 1, episode: 2))
+        let covered = EpisodeSpoilerPolicy.cover(pages, after: position)
+        XCTAssertEqual(covered[0]?.map(\.hidesSpoilers), [false, false])
+        XCTAssertEqual(covered[1]?.map(\.hidesSpoilers), [false, false, true])
+
+        let specialInProgress = [0: [try episode(0, 1, inProgress: true)], 2: [try episode(2, 1), try episode(2, 2)]]
+        XCTAssertEqual(EpisodeSpoilerPolicy.currentPosition(seasons: [], pages: specialInProgress), Position(season: 2, episode: 1),
+                       "a special in progress doesn't become the position")
+    }
+
+    func testEmptySeasonCountsAsFinished() throws {
+        let seasons = [
+            try season(1, episodeCount: 0, userData: #"{"played":false,"watchedCount":0,"unplayedCount":0}"#),
+            try season(2),
+        ]
+        let pages = [2: [try episode(2, 1, played: true), try episode(2, 2), try episode(2, 3)]]
+        let position = EpisodeSpoilerPolicy.currentPosition(seasons: seasons, pages: pages)
+        XCTAssertEqual(position, Position(season: 2, episode: 2))
+        XCTAssertEqual(EpisodeSpoilerPolicy.cover(pages, after: position)[2]?.map(\.hidesSpoilers), [false, false, true])
+    }
+
     func testFullyWatchedSeriesCoversNothing() throws {
         let seasons = [try season(1, userData: #"{"played":true}"#)]
         let page = [try episode(1, 1, played: true), try episode(1, 2, played: true)]

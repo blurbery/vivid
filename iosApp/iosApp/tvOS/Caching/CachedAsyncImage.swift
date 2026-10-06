@@ -80,7 +80,9 @@ struct CachedAsyncImage: View {
         // shelf. A nil request releases the leaf's image without removing its
         // button, hosting cell, row geometry or remembered focus position.
         let imageRequest = retainsArtwork ? request(for: resolvedSize) : nil
-        let warmedImage = retainsArtwork ? prefetchedImage() : nil
+        // A warmed card image is the sharp still, so a softened request never
+        // falls back to it, even for a frame.
+        let warmedImage = retainsArtwork && softening == nil ? prefetchedImage() : nil
         let loadAnimation: Animation? = isHomeShelf || reduceMotion || warmedImage != nil
             ? nil
             : .easeOut(duration: VividTheme.slowDuration)

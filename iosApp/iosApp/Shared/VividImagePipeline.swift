@@ -342,7 +342,10 @@ final class VividImagePipeline: @unchecked Sendable {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw URLError(.cannotDecodeContentData)
         }
-        if let softening = request.softening, softening > 0, let softened = soften(image, fraction: softening) {
+        if let softening = request.softening, softening > 0 {
+            // A covered still must never fall back to the sharp decode; the
+            // view shows its placeholder instead.
+            guard let softened = soften(image, fraction: softening) else { throw URLError(.cannotDecodeContentData) }
             return UIImage(cgImage: softened)
         }
         return UIImage(cgImage: image)

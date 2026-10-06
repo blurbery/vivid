@@ -14,7 +14,8 @@ struct TVEpisodeRail: View {
     let episodes: [EpisodeListItem]
     let onSelect: (String) -> Void
     /// Seasons of the series, so Hide Episode Spoilers can place the viewer's
-    /// position. Empty leaves every episode readable.
+    /// position from their watched counts. Without them the rail's own list
+    /// decides.
     var spoilerSeasons: [Season] = []
     /// Optional Play action surfaced by the long-press context menu. Series
     /// supplies this even though its normal Select action also plays, keeping
@@ -54,7 +55,7 @@ struct TVEpisodeRail: View {
     /// when Hide Episode Spoilers is on. This rail only knows one season's
     /// list, so that list is the loaded page.
     private var shownEpisodes: [EpisodeListItem] {
-        guard playerSettings.hideFutureEpisodeSpoilers, !spoilerSeasons.isEmpty,
+        guard playerSettings.hideFutureEpisodeSpoilers,
               let seasonNumber = episodes.first?.seasonNumber else { return episodes }
         let position = EpisodeSpoilerPolicy.currentPosition(seasons: spoilerSeasons, pages: [seasonNumber: episodes])
         return EpisodeSpoilerPolicy.cover(episodes, after: position)
