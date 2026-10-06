@@ -28,8 +28,10 @@ enum CastCrewGrouping {
         maxCast: Int = 24,
         maxCrewPerGroup: Int = 6
     ) -> [CastCrewGroup] {
-        // A person credited more than once (a writer-director, or both
-        // screenplay and story) only appears in their first group.
+        // Between the crew groups, a person credited more than once (a
+        // writer-director, or both screenplay and story) only appears in their
+        // first group. The cast keeps every billed actor, so someone who
+        // directs and acts still shows with their character.
         var seen = Set<String>()
         func crewGroup(_ id: String, label: String, role: (String?) -> String?) -> CastCrewGroup {
             var people: [CastCrewPerson] = []

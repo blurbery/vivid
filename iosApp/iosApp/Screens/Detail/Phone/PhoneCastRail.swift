@@ -72,7 +72,7 @@ struct PhoneCastRail: View {
             if let personId = person.personId { onTap(personId) }
         } label: {
             VStack(spacing: 8) {
-                photo(url: person.photoUrl)
+                photo(url: person.photoUrl, thumbhash: person.photoThumbhash)
                 VStack(spacing: 2) {
                     Text(person.name)
                         .font(.system(size: 12, weight: .semibold))
@@ -95,11 +95,11 @@ struct PhoneCastRail: View {
     }
 
     @ViewBuilder
-    private func photo(url: String?) -> some View {
+    private func photo(url: String?, thumbhash: String?) -> some View {
         ZStack {
             Color.vividSurfaceElevated
             if let url, !url.isEmpty {
-                AsyncImageView(url: url, contentMode: .fill)
+                AsyncImageView(url: url, thumbhash: thumbhash, contentMode: .fill)
             } else {
                 Image(systemName: "person.fill")
                     .font(.system(size: cardWidth * 0.4))
