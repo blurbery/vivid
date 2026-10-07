@@ -36,6 +36,9 @@ struct StudioNetworkResult: Codable, Equatable {
     /// Every matched title, before the grid cap. Ranks the automatic picks.
     var matchCount = 0
     var count: Int { matchCount }
+
+    /// Every title the page can show, for reading poster expiry.
+    var items: [BrowseItem] { movies + series + recentSeries + recentMovies + all }
 }
 
 /// Decodes a catalogue item together with the TMDb ID providers attach.
@@ -157,6 +160,12 @@ final class StudiosNetworksStore {
     /// TMDb discover pages read per list (20 titles each).
     nonisolated static let pagesPerList = 5
     static let refreshInterval: TimeInterval = 24 * 60 * 60
+    /// Silo signs artwork URLs for a few hours, far less than the daily
+    /// refresh, so posters are re-read this long before the first one expires.
+    nonisolated static let artworkRefreshLead: TimeInterval = 15 * 60
+    /// Least time between poster refreshes, in case the server's URLs come
+    /// back already near expiry or the device clock runs ahead.
+    static let artworkRefreshCooldown: TimeInterval = 15 * 60
     /// Brands matched at once. Each runs up to four lists in parallel.
     static let concurrentBrands = 3
 
@@ -191,6 +200,13 @@ final class StudiosNetworksStore {
     private(set) var isEditing = false
 
     private var loadedScope: Scope?
+    /// When the shown results were matched, kept when only their posters are
+    /// refreshed so the daily TMDb refresh stays on schedule.
+    private var resultsSavedAt: Date?
+    /// When the first signed poster URL in the results stops working. Nil
+    /// when none carries an expiry, as with Emby and Jellyfin.
+    private var artworkExpiresAt: Date?
+    private var artworkRefreshedAt: Date?
     private var titlesRead: [String: Int] = [:]
     private var loadTask: Task<Void, Never>?
     private let defaults = SharedDefaults.shared
@@ -361,6 +377,9 @@ final class StudiosNetworksStore {
             loadTask = nil
             loadedScope = scope
             results = [:]
+            resultsSavedAt = nil
+            artworkExpiresAt = nil
+            artworkRefreshedAt = nil
             progressText = nil
             status = .idle
         }
@@ -389,11 +408,15 @@ final class StudiosNetworksStore {
             return
         }
         if let loadTask { await loadTask.value; return }
-        guard status != .ready, let scope = loadedScope else { return }
+        guard let scope = loadedScope else { return }
+        // Ready results only need fresh posters, for an app left open past
+        // their expiry.
+        let isReady = status == .ready
+        if isReady, !artworkNeedsRefresh { return }
         // One task covers the cache read and any load, so Home and Settings
         // asking at the same time share a single load.
         let task = Task { [weak self] in
-            await self?.prepare(scope)
+            if isReady { await self?.refreshArtwork(scope) } else { await self?.prepare(scope) }
             if self?.loadedScope == scope { self?.loadTask = nil }
         }
         loadTask = task
@@ -406,10 +429,15 @@ final class StudiosNetworksStore {
         if let cached = await Self.read(StudioNetworkResultsFile.self, scope.cacheURL("results")) {
             guard loadedScope == scope else { return }
             results = cached.results
+            resultsSavedAt = cached.savedAt
             status = .ready
             topUpForEditing()
+            let expiry = await Self.artworkExpiry(in: cached.results)
+            guard loadedScope == scope else { return }
+            artworkExpiresAt = expiry
             guard Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else {
                 Self.saveMissingMovieLookup(library: scope.cacheURL("library"), lookup: scope.cacheURL("movies"))
+                if artworkNeedsRefresh { await refreshArtwork(scope) }
                 return
             }
         } else {
@@ -423,19 +451,11 @@ final class StudiosNetworksStore {
         do {
             let index: StudioNetworkIndexFile
             if let cached = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")),
-               Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval {
+               Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval,
+               await Self.hasCurrentArtwork(cached) {
                 index = cached
             } else {
-                titlesRead = [:]
-                let report: @MainActor (String, Int) -> Void = { [weak self] type, count in
-                    guard let self, self.loadedScope == scope else { return }
-                    self.titlesRead[type] = count
-                    self.progressText = "Reading your library… \(self.titlesRead.values.reduce(0, +).formatted()) titles"
-                }
-                async let movies = Self.libraryIndex(type: "movie", report: report)
-                async let series = Self.libraryIndex(type: "series", report: report)
-                index = StudioNetworkIndexFile(savedAt: Date(), movies: try await movies, series: try await series)
-                await Self.write(index, scope.cacheURL("library"))
+                index = try await readLibrary(scope, reportsProgress: true)
             }
             await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
 
@@ -461,11 +481,15 @@ final class StudiosNetworksStore {
             }
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
+            let savedAt = Date()
             results = loaded
+            resultsSavedAt = savedAt
             status = .ready
             topUpForEditing()
             progressText = nil
-            await Self.write(StudioNetworkResultsFile(savedAt: Date(), results: loaded), scope.cacheURL("results"))
+            await Self.write(StudioNetworkResultsFile(savedAt: savedAt, results: loaded), scope.cacheURL("results"))
+            let expiry = await Self.artworkExpiry(in: loaded)
+            if loadedScope == scope { artworkExpiresAt = expiry }
         } catch {
             guard loadedScope == scope else { return }
             progressText = nil
@@ -474,7 +498,106 @@ final class StudiosNetworksStore {
         }
     }
 
+    // MARK: Poster refresh
+
+    private var artworkNeedsRefresh: Bool {
+        guard let artworkExpiresAt,
+              artworkExpiresAt.timeIntervalSinceNow < Self.artworkRefreshLead else { return false }
+        guard let artworkRefreshedAt else { return true }
+        return Date().timeIntervalSince(artworkRefreshedAt) > Self.artworkRefreshCooldown
+    }
+
+    /// Swaps fresh poster URLs into the shown results by re-reading the
+    /// library, without matching with TMDb again. Results are kept for a day,
+    /// but Silo's signed artwork URLs stop working after a few hours and every
+    /// poster would be left on its blurred placeholder. Status and progress
+    /// stay as they are, so this runs unseen behind the current results.
+    private func refreshArtwork(_ scope: Scope) async {
+        artworkRefreshedAt = Date()
+        do {
+            let index = try await readLibrary(scope, reportsProgress: false)
+            await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
+            try Task.checkCancellation()
+            guard loadedScope == scope else { return }
+            let current = results
+            let refreshed = await Task.detached(priority: .utility) {
+                Self.replacingArtwork(in: current, with: [index.movies.values, index.series.values].joined())
+            }.value
+            let expiry = await Self.artworkExpiry(in: refreshed)
+            guard loadedScope == scope else { return }
+            results = refreshed
+            artworkExpiresAt = expiry
+            await Self.write(StudioNetworkResultsFile(savedAt: resultsSavedAt ?? Date(), results: refreshed), scope.cacheURL("results"))
+        } catch {
+            // Keep the current results. The next visit after the cooldown
+            // tries again, and the daily refresh reads the library anyway.
+        }
+    }
+
+    /// The results with every title replaced by its entry from a fresh
+    /// library read, which carries current artwork. Titles no longer in the
+    /// library are dropped, so an expired URL can't linger.
+    nonisolated static func replacingArtwork(
+        in results: [String: StudioNetworkResult],
+        with titles: some Sequence<BrowseItem>
+    ) -> [String: StudioNetworkResult] {
+        var current: [String: BrowseItem] = [:]
+        for title in titles { current[title.contentId] = title }
+        func refreshed(_ items: [BrowseItem]) -> [BrowseItem] { items.compactMap { current[$0.contentId] } }
+        return results.mapValues { result in
+            var result = result
+            result.movies = refreshed(result.movies)
+            result.series = refreshed(result.series)
+            result.recentSeries = refreshed(result.recentSeries)
+            result.recentMovies = refreshed(result.recentMovies)
+            result.all = refreshed(result.all)
+            return result
+        }
+    }
+
+    /// The earliest expiry among signed poster URLs, or nil when none has one.
+    nonisolated static func artworkExpiry(of items: some Sequence<BrowseItem>) -> Date? {
+        var earliest: Date?
+        var seen = Set<String>()
+        for item in items {
+            guard let url = item.posterUrl, seen.insert(url).inserted,
+                  let expiry = SiloAPICompatibility.artworkExpiry(url) else { continue }
+            earliest = min(earliest ?? expiry, expiry)
+        }
+        return earliest
+    }
+
+    private nonisolated static func artworkExpiry(in results: [String: StudioNetworkResult]) async -> Date? {
+        await Task.detached(priority: .utility) {
+            artworkExpiry(of: results.values.lazy.flatMap(\.items))
+        }.value
+    }
+
+    /// Whether a saved index's posters will still load for a while. Runs off
+    /// the main actor, as the index holds every library title.
+    private nonisolated static func hasCurrentArtwork(_ index: StudioNetworkIndexFile) async -> Bool {
+        await Task.detached(priority: .utility) {
+            guard let expiry = artworkExpiry(of: [index.movies.values, index.series.values].joined()) else { return true }
+            return expiry.timeIntervalSinceNow >= artworkRefreshLead
+        }.value
+    }
+
     // MARK: Library index
+
+    /// Reads every library title from the server and saves the index.
+    private func readLibrary(_ scope: Scope, reportsProgress: Bool) async throws -> StudioNetworkIndexFile {
+        if reportsProgress { titlesRead = [:] }
+        let report: @MainActor (String, Int) -> Void = { [weak self] type, count in
+            guard reportsProgress, let self, self.loadedScope == scope else { return }
+            self.titlesRead[type] = count
+            self.progressText = "Reading your library… \(self.titlesRead.values.reduce(0, +).formatted()) titles"
+        }
+        async let movies = Self.libraryIndex(type: "movie", report: report)
+        async let series = Self.libraryIndex(type: "series", report: report)
+        let index = StudioNetworkIndexFile(savedAt: Date(), movies: try await movies, series: try await series)
+        await Self.write(index, scope.cacheURL("library"))
+        return index
+    }
 
     /// Every library title of one type, keyed by TMDb ID and by title + year.
     /// Runs off the main actor: building the index folds every library
