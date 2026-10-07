@@ -6,11 +6,11 @@
 <p align="center"><strong>Your media. Vivid.</strong></p>
 <p align="center">An open-source media app for iPhone, iPad and Apple TV.</p>
 <p align="center">
-  <img src="https://img.shields.io/badge/Apple-iOS%20%C2%B7%20tvOS-555555?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Apple: iOS and tvOS">
+  <img src="https://img.shields.io/badge/Apple-iOS%20%C2%B7%20tvOS-3B82F6?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Apple: iOS and tvOS">
   <img src="https://img.shields.io/badge/Swift-SwiftUI-F05138?style=flat-square&amp;logo=swift&amp;logoColor=white" alt="Built with Swift and SwiftUI">
-  <a href="https://github.com/blurbery/vivid/releases/latest"><img src="https://img.shields.io/github/v/release/blurbery/vivid?style=flat-square&amp;label=releases&amp;color=3B82F6&amp;display_name=release" alt="Latest GitHub release"></a>
+  <a href="https://github.com/blurbery/vivid/releases/latest"><img src="https://img.shields.io/github/v/release/blurbery/vivid?style=flat-square&amp;label=release&amp;color=3B82F6&amp;display_name=release" alt="Latest GitHub release"></a>
   <img src="https://img.shields.io/badge/status-in%20development-D29922?style=flat-square" alt="In development">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-555555?style=flat-square" alt="Licence: GPLv3 with Apple distribution permission"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-GPLv3-3B82F6?style=flat-square" alt="Licence: GPLv3 with Apple distribution permission"></a>
   <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Sponsor blurbery on GitHub"></a>
 </p>
 <p align="center">
