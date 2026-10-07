@@ -11,7 +11,7 @@
   <a href="https://github.com/blurbery/vivid/releases/latest"><img src="https://img.shields.io/github/v/release/blurbery/vivid?style=flat-square&amp;label=releases&amp;color=3B82F6&amp;display_name=release" alt="Latest GitHub release"></a>
   <img src="https://img.shields.io/badge/status-in%20development-D29922?style=flat-square" alt="In development">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-555555?style=flat-square" alt="Licence: GPLv3 with Apple distribution permission"></a>
-  <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Sponsor blurbery on GitHub"></a>
+  <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Sponsor blurbery on GitHub"></a>
 </p>
 <p align="center">
   <a href="CONTRIBUTING.md#local-setup">Build</a> ·
