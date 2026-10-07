@@ -279,6 +279,46 @@ enum SiloAPICompatibility {
         return absolute
     }
 
+    /// When a signed Silo artwork URL stops working, for each way Silo serves
+    /// artwork: `exp` on the server's own artwork route, the SigV4 window on a
+    /// presigned S3 URL, or a Cloudflare token's issue time. Nil for any other
+    /// URL, including Emby and Jellyfin images and Silo's public URLs, which
+    /// don't expire.
+    static func artworkExpiry(_ raw: String) -> Date? {
+        guard raw.contains("exp=") || raw.contains("X-Amz-Expires=") || raw.contains("verify="),
+              let items = URLComponents(string: raw)?.queryItems else { return nil }
+        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+        // Every form uses whole seconds. Parsing integers keeps out "nan" or
+        // "inf", which would make a poster look current forever.
+        if value("sig") != nil, let exp = value("exp").flatMap(Int.init) {
+            return Date(timeIntervalSince1970: TimeInterval(exp))
+        }
+        if value("X-Amz-Signature") != nil,
+           let signed = value("X-Amz-Date").flatMap(amzDateFormatter.date(from:)),
+           let lifetime = value("X-Amz-Expires").flatMap(Int.init) {
+            return signed.addingTimeInterval(TimeInterval(lifetime))
+        }
+        // Cloudflare token auth: `verify=<issued>-<mac>`. The lifetime is set
+        // in the WAF rule, not the URL, so assume Silo's default.
+        if let token = value("verify"), let dash = token.firstIndex(of: "-"),
+           token.index(after: dash) < token.endIndex,
+           let issued = Int(token[..<dash]) {
+            return Date(timeIntervalSince1970: TimeInterval(issued) + cloudflareTokenLifetime)
+        }
+        return nil
+    }
+
+    /// Silo's default `public_token_ttl`.
+    private static let cloudflareTokenLifetime: TimeInterval = 3 * 60 * 60
+
+    private static let amzDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        return formatter
+    }()
+
     private static func decodeIDs(_ value: Any, key: String = "", numericObjectID: Bool = false) -> Any {
         if var object = value as? [String: Any] {
             if ["intro", "credits"].contains(key) {

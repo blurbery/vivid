@@ -3,10 +3,17 @@ import XCTest
 
 @MainActor
 final class StudiosNetworksStoreTests: XCTestCase {
-    private func item(_ id: String, _ title: String, year: Int, type: String = "movie") throws -> BrowseItem {
-        let json = #"{"contentId":"\#(id)","type":"\#(type)","title":"\#(title)","year":\#(year)}"#
+    private func item(_ id: String, _ title: String, year: Int, type: String = "movie", poster: String? = nil) throws -> BrowseItem {
+        let posterField = poster.map { #","posterUrl":"\#($0)""# } ?? ""
+        let json = #"{"contentId":"\#(id)","type":"\#(type)","title":"\#(title)","year":\#(year)\#(posterField)}"#
         return try JSONDecoder().decode(BrowseItem.self, from: Data(json.utf8))
     }
+
+    private let siloPoster = "https://silo.example.com/api/v2/artwork/posters/a.webp?exp=1791000000&sig=0f1e2d"
+    private let s3Poster = "https://bucket.s3.example.com/posters/a.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+        + "&X-Amz-Credential=key%2F20261007%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261007T120000Z"
+        + "&X-Amz-Expires=14400&X-Amz-SignedHeaders=host&X-Amz-Signature=abc123"
+    private let embyPoster = "https://emby.example.com/Items/42/Images/Primary?tag=abc&maxWidth=780&quality=90"
 
     private func discover(id: Int, title: String? = nil, name: String? = nil, date: String) throws -> TVTMDbStore.DiscoverPage.Result {
         var fields = [#""id":\#(id)"#]
@@ -115,6 +122,72 @@ final class StudiosNetworksStoreTests: XCTestCase {
         var result = StudioNetworkResult()
         result.matchCount = 150
         XCTAssertEqual(result.count, 150)
+    }
+
+    func testArtworkExpiryReadsEverySignedSiloArtworkURL() {
+        XCTAssertEqual(SiloAPICompatibility.artworkExpiry(siloPoster), Date(timeIntervalSince1970: 1_791_000_000))
+        XCTAssertEqual(
+            SiloAPICompatibility.artworkExpiry("/api/v2/artwork/posters/a.webp?exp=1791000000&sig=0f1e2d"),
+            Date(timeIntervalSince1970: 1_791_000_000)
+        )
+        // Signed at 12:00 UTC for four hours.
+        XCTAssertEqual(SiloAPICompatibility.artworkExpiry(s3Poster), Date(timeIntervalSince1970: 1_791_388_800))
+        // Issued at 12:00 UTC, with Silo's default three-hour token.
+        XCTAssertEqual(
+            SiloAPICompatibility.artworkExpiry("https://cdn.example.com/posters/a.webp?verify=1791374400-q1w2e3%2Br4%3D"),
+            Date(timeIntervalSince1970: 1_791_385_200)
+        )
+    }
+
+    func testArtworkExpiryIgnoresUnsignedURLs() {
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry(embyPoster))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/posters/a.webp"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?exp=1791000000"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.jpg?X-Amz-Date=20261007T120000Z&X-Amz-Expires=14400"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://silo.example.com/a.webp?exp=soon&sig=0f1e2d"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://silo.example.com/a.webp?exp=nan&sig=0f1e2d"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://silo.example.com/a.webp?exp=inf&sig=0f1e2d"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry(s3Poster.replacingOccurrences(of: "X-Amz-Expires=14400", with: "X-Amz-Expires=nan")))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?verify=nan-q1w2e3"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?verify=1791374400"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?verify=1791374400-"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry(""))
+    }
+
+    func testRootRelativeSiloArtworkKeepsItsExpiry() throws {
+        let server = try XCTUnwrap(URL(string: "https://silo.example.com"))
+        let url = try XCTUnwrap(SiloAPICompatibility.artworkURL("/api/v2/artwork/posters/a.webp?exp=1791000000&sig=0f1e2d", relativeTo: server))
+        XCTAssertEqual(SiloAPICompatibility.artworkExpiry(url.absoluteString), Date(timeIntervalSince1970: 1_791_000_000))
+    }
+
+    func testResultsArtworkExpiryIsTheEarliestSignedPoster() throws {
+        let items = [
+            try item("a", "A", year: 2020, poster: siloPoster),
+            try item("b", "B", year: 2020, poster: s3Poster),
+            try item("c", "C", year: 2020, poster: embyPoster),
+            try item("d", "D", year: 2020),
+        ]
+        XCTAssertEqual(StudiosNetworksStore.artworkExpiry(of: items), Date(timeIntervalSince1970: 1_791_000_000))
+        XCTAssertNil(StudiosNetworksStore.artworkExpiry(of: Array(items.suffix(2))))
+    }
+
+    func testReplacingArtworkSwapsTitlesByIDAndDropsRemovedOnesFromTheCount() throws {
+        var result = StudioNetworkResult()
+        result.movies = [try item("a", "A", year: 2020, poster: siloPoster), try item("gone", "Gone", year: 2020, poster: siloPoster)]
+        result.all = result.movies
+        result.series = [try item("s", "S", year: 2021, type: "series", poster: siloPoster)]
+        result.matchCount = 3
+        let fresh = [
+            try item("a", "A", year: 2020, poster: "https://silo.example.com/api/v2/artwork/a.webp?exp=1791100000&sig=1"),
+            try item("s", "S", year: 2021, type: "series", poster: "https://silo.example.com/api/v2/artwork/s.webp?exp=1791100000&sig=2"),
+        ]
+        let refreshed = try XCTUnwrap(StudiosNetworksStore.replacingArtwork(in: ["pixar": result], with: fresh)["pixar"])
+        XCTAssertEqual(refreshed.movies.map(\.contentId), ["a"])
+        XCTAssertEqual(refreshed.all.map(\.contentId), ["a"])
+        XCTAssertEqual(refreshed.movies.first?.posterUrl, fresh[0].posterUrl)
+        XCTAssertEqual(refreshed.series.first?.posterUrl, fresh[1].posterUrl)
+        XCTAssertEqual(refreshed.matchCount, 2)
+        XCTAssertEqual(StudiosNetworksStore.artworkExpiry(of: refreshed.items), Date(timeIntervalSince1970: 1_791_100_000))
     }
 
     func testCatalogueIDsAreUniqueAndAppleTVUsesAWordmark() {
