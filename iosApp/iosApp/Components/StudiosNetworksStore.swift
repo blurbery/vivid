@@ -536,7 +536,8 @@ final class StudiosNetworksStore {
 
     /// The results with every title replaced by its entry from a fresh
     /// library read, which carries current artwork. Titles no longer in the
-    /// library are dropped, so an expired URL can't linger.
+    /// library are dropped, so an expired URL can't linger, and the match
+    /// count follows so a brand that falls below six leaves Home.
     nonisolated static func replacingArtwork(
         in results: [String: StudioNetworkResult],
         with titles: some Sequence<BrowseItem>
@@ -551,6 +552,8 @@ final class StudiosNetworksStore {
             result.recentSeries = refreshed(result.recentSeries)
             result.recentMovies = refreshed(result.recentMovies)
             result.all = refreshed(result.all)
+            // Matching counts each title once across movies and series.
+            result.matchCount = Set((result.movies + result.series).map(\.contentId)).count
             return result
         }
     }

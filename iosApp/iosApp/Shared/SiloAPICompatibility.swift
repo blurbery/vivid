@@ -288,20 +288,22 @@ enum SiloAPICompatibility {
         guard raw.contains("exp=") || raw.contains("X-Amz-Expires=") || raw.contains("verify="),
               let items = URLComponents(string: raw)?.queryItems else { return nil }
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
-        if value("sig") != nil, let exp = value("exp").flatMap(TimeInterval.init) {
-            return Date(timeIntervalSince1970: exp)
+        // Every form uses whole seconds. Parsing integers keeps out "nan" or
+        // "inf", which would make a poster look current forever.
+        if value("sig") != nil, let exp = value("exp").flatMap(Int.init) {
+            return Date(timeIntervalSince1970: TimeInterval(exp))
         }
         if value("X-Amz-Signature") != nil,
            let signed = value("X-Amz-Date").flatMap(amzDateFormatter.date(from:)),
-           let lifetime = value("X-Amz-Expires").flatMap(TimeInterval.init) {
-            return signed.addingTimeInterval(lifetime)
+           let lifetime = value("X-Amz-Expires").flatMap(Int.init) {
+            return signed.addingTimeInterval(TimeInterval(lifetime))
         }
         // Cloudflare token auth: `verify=<issued>-<mac>`. The lifetime is set
         // in the WAF rule, not the URL, so assume Silo's default.
         if let token = value("verify"), let dash = token.firstIndex(of: "-"),
            token.index(after: dash) < token.endIndex,
-           let issued = TimeInterval(token[..<dash]) {
-            return Date(timeIntervalSince1970: issued + cloudflareTokenLifetime)
+           let issued = Int(token[..<dash]) {
+            return Date(timeIntervalSince1970: TimeInterval(issued) + cloudflareTokenLifetime)
         }
         return nil
     }

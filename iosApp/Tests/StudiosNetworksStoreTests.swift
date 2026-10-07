@@ -145,6 +145,10 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?exp=1791000000"))
         XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.jpg?X-Amz-Date=20261007T120000Z&X-Amz-Expires=14400"))
         XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://silo.example.com/a.webp?exp=soon&sig=0f1e2d"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://silo.example.com/a.webp?exp=nan&sig=0f1e2d"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://silo.example.com/a.webp?exp=inf&sig=0f1e2d"))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry(s3Poster.replacingOccurrences(of: "X-Amz-Expires=14400", with: "X-Amz-Expires=nan")))
+        XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?verify=nan-q1w2e3"))
         XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?verify=1791374400"))
         XCTAssertNil(SiloAPICompatibility.artworkExpiry("https://cdn.example.com/a.webp?verify=1791374400-"))
         XCTAssertNil(SiloAPICompatibility.artworkExpiry(""))
@@ -167,7 +171,7 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertNil(StudiosNetworksStore.artworkExpiry(of: Array(items.suffix(2))))
     }
 
-    func testReplacingArtworkSwapsTitlesByIDAndDropsRemovedOnes() throws {
+    func testReplacingArtworkSwapsTitlesByIDAndDropsRemovedOnesFromTheCount() throws {
         var result = StudioNetworkResult()
         result.movies = [try item("a", "A", year: 2020, poster: siloPoster), try item("gone", "Gone", year: 2020, poster: siloPoster)]
         result.all = result.movies
@@ -182,7 +186,7 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertEqual(refreshed.all.map(\.contentId), ["a"])
         XCTAssertEqual(refreshed.movies.first?.posterUrl, fresh[0].posterUrl)
         XCTAssertEqual(refreshed.series.first?.posterUrl, fresh[1].posterUrl)
-        XCTAssertEqual(refreshed.matchCount, 3)
+        XCTAssertEqual(refreshed.matchCount, 2)
         XCTAssertEqual(StudiosNetworksStore.artworkExpiry(of: refreshed.items), Date(timeIntervalSince1970: 1_791_100_000))
     }
 
