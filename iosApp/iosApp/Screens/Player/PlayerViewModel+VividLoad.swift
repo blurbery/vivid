@@ -145,6 +145,18 @@ extension PlayerViewModel {
         establishedVividLoadEpoch = loadEpoch
         scrubPreviewProvider.activate(spec)
         #if os(iOS) || os(tvOS)
+        // Emby and Jellyfin list subtitle files stored beside the media (and,
+        // when transcoding, text streams) separately from the container.
+        if MediaServerProvider.active.usesNativeUser, prepared.protocolV3 == nil, !streamRequest.url.isFileURL {
+            for sidecar in prepared.session.subtitleUrls ?? [] {
+                guard let url = URL(string: sidecar.url) else { continue }
+                vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url,
+                    name: sidecar.label ?? "External", language: sidecar.language,
+                    isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
+                    isDefault: sidecar.default ?? false, httpHeaders: streamRequest.headers,
+                    formatHint: sidecar.codec), appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
+            }
+        }
         for entry in openSubtitleFiles.entries.values {
             vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: entry.url,
                 name: "OpenSubtitles · " + entry.name, language: entry.language,
@@ -158,6 +170,7 @@ extension PlayerViewModel {
             do { try useOpenSubtitle(pending.result, data: pending.data, expected: context) }
             catch { showNotice(title: "Subtitles", message: "Unable to load the downloaded subtitle", tone: .warning, duration: 5) }
         }
+        restoreRememberedOpenSubtitle()
         if let id = openSubtitleFiles.selectedID, let track = subtitleTracks.first(where: { $0.trackId == id }) {
             selectSubtitle(track)
         }
@@ -257,7 +270,8 @@ extension PlayerViewModel {
         )
         let vividSubtitleTracks = engine.subtitleTracks.filter { track in
             #if os(iOS) || os(tvOS)
-            return !track.isExternal || openSubtitleIDs.contains(vividPlaybackController.appSubtitleID(forVividID: track.id))
+            let appTrackID = vividPlaybackController.appSubtitleID(forVividID: track.id)
+            return !track.isExternal || openSubtitleIDs.contains(appTrackID) || SubtitleTrackIdSpace.isSidecar(appTrackID)
             #else
             return !track.isExternal
             #endif
@@ -369,6 +383,24 @@ extension PlayerViewModel {
                     pendingSubtitleFfIndex = nil
                     selectedSubtitleId = publishedTrackID
                     applySubtitleTrackSelection(match.trackId, reason: "pending_subtitle_index")
+                }
+            } else if let sidecar = vividSubtitleTracks.first(where: {
+                $0.isExternal && SubtitleTrackIdSpace.isSidecar($0.trackId) && $0.srcId == wantedIndex
+            }) {
+                // An Emby or Jellyfin stream index can name a server subtitle
+                // file rather than a container stream.
+                switch DeferredTrackSelectionGate.outcome(
+                    isLoadEstablished: loadIsEstablished,
+                    engineAlreadyMatches: selectedSubtitleId == sidecar.trackId
+                ) {
+                case .deferUntilEstablished:
+                    break
+                case .adoptWithoutEngineCall:
+                    pendingSubtitleFfIndex = nil
+                case .applyToEngine:
+                    pendingSubtitleFfIndex = nil
+                    selectedSubtitleId = sidecar.trackId
+                    applySubtitleTrackSelection(sidecar.trackId, reason: "pending_subtitle_sidecar")
                 }
             }
         }

@@ -27,8 +27,11 @@ final class LucidSubtitleInventory {
         guard let key = key(context.contentID, context.fileID) else { return }
         choices = [key: Choice(trackID: id)]
         OpenSubtitlesStore.shared.clearStaged(context: context)
+        OpenSubtitlesStore.shared.forgetSelection(contentID: context.contentID, fileID: context.fileID)
     }
     func clearChoice(context: OpenSubtitlePlaybackContext) {
+        // Auto, or a new detail-page download, replaces a remembered file.
+        OpenSubtitlesStore.shared.forgetSelection(contentID: context.contentID, fileID: context.fileID)
         guard let key = key(context.contentID, context.fileID) else { return }
         choices.removeValue(forKey: key)
     }

@@ -59,13 +59,13 @@ Quality preferences remain device/profile-local. Vivid sends the selected resolu
 
 ## Subtitles and chapters
 
-Chapters and embedded subtitles come from Lucid’s actual media inventory. The detail and in-player Subtitles menus share track labels, ordering and selection identities. The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
+Chapters and embedded subtitles come from Lucid’s actual media inventory. With Emby and Jellyfin, the player also mounts the server's text subtitle files as external tracks. The detail and in-player Subtitles menus share track labels, ordering and selection identities. The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
 
 Settings → Subtitles owns subtitle language, behaviour and appearance. Automatic selection turns subtitles off when the requested language is absent. Plain-text styling and delay apply to native text rendering and downloaded-text overlays. Authored ASS and bitmap styles remain intact. Device checks of full external ASS styling remain outstanding.
 
 Downloaded ASS sidecars retain their authored text and render through Lucid using temporary local files, removed when the load ends. Plain-text sidecars continue to use the app overlay. Full external ASS visual verification on devices remains outstanding. Detail selectors distinguish automatic preference, explicit Off, embedded choices and staged downloads.
 
-OpenSubtitles is optional. On tvOS, search is a native submenu beside embedded tracks. User-selected downloads are temporary, context-checked and retained across replacement loads of the same item. See [track and subtitle ownership](../playback/architecture.md#tracks-subtitles-and-previews) for limits and cleanup.
+OpenSubtitles is optional. On tvOS, search is a native submenu beside embedded tracks. User-selected downloads are context-checked and retained across replacement loads of the same item, and the chosen file is remembered on the device so resuming the item restores it. See [track and subtitle ownership](../playback/architecture.md#tracks-subtitles-and-previews) for limits and cleanup.
 
 ## Builds and native audio patch
 

@@ -48,7 +48,7 @@ struct OpenSubtitlesSettingsView: View {
         #endif
     }
     private var status: String { busy ? "Connecting…" : store.isConnected ? "Connected" : "Not connected" }
-    private var footer: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Downloads use OpenSubtitles’ quota and are temporary for the current playback. Nothing is uploaded to your media server." }
+    private var footer: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Downloads use OpenSubtitles’ quota. The subtitle you choose stays on this device for that title, so it comes back when you resume, until you choose another or disconnect. Nothing is uploaded to your media server." }
     private var keyField: some View {
         SecureField("OpenSubtitles API key", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(busy)
     }

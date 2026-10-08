@@ -162,6 +162,11 @@ extension PlayerViewModel {
         // an embedded pick can be persisted. Restoring it as an embedded index
         // would arm both identities for the same subtitle.
         if let selectedSubtitleId, SubtitleTrackIdSpace.isSidecar(selectedSubtitleId) {
+            // Emby and Jellyfin remount their subtitle files with each
+            // session, so the server stream index finds the same file again.
+            if activePreparedProtocolV3 == nil {
+                return SubtitleTrackIdSpace.sidecarIndex(from: selectedSubtitleId)
+            }
             // Sidecars are re-applied client-side after the playback
             // session returns `subtitle_urls`; keep embedded subtitles off
             // until that explicit sidecar selection is restored.

@@ -112,7 +112,7 @@ final class JellyfinPlayback {
         for track in playable["MediaStreams"] as? [[String: Any]] ?? [] where track["Type"] as? String == "Subtitle" && (track["IsExternal"] as? Bool == true || !direct) {
             guard let index = track["Index"] as? Int, let codec = track["Codec"] as? String,
                   ["srt", "ass", "ssa", "vtt", "subrip"].contains(codec.lowercased()) else { continue }
-            let format = codec == "subrip" ? "srt" : codec
+            let format = codec.lowercased() == "subrip" ? "srt" : codec.lowercased()
             let subURL = try JellyfinConnection.url(serverURL: connection.serverURL,
                 path:"/Videos/\(JellyfinConnection.id(detail.contentId))/\(JellyfinConnection.id(sourceID))/Subtitles/\(index)/Stream.\(format)")
             subtitles.append(SubtitleUrl(index:index, language:track["Language"] as? String, codec:format,
