@@ -10,7 +10,7 @@ private struct TVStudioNetworkTile: View {
 
     var body: some View {
         StudioNetworkLogo(brand: store.brand(id), url: store.results[id]?.logoURL, fallbackName: id)
-            .frame(maxWidth: width * 0.62, maxHeight: width * 9 / 16 * 0.42)
+            .frame(maxWidth: width * 0.62, maxHeight: width * 9 / 16 * 0.42 * (store.brand(id)?.logoHeightScale ?? 1))
             .frame(width: width, height: width * 9 / 16)
             .background(Color.white.opacity(0.06))
     }
@@ -424,12 +424,19 @@ struct TVStudiosNetworksSettingsView: View {
     private func pickSection(title: String, kind: StudioNetworkBrand.Kind) -> some View {
         let brands = StudiosNetworksStore.catalogue.filter { $0.kind == kind }
         let width = (TVSettingsLayout.contentWidth - 24 * 3) / 4
+        let rows = stride(from: 0, to: brands.count, by: 4).map { Array(brands[$0..<min($0 + 4, brands.count)]) }
         return VStack(alignment: .leading, spacing: 16) {
             TVSettingsSectionHeader(title)
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(width), spacing: 24), count: 4),
-                      alignment: .leading, spacing: 36) {
-                ForEach(brands) { brand in
-                    pickTile(brand, width: width)
+            // Not lazy: tiles below the screen must exist for Down to land on
+            // them, otherwise focus skipped a section and jumped to Reset.
+            // Rows align at the top so a two-line name can't lift a tile.
+            Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 36) {
+                ForEach(rows.indices, id: \.self) { row in
+                    GridRow {
+                        ForEach(rows[row]) { brand in
+                            pickTile(brand, width: width)
+                        }
+                    }
                 }
             }
             .focusSection()
@@ -443,7 +450,9 @@ struct TVStudiosNetworksSettingsView: View {
         let eligible = store.isEligible(brand.id)
         let unavailable = !eligible || (store.picks.count >= StudiosNetworksStore.maxPicks && !picked)
         return VStack(alignment: .leading, spacing: 10) {
-            Button { store.toggle(brand.id) } label: {
+            // Unavailable tiles stay focusable but do nothing, so a section
+            // with none available can still be reached and scrolled to.
+            Button { if !unavailable { store.toggle(brand.id) } } label: {
                 TVStudioNetworkTile(id: brand.id, width: width)
                     .overlay(alignment: .topTrailing) {
                         if picked { WatchedCheckPill().padding(10) }
@@ -451,9 +460,8 @@ struct TVStudiosNetworksSettingsView: View {
             }
             .buttonStyle(.card)
             .focused($focus, equals: .pick(brand.id))
-            .disabled(unavailable)
             .opacity(unavailable ? 0.4 : 1)
-            .accessibilityLabel("\(brand.name), \(count) titles\(picked ? ", chosen" : "")")
+            .accessibilityLabel("\(brand.name), \(count) titles\(picked ? ", chosen" : "")\(unavailable ? ", unavailable" : "")")
 
             Text(brand.name).font(.system(size: 22, weight: .semibold))
             Text(Self.countLabel(count, eligible: eligible))
