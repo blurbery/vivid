@@ -53,6 +53,9 @@ struct PlaybackSessionAccumulator {
         startedAt = now
         warmupUntil = now + Self.warmupSeconds
         lastTick = now
+        totals.pausedSeconds = 0
+        totals.waitSeconds = 0
+        totals.longestWaitSeconds = 0
     }
 
     private var minuteIndex: Int { min(Int(totals.playedSeconds / 60), Self.maxTimelineMinutes - 1) }
@@ -70,13 +73,24 @@ struct PlaybackSessionAccumulator {
         guard let lastTick, now > lastTick else { return }
         let elapsed = min(now - lastTick, 5)
         if buffering {
-            guard bufferingIsRebuffer else { return }
+            guard bufferingIsRebuffer else {
+                // Loading after opening, seeking or resuming isn't a rebuffer,
+                // but it's still time the viewer spent waiting.
+                totals.waitSeconds = (totals.waitSeconds ?? 0) + elapsed
+                if let since = bufferingSince {
+                    totals.longestWaitSeconds = max(totals.longestWaitSeconds ?? 0, now - since)
+                }
+                return
+            }
             totals.rebufferSeconds += elapsed
             let index = minuteIndex
             minutes[index, default: .init(minute: index)].rebufferSeconds += elapsed
             return
         }
-        guard playing else { return }
+        guard playing else {
+            if playheadStarted { totals.pausedSeconds = (totals.pausedSeconds ?? 0) + elapsed }
+            return
+        }
         guard playheadStarted else {
             totals.warmupSeconds += elapsed
             return
