@@ -164,6 +164,8 @@ final class EmbyAdapterTests: XCTestCase {
             XCTAssertEqual(capability.downloadAllowed, downloads)
             XCTAssertEqual(capability.qualityPresets, ["original"])
             XCTAssertFalse(capability.transcodeEnabled)
+            XCTAssertTrue(capability.seasonDownload)
+            XCTAssertFalse(capability.seriesMonitoring)
             testSession?.invalidateAndCancel()
         }
     }
@@ -265,6 +267,69 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(source["Container"] as? String, "mp4")
         XCTAssertEqual(source["Id"] as? String, "source-1")
         XCTAssertEqual(source["Size"] as? Int, 1234)
+    }
+
+    func testBatchDownloadsKeepOnlyPresentEpisodesWithAUsableSource() {
+        let sources: [[String: Any]] = [["Id": "source-1"]]
+        let items: [[String: Any]] = [
+            ["Id": "episode-1", "Type": "Episode", "MediaSources": sources],
+            ["Id": "episode-2", "Type": "Episode", "LocationType": "Virtual", "MediaSources": sources],
+            ["Id": "episode-3", "Type": "Episode", "IsMissing": true, "MediaSources": sources],
+            ["Id": "episode-4", "Type": "Episode"],
+            ["Id": "episode-5", "Type": "Episode", "MediaSources": []],
+            ["Id": "episode-6", "Type": "Episode", "MediaSources": [["Id": "../source"]]],
+            ["Id": "season-1", "Type": "Season", "MediaSources": sources],
+            ["Id": "episode-1", "Type": "Episode", "MediaSources": sources],
+            ["Id": "episode-7", "Type": "Episode", "LocationType": "FileSystem", "IsMissing": false, "MediaSources": sources]
+        ]
+        XCTAssertEqual(EmbyDownloads.downloadableEpisodes(items).compactMap { $0["Id"] as? String }, ["episode-1", "episode-7"])
+    }
+
+    func testBatchDownloadRejectsConversionAndFileChoicesBeforeListingEpisodes() async throws {
+        let base: [String: Any] = ["content_id": "series-1", "series": true, "batch_id": "batch-1"]
+        for extra in [["quality": "2mbps"], ["file_id": 7], ["episode_id": "episode-1"], ["season_number": "2"]] as [[String: Any]] {
+            let paths = LoadedRows()
+            let adapter = stubbedAdapter { request in
+                paths.append(request.url?.path ?? "")
+                return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true]])
+            }
+            do {
+                _ = try await adapter.route(method: "POST", path: "/api/v1/downloads", query: [:], body: base.merging(extra) { _, new in new })
+                XCTFail("Batches are original-quality only and choose each episode's file")
+            } catch EmbyError.unsupportedFeature { }
+            XCTAssertEqual(paths.take(), ["/emby/Users/user-1"], "No episode listing or Sync job")
+            testSession?.invalidateAndCancel()
+        }
+    }
+
+    func testSeriesAndSeasonBatchesListPresentEpisodesInOneRequest() async throws {
+        for season in [2, nil] as [Int?] {
+            var listed: [[String: String]] = []
+            let adapter = stubbedAdapter { request in
+                let url = try XCTUnwrap(request.url)
+                if url.path == "/emby/Users/user-1" { return (200, ["Policy": ["EnableContentDownloading": true]]) }
+                XCTAssertEqual(url.path, "/emby/Shows/series-1/Episodes")
+                listed.append(Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
+                return (200, ["Items": [["Id": "episode-1", "Type": "Episode", "LocationType": "Virtual", "MediaSources": [["Id": "source-1"]]]]])
+            }
+            var body: [String: Any] = ["content_id": "series-1", "series": true, "quality": "original", "batch_id": "batch-1"]
+            body["season_number"] = season
+            do {
+                _ = try await adapter.route(method: "POST", path: "/api/v1/downloads", query: [:], body: body)
+                XCTFail("Only missing episodes leaves nothing to download")
+            } catch EmbyDownloads.BatchError.noEpisodes { }
+            XCTAssertEqual(listed.count, 1)
+            let query = try XCTUnwrap(listed.first)
+            XCTAssertEqual(query["Season"], season.map { String($0) })
+            XCTAssertEqual(query["IsMissing"], "false")
+            XCTAssertEqual(query["UserId"], "user-1")
+            XCTAssertEqual(query["EnableUserData"], "true")
+            XCTAssertEqual(query["Fields"], EmbyAdapter.fields)
+            XCTAssertEqual(query["SortBy"], "ParentIndexNumber,IndexNumber")
+            testSession?.invalidateAndCancel()
+        }
+        XCTAssertEqual(EmbyDownloads.BatchError.noEpisodes.localizedDescription, "No downloadable episodes were found.")
+        XCTAssertEqual(EmbyDownloads.BatchError.alreadyDownloaded.localizedDescription, "All available episodes are already downloaded.")
     }
 
     func testFilterRoutePagesBothEndpointsAndPreservesLibraryScope() async throws {

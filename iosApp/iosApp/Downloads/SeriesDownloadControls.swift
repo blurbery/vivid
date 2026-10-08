@@ -34,12 +34,13 @@ struct SeriesDownloadMenuButton: View {
     var style: Style = .circle
 
     private var seriesId: String { detail.seriesId ?? detail.contentId }
-    /// Only an episode page that has not already queued this episode offers
-    /// the single-episode options.
+    /// Only an episode page offers the single-episode options, and only while
+    /// that episode isn't already queued or downloaded. A failed download can
+    /// be retried with new options.
     private var canChooseEpisodeOptions: Bool {
-        detail.type == "episode"
-            && manager.record(forContentId: detail.contentId) == nil
-            && !manager.isRegistering(contentId: detail.contentId)
+        guard detail.type == "episode", !manager.isRegistering(contentId: detail.contentId) else { return false }
+        guard let record = manager.record(forContentId: detail.contentId) else { return true }
+        return record.localStatus == .failed
     }
     private var isMonitored: Bool { manager.subscription(forSeriesId: seriesId) != nil }
     private var isDownloading: Bool {

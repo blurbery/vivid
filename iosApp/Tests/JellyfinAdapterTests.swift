@@ -550,6 +550,71 @@ final class JellyfinAdapterTests: XCTestCase {
         let capability = try await adapter.route(method:"GET",path:"/api/v1/downloads/capability",query:[:],body:nil) as? [String:Any]
         XCTAssertEqual(capability?["qualityPresets"] as? [String], ["original"])
         XCTAssertEqual(capability?["transcodeEnabled"] as? Bool, false)
+        XCTAssertEqual(capability?["seasonDownload"] as? Bool, true)
+        XCTAssertEqual(capability?["seriesMonitoring"] as? Bool, false)
+    }
+
+    func testBatchDownloadsKeepOnlyPresentEpisodesWithAUsableSource() {
+        let sources: [[String: Any]] = [["Id": source]]
+        let items: [[String: Any]] = [
+            ["Id": "episode-1", "Type": "Episode", "MediaSources": sources],
+            ["Id": "episode-2", "Type": "Episode", "LocationType": "Virtual", "MediaSources": sources],
+            ["Id": "episode-3", "Type": "Episode", "IsMissing": true, "MediaSources": sources],
+            ["Id": "episode-4", "Type": "Episode"],
+            ["Id": "episode-5", "Type": "Episode", "MediaSources": []],
+            ["Id": "episode-6", "Type": "Episode", "MediaSources": [["Id": "../source"]]],
+            ["Id": "season-1", "Type": "Season", "MediaSources": sources],
+            ["Id": "episode-1", "Type": "Episode", "MediaSources": sources],
+            ["Id": "episode-7", "Type": "Episode", "LocationType": "FileSystem", "IsMissing": false, "MediaSources": sources]
+        ]
+        XCTAssertEqual(JellyfinDownloads.downloadableEpisodes(items).compactMap { $0["Id"] as? String }, ["episode-1", "episode-7"])
+    }
+
+    func testBatchDownloadRejectsConversionAndFileChoicesBeforeListingEpisodes() async throws {
+        let base: [String: Any] = ["content_id": item, "series": true, "batch_id": "batch-1"]
+        for extra in [["quality": "2mbps"], ["file_id": 7], ["episode_id": item], ["season_number": "2"]] as [[String: Any]] {
+            var paths: [String] = []
+            let adapter = adapter { request in
+                paths.append(request.url!.path)
+                return (200, ["Policy": ["EnableContentDownloading": true]])
+            }
+            do {
+                _ = try await adapter.route(method: "POST", path: "/api/v1/downloads", query: [:], body: base.merging(extra) { _, new in new })
+                XCTFail("Batches are original-quality only and choose each episode's file")
+            } catch JellyfinError.unsupportedFeature { }
+            XCTAssertEqual(paths, ["/jellyfin/Users/\(user)"], "No episode listing")
+            session?.invalidateAndCancel()
+        }
+    }
+
+    func testSeriesAndSeasonBatchesListPresentEpisodesInOneRequest() async throws {
+        for season in [2, nil] as [Int?] {
+            var listed: [[String: String]] = []
+            let adapter = adapter { request in
+                let url = try XCTUnwrap(request.url)
+                if url.path == "/jellyfin/Users/" + self.user { return (200, ["Policy": ["EnableContentDownloading": true]]) }
+                XCTAssertEqual(url.path, "/jellyfin/Shows/\(self.item)/Episodes")
+                listed.append(Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
+                return (200, ["Items": [["Id": self.item, "Type": "Episode", "IsMissing": true, "MediaSources": [["Id": self.source]]]]])
+            }
+            var body: [String: Any] = ["content_id": item, "series": true, "quality": "original", "batch_id": "batch-1"]
+            body["season_number"] = season
+            do {
+                _ = try await adapter.route(method: "POST", path: "/api/v1/downloads", query: [:], body: body)
+                XCTFail("Only missing episodes leaves nothing to download")
+            } catch JellyfinDownloads.BatchError.noEpisodes { }
+            XCTAssertEqual(listed.count, 1)
+            let query = try XCTUnwrap(listed.first)
+            XCTAssertEqual(query["Season"], season.map { String($0) })
+            XCTAssertEqual(query["IsMissing"], "false")
+            XCTAssertEqual(query["UserId"], user)
+            XCTAssertEqual(query["EnableUserData"], "true")
+            XCTAssertEqual(query["Fields"], JellyfinAdapter.fields)
+            XCTAssertEqual(query["SortBy"], "ParentIndexNumber,IndexNumber")
+            session?.invalidateAndCancel()
+        }
+        XCTAssertEqual(JellyfinDownloads.BatchError.noEpisodes.localizedDescription, "No downloadable episodes were found.")
+        XCTAssertEqual(JellyfinDownloads.BatchError.alreadyDownloaded.localizedDescription, "All available episodes are already downloaded.")
     }
 
     @MainActor
