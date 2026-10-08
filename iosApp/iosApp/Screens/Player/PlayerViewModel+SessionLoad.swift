@@ -162,6 +162,9 @@ extension PlayerViewModel {
         // an embedded pick can be persisted. Restoring it as an embedded index
         // would arm both identities for the same subtitle.
         if let selectedSubtitleId, SubtitleTrackIdSpace.isSidecar(selectedSubtitleId) {
+            // A Silo external file picked on this device stays local; it's
+            // re-applied after the reload rather than sent to Silo.
+            if lazySubtitleSidecars[selectedSubtitleId] != nil { return -1 }
             // Emby and Jellyfin remount their subtitle files with each
             // session, so the server stream index finds the same file again.
             if activePreparedProtocolV3 == nil {

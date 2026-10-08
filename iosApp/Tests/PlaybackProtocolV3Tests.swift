@@ -196,6 +196,36 @@ final class PlaybackProtocolV3Tests: XCTestCase {
         XCTAssertNil(intent.ffmpegStreamIndex)
     }
 
+    func testLocalSiloExternalSubtitlePickIsNeverSentToSilo() async {
+        let model = PlayerViewModel()
+        let external = SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: 0)
+        model.lazySubtitleSidecars[external] = ExternalSubtitleTrack(
+            url: URL(string: "https://dev.example.test/api/v1/stream/s/subtitles/0.vtt")!)
+        model.selectedSubtitleId = external
+        model.hasExplicitSubtitleChoice = true
+        XCTAssertFalse(model.hasDisabledServerSubtitlesForResume)
+        XCTAssertNil(model.resolvedSidecarSubtitleTrackIdForResume())
+        XCTAssertEqual(model.resolvedSubtitleTrackIndexForResume(), -1)
+
+        // A quality switch or renewal keeps the server's own subtitle choice.
+        let original = PlayerViewModel.LoadRequest(
+            contentId: "movie", preferredFileId: 42, preferredAudioTrackIndex: nil,
+            preferredSubtitleTrackIndex: -1, preferredSidecarSubtitleTrackId: nil,
+            startFromBeginning: false, preferredProtocolV3SubtitleIndex: 3
+        )
+        let recovery = original.copyForRecovery(
+            preferredFileId: 42, preferredAudioTrackIndex: nil,
+            preferredSubtitleTrackIndex: model.resolvedSubtitleTrackIndexForResume(),
+            preferredSidecarSubtitleTrackId: model.resolvedSidecarSubtitleTrackIdForResume(),
+            offlineDownloadId: nil,
+            serverSubtitlesDisabled: model.hasDisabledServerSubtitlesForResume
+        )
+        XCTAssertNil(recovery.preferredSidecarSubtitleTrackId)
+        XCTAssertEqual(recovery.preferredProtocolV3SubtitleIndex, 3)
+        model.cleanup()
+        await model.waitForCleanupCompletion()
+    }
+
     func testTeardownClearsSubtitleLoadingWithoutAnEngineEvent() async {
         let model = PlayerViewModel()
         model.isLoadingSubtitles = true
