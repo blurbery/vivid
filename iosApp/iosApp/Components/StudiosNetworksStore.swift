@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import ImageIO
 
 /// One studio or network that can be pinned to Home.
 struct StudioNetworkBrand: Identifiable, Equatable {
@@ -9,13 +10,27 @@ struct StudioNetworkBrand: Identifiable, Equatable {
     let kind: Kind
     /// TMDb network ID for networks, company ID for studios.
     let tmdbId: Int
-    /// TMDb watch provider for a network's films, read from the US lists,
-    /// which are the most complete. Titles still only show when they're in
-    /// the library, so the region never limits what can be watched.
-    var watchProviderId: Int? = nil
-    /// Logos printed on a solid block (Marvel) would render as a plain white
-    /// box, so their lettering is knocked out of the block instead.
+    /// A studio's sister labels, whose films count too. Sony's big releases
+    /// are credited to Columbia, not Sony Pictures. The logo stays `tmdbId`'s.
+    var labelIds: [Int] = []
+    /// TMDb watch providers for a network's films, any of which counts (a
+    /// service with several plans lists each one). Read from the US lists,
+    /// which are the most complete, unless the service only runs elsewhere.
+    /// Titles still only show when they're in the library, so the region
+    /// never limits what can be watched.
+    var watchProviderIds: [Int] = []
+    var watchRegion = "US"
+    /// Logos printed on a solid block (Marvel's box, the Warner Bros. shield)
+    /// would render as a plain white shape, so their lettering is knocked out
+    /// of the block instead.
     var knocksOutLogoText = false
+    /// Lets a near-square logo (the Warner Bros. shield) use more of the
+    /// tile's height, as the shared height limit left it smaller than the
+    /// wide wordmarks beside it.
+    var logoHeightScale: CGFloat = 1
+    /// Redraws a one-line logo with its two words stacked beside the emblem,
+    /// as Sony Pictures' long line was tiny on a tile.
+    var stacksLogoWords = false
     /// Shows the name as a wordmark instead of the TMDb logo. Apple TV's
     /// logo carries the Apple mark, which apps can't display, so it's set in
     /// the system typeface instead.
@@ -170,18 +185,24 @@ final class StudiosNetworksStore {
     static let concurrentBrands = 3
 
     static let catalogue: [StudioNetworkBrand] = [
-        .init(id: "netflix", name: "Netflix", kind: .network, tmdbId: 213, watchProviderId: 8),
-        .init(id: "hbo", name: "HBO", kind: .network, tmdbId: 49, watchProviderId: 1899),
-        .init(id: "appletv", name: "Apple TV", kind: .network, tmdbId: 2552, watchProviderId: 350, usesWordmark: true),
-        .init(id: "disneyplus", name: "Disney+", kind: .network, tmdbId: 2739, watchProviderId: 337),
-        .init(id: "prime", name: "Prime Video", kind: .network, tmdbId: 1024, watchProviderId: 9),
-        .init(id: "hulu", name: "Hulu", kind: .network, tmdbId: 453, watchProviderId: 15),
+        .init(id: "netflix", name: "Netflix", kind: .network, tmdbId: 213, watchProviderIds: [8]),
+        .init(id: "hbo", name: "HBO", kind: .network, tmdbId: 49, watchProviderIds: [1899]),
+        .init(id: "appletv", name: "Apple TV", kind: .network, tmdbId: 2552, watchProviderIds: [350], usesWordmark: true),
+        .init(id: "disneyplus", name: "Disney+", kind: .network, tmdbId: 2739, watchProviderIds: [337]),
+        .init(id: "prime", name: "Prime Video", kind: .network, tmdbId: 1024, watchProviderIds: [9]),
+        .init(id: "hulu", name: "Hulu", kind: .network, tmdbId: 453, watchProviderIds: [15]),
+        .init(id: "peacock", name: "Peacock", kind: .network, tmdbId: 3353, watchProviderIds: [386, 387]),
+        .init(id: "paramountplus", name: "Paramount+", kind: .network, tmdbId: 4330, watchProviderIds: [2303, 2616]),
+        .init(id: "stan", name: "Stan", kind: .network, tmdbId: 1255, watchProviderIds: [21], watchRegion: "AU"),
         .init(id: "pixar", name: "Pixar", kind: .studio, tmdbId: 3),
         .init(id: "marvel", name: "Marvel Studios", kind: .studio, tmdbId: 420, knocksOutLogoText: true),
         .init(id: "a24", name: "A24", kind: .studio, tmdbId: 41077),
         .init(id: "lucasfilm", name: "Lucasfilm", kind: .studio, tmdbId: 1),
-        .init(id: "dreamworks", name: "DreamWorks Animation", kind: .studio, tmdbId: 521),
+        .init(id: "dreamworks", name: "DreamWorks", kind: .studio, tmdbId: 521),
         .init(id: "ghibli", name: "Studio Ghibli", kind: .studio, tmdbId: 10342),
+        .init(id: "sony", name: "Sony Pictures", kind: .studio, tmdbId: 34, labelIds: [5, 2251, 559], stacksLogoWords: true),
+        .init(id: "warnerbros", name: "Warner Bros.", kind: .studio, tmdbId: 174, knocksOutLogoText: true, logoHeightScale: 1.35),
+        .init(id: "universal", name: "Universal", kind: .studio, tmdbId: 33),
     ]
 
     static let firstLoadNotice = "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly."
@@ -435,7 +456,10 @@ final class StudiosNetworksStore {
             let expiry = await Self.artworkExpiry(in: cached.results)
             guard loadedScope == scope else { return }
             artworkExpiresAt = expiry
-            guard Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else {
+            // Brands added since the results were saved have nothing to show
+            // until they're matched, so a new brand refreshes them early.
+            let missesBrands = Self.catalogue.contains { cached.results[$0.id] == nil }
+            guard missesBrands || Date().timeIntervalSince(cached.savedAt) > Self.refreshInterval else {
                 Self.saveMissingMovieLookup(library: scope.cacheURL("library"), lookup: scope.cacheURL("movies"))
                 if artworkNeedsRefresh { await refreshArtwork(scope) }
                 return
@@ -668,12 +692,15 @@ final class StudiosNetworksStore {
         let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
         let to = dayFormatter.string(from: today)
 
-        let seriesQuery = brand.kind == .network ? ["with_networks": id] : ["with_companies": id]
+        let companies = ([brand.tmdbId] + brand.labelIds).map(String.init).joined(separator: "|")
+        let seriesQuery = brand.kind == .network ? ["with_networks": id] : ["with_companies": companies]
         let movieQuery: [String: String]? = switch brand.kind {
-        case .studio: ["with_companies": id]
-        case .network: brand.watchProviderId.map {
-            ["with_watch_providers": String($0), "watch_region": "US", "with_watch_monetization_types": "flatrate"]
-        }
+        case .studio: ["with_companies": companies]
+        case .network: brand.watchProviderIds.isEmpty ? nil : [
+            "with_watch_providers": brand.watchProviderIds.map(String.init).joined(separator: "|"),
+            "watch_region": brand.watchRegion,
+            "with_watch_monetization_types": "flatrate",
+        ]
         }
 
         let recentSeriesQuery = seriesQuery.merging(["air_date.gte": from, "air_date.lte": to]) { $1 }
@@ -835,6 +862,14 @@ struct StudioNetworkLogo: View {
     var fallbackName = ""
 
     var body: some View {
+        if brand?.stacksLogoWords == true, let url {
+            StackedWordsLogo(url: url).accessibilityHidden(true)
+        } else {
+            standardLogo
+        }
+    }
+
+    private var standardLogo: some View {
         AsyncImage(url: brand?.usesWordmark == true ? nil : url) { phase in
             if let image = phase.image {
                 if brand?.knocksOutLogoText == true {
@@ -862,16 +897,137 @@ struct StudioNetworkLogo: View {
         .accessibilityHidden(true)
     }
 
-    /// Drawn large and scaled to fit, so it matches the other logos' weight
-    /// at any tile size, with the slightly tight tracking of a display wordmark.
+    /// Drawn once at display size and scaled like the TMDb logos, so it
+    /// matches their weight and keeps the same letter spacing on every tile.
+    /// Scaling the text itself kept its tracking in points, which crowded the
+    /// letters on the smaller iPhone tiles.
+    @ViewBuilder
     private var wordmark: some View {
-        // Negative tracking also trims after the last letter, which clips it;
-        // a trailing hair space takes that trim instead.
-        Text((brand?.name ?? fallbackName) + "\u{200A}")
+        if let image = Self.wordmarkImage(brand?.name ?? fallbackName) {
+            image.resizable().renderingMode(.template).scaledToFit().foregroundStyle(.white)
+        }
+    }
+
+    @MainActor private static var wordmarks: [String: Image] = [:]
+
+    @MainActor private static func wordmarkImage(_ name: String) -> Image? {
+        if let image = wordmarks[name] { return image }
+        // The slightly tight tracking of a display wordmark. It also trims
+        // after the last letter, so trailing padding keeps that letter whole.
+        let renderer = ImageRenderer(content: Text(name)
             .font(.system(size: 200, weight: .semibold))
-            .tracking(-3)
+            .tracking(-13)
             .foregroundStyle(.white)
-            .lineLimit(1)
-            .minimumScaleFactor(0.05)
+            .fixedSize()
+            .padding(.trailing, 13))
+        renderer.scale = 2
+        guard let cgImage = renderer.cgImage else { return nil }
+        let image = Image(decorative: cgImage, scale: 2)
+        wordmarks[name] = image
+        return image
+    }
+}
+
+/// A one-line logo with its emblem on the left, the first word on top and the
+/// second word below, scaled to the first word's width. Shows the logo as
+/// it is if it doesn't split into an emblem and two words.
+private struct StackedWordsLogo: View {
+    let url: URL
+    @State private var image: Image?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                image.resizable().renderingMode(.template).scaledToFit().foregroundStyle(.white)
+            }
+        }
+        .task(id: url) { image = await StackedWordsLogoRenderer.image(for: url) }
+    }
+}
+
+@MainActor
+private enum StackedWordsLogoRenderer {
+    private static var images: [URL: Image] = [:]
+
+    static func image(for url: URL) async -> Image? {
+        if let image = images[url] { return image }
+        // The 500-point logo's letters are only a few pixels apart, so the
+        // stacked version is built from the full-size original.
+        let original = URL(string: url.absoluteString.replacingOccurrences(of: "/t/p/w500/", with: "/t/p/original/")) ?? url
+        guard let (data, _) = try? await URLSession.shared.data(from: original),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let logo = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let stacked = await Task.detached(priority: .utility) { stack(logo) }.value
+        let image = Image(decorative: stacked ?? logo, scale: 1)
+        images[url] = image
+        return image
+    }
+
+    nonisolated static func stack(_ logo: CGImage) -> CGImage? {
+        let width = logo.width, height = logo.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(logo, in: CGRect(x: 0, y: 0, width: width, height: height))
+        func ink(_ x: Int, _ y: Int) -> Bool { pixels[(y * width + x) * 4 + 3] > 40 }
+
+        // Runs of columns with ink: the emblem, then each letter.
+        var runs: [ClosedRange<Int>] = []
+        var start: Int?
+        var last = 0
+        for x in 0..<width {
+            if (0..<height).contains(where: { ink(x, $0) }) {
+                if start == nil { start = x }
+                last = x
+            } else if let first = start, x - last > 1 {
+                runs.append(first...last)
+                start = nil
+            }
+        }
+        if let first = start { runs.append(first...last) }
+        func rows(_ columns: ClosedRange<Int>) -> ClosedRange<Int>? {
+            var top = height, bottom = -1
+            for y in 0..<height where columns.contains(where: { ink($0, y) }) {
+                top = min(top, y)
+                bottom = max(bottom, y)
+            }
+            return bottom >= top ? top...bottom : nil
+        }
+
+        // Letters sit close together; the gaps after the emblem and between
+        // the words are wider than about a third of the letter height.
+        guard runs.count >= 3, let letter = rows(runs[1]) else { return nil }
+        var groups = [runs[0]]
+        for run in runs.dropFirst() {
+            let previous = groups[groups.count - 1]
+            if Double(run.lowerBound - previous.upperBound) > Double(letter.count) * 0.29 {
+                groups.append(run)
+            } else {
+                groups[groups.count - 1] = previous.lowerBound...run.upperBound
+            }
+        }
+        guard groups.count == 3 else { return nil }
+        func crop(_ columns: ClosedRange<Int>) -> (image: CGImage, size: CGSize)? {
+            guard let rows = rows(columns) else { return nil }
+            let rect = CGRect(x: columns.lowerBound, y: rows.lowerBound, width: columns.count, height: rows.count)
+            return logo.cropping(to: rect).map { ($0, rect.size) }
+        }
+        guard let emblem = crop(groups[0]), let top = crop(groups[1]), let bottom = crop(groups[2]) else { return nil }
+
+        let bottomHeight = bottom.size.height * top.size.width / bottom.size.width
+        let gap = top.size.height * 0.28
+        let stackHeight = top.size.height + gap + bottomHeight
+        let emblemWidth = emblem.size.width * stackHeight / emblem.size.height
+        let textX = emblemWidth + top.size.height * 0.32
+        guard let output = CGContext(data: nil, width: Int((textX + top.size.width).rounded(.up)),
+                                     height: Int(stackHeight.rounded(.up)), bitsPerComponent: 8, bytesPerRow: 0,
+                                     space: CGColorSpaceCreateDeviceRGB(),
+                                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        output.interpolationQuality = .high
+        output.draw(emblem.image, in: CGRect(x: 0, y: 0, width: emblemWidth, height: stackHeight))
+        output.draw(top.image, in: CGRect(x: textX, y: bottomHeight + gap, width: top.size.width, height: top.size.height))
+        output.draw(bottom.image, in: CGRect(x: textX, y: 0, width: top.size.width, height: bottomHeight))
+        return output.makeImage()
     }
 }
