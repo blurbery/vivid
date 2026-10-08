@@ -132,8 +132,23 @@ actor EmbyDownloads {
         if let season { query["Season"] = String(season) }
         let result = try await connection.object("GET", "/Shows/\(EmbyConnection.id(seriesID))/Episodes", query: query)
         guard let items = result["Items"] as? [[String:Any]] else { throw EmbyError.invalidResponse }
-        let adapter = EmbyAdapter(connection:connection)
-        var built: [(itemID: String, id: String, entry: [String:Any], row: [String:Any])] = []
+        let built = try Self.batchEpisodes(items, body: body, adapter: EmbyAdapter(connection:connection))
+        guard !built.isEmpty else { throw BatchError.noEpisodes }
+        try await connection.validate()
+        // No await from here to the save, so overlapping requests can't register an episode twice.
+        var current = try records(connection)
+        let batch = Self.batchResult(built: built, stored: current)
+        guard !batch.rows.isEmpty else { throw BatchError.alreadyDownloaded }
+        for episode in batch.fresh { current[episode.id] = episode.entry }
+        if !batch.fresh.isEmpty { try save(current,connection:connection) }
+        return ["downloads":batch.rows]
+    }
+
+    typealias BatchEpisode = (itemID: String, id: String, entry: [String:Any], row: [String:Any])
+
+    /// Original-file registrations for each downloadable episode, in server order.
+    nonisolated static func batchEpisodes(_ items: [[String:Any]], body: [String:Any], adapter: EmbyAdapter) throws -> [BatchEpisode] {
+        var built: [BatchEpisode] = []
         for raw in Self.downloadableEpisodes(items) {
             try Task.checkCancellation()
             guard let itemID = raw["Id"] as? String, let source = (raw["MediaSources"] as? [[String:Any]])?.first,
@@ -145,16 +160,28 @@ actor EmbyDownloads {
                 built.append((itemID, id, entry, row))
             } catch EmbyError.invalidResponse, EmbyError.invalidURL { continue }
         }
-        guard !built.isEmpty else { throw BatchError.noEpisodes }
-        try await connection.validate()
-        // No await from here to the save, so overlapping requests can't register an episode twice.
-        var current = try records(connection)
-        let stored = Set(current.values.filter { $0["deletionPending"] as? Bool != true }.compactMap { $0["itemID"] as? String })
-        let fresh = built.filter { !stored.contains($0.itemID) }
-        guard !fresh.isEmpty else { throw BatchError.alreadyDownloaded }
-        for episode in fresh { current[episode.id] = episode.entry }
-        try save(current,connection:connection)
-        return ["downloads":fresh.map { $0.row }]
+        return built
+    }
+
+    /// Episodes without a live stored entry are registered fresh. A stored copy that was never
+    /// finished ("ready" or "downloading") is returned again as ready under its own ID, so a failed
+    /// local copy re-queues. Completed, converting and failed copies are left alone.
+    nonisolated static func batchResult(built: [BatchEpisode], stored: [String:[String:Any]]) -> (fresh: [BatchEpisode], rows: [[String:Any]]) {
+        var known = Set<String>(), retry: [String:[String:Any]] = [:]
+        for (_, entry) in stored.sorted(by: { $0.key < $1.key }) {
+            guard entry["deletionPending"] as? Bool != true, let itemID = entry["itemID"] as? String else { continue }
+            known.insert(itemID)
+            if retry[itemID] == nil, var row = entry["row"] as? [String:Any], let status = row["status"] as? String,
+               ["ready","downloading"].contains(status) {
+                row["status"] = "ready"; retry[itemID] = row
+            }
+        }
+        var fresh: [BatchEpisode] = [], rows: [[String:Any]] = []
+        for episode in built {
+            if let row = retry[episode.itemID] { rows.append(row) }
+            else if !known.contains(episode.itemID) { fresh.append(episode); rows.append(episode.row) }
+        }
+        return (fresh, rows)
     }
 
     /// Present episodes with a usable first source, once each, in server order.

@@ -236,11 +236,13 @@ private struct LucidDetailSubtitleMenu: View {
                         }
                     }
                 }
-                Section("Embedded Subtitles") {
+                Section("Subtitles") {
                     if loading { ProgressView("Reading subtitles…") }
                     else if let message {
                         Text(message).foregroundStyle(.secondary)
                         Button("Retry") { retry += 1 }
+                        // Server files come from the catalogue, not the file read.
+                        ForEach(LucidSubtitleInventory.ordered(serverRows)) { trackRow($0) }
                     } else {
                         TrackSelectionRow(name: "Auto", attributes: nil, isSelected: selectionIsAutomatic && !hasStagedSelection) {
                             guard let context else { return }
@@ -250,15 +252,8 @@ private struct LucidDetailSubtitleMenu: View {
                             dismiss()
                         }
                         TrackSelectionRow(name: "Off", attributes: nil, isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
-                        ForEach(LucidSubtitleInventory.ordered(tracks + serverRows)) { track in
-                            TrackSelectionRow(name: track.languageFirstPrimaryLabel,
-                                detail: track.languageFirstDetailLabel,
-                                attributes: nil, pills: track.attributePillLabels(includeLanguage: track.normalizedLanguageCode == nil),
-                                isSelected: selectedID == track.trackId && !hasStagedSelection) {
-                                select(track.trackId, label: track.isExternal ? track.languageFirstPrimaryLabel : nil)
-                            }
-                        }
-                        if tracks.isEmpty && serverRows.isEmpty { Text("This media file has no embedded subtitles.").foregroundStyle(.secondary) }
+                        ForEach(LucidSubtitleInventory.ordered(tracks + serverRows)) { trackRow($0) }
+                        if tracks.isEmpty && serverRows.isEmpty { Text("This media file has no subtitles.").foregroundStyle(.secondary) }
                     }
                 }
             }
@@ -278,12 +273,23 @@ private struct LucidDetailSubtitleMenu: View {
                     selectionIsAutomatic = PlayerSettings.shared.preferredSubtitleMode != "off"
                 }
             } catch is CancellationError { return }
-            catch { message = "Unable to read this file’s embedded subtitles. Try again." }
+            catch {
+                message = "Unable to read this file’s embedded subtitles. Try again."
+                if let choice = LucidSubtitleInventory.shared.choice(context: context) { selectedID = choice.trackID }
+            }
             loading = false
         }
         #if os(tvOS)
         .onExitCommand { dismiss() }
         #endif
+    }
+    private func trackRow(_ track: PlayerTrack) -> some View {
+        TrackSelectionRow(name: track.languageFirstPrimaryLabel,
+            detail: track.languageFirstDetailLabel,
+            attributes: nil, pills: track.attributePillLabels(includeLanguage: track.normalizedLanguageCode == nil),
+            isSelected: selectedID == track.trackId && !hasStagedSelection) {
+            select(track.trackId, label: track.isExternal ? track.languageFirstPrimaryLabel : nil)
+        }
     }
     private func select(_ id: Int64?, label: String? = nil) {
         guard let context else { return }

@@ -67,7 +67,7 @@ enum SubtitleTrackCandidates {
 /// rows are keyed by position among the file's external files, which is the
 /// playback plan's combined index, and the player fetches one only when chosen.
 enum ServerSubtitleSidecars {
-    static let mountableCodecs: Set<String> = ["srt", "ass", "ssa", "vtt", "subrip"]
+    static let mountableCodecs: Set<String> = ["srt", "ass", "ssa", "vtt", "subrip", "webvtt"]
     static let siloTextCodecs: Set<String> = ["srt", "subrip", "vtt", "webvtt", "ass", "ssa"]
 
     static func isMountable(codec: String?) -> Bool {
@@ -75,7 +75,11 @@ enum ServerSubtitleSidecars {
     }
 
     static func format(_ codec: String) -> String {
-        codec.lowercased() == "subrip" ? "srt" : codec.lowercased()
+        switch codec.lowercased() {
+        case "subrip": "srt"
+        case "webvtt": "vtt"
+        case let other: other
+        }
     }
 
     @MainActor
@@ -95,8 +99,10 @@ enum ServerSubtitleSidecars {
     }
 
     /// A Silo detail row names an external file by position, so it applies
-    /// only while the catalogue and the plan list the same external files.
-    /// Emby and Jellyfin rows use the server index and always agree.
+    /// only while the catalogue and the plan list the same external files:
+    /// externals first in the combined index, the same count, and the same
+    /// language, format and name at that position. Emby and Jellyfin rows use
+    /// the server index and always agree.
     static func siloOrdinalAgrees(_ trackID: Int64, plan: PlaybackV3Plan?, catalog: [SubtitleTrack]?) -> Bool {
         guard let plan else { return true }
         let ordinal = SubtitleTrackIdSpace.sidecarIndex(from: trackID)
@@ -104,9 +110,12 @@ enum ServerSubtitleSidecars {
         let externals = (catalog ?? []).filter { $0.external == true }
         guard inventory.count == externals.count, inventory.indices.contains(ordinal),
               inventory[ordinal].combinedIndex == ordinal else { return false }
-        let planLanguage = inventory[ordinal].language?.lowercased()
-        let catalogLanguage = externals[ordinal].language?.lowercased()
-        return planLanguage == catalogLanguage
+        let item = inventory[ordinal], row = externals[ordinal]
+        guard item.language?.lowercased() == row.language?.lowercased(),
+              item.codec.map(format) == row.codec.map(format),
+              let label = item.label else { return false }
+        // Silo labels an external file by its title, embedded title or file name.
+        return [row.title, row.embeddedTitle, row.externalPath].contains(label)
     }
 
     private static func row(_ track: SubtitleTrack, index: Int, codec: String) -> PlayerTrack {
