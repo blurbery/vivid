@@ -203,8 +203,14 @@ private struct HomeCardMenu: ViewModifier {
     /// matching `MediaCard`.
     private var hasPersonalActions: Bool { item.userState != nil }
 
+    /// Removal is a Silo Home action. Resume-card styling still keys off
+    /// `onRemoveFromContinueWatching` on every server.
+    private var removeFromContinueWatching: (() -> Void)? {
+        MediaServerProvider.active.supportsContinueWatchingRemoval ? onRemoveFromContinueWatching : nil
+    }
+
     private var hasAnyAction: Bool {
-        hasPersonalActions || onSetWatched != nil || onRemoveFromContinueWatching != nil
+        hasPersonalActions || onSetWatched != nil || removeFromContinueWatching != nil
     }
 
     func body(content: Content) -> some View {
@@ -249,8 +255,8 @@ private struct HomeCardMenu: ViewModifier {
             )
         }
 
-        if let onRemoveFromContinueWatching {
-            Button(role: .destructive, action: onRemoveFromContinueWatching) {
+        if let removeFromContinueWatching {
+            Button(role: .destructive, action: removeFromContinueWatching) {
                 Label("Remove from Continue Watching", systemImage: "xmark.circle")
             }
         }

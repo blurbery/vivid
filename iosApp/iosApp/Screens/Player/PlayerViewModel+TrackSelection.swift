@@ -63,6 +63,7 @@ extension PlayerViewModel {
     }
 
     #if os(iOS) || os(tvOS)
+    static let openSubtitleTrackIDBase: Int64 = 9_000_000_000
     var openSubtitleIDs: Set<Int64> { Set(openSubtitleFiles.entries.keys) }
     func removeOpenSubtitleFiles(_ files: [URL]) {
         for url in files { try? FileManager.default.removeItem(at: url) }
@@ -77,7 +78,7 @@ extension PlayerViewModel {
         guard openSubtitleContext == expected else { throw OpenSubtitlesError.context }
         guard OpenSubtitlesClient.isSubtitle(data), let text = String(data: data, encoding: .utf8),
               !VividSubtitleLoader.parse(text).isEmpty else { throw OpenSubtitlesError.file }
-        let id = 9_000_000_000 + Int64(result.id)
+        let id = Self.openSubtitleTrackIDBase + Int64(result.id)
         if openSubtitleIDs.contains(id), let track = subtitleTracks.first(where: { $0.trackId == id }), isSelectableSubtitle(track) {
             selectSubtitle(track)
             return
@@ -93,11 +94,45 @@ extension PlayerViewModel {
         adoptVividInventory()
         if let track = subtitleTracks.first(where: { $0.trackId == id }) { selectSubtitle(track) }
     }
+
+    /// Keeps the item's remembered OpenSubtitles file in step with the latest
+    /// explicit choice, so resuming later restores it.
+    private func rememberOpenSubtitleChoice(_ trackID: Int64?) {
+        guard let context = openSubtitleContext else { return }
+        let fileID = currentSelectedVersion?.fileId
+        guard let trackID, let entry = openSubtitleFiles.entries[trackID] else {
+            OpenSubtitlesStore.shared.forgetSelection(contentID: context.contentID, fileID: fileID)
+            return
+        }
+        guard let data = try? Data(contentsOf: entry.url) else { return }
+        let result = OpenSubtitleResult(id: Int(entry.id - Self.openSubtitleTrackIDBase), name: entry.name,
+            language: entry.language, hearingImpaired: entry.hearingImpaired)
+        OpenSubtitlesStore.shared.rememberSelection(result, data: data, contentID: context.contentID, fileID: fileID)
+    }
+
+    /// Restores the OpenSubtitles file chosen when this item last played.
+    func restoreRememberedOpenSubtitle() {
+        guard openSubtitleFiles.entries.isEmpty, let context = openSubtitleContext else { return }
+        let fileID = currentSelectedVersion?.fileId
+        guard let saved = OpenSubtitlesStore.shared.rememberedSelection(contentID: context.contentID, fileID: fileID) else { return }
+        do { try useOpenSubtitle(saved.result, data: saved.data, expected: context) }
+        catch { OpenSubtitlesStore.shared.forgetSelection(contentID: context.contentID, fileID: fileID) }
+    }
     #endif
+
+    /// Server subtitle files beside the media: mounted for Emby and Jellyfin,
+    /// or offered for Silo and mounted when chosen.
+    func isServerSidecarSubtitle(_ trackID: Int64) -> Bool {
+        SubtitleTrackIdSpace.isSidecar(trackID)
+            && (vividPlaybackController.containsSubtitle(appTrackID: trackID) || lazySubtitleSidecars[trackID] != nil)
+    }
 
     private func isSelectableSubtitle(_ track: PlayerTrack) -> Bool {
         #if os(iOS) || os(tvOS)
-        if track.isExternal { return openSubtitleIDs.contains(track.trackId) && vividPlaybackController.containsSubtitle(appTrackID: track.trackId) }
+        if track.isExternal {
+            return (openSubtitleIDs.contains(track.trackId) && vividPlaybackController.containsSubtitle(appTrackID: track.trackId))
+                || isServerSidecarSubtitle(track.trackId)
+        }
         #endif
         return !track.isExternal && vividPlaybackController.containsSubtitle(appTrackID: track.trackId)
     }
@@ -106,6 +141,7 @@ extension PlayerViewModel {
         guard isSelectableSubtitle(track) else { return }
         #if os(iOS) || os(tvOS)
         openSubtitleFiles.selectedID = openSubtitleIDs.contains(track.trackId) ? track.trackId : nil
+        rememberOpenSubtitleChoice(openSubtitleFiles.selectedID)
         #endif
         hasExplicitSubtitleChoice = true
         pendingSubtitleFfIndex = nil
@@ -113,7 +149,7 @@ extension PlayerViewModel {
         pendingServerRenderedSubtitleTrackId = nil
         if selectedSecondarySubtitleId == track.trackId { disableSecondarySubtitles() }
         selectedSubtitleId = track.trackId
-        if !track.isExternal { persistSubtitleSelection(track) }
+        if !track.isExternal || SubtitleTrackIdSpace.isSidecar(track.trackId) { persistSubtitleSelection(track) }
         applySubtitleTrackSelection(track.trackId, reason: "user_selection")
         scheduleHideControls()
     }
@@ -121,7 +157,9 @@ extension PlayerViewModel {
     func disableSubtitles() {
         #if os(iOS) || os(tvOS)
         openSubtitleFiles.selectedID = nil
+        rememberOpenSubtitleChoice(nil)
         #endif
+        localExternalSubtitlePick = nil
         hasExplicitSubtitleChoice = true
         pendingSubtitleFfIndex = -1
         pendingSidecarSubtitleTrackId = nil
@@ -334,6 +372,19 @@ extension PlayerViewModel {
             "[CMP-SUB] apply primary selection trackId=\(trackId.map(String.init) ?? "nil", privacy: .public) route=\(self.activeRouteLabel, privacy: .public)"
         )
         recordSubtitleTrackSelectionBreadcrumb(trackId, reason: reason, viaServerReplan: false)
+        // A Silo external file is fetched only once it's actually chosen, and
+        // remembered so replacement loads re-apply it. A reload's interim Off
+        // (nil) leaves the pick alone; an explicit Off clears it.
+        if let trackId {
+            if let sidecar = lazySubtitleSidecars[trackId] {
+                if !vividPlaybackController.containsSubtitle(appTrackID: trackId) {
+                    vividPlaybackController.addExternalSubtitleTrack(sidecar, appTrackID: trackId)
+                }
+                localExternalSubtitlePick = currentWatchDetail.map { (trackId, $0.contentId, currentSelectedVersion?.fileId) }
+            } else {
+                localExternalSubtitlePick = nil
+            }
+        }
         vividPlaybackController.selectSubtitleTrack(id: trackId)
     }
 
@@ -602,6 +653,7 @@ extension PlayerViewModel {
         case .noChange:
             return
         case .disable:
+            localExternalSubtitlePick = nil
             if selectedSubtitleId != nil {
                 selectedSubtitleId = nil
                 applySubtitleTrackSelection(nil, reason: "auto_preference")

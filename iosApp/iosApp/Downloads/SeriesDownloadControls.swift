@@ -11,10 +11,16 @@ struct SeriesDownloadMenuButton: View {
     let selectedSeason: Season?
     let episodes: [EpisodeListItem]
     let episodesBySeason: [Int: [EpisodeListItem]]
+    /// The page's episode files, so one episode can be downloaded with the
+    /// same version and quality choices as a movie.
+    var episodeVersions: [FileVersion] = []
+    var selectedVersionFileId: Int? = nil
 
     private var manager: DownloadManager { DownloadManager.shared }
     @State private var activeSheet: SeriesDownloadSheet?
     @State private var pendingMonitorSheet = false
+    @State private var pendingEpisodeOptions = false
+    @State private var episodeDownloadError: String?
     @State private var resolvedSeriesPosterPath: String?
     @State private var resolvedSeriesPosterThumbhash: String?
 
@@ -28,6 +34,14 @@ struct SeriesDownloadMenuButton: View {
     var style: Style = .circle
 
     private var seriesId: String { detail.seriesId ?? detail.contentId }
+    /// Only an episode page offers the single-episode options, and only while
+    /// that episode isn't already queued or downloaded. A failed download can
+    /// be retried with new options.
+    private var canChooseEpisodeOptions: Bool {
+        guard detail.type == "episode", !manager.isRegistering(contentId: detail.contentId) else { return false }
+        guard let record = manager.record(forContentId: detail.contentId) else { return true }
+        return record.localStatus == .failed
+    }
     private var isMonitored: Bool { manager.subscription(forSeriesId: seriesId) != nil }
     private var isDownloading: Bool {
         manager.isRegistering(contentId: seriesId)
@@ -122,6 +136,9 @@ struct SeriesDownloadMenuButton: View {
             if pendingMonitorSheet {
                 pendingMonitorSheet = false
                 activeSheet = .monitor
+            } else if pendingEpisodeOptions {
+                pendingEpisodeOptions = false
+                activeSheet = .episodeOptions
             }
         }) { sheet in
             switch sheet {
@@ -137,11 +154,32 @@ struct SeriesDownloadMenuButton: View {
                     canDownloadSeason: manager.canDownloadSeason,
                     canMonitorSeries: manager.canMonitorSeries,
                     isMonitored: isMonitored,
-                    onMonitor: { pendingMonitorSheet = true }
+                    episodeTitle: canChooseEpisodeOptions ? detail.title : nil,
+                    onMonitor: { pendingMonitorSheet = true },
+                    onEpisodeOptions: { pendingEpisodeOptions = true }
                 )
             case .monitor:
                 SeriesMonitorSheet(seriesId: seriesId, seriesTitle: detail.seriesTitle ?? detail.title, seasons: seasons)
+            case .episodeOptions:
+                DownloadOptionsSheet(
+                    title: detail.title,
+                    versions: episodeVersions,
+                    selectedVersionFileId: selectedVersionFileId,
+                    lastVersionFileId: detail.userData?.lastFileId,
+                    onStart: startEpisodeDownload
+                )
             }
+        }
+        .alert(
+            "Download Failed",
+            isPresented: Binding(
+                get: { episodeDownloadError != nil },
+                set: { if !$0 { episodeDownloadError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(episodeDownloadError ?? "")
         }
         .task(id: seriesId) {
             if detail.type == "series" {
@@ -161,16 +199,44 @@ struct SeriesDownloadMenuButton: View {
             resolvedSeriesPosterThumbhash = series.posterThumbhash
         }
     }
+
+    private func startEpisodeDownload(_ options: DownloadRequestOptions) {
+        Task {
+            do {
+                try await manager.downloadEpisode(
+                    seriesId: seriesId,
+                    episodeId: detail.contentId,
+                    displayTitle: detail.title,
+                    displaySubtitle: DownloadActionButton.episodeSubtitle(
+                        seasonNumber: detail.seasonNumber,
+                        episodeNumber: detail.episodeNumber,
+                        fallback: detail.seriesTitle
+                    ),
+                    seriesTitle: detail.seriesTitle,
+                    posterThumbhash: seriesPosterThumbhash,
+                    preferredPosterPath: seriesPosterPath,
+                    fileId: options.fileId,
+                    quality: options.quality
+                )
+            } catch DownloadError.registrationAlreadyInFlight {
+                // The first request owns the Preparing state.
+            } catch {
+                episodeDownloadError = error.localizedDescription
+            }
+        }
+    }
 }
 
 private enum SeriesDownloadSheet: Identifiable {
     case downloadOptions
     case monitor
+    case episodeOptions
 
     var id: String {
         switch self {
         case .downloadOptions: return "downloadOptions"
         case .monitor: return "monitor"
+        case .episodeOptions: return "episodeOptions"
         }
     }
 }
@@ -186,7 +252,10 @@ private struct SeriesDownloadOptionsSheet: View {
     let canDownloadSeason: Bool
     let canMonitorSeries: Bool
     let isMonitored: Bool
+    /// Set when the sheet was opened from an episode page.
+    let episodeTitle: String?
     let onMonitor: () -> Void
+    let onEpisodeOptions: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     private var manager: DownloadManager { DownloadManager.shared }
@@ -197,6 +266,17 @@ private struct SeriesDownloadOptionsSheet: View {
         NavigationStack {
             Form {
                 Section {
+                    if let episodeTitle {
+                        optionButton(
+                            title: "Download This Episode",
+                            detail: "\(episodeTitle) · Choose version and quality",
+                            icon: "arrow.down.to.line"
+                        ) {
+                            dismiss()
+                            onEpisodeOptions()
+                        }
+                    }
+
                     if !availableSeasons.isEmpty {
                         NavigationLink {
                             SeriesSeasonDownloadPicker(

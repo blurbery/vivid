@@ -18,6 +18,7 @@ extension PlayerViewModel {
         shouldPlayWhenReady: Bool
     ) async throws {
         try requireCurrentStreamLoad(expectedStreamLoadGeneration)
+        lazySubtitleSidecars = [:]
         #if os(iOS) || os(tvOS)
         removeOpenSubtitleFiles(openSubtitleFiles.prepare(contentID: prepared.watchDetail.contentId))
         #endif
@@ -145,6 +146,36 @@ extension PlayerViewModel {
         establishedVividLoadEpoch = loadEpoch
         scrubPreviewProvider.activate(spec)
         #if os(iOS) || os(tvOS)
+        // Emby and Jellyfin list subtitle files stored beside the media (and,
+        // when transcoding, text streams) separately from the container.
+        if MediaServerProvider.active.usesNativeUser, prepared.protocolV3 == nil, !streamRequest.url.isFileURL {
+            for sidecar in prepared.session.subtitleUrls ?? [] {
+                guard let url = URL(string: sidecar.url) else { continue }
+                vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url,
+                    name: sidecar.label ?? "External", language: sidecar.language,
+                    isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
+                    isDefault: sidecar.default ?? false, httpHeaders: streamRequest.headers,
+                    formatHint: sidecar.codec), appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
+            }
+        }
+        // Silo publishes its external subtitle files in the plan. They're
+        // offered as rows and fetched only when chosen; Silo is never told.
+        if let v3 = prepared.protocolV3, !streamRequest.url.isFileURL {
+            let apiOrigin = URL(string: streamRequest.serverUrl)
+            for item in v3.plan.subtitle.inventory where item.source == "external" && item.delivery == "sidecar"
+                && item.codec.map({ ServerSubtitleSidecars.siloTextCodecs.contains($0.lowercased()) }) == true {
+                guard let raw = item.url?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty,
+                      let url = StreamRequest.resolve(rawURL: raw, serverURL: streamRequest.serverUrl,
+                          additionalHeaders: [:], accessToken: nil, requiresHeaderAuthenticatedMedia: true,
+                          nativeApiMajor: v3.plan.nativeApiMajor)?.url else { continue }
+                lazySubtitleSidecars[SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: item.combinedIndex)] = ExternalSubtitleTrack(
+                    url: url, name: item.label ?? "External", language: item.language,
+                    isForced: item.forced, isHearingImpaired: item.hearingImpaired, isDefault: item.default,
+                    httpHeaders: VividLoadSpec.subtitleRequestHeaders(streamRequest.headers, resourceURL: url,
+                        trustedOriginURLs: [apiOrigin].compactMap { $0 }),
+                    formatHint: url.pathExtension.lowercased())
+            }
+        }
         for entry in openSubtitleFiles.entries.values {
             vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: entry.url,
                 name: "OpenSubtitles · " + entry.name, language: entry.language,
@@ -158,16 +189,30 @@ extension PlayerViewModel {
             do { try useOpenSubtitle(pending.result, data: pending.data, expected: context) }
             catch { showNotice(title: "Subtitles", message: "Unable to load the downloaded subtitle", tone: .warning, duration: 5) }
         }
+        restoreRememberedOpenSubtitle()
         if let id = openSubtitleFiles.selectedID, let track = subtitleTracks.first(where: { $0.trackId == id }) {
             selectSubtitle(track)
         }
         if let context = openSubtitleContext,
            let choice = LucidSubtitleInventory.shared.takeChoice(contentID: context.contentID, fileID: currentSelectedVersion?.fileId) {
-            if let id = choice.trackID, let track = subtitleTracks.first(where: { !$0.isExternal && $0.trackId == id }) {
+            if let id = choice.trackID, let track = subtitleTracks.first(where: {
+                $0.trackId == id && (!$0.isExternal || (isServerSidecarSubtitle($0.trackId)
+                    && ServerSubtitleSidecars.siloOrdinalAgrees(id, plan: prepared.protocolV3?.plan,
+                        catalog: currentSelectedVersion?.subtitleTracks)))
+            }) {
                 selectSubtitle(track)
             } else if choice.trackID == nil { disableSubtitles() }
         }
         #endif
+        if let pick = localExternalSubtitlePick {
+            if pick.contentID == prepared.watchDetail.contentId, pick.fileID == currentSelectedVersion?.fileId,
+               lazySubtitleSidecars[pick.trackID] != nil {
+                selectedSubtitleId = pick.trackID
+                applySubtitleTrackSelection(pick.trackID, reason: "restored_local_external")
+            } else {
+                localExternalSubtitlePick = nil
+            }
+        }
         reapplyVividGain()
 
         if vividPlaybackController.shouldPlayWhenReady {
@@ -257,7 +302,8 @@ extension PlayerViewModel {
         )
         let vividSubtitleTracks = engine.subtitleTracks.filter { track in
             #if os(iOS) || os(tvOS)
-            return !track.isExternal || openSubtitleIDs.contains(vividPlaybackController.appSubtitleID(forVividID: track.id))
+            let appTrackID = vividPlaybackController.appSubtitleID(forVividID: track.id)
+            return !track.isExternal || openSubtitleIDs.contains(appTrackID) || SubtitleTrackIdSpace.isSidecar(appTrackID)
             #else
             return !track.isExternal
             #endif
@@ -283,7 +329,14 @@ extension PlayerViewModel {
                     : nil
             )
         }
-        let publishedSubtitleTracks = vividSubtitleTracks
+        let lazySidecarRows = lazySubtitleSidecars.sorted { $0.key < $1.key }.compactMap { id, sidecar -> PlayerTrack? in
+            guard !vividPlaybackController.containsSubtitle(appTrackID: id) else { return nil }
+            return PlayerTrack(trackId: id, kind: .sub, title: sidecar.name, lang: sidecar.language, codec: nil,
+                audioChannelCount: nil, bitrate: nil, isDefault: sidecar.isDefault, isForced: sidecar.isForced,
+                isHearingImpaired: sidecar.isHearingImpaired, isExternal: true, isSelected: false,
+                ffIndex: nil, srcId: SubtitleTrackIdSpace.sidecarIndex(from: id))
+        }
+        let publishedSubtitleTracks = vividSubtitleTracks + lazySidecarRows
         subtitleTracks = publishedSubtitleTracks
         if engine.isSessionReady, let context = openSubtitleContext {
             LucidSubtitleInventory.shared.record(contentID: context.contentID,
@@ -369,6 +422,24 @@ extension PlayerViewModel {
                     pendingSubtitleFfIndex = nil
                     selectedSubtitleId = publishedTrackID
                     applySubtitleTrackSelection(match.trackId, reason: "pending_subtitle_index")
+                }
+            } else if activePreparedProtocolV3 == nil, let sidecar = vividSubtitleTracks.first(where: {
+                $0.isExternal && SubtitleTrackIdSpace.isSidecar($0.trackId) && $0.srcId == wantedIndex
+            }) {
+                // An Emby or Jellyfin stream index can name a server subtitle
+                // file rather than a container stream.
+                switch DeferredTrackSelectionGate.outcome(
+                    isLoadEstablished: loadIsEstablished,
+                    engineAlreadyMatches: selectedSubtitleId == sidecar.trackId
+                ) {
+                case .deferUntilEstablished:
+                    break
+                case .adoptWithoutEngineCall:
+                    pendingSubtitleFfIndex = nil
+                case .applyToEngine:
+                    pendingSubtitleFfIndex = nil
+                    selectedSubtitleId = sidecar.trackId
+                    applySubtitleTrackSelection(sidecar.trackId, reason: "pending_subtitle_sidecar")
                 }
             }
         }

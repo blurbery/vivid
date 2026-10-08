@@ -48,7 +48,7 @@ struct OpenSubtitlesSettingsView: View {
         #endif
     }
     private var status: String { busy ? "Connecting…" : store.isConnected ? "Connected" : "Not connected" }
-    private var footer: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Downloads use OpenSubtitles’ quota and are temporary for the current playback. Nothing is uploaded to your media server." }
+    private var footer: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Downloads use OpenSubtitles’ quota. The subtitle you choose stays on this device for that title (your 40 most recent), so it comes back when you resume, until you choose another, Off or Auto, or disconnect. Apple TV may clear it to free space. Nothing is uploaded to your media server." }
     private var keyField: some View {
         SecureField("OpenSubtitles API key", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(busy)
     }
@@ -187,6 +187,7 @@ extension EnvironmentValues {
 private struct OpenSubtitleDetailSearch: ViewModifier {
     @Environment(\.openSubtitleDetailContext) private var detailContext
     let fileID: Int?
+    let serverSubtitles: [SubtitleTrack]?
     @Binding var isPresented: Bool
     private var context: OpenSubtitlePlaybackContext? {
         guard var context = detailContext, let fileID else { return nil }
@@ -195,19 +196,21 @@ private struct OpenSubtitleDetailSearch: ViewModifier {
     }
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
-            LucidDetailSubtitleMenu(context: context)
+            LucidDetailSubtitleMenu(context: context, serverRows: ServerSubtitleSidecars.detailRows(serverSubtitles))
         }
     }
 }
 
 extension View {
-    func openSubtitlesDetailSearch(fileID: Int?, isPresented: Binding<Bool>) -> some View {
-        modifier(OpenSubtitleDetailSearch(fileID: fileID, isPresented: isPresented))
+    func openSubtitlesDetailSearch(fileID: Int?, serverSubtitles: [SubtitleTrack]? = nil, isPresented: Binding<Bool>) -> some View {
+        modifier(OpenSubtitleDetailSearch(fileID: fileID, serverSubtitles: serverSubtitles, isPresented: isPresented))
     }
 }
 
 private struct LucidDetailSubtitleMenu: View {
     let context: OpenSubtitlePlaybackContext?
+    /// Emby and Jellyfin subtitle files beside the media.
+    let serverRows: [PlayerTrack]
     @Environment(\.dismiss) private var dismiss
     @State private var tracks: [PlayerTrack] = []
     @State private var loading = true
@@ -233,11 +236,13 @@ private struct LucidDetailSubtitleMenu: View {
                         }
                     }
                 }
-                Section("Embedded Subtitles") {
+                Section("Subtitles") {
                     if loading { ProgressView("Reading subtitles…") }
                     else if let message {
                         Text(message).foregroundStyle(.secondary)
                         Button("Retry") { retry += 1 }
+                        // Server files come from the catalogue, not the file read.
+                        ForEach(LucidSubtitleInventory.ordered(serverRows)) { trackRow($0) }
                     } else {
                         TrackSelectionRow(name: "Auto", attributes: nil, isSelected: selectionIsAutomatic && !hasStagedSelection) {
                             guard let context else { return }
@@ -247,13 +252,8 @@ private struct LucidDetailSubtitleMenu: View {
                             dismiss()
                         }
                         TrackSelectionRow(name: "Off", attributes: nil, isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
-                        ForEach(LucidSubtitleInventory.ordered(tracks)) { track in
-                            TrackSelectionRow(name: track.languageFirstPrimaryLabel,
-                                detail: track.languageFirstDetailLabel,
-                                attributes: nil, pills: track.attributePillLabels(includeLanguage: track.normalizedLanguageCode == nil),
-                                isSelected: selectedID == track.trackId && !hasStagedSelection) { select(track.trackId) }
-                        }
-                        if tracks.isEmpty { Text("This media file has no embedded subtitles.").foregroundStyle(.secondary) }
+                        ForEach(LucidSubtitleInventory.ordered(tracks + serverRows)) { trackRow($0) }
+                        if tracks.isEmpty && serverRows.isEmpty { Text("This media file has no subtitles.").foregroundStyle(.secondary) }
                     }
                 }
             }
@@ -273,16 +273,27 @@ private struct LucidDetailSubtitleMenu: View {
                     selectionIsAutomatic = PlayerSettings.shared.preferredSubtitleMode != "off"
                 }
             } catch is CancellationError { return }
-            catch { message = "Unable to read this file’s embedded subtitles. Try again." }
+            catch {
+                message = "Unable to read this file’s embedded subtitles. Try again."
+                if let choice = LucidSubtitleInventory.shared.choice(context: context) { selectedID = choice.trackID }
+            }
             loading = false
         }
         #if os(tvOS)
         .onExitCommand { dismiss() }
         #endif
     }
-    private func select(_ id: Int64?) {
+    private func trackRow(_ track: PlayerTrack) -> some View {
+        TrackSelectionRow(name: track.languageFirstPrimaryLabel,
+            detail: track.languageFirstDetailLabel,
+            attributes: nil, pills: track.attributePillLabels(includeLanguage: track.normalizedLanguageCode == nil),
+            isSelected: selectedID == track.trackId && !hasStagedSelection) {
+            select(track.trackId, label: track.isExternal ? track.languageFirstPrimaryLabel : nil)
+        }
+    }
+    private func select(_ id: Int64?, label: String? = nil) {
         guard let context else { return }
-        LucidSubtitleInventory.shared.choose(id, context: context)
+        LucidSubtitleInventory.shared.choose(id, label: label, context: context)
         selectedID = id
         selectionIsAutomatic = false
         dismiss()

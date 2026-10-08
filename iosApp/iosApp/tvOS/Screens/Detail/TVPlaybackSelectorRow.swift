@@ -65,6 +65,25 @@ struct TVPlaybackActionSelectors: View {
         return context
     }
 
+    /// Server subtitle files beside the media.
+    private var serverSubtitleRows: [PlayerTrack] {
+        ServerSubtitleSidecars.detailRows(currentVersion?.subtitleTracks)
+    }
+
+    private func subtitleTrackButton(_ track: PlayerTrack) -> some View {
+        Button {
+            if let context = fileSubtitleContext {
+                LucidSubtitleInventory.shared.choose(track.trackId,
+                    label: track.isExternal ? track.languageFirstPrimaryLabel : nil, context: context)
+            }
+        } label: {
+            let chosen = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
+            menuItem(title: track.languageFirstPrimaryLabel,
+                     detail: ([track.languageFirstDetailLabel].compactMap { $0 } + track.attributePillLabels(includeLanguage: false)).joined(separator: " · "),
+                     isSelected: chosen?.trackID == track.trackId)
+        }
+    }
+
     private var subtitleFallback: String {
         selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
             ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
@@ -92,6 +111,8 @@ struct TVPlaybackActionSelectors: View {
                 Text("Reading subtitles…")
             } else if subtitleError {
                 Button("Retry Reading Subtitles") { subtitleRetry += 1 }
+                // Server files come from the catalogue, not the file read.
+                ForEach(LucidSubtitleInventory.ordered(serverSubtitleRows)) { subtitleTrackButton($0) }
             } else {
                 Button {
                     if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(nil, context: context) }
@@ -101,17 +122,8 @@ struct TVPlaybackActionSelectors: View {
                     if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
                     else { Text("Off") }
                 }
-                ForEach(LucidSubtitleInventory.ordered(subtitleTracks)) { track in
-                    Button {
-                        if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(track.trackId, context: context) }
-                    } label: {
-                        let chosen = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
-                        menuItem(title: track.languageFirstPrimaryLabel,
-                                 detail: ([track.languageFirstDetailLabel].compactMap { $0 } + track.attributePillLabels(includeLanguage: false)).joined(separator: " · "),
-                                 isSelected: chosen?.trackID == track.trackId)
-                    }
-                }
-                if subtitleTracks.isEmpty { Text("No embedded subtitles") }
+                ForEach(LucidSubtitleInventory.ordered(subtitleTracks + serverSubtitleRows)) { subtitleTrackButton($0) }
+                if subtitleTracks.isEmpty && serverSubtitleRows.isEmpty { Text("No subtitles") }
             }
             Divider()
             OpenSubtitlesMenu(context: { fileSubtitleContext }) { result, data, expected in

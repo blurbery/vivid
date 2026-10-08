@@ -162,6 +162,14 @@ extension PlayerViewModel {
         // an embedded pick can be persisted. Restoring it as an embedded index
         // would arm both identities for the same subtitle.
         if let selectedSubtitleId, SubtitleTrackIdSpace.isSidecar(selectedSubtitleId) {
+            // A Silo external file picked on this device stays local; it's
+            // re-applied after the reload rather than sent to Silo.
+            if lazySubtitleSidecars[selectedSubtitleId] != nil { return -1 }
+            // Emby and Jellyfin remount their subtitle files with each
+            // session, so the server stream index finds the same file again.
+            if activePreparedProtocolV3 == nil {
+                return SubtitleTrackIdSpace.sidecarIndex(from: selectedSubtitleId)
+            }
             // Sidecars are re-applied client-side after the playback
             // session returns `subtitle_urls`; keep embedded subtitles off
             // until that explicit sidecar selection is restored.
@@ -184,6 +192,9 @@ extension PlayerViewModel {
 
     func resolvedSidecarSubtitleTrackIdForResume() -> Int64? {
         if hasDisabledServerSubtitlesForResume { return nil }
+        // A Silo external file picked on this device is never sent to Silo;
+        // `loadVivid` re-applies it locally.
+        if let selectedSubtitleId, lazySubtitleSidecars[selectedSubtitleId] != nil { return nil }
         if Self.selectedEmbeddedSubtitleIndexForResume(
             plan: activePreparedProtocolV3?.plan, selectedTrackID: selectedSubtitleId
         ) != nil { return nil }

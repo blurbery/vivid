@@ -4,6 +4,19 @@ import AVFoundation
 import Foundation
 
 
+/// Refuses redirects for header-authenticated subtitle requests, so the
+/// redirect response surfaces as a failed download instead.
+private final class CredentialRedirectGuard: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        nil
+    }
+}
+
 enum VividSubtitleLoader {
     enum Document {
         case cues([SubtitleCue])
@@ -16,8 +29,13 @@ enum VividSubtitleLoader {
         } else {
             var request = URLRequest(url: track.url)
             request.timeoutInterval = 20
-            for (key, value) in track.httpHeaders ?? [:] { request.setValue(value, forHTTPHeaderField: key) }
-            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            let headers = track.httpHeaders ?? [:]
+            for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+            // Media-server credentials must never follow a redirect elsewhere.
+            let (bytes, response) = try await URLSession.shared.bytes(
+                for: request,
+                delegate: headers.isEmpty ? nil : CredentialRedirectGuard()
+            )
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
             var received = Data()
             for try await byte in bytes {

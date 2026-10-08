@@ -390,7 +390,7 @@ struct DownloadActionButton: View {
         return "Cancel this download?"
     }
 
-    private static func episodeSubtitle(
+    static func episodeSubtitle(
         seasonNumber: Int?,
         episodeNumber: Int?,
         fallback: String?

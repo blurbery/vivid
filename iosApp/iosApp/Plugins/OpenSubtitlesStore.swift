@@ -26,12 +26,37 @@ final class OpenSubtitlesStore {
            pendingSelection?.context.fileID == context.fileID { pendingSelection = nil }
     }
 
+    /// The OpenSubtitles file this item will use when it next plays: a pick
+    /// staged on the detail page, or the one remembered from earlier playback.
     func stagedLabel(context: OpenSubtitlePlaybackContext) -> String? {
-        guard loadedScope == scope, let pending = pendingSelection,
-              pending.revision == revision, pending.expires > Date(),
-              pending.context.contentID == context.contentID,
-              pending.context.fileID == context.fileID else { return nil }
-        return pending.result.name
+        guard loadedScope == scope else { return nil }
+        if let pending = pendingSelection,
+           pending.revision == revision, pending.expires > Date(),
+           pending.context.contentID == context.contentID,
+           pending.context.fileID == context.fileID {
+            return pending.result.name
+        }
+        guard isConnected, let scope else { return nil }
+        return OpenSubtitlesSelectionMemory.shared.record(scope: scope,
+            contentID: context.contentID, fileID: context.fileID)?.name
+    }
+
+    func rememberSelection(_ result: OpenSubtitleResult, data: Data, contentID: String, fileID: Int?) {
+        // A file still open in the player after Disconnect must not be saved again.
+        reload()
+        guard isConnected, let scope else { return }
+        OpenSubtitlesSelectionMemory.shared.remember(result, data: data, scope: scope, contentID: contentID, fileID: fileID)
+    }
+
+    func rememberedSelection(contentID: String, fileID: Int?) -> (result: OpenSubtitleResult, data: Data)? {
+        reload()
+        guard isConnected, let scope else { return nil }
+        return OpenSubtitlesSelectionMemory.shared.restore(scope: scope, contentID: contentID, fileID: fileID)
+    }
+
+    func forgetSelection(contentID: String, fileID: Int?) {
+        guard let scope else { return }
+        OpenSubtitlesSelectionMemory.shared.forget(scope: scope, contentID: contentID, fileID: fileID)
     }
 
     func takeStaged(contentID: String, fileID: Int?) -> (result: OpenSubtitleResult, data: Data)? {
@@ -85,6 +110,7 @@ final class OpenSubtitlesStore {
         try VividCloudPreferences.shared.setPluginCredential(nil, for: storageKey(scope))
         downloads = OpenSubtitleDownloadCache()
         pendingSelection = nil
+        OpenSubtitlesSelectionMemory.shared.clear(scope: scope)
         key = ""
         isConnected = false
         revision = UUID()
