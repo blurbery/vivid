@@ -88,7 +88,6 @@ struct PersonalListFilter: Hashable {
 @MainActor
 enum PersonalListLoader {
     private static let pageSize = 200
-    private static let maxPages = 50
 
     /// Every title on `source` ("watchlist" or "favorites") that matches the
     /// filter. Anime is decided on the device, so the whole list is fetched.
@@ -140,16 +139,21 @@ enum PersonalListLoader {
     private static func allPages(_ base: [String: String]) async throws -> [BrowseItem] {
         var items: [BrowseItem] = []
         var seen = Set<String>()
-        for page in 0..<maxPages {
+        var offset = 0
+        // Pages until the server says there are no more. A page with nothing
+        // new also stops it, so a server that keeps saying "more" can't loop.
+        while true {
             try Task.checkCancellation()
             var query = base
-            query["offset"] = String(page * pageSize)
+            query["offset"] = String(offset)
             query["limit"] = String(pageSize)
             query["include_total"] = "false"
             let response = try await VividAPI.shared.catalog(query: query)
-            items.append(contentsOf: response.items.filter { seen.insert($0.contentId).inserted })
-            let hasMore = response.hasMore ?? (response.total.map { (page + 1) * pageSize < $0 } ?? false)
-            if !hasMore || response.items.isEmpty { break }
+            let fresh = response.items.filter { seen.insert($0.contentId).inserted }
+            items.append(contentsOf: fresh)
+            offset += response.items.count
+            let hasMore = response.hasMore ?? (response.total.map { offset < $0 } ?? false)
+            if !hasMore || fresh.isEmpty { break }
         }
         return items
     }

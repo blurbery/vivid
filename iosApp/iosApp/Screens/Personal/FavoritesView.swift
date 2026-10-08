@@ -94,6 +94,10 @@ struct FavoritesView: View {
 
     @State private var items: [BrowseItem] = []
     @State private var isLoading = false
+    @State private var loadGeneration = UUID()
+    /// The filter `items` was loaded with, so a new filter clears the old
+    /// titles instead of showing them until its results arrive.
+    @State private var loadedFilter = PersonalListFilter()
     @State private var error: ErrorState?
     @State private var uiCustomization = UICustomizationPreferences.shared
     #if os(tvOS)
@@ -371,8 +375,16 @@ struct FavoritesView: View {
     }
 
     private func loadFavorites() async {
+        // A refresh or retry still running for an earlier filter must not
+        // overwrite the current one's results.
+        let generation = UUID()
+        loadGeneration = generation
+        if filter != loadedFilter {
+            items = []
+            loadedFilter = filter
+        }
         if filter.isActive {
-            await loadFilteredFavorites()
+            await loadFilteredFavorites(generation)
             return
         }
         if items.isEmpty,
@@ -387,9 +399,11 @@ struct FavoritesView: View {
             let response: CatalogResponse = try await VividAPI.shared.get(
                 "/api/v1/favorites"
             )
+            guard loadGeneration == generation else { return }
             ResponseCache.shared.set(response, for: CacheKey.favorites)
             items = response.items
         } catch let err {
+            guard loadGeneration == generation else { return }
             if items.isEmpty {
                 self.error = ErrorState(err)
             }
@@ -397,15 +411,15 @@ struct FavoritesView: View {
         isLoading = false
     }
 
-    private func loadFilteredFavorites() async {
+    private func loadFilteredFavorites(_ generation: UUID) async {
         error = nil
         if items.isEmpty { isLoading = true }
         do {
             let matches = try await PersonalListLoader.loadAll(source: "favorites", filter: filter)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             items = matches
         } catch let err {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             items = []
             self.error = ErrorState(err)
         }

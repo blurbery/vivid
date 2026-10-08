@@ -14,6 +14,9 @@ struct WatchlistView: View {
     @State private var items: [BrowseItem] = []
     @State private var isLoading = false
     @State private var loadGeneration = UUID()
+    /// The filter `items` was loaded with, so a new filter clears the old
+    /// titles instead of showing them until its results arrive.
+    @State private var loadedFilter = PersonalListFilter()
     @State private var error: ErrorState?
     @State private var uiCustomization = UICustomizationPreferences.shared
     @Environment(AppRouter.self) private var router
@@ -238,6 +241,10 @@ struct WatchlistView: View {
         let generation = UUID()
         loadGeneration = generation
         defer { if loadGeneration == generation { isLoading = false } }
+        if filter != loadedFilter {
+            items = []
+            loadedFilter = filter
+        }
         if filter.isActive {
             error = nil
             if items.isEmpty { isLoading = true }
