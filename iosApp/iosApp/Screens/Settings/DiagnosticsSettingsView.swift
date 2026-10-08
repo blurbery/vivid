@@ -17,6 +17,7 @@ struct DiagnosticsSettingsView: View {
     /// latest may publish its export file, and older ones remove their own.
     @State private var reloadGeneration = 0
     @State private var latestPlayback: PlaybackSessionReport?
+    @State private var note = ""
 
     private var groups: [AppHealthReportGroup] { AppHealthReportGroup.grouping(reports) }
     private var unsent: [AppHealthReport] { AppHealthSendState.unsent(in: reports, sentIDs: sentIDs) }
@@ -66,12 +67,13 @@ struct DiagnosticsSettingsView: View {
                 }
             if !reports.isEmpty {
                 Section {
-                    DiagnosticsSendButton(title: sendTitle, reports: toSend)
+                    DiagnosticsNoteField(text: $note)
+                    DiagnosticsSendButton(title: sendTitle, reports: toSend, note: DiagnosticsNote.cleaned(note))
                     DiagnosticsOtherOptions(subject: "Vivid Diagnostics", shareURL: shareURL,
                                             file: { [reports = toSend] in DiagnosticsExportFile.write(AppHealthStore.shared.exportData(reports)) },
                                             onMailSent: { [reports = toSend] in AppHealthSendState.markSent(reports) })
                 } footer: {
-                    Text("Sends the reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Other Options sends them with Mail or the share sheet instead. Open a report to send it on its own.")
+                    Text("Sends the reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Other Options sends them with Mail or the share sheet instead. Open a report to send it on its own. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
                 }
                 Section {
                     Button("Delete All Reports", role: .destructive) { showsDeleteConfirm = true }
@@ -219,6 +221,10 @@ private struct LatestPlaybackView: View {
     let report: PlaybackSessionReport
     @State private var shareURL: URL?
     @State private var status: DiagnosticsSendStatus = .idle
+    @State private var note = ""
+    /// The "Sent Content" text, refreshed shortly after typing pauses so a
+    /// long record isn't re-encoded and laid out on every keystroke.
+    @State private var json = ""
 
     var body: some View {
         List {
@@ -232,11 +238,14 @@ private struct LatestPlaybackView: View {
                 }
             } header: { PhoneSettingsSectionHeader("Summary") }
             Section {
-                DiagnosticsSendRow(title: "Send Latest Playback", status: status, disabled: data == nil, action: send)
+                DiagnosticsNoteField(text: $note)
+                DiagnosticsSendRow(title: "Send Latest Playback", status: status, disabled: json.isEmpty, action: send)
                 DiagnosticsOtherOptions(subject: "Vivid Playback Report", shareURL: shareURL,
-                                        file: { [data = data] in data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") } })
+                                        file: { [report, note] in
+                                            Self.encoded(report, note: note).flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") }
+                                        })
             } footer: {
-                Text("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses.")
+                Text("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
             }
             Section {
                 Text(json).font(.caption.monospaced()).textSelection(.enabled)
@@ -244,15 +253,25 @@ private struct LatestPlaybackView: View {
                 footer: { Text("This is exactly what is sent.") }
         }
         .settingsListChrome().navigationTitle("")
-        .task { shareURL = data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") } }
+        .task { shareURL = Self.encoded(report, note: "").flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") } }
+        .task(id: note) {
+            if !json.isEmpty {
+                do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            }
+            json = Self.encoded(report, note: note).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        }
         .onDisappear { DiagnosticsExportFile.remove(shareURL); shareURL = nil }
     }
 
-    private var data: Data? { PlaybackSessionRecorder.encode(report) }
-    private var json: String { data.map { String(decoding: $0, as: UTF8.self) } ?? "" }
+    /// Exactly what is sent: the record, plus the note when there is one.
+    private static func encoded(_ report: PlaybackSessionReport, note: String) -> Data? {
+        var sent = report
+        sent.note = DiagnosticsNote.cleaned(note)
+        return PlaybackSessionRecorder.encode(sent)
+    }
 
     private func send() {
-        guard let data, !status.isSending else { return }
+        guard !status.isSending, let data = Self.encoded(report, note: note) else { return }
         status = .sending
         Task {
             do {
@@ -269,6 +288,7 @@ private struct LatestPlaybackView: View {
 private struct DiagnosticsSendButton: View {
     let title: String
     let reports: [AppHealthReport]
+    var note: String? = nil
     @State private var status: DiagnosticsSendStatus = .idle
 
     var body: some View {
@@ -279,8 +299,9 @@ private struct DiagnosticsSendButton: View {
         guard !reports.isEmpty, !status.isSending else { return }
         status = .sending
         let reports = reports
+        let note = note
         Task {
-            let data = await Task.detached(priority: .userInitiated) { AppHealthStore.shared.exportData(reports) }.value
+            let data = await Task.detached(priority: .userInitiated) { AppHealthStore.shared.exportData(reports, note: note) }.value
             do {
                 let reference = try await DiagnosticsUploader.send(data, kind: .problems)
                 AppHealthSendState.markSent(reports)
@@ -289,6 +310,20 @@ private struct DiagnosticsSendButton: View {
                 status = .failed(error as? DiagnosticsUploader.Failure ?? .unavailable)
             }
         }
+    }
+}
+
+/// The optional "What happened?" note, sent with the report.
+private struct DiagnosticsNoteField: View {
+    @Binding var text: String
+
+    var body: some View {
+        TextField("What happened? (optional)", text: $text, axis: .vertical)
+            .lineLimit(1...5)
+            .onChange(of: text) { _, new in
+                let limited = DiagnosticsNote.limited(new)
+                if limited != new { text = limited }
+            }
     }
 }
 

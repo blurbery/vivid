@@ -19,7 +19,7 @@ The source is in [`diagnostics-relay/`](../diagnostics-relay). It is separate fr
 | `POST /v1/reports/playback` | The latest playback record, exactly as the app shows it | 128 KB |
 | `POST /v1/reports/problems` | Problem reports (crashes, freezes, failures, app errors), as exported | 2.5 MB, up to 50 reports |
 
-The body must be `application/json` and match the app's format: known fields only, a supported format version, short printable app details, `VD-` issue IDs and known report kinds. Anything else gets `400`. A successful send returns `200` with `{"reference":"VR-7K2M9Q"}`. The reference is random and different from the `VD-` issue IDs, which identify the problem rather than the send.
+The body must be `application/json` and match the app's format: known top-level fields only, a supported format version, short printable app details, `VD-` issue IDs and known report kinds. Either kind can carry an optional top-level `note`, the tester's own "What happened?" text: up to 500 Unicode code points, with line breaks and tabs allowed but no other control characters or text-direction overrides. An empty note counts as none. Anything else gets `400`. Playback `totals` aren't checked field by field, so additive counters such as `pausedSeconds`, `waitSeconds` and `longestWaitSeconds` need no relay change. A successful send returns `200` with `{"reference":"VR-7K2M9Q"}`. The reference is random and different from the `VD-` issue IDs, which identify the problem rather than the send.
 
 | Response | Meaning | What the app should do |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ The body must be `application/json` and match the app's format: known fields onl
 
 ## Email
 
-Mail is sent through [Resend](https://resend.com) to `diagnostics@vividapp.co` only; the address is fixed in `worker.mjs`. It comes from `reports@diagnostics.vividapp.co`, so Resend's DNS records sit under the `diagnostics.vividapp.co` subdomain and the root domain's records, which deliver mail to iCloud+, are left alone. Set `RESEND_FROM` to use another verified sender. The subject carries the reference and a short summary, for example `Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames`, and the report is attached as JSON. Replies can't reach the person who sent it; ask them for the reference instead.
+Mail is sent through [Resend](https://resend.com) to `diagnostics@vividapp.co` only; the address is fixed in `worker.mjs`. It comes from `reports@diagnostics.vividapp.co`, so Resend's DNS records sit under the `diagnostics.vividapp.co` subdomain and the root domain's records, which deliver mail to iCloud+, are left alone. Set `RESEND_FROM` to use another verified sender. The subject carries the reference and a short summary, for example `Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames`, plus `waited N s to load` when a playback report's longest wait reached 10 seconds, and the report is attached as JSON. A note appears only in the plain-text body, under `What happened:` with each line indented, never in the subject. Replies can't reach the person who sent it; ask them for the reference instead.
 
 > [!WARNING]
 > Never enable Cloudflare Email Routing for vividapp.co. It replaces the root MX records and takes incoming mail away from iCloud+.
@@ -66,4 +66,4 @@ The app's Send button must only ship after the relay is live and the privacy tex
 npm run test:relay
 ```
 
-The tests use the sample reports in `diagnostics-relay/fixtures/` and cover acceptance, validation, size limits, rate and daily limits, partial failures, reference format and subject safety. `npx wrangler deploy --dry-run` checks the configuration without deploying.
+The tests use the sample reports in `diagnostics-relay/fixtures/` and cover acceptance, validation, size limits, rate and daily limits, partial failures, reference format, subject safety, and the note's limits, body placement and indentation. `npx wrangler deploy --dry-run` checks the configuration without deploying.

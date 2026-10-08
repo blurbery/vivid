@@ -160,3 +160,56 @@ test('stalls appear in the playback subject', async () => {
   await run(post('playback', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-CCCCCC'});
   assert.match(env.sent[0].subject, /412 dropped frames · 2 stalls$/);
 });
+
+test('a note is emailed in the body, kept in the copy and never put in the subject', async () => {
+  const env = makeEnv();
+  const report = JSON.parse(await fixture('playback'));
+  report.note = 'It froze after I skipped ahead.\r\nBcc: someone@example.com\n\nThen it never came back.';
+  report.totals.pausedSeconds = 0;
+  report.totals.waitSeconds = 20.4;
+  report.totals.longestWaitSeconds = 20.4;
+  const body = JSON.stringify(report);
+  const response = await run(post('playback', body), env, {now: fixedNow, reference: () => 'VR-DDDDDD'});
+  assert.equal(response.status, 200);
+  const email = env.sent[0];
+  assert.equal(email.subject, 'Playback report VR-DDDDDD · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames · waited 20 s to load');
+  assert.ok(!/froze|Bcc/.test(email.subject));
+  assert.match(email.text, /\nType: Latest playback\n\nWhat happened:\n {2}It froze after I skipped ahead\.\n {2}Bcc: someone@example\.com\n {2}\n {2}Then it never came back\.\n/);
+  assert.ok(!/^Bcc:/m.test(email.text), 'note lines are indented');
+  assert.equal(new TextDecoder().decode(env.stored[0].body), body);
+});
+
+test('problem reports can carry a note too', async () => {
+  const env = makeEnv();
+  const report = JSON.parse(await fixture('problems'));
+  report.note = 'Happens every time on my TV.';
+  const response = await run(post('problems', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-EEEEEE'});
+  assert.equal(response.status, 200);
+  assert.match(env.sent[0].text, /What happened:\n {2}Happens every time on my TV\.\n\nVD-/);
+  assert.ok(!/my TV/.test(env.sent[0].subject));
+});
+
+test('reports without a note, or with an empty one, read as before', async () => {
+  const env = makeEnv();
+  const report = JSON.parse(await fixture('playback'));
+  report.note = '';
+  await run(post('playback', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-FFFFFF'});
+  await run(post('playback', await fixture('playback')), env, {now: fixedNow, reference: () => 'VR-FFFFF2'});
+  assert.equal(env.sent.length, 2);
+  for (const email of env.sent) assert.ok(!email.text.includes('What happened'));
+});
+
+test('rejects notes that are too long, not text or contain control characters', async () => {
+  const env = makeEnv();
+  const playback = JSON.parse(await fixture('playback'));
+  const problems = JSON.parse(await fixture('problems'));
+  const longest = '😀'.repeat(limits.noteCodePoints);
+  for (const [kind, base] of [['playback', playback], ['problems', problems]]) {
+    const accepted = await run(post(kind, JSON.stringify({...base, note: longest})), env, {now: fixedNow});
+    assert.equal(accepted.status, 200, `${kind}: ${limits.noteCodePoints} code points fit`);
+    for (const note of [longest + 'x', 42, ['list'], 'bell\u0007', 'escape\u001b[2J', 'flip‮text']) {
+      const response = await run(post(kind, JSON.stringify({...base, note})), env, {now: fixedNow});
+      assert.equal(response.status, 400, `${kind}: ${JSON.stringify(note).slice(0, 40)}`);
+    }
+  }
+});

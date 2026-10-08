@@ -16,6 +16,9 @@ export const limits = Object.freeze({
   keepSeconds: 30 * 24 * 60 * 60,
   maxProblemReports: 50,
   maxTimelineMinutes: 240,
+  // The optional "What happened?" note, in Unicode code points, matching
+  // the app's own limit.
+  noteCodePoints: 500,
 });
 
 // The only address the relay ever sends to.
@@ -61,11 +64,32 @@ const isDate = value => typeof value === 'string' && value.length <= 40 && !Numb
 const isShortText = (value, max = 64) => typeof value === 'string' && value.length > 0 && value.length <= max && !/\p{Cc}/u.test(value);
 const isToken = value => typeof value === 'string' && /^[a-z0-9_-]{1,32}$/.test(value);
 
+// The optional note a tester types. Line breaks and tabs are fine; other
+// control characters and text-direction overrides are not. An empty note is
+// the same as none, so the app never gets a permanent rejection for it.
+const directionControls = /[\u202A-\u202E\u2066-\u2069]/u;
+function validNote(note) {
+  if (note === undefined || note === null || note === '') return true;
+  if (typeof note !== 'string' || [...note].length > limits.noteCodePoints) return false;
+  return !/[^\P{Cc}\n\r\t]/u.test(note) && !directionControls.test(note);
+}
+
+// The note as plain body lines, indented so nothing in it can pass for one of
+// the relay's own lines.
+function noteLines(note) {
+  if (typeof note !== 'string') return [];
+  const lines = note.replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n').split('\n')
+    .map(line => line.replace(/\t/g, '  ').trimEnd());
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.length ? ['', 'What happened:', ...lines.map(line => `  ${line}`)] : [];
+}
+
 function validApp(app) {
   return isObject(app) && ['version', 'build', 'os', 'device'].every(key => isShortText(app[key]));
 }
 
-const playbackKeys = new Set(['format', 'startedAt', 'updatedAt', 'app', 'setup', 'media', 'totals', 'timeline', 'notMeasured']);
+const playbackKeys = new Set(['format', 'startedAt', 'updatedAt', 'app', 'setup', 'media', 'totals', 'timeline', 'notMeasured', 'note']);
 
 export function validatePlayback(report) {
   if (!isObject(report)) return 'not an object';
@@ -77,6 +101,7 @@ export function validatePlayback(report) {
   if (!Array.isArray(report.timeline) || report.timeline.length > limits.maxTimelineMinutes
       || !report.timeline.every(minute => isObject(minute) && Number.isInteger(minute.minute))) return 'bad timeline';
   if (!Array.isArray(report.notMeasured) || !report.notMeasured.every(isToken)) return 'bad notMeasured';
+  if (!validNote(report.note)) return 'bad note';
   return null;
 }
 
@@ -84,6 +109,7 @@ export function validateProblems(report) {
   if (!isObject(report)) return 'not an object';
   if (!Number.isInteger(report.format) || report.format < 1 || report.format > 99) return 'unsupported format';
   if (!isDate(report.exportedAt)) return 'bad date';
+  if (!validNote(report.note)) return 'bad note';
   if (!Array.isArray(report.reports) || report.reports.length === 0 || report.reports.length > limits.maxProblemReports) return 'bad reports';
   for (const entry of report.reports) {
     if (!isObject(entry) || !/^VD-[0-9A-F]{6}$/.test(entry.issueID ?? '')) return 'bad issue ID';
@@ -107,6 +133,9 @@ export function describe(kind, report, reference) {
     if (Number.isInteger(totals.rebuffers) && totals.rebuffers > 0) parts.push(`${totals.rebuffers} rebuffers`);
     if (Number.isInteger(totals.stalls) && totals.stalls > 0) parts.push(`${totals.stalls} stalls`);
     if (isToken(totals.endReason) && totals.endReason.startsWith('failed')) parts.push(totals.endReason);
+    if (Number.isFinite(totals.longestWaitSeconds) && totals.longestWaitSeconds >= 10) {
+      parts.push(`waited ${Math.round(totals.longestWaitSeconds)} s to load`);
+    }
     return parts.map(clean).filter(Boolean).join(' · ').slice(0, 200);
   }
   const first = report.reports[0];
@@ -118,7 +147,9 @@ export function describe(kind, report, reference) {
 
 function emailText(kind, report, reference, receivedAt) {
   const lines = [`Reference: ${reference}`, `Received: ${receivedAt}`, `Type: ${kind === 'playback' ? 'Latest playback' : 'Problem reports'}`];
+  lines.push(...noteLines(report.note));
   if (kind === 'problems') {
+    if (lines.length > 3) lines.push('');
     for (const entry of report.reports) lines.push(`${entry.issueID}  ${clean(entry.title)}`);
   }
   lines.push('', 'The full report is attached as JSON.');

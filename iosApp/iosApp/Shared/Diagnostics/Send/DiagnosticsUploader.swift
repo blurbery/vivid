@@ -3,10 +3,36 @@
 #if os(iOS) || os(tvOS)
 import Foundation
 
+/// The optional "What happened?" text a tester adds before sending. It goes
+/// out as written, apart from trimming, removing control and text-direction
+/// characters, and the relay's limit of 500 characters (Unicode scalars, which
+/// the relay counts as code points).
+enum DiagnosticsNote {
+    static let maxCharacters = 500
+
+    /// Keeps typing within the limit.
+    static func limited(_ text: String) -> String {
+        guard text.unicodeScalars.count > maxCharacters else { return text }
+        return String(String.UnicodeScalarView(text.unicodeScalars.prefix(maxCharacters)))
+    }
+
+    /// The note as sent, or nil when there's nothing to send.
+    static func cleaned(_ text: String) -> String? {
+        let scalars = text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars.filter { scalar in
+            if scalar == "\n" || scalar == "\t" { return true }
+            if scalar.properties.generalCategory == .control { return false }
+            return !(0x202A...0x202E).contains(scalar.value) && !(0x2066...0x2069).contains(scalar.value)
+        }
+        let trimmed = limited(String(String.UnicodeScalarView(scalars))).trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 /// Sends a diagnostics file the person chose to send to Vivid's diagnostics
 /// relay, which keeps a copy for 30 days and emails it to
 /// diagnostics@vividapp.co. The body is exactly the JSON shown as "what is
-/// sent"; nothing else about the device or account is added.
+/// sent", plus any note the person wrote; nothing else about the device or
+/// account is added.
 enum DiagnosticsUploader {
     enum Kind: String {
         case playback, problems
