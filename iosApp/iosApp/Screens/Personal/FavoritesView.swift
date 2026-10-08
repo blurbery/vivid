@@ -379,6 +379,7 @@ struct FavoritesView: View {
         // overwrite the current one's results.
         let generation = UUID()
         loadGeneration = generation
+        defer { if loadGeneration == generation { isLoading = false } }
         if filter != loadedFilter {
             items = []
             loadedFilter = filter
@@ -399,16 +400,15 @@ struct FavoritesView: View {
             let response: CatalogResponse = try await VividAPI.shared.get(
                 "/api/v1/favorites"
             )
-            guard loadGeneration == generation else { return }
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             ResponseCache.shared.set(response, for: CacheKey.favorites)
             items = response.items
         } catch let err {
-            guard loadGeneration == generation else { return }
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             if items.isEmpty {
                 self.error = ErrorState(err)
             }
         }
-        isLoading = false
     }
 
     private func loadFilteredFavorites(_ generation: UUID) async {
@@ -423,7 +423,6 @@ struct FavoritesView: View {
             items = []
             self.error = ErrorState(err)
         }
-        isLoading = false
     }
 }
 
