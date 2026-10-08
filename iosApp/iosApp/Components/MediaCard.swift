@@ -230,8 +230,14 @@ struct MediaCard: View {
         .accessibilityLabel(accessibilityDescription)
     }
 
+    /// Removal is a Silo Home action. Resume-card styling still keys off
+    /// `onRemoveFromContinueWatching` on every server.
+    private var removeFromContinueWatching: (() -> Void)? {
+        MediaServerProvider.active.supportsContinueWatchingRemoval ? onRemoveFromContinueWatching : nil
+    }
+
     private var hasIOSContextActions: Bool {
-        hasPersonalActions || onSetWatched != nil || onRemoveFromContinueWatching != nil
+        hasPersonalActions || onSetWatched != nil || removeFromContinueWatching != nil
     }
 
     /// Same action set (and ordering) as the tvOS `FocusableMediaCard` menu:
@@ -260,9 +266,9 @@ struct MediaCard: View {
             personalMenuItems
         }
 
-        if let onRemoveFromContinueWatching {
+        if let removeFromContinueWatching {
             Button(role: .destructive) {
-                onRemoveFromContinueWatching()
+                removeFromContinueWatching()
             } label: {
                 Label("Remove from Continue Watching", systemImage: "xmark.circle")
             }
@@ -588,11 +594,17 @@ private struct FocusableMediaCard<Content: View>: View {
         }
     }
 
+    /// Removal is a Silo Home action. Resume-card styling still keys off
+    /// `onRemoveFromContinueWatching` on every server.
+    private var removeFromContinueWatching: (() -> Void)? {
+        MediaServerProvider.active.supportsContinueWatchingRemoval ? onRemoveFromContinueWatching : nil
+    }
+
     private var hasContextActions: Bool {
         (contextPlayTitle != nil && playAction != nil)
             || onOpenContextDetail != nil
             || onSetWatched != nil
-            || onRemoveFromContinueWatching != nil
+            || removeFromContinueWatching != nil
             || personalItems != nil
     }
 
@@ -636,9 +648,9 @@ private struct FocusableMediaCard<Content: View>: View {
             personalItems
         }
 
-        if let onRemoveFromContinueWatching {
+        if let removeFromContinueWatching {
             Button(role: .destructive) {
-                onRemoveFromContinueWatching()
+                removeFromContinueWatching()
             } label: {
                 Label("Remove from Continue Watching", systemImage: "xmark.circle")
             }

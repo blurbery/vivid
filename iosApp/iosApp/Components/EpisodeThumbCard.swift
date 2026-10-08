@@ -473,12 +473,18 @@ struct EpisodeThumbCard: View {
     }
     #endif
 
+    /// Removal is a Silo Home action. Resume-card styling still keys off
+    /// `onRemoveFromContinueWatching` on every server.
+    private var removeFromContinueWatching: (() -> Void)? {
+        MediaServerProvider.active.supportsContinueWatchingRemoval ? onRemoveFromContinueWatching : nil
+    }
+
     private var hasContextActions: Bool {
         (contextPlayTitle != nil && playAction != nil)
             || onOpenContextDetail != nil
             || onSetWatched != nil
             || onSetFavorite != nil
-            || onRemoveFromContinueWatching != nil
+            || removeFromContinueWatching != nil
     }
 
     @ViewBuilder
@@ -531,9 +537,9 @@ struct EpisodeThumbCard: View {
             }
         }
 
-        if let onRemoveFromContinueWatching {
+        if let removeFromContinueWatching {
             Button(role: .destructive) {
-                onRemoveFromContinueWatching()
+                removeFromContinueWatching()
             } label: {
                 Label("Remove from Continue Watching", systemImage: "xmark.circle")
             }

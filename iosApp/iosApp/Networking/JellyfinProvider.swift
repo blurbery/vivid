@@ -636,10 +636,8 @@ struct JellyfinAdapter {
     }
 
     func section(_ id: String, _ title: String, _ catalog: [String: Any], featured: Bool = false) -> [String: Any] {
-        let hidden = Set(UserDefaults.standard.stringArray(forKey:storagePrefix + ".dismissals." + id) ?? [])
-        let rows = (catalog["items"] as? [[String:Any]] ?? []).filter {
-            !hidden.contains($0["contentId"] as? String ?? "")
-        }.map { item in
+        // Continue Watching removal is Silo-only, so rows follow the server.
+        let rows = (catalog["items"] as? [[String:Any]] ?? []).map { item in
             var card = item
             if ["continue_watching", "next_up"].contains(id),
                item["type"] as? String == "episode",
@@ -818,15 +816,6 @@ struct JellyfinAdapter {
                 return [:]
             }
             return try await connection.request(method == "DELETE" ? "DELETE" : "POST", "/User\(kind)/\(JellyfinConnection.id(p[3]))")
-        }
-        if p.count == 6, p[2] == "home", p[3] == "dismissals", ["continue_watching","next_up"].contains(p[4]) {
-            let id = try JellyfinConnection.id(p[5])
-            try await connection.validate()
-            let key = storagePrefix + ".dismissals." + p[4]
-            var ids = Set(UserDefaults.standard.stringArray(forKey:key) ?? [])
-            if method == "DELETE" { ids.remove(id) } else { ids.insert(id) }
-            UserDefaults.standard.set(Array(ids),forKey:key)
-            return [:]
         }
         if path == "/api/v1/recommendations/discover" {
             let result = try await items(query:["SortBy":"Random","IncludeItemTypes":"Movie,Series","Limit":"30","Fields":Self.homeFields])
