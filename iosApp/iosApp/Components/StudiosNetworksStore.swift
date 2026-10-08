@@ -863,7 +863,7 @@ struct StudioNetworkLogo: View {
 
     var body: some View {
         if brand?.stacksLogoWords == true, let url {
-            StackedWordsLogo(url: url).accessibilityHidden(true)
+            StackedWordsLogo(url: url) { standardLogo }.accessibilityHidden(true)
         } else {
             standardLogo
         }
@@ -930,15 +930,19 @@ struct StudioNetworkLogo: View {
 
 /// A one-line logo with its emblem on the left, the first word on top and the
 /// second word below, scaled to the first word's width. Shows the logo as
-/// it is if it doesn't split into an emblem and two words.
-private struct StackedWordsLogo: View {
+/// it is if it doesn't split into an emblem and two words, and the standard
+/// logo while the stacked one loads or if it can't be built.
+private struct StackedWordsLogo<Fallback: View>: View {
     let url: URL
+    @ViewBuilder let fallback: () -> Fallback
     @State private var image: Image?
 
     var body: some View {
         ZStack {
             if let image {
                 image.resizable().renderingMode(.template).scaledToFit().foregroundStyle(.white)
+            } else {
+                fallback()
             }
         }
         .task(id: url) { image = await StackedWordsLogoRenderer.image(for: url) }
