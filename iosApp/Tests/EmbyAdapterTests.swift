@@ -349,6 +349,7 @@ final class EmbyAdapterTests: XCTestCase {
             let stored = try XCTUnwrap(episode.entry["row"] as? [String: Any])
             for row in [episode.row, stored] {
                 XCTAssertEqual(row["id"] as? String, episode.id)
+                XCTAssertEqual(row["contentId"] as? String, "series-1", "Episode rows name their series")
                 XCTAssertEqual(row["episodeId"] as? String, episode.itemID)
                 XCTAssertEqual(row["batchId"] as? String, "batch-1")
                 XCTAssertEqual(row["status"] as? String, "ready")

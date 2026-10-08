@@ -162,7 +162,8 @@ extension PlayerViewModel {
         // offered as rows and fetched only when chosen; Silo is never told.
         if let v3 = prepared.protocolV3, !streamRequest.url.isFileURL {
             let apiOrigin = URL(string: streamRequest.serverUrl)
-            for item in v3.plan.subtitle.inventory where item.source == "external" && item.delivery == "sidecar" {
+            for item in v3.plan.subtitle.inventory where item.source == "external" && item.delivery == "sidecar"
+                && item.codec.map({ ServerSubtitleSidecars.siloTextCodecs.contains($0.lowercased()) }) == true {
                 guard let raw = item.url?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty,
                       let url = StreamRequest.resolve(rawURL: raw, serverURL: streamRequest.serverUrl,
                           additionalHeaders: [:], accessToken: nil, requiresHeaderAuthenticatedMedia: true,

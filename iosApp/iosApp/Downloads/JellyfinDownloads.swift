@@ -121,8 +121,11 @@ actor JellyfinDownloads {
                   let sourceID = source["Id"] as? String else { continue }
             let id = "jellyfin-" + UUID().uuidString
             do {
-                let (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:.original,
+                var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:.original,
                                                    batchID:body["batch_id"] as? String,adapter:adapter)
+                // Episode rows name their series, as Silo's do; the episode stays in episodeId.
+                row["contentId"] = body["content_id"] as? String ?? itemID
+                entry["row"] = row
                 built.append((itemID, id, entry, row))
             } catch JellyfinError.invalidResponse, JellyfinError.invalidURL { continue }
         }
