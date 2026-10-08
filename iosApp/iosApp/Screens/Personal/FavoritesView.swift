@@ -41,7 +41,6 @@ struct IOSPersonalMediaPosterLayout: View {
                     },
                     contentId: item.contentId,
                     cardWidthOverride: cardWidthOverride,
-                    mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series",
                     onUserStateChanged: { state in
                         onUserStateChanged(item, state)
                     }
@@ -90,6 +89,8 @@ struct FavoritesView: View {
     var focusRequest: Int
     var isTopMenuFocused: Bool
     var onTopMenuFocusRequest: (() -> Void)?
+    /// For You's Filter menu on iPhone and iPad; other entry points pass none.
+    var filter: PersonalListFilter
 
     @State private var items: [BrowseItem] = []
     @State private var isLoading = false
@@ -122,13 +123,15 @@ struct FavoritesView: View {
         usesTVTopMenu: Bool = false,
         focusRequest: Int = 0,
         isTopMenuFocused: Bool = false,
-        onTopMenuFocusRequest: (() -> Void)? = nil
+        onTopMenuFocusRequest: (() -> Void)? = nil,
+        filter: PersonalListFilter = PersonalListFilter()
     ) {
         self.showsNavigationTitle = showsNavigationTitle
         self.usesTVTopMenu = usesTVTopMenu
         self.focusRequest = focusRequest
         self.isTopMenuFocused = isTopMenuFocused
         self.onTopMenuFocusRequest = onTopMenuFocusRequest
+        self.filter = filter
     }
 
     #if os(iOS)
@@ -166,6 +169,8 @@ struct FavoritesView: View {
                 #if os(tvOS)
                     .focusable()
                 #endif
+            } else if filter.isActive {
+                EmptyStateView(icon: "line.3.horizontal.decrease", title: "No titles match these filters")
             } else {
                 EmptyStateView(
                     icon: "heart",
@@ -177,7 +182,7 @@ struct FavoritesView: View {
         }
         .vividBackground()
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Favorites" : nil))
-        .task {
+        .task(id: filter) {
             await loadFavorites()
         }
         .refreshable {
@@ -366,6 +371,10 @@ struct FavoritesView: View {
     }
 
     private func loadFavorites() async {
+        if filter.isActive {
+            await loadFilteredFavorites()
+            return
+        }
         if items.isEmpty,
            let cached: CatalogResponse = ResponseCache.shared.get(CacheKey.favorites) {
             items = cached.items
@@ -384,6 +393,21 @@ struct FavoritesView: View {
             if items.isEmpty {
                 self.error = ErrorState(err)
             }
+        }
+        isLoading = false
+    }
+
+    private func loadFilteredFavorites() async {
+        error = nil
+        if items.isEmpty { isLoading = true }
+        do {
+            let matches = try await PersonalListLoader.loadAll(source: "favorites", filter: filter)
+            guard !Task.isCancelled else { return }
+            items = matches
+        } catch let err {
+            guard !Task.isCancelled else { return }
+            items = []
+            self.error = ErrorState(err)
         }
         isLoading = false
     }

@@ -632,12 +632,18 @@ private struct TVForYouView: View {
     let onTopMenuFocusRequest: () -> Void
 
     private struct CachedPage {
-        let response: CatalogResponse
+        let items: [BrowseItem]
+        let hasMore: Bool
     }
     @State private var prefixes: [TVPersonalRootDestination: String] = [:]
+    @State private var filters: [TVPersonalRootDestination: PersonalListFilter] = [:]
     @FocusState private var alphabetFocused: Bool
+    @FocusState private var filterFocused: Bool
     private var selectedPrefix: String? { prefixes[selection] }
-    private var cacheKey: String { "personal:tvForYou:\(selection):prefix=\(selectedPrefix ?? "all")" }
+    private var selectedFilter: PersonalListFilter { filters[selection] ?? PersonalListFilter() }
+    private var cacheKey: String {
+        "personal:tvForYou:\(selection):prefix=\(selectedPrefix ?? "all"):\(selectedFilter.cacheKey)"
+    }
 
     @State private var items: [BrowseItem] = []
     @State private var isLoading = false
@@ -659,7 +665,7 @@ private struct TVForYouView: View {
                     suppressesEdgeShading: true,
                     topContentInset: 0,
                     fixedColumnCount: 7,
-                    isTopMenuFocused: isTopMenuFocused || focusedTab != nil || alphabetFocused,
+                    isTopMenuFocused: isTopMenuFocused || focusedTab != nil || alphabetFocused || filterFocused,
                     onMoveUp: nil
                 )
                 .environment(\.forYouScrollHeader, AnyView(sectionTabs))
@@ -671,8 +677,12 @@ private struct TVForYouView: View {
                         ErrorView(state: error, onRetry: { Task { await reload() } })
                     } else if items.isEmpty && !isLoading {
                         EmptyStateView(
-                            icon: selection == .watchlist ? "bookmark" : "heart",
-                            title: "Your \(selection.title.lowercased()) is empty",
+                            icon: selectedFilter.isActive
+                                ? "line.3.horizontal.decrease"
+                                : (selection == .watchlist ? "bookmark" : "heart"),
+                            title: selectedFilter.isActive
+                                ? "No titles match these filters"
+                                : "Your \(selection.title.lowercased()) is empty",
                             subtitle: nil
                         )
                         .frame(maxWidth: .infinity, minHeight: 360)
@@ -684,7 +694,6 @@ private struct TVForYouView: View {
                             hasMore: hasMore,
                             onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
                             onNearEnd: { _ in Task { await loadMore() } },
-                            showsMediaTypePills: true,
                             fixedColumnCount: 7
                         )
                         .padding(.horizontal, VividTheme.safePadding)
@@ -730,6 +739,9 @@ private struct TVForYouView: View {
                     .accessibilityAddTraits(selection == tab ? .isSelected : [])
                 }
                 Spacer(minLength: 0)
+                if selection != .collections {
+                    filterMenu
+                }
                 TVAlphabetMenu(selected: selectedPrefix) { prefix in
                     prefixes[selection] = prefix
                 }
@@ -743,8 +755,29 @@ private struct TVForYouView: View {
             .defaultFocus($focusedTab, selection, priority: .userInitiated)
             .focusSection()
             .onMoveCommand { direction in
-                if direction == .up { alphabetFocused = false; focusedTab = nil; onTopMenuFocusRequest() }
+                if direction == .up {
+                    alphabetFocused = false; filterFocused = false; focusedTab = nil; onTopMenuFocusRequest()
+                }
             }
+    }
+
+    /// Watchlist and Favourites only; Collections keeps just A–Z.
+    private var filterMenu: some View {
+        Menu {
+            PersonalListFilterMenuContent(
+                filter: Binding(get: { selectedFilter }, set: { filters[selection] = $0 }),
+                showsAlphabet: false
+            )
+        } label: {
+            Label(
+                selectedFilter.isActive ? "Filter · \(selectedFilter.activeCount)" : "Filter",
+                systemImage: "line.3.horizontal.decrease"
+            )
+        }
+        .menuStyle(.button)
+        .buttonStyle(TVBrowseControlPillStyle(active: selectedFilter.isActive))
+        .focused($filterFocused)
+        .accessibilityHint("Choose filters")
     }
 
     private func reload() async {
@@ -756,9 +789,9 @@ private struct TVForYouView: View {
         error = nil
         guard selection != .collections else { return }
         if let cached: CachedPage = ResponseCache.shared.get(cacheKey) {
-            items = cached.response.items
+            items = cached.items
             nextOffset = items.count
-            hasMore = cached.response.hasMore ?? false
+            hasMore = cached.hasMore
         }
         await loadMore(reset: true)
     }
@@ -768,6 +801,7 @@ private struct TVForYouView: View {
         let requestGeneration = generation
         let requestedSection = selection
         let requestedPrefix = selectedPrefix
+        let requestedFilter = selectedFilter
         let requestedCacheKey = cacheKey
         isLoading = true
         defer {
@@ -785,21 +819,42 @@ private struct TVForYouView: View {
                 query["sort"] = CatalogSortKey.title.field
                 query["order"] = CatalogSortOrder.asc.rawValue
             }
-            let response = try await VividAPI.shared.catalog(query: query)
+            requestedFilter.apply(to: &query)
+            let pageItems: [BrowseItem]
+            let serverHasMore: Bool?
+            let serverTotal: Int?
+            if requestedFilter.anime != .any {
+                // Anime is matched on the device, so load the whole list once.
+                var wholeList = requestedFilter
+                wholeList.namePrefix = requestedPrefix
+                pageItems = try await PersonalListLoader.loadAll(
+                    source: query["source"] ?? "watchlist",
+                    filter: wholeList
+                )
+                serverHasMore = false
+                serverTotal = nil
+            } else {
+                let response = try await VividAPI.shared.catalog(query: query)
+                pageItems = response.items
+                serverHasMore = response.hasMore
+                serverTotal = response.total
+            }
             guard requestGeneration == generation, requestedSection == selection, requestedPrefix == selectedPrefix,
-                  !Task.isCancelled else { return }
+                  requestedFilter == selectedFilter, !Task.isCancelled else { return }
             if reset {
                 items = []
                 nextOffset = 0
-                ResponseCache.shared.set(CachedPage(response: response), for: requestedCacheKey)
             }
             var seen = Set(items.map(\.contentId))
-            items.append(contentsOf: response.items.filter { seen.insert($0.contentId).inserted })
-            nextOffset += response.items.count
-            hasMore = response.hasMore ?? (response.total.map { nextOffset < $0 } ?? false)
+            items.append(contentsOf: pageItems.filter { seen.insert($0.contentId).inserted })
+            nextOffset += pageItems.count
+            hasMore = serverHasMore ?? (serverTotal.map { nextOffset < $0 } ?? false)
+            if reset {
+                ResponseCache.shared.set(CachedPage(items: pageItems, hasMore: hasMore), for: requestedCacheKey)
+            }
         } catch {
             guard requestGeneration == generation, requestedSection == selection, requestedPrefix == selectedPrefix,
-                  !Task.isCancelled else { return }
+                  requestedFilter == selectedFilter, !Task.isCancelled else { return }
             self.error = ErrorState(error)
         }
     }

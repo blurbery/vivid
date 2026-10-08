@@ -8,6 +8,8 @@ struct WatchlistView: View {
     var focusRequest: Int
     var isTopMenuFocused: Bool
     var onTopMenuFocusRequest: (() -> Void)?
+    /// For You's Filter menu on iPhone and iPad; other entry points pass none.
+    var filter: PersonalListFilter
 
     @State private var items: [BrowseItem] = []
     @State private var isLoading = false
@@ -41,13 +43,15 @@ struct WatchlistView: View {
         usesTVTopMenu: Bool = false,
         focusRequest: Int = 0,
         isTopMenuFocused: Bool = false,
-        onTopMenuFocusRequest: (() -> Void)? = nil
+        onTopMenuFocusRequest: (() -> Void)? = nil,
+        filter: PersonalListFilter = PersonalListFilter()
     ) {
         self.showsNavigationTitle = showsNavigationTitle
         self.usesTVTopMenu = usesTVTopMenu
         self.focusRequest = focusRequest
         self.isTopMenuFocused = isTopMenuFocused
         self.onTopMenuFocusRequest = onTopMenuFocusRequest
+        self.filter = filter
     }
 
     var body: some View {
@@ -66,6 +70,8 @@ struct WatchlistView: View {
                 #if os(tvOS)
                     .focusable()
                 #endif
+            } else if filter.isActive {
+                EmptyStateView(icon: "line.3.horizontal.decrease", title: "No titles match these filters")
             } else {
                 EmptyStateView(
                     icon: "bookmark",
@@ -77,7 +83,7 @@ struct WatchlistView: View {
         }
         .vividBackground()
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Watchlist" : nil))
-        .task(id: watchlistRevision) { await loadWatchlist() }
+        .task(id: "\(watchlistRevision):\(filter.cacheKey)") { await loadWatchlist() }
         .onDisappear { loadGeneration = UUID() }
         .refreshable {
             await loadWatchlist()
@@ -232,6 +238,20 @@ struct WatchlistView: View {
         let generation = UUID()
         loadGeneration = generation
         defer { if loadGeneration == generation { isLoading = false } }
+        if filter.isActive {
+            error = nil
+            if items.isEmpty { isLoading = true }
+            do {
+                let matches = try await PersonalListLoader.loadAll(source: "watchlist", filter: filter)
+                guard !Task.isCancelled, loadGeneration == generation else { return }
+                items = matches
+            } catch let err {
+                guard !Task.isCancelled, loadGeneration == generation else { return }
+                items = []
+                self.error = ErrorState(err)
+            }
+            return
+        }
         if items.isEmpty,
            let cached: CatalogResponse = ResponseCache.shared.get(CacheKey.watchlist) {
             items = cached.items
