@@ -194,6 +194,7 @@ final class StudiosNetworksStoreTests: XCTestCase {
         let ids = StudiosNetworksStore.catalogue.map(\.id)
         XCTAssertEqual(ids.count, Set(ids).count)
         XCTAssertEqual(StudiosNetworksStore.catalogue.first { $0.id == "appletv" }?.usesWordmark, true)
-        XCTAssertTrue(StudiosNetworksStore.catalogue.filter { $0.kind == .network }.allSatisfy { $0.watchProviderId != nil })
+        XCTAssertTrue(StudiosNetworksStore.catalogue.filter { $0.kind == .network }.allSatisfy { !$0.watchProviderIds.isEmpty })
+        XCTAssertEqual(StudiosNetworksStore.catalogue.first { $0.id == "stan" }?.watchRegion, "AU")
     }
 }

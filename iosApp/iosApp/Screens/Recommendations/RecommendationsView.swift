@@ -15,6 +15,8 @@ struct RecommendationsView: View {
 
     @State private var viewModel: RecommendationsViewModel
     @State private var mobileSelection = "Watchlist"
+    /// One Filter choice per For You list, reset on launch.
+    @State private var mobileFilters: [String: PersonalListFilter] = [:]
     @State private var savedListSelection: SavedShortcut = .watchlist
     #if !os(tvOS)
     /// Feeds the shared glass strip behind the pinned header as rows scroll
@@ -57,9 +59,9 @@ struct RecommendationsView: View {
     private var mobileSavedLists: some View {
             Group {
                 switch mobileSelection {
-                case "Favourites": FavoritesView(showsNavigationTitle: false)
+                case "Favourites": FavoritesView(showsNavigationTitle: false, filter: mobileFilter(for: "Favourites"))
                 case "Collections": MobileForYouCollections()
-                default: WatchlistView(showsNavigationTitle: false)
+                default: WatchlistView(showsNavigationTitle: false, filter: mobileFilter(for: "Watchlist"))
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(MobileTopScrollEdgeModifier())
@@ -69,7 +71,8 @@ struct RecommendationsView: View {
         .toolbar(.hidden, for: .navigationBar)
     }
     private var mobileSectionTabs: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 ForEach(["Watchlist", "Favourites", "Collections"], id: \.self) { title in
                     Button { mobileSelection = title; chromeScrollState.reset() } label: {
                         Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
@@ -80,9 +83,48 @@ struct RecommendationsView: View {
                 }
             }.padding(5).vividGlass(in: Capsule())
             .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
+            if mobileSelection != "Collections" {
+                mobileFilterMenu
+            }
+        }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.top, 12)
+    }
+
+    private func mobileFilter(for list: String) -> PersonalListFilter {
+        mobileFilters[list] ?? PersonalListFilter()
+    }
+
+    /// Watchlist and Favourites only. A–Z lives inside this menu on iPhone and iPad.
+    private var mobileFilterMenu: some View {
+        let filter = mobileFilter(for: mobileSelection)
+        return Menu {
+            PersonalListFilterMenuContent(
+                filter: Binding(
+                    get: { mobileFilter(for: mobileSelection) },
+                    set: { mobileFilters[mobileSelection] = $0; chromeScrollState.reset() }
+                ),
+                showsAlphabet: true
+            )
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 50, height: 50)
+                .vividGlass(in: Circle())
+                .overlay(alignment: .topTrailing) {
+                    if filter.isActive {
+                        Text("\(filter.activeCount)")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.vividBackground)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.vividOnSurface))
+                    }
+                }
+        }
+        .accessibilityLabel(filter.isActive ? "Filter, \(filter.activeCount) on" : "Filter")
     }
     #endif
 

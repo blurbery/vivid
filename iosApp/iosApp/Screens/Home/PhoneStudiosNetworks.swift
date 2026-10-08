@@ -9,7 +9,7 @@ private struct PhoneStudioNetworkTile: View {
 
     var body: some View {
         StudioNetworkLogo(brand: store.brand(id), url: store.results[id]?.logoURL, fallbackName: id)
-            .frame(maxWidth: width * 0.62, maxHeight: width * 9 / 16 * 0.42)
+            .frame(maxWidth: width * 0.62, maxHeight: width * 9 / 16 * 0.42 * (store.brand(id)?.logoHeightScale ?? 1))
             .frame(width: width, height: width * 9 / 16)
             .background(Color.white.opacity(0.06),
                         in: RoundedRectangle(cornerRadius: HomeFeedMetrics.stillRadius, style: .continuous))

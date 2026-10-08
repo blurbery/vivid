@@ -41,7 +41,6 @@ struct IOSPersonalMediaPosterLayout: View {
                     },
                     contentId: item.contentId,
                     cardWidthOverride: cardWidthOverride,
-                    mediaTypeLabel: VividMediaType.isMovieLibrary(item.type) ? "Movie" : "Series",
                     onUserStateChanged: { state in
                         onUserStateChanged(item, state)
                     }
@@ -90,9 +89,15 @@ struct FavoritesView: View {
     var focusRequest: Int
     var isTopMenuFocused: Bool
     var onTopMenuFocusRequest: (() -> Void)?
+    /// For You's Filter menu on iPhone and iPad; other entry points pass none.
+    var filter: PersonalListFilter
 
     @State private var items: [BrowseItem] = []
     @State private var isLoading = false
+    @State private var loadGeneration = UUID()
+    /// The filter `items` was loaded with, so a new filter clears the old
+    /// titles instead of showing them until its results arrive.
+    @State private var loadedFilter = PersonalListFilter()
     @State private var error: ErrorState?
     @State private var uiCustomization = UICustomizationPreferences.shared
     #if os(tvOS)
@@ -122,13 +127,15 @@ struct FavoritesView: View {
         usesTVTopMenu: Bool = false,
         focusRequest: Int = 0,
         isTopMenuFocused: Bool = false,
-        onTopMenuFocusRequest: (() -> Void)? = nil
+        onTopMenuFocusRequest: (() -> Void)? = nil,
+        filter: PersonalListFilter = PersonalListFilter()
     ) {
         self.showsNavigationTitle = showsNavigationTitle
         self.usesTVTopMenu = usesTVTopMenu
         self.focusRequest = focusRequest
         self.isTopMenuFocused = isTopMenuFocused
         self.onTopMenuFocusRequest = onTopMenuFocusRequest
+        self.filter = filter
     }
 
     #if os(iOS)
@@ -166,6 +173,8 @@ struct FavoritesView: View {
                 #if os(tvOS)
                     .focusable()
                 #endif
+            } else if filter.isActive {
+                EmptyStateView(icon: "line.3.horizontal.decrease", title: "No titles match these filters")
             } else {
                 EmptyStateView(
                     icon: "heart",
@@ -177,7 +186,7 @@ struct FavoritesView: View {
         }
         .vividBackground()
         .modifier(PersonalListNavigationChrome(title: showsNavigationTitle ? "Favorites" : nil))
-        .task {
+        .task(id: filter) {
             await loadFavorites()
         }
         .refreshable {
@@ -366,6 +375,19 @@ struct FavoritesView: View {
     }
 
     private func loadFavorites() async {
+        // A refresh or retry still running for an earlier filter must not
+        // overwrite the current one's results.
+        let generation = UUID()
+        loadGeneration = generation
+        defer { if loadGeneration == generation { isLoading = false } }
+        if filter != loadedFilter {
+            items = []
+            loadedFilter = filter
+        }
+        if filter.isActive {
+            await loadFilteredFavorites(generation)
+            return
+        }
         if items.isEmpty,
            let cached: CatalogResponse = ResponseCache.shared.get(CacheKey.favorites) {
             items = cached.items
@@ -378,14 +400,29 @@ struct FavoritesView: View {
             let response: CatalogResponse = try await VividAPI.shared.get(
                 "/api/v1/favorites"
             )
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             ResponseCache.shared.set(response, for: CacheKey.favorites)
             items = response.items
         } catch let err {
+            guard !Task.isCancelled, loadGeneration == generation else { return }
             if items.isEmpty {
                 self.error = ErrorState(err)
             }
         }
-        isLoading = false
+    }
+
+    private func loadFilteredFavorites(_ generation: UUID) async {
+        error = nil
+        if items.isEmpty { isLoading = true }
+        do {
+            let matches = try await PersonalListLoader.loadAll(source: "favorites", filter: filter)
+            guard !Task.isCancelled, loadGeneration == generation else { return }
+            items = matches
+        } catch let err {
+            guard !Task.isCancelled, loadGeneration == generation else { return }
+            items = []
+            self.error = ErrorState(err)
+        }
     }
 }
 
