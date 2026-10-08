@@ -9,7 +9,8 @@ final class LucidSubtitleInventory {
     static let shared = LucidSubtitleInventory()
     private struct Key: Hashable { let scope: String; let content: String; let file: Int }
     private struct Entry { let tracks: [PlayerTrack]; let expires: Date }
-    struct Choice { let trackID: Int64? }
+    /// `label` names a server subtitle file, which the embedded reader never lists.
+    struct Choice { let trackID: Int64?; var label: String? = nil }
     private var entries: [Key: Entry] = [:]
     private var choices: [Key: Choice] = [:]
 
@@ -23,9 +24,9 @@ final class LucidSubtitleInventory {
         if entries.count >= 8, entries[key] == nil { entries.removeAll() }
         entries[key] = Entry(tracks: tracks.filter { !$0.isExternal }, expires: Date().addingTimeInterval(300))
     }
-    func choose(_ id: Int64?, context: OpenSubtitlePlaybackContext) {
+    func choose(_ id: Int64?, label: String? = nil, context: OpenSubtitlePlaybackContext) {
         guard let key = key(context.contentID, context.fileID) else { return }
-        choices = [key: Choice(trackID: id)]
+        choices = [key: Choice(trackID: id, label: label)]
         OpenSubtitlesStore.shared.clearStaged(context: context)
         OpenSubtitlesStore.shared.forgetSelection(contentID: context.contentID, fileID: context.fileID)
     }
@@ -48,7 +49,7 @@ final class LucidSubtitleInventory {
         if let staged = OpenSubtitlesStore.shared.stagedLabel(context: context) { return staged }
         guard let choice = choices[key] else { return fallback }
         guard let id = choice.trackID else { return "Off" }
-        return entries[key]?.tracks.first(where: { $0.trackId == id })?.languageFirstPrimaryLabel ?? "On"
+        return entries[key]?.tracks.first(where: { $0.trackId == id })?.languageFirstPrimaryLabel ?? choice.label ?? "On"
     }
 
     static func ordered(_ tracks: [PlayerTrack]) -> [PlayerTrack] {

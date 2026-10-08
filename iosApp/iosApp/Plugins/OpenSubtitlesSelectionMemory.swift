@@ -4,8 +4,8 @@ import Foundation
 
 /// Remembers the OpenSubtitles file chosen for an item, so stopping and
 /// resuming it later brings the same subtitle back. The index and files stay
-/// on this device, scoped to the server account and profile, and never enter
-/// the iCloud vault.
+/// together on this device, excluded from backups, scoped to the server
+/// account and profile, and never enter the iCloud vault.
 @MainActor
 final class OpenSubtitlesSelectionMemory {
     struct Record: Codable, Equatable {
@@ -20,17 +20,14 @@ final class OpenSubtitlesSelectionMemory {
     static let shared = OpenSubtitlesSelectionMemory()
     static let countLimit = 40
 
-    private let defaults: UserDefaults
     private let directory: URL
     private let now: () -> Date
     private var loaded: [String: [Record]] = [:]
 
     init(
-        defaults: UserDefaults = .standard,
         directory: URL = OpenSubtitlesSelectionMemory.defaultDirectory,
         now: @escaping () -> Date = Date.init
     ) {
-        self.defaults = defaults
         self.directory = directory
         self.now = now
     }
@@ -57,12 +54,7 @@ final class OpenSubtitlesSelectionMemory {
             records[index].savedAt = now()
         } else {
             do {
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                // Re-downloadable, so keep it out of device backups.
-                var root = directory
-                var values = URLResourceValues()
-                values.isExcludedFromBackup = true
-                try? root.setResourceValues(values)
+                try prepareDirectory(scope: scope)
                 try data.write(to: url, options: .atomic)
             } catch {
                 return
@@ -78,9 +70,16 @@ final class OpenSubtitlesSelectionMemory {
         save(Array(records.prefix(Self.countLimit)), scope: scope)
     }
 
+    /// A record whose file has gone (tvOS can purge Caches) is forgotten
+    /// rather than reported as remembered.
     func record(scope: String, contentID: String, fileID: Int?) -> Record? {
         let key = Self.key(contentID: contentID, fileID: fileID)
-        return records(for: scope).first { $0.key == key }
+        guard let record = records(for: scope).first(where: { $0.key == key }) else { return nil }
+        guard FileManager.default.fileExists(atPath: fileURL(scope: scope, key: key).path) else {
+            forget(scope: scope, contentID: contentID, fileID: fileID)
+            return nil
+        }
+        return record
     }
 
     func restore(scope: String, contentID: String, fileID: Int?) -> (result: OpenSubtitleResult, data: Data)? {
@@ -104,9 +103,8 @@ final class OpenSubtitlesSelectionMemory {
     }
 
     func clear(scope: String) {
-        try? FileManager.default.removeItem(at: directory.appendingPathComponent(scope, isDirectory: true))
+        try? FileManager.default.removeItem(at: scopeDirectory(scope))
         loaded[scope] = []
-        defaults.removeObject(forKey: storageKey(scope))
     }
 
     static func key(contentID: String, fileID: Int?) -> String {
@@ -114,15 +112,30 @@ final class OpenSubtitlesSelectionMemory {
         return SHA256.hash(data: Data(raw.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 
-    private func storageKey(_ scope: String) -> String { "vivid.opensubtitles.selection.v1." + scope }
+    private func scopeDirectory(_ scope: String) -> URL {
+        directory.appendingPathComponent(scope, isDirectory: true)
+    }
+
+    private func indexURL(_ scope: String) -> URL {
+        scopeDirectory(scope).appendingPathComponent("index.json")
+    }
 
     private func fileURL(scope: String, key: String) -> URL {
-        directory.appendingPathComponent(scope, isDirectory: true).appendingPathComponent(key + ".srt")
+        scopeDirectory(scope).appendingPathComponent(key + ".srt")
+    }
+
+    private func prepareDirectory(scope: String) throws {
+        try FileManager.default.createDirectory(at: scopeDirectory(scope), withIntermediateDirectories: true)
+        // Re-downloadable, so keep the files and their index out of backups.
+        var root = directory
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? root.setResourceValues(values)
     }
 
     private func records(for scope: String) -> [Record] {
         if let cached = loaded[scope] { return cached }
-        let decoded = defaults.data(forKey: storageKey(scope))
+        let decoded = (try? Data(contentsOf: indexURL(scope)))
             .flatMap { try? JSONDecoder().decode([Record].self, from: $0) } ?? []
         loaded[scope] = decoded
         return decoded
@@ -130,9 +143,9 @@ final class OpenSubtitlesSelectionMemory {
 
     private func save(_ records: [Record], scope: String) {
         loaded[scope] = records
-        if let data = try? JSONEncoder().encode(records) {
-            defaults.set(data, forKey: storageKey(scope))
-        }
+        guard let data = try? JSONEncoder().encode(records) else { return }
+        try? prepareDirectory(scope: scope)
+        try? data.write(to: indexURL(scope), options: .atomic)
     }
 }
 #endif

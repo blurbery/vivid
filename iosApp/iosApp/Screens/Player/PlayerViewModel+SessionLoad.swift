@@ -189,6 +189,9 @@ extension PlayerViewModel {
 
     func resolvedSidecarSubtitleTrackIdForResume() -> Int64? {
         if hasDisabledServerSubtitlesForResume { return nil }
+        // A Silo external file picked on this device is never sent to Silo;
+        // `loadVivid` re-applies it locally.
+        if let selectedSubtitleId, lazySubtitleSidecars[selectedSubtitleId] != nil { return nil }
         if Self.selectedEmbeddedSubtitleIndexForResume(
             plan: activePreparedProtocolV3?.plan, selectedTrackID: selectedSubtitleId
         ) != nil { return nil }

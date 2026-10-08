@@ -120,16 +120,18 @@ extension PlayerViewModel {
     }
     #endif
 
-    /// Server subtitle files mounted beside the media (Emby and Jellyfin).
+    /// Server subtitle files beside the media: mounted for Emby and Jellyfin,
+    /// or offered for Silo and mounted when chosen.
     func isServerSidecarSubtitle(_ trackID: Int64) -> Bool {
-        SubtitleTrackIdSpace.isSidecar(trackID) && vividPlaybackController.containsSubtitle(appTrackID: trackID)
+        SubtitleTrackIdSpace.isSidecar(trackID)
+            && (vividPlaybackController.containsSubtitle(appTrackID: trackID) || lazySubtitleSidecars[trackID] != nil)
     }
 
     private func isSelectableSubtitle(_ track: PlayerTrack) -> Bool {
         #if os(iOS) || os(tvOS)
         if track.isExternal {
-            return (openSubtitleIDs.contains(track.trackId) || isServerSidecarSubtitle(track.trackId))
-                && vividPlaybackController.containsSubtitle(appTrackID: track.trackId)
+            return (openSubtitleIDs.contains(track.trackId) && vividPlaybackController.containsSubtitle(appTrackID: track.trackId))
+                || isServerSidecarSubtitle(track.trackId)
         }
         #endif
         return !track.isExternal && vividPlaybackController.containsSubtitle(appTrackID: track.trackId)
@@ -157,6 +159,7 @@ extension PlayerViewModel {
         openSubtitleFiles.selectedID = nil
         rememberOpenSubtitleChoice(nil)
         #endif
+        localExternalSubtitlePick = nil
         hasExplicitSubtitleChoice = true
         pendingSubtitleFfIndex = -1
         pendingSidecarSubtitleTrackId = nil
@@ -369,6 +372,19 @@ extension PlayerViewModel {
             "[CMP-SUB] apply primary selection trackId=\(trackId.map(String.init) ?? "nil", privacy: .public) route=\(self.activeRouteLabel, privacy: .public)"
         )
         recordSubtitleTrackSelectionBreadcrumb(trackId, reason: reason, viaServerReplan: false)
+        // A Silo external file is fetched only once it's actually chosen, and
+        // remembered so replacement loads re-apply it. A reload's interim Off
+        // (nil) leaves the pick alone; an explicit Off clears it.
+        if let trackId {
+            if let sidecar = lazySubtitleSidecars[trackId] {
+                if !vividPlaybackController.containsSubtitle(appTrackID: trackId) {
+                    vividPlaybackController.addExternalSubtitleTrack(sidecar, appTrackID: trackId)
+                }
+                localExternalSubtitlePick = currentWatchDetail.map { (trackId, $0.contentId, currentSelectedVersion?.fileId) }
+            } else {
+                localExternalSubtitlePick = nil
+            }
+        }
         vividPlaybackController.selectSubtitleTrack(id: trackId)
     }
 
@@ -637,6 +653,7 @@ extension PlayerViewModel {
         case .noChange:
             return
         case .disable:
+            localExternalSubtitlePick = nil
             if selectedSubtitleId != nil {
                 selectedSubtitleId = nil
                 applySubtitleTrackSelection(nil, reason: "auto_preference")

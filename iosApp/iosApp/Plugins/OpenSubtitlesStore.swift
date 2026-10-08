@@ -42,7 +42,9 @@ final class OpenSubtitlesStore {
     }
 
     func rememberSelection(_ result: OpenSubtitleResult, data: Data, contentID: String, fileID: Int?) {
-        guard let scope else { return }
+        // A file still open in the player after Disconnect must not be saved again.
+        reload()
+        guard isConnected, let scope else { return }
         OpenSubtitlesSelectionMemory.shared.remember(result, data: data, scope: scope, contentID: contentID, fileID: fileID)
     }
 

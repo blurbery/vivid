@@ -68,7 +68,7 @@ struct StreamRequest {
                   let c = URLComponents(string: raw), c.fragment == nil,
                   c.percentEncodedPath.hasPrefix("/api/v2/"),
                   Self.isAllowedHeaderAuthenticatedMediaPath(String(c.percentEncodedPath.dropFirst(7))),
-                  Self.hasAllowedNativeV2Query(c.queryItems ?? []) else { return nil }
+                  Self.hasAllowedNativeV2Query(path: String(c.percentEncodedPath.dropFirst(7)), items: c.queryItems ?? []) else { return nil }
             guard let resolved = URL(string: normalizedServer + raw) else { return nil }
             resolvedURL = resolved
         } else if requiresHeaderAuthenticatedMedia,
@@ -212,7 +212,7 @@ struct StreamRequest {
         return true
     }
 
-    private static func hasAllowedNativeV2Query(_ items: [URLQueryItem]) -> Bool {
+    private static func hasAllowedNativeV2Query(path: String, items: [URLQueryItem]) -> Bool {
         var seen = Set<String>()
         for item in items {
             guard seen.insert(item.name).inserted, let value = item.value, !value.isEmpty else { return false }
@@ -220,10 +220,11 @@ struct StreamRequest {
             case "st": break
             case "seek": guard let seconds = Double(value), seconds.isFinite, seconds >= 0 else { return false }
             case "file_id", "downloaded_subtitle_id": guard value.allSatisfy({ $0.isNumber }) else { return false }
+            case "external_subtitle_key": guard isSubtitleArtifactPath(path), isExternalSubtitleKey(value) else { return false }
             default: return false
             }
         }
-        return true
+        return hasSingleSubtitleIdentity(seen)
     }
 
     static func isAllowedHeaderAuthenticatedMediaPath(_ path: String) -> Bool {
@@ -272,11 +273,26 @@ struct StreamRequest {
                 guard allowsSubtitleArtifactIdentifiers, isNonNegativeInteger(value) else {
                     return false
                 }
+            case "external_subtitle_key":
+                guard allowsSubtitleArtifactIdentifiers, isExternalSubtitleKey(value) else {
+                    return false
+                }
             default:
                 return false
             }
         }
-        return true
+        return hasSingleSubtitleIdentity(seenNames)
+    }
+
+    /// Silo names an external subtitle file by the SHA-256 hex of its path:
+    /// an identifier, never a credential.
+    private static func isExternalSubtitleKey(_ value: String) -> Bool {
+        value.count == 64 && value.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+    }
+
+    /// A subtitle artifact names an imported or an external file, never both.
+    private static func hasSingleSubtitleIdentity(_ names: Set<String>) -> Bool {
+        !(names.contains("external_subtitle_key") && names.contains("downloaded_subtitle_id"))
     }
 
     /// Matches the server's subtitle artifact shapes

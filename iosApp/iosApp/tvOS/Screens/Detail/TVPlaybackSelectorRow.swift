@@ -65,6 +65,11 @@ struct TVPlaybackActionSelectors: View {
         return context
     }
 
+    /// Emby and Jellyfin subtitle files beside the media.
+    private var serverSubtitleRows: [PlayerTrack] {
+        ServerSubtitleSidecars.detailRows(currentVersion?.subtitleTracks)
+    }
+
     private var subtitleFallback: String {
         selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
             ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
@@ -101,9 +106,12 @@ struct TVPlaybackActionSelectors: View {
                     if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
                     else { Text("Off") }
                 }
-                ForEach(LucidSubtitleInventory.ordered(subtitleTracks)) { track in
+                ForEach(LucidSubtitleInventory.ordered(subtitleTracks + serverSubtitleRows)) { track in
                     Button {
-                        if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(track.trackId, context: context) }
+                        if let context = fileSubtitleContext {
+                            LucidSubtitleInventory.shared.choose(track.trackId,
+                                label: track.isExternal ? track.languageFirstPrimaryLabel : nil, context: context)
+                        }
                     } label: {
                         let chosen = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
                         menuItem(title: track.languageFirstPrimaryLabel,
@@ -111,7 +119,7 @@ struct TVPlaybackActionSelectors: View {
                                  isSelected: chosen?.trackID == track.trackId)
                     }
                 }
-                if subtitleTracks.isEmpty { Text("No embedded subtitles") }
+                if subtitleTracks.isEmpty && serverSubtitleRows.isEmpty { Text("No embedded subtitles") }
             }
             Divider()
             OpenSubtitlesMenu(context: { fileSubtitleContext }) { result, data, expected in

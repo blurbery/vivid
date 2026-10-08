@@ -72,7 +72,7 @@ struct PhonePlaybackSelectorRow: View {
         if currentVersion != nil, !selectorKinds.isEmpty {
             selectorCard
                 .task { await ProfilePrefsStore.shared.hydrateIfNeeded() }
-                .openSubtitlesDetailSearch(fileID: currentVersion?.fileId, isPresented: $showOpenSubtitles)
+                .openSubtitlesDetailSearch(fileID: currentVersion?.fileId, serverSubtitles: currentVersion?.subtitleTracks, isPresented: $showOpenSubtitles)
         }
     }
 

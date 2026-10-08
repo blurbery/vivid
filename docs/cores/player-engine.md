@@ -59,7 +59,7 @@ Quality preferences remain device/profile-local. Vivid sends the selected resolu
 
 ## Subtitles and chapters
 
-Chapters and embedded subtitles come from Lucid’s actual media inventory. With Emby and Jellyfin, the player also mounts the server's text subtitle files as external tracks. The detail and in-player Subtitles menus share track labels, ordering and selection identities. The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
+Chapters and embedded subtitles come from Lucid’s actual media inventory. With Emby and Jellyfin, the player also mounts the server's text subtitle files as external tracks; Silo's external files are offered the same way and fetched when chosen. The detail and in-player Subtitles menus share track labels, ordering and selection identities. The detail reader is bounded and scoped to the chosen account, content and file; it produces no audio, video or viewing-progress updates.
 
 Settings → Subtitles owns subtitle language, behaviour and appearance. Automatic selection turns subtitles off when the requested language is absent. Plain-text styling and delay apply to native text rendering and downloaded-text overlays. Authored ASS and bitmap styles remain intact. Device checks of full external ASS styling remain outstanding.
 

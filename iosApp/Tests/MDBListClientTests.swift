@@ -516,28 +516,25 @@ final class MDBListClientTests: XCTestCase {
 
     @MainActor
     func testChosenSubtitleIsRememberedPerFileUntilForgottenOrDisconnected() throws {
-        let suite = "vivid.tests.opensubtitles.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
-        defer {
-            defaults.removePersistentDomain(forName: suite)
-            try? FileManager.default.removeItem(at: directory)
-        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vivid.tests.opensubtitles.\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
         let result = OpenSubtitleResult(id: 42, name: "Release", language: "en", hearingImpaired: true)
         let data = Data("1\n00:00:01,000 --> 00:00:02,000\nHello\n".utf8)
 
-        var memory = OpenSubtitlesSelectionMemory(defaults: defaults, directory: directory)
+        var memory = OpenSubtitlesSelectionMemory(directory: directory)
         memory.remember(result, data: data, scope: "scope", contentID: "episode", fileID: 3)
         XCTAssertNil(memory.restore(scope: "scope", contentID: "episode", fileID: 4), "Another file has different timing")
         XCTAssertNil(memory.restore(scope: "other", contentID: "episode", fileID: 3))
 
         // A fresh instance reads the same index, as after relaunching the app.
-        memory = OpenSubtitlesSelectionMemory(defaults: defaults, directory: directory)
+        memory = OpenSubtitlesSelectionMemory(directory: directory)
         let restored = try XCTUnwrap(memory.restore(scope: "scope", contentID: "episode", fileID: 3))
         XCTAssertEqual(restored.data, data)
         XCTAssertEqual(restored.result.id, 42)
         XCTAssertEqual(restored.result.name, "Release")
         XCTAssertTrue(restored.result.hearingImpaired)
+        XCTAssertEqual(try directory.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
 
         memory.forget(scope: "scope", contentID: "episode", fileID: 3)
         XCTAssertNil(memory.restore(scope: "scope", contentID: "episode", fileID: 3))
@@ -545,19 +542,16 @@ final class MDBListClientTests: XCTestCase {
         memory.remember(result, data: data, scope: "scope", contentID: "movie", fileID: nil)
         memory.clear(scope: "scope")
         XCTAssertNil(memory.restore(scope: "scope", contentID: "movie", fileID: nil))
+        XCTAssertNil(OpenSubtitlesSelectionMemory(directory: directory).record(scope: "scope", contentID: "movie", fileID: nil))
     }
 
     @MainActor
     func testRememberedSubtitlesAreBoundedAndDropMissingFiles() throws {
-        let suite = "vivid.tests.opensubtitles.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
-        defer {
-            defaults.removePersistentDomain(forName: suite)
-            try? FileManager.default.removeItem(at: directory)
-        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vivid.tests.opensubtitles.\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
         var clock = Date(timeIntervalSince1970: 0)
-        let memory = OpenSubtitlesSelectionMemory(defaults: defaults, directory: directory, now: { clock })
+        let memory = OpenSubtitlesSelectionMemory(directory: directory, now: { clock })
         let data = Data("1\n00:00:01,000 --> 00:00:02,000\nHello\n".utf8)
         for index in 0...OpenSubtitlesSelectionMemory.countLimit {
             clock = clock.addingTimeInterval(1)
@@ -567,9 +561,13 @@ final class MDBListClientTests: XCTestCase {
         XCTAssertNil(memory.restore(scope: "scope", contentID: "item-0", fileID: 1), "The oldest choice is dropped")
         XCTAssertNotNil(memory.restore(scope: "scope", contentID: "item-1", fileID: 1))
 
-        try FileManager.default.removeItem(at: directory)
+        // tvOS can purge a cached file while its index entry survives.
+        let purged = directory.appendingPathComponent("scope", isDirectory: true)
+            .appendingPathComponent(OpenSubtitlesSelectionMemory.key(contentID: "item-2", fileID: 1) + ".srt")
+        try FileManager.default.removeItem(at: purged)
+        XCTAssertNil(memory.record(scope: "scope", contentID: "item-2", fileID: 1), "A purged file is not reported as remembered")
         XCTAssertNil(memory.restore(scope: "scope", contentID: "item-2", fileID: 1))
-        XCTAssertNil(memory.record(scope: "scope", contentID: "item-2", fileID: 1), "A purged file forgets its record")
+        XCTAssertNotNil(memory.record(scope: "scope", contentID: "item-3", fileID: 1))
     }
 
     private func client() -> MDBListClient {

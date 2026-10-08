@@ -630,6 +630,8 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             "/stream/session-1/subtitles/2.vtt?file_id=631745",
             "/stream/session-1/subtitles/2.vtt?file_id=631745&downloaded_subtitle_id=8",
             "/stream/session-1/subtitles/2/fonts?file_id=631745",
+            // Silo external subtitle files carry the hex key of their path.
+            "/stream/session-1/subtitles/0.vtt?file_id=631745&external_subtitle_key=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0123456789abcdef0123456789abcdef",
         ] {
             let request = try XCTUnwrap(StreamRequest.resolve(
                 rawURL: raw,
@@ -663,6 +665,12 @@ final class VividPlaybackBoundaryTests: XCTestCase {
             "/stream/session-1/subtitles/2.vtt?downloaded_subtitle_id=-8",
             "/stream/session-1/subtitles/2.vtt?file_id=1&file_id=2",
             "/stream/session-1/subtitles/2.vtt?file_id=1#token=legacy-secret",
+            // External keys: subtitle artifacts only, 64 lowercase hex, one identity.
+            "/stream/session-1?external_subtitle_key=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0123456789abcdef0123456789abcdef",
+            "/stream/session-1/subtitles/0.vtt?external_subtitle_key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0123456789ABCDEF0123456789ABCDEF",
+            "/stream/session-1/subtitles/0.vtt?external_subtitle_key=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0123456789abcdef0123456789abcde",
+            "/stream/session-1/subtitles/0.vtt?external_subtitle_key=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0123456789abcdef0123456789abcdeg",
+            "/stream/session-1/subtitles/0.vtt?external_subtitle_key=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0123456789abcdef0123456789abcdef&downloaded_subtitle_id=8",
         ] {
             XCTAssertNil(StreamRequest.resolve(
                 rawURL: raw,
