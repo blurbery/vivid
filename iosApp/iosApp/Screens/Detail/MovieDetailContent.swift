@@ -229,6 +229,8 @@ struct MovieDetailContent<BelowOverview: View>: View {
                         SeriesDownloadMenuButton(
                             detail: detail, seasons: seasons, selectedSeason: selectedSeason,
                             episodes: seasonEpisodes, episodesBySeason: seasonEpisodesBySeason,
+                            episodeVersions: availableVersions,
+                            selectedVersionFileId: selectedVersionFileId,
                             style: .labeled
                         )
                     } else {
