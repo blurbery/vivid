@@ -641,6 +641,9 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         // on screen, so opening the file is never mistaken for playback.
         PlaybackSessionRecorder.shared.setPlaying(isSessionReady && hasFirstFrameReadyForDisplay && wantsPlay
             && !isSeeking && !isBuffering && errorInfo == nil && state != .ended && endConfirmationTask == nil)
+        // A seek the viewer is waiting on counts as loading, not as a pause.
+        PlaybackSessionRecorder.shared.setSeeking(isSessionReady && wantsPlay && isSeeking
+            && errorInfo == nil && state != .ended)
         guard isSessionReady, errorInfo == nil, state != .ended else { return }
         if isSeeking { state = .seeking; playbackPhase = .seeking }
         else if !wantsPlay { state = .paused; playbackPhase = .paused }

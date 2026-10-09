@@ -116,6 +116,7 @@ final class PlaybackSessionRecorder {
     func setPlaying(_ playing: Bool) { accumulator?.setPlaying(playing, at: now) }
     func setBuffering(_ buffering: Bool) { accumulator?.setBuffering(buffering, at: now) }
     func seeked() { accumulator?.seeked(at: now) }
+    func setSeeking(_ seeking: Bool) { accumulator?.setSeeking(seeking, at: now) }
     func reloaded() { accumulator?.reloaded(at: now) }
     var isRecording: Bool { accumulator != nil }
     /// Starts a short warm-up for changes that briefly disturb playback:

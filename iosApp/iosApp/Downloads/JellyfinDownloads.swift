@@ -179,6 +179,9 @@ actor JellyfinDownloads {
                 path:"/Videos/\(JellyfinConnection.id(itemID))/\(sourceID)/Subtitles/\(index)/Stream.\(format)")
             var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":true]
             subtitle["language"] = stream["Language"]; subtitle["forced"] = stream["IsForced"]; subtitle["hearingImpaired"] = stream["IsHearingImpaired"]
+            // The stream index and label match the online sidecar, so a
+            // chosen subtitle keeps its track ID offline.
+            subtitle["index"] = index; subtitle["title"] = stream["DisplayTitle"]
             return subtitle
         }
         var row: [String:Any] = ["id":id,"contentId":itemID,"mediaFileId":JellyfinAdapter.numberID(sourceID),"status":"ready","quality":format.rawValue,"revision":1]

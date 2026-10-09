@@ -278,14 +278,17 @@ enum OfflineSubtitleFiles {
         return (last.removingPercentEncoding ?? String(last)).hasPrefix("embedded:")
     }
 
-    /// Player sidecars for the saved files, in manifest order. Each index is
-    /// the subtitle's position in the manifest, so its track ID stays the
-    /// same across plays.
+    /// Player sidecars for the saved files, in manifest order. Emby and
+    /// Jellyfin files keep their server stream index, so a track has the
+    /// same ID offline as online; Silo files use their manifest position.
     static func sidecars(manifest: OfflineManifest, filenames: [String: String], fileURL: (String) -> URL?) -> [SubtitleUrl] {
-        savable(manifest.subtitles ?? []).compactMap { entry in
-            guard let filename = filenames[entry.subtitle.fetchUrl], let url = fileURL(filename), url.isFileURL,
+        var used = Set<Int>()
+        return savable(manifest.subtitles ?? []).compactMap { entry in
+            let index = entry.subtitle.index ?? entry.index
+            guard index >= 0, used.insert(index).inserted,
+                  let filename = filenames[entry.subtitle.fetchUrl], let url = fileURL(filename), url.isFileURL,
                   FileManager.default.fileExists(atPath: url.path) else { return nil }
-            return SubtitleUrl(index: entry.index, language: entry.subtitle.language, codec: entry.ext,
+            return SubtitleUrl(index: index, language: entry.subtitle.language, codec: entry.ext,
                 label: entry.subtitle.title ?? "External", source: "external", forced: entry.subtitle.forced,
                 hearingImpaired: entry.subtitle.hearingImpaired, url: url.absoluteString)
         }

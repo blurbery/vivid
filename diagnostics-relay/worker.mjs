@@ -133,10 +133,12 @@ export function describe(kind, report, reference) {
     if (Number.isInteger(totals.rebuffers) && totals.rebuffers > 0) parts.push(`${totals.rebuffers} rebuffers`);
     if (Number.isInteger(totals.stalls) && totals.stalls > 0) parts.push(`${totals.stalls} stalls`);
     if (isToken(totals.endReason) && totals.endReason.startsWith('failed')) parts.push(totals.endReason);
-    if (Number.isFinite(totals.longestWaitSeconds) && totals.longestWaitSeconds >= 10) {
-      parts.push(`waited ${Math.round(totals.longestWaitSeconds)} s to load`);
-    }
-    return parts.map(clean).filter(Boolean).join(' · ').slice(0, 200);
+    const subject = parts.map(clean).filter(Boolean).join(' · ');
+    if (!(Number.isFinite(totals.longestWaitSeconds) && totals.longestWaitSeconds >= 10)) return subject.slice(0, 200);
+    // A long wait is the headline, so the parts before it are shortened
+    // rather than letting the 200-character cap drop it.
+    const wait = ` · waited ${Math.round(totals.longestWaitSeconds)} s to load`;
+    return subject.slice(0, 200 - wait.length) + wait;
   }
   const first = report.reports[0];
   const count = report.reports.length;

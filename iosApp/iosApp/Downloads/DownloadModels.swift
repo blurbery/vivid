@@ -499,8 +499,11 @@ struct OfflineAudioTrack: Codable, Hashable, Sendable {
 /// origin (`external:{index}` or `downloaded:{id}`).
 struct OfflineSubtitle: Codable, Hashable, Sendable {
     let language: String?
-    /// Silo's track title. Emby and Jellyfin manifests leave it out.
+    /// The track's label: Silo's title or Emby's and Jellyfin's display title.
     var title: String? = nil
+    /// Emby's and Jellyfin's subtitle stream index, the same one their online
+    /// sidecars use. Silo manifests leave it out.
+    var index: Int? = nil
     let format: String?
     let forced: Bool?
     let hearingImpaired: Bool?

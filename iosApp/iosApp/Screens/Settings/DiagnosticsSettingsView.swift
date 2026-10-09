@@ -16,6 +16,7 @@ struct DiagnosticsSettingsView: View {
     /// Reloads can overlap (on appear and after every store change); only the
     /// latest may publish its export file, and older ones remove their own.
     @State private var reloadGeneration = 0
+    @State private var shareGeneration = 0
     @State private var latestPlayback: PlaybackSessionReport?
     @State private var note = ""
 
@@ -70,7 +71,9 @@ struct DiagnosticsSettingsView: View {
                     DiagnosticsNoteField(text: $note)
                     DiagnosticsSendButton(title: sendTitle, reports: toSend, note: DiagnosticsNote.cleaned(note))
                     DiagnosticsOtherOptions(subject: "Vivid Diagnostics", shareURL: shareURL,
-                                            file: { [reports = toSend] in DiagnosticsExportFile.write(AppHealthStore.shared.exportData(reports)) },
+                                            file: { [reports = toSend, note] in
+                                                DiagnosticsExportFile.write(AppHealthStore.shared.exportData(reports, note: DiagnosticsNote.cleaned(note)))
+                                            },
                                             onMailSent: { [reports = toSend] in AppHealthSendState.markSent(reports) })
                 } footer: {
                     Text("Sends the reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Other Options sends them with Mail or the share sheet instead. Open a report to send it on its own. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
@@ -93,6 +96,12 @@ struct DiagnosticsSettingsView: View {
             Text("Remove every diagnostics report from this device?")
         }
         .task { await reload() }
+        .task(id: note) {
+            // Share File carries the note too; rebuild it once typing pauses.
+            guard loaded else { return }
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            await rebuildShareFile()
+        }
         .onReceive(NotificationCenter.default.publisher(for: AppHealthStore.didChange)) { _ in
             Task { await reload() }
         }
@@ -129,12 +138,19 @@ struct DiagnosticsSettingsView: View {
         reports = loadedReports
         sentIDs = loadedSentIDs
         loaded = true
-        // Other Options shares the same reports the send button would.
+        await rebuildShareFile()
+    }
+
+    /// Other Options shares exactly what the send button would, note included.
+    private func rebuildShareFile() async {
+        shareGeneration += 1
+        let generation = shareGeneration
         let subset = toSend
+        let cleanedNote = DiagnosticsNote.cleaned(note)
         let url = subset.isEmpty ? nil : await Task.detached(priority: .userInitiated) {
-            DiagnosticsExportFile.write(AppHealthStore.shared.exportData(subset))
+            DiagnosticsExportFile.write(AppHealthStore.shared.exportData(subset, note: cleanedNote))
         }.value
-        guard generation == reloadGeneration else {
+        guard generation == shareGeneration else {
             DiagnosticsExportFile.remove(url)
             return
         }
@@ -253,12 +269,16 @@ private struct LatestPlaybackView: View {
                 footer: { Text("This is exactly what is sent.") }
         }
         .settingsListChrome().navigationTitle("")
-        .task { shareURL = Self.encoded(report, note: "").flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") } }
         .task(id: note) {
             if !json.isEmpty {
                 do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
             }
-            json = Self.encoded(report, note: note).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            let data = Self.encoded(report, note: note)
+            json = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+            // Share File is the same bytes as Send, note included.
+            let previous = shareURL
+            shareURL = data.flatMap { DiagnosticsExportFile.write($0, name: "Vivid-Playback") }
+            DiagnosticsExportFile.remove(previous)
         }
         .onDisappear { DiagnosticsExportFile.remove(shareURL); shareURL = nil }
     }

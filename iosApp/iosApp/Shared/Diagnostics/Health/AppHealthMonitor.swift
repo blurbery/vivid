@@ -235,8 +235,9 @@ enum AppHealthMonitor {
     }
 
     /// A download failed for good (registration refused, or preparing or
-    /// transferring it ran out of retries). Network failures while the device
-    /// is offline or the server is unreachable aren't recorded.
+    /// transferring it ran out of retries). Connectivity failures, and other
+    /// network failures while the device is offline or the server is
+    /// unreachable, aren't recorded.
     static func downloadFailed(_ failure: DownloadFailureReport) {
         guard shouldReportDownloadFailure(failure, context: AppHealthContext.snapshot()) else { return }
         let allowed = state.withLock { state -> Bool in
@@ -249,7 +250,8 @@ enum AppHealthMonitor {
     }
 
     static func shouldReportDownloadFailure(_ failure: DownloadFailureReport, context: AppHealthContextSnapshot) -> Bool {
-        !(failure.isNetwork && (!context.deviceOnline || !context.serverReachable))
+        guard !failure.isConnectivity else { return false }
+        return !(failure.isNetwork && (!context.deviceOnline || !context.serverReachable))
     }
 
     /// Called by `DiagTrace` for every essential error line. Playback errors

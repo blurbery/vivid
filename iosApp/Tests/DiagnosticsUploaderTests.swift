@@ -52,12 +52,15 @@ final class DiagnosticsUploaderTests: XCTestCase {
 
     func testANoteIsOnlyAddedWhenWritten() throws {
         let date = Date(timeIntervalSince1970: 1_790_000_000)
-        let encoder = JSONEncoder()
-        let plain = String(decoding: try encoder.encode(AppHealthExport(format: 1, exportedAt: date, reports: [])), as: UTF8.self)
-        XCTAssertFalse(plain.contains("note"), "Without a note the file is unchanged")
-        let noted = String(decoding: try encoder.encode(AppHealthExport(format: 1, exportedAt: date, reports: [], note: "Stuck after a seek")),
-                           as: UTF8.self)
-        XCTAssertTrue(noted.contains(#""note":"Stuck after a seek""#))
+        // The encoder the app sends with, read back as JSON rather than
+        // matched as text, so formatting changes don't matter.
+        func sent(_ export: AppHealthExport) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: AppHealthStore.encoder.encode(export)) as? [String: Any])
+        }
+        let plain = try sent(AppHealthExport(format: 1, exportedAt: date, reports: []))
+        XCTAssertFalse(plain.keys.contains("note"), "Without a note the file is unchanged")
+        let noted = try sent(AppHealthExport(format: 1, exportedAt: date, reports: [], note: "Stuck after a seek"))
+        XCTAssertEqual(noted["note"] as? String, "Stuck after a seek")
     }
 
     @MainActor
@@ -66,10 +69,10 @@ final class DiagnosticsUploaderTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1_790_000_000), updatedAt: Date(timeIntervalSince1970: 1_790_000_000),
             app: AppHealthAppInfo(version: "0.14.3", build: "65", os: "iOS 27.0", device: "iPhone18,2"),
             setup: .init(), media: .init(), totals: .init(), timeline: [], notMeasured: [])
-        let saved = String(decoding: try XCTUnwrap(PlaybackSessionRecorder.encode(report)), as: UTF8.self)
-        XCTAssertFalse(saved.contains("note"))
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(PlaybackSessionRecorder.encode(report))) as? [String: Any])
+        XCTAssertFalse(saved.keys.contains("note"))
         report.note = DiagnosticsNote.cleaned("Video froze")
-        let sent = String(decoding: try XCTUnwrap(PlaybackSessionRecorder.encode(report)), as: UTF8.self)
-        XCTAssertTrue(sent.contains(#""note" : "Video froze""#))
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(PlaybackSessionRecorder.encode(report))) as? [String: Any])
+        XCTAssertEqual(sent["note"] as? String, "Video froze")
     }
 }

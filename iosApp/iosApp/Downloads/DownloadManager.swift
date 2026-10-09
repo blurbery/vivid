@@ -1014,7 +1014,9 @@ final class DownloadManager {
     /// once, while the server is reachable.
     private func backfillSubtitlesIfNeeded() async {
         let pending = file.records.values.filter {
-            $0.localStatus == .completed && $0.subtitlesChecked != true && $0.manifestFilename != nil
+            // Revoked downloads stay playable offline, so they get theirs too.
+            ($0.localStatus == .completed || $0.localStatus == .revoked)
+                && $0.subtitlesChecked != true && $0.manifestFilename != nil
         }
         guard !pending.isEmpty, let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
               auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return }

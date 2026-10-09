@@ -33,7 +33,8 @@ struct DownloadFailureReport: Equatable {
         self.status = status
         self.urlErrorCode = urlErrorCode
         self.error = Self.token(error)
-        self.quality = quality.map(Self.token)
+        // Only the app's own presets; anything else the server sent is "other".
+        self.quality = quality.map { DownloadFormat(rawValue: $0)?.rawValue ?? "other" }
         self.batch = batch
         self.retries = max(retries, 0)
     }
@@ -50,6 +51,20 @@ struct DownloadFailureReport: Equatable {
     /// A network failure, which isn't the app's fault while the device is
     /// offline or the server is unreachable.
     var isNetwork: Bool { urlErrorCode != nil }
+
+    /// Connectivity, timeouts and TLS failures point at the network or the
+    /// server, not the app, as for app errors. Background transfers can't
+    /// tell whether the server was reachable, so these are never recorded.
+    var isConnectivity: Bool {
+        guard let urlErrorCode else { return false }
+        let codes: Set<URLError.Code> = [
+            .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+            .timedOut, .internationalRoamingOff, .callIsActive, .dataNotAllowed, .secureConnectionFailed,
+            .serverCertificateHasBadDate, .serverCertificateUntrusted, .serverCertificateHasUnknownRoot,
+            .serverCertificateNotYetValid, .clientCertificateRejected, .clientCertificateRequired,
+        ]
+        return codes.contains(URLError.Code(rawValue: urlErrorCode))
+    }
 
     var details: [String: DiagnosticsJSONValue] {
         var details: [String: DiagnosticsJSONValue] = [

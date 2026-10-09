@@ -590,23 +590,24 @@ final class AppHealthReportTests: XCTestCase {
     }
 
     func testDownloadFailureKeepsOnlyTokensAndNumbers() throws {
-        let failure = DownloadFailureReport(stage: .transfer, server: "emby", urlErrorCode: -1001, error: "network",
+        let failure = DownloadFailureReport(stage: .transfer, server: "emby", urlErrorCode: -3003, error: "network",
                                             quality: "5mbps", batch: true, retries: 4)
         XCTAssertEqual(failure.details, [
-            "stage": .string("transfer"), "server": .string("emby"), "url_error": .int(-1001),
+            "stage": .string("transfer"), "server": .string("emby"), "url_error": .int(-3003),
             "error": .string("network"), "quality": .string("5mbps"), "batch": .bool(true), "retries": .int(4),
         ])
         let report = downloadReport(failure, at: Date(timeIntervalSince1970: 1_790_000_000))
         XCTAssertEqual(report.kind.rawValue, "download_failure")
         XCTAssertEqual(report.groupSummary, "Download stopped before it finished")
-        XCTAssertEqual(report.technicalCode, "transfer · URLError -1001")
+        XCTAssertEqual(report.technicalCode, "transfer · URLError -3003")
 
-        // Server error bodies and odd quality values never reach the report.
+        // Server error bodies never reach the report, and only the app's own
+        // quality presets are kept.
         let refused = try XCTUnwrap(DownloadFailureReport(
             stage: .registration, error: HTTPError.http(statusCode: 500, body: "Secret Title S01E02"),
             server: "silo", quality: "Odd Value/../x", batch: false, retries: 0))
         XCTAssertEqual(refused.status, 500)
-        XCTAssertEqual(refused.quality, "odd_value____x")
+        XCTAssertEqual(refused.quality, "other")
         XCTAssertFalse(String(describing: refused.details).contains("Secret"))
         XCTAssertEqual(downloadReport(refused, at: Date()).technicalCode, "registration · HTTP 500")
         XCTAssertEqual(DownloadFailureReport(stage: .registration, error: EmbyError.unsupportedFeature,
@@ -626,15 +627,29 @@ final class AppHealthReportTests: XCTestCase {
         }
     }
 
-    func testDownloadNetworkFailuresWhileOfflineAreSkipped() {
-        let network = DownloadFailureReport(stage: .transfer, server: "silo", urlErrorCode: -1009, error: "network",
-                                            quality: "original", batch: false, retries: 4)
+    func testDownloadNetworkFailuresOutsideTheAppAreSkipped() {
+        func transfer(_ code: URLError.Code) -> DownloadFailureReport {
+            DownloadFailureReport(stage: .transfer, server: "silo", urlErrorCode: code.rawValue, error: "network",
+                                  quality: "original", batch: false, retries: 4)
+        }
         let refused = DownloadFailureReport(stage: .transfer, server: "silo", status: 403, error: "http",
                                             quality: "original", batch: false, retries: 0)
         var context = AppHealthContextSnapshot()
-        XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(network, context: context))
+        // Connectivity, timeouts and TLS are never the app's fault, even when
+        // the app last saw the server reachable (a background transfer can't
+        // know).
+        for code: URLError.Code in [.notConnectedToInternet, .cannotConnectToHost, .timedOut, .networkConnectionLost,
+                                    .secureConnectionFailed] {
+            XCTAssertFalse(AppHealthMonitor.shouldReportDownloadFailure(transfer(code), context: context), "\(code)")
+        }
+        XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(transfer(.badServerResponse), context: context))
+        XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(transfer(.cannotWriteToFile), context: context))
+        context.serverReachable = false
+        XCTAssertFalse(AppHealthMonitor.shouldReportDownloadFailure(transfer(.badServerResponse), context: context))
+        XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(refused, context: context))
+        context.serverReachable = true
         context.deviceOnline = false
-        XCTAssertFalse(AppHealthMonitor.shouldReportDownloadFailure(network, context: context))
+        XCTAssertFalse(AppHealthMonitor.shouldReportDownloadFailure(transfer(.badServerResponse), context: context))
         XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(refused, context: context))
     }
 

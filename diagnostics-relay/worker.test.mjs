@@ -63,17 +63,23 @@ test('problem reports are accepted and listed in the email', async () => {
   assert.match(env.sent[0].text, /VD-3F9A2C {2}Playback failed: source refused/);
 });
 
-test('download failures are accepted and other unknown kinds are not', async () => {
+test('every report kind the app records is accepted and unknown kinds are not', async () => {
   const problems = JSON.parse(await fixture('problems'));
   const withKind = kind => JSON.stringify({...problems, reports: [{...problems.reports[0], title: "Couldn't start a download",
     report: {...problems.reports[0].report, kind}}]});
+  const kinds = ['crash', 'hang', 'cpu_exception', 'disk_write_exception', 'slow_launch', 'unexpected_exit',
+    'playback_failure', 'app_error', 'download_failure'];
   const env = makeEnv();
-  const accepted = await run(post('problems', withKind('download_failure')), env, {now: fixedNow, reference: () => 'VR-BBBBBB'});
-  assert.equal(accepted.status, 200);
-  assert.match(env.sent[0].subject, /Couldn't start a download$/);
-  const rejected = await run(post('problems', withKind('download_failures')), env, {now: fixedNow});
-  assert.equal(rejected.status, 400);
-  assert.equal(env.sent.length, 1);
+  for (const kind of kinds) {
+    const accepted = await run(post('problems', withKind(kind)), env, {now: fixedNow});
+    assert.equal(accepted.status, 200, kind);
+  }
+  assert.match(env.sent.at(-1).subject, /Couldn't start a download$/);
+  for (const kind of ['download_failures', 'Crash', 'other', '']) {
+    const rejected = await run(post('problems', withKind(kind)), env, {now: fixedNow});
+    assert.equal(rejected.status, 400, JSON.stringify(kind));
+  }
+  assert.equal(env.sent.length, kinds.length);
 });
 
 test('the client address is only used for rate limiting', async () => {
@@ -172,6 +178,14 @@ test('stalls appear in the playback subject', async () => {
   report.totals.stalls = 2;
   await run(post('playback', JSON.stringify(report)), env, {now: fixedNow, reference: () => 'VR-CCCCCC'});
   assert.match(env.sent[0].subject, /412 dropped frames · 2 stalls$/);
+});
+
+test('a long wait survives the subject length cap', () => {
+  const report = {app: {os: 'o'.repeat(64), device: 'd'.repeat(64)}, setup: {audioOutput: 'hdmi'}, media: {audioOutputChannels: 8},
+    totals: {droppedFrames: 412, rebuffers: 3, stalls: 2, endReason: 'failed_decode', longestWaitSeconds: 1234}};
+  const subject = describe('playback', report, 'VR-EEEEEE');
+  assert.ok(subject.length <= 200);
+  assert.ok(subject.endsWith(' · waited 1234 s to load'), subject);
 });
 
 test('a note is emailed in the body, kept in the copy and never put in the subject', async () => {
