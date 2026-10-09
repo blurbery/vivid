@@ -19,6 +19,10 @@ enum DownloadBackgroundRefresh {
     /// patterns. Hours-scale matches the monitoring feature: new episodes
     /// land on a release schedule, not minute-by-minute.
     private static let earliestInterval: TimeInterval = 4 * 60 * 60
+    /// Used while the server is still converting a download, so a smaller
+    /// quality the user picked can start downloading without reopening the
+    /// app. Still only a hint to the scheduler.
+    private static let preparingInterval: TimeInterval = 15 * 60
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app",
@@ -43,9 +47,9 @@ enum DownloadBackgroundRefresh {
     /// Submit (or re-submit) the next refresh. Safe to call on every
     /// background transition — a pending request with the same identifier is
     /// replaced, not stacked.
-    static func schedule() {
+    static func schedule(soon: Bool = false) {
         let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: earliestInterval)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: soon ? preparingInterval : earliestInterval)
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
@@ -72,6 +76,7 @@ enum DownloadBackgroundRefresh {
             // activate scope → refresh capability → reconcile →
             // monitoring/progress sync (which also kicks the pipeline).
             await DownloadManager.shared.onAppActive()
+            if DownloadManager.shared.downloadsEnabled, DownloadManager.shared.hasServerPreparingDownloads { schedule(soon: true) }
             task.setTaskCompleted(success: !Task.isCancelled)
         }
         task.expirationHandler = {

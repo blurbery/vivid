@@ -280,11 +280,10 @@ struct MovieDetailContent<BelowOverview: View>: View {
             onPlay(false)
         }
     }
-    /// Download is offered for movies and individual episodes once the
-    /// server advertises the capability for this profile.
+    /// Download is offered for movies and individual episodes. Where the
+    /// account can't download, the control stays and shows crossed out.
     private var showsDownloadButton: Bool {
-        DownloadManager.shared.downloadsEnabled
-            && (detail.type == "movie" || detail.type == "episode")
+        detail.type == "movie" || detail.type == "episode"
     }
 
 

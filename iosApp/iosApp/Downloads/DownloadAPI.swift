@@ -64,6 +64,23 @@ struct DownloadAssetRequestLocation: Equatable {
     }
 }
 
+/// The server-relative path of an Emby or Jellyfin image or video URL on the
+/// account's own server, or nil for anything else. Foundation reports a base
+/// path without its trailing slash ("/emby"), so the base is matched as whole
+/// path segments; trimming it as "/emby/" turned every Emby image into
+/// "//Items/…" and downloads never saved their artwork.
+enum ServerAssetPath {
+    static func relative(_ url: URL, base: URL) -> String? {
+        guard url.scheme?.lowercased() == base.scheme?.lowercased(), url.host?.lowercased() == base.host?.lowercased(),
+              url.port == base.port, url.user == nil, url.password == nil else { return nil }
+        let basePath = base.path.hasSuffix("/") ? String(base.path.dropLast()) : base.path
+        guard basePath.isEmpty || url.path.hasPrefix(basePath + "/") else { return nil }
+        let relative = String(url.path.dropFirst(basePath.count))
+        guard relative.hasPrefix("/Items/") || relative.hasPrefix("/Videos/") else { return nil }
+        return relative
+    }
+}
+
 /// Typed download / offline-sync endpoints, grouped as an extension on the
 /// existing `VividAPI` facade. These reuse the facade's injected `http`
 /// transport (auth injection, 401 refresh, snake_case JSON coders) rather
@@ -72,26 +89,32 @@ extension VividAPI {
 
     // MARK: - Capability
 
-    func downloadCapability() async throws -> DownloadCapability {
-        try await http.get("/api/v1/downloads/capability")
+    /// `auth` pins the request to one account, so an answer can't come
+    /// from a server the app switched to mid-request.
+    func downloadCapability(auth: CapturedOrdinaryRequestAuth? = nil) async throws -> DownloadCapability {
+        try await http.get("/api/v1/downloads/capability", expectedAuth: auth)
     }
 
     // MARK: - Download registry
 
     /// Register a managed download. Returns one row for a single item, or
     /// every batch member for a series/season request.
-    func createDownload(_ request: CreateDownloadRequest) async throws -> [ServerDownloadRow] {
+    /// `auth` pins the registration to the account whose downloads it joins.
+    /// Mid-switch the client's sign-in can still be the previous server's,
+    /// which once registered a Jellyfin episode with Emby.
+    func createDownload(_ request: CreateDownloadRequest, auth: CapturedOrdinaryRequestAuth? = nil) async throws -> [ServerDownloadRow] {
         let response: CreateDownloadResponse = try await http.post(
             "/api/v1/downloads",
-            body: request
+            body: request,
+            expectedAuth: auth
         )
         return response.downloads
     }
 
     /// The calling device's managed entries. Primary poll-for-readiness and
     /// reconcile-on-launch call.
-    func listDownloads() async throws -> [ServerDownloadRow] {
-        let response: ServerDownloadsResponse = try await http.get("/api/v1/downloads")
+    func listDownloads(auth: CapturedOrdinaryRequestAuth? = nil) async throws -> [ServerDownloadRow] {
+        let response: ServerDownloadsResponse = try await http.get("/api/v1/downloads", expectedAuth: auth)
         return response.downloads
     }
 
@@ -105,8 +128,8 @@ extension VividAPI {
         )
     }
 
-    func deleteDownloadRow(id: String) async throws {
-        try await http.delete("/api/v1/downloads/\(id)")
+    func deleteDownloadRow(id: String, auth: CapturedOrdinaryRequestAuth? = nil) async throws {
+        try await http.delete("/api/v1/downloads/\(id)", expectedAuth: auth)
     }
 
     func fetchManifest(downloadId: String, auth: CapturedOrdinaryRequestAuth) async throws -> OfflineManifest {
@@ -130,11 +153,49 @@ extension VividAPI {
         if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
             return try await EmbyConnection.current(matching: auth).assetData(path)
         }
-        let location = try DownloadAssetRequestLocation.resolve(
-            path,
-            relativeTo: auth.account.serverURL
-        )
+        let location: DownloadAssetRequestLocation
+        do {
+            location = try DownloadAssetRequestLocation.resolve(path, relativeTo: auth.account.serverURL)
+        } catch {
+            // Silo signs posters onto its storage (a presigned S3 link or a CDN
+            // token), another origin the same-server check rightly refuses.
+            // Those links carry their own authorisation, so they're fetched
+            // without this account's credentials.
+            guard let url = URL(string: path), url.scheme?.lowercased() == "https", url.host != nil,
+                  url.user == nil, url.password == nil else { throw error }
+            return try await Self.signedArtworkData(url)
+        }
         return try await http.getData(location.path, query: location.query, expectedAuth: auth)
+    }
+
+    private static let signedArtworkSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 30
+        return URLSession(configuration: configuration)
+    }()
+
+    /// A presigned artwork link: no credentials, image responses only, and
+    /// capped at 20 MB.
+    static func signedArtworkData(_ url: URL) async throws -> Data {
+        let limit = 20_000_000
+        let (bytes, response) = try await signedArtworkSession.bytes(from: url)
+        guard let http = response as? HTTPURLResponse else { throw HTTPError.invalidURL(url.absoluteString) }
+        guard (200..<300).contains(http.statusCode) else { throw HTTPError.http(statusCode: http.statusCode, body: nil) }
+        guard (http.mimeType ?? "").hasPrefix("image/"), http.expectedContentLength <= Int64(limit) else {
+            throw HTTPError.invalidURL(url.absoluteString)
+        }
+        // Read as it arrives and stop at the limit, so an oversized
+        // response is never held in memory whole.
+        var data = Data()
+        if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > limit { throw HTTPError.invalidURL(url.absoluteString) }
+        }
+        guard !data.isEmpty else { throw HTTPError.invalidURL(url.absoluteString) }
+        return data
     }
 
     /// Build the absolute file-endpoint URL for a download, resolved

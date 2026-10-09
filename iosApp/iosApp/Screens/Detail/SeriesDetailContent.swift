@@ -209,16 +209,14 @@ struct SeriesDetailContent<BelowOverview: View>: View {
                     }
                     Button(isWatched ? "Mark Series as Unwatched" : "Mark Series as Watched", action: onToggleWatched)
                 }
-                if DownloadManager.shared.downloadsEnabled {
-                    SeriesDownloadMenuButton(
-                        detail: detail,
-                        seasons: seasons,
-                        selectedSeason: selectedSeason,
-                        episodes: episodes,
-                        episodesBySeason: episodesBySeason,
-                        style: .labeled
-                    )
-                }
+                SeriesDownloadMenuButton(
+                    detail: detail,
+                    seasons: seasons,
+                    selectedSeason: selectedSeason,
+                    episodes: episodes,
+                    episodesBySeason: episodesBySeason,
+                    style: .labeled
+                )
 
             }
 

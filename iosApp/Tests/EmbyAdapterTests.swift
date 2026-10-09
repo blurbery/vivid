@@ -152,18 +152,23 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(nextUpRequests, 1)
     }
 
-    func testDownloadConversionRequiresDownloadAndSyncPermissions() async throws {
-        for (downloads, conversion) in [(false, false), (false, true), (true, false)] {
+    func testSmallerDownloadsNeedDownloadAndTranscodePermissions() async throws {
+        let cases: [(downloads: Bool, conversion: Bool, playback: Bool, smaller: Bool)] = [
+            (false, false, true, false), (false, true, true, false), (true, false, false, false), (true, false, true, true)
+        ]
+        for permission in cases {
             let adapter = stubbedAdapter { request in
                 XCTAssertEqual(request.url?.path, "/emby/Users/user-1")
-                return (200, ["Policy": ["EnableContentDownloading": downloads, "EnableSyncTranscoding": conversion,
-                    "EnableVideoPlaybackTranscoding": true]])
+                return (200, ["Policy": ["EnableContentDownloading": permission.downloads, "EnableSyncTranscoding": permission.conversion,
+                    "EnableVideoPlaybackTranscoding": permission.playback]])
             }
             let raw = try await adapter.route(method: "GET", path: "/api/v1/downloads/capability", query: [:], body: nil)
             let capability: DownloadCapability = try EmbyAdapter.decode(raw)
-            XCTAssertEqual(capability.downloadAllowed, downloads)
-            XCTAssertEqual(capability.qualityPresets, ["original"])
-            XCTAssertFalse(capability.transcodeEnabled)
+            XCTAssertEqual(capability.downloadAllowed, permission.downloads)
+            // Playback transcoding alone is enough: the server streams the smaller file.
+            XCTAssertEqual(capability.qualityPresets, permission.smaller ? DownloadFormat.allCases.map(\.rawValue) : ["original"])
+            XCTAssertEqual(capability.transcodeEnabled, permission.smaller)
+            XCTAssertEqual(capability.bulkQuality, permission.smaller, "Seasons offer the same qualities as single items")
             XCTAssertTrue(capability.seasonDownload)
             XCTAssertFalse(capability.seriesMonitoring)
             testSession?.invalidateAndCancel()
@@ -178,7 +183,8 @@ final class EmbyAdapterTests: XCTestCase {
             let query = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
             switch url.path {
             case "/emby/Users/user-1":
-                return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true]])
+                return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true,
+                                         "EnableVideoPlaybackTranscoding": false]])
             case "/emby/Users/user-1/Items": return (200, ["Items": [["Id": "sample-1"]]])
             case "/emby/Sessions": return (200, [["Id": "current-session", "DeviceId": EmbyConnection.deviceID, "UserId": "user-1"]])
             case "/emby/Sessions/Capabilities/Full": return (200, [:])
@@ -201,7 +207,8 @@ final class EmbyAdapterTests: XCTestCase {
         for failure in [500, 404] {
             let adapter = stubbedAdapter { request in
                 if request.url?.path == "/emby/Users/user-1" {
-                    return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true]])
+                    return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true,
+                                             "EnableVideoPlaybackTranscoding": false]])
                 }
                 return (failure, [:])
             }
@@ -326,21 +333,38 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(EmbyDownloads.downloadableEpisodes(items).compactMap { $0["Id"] as? String }, ["episode-1", "episode-7"])
     }
 
-    func testBatchDownloadRejectsConversionAndFileChoicesBeforeListingEpisodes() async throws {
+    func testBatchDownloadRejectsUnpermittedQualityAndFileChoicesBeforeListingEpisodes() async throws {
         let base: [String: Any] = ["content_id": "series-1", "series": true, "batch_id": "batch-1"]
         for extra in [["quality": "2mbps"], ["file_id": 7], ["episode_id": "episode-1"], ["season_number": "2"]] as [[String: Any]] {
             let paths = LoadedRows()
             let adapter = stubbedAdapter { request in
                 paths.append(request.url?.path ?? "")
-                return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true]])
+                return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": false,
+                                         "EnableVideoPlaybackTranscoding": false]])
             }
             do {
                 _ = try await adapter.route(method: "POST", path: "/api/v1/downloads", query: [:], body: base.merging(extra) { _, new in new })
-                XCTFail("Batches are original-quality only and choose each episode's file")
+                XCTFail("A smaller batch quality needs transcode permission, and batches choose each episode's file")
             } catch EmbyError.unsupportedFeature { }
             XCTAssertEqual(paths.take(), ["/emby/Users/user-1"], "No episode listing or Sync job")
             testSession?.invalidateAndCancel()
         }
+    }
+
+    func testBatchEpisodesStreamTheChosenQualityWithoutConversion() throws {
+        let adapter = stubbedAdapter { _ in XCTFail("Building registrations makes no requests"); return (500, [:]) }
+        let sources: [[String: Any]] = [["Id": "source-1", "Size": 1234, "RunTimeTicks": 18_000_000_000]]
+        let items: [[String: Any]] = [["Id": "episode-1", "Name": "One", "Type": "Episode", "MediaSources": sources]]
+        let built = try EmbyDownloads.batchEpisodes(items, body: ["content_id": "series-1", "season_number": 1],
+                                                    format: .twoMbps, adapter: adapter)
+        let episode = try XCTUnwrap(built.first)
+        XCTAssertEqual(StreamedTranscodeDownload.format(of: episode.entry), .twoMbps)
+        XCTAssertEqual(episode.row["quality"] as? String, "2mbps")
+        XCTAssertEqual(episode.row["fileSize"] as? Int64, StreamedTranscodeDownload.estimatedBytes(format: .twoMbps, durationSeconds: 1800))
+        XCTAssertNil(episode.entry["syncJobID"], "A streamed episode needs no conversion job")
+        let original = try XCTUnwrap(EmbyDownloads.batchEpisodes(items, body: ["content_id": "series-1"], adapter: adapter).first)
+        XCTAssertNil(StreamedTranscodeDownload.format(of: original.entry))
+        XCTAssertEqual(original.row["quality"] as? String, "original")
     }
 
     func testSeriesAndSeasonBatchesListPresentEpisodesInOneRequest() async throws {

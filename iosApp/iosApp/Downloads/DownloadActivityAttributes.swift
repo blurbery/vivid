@@ -41,6 +41,20 @@ struct DownloadActivityAttributes: ActivityAttributes {
         var totalCount: Int
         /// Smoothed aggregate rate; nil when nothing is transferring.
         var bytesPerSecond: Double?
+        /// The bar's timeline: from where it would have started at the
+        /// current rate to when the queue should finish. The widget animates
+        /// between them by itself, so progress keeps moving while iOS has
+        /// Vivid suspended and can't send updates. Nil without a rate.
+        var estimateStart: Date?
+        var estimatedEnd: Date?
+
+        /// The timeline, when there is one worth animating. Once its end has
+        /// passed, the bar falls back to the reported fraction like the text.
+        var estimate: ClosedRange<Date>? {
+            guard phase == .downloading, let estimateStart, let estimatedEnd, estimateStart < estimatedEnd,
+                  estimatedEnd > Date() else { return nil }
+            return estimateStart...estimatedEnd
+        }
     }
 }
 #endif

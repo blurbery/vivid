@@ -38,24 +38,30 @@ actor EmbyDownloads {
             let formats = try await offeredFormats(connection: connection, policy: policy)
             return ["enabled":true,"downloadAllowed":policy["EnableContentDownloading"] as? Bool ?? false,
                     "qualityPresets":formats.map(\.rawValue),"transcodeEnabled":formats.count > 1,
-                    "transcodeUserAllowed":EmbyDownloadConversion.isAllowed(policy: policy),
-                    "seasonDownload":true,"seriesMonitoring":false]
+                    "transcodeUserAllowed":formats.count > 1,
+                    "seasonDownload":true,"seriesMonitoring":false,"bulkQuality":formats.count > 1]
         }
         if path.count == 3, method == "POST" {
             let rawUser = try await connection.object("GET", "/Users/\(user)")
-            guard (rawUser["Policy"] as? [String:Any])?["EnableContentDownloading"] as? Bool == true else { throw EmbyError.unsupportedFeature }
+            let policy = rawUser["Policy"] as? [String:Any] ?? [:]
+            guard policy["EnableContentDownloading"] as? Bool == true else { throw EmbyError.unsupportedFeature }
             if body["series"] as? Bool == true || body["season_number"] != nil {
-                return try await registerEpisodes(connection: connection, user: user, body: body)
+                return try await registerEpisodes(connection: connection, user: user, body: body, policy: policy)
             }
             guard let format = DownloadFormat(rawValue: body["quality"] as? String ?? "original"), body["series"] as? Bool != true,
                   body["season_number"] == nil,
                   let itemID = body["episode_id"] as? String ?? body["content_id"] as? String else { throw EmbyError.unsupportedFeature }
             let conversionOptions: EmbyDownloadConversion.Options?
+            let fileRequested = !(body["file_id"] == nil || body["file_id"] is NSNull)
             if format != .original {
                 #if os(iOS)
-                guard EmbyDownloadConversion.isAllowed(policy: rawUser["Policy"] as? [String: Any] ?? [:]),
-                      body["file_id"] == nil || body["file_id"] is NSNull else { throw EmbyError.unsupportedFeature }
-                conversionOptions = try await EmbyDownloadConversion.availableOptions(connection: connection, itemID: itemID)
+                // The playback transcoder streams the file in the background
+                // session, so it keeps going with the app closed. Emby's
+                // conversion service, which only advances while Vivid checks
+                // on it, is the fallback for accounts that can't transcode.
+                conversionOptions = fileRequested || StreamedTranscodeDownload.isAllowed(policy: policy) ? nil
+                    : try await self.conversionOptions(connection: connection, policy: policy, itemID: itemID)
+                guard conversionOptions != nil || StreamedTranscodeDownload.isAllowed(policy: policy) else { throw EmbyError.unsupportedFeature }
                 #else
                 throw EmbyError.unsupportedFeature
                 #endif
@@ -70,10 +76,12 @@ actor EmbyDownloads {
             guard let source, let sourceID = source["Id"] as? String else { throw EmbyError.playbackUnavailable }
             let id = "emby-" + UUID().uuidString
             var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:format,adapter:adapter)
+            var createdJobID: String?
             if let conversionOptions {
                 let request = try EmbyDownloadConversion.request(itemID: itemID, userID: user, format: format, options: conversionOptions)
                 let result = try await connection.object("POST", "/Sync/Jobs", body: request)
                 let conversion = try EmbyDownloadConversion.creation(result)
+                createdJobID = conversion.jobID
                 entry["syncJobID"] = conversion.jobID
                 entry["syncItemID"] = conversion.itemID
                 entry["sourceItem"] = raw
@@ -82,11 +90,19 @@ actor EmbyDownloads {
                 row["targetBitrateKbps"] = format.targetBitrateKbps
             }
             entry["row"] = row
-            try await connection.validate()
-            var current = try records(connection)
-            current[id] = entry
-            try save(current,connection:connection)
-            return ["downloads":[row]]
+            // Without a conversion job the playback transcoder streams the
+            // smaller file instead.
+            if conversionOptions == nil { StreamedTranscodeDownload.apply(format, to: &entry, source: source) }
+            do {
+                try await connection.validate()
+                var current = try records(connection)
+                current[id] = entry
+                try save(current,connection:connection)
+            } catch {
+                if let createdJobID { discardUntrackedJob(createdJobID, connection: connection) }
+                throw error
+            }
+            return ["downloads":[entry["row"] ?? row]]
         }
         if path.count == 3, method == "GET" {
             try await refreshConversions(connection: connection)
@@ -121,11 +137,14 @@ actor EmbyDownloads {
         throw EmbyError.unsupportedFeature
     }
 
-    /// Series and season batches register each present episode's original file in
-    /// one write. Converted batches would need a Sync job per episode, so they stay unsupported.
-    private func registerEpisodes(connection: EmbyConnection, user: String, body: [String:Any]) async throws -> Any {
+    /// Series and season batches register each present episode. Original files
+    /// are saved in one write; a smaller quality streams through the playback
+    /// transcoder, or gets a conversion job per episode for an account that
+    /// can only use Emby's conversion service.
+    private func registerEpisodes(connection: EmbyConnection, user: String, body: [String:Any], policy: [String:Any]) async throws -> Any {
         let season = body["season_number"] as? Int
-        guard DownloadFormat(rawValue: body["quality"] as? String ?? "original") == .original,
+        guard let format = DownloadFormat(rawValue: body["quality"] as? String ?? "original"),
+              format == .original || EmbyDownloadConversion.isAllowed(policy: policy) || StreamedTranscodeDownload.isAllowed(policy: policy),
               body["file_id"] == nil || body["file_id"] is NSNull, body["episode_id"] == nil || body["episode_id"] is NSNull,
               body["season_number"] == nil || season != nil,
               let seriesID = body["content_id"] as? String else { throw EmbyError.unsupportedFeature }
@@ -134,8 +153,25 @@ actor EmbyDownloads {
         if let season { query["Season"] = String(season) }
         let result = try await connection.object("GET", "/Shows/\(EmbyConnection.id(seriesID))/Episodes", query: query)
         guard let items = result["Items"] as? [[String:Any]] else { throw EmbyError.invalidResponse }
-        let built = try Self.batchEpisodes(items, body: body, adapter: EmbyAdapter(connection:connection))
+        var conversionOptions: EmbyDownloadConversion.Options?
+        if format != .original {
+            #if os(iOS)
+            if !StreamedTranscodeDownload.isAllowed(policy: policy),
+               let sample = Self.downloadableEpisodes(items).first?["Id"] as? String {
+                conversionOptions = try await self.conversionOptions(connection: connection, policy: policy, itemID: sample)
+            }
+            guard conversionOptions != nil || StreamedTranscodeDownload.isAllowed(policy: policy) else { throw EmbyError.unsupportedFeature }
+            #else
+            throw EmbyError.unsupportedFeature
+            #endif
+        }
+        let built = try Self.batchEpisodes(items, body: body, format: conversionOptions == nil ? format : .original,
+                                           adapter: EmbyAdapter(connection:connection))
         guard !built.isEmpty else { throw BatchError.noEpisodes }
+        if let conversionOptions {
+            return try await registerConvertedEpisodes(built, items: items, format: format, options: conversionOptions,
+                                                       connection: connection, user: user)
+        }
         try await connection.validate()
         // No await from here to the save, so overlapping requests can't register an episode twice.
         var current = try records(connection)
@@ -146,10 +182,87 @@ actor EmbyDownloads {
         return ["downloads":batch.rows]
     }
 
+    /// A converted batch: one Sync job per episode not already stored, saved
+    /// as each job is created so an interruption never repeats a conversion.
+    /// Episodes that already have a stored copy keep it, as with originals.
+    private func registerConvertedEpisodes(_ built: [BatchEpisode], items: [[String:Any]], format: DownloadFormat,
+                                           options: EmbyDownloadConversion.Options, connection: EmbyConnection,
+                                           user: String) async throws -> Any {
+        try await connection.validate()
+        let batch = Self.batchResult(built: built, stored: try records(connection))
+        guard !batch.rows.isEmpty else { throw BatchError.alreadyDownloaded }
+        let freshIDs = Set(batch.fresh.map(\.id))
+        var rows = batch.rows.filter { !freshIDs.contains($0["id"] as? String ?? "") }
+        let rawByID = Dictionary(items.compactMap { raw in (raw["Id"] as? String).map { ($0, raw) } }, uniquingKeysWith: { first, _ in first })
+        var firstError: Error?
+        for episode in batch.fresh {
+            do {
+                var entry = episode.entry
+                var row = episode.row
+                let request = try EmbyDownloadConversion.request(itemID: episode.itemID, userID: user, format: format, options: options)
+                let conversion = try EmbyDownloadConversion.creation(try await connection.object("POST", "/Sync/Jobs", body: request))
+                entry["syncJobID"] = conversion.jobID
+                entry["syncItemID"] = conversion.itemID
+                entry["sourceItem"] = rawByID[episode.itemID]
+                row["status"] = "preparing"
+                row["quality"] = format.rawValue
+                row["fileSize"] = 0
+                row["targetBitrateKbps"] = format.targetBitrateKbps
+                entry["row"] = row
+                do {
+                    try await connection.validate()
+                    var current = try records(connection)
+                    current[episode.id] = entry
+                    try save(current, connection: connection)
+                } catch {
+                    discardUntrackedJob(conversion.jobID, connection: connection)
+                    throw error
+                }
+                rows.append(row)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch HTTPError.requestIdentityChanged {
+                throw HTTPError.requestIdentityChanged
+            } catch {
+                // Keep the episodes already queued; report only a total failure.
+                firstError = firstError ?? error
+            }
+        }
+        if rows.isEmpty, let firstError { throw firstError }
+        return ["downloads": rows]
+    }
+
+    /// A conversion job created just before a cancellation or account switch
+    /// was never saved, so nothing would track or clean it up. Remove it with
+    /// the token that created it, outside the cancelled request.
+    private func discardUntrackedJob(_ jobID: String, connection: EmbyConnection) {
+        let owner = EmbyConnection(serverURL: connection.serverURL, token: connection.token, userID: connection.userID,
+                                   identity: nil, sessionOverride: connection.sessionOverride)
+        Task { _ = try? await owner.request("DELETE", "/Sync/Jobs/\(EmbyConnection.id(jobID))") }
+    }
+
+    /// Emby's conversion service for this account and item, or nil when it
+    /// isn't available. Identity changes and cancellation still propagate.
+    private func conversionOptions(connection: EmbyConnection, policy: [String:Any], itemID: String) async throws -> EmbyDownloadConversion.Options? {
+        #if os(iOS)
+        guard EmbyDownloadConversion.isAllowed(policy: policy) else { return nil }
+        do {
+            return try await EmbyDownloadConversion.availableOptions(connection: connection, itemID: itemID)
+        } catch {
+            try await connection.validate()
+            return nil
+        }
+        #else
+        return nil
+        #endif
+    }
+
     typealias BatchEpisode = (itemID: String, id: String, entry: [String:Any], row: [String:Any])
 
-    /// Original-file registrations for each downloadable episode, in server order.
-    nonisolated static func batchEpisodes(_ items: [[String:Any]], body: [String:Any], adapter: EmbyAdapter) throws -> [BatchEpisode] {
+    /// Registrations for each downloadable episode, in server order: the
+    /// original file, or a transcoded stream at `format`.
+    nonisolated static func batchEpisodes(_ items: [[String:Any]], body: [String:Any], format: DownloadFormat = .original,
+                                          adapter: EmbyAdapter) throws -> [BatchEpisode] {
         var built: [BatchEpisode] = []
         for raw in Self.downloadableEpisodes(items) {
             try Task.checkCancellation()
@@ -157,12 +270,13 @@ actor EmbyDownloads {
                   let sourceID = source["Id"] as? String else { continue }
             let id = "emby-" + UUID().uuidString
             do {
-                var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:.original,
+                var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:format,
                                                    batchID:body["batch_id"] as? String,adapter:adapter)
                 // Episode rows name their series, as Silo's do; the episode stays in episodeId.
                 row["contentId"] = body["content_id"] as? String ?? itemID
                 entry["row"] = row
-                built.append((itemID, id, entry, row))
+                StreamedTranscodeDownload.apply(format, to: &entry, source: source)
+                built.append((itemID, id, entry, entry["row"] as? [String:Any] ?? row))
             } catch EmbyError.invalidResponse, EmbyError.invalidURL { continue }
         }
         return built
@@ -206,14 +320,18 @@ actor EmbyDownloads {
         _ = try EmbyConnection.id(sourceID)
         var manifest = try Self.manifest(id:id,raw:raw,source:source,adapter:adapter)
         let subtitleStreams = source["MediaStreams"] as? [[String:Any]] ?? []
+        // A transcoded file leaves out the source's embedded text subtitles,
+        // so those are saved as files too (the server extracts them).
+        let keepsEmbedded = format == .original
         manifest["subtitles"] = try subtitleStreams.compactMap { stream -> [String:Any]? in
-            guard stream["Type"] as? String == "Subtitle", stream["IsExternal"] as? Bool == true,
+            let external = stream["IsExternal"] as? Bool == true
+            guard stream["Type"] as? String == "Subtitle", external || !keepsEmbedded,
                   let index = stream["Index"] as? Int, let codec = stream["Codec"] as? String,
                   ["srt","subrip","ass","ssa","vtt","webvtt"].contains(codec.lowercased()) else { return nil }
             let format = ServerSubtitleSidecars.format(codec)
             let url = try EmbyConnection.url(serverURL:adapter.connection.serverURL,
                 path:"/Videos/\(EmbyConnection.id(itemID))/\(sourceID)/Subtitles/\(index)/Stream.\(format)")
-            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":true]
+            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":external]
             subtitle["language"] = stream["Language"]; subtitle["forced"] = stream["IsForced"]; subtitle["hearingImpaired"] = stream["IsHearingImpaired"]
             // The stream index and label match the online sidecar, so a
             // chosen subtitle keeps its track ID offline.
@@ -253,11 +371,20 @@ actor EmbyDownloads {
                   ["ready", "downloading", "completed"].contains(status) else { throw EmbyError.playbackUnavailable }
             return try EmbyConnection.url(serverURL: connection.serverURL, path: "/Sync/JobItems/\(EmbyConnection.id(syncItemID))/File")
         }
+        if let format = StreamedTranscodeDownload.format(of: record) {
+            guard let query = StreamedTranscodeDownload.query(format: format, sourceID: sourceID,
+                                                              audioStreamIndex: record["audioStreamIndex"] as? Int,
+                                                              deviceID: EmbyConnection.deviceID) else { throw EmbyError.invalidResponse }
+            return try EmbyConnection.url(serverURL: connection.serverURL, path: "/Videos/\(EmbyConnection.id(itemID))/stream.mp4", query: query)
+        }
         return try EmbyConnection.url(serverURL:connection.serverURL,path:"/Videos/\(EmbyConnection.id(itemID))/stream",query:["Static":"true","MediaSourceId":sourceID])
     }
 
     private func offeredFormats(connection: EmbyConnection, policy: [String: Any]) async throws -> [DownloadFormat] {
         #if os(iOS)
+        // The playback transcoder serves smaller files to any account allowed
+        // to transcode, so the conversion service isn't required.
+        if StreamedTranscodeDownload.isAllowed(policy: policy) { return DownloadFormat.allCases }
         if EmbyDownloadConversion.isAllowed(policy: policy) {
             do {
                 _ = try await EmbyDownloadConversion.availableOptions(connection: connection)

@@ -4,18 +4,52 @@ import OSLog
 /// Events surfaced by the background download session, consumed by
 /// `DownloadManager` on the MainActor via an `AsyncStream`.
 enum DownloadSessionEvent: Sendable {
-    case progress(taskId: Int, bytesWritten: Int64, totalExpected: Int64)
+    case progress(taskId: Int, bytesWritten: Int64, totalExpected: Int64, tag: DownloadTaskTag? = nil)
     /// Media transfer succeeded (HTTP 2xx). `stagedURL` is a stable file in
     /// the staging directory — the volatile temp file has already been
     /// moved there synchronously inside the delegate callback.
-    case finished(taskId: Int, stagedURL: URL, statusCode: Int)
+    case finished(taskId: Int, stagedURL: URL, statusCode: Int, tag: DownloadTaskTag? = nil)
     /// Transfer ended without a usable file: a network error, a
     /// cancellation, or a non-2xx server response (e.g. 409 revoked).
     /// `urlErrorCode` is the `URLError` code of a transport failure.
-    case failed(taskId: Int, statusCode: Int?, resumeData: Data?, message: String, urlErrorCode: Int? = nil)
+    case failed(taskId: Int, statusCode: Int?, resumeData: Data?, message: String, urlErrorCode: Int? = nil,
+                tag: DownloadTaskTag? = nil)
     /// All background events for this launch have been delivered; the app
     /// may call the system-provided completion handler.
     case allEventsDelivered
+}
+
+/// The server, profile and download a background transfer belongs to,
+/// stored in the task's `taskDescription`. Task identifiers repeat across
+/// session instances and scopes, so a transfer that finishes after a server
+/// or profile switch is matched by this tag rather than by its identifier.
+struct DownloadTaskTag: Hashable, Sendable {
+    let serverId: String
+    let profileId: String
+    let recordId: String
+
+    private static let prefix = "vivid-download-v1"
+
+    var taskDescription: String {
+        [Self.prefix, serverId, profileId, recordId].joined(separator: "\n")
+    }
+
+    init(serverId: String, profileId: String, recordId: String) {
+        self.serverId = serverId
+        self.profileId = profileId
+        self.recordId = recordId
+    }
+
+    init?(taskDescription: String?) {
+        let parts = (taskDescription ?? "").components(separatedBy: "\n")
+        guard parts.count == 4, parts[0] == Self.prefix,
+              !parts[1].isEmpty, !parts[2].isEmpty, !parts[3].isEmpty else { return nil }
+        self.init(serverId: parts[1], profileId: parts[2], recordId: parts[3])
+    }
+
+    func isScope(serverId: String, profileId: String) -> Bool {
+        self.serverId == serverId && self.profileId == profileId
+    }
 }
 
 /// Owns the app's single background `URLSession` used to transfer media
@@ -58,15 +92,17 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
 
     /// Start a fresh media download. Returns the task identifier to persist
     /// on the record for relaunch reconnection.
-    func start(request: URLRequest) -> Int {
+    func start(request: URLRequest, tag: DownloadTaskTag? = nil) -> Int {
         let task = session.downloadTask(with: request)
+        task.taskDescription = tag?.taskDescription
         task.resume()
         return task.taskIdentifier
     }
 
     /// Resume a previously-interrupted download from its `resumeData`.
-    func resume(data: Data) -> Int {
+    func resume(data: Data, tag: DownloadTaskTag? = nil) -> Int {
         let task = session.downloadTask(withResumeData: data)
+        task.taskDescription = tag?.taskDescription
         task.resume()
         return task.taskIdentifier
     }
@@ -116,7 +152,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         continuation.yield(.progress(
             taskId: downloadTask.taskIdentifier,
             bytesWritten: totalBytesWritten,
-            totalExpected: totalBytesExpectedToWrite
+            totalExpected: totalBytesExpectedToWrite,
+            tag: DownloadTaskTag(taskDescription: downloadTask.taskDescription)
         ))
     }
 
@@ -126,6 +163,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         didFinishDownloadingTo location: URL
     ) {
         let taskId = downloadTask.taskIdentifier
+        let tag = DownloadTaskTag(taskDescription: downloadTask.taskDescription)
         let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
 
         // A non-2xx "success" means the body is an error envelope, not media.
@@ -135,7 +173,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
                 taskId: taskId,
                 statusCode: statusCode,
                 resumeData: nil,
-                message: "HTTP \(statusCode)"
+                message: "HTTP \(statusCode)",
+                tag: tag
             ))
             return
         }
@@ -146,14 +185,15 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         try? FileManager.default.removeItem(at: staged)
         do {
             try FileManager.default.moveItem(at: location, to: staged)
-            continuation.yield(.finished(taskId: taskId, stagedURL: staged, statusCode: statusCode))
+            continuation.yield(.finished(taskId: taskId, stagedURL: staged, statusCode: statusCode, tag: tag))
         } catch {
             Self.logger.error("Failed to stage finished download \(taskId): \(String(describing: error), privacy: .public)")
             continuation.yield(.failed(
                 taskId: taskId,
                 statusCode: statusCode,
                 resumeData: nil,
-                message: "stage_failed"
+                message: "stage_failed",
+                tag: tag
             ))
         }
     }
@@ -176,7 +216,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
             statusCode: statusCode,
             resumeData: resumeData,
             message: error.localizedDescription,
-            urlErrorCode: nsError.domain == NSURLErrorDomain ? nsError.code : nil
+            urlErrorCode: nsError.domain == NSURLErrorDomain ? nsError.code : nil,
+            tag: DownloadTaskTag(taskDescription: task.taskDescription)
         ))
     }
 

@@ -14,10 +14,23 @@ struct DownloadCapability: Codable, Hashable, Sendable {
     let seasonDownload: Bool
     let seriesMonitoring: Bool
     let monitoringModes: [String]
+    /// Season and series requests accept any of `qualityPresets`, not just
+    /// original. Silo advertises it as `bulk_quality`.
+    let bulkQuality: Bool
+    /// What each preset produces, when the server says (Silo does, and
+    /// caps it by its 4K setting and the account's playback limit).
+    let qualityOptions: [DownloadQualityOption]
 
     /// Downloads are usable at all only when the feature is on AND this
     /// user is allowed to download.
     var isUsable: Bool { enabled && downloadAllowed }
+
+    /// A server without the downloads API, so the controls show as unavailable
+    /// rather than as still checking.
+    static let unsupported = DownloadCapability(
+        enabled: false, downloadAllowed: false, qualityPresets: [], transcodeEnabled: false,
+        transcodeUserAllowed: false, seasonDownload: false, seriesMonitoring: false, monitoringModes: []
+    )
 
     /// Compatibility alias for stores written before the server renamed
     /// public download choices from formats to quality presets.
@@ -33,6 +46,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         case seasonDownload
         case seriesMonitoring
         case monitoringModes
+        case bulkQuality
+        case qualityOptions
     }
 
     init(
@@ -43,7 +58,9 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         transcodeUserAllowed: Bool,
         seasonDownload: Bool,
         seriesMonitoring: Bool,
-        monitoringModes: [String]
+        monitoringModes: [String],
+        bulkQuality: Bool = false,
+        qualityOptions: [DownloadQualityOption] = []
     ) {
         self.enabled = enabled
         self.downloadAllowed = downloadAllowed
@@ -53,6 +70,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         self.seasonDownload = seasonDownload
         self.seriesMonitoring = seriesMonitoring
         self.monitoringModes = monitoringModes
+        self.bulkQuality = bulkQuality
+        self.qualityOptions = qualityOptions
     }
 
     init(from decoder: Decoder) throws {
@@ -67,6 +86,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         seasonDownload = try container.decodeIfPresent(Bool.self, forKey: .seasonDownload) ?? false
         seriesMonitoring = try container.decodeIfPresent(Bool.self, forKey: .seriesMonitoring) ?? false
         monitoringModes = try container.decodeIfPresent([String].self, forKey: .monitoringModes) ?? []
+        bulkQuality = try container.decodeIfPresent(Bool.self, forKey: .bulkQuality) ?? false
+        qualityOptions = (try? container.decodeIfPresent([DownloadQualityOption].self, forKey: .qualityOptions)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -79,6 +100,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         try container.encode(seasonDownload, forKey: .seasonDownload)
         try container.encode(seriesMonitoring, forKey: .seriesMonitoring)
         try container.encode(monitoringModes, forKey: .monitoringModes)
+        try container.encode(bulkQuality, forKey: .bulkQuality)
+        try container.encode(qualityOptions, forKey: .qualityOptions)
     }
 }
 
@@ -113,6 +136,38 @@ enum DownloadFormat: String, Codable, CaseIterable, Sendable {
         case .oneMbps: return "1 Mbps"
         }
     }
+
+    /// Tallest output each preset makes, on the same ladder as Silo's
+    /// downloads (Apple's H.264 authoring floors): 20 Mbps keeps 4K, 10 and
+    /// 5 Mbps make 1080p, 2 Mbps 720p and 1 Mbps 480p. A file is never made
+    /// taller than its source.
+    var ladderMaxHeight: Int? {
+        switch self {
+        case .original: return nil
+        case .twentyMbps: return 2160
+        case .tenMbps, .fiveMbps: return 1080
+        case .twoMbps: return 720
+        case .oneMbps: return 480
+        }
+    }
+
+    static func resolutionName(_ height: Int) -> String {
+        height >= 2160 ? "4K" : "\(height)p"
+    }
+
+    /// "4K · 20 Mbps", "1080p · 10 Mbps" or "Original", so the choice says
+    /// what resolution the bitrate brings it down to.
+    func qualityLabel(maxHeight: Int?) -> String {
+        guard self != .original, let height = maxHeight ?? ladderMaxHeight else { return displayName }
+        return "\(Self.resolutionName(height)) · \(displayName)"
+    }
+}
+
+/// One preset's output as the server describes it (Silo's `quality_options`).
+struct DownloadQualityOption: Codable, Hashable, Sendable {
+    let preset: String
+    let bitrateKbps: Int?
+    let maxHeight: Int?
 }
 
 // MARK: - Download row (POST/GET /api/v1/downloads)
@@ -137,6 +192,8 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
     let revision: Int?
     let createdAt: Date?
     let completedAt: Date?
+    /// Silo's progress on a download it's still preparing.
+    let preparation: DownloadPreparationStatus?
 
     /// Compatibility alias for local code that still names the stored
     /// requested quality `format`.
@@ -161,6 +218,7 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
         case revision
         case createdAt
         case completedAt
+        case preparation
     }
 
     init(from decoder: Decoder) throws {
@@ -170,6 +228,8 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
         episodeId = try container.decodeIfPresent(String.self, forKey: .episodeId)
         batchId = try container.decodeIfPresent(String.self, forKey: .batchId)
         deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId)
+        // Optional extra: a malformed report never fails the row.
+        preparation = (try? container.decodeIfPresent(DownloadPreparationStatus.self, forKey: .preparation)) ?? nil
         mediaFileId = try container.decodeIfPresent(Int.self, forKey: .mediaFileId) ?? 0
         fileSize = try container.decodeIfPresent(Int64.self, forKey: .fileSize)
         bytesSent = try container.decodeIfPresent(Int64.self, forKey: .bytesSent)
@@ -184,6 +244,55 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
         revision = try container.decodeIfPresent(Int.self, forKey: .revision)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+    }
+}
+
+/// How far the server has got preparing a download (Silo's `preparation`):
+/// its place in the queue, or the running encode's progress.
+struct DownloadPreparationStatus: Codable, Hashable, Sendable {
+    /// `queued`, `running`, `retrying` or `paused`.
+    let state: String
+    let queuePosition: Int?
+    /// Encoded fraction, 0 to 1.
+    let progress: Double?
+    let remainingSeconds: Int?
+}
+
+extension DownloadPreparationStatus {
+    /// Row status while the server prepares the file, for example
+    /// "Preparing on server · 65% · 4 min left" or "Waiting on server · 2nd in line".
+    var statusText: String {
+        switch state {
+        case "queued":
+            guard let queuePosition, queuePosition > 0 else { return "Waiting on server…" }
+            return "Waiting on server · \(Self.ordinal(queuePosition)) in line"
+        case "retrying":
+            return "Retrying on server…"
+        case "paused":
+            return "Paused on server"
+        default:
+            var parts: [String] = []
+            if let progress {
+                parts.append("\(Int((min(max(progress, 0), 1) * 100).rounded(.down)))%")
+            }
+            if let remainingSeconds, remainingSeconds >= 0 {
+                parts.append(Self.remainingText(seconds: remainingSeconds))
+            }
+            return parts.isEmpty ? "Preparing on server…" : (["Preparing on server"] + parts).joined(separator: " · ")
+        }
+    }
+
+    private static func ordinal(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .ordinal
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private static func remainingText(seconds: Int) -> String {
+        let minutes = Int((Double(seconds) / 60).rounded())
+        if minutes < 1 { return "under 1 min left" }
+        if minutes < 60 { return "\(minutes) min left" }
+        return "\(minutes / 60) hr \(minutes % 60) min left"
     }
 }
 
@@ -687,6 +796,10 @@ struct DownloadRecord: Codable, Identifiable, Hashable, Sendable {
     /// to be unavailable, so downloads made before subtitles were saved are
     /// backfilled once rather than on every launch.
     var subtitlesChecked: Bool? = nil
+    /// Set once every advertised artwork file is saved. Artwork is fetched
+    /// after the media transfer starts, so a download that was closed early
+    /// is backfilled rather than left without a poster.
+    var artworkChecked: Bool? = nil
 
     // Display fields cached so the Downloads list renders before the
     // manifest is fetched and offline.
@@ -708,6 +821,8 @@ struct DownloadRecord: Codable, Identifiable, Hashable, Sendable {
     /// art; keeping the parent endpoint lets every single/season/series
     /// transfer use the same main series poster in Downloads.
     var preferredPosterPath: String? = nil
+    /// The server's latest report while it prepares this download.
+    var preparation: DownloadPreparationStatus? = nil
     var container: String?               // media container, drives file ext + engine
 
     var stableIdentity: StableIdentity?
@@ -790,6 +905,10 @@ struct DownloadStoreFile: Codable, Sendable {
     var progressCursor: String?
     var localProgress: [String: LocalProgressEntry]
     var progressBootstrap: SiloProgressBootstrapStage? = nil
+    /// Downloads removed on this device whose server row still has to be
+    /// deleted with this account's sign-in. Kept until the server confirms,
+    /// so a removed download can't come back as an out-of-band row.
+    var pendingServerDeletes: [String]? = nil
 
     static let currentVersion = 1
 

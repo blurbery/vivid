@@ -23,6 +23,7 @@ struct SeriesDownloadMenuButton: View {
     @State private var episodeDownloadError: String?
     @State private var resolvedSeriesPosterPath: String?
     @State private var resolvedSeriesPosterThumbhash: String?
+    @State private var showUnavailable = false
 
     /// Presentation of the trigger. `labeled` matches the detail page's named
     /// action row; `circle` is the original chrome, still used elsewhere.
@@ -117,16 +118,53 @@ struct SeriesDownloadMenuButton: View {
         .contentShape(Rectangle())
     }
 
+    /// Downloads are off for this account and nothing is in flight, so the
+    /// control shows crossed out instead of disappearing.
+    private var showsUnavailable: Bool { manager.downloadsDisallowed && !isDownloading }
+
+    @ViewBuilder
+    private var unavailableLabel: some View {
+        switch style {
+        case .circle:
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.10))
+                    .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                DownloadUnavailableGlyph(size: 16)
+            }
+            .frame(width: 44, height: 44)
+        case .labeled:
+            VStack(spacing: 6) {
+                DownloadUnavailableGlyph(size: 19)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(Color.white.opacity(0.10)))
+                Text("Unavailable")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(Color.vividOnSurface.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .contentShape(Rectangle())
+        }
+    }
+
     var body: some View {
         Button {
-            activeSheet = .downloadOptions
+            if showsUnavailable { showUnavailable = true } else { activeSheet = .downloadOptions }
         } label: {
-            switch style {
-            case .circle: circleLabel
-            case .labeled: labeledLabel
+            if showsUnavailable {
+                unavailableLabel
+            } else {
+                switch style {
+                case .circle: circleLabel
+                case .labeled: labeledLabel
+                }
             }
         }
-        .accessibilityLabel("Download or monitor series")
+        .downloadsUnavailableAlert(isPresented: $showUnavailable)
+        .accessibilityLabel(showsUnavailable ? "Download unavailable" : "Download or monitor series")
+        .accessibilityHint(showsUnavailable ? "Downloads aren't enabled for this account" : "")
         .accessibilityValue(isMonitored ? "Monitored" : "Not monitored")
         // Chaining sheets from `onDismiss` waits out the real dismiss
         // animation instead of guessing a delay — a fixed sleep silently
@@ -166,6 +204,7 @@ struct SeriesDownloadMenuButton: View {
                     versions: episodeVersions,
                     selectedVersionFileId: selectedVersionFileId,
                     lastVersionFileId: detail.userData?.lastFileId,
+                    isEpisode: true,
                     onStart: startEpisodeDownload
                 )
             }
@@ -227,6 +266,42 @@ struct SeriesDownloadMenuButton: View {
     }
 }
 
+/// Inline quality choice for season, series and multi-episode downloads,
+/// listing what the server offers for this account.
+struct DownloadQualityPicker: View {
+    @Binding var quality: String
+    private var manager: DownloadManager { DownloadManager.shared }
+
+    private var formats: [DownloadFormat] {
+        let available = manager.availableFormats
+        return available.isEmpty ? [.original] : available
+    }
+
+    var body: some View {
+        Picker(selection: $quality) {
+            ForEach(formats, id: \.self) { format in
+                Text(manager.qualityLabel(format)).tag(format.rawValue)
+            }
+        } label: {
+            Label("Quality", systemImage: "slider.horizontal.3")
+        }
+        .pickerStyle(.menu)
+        .onAppear(perform: clamp)
+        .onChange(of: manager.availableFormats) { _, _ in clamp() }
+    }
+
+    /// The chosen quality's size, for the line under the menu (menus show
+    /// one line per choice).
+    static func sizeNote(_ quality: String) -> String? {
+        DownloadFormat(rawValue: quality).flatMap(DownloadManager.sizePerHour).map { "\($0) of video." }
+    }
+
+    private func clamp() {
+        guard !formats.contains(where: { $0.rawValue == quality }) else { return }
+        quality = DownloadSettings.shared.resolvedFormat(allowedFormats: manager.capability?.qualityPresets ?? [])
+    }
+}
+
 private enum SeriesDownloadSheet: Identifiable {
     case downloadOptions
     case monitor
@@ -261,10 +336,34 @@ private struct SeriesDownloadOptionsSheet: View {
     private var manager: DownloadManager { DownloadManager.shared }
     @State private var errorMessage: String?
     @State private var isWorking = false
+    @State private var quality = DownloadSettings.shared.preferredFormat
+    @State private var confirmingCancel = false
+
+    /// The quality season and series downloads will use: the picked one where
+    /// the server takes it for batches, otherwise original.
+    private var batchQuality: String {
+        manager.canChooseBatchQuality ? quality : DownloadFormat.original.rawValue
+    }
+
+    private var batchQualityLabel: String {
+        manager.qualityLabel(rawValue: batchQuality)
+    }
+
+    private var activeDownloadCount: Int { manager.activeRecords(seriesId: seriesId).count }
 
     var body: some View {
         NavigationStack {
             Form {
+                if manager.canChooseBatchQuality {
+                    Section {
+                        DownloadQualityPicker(quality: $quality)
+                    } footer: {
+                        Text([DownloadQualityPicker.sizeNote(quality),
+                              "Applies to season and series downloads. Lower bitrates use less storage, and the server prepares the file first."]
+                            .compactMap { $0 }.joined(separator: " "))
+                    }
+                }
+
                 Section {
                     if let episodeTitle {
                         optionButton(
@@ -299,16 +398,18 @@ private struct SeriesDownloadOptionsSheet: View {
                     if canDownloadSeason, let selectedSeason {
                         optionButton(
                             title: "Download Season \(selectedSeason.seasonNumber)",
-                            detail: "Original quality · \(selectedSeason.episodeCount) episode\(selectedSeason.episodeCount == 1 ? "" : "s")",
+                            detail: "\(batchQualityLabel) · \(selectedSeason.episodeCount) episode\(selectedSeason.episodeCount == 1 ? "" : "s")",
                             icon: "arrow.down.square.on.square"
                         ) {
+                            let quality = batchQuality
                             startDownload {
                                 try await manager.downloadSeason(
                                     seriesId: seriesId,
                                     seasonNumber: selectedSeason.seasonNumber,
                                     seriesTitle: seriesTitle,
                                     posterThumbhash: posterThumbhash,
-                                    preferredPosterPath: preferredPosterPath
+                                    preferredPosterPath: preferredPosterPath,
+                                    quality: quality
                                 )
                             }
                         }
@@ -316,22 +417,43 @@ private struct SeriesDownloadOptionsSheet: View {
 
                     optionButton(
                         title: "Download All Episodes",
-                        detail: "Original quality",
+                        detail: batchQualityLabel,
                         icon: "arrow.down.circle"
                     ) {
+                        let quality = batchQuality
                         startDownload {
                             try await manager.downloadSeries(
                                 seriesId: seriesId,
                                 seriesTitle: seriesTitle,
                                 posterThumbhash: posterThumbhash,
-                                preferredPosterPath: preferredPosterPath
+                                preferredPosterPath: preferredPosterPath,
+                                quality: quality
                             )
                         }
                     }
                 } header: {
                     Text("Download")
                 } footer: {
-                    Text("Series and season downloads use original quality.")
+                    if !manager.canChooseBatchQuality {
+                        Text(manager.availableFormats.count > 1
+                             ? "This server downloads whole seasons in original quality. Pick episodes to choose a smaller quality."
+                             : "Downloads use original quality. Smaller qualities appear when the server allows download transcoding.")
+                    }
+                }
+
+                if activeDownloadCount > 0 {
+                    Section {
+                        Button(role: .destructive) {
+                            confirmingCancel = true
+                        } label: {
+                            Label(
+                                activeDownloadCount == 1 ? "Cancel Download" : "Cancel \(activeDownloadCount) Downloads",
+                                systemImage: "xmark.circle"
+                            )
+                        }
+                    } footer: {
+                        Text("Stops this series' unfinished downloads. Finished episodes are kept.")
+                    }
                 }
 
                 if canMonitorSeries {
@@ -371,6 +493,22 @@ private struct SeriesDownloadOptionsSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .task {
+                // Straight after launch or a server switch the permission may
+                // not be loaded yet; the season and quality options need it.
+                _ = await manager.prepareForDownload()
+                quality = DownloadSettings.shared.resolvedFormat(allowedFormats: manager.capability?.qualityPresets ?? [])
+            }
+            .confirmationDialog(
+                activeDownloadCount == 1 ? "Cancel this download?" : "Cancel \(activeDownloadCount) downloads?",
+                isPresented: $confirmingCancel,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel Downloads", role: .destructive) { manager.cancelActiveDownloads(seriesId: seriesId) }
+                Button("Keep Downloading", role: .cancel) {}
+            } message: {
+                Text("Finished episodes are kept.")
             }
         }
         #if os(iOS)
@@ -426,6 +564,18 @@ private struct SeriesDownloadOptionsSheet: View {
     }
 
     private func optionLabel(title: String, detail: String, icon: String) -> some View {
+        DownloadOptionRow(title: title, detail: detail, icon: icon)
+    }
+}
+
+/// An icon row with a title, detail line and chevron. The series and movie
+/// download sheets share it.
+struct DownloadOptionRow: View {
+    let title: String
+    let detail: String
+    let icon: String
+
+    var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .semibold))
@@ -518,6 +668,9 @@ private struct SeriesEpisodeDownloadPicker: View {
     @State private var isLoading = false
     @State private var isWorking = false
     @State private var errorMessage: String?
+    @State private var quality = DownloadSettings.shared.resolvedFormat(
+        allowedFormats: DownloadManager.shared.capability?.qualityPresets ?? []
+    )
 
     init(
         seriesId: String,
@@ -570,6 +723,14 @@ private struct SeriesEpisodeDownloadPicker: View {
                 )
             } else {
                 List {
+                    if manager.availableFormats.count > 1 {
+                        Section {
+                            DownloadQualityPicker(quality: $quality)
+                                .disabled(isWorking)
+                        } footer: {
+                            if let note = DownloadQualityPicker.sizeNote(quality) { Text(note) }
+                        }
+                    }
                     Section {
                         ForEach(episodes) { episode in
                             episodeRow(episode)
@@ -603,6 +764,11 @@ private struct SeriesEpisodeDownloadPicker: View {
             if !episodes.isEmpty {
                 downloadBar
             }
+        }
+        .task {
+            // Reached quickly from the series sheet, the permission and its
+            // qualities may still be loading.
+            _ = await manager.prepareForDownload()
         }
         .task { await loadEpisodesIfNeeded() }
         .alert(
@@ -809,6 +975,8 @@ private struct SeriesEpisodeDownloadPicker: View {
     private func startSelectedDownloads() {
         let targets = selectedEpisodes
         guard !targets.isEmpty, !isWorking else { return }
+        // One choice applies to the whole selection.
+        let quality = quality
         isWorking = true
         Task {
             do {
@@ -825,9 +993,7 @@ private struct SeriesEpisodeDownloadPicker: View {
                         seriesTitle: seriesTitle,
                         posterThumbhash: posterThumbhash,
                         preferredPosterPath: preferredPosterPath,
-                        quality: DownloadSettings.shared.resolvedFormat(
-                            allowedFormats: manager.capability?.qualityPresets ?? []
-                        )
+                        quality: quality
                     )
                     selectedEpisodeIds.remove(episode.contentId)
                 }

@@ -29,7 +29,7 @@ struct DownloadsSettingsView: View {
                 if formats.count > 1 {
                     Picker("Quality", selection: $settings.preferredFormat) {
                         ForEach(formats, id: \.self) { format in
-                            Text(format.displayName).tag(format.rawValue)
+                            Text(manager.qualityLabel(format)).tag(format.rawValue)
                         }
                     }
                 } else {

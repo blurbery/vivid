@@ -270,11 +270,8 @@ struct JellyfinConnection: Sendable {
 
     func assetData(_ raw: String) async throws -> Data {
         let base = try Self.url(serverURL:serverURL,path:"/")
-        guard let url = URL(string:raw), url.scheme == base.scheme, url.host == base.host, url.port == base.port,
-              url.user == nil, url.password == nil, url.path.hasPrefix(base.path),
+        guard let url = URL(string:raw), let path = ServerAssetPath.relative(url, base: base),
               let components = URLComponents(url:url,resolvingAgainstBaseURL:false) else { throw JellyfinError.invalidURL }
-        let path = "/" + url.path.dropFirst(base.path.count)
-        guard path.hasPrefix("/Items/") || path.hasPrefix("/Videos/") else { throw JellyfinError.invalidURL }
         let query = Dictionary((components.queryItems ?? []).map { ($0.name,$0.value ?? "") },uniquingKeysWith:{ _,last in last })
         return try await data("GET",path,query:query)
     }

@@ -58,13 +58,13 @@ struct DownloadActiveRow: View {
                         .foregroundColor(.vividSecondaryText)
                         .lineLimit(1)
                 }
-                if record.localStatus == .downloading || record.localStatus == .paused {
+                if let barFraction {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.vividOnSurface.opacity(0.12))
                             Capsule()
                                 .fill(Color.vividOnSurface.opacity(record.localStatus == .paused ? 0.52 : 0.92))
-                                .frame(width: geometry.size.width * record.progressFraction)
+                                .frame(width: geometry.size.width * barFraction)
                         }
                     }
                     .frame(height: 4)
@@ -139,15 +139,26 @@ struct DownloadActiveRow: View {
     private var statusLine: String {
         switch record.localStatus {
         case .downloading:
+            // Queued in the background session behind other transfers.
+            if record.bytesDownloaded == 0, rateParts.isEmpty { return "Waiting to download…" }
             return ([percentText, sizeText] + rateParts).joined(separator: " · ")
         case .paused:
             return "Paused · \(percentText) · \(sizeText)"
         case .registering, .queued: return "Queued"
-        case .preparing: return "Preparing on server…"
-        case .fetchingAssets: return "Finishing…"
+        case .preparing: return record.preparation?.statusText ?? "Preparing on server…"
+        case .fetchingAssets: return "Starting…"
         case .completed: return DownloadFormatting.bytes(record.fileSize)
         case .failed: return "Failed"
         case .revoked: return "No longer available"
+        }
+    }
+
+    /// The transfer's progress, or the server's while it prepares the file.
+    private var barFraction: Double? {
+        switch record.localStatus {
+        case .downloading, .paused: return record.progressFraction
+        case .preparing: return record.preparation?.progress.map { min(max($0, 0), 1) }
+        case .registering, .queued, .fetchingAssets, .completed, .failed, .revoked: return nil
         }
     }
 

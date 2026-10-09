@@ -210,6 +210,13 @@ struct ContentView: View {
             await maybeAutoPlayForDebug()
             #endif
             if router.authState == .authenticated {
+                #if !os(tvOS)
+                // Downloads load their own scope and permission straight away.
+                // Waiting behind the refreshes below (one of which can sit on
+                // the notification prompt) left them "unavailable" until the
+                // app next came to the foreground.
+                Task { await DownloadManager.shared.onAppActive() }
+                #endif
                 let hasPendingDeepLink = pendingDeepLink != nil
                 if let pending = pendingDeepLink {
                     pendingDeepLink = nil
@@ -235,9 +242,6 @@ struct ContentView: View {
                 #if os(iOS)
                 await LocalNotificationAuthorization.requestIfNeeded()
                 #endif
-                #if !os(tvOS)
-                await DownloadManager.shared.onAppActive()
-                #endif
             }
         }
         .task(id: serverRegistry.activeServerId) {
@@ -258,6 +262,14 @@ struct ContentView: View {
             overlayPrefs.clear()
             guard !Task.isCancelled else { return }
             Task { await AuthService.shared.refreshActiveServerName() }
+            #if !os(tvOS)
+            // A switch between signed-in servers stays `.authenticated`, so
+            // the auth-state task never reruns. Point downloads at the new
+            // server here, or they keep the previous server's permission.
+            if router.authState == .authenticated {
+                Task { await DownloadManager.shared.onAppActive() }
+            }
+            #endif
             if router.authState == .authenticated {
                 await uiCustomization.refresh()
                 // The one hydration whose outcome is never optional: `clear()`
@@ -284,13 +296,15 @@ struct ContentView: View {
             switch newPhase {
             case .active:
                 TVSavedAccountStore.shared.enteredForeground()
+                DownloadManager.shared.resumeNormalPreparation()
             case .background:
                 TVSavedAccountStore.shared.enteredBackground()
                 VividImagePipeline.shared.prepareForMacSuspension()
+                DownloadManager.shared.handOffQueuedTransfers()
                 // Keep series monitoring alive while backgrounded; only
                 // worth a wake when the profile can download at all.
                 if DownloadManager.shared.downloadsEnabled {
-                    DownloadBackgroundRefresh.schedule()
+                    DownloadBackgroundRefresh.schedule(soon: DownloadManager.shared.hasServerPreparingDownloads)
                 }
             default:
                 break

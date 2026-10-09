@@ -11,6 +11,8 @@ struct DownloadOptionsSheet: View {
     let versions: [FileVersion]
     let selectedVersionFileId: Int?
     let lastVersionFileId: Int?
+    /// Names the Download row ("Download Episode" or "Download Movie").
+    let isEpisode: Bool
     let onStart: (DownloadRequestOptions) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -24,12 +26,14 @@ struct DownloadOptionsSheet: View {
         versions: [FileVersion],
         selectedVersionFileId: Int?,
         lastVersionFileId: Int?,
+        isEpisode: Bool,
         onStart: @escaping (DownloadRequestOptions) -> Void
     ) {
         self.title = title
         self.versions = versions
         self.selectedVersionFileId = selectedVersionFileId
         self.lastVersionFileId = lastVersionFileId
+        self.isEpisode = isEpisode
         self.onStart = onStart
 
         _fileId = State(initialValue: selectedVersionFileId)
@@ -43,60 +47,16 @@ struct DownloadOptionsSheet: View {
 
     private var isEmbyConversion: Bool { MediaServerProvider.active == .emby && quality != DownloadFormat.original.rawValue }
 
-    private var editions: [PlaybackEditions.Edition] {
-        PlaybackEditions.editions(from: versions)
-    }
-
-    private var effectiveVersion: FileVersion? {
-        DetailVersionSelection.displayVersion(
-            versions: versions,
-            selectedFileId: fileId,
-            lastFileId: lastVersionFileId,
-            preferredQualityId: PlayerSettings.shared.preferredQuality
-        )
-    }
-
-    private var currentEdition: PlaybackEditions.Edition? {
-        DetailPlaybackFormatting.currentEdition(
-            versions: versions,
-            currentVersion: effectiveVersion
-        )
-    }
-
-    private var scopedVersions: [FileVersion] {
-        if editions.count > 1, let currentEdition {
-            return currentEdition.versions
-        }
-        return versions
+    private var choices: DownloadVersionChoices {
+        DownloadVersionChoices(versions: versions, fileId: fileId, lastVersionFileId: lastVersionFileId)
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    summaryRow
-                } header: {
-                    Text("Download")
-                }
-
-                if editions.count > 1 {
-                    editionSection
-                        .disabled(isEmbyConversion)
-                }
-
-                if !versions.isEmpty {
-                    versionSection
-                }
-
-                qualitySection
-                mediaSummarySection
-            }
-            .navigationTitle("Download Options")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+            form
             .vividScrollContentBackgroundHidden()
             #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
             .background(Color.clear)
             #else
             .vividPageBackground()
@@ -104,12 +64,6 @@ struct DownloadOptionsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Download") {
-                        onStart(DownloadRequestOptions(fileId: isEmbyConversion ? nil : fileId, quality: quality))
-                        dismiss()
-                    }
                 }
             }
             .onAppear(perform: clampQuality)
@@ -131,55 +85,280 @@ struct DownloadOptionsSheet: View {
         #endif
     }
 
-    private var summaryRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.vividOnSurface)
-                .lineLimit(2)
-            Text(summaryDetail)
-                .font(.vividCaption)
-                .foregroundColor(.vividSecondaryText)
-                .lineLimit(3)
-        }
-        .padding(.vertical, 2)
+    private func start() {
+        onStart(DownloadRequestOptions(fileId: isEmbyConversion ? nil : fileId, quality: quality))
+        dismiss()
     }
 
-    private var summaryDetail: String {
-        let qualityLabel = DownloadFormat(rawValue: quality)?.displayName ?? quality
-        let versionLabel = fileId == nil
-            ? "Auto version"
-            : (effectiveVersion.map(DetailPlaybackFormatting.versionPrimaryText) ?? "Selected version")
-        var parts = [versionLabel, qualityLabel]
-        if let estimate = selectionEstimate {
+    // MARK: - Layout
+
+    /// The series download sheet's layout: a quality menu over a Download
+    /// row, with versions on their own page.
+    private var form: some View {
+        Form {
+            if formats.count > 1 {
+                Section {
+                    DownloadQualityPicker(quality: $quality)
+                } footer: {
+                    Text([DownloadQualityPicker.sizeNote(quality),
+                          "Lower bitrates make a smaller file at the resolution shown, never above the original's. The server prepares the file first, which can take longer. Sizes are estimates."]
+                        .compactMap { $0 }.joined(separator: " "))
+                }
+            }
+
+            Section {
+                Button(action: start) {
+                    DownloadOptionRow(title: isEpisode ? "Download Episode" : "Download Movie", detail: downloadDetail, icon: "arrow.down.to.line")
+                }
+                .buttonStyle(.plain)
+
+                if !versions.isEmpty {
+                    NavigationLink {
+                        DownloadVersionPage(
+                            versions: versions,
+                            lastVersionFileId: lastVersionFileId,
+                            quality: quality,
+                            isEmbyConversion: isEmbyConversion,
+                            fileId: $fileId
+                        )
+                    } label: {
+                        DownloadOptionRow(title: "Choose Version", detail: chooseVersionDetail, icon: "square.stack")
+                    }
+                    .disabled(isEmbyConversion)
+                }
+            } header: {
+                Text("Download")
+            } footer: {
+                downloadFooter
+            }
+        }
+        .navigationTitle(title)
+    }
+
+    private var downloadDetail: String {
+        var parts = [manager.qualityLabel(rawValue: quality), choices.versionLabel]
+        if let estimate = choices.estimate(quality: quality) {
             parts.append(estimate.isRange ? "\(estimate.sizeLabel) depending on server choice" : estimate.sizeLabel)
         }
         return parts.joined(separator: " · ")
     }
 
+    private var chooseVersionDetail: String {
+        if isEmbyConversion { return "Emby chooses the version for smaller downloads" }
+        guard fileId != nil, let version = choices.effectiveVersion else {
+            let candidates = choices.scopedVersions.map(DetailPlaybackFormatting.versionPrimaryText).uniqued()
+            return (["Auto"] + [candidates.prefix(3).joined(separator: ", ")].filter { !$0.isEmpty })
+                .joined(separator: " · ")
+        }
+        return [DetailPlaybackFormatting.versionPrimaryText(version), DetailPlaybackFormatting.versionSecondaryText(version)]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private var downloadFooter: some View {
+        let warning = isEmbyConversion ? nil : choices.sizeWarning(quality: quality)
+        let note = formats.count > 1 ? nil : "Downloads use original quality. Smaller qualities appear when the server allows download transcoding."
+        if warning != nil || note != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                if let warning {
+                    Text(warning).foregroundColor(.orange)
+                }
+                if let note {
+                    Text(note)
+                }
+            }
+        }
+    }
+
+    private func clampQuality() {
+        if isEmbyConversion { fileId = nil }
+        guard !formats.contains(where: { $0.rawValue == quality }) else { return }
+        quality = DownloadSettings.shared.resolvedFormat(
+            allowedFormats: manager.capability?.qualityPresets ?? []
+        )
+    }
+}
+
+// MARK: - Versions
+
+/// Which file Auto or a picked version resolves to, its edition and the size
+/// it implies. Shared by both sheet layouts and the Choose Version page.
+private struct DownloadVersionChoices {
+    let versions: [FileVersion]
+    let fileId: Int?
+    let lastVersionFileId: Int?
+
+    var editions: [PlaybackEditions.Edition] {
+        PlaybackEditions.editions(from: versions)
+    }
+
+    var effectiveVersion: FileVersion? {
+        DetailVersionSelection.displayVersion(
+            versions: versions,
+            selectedFileId: fileId,
+            lastFileId: lastVersionFileId,
+            preferredQualityId: PlayerSettings.shared.preferredQuality
+        )
+    }
+
+    var currentEdition: PlaybackEditions.Edition? {
+        DetailPlaybackFormatting.currentEdition(
+            versions: versions,
+            currentVersion: effectiveVersion
+        )
+    }
+
+    var scopedVersions: [FileVersion] {
+        if editions.count > 1, let currentEdition {
+            return currentEdition.versions
+        }
+        return versions
+    }
+
+    var versionLabel: String {
+        fileId == nil
+            ? "Auto version"
+            : (effectiveVersion.map(DetailPlaybackFormatting.versionPrimaryText) ?? "Selected version")
+    }
+
     /// Size expectation for what the current selection would download:
     /// candidate range for Auto, exact size for a chosen version.
-    private var selectionEstimate: DownloadSizeEstimate? {
+    func estimate(quality: String) -> DownloadSizeEstimate? {
         guard quality == DownloadFormat.original.rawValue else { return nil }
         return DownloadSizeEstimate.estimate(versions: versions, fileId: fileId)
     }
 
     /// Over-threshold / insufficient-space caveat for the current selection,
-    /// mirroring the one-tap confirmation so switching versions in the sheet
-    /// keeps the warning honest.
-    private var selectionSizeWarning: String? {
-        selectionEstimate?.warningMessage(
+    /// mirroring the one-tap confirmation so switching versions keeps the
+    /// warning honest.
+    func sizeWarning(quality: String) -> String? {
+        estimate(quality: quality)?.warningMessage(
             availableBytes: DownloadFilePaths.deviceStorage().available
         )
     }
 
+    /// Auto spans every version the server might pick, so disclose the full
+    /// candidate range rather than pretending the size is unknown.
+    var autoVersionDetail: String {
+        guard let estimate = DownloadSizeEstimate.estimate(versions: versions, fileId: nil) else {
+            return "Let the server choose the file"
+        }
+        if estimate.isRange {
+            return "\(estimate.sizeLabel) depending on server choice"
+        }
+        return "\(estimate.sizeLabel) · Let the server choose the file"
+    }
+
+    /// Version rows with a disambiguator appended when two distinct files
+    /// would otherwise render identical primary/secondary text (same
+    /// resolution/codec/size), so every row stays tellable-apart.
+    var versionRows: [(version: FileVersion, title: String, detail: String?)] {
+        let rows = scopedVersions.map { version in
+            (
+                version: version,
+                title: DetailPlaybackFormatting.versionPrimaryText(version),
+                detail: DetailPlaybackFormatting.versionSecondaryText(version)
+            )
+        }
+        var counts: [String: Int] = [:]
+        for row in rows {
+            counts["\(row.title)|\(row.detail ?? "")", default: 0] += 1
+        }
+        return rows.map { row in
+            guard counts["\(row.title)|\(row.detail ?? "")", default: 0] > 1 else { return row }
+            let detail = [row.detail, Self.disambiguator(for: row.version)]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+            return (row.version, row.title, detail)
+        }
+    }
+
+    /// Edition name when the file has one, else a filename fragment — just
+    /// enough to tell apart two files whose technical summary reads the same.
+    private static func disambiguator(for version: FileVersion) -> String {
+        let edition = version.editionDisplayLabel
+        if edition != "Standard" { return edition }
+        if let fragment = version.fileName?
+            .components(separatedBy: "/").last?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !fragment.isEmpty {
+            return fragment
+        }
+        return "File \(version.fileId)"
+    }
+}
+
+/// The movie sheet's Choose Version page. Picking a version goes back to the
+/// sheet; picking an edition stays so its versions can be chosen.
+private struct DownloadVersionPage: View {
+    let versions: [FileVersion]
+    let lastVersionFileId: Int?
+    let quality: String
+    let isEmbyConversion: Bool
+    @Binding var fileId: Int?
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Form {
+            DownloadVersionSections(
+                versions: versions,
+                lastVersionFileId: lastVersionFileId,
+                quality: quality,
+                isEmbyConversion: isEmbyConversion,
+                fileId: $fileId,
+                onPickVersion: { dismiss() }
+            )
+            DownloadIncludedMediaSection(
+                choices: DownloadVersionChoices(versions: versions, fileId: fileId, lastVersionFileId: lastVersionFileId),
+                quality: quality
+            )
+        }
+        .navigationTitle("Choose Version")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .vividScrollContentBackgroundHidden()
+        #if os(iOS)
+        .background(Color.clear)
+        #else
+        .vividPageBackground()
+        #endif
+    }
+}
+
+/// Edition and version rows.
+private struct DownloadVersionSections: View {
+    let versions: [FileVersion]
+    let lastVersionFileId: Int?
+    let quality: String
+    let isEmbyConversion: Bool
+    @Binding var fileId: Int?
+    var onPickVersion: () -> Void = {}
+
+    private var choices: DownloadVersionChoices {
+        DownloadVersionChoices(versions: versions, fileId: fileId, lastVersionFileId: lastVersionFileId)
+    }
+
+    var body: some View {
+        if choices.editions.count > 1 {
+            editionSection
+                .disabled(isEmbyConversion)
+        }
+
+        if !versions.isEmpty {
+            versionSection
+        }
+    }
+
     private var editionSection: some View {
         Section("Edition") {
-            ForEach(editions) { edition in
-                optionButton(
+            ForEach(choices.editions) { edition in
+                DownloadChoiceRow(
                     title: edition.label,
                     detail: "\(edition.versions.count) version\(edition.versions.count == 1 ? "" : "s")",
-                    isSelected: currentEdition?.id == edition.id
+                    isSelected: choices.currentEdition?.id == edition.id
                 ) {
                     let best = DetailVersionSelection.displayVersion(
                         versions: edition.versions,
@@ -195,20 +374,22 @@ struct DownloadOptionsSheet: View {
 
     private var versionSection: some View {
         Section {
-            optionButton(
+            DownloadChoiceRow(
                 title: "Auto",
-                detail: autoVersionDetail,
+                detail: choices.autoVersionDetail,
                 isSelected: fileId == nil
             ) {
                 fileId = nil
+                onPickVersion()
             }
-            ForEach(versionRows, id: \.version.fileId) { row in
-                optionButton(
+            ForEach(choices.versionRows, id: \.version.fileId) { row in
+                DownloadChoiceRow(
                     title: row.title,
                     detail: row.detail,
                     isSelected: fileId == row.version.fileId
                 ) {
                     fileId = row.version.fileId
+                    onPickVersion()
                 }
             }
         } header: {
@@ -216,134 +397,37 @@ struct DownloadOptionsSheet: View {
         } footer: {
             if isEmbyConversion {
                 Text("Emby chooses the source version when preparing a smaller download.")
-            } else if let selectionSizeWarning {
-                Text(selectionSizeWarning)
+            } else if let warning = choices.sizeWarning(quality: quality) {
+                Text(warning)
                     .foregroundColor(.orange)
             }
         }
         .disabled(isEmbyConversion)
     }
+}
 
-    /// Version rows with a disambiguator appended when two distinct files
-    /// would otherwise render identical primary/secondary text (same
-    /// resolution/codec/size), so every row stays tellable-apart.
-    private var versionRows: [(version: FileVersion, title: String, detail: String?)] {
-        let rows = scopedVersions.map { version in
-            (
-                version: version,
-                title: DetailPlaybackFormatting.versionPrimaryText(version),
-                detail: DetailPlaybackFormatting.versionSecondaryText(version)
-            )
-        }
-        var counts: [String: Int] = [:]
-        for row in rows {
-            counts["\(row.title)|\(row.detail ?? "")", default: 0] += 1
-        }
-        return rows.map { row in
-            guard counts["\(row.title)|\(row.detail ?? "")", default: 0] > 1 else { return row }
-            let detail = [row.detail, disambiguator(for: row.version)]
-                .compactMap { $0 }
-                .joined(separator: " · ")
-            return (row.version, row.title, detail)
-        }
-    }
+/// Audio and subtitles the selected file brings with it.
+private struct DownloadIncludedMediaSection: View {
+    let choices: DownloadVersionChoices
+    let quality: String
 
-    /// Edition name when the file has one, else a filename fragment — just
-    /// enough to tell apart two files whose technical summary reads the same.
-    private func disambiguator(for version: FileVersion) -> String {
-        let edition = version.editionDisplayLabel
-        if edition != "Standard" { return edition }
-        if let fragment = version.fileName?
-            .components(separatedBy: "/").last?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !fragment.isEmpty {
-            return fragment
-        }
-        return "File \(version.fileId)"
-    }
-
-    /// Auto spans every version the server might pick, so disclose the full
-    /// candidate range rather than pretending the size is unknown.
-    private var autoVersionDetail: String {
-        guard let estimate = DownloadSizeEstimate.estimate(versions: versions, fileId: nil) else {
-            return "Let the server choose the file"
-        }
-        if estimate.isRange {
-            return "\(estimate.sizeLabel) depending on server choice"
-        }
-        return "\(estimate.sizeLabel) · Let the server choose the file"
-    }
-
-    private var qualitySection: some View {
-        Section {
-            if formats.count > 1 {
-                ForEach(formats, id: \.self) { format in
-                    optionButton(
-                        title: format.displayName,
-                        detail: qualityDetail(for: format),
-                        isSelected: quality == format.rawValue
-                    ) {
-                        quality = format.rawValue
-                    }
-                }
-            } else {
-                optionButton(
-                    title: formats.first?.displayName ?? DownloadFormat.original.displayName,
-                    detail: qualityDetail(for: formats.first ?? .original),
-                    isSelected: true,
-                    isEnabled: false
-                ) {}
-            }
-        } header: {
-            Text("Quality")
-        } footer: {
-            if formats.count > 1 {
-                Text("Lower bitrates use less storage. The server prepares the file before download starts. This choice applies only to this download.")
-            } else {
-                Text(MediaServerProvider.active == .jellyfin ? "Jellyfin downloads keep the original file and source quality." : MediaServerProvider.active == .emby
-                     ? "Smaller downloads need Emby's conversion service and permission for this account. Original keeps the source quality."
-                     : "Smaller downloads appear when your server allows download transcoding.")
-            }
-        }
-    }
-
-    private func qualityDetail(for format: DownloadFormat) -> String {
-        switch format {
-        case .original:
-            return MediaServerProvider.active.usesNativeUser ? "Keep the original file" : "Source quality, with compatibility fallback if needed"
-        case .twentyMbps, .tenMbps, .fiveMbps, .twoMbps, .oneMbps:
-            return "Reduce the bitrate for a smaller offline file"
-        }
-    }
-
-    private func clampQuality() {
-        if isEmbyConversion { fileId = nil }
-        guard !formats.contains(where: { $0.rawValue == quality }) else { return }
-        quality = DownloadSettings.shared.resolvedFormat(
-            allowedFormats: manager.capability?.qualityPresets ?? []
-        )
-    }
-
-    private var mediaSummarySection: some View {
+    var body: some View {
         Section {
             if quality != DownloadFormat.original.rawValue {
-                readOnlyRow(title: "Audio", detail: "Prepared by the server")
-                readOnlyRow(title: "Subtitles", detail: "Available tracks")
-            } else if let effectiveVersion {
-                readOnlyRow(
+                row(title: "Audio", detail: "Prepared by the server")
+                row(title: "Subtitles", detail: "Available tracks")
+            } else if let version = choices.effectiveVersion {
+                row(
                     title: "Audio",
                     detail: DetailPlaybackFormatting.audioValueLabel(
-                        version: effectiveVersion,
+                        version: version,
                         selectedAudioTrackIndex: nil
                     )
                 )
-                readOnlyRow(
-                    title: "Subtitles",
-                    detail: subtitleSummary(for: effectiveVersion)
-                )
+                row(title: "Subtitles", detail: subtitleSummary(for: version))
             } else {
-                readOnlyRow(title: "Audio", detail: "File default")
-                readOnlyRow(title: "Subtitles", detail: "Available tracks")
+                row(title: "Audio", detail: "File default")
+                row(title: "Subtitles", detail: "Available tracks")
             }
         } header: {
             Text("Included Media")
@@ -382,7 +466,7 @@ struct DownloadOptionsSheet: View {
         return value
     }
 
-    private func readOnlyRow(title: String, detail: String) -> some View {
+    private func row(title: String, detail: String) -> some View {
         HStack {
             Text(title)
             Spacer(minLength: 12)
@@ -391,14 +475,17 @@ struct DownloadOptionsSheet: View {
                 .multilineTextAlignment(.trailing)
         }
     }
+}
 
-    private func optionButton(
-        title: String,
-        detail: String?,
-        isSelected: Bool,
-        isEnabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
+/// A selectable row with a checkmark when chosen.
+private struct DownloadChoiceRow: View {
+    let title: String
+    let detail: String?
+    let isSelected: Bool
+    var isEnabled = true
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {

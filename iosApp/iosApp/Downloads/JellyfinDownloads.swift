@@ -33,22 +33,26 @@ actor JellyfinDownloads {
         if path.last == "capability" {
             let raw = try await connection.object("GET", "/Users/\(user)")
             let policy = raw["Policy"] as? [String:Any] ?? [:]
-            let formats: [DownloadFormat] = [.original]
+            // Smaller qualities come from the server's playback transcoder,
+            // so any account allowed to transcode can pick them.
+            let transcode = StreamedTranscodeDownload.isAllowed(policy: policy)
+            let formats: [DownloadFormat] = transcode ? DownloadFormat.allCases : [.original]
             return ["enabled":true,"downloadAllowed":policy["EnableContentDownloading"] as? Bool ?? false,
                     "qualityPresets":formats.map(\.rawValue),"transcodeEnabled":formats.count > 1,
-                    "transcodeUserAllowed":false,
-                    "seasonDownload":true,"seriesMonitoring":false]
+                    "transcodeUserAllowed":transcode,
+                    "seasonDownload":true,"seriesMonitoring":false,"bulkQuality":formats.count > 1]
         }
         if path.count == 3, method == "POST" {
             let rawUser = try await connection.object("GET", "/Users/\(user)")
-            guard (rawUser["Policy"] as? [String:Any])?["EnableContentDownloading"] as? Bool == true else { throw JellyfinError.unsupportedFeature }
+            let policy = rawUser["Policy"] as? [String:Any] ?? [:]
+            guard policy["EnableContentDownloading"] as? Bool == true else { throw JellyfinError.unsupportedFeature }
             if body["series"] as? Bool == true || body["season_number"] != nil {
-                return try await registerEpisodes(connection: connection, user: user, body: body)
+                return try await registerEpisodes(connection: connection, user: user, body: body, policy: policy)
             }
             guard let format = DownloadFormat(rawValue: body["quality"] as? String ?? "original"), body["series"] as? Bool != true,
                   body["season_number"] == nil,
                   let itemID = body["episode_id"] as? String ?? body["content_id"] as? String else { throw JellyfinError.unsupportedFeature }
-            guard format == .original else { throw JellyfinError.unsupportedFeature }
+            guard format == .original || StreamedTranscodeDownload.isAllowed(policy: policy) else { throw JellyfinError.unsupportedFeature }
             let adapter = JellyfinAdapter(connection:connection)
             let raw = try await adapter.rawItem(itemID)
             let sources = raw["MediaSources"] as? [[String:Any]] ?? []
@@ -58,12 +62,13 @@ actor JellyfinDownloads {
             } else { source = sources.first }
             guard let source, let sourceID = source["Id"] as? String else { throw JellyfinError.playbackUnavailable }
             let id = "jellyfin-" + UUID().uuidString
-            let (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:format,adapter:adapter)
+            var (entry, _) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:format,adapter:adapter)
+            StreamedTranscodeDownload.apply(format, to: &entry, source: source)
             try await connection.validate()
             var current = try records(connection)
             current[id] = entry
             try save(current,connection:connection)
-            return ["downloads":[row]]
+            return ["downloads":[entry["row"] ?? [:]]]
         }
         if path.count == 3, method == "GET" {
             return ["downloads":try records(connection).values.filter { $0["deletionPending"] as? Bool != true }.compactMap { $0["row"] }]
@@ -86,10 +91,12 @@ actor JellyfinDownloads {
         throw JellyfinError.unsupportedFeature
     }
 
-    /// Series and season batches register each present episode's original file in one write.
-    private func registerEpisodes(connection: JellyfinConnection, user: String, body: [String:Any]) async throws -> Any {
+    /// Series and season batches register each present episode in one write,
+    /// as the original file or streamed through the transcoder at the chosen quality.
+    private func registerEpisodes(connection: JellyfinConnection, user: String, body: [String:Any], policy: [String:Any]) async throws -> Any {
         let season = body["season_number"] as? Int
-        guard DownloadFormat(rawValue: body["quality"] as? String ?? "original") == .original,
+        guard let format = DownloadFormat(rawValue: body["quality"] as? String ?? "original"),
+              format == .original || StreamedTranscodeDownload.isAllowed(policy: policy),
               body["file_id"] == nil || body["file_id"] is NSNull, body["episode_id"] == nil || body["episode_id"] is NSNull,
               body["season_number"] == nil || season != nil,
               let seriesID = body["content_id"] as? String else { throw JellyfinError.unsupportedFeature }
@@ -98,7 +105,7 @@ actor JellyfinDownloads {
         if let season { query["Season"] = String(season) }
         let result = try await connection.object("GET", "/Shows/\(JellyfinConnection.id(seriesID))/Episodes", query: query)
         guard let items = result["Items"] as? [[String:Any]] else { throw JellyfinError.invalidResponse }
-        let built = try Self.batchEpisodes(items, body: body, adapter: JellyfinAdapter(connection:connection))
+        let built = try Self.batchEpisodes(items, body: body, format: format, adapter: JellyfinAdapter(connection:connection))
         guard !built.isEmpty else { throw BatchError.noEpisodes }
         try await connection.validate()
         // No await from here to the save, so overlapping requests can't register an episode twice.
@@ -112,8 +119,10 @@ actor JellyfinDownloads {
 
     typealias BatchEpisode = (itemID: String, id: String, entry: [String:Any], row: [String:Any])
 
-    /// Original-file registrations for each downloadable episode, in server order.
-    nonisolated static func batchEpisodes(_ items: [[String:Any]], body: [String:Any], adapter: JellyfinAdapter) throws -> [BatchEpisode] {
+    /// Registrations for each downloadable episode, in server order: the
+    /// original file, or a transcoded stream at `format`.
+    nonisolated static func batchEpisodes(_ items: [[String:Any]], body: [String:Any], format: DownloadFormat = .original,
+                                          adapter: JellyfinAdapter) throws -> [BatchEpisode] {
         var built: [BatchEpisode] = []
         for raw in Self.downloadableEpisodes(items) {
             try Task.checkCancellation()
@@ -121,12 +130,13 @@ actor JellyfinDownloads {
                   let sourceID = source["Id"] as? String else { continue }
             let id = "jellyfin-" + UUID().uuidString
             do {
-                var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:.original,
+                var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:format,
                                                    batchID:body["batch_id"] as? String,adapter:adapter)
                 // Episode rows name their series, as Silo's do; the episode stays in episodeId.
                 row["contentId"] = body["content_id"] as? String ?? itemID
                 entry["row"] = row
-                built.append((itemID, id, entry, row))
+                StreamedTranscodeDownload.apply(format, to: &entry, source: source)
+                built.append((itemID, id, entry, entry["row"] as? [String:Any] ?? row))
             } catch JellyfinError.invalidResponse, JellyfinError.invalidURL { continue }
         }
         return built
@@ -170,14 +180,18 @@ actor JellyfinDownloads {
         _ = try JellyfinConnection.id(sourceID)
         var manifest = try Self.manifest(id:id,raw:raw,source:source,adapter:adapter)
         let subtitleStreams = source["MediaStreams"] as? [[String:Any]] ?? []
+        // A transcoded file leaves out the source's embedded text subtitles,
+        // so those are saved as files too (the server extracts them).
+        let keepsEmbedded = format == .original
         manifest["subtitles"] = try subtitleStreams.compactMap { stream -> [String:Any]? in
-            guard stream["Type"] as? String == "Subtitle", stream["IsExternal"] as? Bool == true,
+            let external = stream["IsExternal"] as? Bool == true
+            guard stream["Type"] as? String == "Subtitle", external || !keepsEmbedded,
                   let index = stream["Index"] as? Int, let codec = stream["Codec"] as? String,
                   ["srt","subrip","ass","ssa","vtt","webvtt"].contains(codec.lowercased()) else { return nil }
             let format = ServerSubtitleSidecars.format(codec)
             let url = try JellyfinConnection.url(serverURL:adapter.connection.serverURL,
                 path:"/Videos/\(JellyfinConnection.id(itemID))/\(sourceID)/Subtitles/\(index)/Stream.\(format)")
-            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":true]
+            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":external]
             subtitle["language"] = stream["Language"]; subtitle["forced"] = stream["IsForced"]; subtitle["hearingImpaired"] = stream["IsHearingImpaired"]
             // The stream index and label match the online sidecar, so a
             // chosen subtitle keeps its track ID offline.
@@ -241,6 +255,12 @@ actor JellyfinDownloads {
         try await connection.validate()
         guard let record = try records(connection)[id], let itemID = record["itemID"] as? String,
               let sourceID = record["sourceID"] as? String else { throw JellyfinError.invalidResponse }
+        if let format = StreamedTranscodeDownload.format(of: record) {
+            guard let query = StreamedTranscodeDownload.query(format: format, sourceID: sourceID,
+                                                              audioStreamIndex: record["audioStreamIndex"] as? Int,
+                                                              deviceID: JellyfinConnection.deviceID) else { throw JellyfinError.invalidResponse }
+            return try JellyfinConnection.url(serverURL:connection.serverURL,path:"/Videos/\(JellyfinConnection.id(itemID))/stream.mp4",query:query)
+        }
         return try JellyfinConnection.url(serverURL:connection.serverURL,path:"/Videos/\(JellyfinConnection.id(itemID))/stream",query:["Static":"true","MediaSourceId":sourceID])
     }
 

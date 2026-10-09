@@ -11,11 +11,12 @@ import Foundation
 /// touching ActivityKit, and the manager's 1s progress-publish cadence
 /// already keeps update frequency readable.
 ///
-/// Known limitation, by design: transfers run on a background `URLSession`,
-/// whose progress callbacks stop once iOS suspends the app. The content is
-/// stamped with a short `staleDate` so the widget can switch to a
-/// "Continuing in background…" treatment instead of freezing a live-looking
-/// bar; the completion relaunch then ends the activity with a final state.
+/// Transfers run on a background `URLSession`, whose progress callbacks stop
+/// once iOS suspends the app, so the content also carries an estimated
+/// timeline from the current rate. The widget animates the bar, ring and
+/// time left along it without further updates, iOS's wake-ups for finished
+/// transfers correct it, and past the estimate (plus a margin) the content
+/// goes stale and says it's continuing in the background.
 @MainActor
 final class DownloadLiveActivityController {
     static let shared = DownloadLiveActivityController()
@@ -78,7 +79,7 @@ final class DownloadLiveActivityController {
         // Silent by design: the next foreground sync starts it.
         activity = try? Activity.request(
             attributes: DownloadActivityAttributes(),
-            content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(Self.staleInterval))
+            content: ActivityContent(state: state, staleDate: Self.staleDate(for: state))
         )
         if activity != nil { lastState = state }
     }
@@ -91,9 +92,17 @@ final class DownloadLiveActivityController {
         activityChain = Task {
             await previous?.value
             await activity.update(
-                ActivityContent(state: state, staleDate: Date().addingTimeInterval(Self.staleInterval))
+                ActivityContent(state: state, staleDate: Self.staleDate(for: state))
             )
         }
+    }
+
+    /// Content stays current until the estimated finish plus a margin, or
+    /// the usual interval without an estimate.
+    private static func staleDate(for state: DownloadActivityAttributes.ContentState) -> Date {
+        let fallback = Date().addingTimeInterval(staleInterval)
+        guard let end = state.estimate?.upperBound else { return fallback }
+        return max(fallback, end.addingTimeInterval(60))
     }
 
     private func finishActivity() {
@@ -193,6 +202,11 @@ final class DownloadLiveActivityController {
             }
         }
 
+        // A paused download in the queue won't finish, so there's no
+        // completion time worth animating towards.
+        let timeline = phase == .downloading && !activeRecords.contains(where: { $0.localStatus == .paused })
+            ? Self.timeline(fraction: fraction, remainingBytes: bytesExpected - bytesDownloaded, bytesPerSecond: totalBytesPerSecond)
+            : nil
         return DownloadActivityAttributes.ContentState(
             phase: phase,
             title: title,
@@ -204,8 +218,27 @@ final class DownloadLiveActivityController {
             totalCount: totalCount,
             bytesPerSecond: phase == .downloading && totalBytesPerSecond > 0
                 ? totalBytesPerSecond
-                : nil
+                : nil,
+            estimateStart: timeline?.lowerBound,
+            estimatedEnd: timeline?.upperBound
         )
+    }
+
+    /// When the queue should finish at the current rate, and the start that
+    /// puts the bar at `fraction` now. Times are rounded to 5 seconds so a
+    /// steady transfer doesn't send a new timeline every second.
+    nonisolated static func timeline(fraction: Double, remainingBytes: Int64, bytesPerSecond: Double,
+                         now: Date = Date()) -> ClosedRange<Date>? {
+        guard bytesPerSecond > 0, remainingBytes > 0 else { return nil }
+        let seconds = Double(remainingBytes) / bytesPerSecond
+        guard seconds.isFinite, seconds >= 1, seconds < 48 * 3600 else { return nil }
+        let done = min(max(fraction, 0), 0.99)
+        func rounded(_ date: Date) -> Date {
+            Date(timeIntervalSinceReferenceDate: (date.timeIntervalSinceReferenceDate / 5).rounded() * 5)
+        }
+        let end = rounded(now.addingTimeInterval(seconds))
+        let start = rounded(now.addingTimeInterval(-seconds * done / (1 - done)))
+        return start < end ? start...end : nil
     }
 }
 #endif
