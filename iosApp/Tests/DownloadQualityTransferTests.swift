@@ -35,6 +35,25 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertFalse(DownloadCapability.unsupported.isUsable)
     }
 
+    /// Emby serves everything under /emby, and Foundation reports that base
+    /// without a trailing slash, which used to reject every Emby image.
+    func testServerAssetPathKeepsImagesOnTheAccountsServer() throws {
+        let emby = try EmbyConnection.url(serverURL: "https://media.example.test", path: "/")
+        XCTAssertEqual(ServerAssetPath.relative(URL(string: "https://media.example.test/emby/Items/1/Images/Primary?tag=a")!, base: emby),
+                       "/Items/1/Images/Primary")
+        let root = URL(string: "https://media.example.test/")!
+        XCTAssertEqual(ServerAssetPath.relative(URL(string: "https://media.example.test/Items/1/Images/Primary")!, base: root),
+                       "/Items/1/Images/Primary")
+        let nested = URL(string: "https://media.example.test/jellyfin/")!
+        XCTAssertEqual(ServerAssetPath.relative(URL(string: "https://MEDIA.example.test/jellyfin/Videos/1/stream")!, base: nested),
+                       "/Videos/1/stream")
+        for other in ["https://other.example.test/emby/Items/1/Images/Primary", "http://media.example.test/emby/Items/1/Images/Primary",
+                      "https://media.example.test/embyx/Items/1/Images/Primary", "https://media.example.test/emby/Users/1",
+                      "https://user:pass@media.example.test/emby/Items/1/Images/Primary", "https://media.example.test:8443/emby/Items/1"] {
+            XCTAssertNil(ServerAssetPath.relative(URL(string: other)!, base: emby), other)
+        }
+    }
+
     func testStreamedTranscodeNeedsDownloadAndPlaybackTranscodePermissions() {
         XCTAssertTrue(StreamedTranscodeDownload.isAllowed(policy: ["EnableContentDownloading": true]))
         XCTAssertTrue(StreamedTranscodeDownload.isAllowed(policy: ["EnableContentDownloading": true, "EnableVideoPlaybackTranscoding": true]))

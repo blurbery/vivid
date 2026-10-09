@@ -64,6 +64,23 @@ struct DownloadAssetRequestLocation: Equatable {
     }
 }
 
+/// The server-relative path of an Emby or Jellyfin image or video URL on the
+/// account's own server, or nil for anything else. Foundation reports a base
+/// path without its trailing slash ("/emby"), so the base is matched as whole
+/// path segments; trimming it as "/emby/" turned every Emby image into
+/// "//Items/…" and downloads never saved their artwork.
+enum ServerAssetPath {
+    static func relative(_ url: URL, base: URL) -> String? {
+        guard url.scheme?.lowercased() == base.scheme?.lowercased(), url.host?.lowercased() == base.host?.lowercased(),
+              url.port == base.port, url.user == nil, url.password == nil else { return nil }
+        let basePath = base.path.hasSuffix("/") ? String(base.path.dropLast()) : base.path
+        guard basePath.isEmpty || url.path.hasPrefix(basePath + "/") else { return nil }
+        let relative = String(url.path.dropFirst(basePath.count))
+        guard relative.hasPrefix("/Items/") || relative.hasPrefix("/Videos/") else { return nil }
+        return relative
+    }
+}
+
 /// Typed download / offline-sync endpoints, grouped as an extension on the
 /// existing `VividAPI` facade. These reuse the facade's injected `http`
 /// transport (auth injection, 401 refresh, snake_case JSON coders) rather
