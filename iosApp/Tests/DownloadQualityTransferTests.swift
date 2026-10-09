@@ -257,6 +257,13 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertEqual(sdr4K.file(in: [file(1, "2160p", hdr: true), file(3, "1080p", hdr: false)])?.fileId, 1)
         XCTAssertNil(DownloadVersionPreference(height: 720, hdr: nil).file(in: [file(1, "2160p", hdr: true)]))
 
+        // A file that doesn't say whether it's HDR is neither: an SDR pick
+        // takes the file known to be SDR, and it doesn't split the menu.
+        let unknown = EpisodeFile(fileId: 4, resolution: "2160p", codecVideo: nil, hdr: nil, audioChannels: nil, container: nil, fileSize: nil)
+        XCTAssertEqual(sdr4K.file(in: [file(1, "2160p", hdr: true), unknown, file(5, "2160p", hdr: false)])?.fileId, 5)
+        XCTAssertEqual(sdr4K.file(in: [file(1, "2160p", hdr: true), unknown])?.fileId, 1)
+        XCTAssertEqual(DownloadVersionPreference.options(for: [file(1, "2160p", hdr: true), unknown]).map(\.label), ["4K HDR"])
+
         let defaultVersion = DownloadVersionPreference(height: 2160, hdr: nil)
         let menu = [DownloadVersionPreference(height: 2160, hdr: true), DownloadVersionPreference(height: 2160, hdr: false),
                     DownloadVersionPreference(height: 1080, hdr: nil)]
@@ -300,7 +307,7 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertEqual(result.problem, "1 episode couldn't be added: The server didn't create a download. 3 episodes were added.")
         var skippedOnly = DownloadManager.EpisodeRegistrationResult()
         skippedOnly.skipped = 2
-        XCTAssertEqual(skippedOnly.problem, "These episodes are already downloaded or on their way.")
+        XCTAssertEqual(skippedOnly.problem, "Nothing new to add. These episodes are already downloaded, on their way, or don't have a file yet.")
         var switched = DownloadManager.EpisodeRegistrationResult()
         switched.added = 1
         switched.stoppedBySwitch = true

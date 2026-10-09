@@ -363,11 +363,9 @@ struct DownloadActionButton: View {
     /// what the options sheet preselects) + the global Downloads quality
     /// preference, clamped to what the server currently offers.
     private func startWithDefaults() {
-        let defaultVersion = DownloadSettings.shared.preferredVersion
         startDownload(DownloadRequestOptions(
             fileId: selectedVersionFileId
-                ?? defaultVersion?.version(in: versions)?.fileId
-                ?? defaultVersion?.file(in: episodeFiles)?.fileId,
+                ?? DownloadSettings.shared.preferredVersion?.version(in: versions)?.fileId,
             quality: DownloadSettings.shared.resolvedFormat(
                 allowedFormats: manager.capability?.qualityPresets ?? []
             )
@@ -402,6 +400,11 @@ struct DownloadActionButton: View {
     }
 
     private func startDownload(_ options: DownloadRequestOptions) {
+        // An episode card's sheet has no versions to choose from, so Settings'
+        // default version picks the file for an original download.
+        let fileId = options.fileId ?? (options.quality == DownloadFormat.original.rawValue
+            ? DownloadSettings.shared.preferredVersion?.file(in: episodeFiles)?.fileId
+            : nil)
         Task {
             do {
                 if isEpisode {
@@ -411,7 +414,7 @@ struct DownloadActionButton: View {
                         displayTitle: displayTitle,
                         displaySubtitle: displaySubtitle,
                         posterThumbhash: posterThumbhash,
-                        fileId: options.fileId,
+                        fileId: fileId,
                         quality: options.quality
                     )
                 } else {
@@ -420,7 +423,7 @@ struct DownloadActionButton: View {
                         displayTitle: displayTitle,
                         year: year,
                         posterThumbhash: posterThumbhash,
-                        fileId: options.fileId,
+                        fileId: fileId,
                         quality: options.quality
                     )
                 }

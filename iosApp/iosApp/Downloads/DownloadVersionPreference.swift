@@ -80,16 +80,17 @@ struct DownloadVersionPreference: Hashable, Sendable {
     }
 
     /// The versions these files offer, highest first: one per resolution
-    /// class, split into HDR and SDR only where a class has both.
+    /// class, split into HDR and SDR only where a class has files known to
+    /// be each. A file that doesn't say counts as neither.
     static func options(for files: [EpisodeFile]) -> [DownloadVersionPreference] {
-        var ranges: [Int: Set<Bool>] = [:]
+        var ranges: [Int: Set<Bool?>] = [:]
         for file in files {
             guard let height = heightClass(of: file.resolution) else { continue }
-            ranges[height, default: []].insert(file.hdr == true)
+            ranges[height, default: []].insert(file.hdr)
         }
         return classes.flatMap { height -> [DownloadVersionPreference] in
             guard let found = ranges[height] else { return [] }
-            if found.count > 1 {
+            if found.contains(true), found.contains(false) {
                 return [DownloadVersionPreference(height: height, hdr: true), DownloadVersionPreference(height: height, hdr: false)]
             }
             return [DownloadVersionPreference(height: height, hdr: found.contains(true) ? true : nil)]
@@ -97,11 +98,11 @@ struct DownloadVersionPreference: Hashable, Sendable {
     }
 
     /// The file this version picks from one item's files: the same class
-    /// and HDR, then the same class either way. nil leaves the choice to
-    /// the server.
+    /// and a file known to have the wanted HDR range, then the same class
+    /// either way. nil leaves the choice to the server.
     func match<File>(_ files: [File], resolution: (File) -> String?, hdr: (File) -> Bool?) -> File? {
         let sameClass = files.filter { Self.heightClass(of: resolution($0)) == height }
-        if let wanted = self.hdr, let exact = sameClass.first(where: { (hdr($0) == true) == wanted }) {
+        if let wanted = self.hdr, let exact = sameClass.first(where: { hdr($0) == wanted }) {
             return exact
         }
         return sameClass.first

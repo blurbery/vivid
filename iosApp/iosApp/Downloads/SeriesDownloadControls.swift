@@ -408,10 +408,23 @@ private struct SeriesDownloadOptionsSheet: View {
     @State private var isWorking = false
     @State private var quality = DownloadSettings.shared.preferredFormat
     @State private var confirmingCancel = false
+    /// Seasons the page hadn't loaded, fetched when the sheet opens so the
+    /// menu lists every version in the series.
+    @State private var loadedEpisodesBySeason: [Int: [EpisodeListItem]] = [:]
+    /// Settings' default version is applied once, when versions first appear.
+    @State private var appliedDefaultVersion = false
 
-    /// Original-file versions among the episodes loaded so far.
+    private var episodesBySeason: [Int: [EpisodeListItem]] {
+        var merged = loadedEpisodesBySeason
+        for (season, episodes) in cachedEpisodesBySeason where !episodes.isEmpty {
+            merged[season] = episodes
+        }
+        return merged
+    }
+
+    /// Original-file versions among the series' episodes.
     private var versionOptions: [DownloadVersionPreference] {
-        DownloadVersionPreference.options(for: cachedEpisodesBySeason.values.flatMap { $0 }.flatMap { $0.files ?? [] })
+        DownloadVersionPreference.options(for: episodesBySeason.values.flatMap { $0 }.flatMap { $0.files ?? [] })
     }
 
     /// The version picked in the menu, when it offers versions.
@@ -473,7 +486,7 @@ private struct SeriesDownloadOptionsSheet: View {
                                 seriesId: seriesId,
                                 seriesTitle: seriesTitle,
                                 seasons: availableSeasons,
-                                cachedEpisodesBySeason: cachedEpisodesBySeason,
+                                cachedEpisodesBySeason: episodesBySeason,
                                 posterThumbhash: posterThumbhash,
                                 preferredPosterPath: preferredPosterPath
                             )
@@ -604,7 +617,10 @@ private struct SeriesDownloadOptionsSheet: View {
                     allowedFormats: manager.capability?.qualityPresets ?? [],
                     versions: versionOptions.count > 1 ? versionOptions : []
                 )
+                appliedDefaultVersion = versionOptions.count > 1
+                await loadRemainingSeasons()
             }
+            .onChange(of: versionOptions) { _, _ in applyDefaultVersionIfNeeded() }
             .confirmationDialog(
                 activeDownloadCount == 1 ? "Cancel this download?" : "Cancel \(activeDownloadCount) downloads?",
                 isPresented: $confirmingCancel,
@@ -635,12 +651,13 @@ private struct SeriesDownloadOptionsSheet: View {
     }
 
     /// Season and series requests can't name a version, so each episode is
-    /// registered with its matching file.
+    /// registered with its matching file, on the account the tap was made on.
     private func downloadEpisodes(at version: DownloadVersionPreference, seasons: [Season]) async throws {
+        let scope = await DownloadScope.current()
         var episodes: [EpisodeListItem] = []
         for season in seasons {
-            if let cached = cachedEpisodesBySeason[season.seasonNumber], !cached.isEmpty {
-                episodes += cached
+            if let known = episodesBySeason[season.seasonNumber], !known.isEmpty {
+                episodes += known
             } else {
                 episodes += try await VividAPI.shared.episodes(seriesId: seriesId, seasonNumber: season.seasonNumber).episodes
             }
@@ -652,9 +669,28 @@ private struct SeriesDownloadOptionsSheet: View {
             posterThumbhash: posterThumbhash,
             preferredPosterPath: preferredPosterPath,
             quality: DownloadFormat.original.rawValue,
-            version: version
+            version: version,
+            scope: scope
         )
         if let problem = result.problem { throw EpisodeDownloadProblem(errorDescription: problem) }
+    }
+
+    /// Fetches the seasons the page hadn't loaded, one at a time.
+    private func loadRemainingSeasons() async {
+        for season in availableSeasons where episodesBySeason[season.seasonNumber]?.isEmpty != false {
+            guard !Task.isCancelled else { return }
+            if let response = try? await VividAPI.shared.episodes(seriesId: seriesId, seasonNumber: season.seasonNumber) {
+                loadedEpisodesBySeason[season.seasonNumber] = response.episodes
+            }
+        }
+    }
+
+    private func applyDefaultVersionIfNeeded() {
+        guard !appliedDefaultVersion, versionOptions.count > 1 else { return }
+        appliedDefaultVersion = true
+        guard quality == DownloadFormat.original.rawValue,
+              let option = DownloadSettings.shared.preferredVersion?.option(in: versionOptions) else { return }
+        quality = option.tag
     }
 
     private var availableSeasons: [Season] {
@@ -797,6 +833,8 @@ private struct SeriesEpisodeDownloadPicker: View {
     @State private var isWorking = false
     @State private var errorMessage: String?
     @State private var quality: String
+    /// Settings' default version is applied once, when versions first appear.
+    @State private var appliedDefaultVersion: Bool
 
     init(
         seriesId: String,
@@ -817,6 +855,17 @@ private struct SeriesEpisodeDownloadPicker: View {
             allowedFormats: DownloadManager.shared.capability?.qualityPresets ?? [],
             versions: versions.count > 1 ? versions : []
         ))
+        _appliedDefaultVersion = State(initialValue: versions.count > 1)
+    }
+
+    /// An uncached season starts on Auto; once its episodes load, Settings'
+    /// default version applies if the menu offers it.
+    private func applyDefaultVersionIfNeeded() {
+        guard !appliedDefaultVersion, versionOptions.count > 1 else { return }
+        appliedDefaultVersion = true
+        guard quality == DownloadFormat.original.rawValue,
+              let option = DownloadSettings.shared.preferredVersion?.option(in: versionOptions) else { return }
+        quality = option.tag
     }
 
     /// Original-file versions among this season's episodes.
@@ -909,6 +958,7 @@ private struct SeriesEpisodeDownloadPicker: View {
             _ = await manager.prepareForDownload()
         }
         .task { await loadEpisodesIfNeeded() }
+        .onChange(of: versionOptions) { _, _ in applyDefaultVersionIfNeeded() }
         .alert(
             "Couldn't Continue",
             isPresented: Binding(

@@ -5,6 +5,18 @@ import OSLog
 import UIKit
 #endif
 
+/// The server and profile a download request belongs to.
+struct DownloadScope: Equatable, Sendable {
+    let serverId: String
+    let profileId: String
+
+    @MainActor
+    static func current() async -> DownloadScope {
+        let serverId = ServerRegistry.shared.activeServerId ?? ""
+        return DownloadScope(serverId: serverId, profileId: await TokenStore.shared.getProfileId() ?? "")
+    }
+}
+
 enum DownloadError: LocalizedError {
     case unavailable
     case fileURLUnavailable
@@ -85,6 +97,9 @@ final class DownloadManager {
     /// whole list: Silo counts transferring files against its per-user
     /// limit, so starting them early would get the rest of the list refused.
     private var queueHolds = 0
+    /// Retries that came due while `queueHolds` was set; they start when the
+    /// hold ends, for the same reason the queue waits.
+    private var heldRetries: [() -> Void] = []
     /// Downloads deleted in the current scope. A list that was in flight
     /// during a delete can still return the row, which must not come back.
     /// Cleared on a scope change, which also drops any list in flight; each
@@ -722,13 +737,15 @@ final class DownloadManager {
         posterThumbhash: String?,
         preferredPosterPath: String? = nil,
         fileId: Int? = nil,
-        quality: String? = nil
+        quality: String? = nil,
+        scope: DownloadScope? = nil
     ) async throws {
         try await requestDownload(
             contentId: seriesId,
             episodeId: episodeId,
             fileId: fileId,
             quality: quality,
+            scope: scope,
             type: "episode",
             seriesId: seriesId,
             displayTitle: displayTitle,
@@ -779,6 +796,7 @@ final class DownloadManager {
 
     struct EpisodeRegistrationResult {
         var added = 0
+        /// Already downloaded or on their way, or known to have no file.
         var skipped = 0
         var failures: [Error] = []
         var stoppedBySwitch = false
@@ -794,7 +812,7 @@ final class DownloadManager {
                 return "\(count) episode\(count == 1 ? "" : "s") couldn't be added: \(first.localizedDescription) " + addedText
             }
             if added == 0, skipped > 0 {
-                return "These episodes are already downloaded or on their way."
+                return "Nothing new to add. These episodes are already downloaded, on their way, or don't have a file yet."
             }
             return nil
         }
@@ -814,19 +832,22 @@ final class DownloadManager {
         posterThumbhash: String?,
         preferredPosterPath: String?,
         quality: String,
-        version: DownloadVersionPreference?
+        version: DownloadVersionPreference?,
+        scope expectedScope: DownloadScope? = nil
     ) async -> EpisodeRegistrationResult {
         var result = EpisodeRegistrationResult()
-        let serverId = ServerRegistry.shared.activeServerId
-        let profileId = await TokenStore.shared.getProfileId()
+        // The account the episodes were listed on; a caller that fetched
+        // them first passes the one it started with.
+        let scope: DownloadScope
+        if let expectedScope { scope = expectedScope } else { scope = await DownloadScope.current() }
         queueHolds += 1
         defer {
             queueHolds -= 1
             processQueue()
+            startHeldRetries()
         }
         for episode in episodes {
-            guard ServerRegistry.shared.activeServerId == serverId,
-                  await TokenStore.shared.getProfileId() == profileId else {
+            guard await DownloadScope.current() == scope else {
                 result.stoppedBySwitch = true
                 break
             }
@@ -849,7 +870,8 @@ final class DownloadManager {
                     posterThumbhash: posterThumbhash,
                     preferredPosterPath: preferredPosterPath,
                     fileId: version?.file(in: files)?.fileId,
-                    quality: version == nil ? quality : DownloadFormat.original.rawValue
+                    quality: version == nil ? quality : DownloadFormat.original.rawValue,
+                    scope: scope
                 )
                 result.added += 1
             } catch DownloadError.registrationAlreadyInFlight {
@@ -858,6 +880,11 @@ final class DownloadManager {
                 result.stoppedBySwitch = true
                 break
             } catch {
+                // A request cut short by a switch isn't a download failure.
+                if await DownloadScope.current() != scope {
+                    result.stoppedBySwitch = true
+                    break
+                }
                 result.failures.append(error)
             }
         }
@@ -869,6 +896,7 @@ final class DownloadManager {
         episodeId: String? = nil,
         fileId: Int? = nil,
         quality requestedQuality: String? = nil,
+        scope expectedScope: DownloadScope? = nil,
         series: Bool = false,
         seasonNumber: Int? = nil,
         type: String? = nil,
@@ -881,8 +909,12 @@ final class DownloadManager {
     ) async throws {
         // The item belongs to the account that was active when it was asked
         // for; a switch while preparing must not send it to the next one.
-        let requestedServerId = ServerRegistry.shared.activeServerId ?? ""
-        let requestedProfileId = await TokenStore.shared.getProfileId() ?? ""
+        // A list of episodes passes the account it started on, so one
+        // switching part way can't take the rest with it.
+        let current = await DownloadScope.current()
+        let requestedServerId = expectedScope?.serverId ?? current.serverId
+        let requestedProfileId = expectedScope?.profileId ?? current.profileId
+        guard expectedScope == nil || expectedScope == current else { throw DownloadError.scopeChangedDuringRegistration }
         guard await prepareForDownload() else { throw DownloadError.unavailable }
         guard requestedServerId == scopeServerId, requestedProfileId == scopeProfileId,
               let registrationAuth = await scopeAuth() else {
@@ -1799,19 +1831,40 @@ final class DownloadManager {
             guard self.pipelineIsCurrent(recordId: recordId, generation: generation),
                   self.file.records[recordId]?.taskIdentifier == nil,
                   self.file.records[recordId]?.localStatus == record.localStatus else { return }
-            if let resumeData {
-                let taskId = self.sessionDelegate.resume(data: resumeData, tag: self.taskTag(recordId: recordId))
-                guard var rec = self.file.records[recordId] else { return }
-                rec.taskIdentifier = taskId
-                rec.localStatus = .downloading
-                self.file.records[recordId] = rec
-                self.persist()
-            } else {
-                // Restart from the manifest step — a pipeline failure may have
-                // been in the manifest/asset fetch, not the media transfer.
-                self.setLocalStatus(.fetchingAssets, id: recordId)
-                self.launchMediaPipeline(recordId: recordId)
+            let restart = { [weak self] in
+                guard let self, self.pipelineIsCurrent(recordId: recordId, generation: generation),
+                      self.file.records[recordId]?.taskIdentifier == nil,
+                      self.file.records[recordId]?.localStatus == record.localStatus else { return }
+                self.restartTransfer(recordId: recordId, resumeData: resumeData)
             }
+            guard self.queueHolds == 0 else {
+                self.heldRetries.append(restart)
+                return
+            }
+            restart()
+        }
+    }
+
+    private func startHeldRetries() {
+        guard queueHolds == 0, !heldRetries.isEmpty else { return }
+        let retries = heldRetries
+        heldRetries.removeAll()
+        retries.forEach { $0() }
+    }
+
+    private func restartTransfer(recordId: String, resumeData: Data?) {
+        if let resumeData {
+            let taskId = sessionDelegate.resume(data: resumeData, tag: taskTag(recordId: recordId))
+            guard var rec = file.records[recordId] else { return }
+            rec.taskIdentifier = taskId
+            rec.localStatus = .downloading
+            file.records[recordId] = rec
+            persist()
+        } else {
+            // Restart from the manifest step — a pipeline failure may have
+            // been in the manifest/asset fetch, not the media transfer.
+            setLocalStatus(.fetchingAssets, id: recordId)
+            launchMediaPipeline(recordId: recordId)
         }
     }
 
