@@ -99,10 +99,14 @@ extension VividAPI {
 
     /// Register a managed download. Returns one row for a single item, or
     /// every batch member for a series/season request.
-    func createDownload(_ request: CreateDownloadRequest) async throws -> [ServerDownloadRow] {
+    /// `auth` pins the registration to the account whose downloads it joins.
+    /// Mid-switch the client's sign-in can still be the previous server's,
+    /// which once registered a Jellyfin episode with Emby.
+    func createDownload(_ request: CreateDownloadRequest, auth: CapturedOrdinaryRequestAuth? = nil) async throws -> [ServerDownloadRow] {
         let response: CreateDownloadResponse = try await http.post(
             "/api/v1/downloads",
-            body: request
+            body: request,
+            expectedAuth: auth
         )
         return response.downloads
     }
@@ -124,8 +128,8 @@ extension VividAPI {
         )
     }
 
-    func deleteDownloadRow(id: String) async throws {
-        try await http.delete("/api/v1/downloads/\(id)")
+    func deleteDownloadRow(id: String, auth: CapturedOrdinaryRequestAuth? = nil) async throws {
+        try await http.delete("/api/v1/downloads/\(id)", expectedAuth: auth)
     }
 
     func fetchManifest(downloadId: String, auth: CapturedOrdinaryRequestAuth) async throws -> OfflineManifest {
@@ -149,11 +153,39 @@ extension VividAPI {
         if MediaServerProvider.forServerID(auth.account.serverId) == .emby {
             return try await EmbyConnection.current(matching: auth).assetData(path)
         }
-        let location = try DownloadAssetRequestLocation.resolve(
-            path,
-            relativeTo: auth.account.serverURL
-        )
+        let location: DownloadAssetRequestLocation
+        do {
+            location = try DownloadAssetRequestLocation.resolve(path, relativeTo: auth.account.serverURL)
+        } catch {
+            // Silo signs posters onto its storage (a presigned S3 link or a CDN
+            // token), another origin the same-server check rightly refuses.
+            // Those links carry their own authorisation, so they're fetched
+            // without this account's credentials.
+            guard let url = URL(string: path), url.scheme?.lowercased() == "https", url.host != nil,
+                  url.user == nil, url.password == nil else { throw error }
+            return try await Self.signedArtworkData(url)
+        }
         return try await http.getData(location.path, query: location.query, expectedAuth: auth)
+    }
+
+    private static let signedArtworkSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 30
+        return URLSession(configuration: configuration)
+    }()
+
+    /// A presigned artwork link: no credentials, image responses only, and
+    /// capped at 20 MB.
+    static func signedArtworkData(_ url: URL) async throws -> Data {
+        let (data, response) = try await signedArtworkSession.data(from: url)
+        guard let http = response as? HTTPURLResponse else { throw HTTPError.invalidURL(url.absoluteString) }
+        guard (200..<300).contains(http.statusCode) else { throw HTTPError.http(statusCode: http.statusCode, body: nil) }
+        guard (http.mimeType ?? "").hasPrefix("image/"), !data.isEmpty, data.count <= 20_000_000 else {
+            throw HTTPError.invalidURL(url.absoluteString)
+        }
+        return data
     }
 
     /// Build the absolute file-endpoint URL for a download, resolved

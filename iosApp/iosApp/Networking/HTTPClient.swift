@@ -342,8 +342,8 @@ actor HTTPClient {
         _ = try await sendRaw(method: "PUT", path: path, query: query, body: body)
     }
 
-    func delete(_ path: String, query: [String: String] = [:]) async throws {
-        _ = try await sendRaw(method: "DELETE", path: path, query: query, body: Optional<String>.none)
+    func delete(_ path: String, query: [String: String] = [:], expectedAuth: CapturedOrdinaryRequestAuth? = nil) async throws {
+        _ = try await sendRaw(method: "DELETE", path: path, query: query, body: Optional<String>.none, expectedAuth: expectedAuth)
     }
 
     func patch<T: Decodable>(

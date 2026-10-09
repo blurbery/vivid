@@ -849,6 +849,10 @@ struct DownloadStoreFile: Codable, Sendable {
     var progressCursor: String?
     var localProgress: [String: LocalProgressEntry]
     var progressBootstrap: SiloProgressBootstrapStage? = nil
+    /// Downloads removed on this device whose server row still has to be
+    /// deleted with this account's sign-in. Kept until the server confirms,
+    /// so a removed download can't come back as an out-of-band row.
+    var pendingServerDeletes: [String]? = nil
 
     static let currentVersion = 1
 

@@ -412,12 +412,45 @@ final class DownloadManager {
         }
         guard removed else { return }
         persist()
-        let serverIds = ids
-        Task {
-            for id in serverIds { try? await VividAPI.shared.deleteDownloadRow(id: id) }
-        }
+        deleteServerRows(ids)
         processQueue()
         refreshStorageUsage()
+    }
+
+    /// Delete server rows with this scope's own sign-in. If the sign-in has
+    /// already moved to another account the deletes wait in this scope's
+    /// registry and go out the next time it's active.
+    private func deleteServerRows(_ ids: [String]) {
+        guard !scopeServerId.isEmpty, !ids.isEmpty else { return }
+        file.pendingServerDeletes = Array(Set(file.pendingServerDeletes ?? []).union(ids))
+        persist()
+        flushPendingServerDeletes()
+    }
+
+    private func flushPendingServerDeletes() {
+        let serverId = scopeServerId
+        let profileId = scopeProfileId
+        let ids = file.pendingServerDeletes ?? []
+        guard !serverId.isEmpty, !ids.isEmpty else { return }
+        Task { @MainActor in
+            guard let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+                  auth.account.serverId == serverId, auth.profileId == profileId else { return }
+            var deleted: Set<String> = []
+            for id in ids {
+                do {
+                    try await VividAPI.shared.deleteDownloadRow(id: id, auth: auth)
+                    deleted.insert(id)
+                } catch HTTPError.http(let status, _) where status == 404 {
+                    deleted.insert(id)
+                } catch {
+                    // Kept for the next attempt.
+                }
+            }
+            guard !deleted.isEmpty, serverId == self.scopeServerId, profileId == self.scopeProfileId else { return }
+            let remaining = (self.file.pendingServerDeletes ?? []).filter { !deleted.contains($0) }
+            self.file.pendingServerDeletes = remaining.isEmpty ? nil : remaining
+            self.persist()
+        }
     }
 
     /// Unfinished downloads (queued, preparing, transferring or paused) of one
@@ -545,6 +578,9 @@ final class DownloadManager {
     /// request, so a tap straight after launch or a server switch never runs
     /// against an empty or stale scope.
     func prepareForDownload() async -> Bool {
+        // A server switch publishes the new server before its sign-in is in
+        // place; wait for it so the scope and the sign-in agree.
+        guard await HTTPClient.shared.waitForRequestDispatchOpen() else { return false }
         guard await activateScopeIfNeeded() else { return false }
         if !capabilityKnown || capabilityCheckFailed { await refreshCapability() }
         return downloadsEnabled
@@ -742,7 +778,8 @@ final class DownloadManager {
         let requestedServerId = ServerRegistry.shared.activeServerId ?? ""
         let requestedProfileId = await TokenStore.shared.getProfileId() ?? ""
         guard await prepareForDownload() else { throw DownloadError.unavailable }
-        guard requestedServerId == scopeServerId, requestedProfileId == scopeProfileId else {
+        guard requestedServerId == scopeServerId, requestedProfileId == scopeProfileId,
+              let registrationAuth = await scopeAuth() else {
             throw DownloadError.scopeChangedDuringRegistration
         }
 
@@ -791,7 +828,7 @@ final class DownloadManager {
         }
         let rows: [ServerDownloadRow]
         do {
-            rows = try await VividAPI.shared.createDownload(request)
+            rows = try await VividAPI.shared.createDownload(request, auth: registrationAuth)
             guard !rows.isEmpty else { throw DownloadError.emptyRegistrationResponse }
         } catch {
             // A request overtaken by an account, server or profile switch
@@ -868,7 +905,7 @@ final class DownloadManager {
                 downloadId: id
             )
         }
-        Task { try? await VividAPI.shared.deleteDownloadRow(id: id) }
+        deleteServerRows([id])
         processQueue()
         refreshStorageUsage()
     }
@@ -1222,10 +1259,13 @@ final class DownloadManager {
 
     private func fetchArtwork(_ manifest: OfflineManifest, recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async {
         let preferredPosterPath = file.records[recordId]?.preferredPosterPath
-        let kinds: [(kind: String, path: String?, filename: String)] = [
-            ("poster", preferredPosterPath ?? manifest.artworkUrls?.poster, "poster.jpg"),
-            ("backdrop", manifest.artworkUrls?.backdrop, "backdrop.jpg"),
-            ("logo", manifest.artworkUrls?.logo, "logo.png"),
+        // The series poster from the detail page comes first, so a season's
+        // episodes share one poster; the download's own poster is the
+        // fallback when that link can't be fetched.
+        let kinds: [(kind: String, paths: [String], filename: String)] = [
+            ("poster", [preferredPosterPath, manifest.artworkUrls?.poster].compactMap { $0 }, "poster.jpg"),
+            ("backdrop", [manifest.artworkUrls?.backdrop].compactMap { $0 }, "backdrop.jpg"),
+            ("logo", [manifest.artworkUrls?.logo].compactMap { $0 }, "logo.png"),
         ]
         var fetchedAll = true
         for entry in kinds {
@@ -1233,13 +1273,16 @@ final class DownloadManager {
             // Only fetch artwork the manifest actually advertises. The server
             // omits artwork_urls.* (omitempty) when a title has no poster/
             // backdrop/logo, so synthesizing a path here would guarantee a 404.
-            guard let path = entry.path else { continue }
-            let data: Data
-            do { data = try await VividAPI.shared.fetchDownloadAssetData(path: path, auth: auth) }
-            catch {
+            var fetched: Data?
+            var lastError: Error?
+            for path in entry.paths where fetched == nil {
+                do { fetched = try await VividAPI.shared.fetchDownloadAssetData(path: path, auth: auth) }
+                catch { lastError = error }
+            }
+            guard let data = fetched else {
                 // Missing artwork (a 404) isn't retried; a failure that can
                 // clear up is, by the asset backfill.
-                if DownloadFailureReport.isRetryable(error) { fetchedAll = false }
+                if let lastError, DownloadFailureReport.isRetryable(lastError) { fetchedAll = false }
                 continue
             }
             guard pipelineIsCurrent(recordId: recordId, generation: generation), !data.isEmpty else { continue }
@@ -1686,6 +1729,8 @@ final class DownloadManager {
         // sign-in can already be the next server's, whose rows would mark
         // this account's downloads as removed.
         guard let auth = await scopeAuth(), generation == registrationScopeGeneration else { return }
+        flushPendingServerDeletes()
+        let pendingDeletes = Set(file.pendingServerDeletes ?? [])
         let rows: [ServerDownloadRow]
         do {
             rows = try await VividAPI.shared.listDownloads(auth: auth)
@@ -1739,7 +1784,7 @@ final class DownloadManager {
         }
 
         // Pick up rows registered out-of-band (e.g. subscription sync).
-        for row in rows where file.records[row.id] == nil {
+        for row in rows where file.records[row.id] == nil && !pendingDeletes.contains(row.id) {
             file.records[row.id] = makeRecord(from: row, type: row.episodeId != nil ? "episode" : nil)
         }
         persist()
