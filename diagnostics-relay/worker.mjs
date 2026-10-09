@@ -41,7 +41,7 @@ async function sendEmail(env, message, fetcher = fetch) {
 }
 
 const problemKinds = new Set(['crash', 'hang', 'cpu_exception', 'disk_write_exception', 'slow_launch',
-  'unexpected_exit', 'playback_failure', 'app_error']);
+  'unexpected_exit', 'playback_failure', 'app_error', 'download_failure']);
 
 // No 0/O, 1/I/L or U, so a reference read aloud or typed back is unambiguous.
 const referenceAlphabet = '23456789ABCDEFGHJKMNPQRSTVWXYZ';

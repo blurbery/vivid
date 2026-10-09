@@ -63,6 +63,19 @@ test('problem reports are accepted and listed in the email', async () => {
   assert.match(env.sent[0].text, /VD-3F9A2C {2}Playback failed: source refused/);
 });
 
+test('download failures are accepted and other unknown kinds are not', async () => {
+  const problems = JSON.parse(await fixture('problems'));
+  const withKind = kind => JSON.stringify({...problems, reports: [{...problems.reports[0], title: "Couldn't start a download",
+    report: {...problems.reports[0].report, kind}}]});
+  const env = makeEnv();
+  const accepted = await run(post('problems', withKind('download_failure')), env, {now: fixedNow, reference: () => 'VR-BBBBBB'});
+  assert.equal(accepted.status, 200);
+  assert.match(env.sent[0].subject, /Couldn't start a download$/);
+  const rejected = await run(post('problems', withKind('download_failures')), env, {now: fixedNow});
+  assert.equal(rejected.status, 400);
+  assert.equal(env.sent.length, 1);
+});
+
 test('the client address is only used for rate limiting', async () => {
   const env = makeEnv();
   await run(post('playback', await fixture('playback')), env, {now: fixedNow});

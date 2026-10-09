@@ -158,6 +158,19 @@ extension PlayerViewModel {
                     formatHint: sidecar.codec), appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
             }
         }
+        // A download keeps its subtitle files beside the media. Only local
+        // files inside the downloads folder are added, with no request headers.
+        if streamRequest.url.isFileURL {
+            let downloads = DownloadFilePaths.rootDirectory().standardizedFileURL.path + "/"
+            for sidecar in prepared.session.subtitleUrls ?? [] {
+                guard let url = URL(string: sidecar.url), url.isFileURL,
+                      url.standardizedFileURL.path.hasPrefix(downloads) else { continue }
+                vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url,
+                    name: sidecar.label ?? "External", language: sidecar.language,
+                    isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
+                    formatHint: sidecar.codec), appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
+            }
+        }
         // Silo publishes its external subtitle files in the plan. They're
         // offered as rows and fetched only when chosen; Silo is never told.
         if let v3 = prepared.protocolV3, !streamRequest.url.isFileURL {

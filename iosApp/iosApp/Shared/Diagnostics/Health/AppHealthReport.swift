@@ -17,6 +17,7 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
         case unexpectedExit = "unexpected_exit"
         case playbackFailure = "playback_failure"
         case appError = "app_error"
+        case downloadFailure = "download_failure"
 
         var title: String {
             switch self {
@@ -28,15 +29,17 @@ struct AppHealthReport: Codable, Equatable, Identifiable {
             case .unexpectedExit: return "Unexpected exit"
             case .playbackFailure: return "Playback failure"
             case .appError: return "App error"
+            case .downloadFailure: return "Download failure"
             }
         }
 
         /// Pruning order when the store is full: app errors go first, then
-        /// performance reports, so routine noise never pushes out a crash.
+        /// performance reports and download failures, so routine noise never
+        /// pushes out a crash.
         var retentionPriority: Int {
             switch self {
             case .appError: return 0
-            case .hang, .cpuException, .diskWriteException, .slowLaunch: return 1
+            case .hang, .cpuException, .diskWriteException, .slowLaunch, .downloadFailure: return 1
             case .crash, .unexpectedExit, .playbackFailure: return 2
             }
         }

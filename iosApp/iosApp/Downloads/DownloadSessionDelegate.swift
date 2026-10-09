@@ -11,7 +11,8 @@ enum DownloadSessionEvent: Sendable {
     case finished(taskId: Int, stagedURL: URL, statusCode: Int)
     /// Transfer ended without a usable file: a network error, a
     /// cancellation, or a non-2xx server response (e.g. 409 revoked).
-    case failed(taskId: Int, statusCode: Int?, resumeData: Data?, message: String)
+    /// `urlErrorCode` is the `URLError` code of a transport failure.
+    case failed(taskId: Int, statusCode: Int?, resumeData: Data?, message: String, urlErrorCode: Int? = nil)
     /// All background events for this launch have been delivered; the app
     /// may call the system-provided completion handler.
     case allEventsDelivered
@@ -174,7 +175,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
             taskId: task.taskIdentifier,
             statusCode: statusCode,
             resumeData: resumeData,
-            message: error.localizedDescription
+            message: error.localizedDescription,
+            urlErrorCode: nsError.domain == NSURLErrorDomain ? nsError.code : nil
         ))
     }
 

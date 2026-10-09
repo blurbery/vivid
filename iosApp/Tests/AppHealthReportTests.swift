@@ -578,4 +578,73 @@ final class AppHealthReportTests: XCTestCase {
         XCTAssertNil(context.attributes["playing_min"], "playback length only applies while the player is open")
         XCTAssertNotNil(AppHealthMemory.footprintMB())
     }
+
+    // MARK: - Download failures
+
+    private func downloadReport(_ failure: DownloadFailureReport, at date: Date) -> AppHealthReport {
+        AppHealthReport(
+            kind: .downloadFailure, source: .app, recordedAt: date,
+            app: AppHealthAppInfo(version: "0.14.3", build: "42", os: "iOS 18.1.0", device: "iPhone16,2"),
+            details: failure.details, fingerprintSeed: "\(date.timeIntervalSince1970)"
+        )
+    }
+
+    func testDownloadFailureKeepsOnlyTokensAndNumbers() throws {
+        let failure = DownloadFailureReport(stage: .transfer, server: "emby", urlErrorCode: -1001, error: "network",
+                                            quality: "5mbps", batch: true, retries: 4)
+        XCTAssertEqual(failure.details, [
+            "stage": .string("transfer"), "server": .string("emby"), "url_error": .int(-1001),
+            "error": .string("network"), "quality": .string("5mbps"), "batch": .bool(true), "retries": .int(4),
+        ])
+        let report = downloadReport(failure, at: Date(timeIntervalSince1970: 1_790_000_000))
+        XCTAssertEqual(report.kind.rawValue, "download_failure")
+        XCTAssertEqual(report.groupSummary, "Download stopped before it finished")
+        XCTAssertEqual(report.technicalCode, "transfer · URLError -1001")
+
+        // Server error bodies and odd quality values never reach the report.
+        let refused = try XCTUnwrap(DownloadFailureReport(
+            stage: .registration, error: HTTPError.http(statusCode: 500, body: "Secret Title S01E02"),
+            server: "silo", quality: "Odd Value/../x", batch: false, retries: 0))
+        XCTAssertEqual(refused.status, 500)
+        XCTAssertEqual(refused.quality, "odd_value____x")
+        XCTAssertFalse(String(describing: refused.details).contains("Secret"))
+        XCTAssertEqual(downloadReport(refused, at: Date()).technicalCode, "registration · HTTP 500")
+        XCTAssertEqual(DownloadFailureReport(stage: .registration, error: EmbyError.unsupportedFeature,
+                                             server: "emby", quality: "original", batch: false, retries: 0)?.error,
+                       "unsupported_feature")
+    }
+
+    func testExpectedDownloadOutcomesAreNotFailures() {
+        let expected: [Error] = [
+            CancellationError(), URLError(.cancelled), HTTPError.requestIdentityChanged,
+            DownloadError.registrationAlreadyInFlight, DownloadError.scopeChangedDuringRegistration,
+            EmbyDownloads.BatchError.alreadyDownloaded, JellyfinDownloads.BatchError.noEpisodes,
+        ]
+        for error in expected {
+            XCTAssertNil(DownloadFailureReport(stage: .registration, error: error, server: "emby", quality: nil,
+                                               batch: true, retries: 0), "\(error)")
+        }
+    }
+
+    func testDownloadNetworkFailuresWhileOfflineAreSkipped() {
+        let network = DownloadFailureReport(stage: .transfer, server: "silo", urlErrorCode: -1009, error: "network",
+                                            quality: "original", batch: false, retries: 4)
+        let refused = DownloadFailureReport(stage: .transfer, server: "silo", status: 403, error: "http",
+                                            quality: "original", batch: false, retries: 0)
+        var context = AppHealthContextSnapshot()
+        XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(network, context: context))
+        context.deviceOnline = false
+        XCTAssertFalse(AppHealthMonitor.shouldReportDownloadFailure(network, context: context))
+        XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(refused, context: context))
+    }
+
+    func testRepeatedDownloadFailuresAreCountedOnOneReport() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 7 * 86_400), now: { now })
+        let failure = DownloadFailureReport(stage: .preparing, server: "jellyfin", status: 404, error: "http",
+                                            quality: "original", batch: true, retries: 0)
+        XCTAssertTrue(store.add(downloadReport(failure, at: now.addingTimeInterval(-60))))
+        XCTAssertFalse(store.add(downloadReport(failure, at: now)), "a season failing episode by episode is one report")
+        XCTAssertEqual(store.reports().map(\.occurrenceCount), [2])
+    }
 }

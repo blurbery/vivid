@@ -90,7 +90,7 @@ final class AppHealthStore: Sendable {
     /// details worth keeping.
     static func countsRepeats(_ report: AppHealthReport) -> Bool {
         switch report.kind {
-        case .appError, .playbackFailure:
+        case .appError, .playbackFailure, .downloadFailure:
             return true
         case .hang:
             return report.source == .watchdog

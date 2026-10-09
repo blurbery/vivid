@@ -459,6 +459,7 @@ final class DownloadManager {
         guard downloadsEnabled else { return }
         await reconcileWithServer(triggerPipeline: true)
         await runMonitoringAndProgressSync()
+        await backfillSubtitlesIfNeeded()
     }
 
     /// Profile/server switched — load the new scope and refresh.
@@ -663,13 +664,22 @@ final class DownloadManager {
             request.expectedRevision = existing?.revision ?? 0
             if (request.expectedRevision ?? 0) > 0 { request.expectedDownloadId = existing?.id }
         }
-        let rows = try await VividAPI.shared.createDownload(request)
+        let rows: [ServerDownloadRow]
+        do {
+            rows = try await VividAPI.shared.createDownload(request)
+            guard !rows.isEmpty else { throw DownloadError.emptyRegistrationResponse }
+        } catch {
+            if let failure = DownloadFailureReport(stage: .registration, error: error, server: MediaServerProvider.active.rawValue,
+                                                   quality: quality, batch: isBatch, retries: 0) {
+                AppHealthMonitor.downloadFailed(failure)
+            }
+            throw error
+        }
         guard capturedScopeGeneration == registrationScopeGeneration,
               capturedServerId == scopeServerId,
               capturedProfileId == scopeProfileId else {
             throw DownloadError.scopeChangedDuringRegistration
         }
-        guard !rows.isEmpty else { throw DownloadError.emptyRegistrationResponse }
         for row in rows {
             upsertRow(
                 row,
@@ -900,6 +910,8 @@ final class DownloadManager {
             applyManifestDisplay(manifest, recordId: recordId)
             await fetchArtwork(manifest, recordId: recordId, generation: generation, auth: auth)
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
+            await fetchSubtitles(manifest, recordId: recordId, generation: generation, auth: auth)
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             try await startMediaTransfer(recordId: recordId, generation: generation, auth: auth)
         } catch {
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
@@ -967,6 +979,53 @@ final class DownloadManager {
         persist()
     }
 
+    /// Save the manifest's subtitle files beside the download so they're
+    /// available offline. Best effort, like artwork: a file that can't be
+    /// fetched never fails the download. A network failure, cancellation or
+    /// account switch leaves the record unchecked so a later backfill tries
+    /// again; a file the server refuses is not retried.
+    private func fetchSubtitles(_ manifest: OfflineManifest, recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async {
+        var saved = file.records[recordId]?.subtitleFilenames ?? [:]
+        var retryLater = false
+        for entry in OfflineSubtitleFiles.savable(manifest.subtitles ?? []) where saved[entry.subtitle.fetchUrl] == nil {
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
+            let filename = OfflineSubtitleFiles.filename(index: entry.index, ext: entry.ext)
+            let data: Data
+            do { data = try await VividAPI.shared.fetchDownloadAssetData(path: entry.subtitle.fetchUrl, auth: auth) }
+            catch {
+                let classified = DownloadFailureReport.classify(error)
+                if classified == nil || classified?.urlErrorCode != nil { retryLater = true }
+                continue
+            }
+            guard pipelineIsCurrent(recordId: recordId, generation: generation),
+                  !data.isEmpty, data.count <= OfflineSubtitleFiles.maxBytes,
+                  let url = absoluteFileURLForNewAsset(recordId: recordId, filename: filename),
+                  (try? data.write(to: url, options: .atomic)) != nil else { continue }
+            saved[entry.subtitle.fetchUrl] = filename
+        }
+        guard pipelineIsCurrent(recordId: recordId, generation: generation), var record = file.records[recordId] else { return }
+        record.subtitleFilenames = saved
+        if !retryLater { record.subtitlesChecked = true }
+        file.records[recordId] = record
+        persist()
+    }
+
+    /// Completed downloads made before subtitle files were saved get them
+    /// once, while the server is reachable.
+    private func backfillSubtitlesIfNeeded() async {
+        let pending = file.records.values.filter {
+            $0.localStatus == .completed && $0.subtitlesChecked != true && $0.manifestFilename != nil
+        }
+        guard !pending.isEmpty, let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+              auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return }
+        let generation = registrationScopeGeneration
+        for record in pending {
+            guard generation == registrationScopeGeneration, file.records[record.id] != nil,
+                  let manifest = await loadManifest(for: record) else { continue }
+            await fetchSubtitles(manifest, recordId: record.id, generation: generation, auth: auth)
+        }
+    }
+
     private func fetchArtwork(_ manifest: OfflineManifest, recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async {
         let preferredPosterPath = file.records[recordId]?.preferredPosterPath
         let kinds: [(kind: String, path: String?, filename: String)] = [
@@ -1028,6 +1087,7 @@ final class DownloadManager {
                     record.lastError = "http_\(statusCode)"
                     file.records[recordId] = record
                     persist()
+                    reportFailure(.preparing, error: error, record: record)
                     processQueue()
                 }
                 return
@@ -1043,8 +1103,31 @@ final class DownloadManager {
         persist()
         if record.localStatus == .failed {
             notifyTerminalFailure(record)
+            reportFailure(.preparing, error: error, record: record)
         }
         processQueue()
+    }
+
+    /// Records a terminal failure in Settings → Diagnostics. Only tokens and
+    /// numbers are kept; `lastError` text never leaves the record.
+    private func reportFailure(_ stage: DownloadFailureReport.Stage, error: Error, record: DownloadRecord) {
+        guard let failure = DownloadFailureReport(stage: stage, error: error, server: MediaServerProvider.active.rawValue,
+                                                  quality: record.format, batch: record.batchId != nil,
+                                                  retries: record.retryCount) else { return }
+        AppHealthMonitor.downloadFailed(failure)
+    }
+
+    private func reportFailure(_ stage: DownloadFailureReport.Stage, status: Int?, urlErrorCode: Int?, error: String,
+                               record: DownloadRecord) {
+        AppHealthMonitor.downloadFailed(DownloadFailureReport(
+            stage: stage, server: MediaServerProvider.active.rawValue, status: status, urlErrorCode: urlErrorCode,
+            error: error, quality: record.format, batch: record.batchId != nil, retries: record.retryCount))
+    }
+
+    /// The delegate's own failure messages are fixed tokens; anything else is
+    /// system text and is not kept.
+    static func transferFailureToken(_ message: String) -> String {
+        message == "stage_failed" ? "stage_failed" : "other"
     }
 
     /// Mirror the active queue into the lock-screen Live Activity. Hooked
@@ -1109,8 +1192,9 @@ final class DownloadManager {
         case let .finished(taskId, stagedURL, _):
             handleMediaFinished(taskId: taskId, stagedURL: stagedURL)
 
-        case let .failed(taskId, statusCode, resumeData, message):
-            handleMediaFailure(taskId: taskId, statusCode: statusCode, resumeData: resumeData, message: message)
+        case let .failed(taskId, statusCode, resumeData, message, urlErrorCode):
+            handleMediaFailure(taskId: taskId, statusCode: statusCode, resumeData: resumeData, message: message,
+                               urlErrorCode: urlErrorCode)
 
         case .allEventsDelivered:
             // Flush queued store writes before handing control back — iOS
@@ -1161,6 +1245,7 @@ final class DownloadManager {
             record.taskIdentifier = nil
             file.records[record.id] = record
             persist()
+            reportFailure(.saving, status: nil, urlErrorCode: nil, error: "move_failed", record: record)
             processQueue()
             return
         }
@@ -1185,7 +1270,7 @@ final class DownloadManager {
         Task { await self.enforceRetention() }
     }
 
-    private func handleMediaFailure(taskId: Int, statusCode: Int?, resumeData: Data?, message: String) {
+    private func handleMediaFailure(taskId: Int, statusCode: Int?, resumeData: Data?, message: String, urlErrorCode: Int? = nil) {
         if intentionalCancels.remove(taskId) != nil { return }
         guard var record = recordByTask(taskId) else { return }
         record.taskIdentifier = nil
@@ -1206,6 +1291,7 @@ final class DownloadManager {
                 file.records[record.id] = record
                 persist()
                 notifyTerminalFailure(record)
+                reportFailure(.transfer, status: statusCode, urlErrorCode: nil, error: "http", record: record)
                 processQueue()
                 return
             case 401:
@@ -1222,6 +1308,7 @@ final class DownloadManager {
                     file.records[record.id] = record
                     persist()
                     notifyTerminalFailure(record)
+                    reportFailure(.transfer, status: statusCode, urlErrorCode: nil, error: "http", record: record)
                     processQueue()
                 }
                 return
@@ -1240,6 +1327,10 @@ final class DownloadManager {
             file.records[record.id] = record
             persist()
             notifyTerminalFailure(record)
+            let httpStatus = statusCode.flatMap { (200..<300).contains($0) ? nil : $0 }
+            reportFailure(.transfer, status: httpStatus, urlErrorCode: urlErrorCode,
+                          error: httpStatus != nil ? "http" : urlErrorCode != nil ? "network" : Self.transferFailureToken(message),
+                          record: record)
             processQueue()
         }
     }
@@ -1330,6 +1421,9 @@ final class DownloadManager {
                     }
                 case "failed":
                     if record.localStatus != .completed {
+                        if record.localStatus != .failed {
+                            reportFailure(.conversion, status: nil, urlErrorCode: nil, error: "server_failed", record: record)
+                        }
                         record.localStatus = .failed
                         record.lastError = "server_failed"
                     }
@@ -1802,6 +1896,7 @@ final class DownloadManager {
         record.backdropFilename = nil
         record.logoFilename = nil
         record.subtitleFilenames = [:]
+        record.subtitlesChecked = nil
         record.resumeDataFilename = nil
         record.container = nil
         record.stableIdentity = nil

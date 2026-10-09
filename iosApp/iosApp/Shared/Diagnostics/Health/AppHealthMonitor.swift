@@ -17,6 +17,7 @@ enum AppHealthMonitor {
         var hangInProgressMs: Int?
         var watchdogReports = 0
         var playbackFailureReports = 0
+        var downloadFailureReports = 0
         var appErrorReports = 0
         var appErrorKeys: [String: Int] = [:]
     }
@@ -29,6 +30,9 @@ enum AppHealthMonitor {
     /// where a short stall goes unnoticed; only longer ones count then.
     private static let launchHangThresholdMs = 2_000
     private static let maxPlaybackFailuresPerSession = 10
+    /// A season batch can fail many episodes at once; repeats of the same
+    /// failure also fold into one report.
+    private static let maxDownloadFailuresPerSession = 10
     private static let maxAppErrorsPerSession = 10
     /// One failing request can repeat; keep a couple of each kind.
     private static let maxAppErrorsPerKind = 2
@@ -228,6 +232,24 @@ enum AppHealthMonitor {
         if let method = AppHealthContextSnapshot.playMethodToken(playMethod) { details["play_method"] = .string(method) }
         if let positionMs { details["position_min"] = .int(max(positionMs, 0) / 60_000) }
         recordWithRecentEvents(kind: .playbackFailure, details: details)
+    }
+
+    /// A download failed for good (registration refused, or preparing or
+    /// transferring it ran out of retries). Network failures while the device
+    /// is offline or the server is unreachable aren't recorded.
+    static func downloadFailed(_ failure: DownloadFailureReport) {
+        guard shouldReportDownloadFailure(failure, context: AppHealthContext.snapshot()) else { return }
+        let allowed = state.withLock { state -> Bool in
+            guard state.enabled, state.downloadFailureReports < maxDownloadFailuresPerSession else { return false }
+            state.downloadFailureReports += 1
+            return true
+        }
+        guard allowed else { return }
+        recordWithRecentEvents(kind: .downloadFailure, details: failure.details)
+    }
+
+    static func shouldReportDownloadFailure(_ failure: DownloadFailureReport, context: AppHealthContextSnapshot) -> Bool {
+        !(failure.isNetwork && (!context.deviceOnline || !context.serverReachable))
     }
 
     /// Called by `DiagTrace` for every essential error line. Playback errors

@@ -65,6 +65,8 @@ extension AppHealthReport {
             return "Playback failed"
         case .appError:
             return appErrorMeaning
+        case .downloadFailure:
+            return downloadMeaning
         case .cpuException:
             return "Used too much processing power"
         case .diskWriteException:
@@ -109,6 +111,16 @@ extension AppHealthReport {
             }
             if let failingRequest { parts.append(failingRequest) }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        case .downloadFailure:
+            var parts: [String] = []
+            if case .string(let stage) = details["stage"] { parts.append(stage) }
+            if case .int(let status) = details["status"] {
+                parts.append("HTTP \(status)")
+            } else if case .int(let code) = details["url_error"] {
+                parts.append("URLError \(code)")
+            }
+            if case .string(let error) = details["error"], error != "http", error != "network" { parts.append(error) }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
         case .hang:
             if case .int(let ms) = details["duration_ms"] {
                 return String(format: "%.1f s", Double(ms) / 1000)
@@ -148,6 +160,17 @@ extension AppHealthReport {
         default:
             if details["category"] == .string("network") { return "Network problem" }
             return "Something went wrong"
+        }
+    }
+
+    private var downloadMeaning: String {
+        switch details["stage"] {
+        case .string("registration"): return "Couldn't start a download"
+        case .string("preparing"): return "Couldn't prepare a download"
+        case .string("transfer"): return "Download stopped before it finished"
+        case .string("saving"): return "Couldn't save a finished download"
+        case .string("conversion"): return "Server couldn't prepare a download"
+        default: return "Download failed"
         }
     }
 
