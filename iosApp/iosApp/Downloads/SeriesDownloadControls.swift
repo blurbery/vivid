@@ -204,6 +204,7 @@ struct SeriesDownloadMenuButton: View {
                     versions: episodeVersions,
                     selectedVersionFileId: selectedVersionFileId,
                     lastVersionFileId: detail.userData?.lastFileId,
+                    isEpisode: true,
                     onStart: startEpisodeDownload
                 )
             }

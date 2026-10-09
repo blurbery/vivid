@@ -11,10 +11,8 @@ struct DownloadOptionsSheet: View {
     let versions: [FileVersion]
     let selectedVersionFileId: Int?
     let lastVersionFileId: Int?
-    /// Movies use the series sheet's layout: a quality menu over a Download
-    /// row, with versions on their own page. Episodes keep every choice on
-    /// one sheet.
-    let isMovie: Bool
+    /// Names the Download row ("Download Episode" or "Download Movie").
+    let isEpisode: Bool
     let onStart: (DownloadRequestOptions) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -28,14 +26,14 @@ struct DownloadOptionsSheet: View {
         versions: [FileVersion],
         selectedVersionFileId: Int?,
         lastVersionFileId: Int?,
-        isMovie: Bool = false,
+        isEpisode: Bool,
         onStart: @escaping (DownloadRequestOptions) -> Void
     ) {
         self.title = title
         self.versions = versions
         self.selectedVersionFileId = selectedVersionFileId
         self.lastVersionFileId = lastVersionFileId
-        self.isMovie = isMovie
+        self.isEpisode = isEpisode
         self.onStart = onStart
 
         _fileId = State(initialValue: selectedVersionFileId)
@@ -55,13 +53,7 @@ struct DownloadOptionsSheet: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if isMovie {
-                    movieForm
-                } else {
-                    optionsForm
-                }
-            }
+            form
             .vividScrollContentBackgroundHidden()
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -72,11 +64,6 @@ struct DownloadOptionsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-                if !isMovie {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Download", action: start)
-                    }
                 }
             }
             .onAppear(perform: clampQuality)
@@ -103,9 +90,11 @@ struct DownloadOptionsSheet: View {
         dismiss()
     }
 
-    // MARK: - Movie layout
+    // MARK: - Layout
 
-    private var movieForm: some View {
+    /// The series download sheet's layout: a quality menu over a Download
+    /// row, with versions on their own page.
+    private var form: some View {
         Form {
             if formats.count > 1 {
                 Section {
@@ -119,7 +108,7 @@ struct DownloadOptionsSheet: View {
 
             Section {
                 Button(action: start) {
-                    DownloadOptionRow(title: "Download Movie", detail: movieDownloadDetail, icon: "arrow.down.to.line")
+                    DownloadOptionRow(title: isEpisode ? "Download Episode" : "Download Movie", detail: downloadDetail, icon: "arrow.down.to.line")
                 }
                 .buttonStyle(.plain)
 
@@ -140,13 +129,13 @@ struct DownloadOptionsSheet: View {
             } header: {
                 Text("Download")
             } footer: {
-                movieDownloadFooter
+                downloadFooter
             }
         }
         .navigationTitle(title)
     }
 
-    private var movieDownloadDetail: String {
+    private var downloadDetail: String {
         var parts = [manager.qualityLabel(rawValue: quality), choices.versionLabel]
         if let estimate = choices.estimate(quality: quality) {
             parts.append(estimate.isRange ? "\(estimate.sizeLabel) depending on server choice" : estimate.sizeLabel)
@@ -167,7 +156,7 @@ struct DownloadOptionsSheet: View {
     }
 
     @ViewBuilder
-    private var movieDownloadFooter: some View {
+    private var downloadFooter: some View {
         let warning = isEmbyConversion ? nil : choices.sizeWarning(quality: quality)
         let note = formats.count > 1 ? nil : "Downloads use original quality. Smaller qualities appear when the server allows download transcoding."
         if warning != nil || note != nil {
@@ -179,92 +168,6 @@ struct DownloadOptionsSheet: View {
                     Text(note)
                 }
             }
-        }
-    }
-
-    // MARK: - Single-sheet layout
-
-    private var optionsForm: some View {
-        Form {
-            Section {
-                summaryRow
-            } header: {
-                Text("Download")
-            }
-
-            DownloadVersionSections(
-                versions: versions,
-                lastVersionFileId: lastVersionFileId,
-                quality: quality,
-                isEmbyConversion: isEmbyConversion,
-                fileId: $fileId
-            )
-
-            qualitySection
-            DownloadIncludedMediaSection(choices: choices, quality: quality)
-        }
-        .navigationTitle("Download Options")
-    }
-
-    private var summaryRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.vividOnSurface)
-                .lineLimit(2)
-            Text(summaryDetail)
-                .font(.vividCaption)
-                .foregroundColor(.vividSecondaryText)
-                .lineLimit(3)
-        }
-        .padding(.vertical, 2)
-    }
-
-    private var summaryDetail: String {
-        var parts = [choices.versionLabel, manager.qualityLabel(rawValue: quality)]
-        if let estimate = choices.estimate(quality: quality) {
-            parts.append(estimate.isRange ? "\(estimate.sizeLabel) depending on server choice" : estimate.sizeLabel)
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private var qualitySection: some View {
-        Section {
-            if formats.count > 1 {
-                ForEach(formats, id: \.self) { format in
-                    DownloadChoiceRow(
-                        title: manager.qualityLabel(format),
-                        detail: qualityDetail(for: format),
-                        isSelected: quality == format.rawValue
-                    ) {
-                        quality = format.rawValue
-                    }
-                }
-            } else {
-                DownloadChoiceRow(
-                    title: manager.qualityLabel(formats.first ?? .original),
-                    detail: qualityDetail(for: formats.first ?? .original),
-                    isSelected: true,
-                    isEnabled: false
-                ) {}
-            }
-        } header: {
-            Text("Quality")
-        } footer: {
-            if formats.count > 1 {
-                Text("Lower bitrates make a smaller file at the resolution shown, never above the original's. The server converts it for this download, which can take longer than the original. Sizes are estimates.")
-            } else {
-                Text("Original keeps the source file. Smaller qualities appear when the server lets this account transcode downloads.")
-            }
-        }
-    }
-
-    private func qualityDetail(for format: DownloadFormat) -> String {
-        switch format {
-        case .original:
-            return MediaServerProvider.active.usesNativeUser ? "Keep the original file" : "Source quality, with compatibility fallback if needed"
-        case .twentyMbps, .tenMbps, .fiveMbps, .twoMbps, .oneMbps:
-            return DownloadManager.sizePerHour(format) ?? "Reduce the bitrate for a smaller offline file"
         }
     }
 
