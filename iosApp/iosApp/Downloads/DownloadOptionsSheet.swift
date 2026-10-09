@@ -36,7 +36,9 @@ struct DownloadOptionsSheet: View {
         self.isEpisode = isEpisode
         self.onStart = onStart
 
-        _fileId = State(initialValue: selectedVersionFileId)
+        // Settings' default version applies when no version is set yet.
+        _fileId = State(initialValue: selectedVersionFileId
+            ?? DownloadSettings.shared.preferredVersion?.version(in: versions)?.fileId)
         _quality = State(initialValue: DownloadSettings.shared.preferredFormat)
     }
 

@@ -15,6 +15,18 @@ final class DownloadSettings {
         didSet { defaults.set(preferredFormat, forKey: storageKey(Keys.preferredFormat)) }
     }
 
+    /// The original-file version to prefer when `preferredFormat` is
+    /// original, as a `DownloadVersionPreference` tag; empty leaves it to the
+    /// server. Kept apart from `preferredFormat`, which is always a quality
+    /// the server understands.
+    var preferredVersionTag: String {
+        didSet { defaults.set(preferredVersionTag, forKey: storageKey(Keys.preferredVersion)) }
+    }
+
+    var preferredVersion: DownloadVersionPreference? {
+        DownloadVersionPreference(tag: preferredVersionTag)
+    }
+
     /// When true, downloads only transfer over Wi-Fi.
     var wifiOnly: Bool {
         didSet { defaults.set(wifiOnly, forKey: storageKey(Keys.wifiOnly)) }
@@ -57,6 +69,7 @@ final class DownloadSettings {
         guard loadedScope != scope else { return }
         loadedScope = scope
         preferredFormat = defaults.string(forKey: storageKey(Keys.preferredFormat)) ?? DownloadFormat.original.rawValue
+        preferredVersionTag = defaults.string(forKey: storageKey(Keys.preferredVersion)) ?? ""
         wifiOnly = (defaults.object(forKey: storageKey(Keys.wifiOnly)) as? Bool) ?? true
         defaultDeleteWatched = defaults.bool(forKey: storageKey(Keys.defaultDeleteWatched))
         defaultMaxStorageGB = defaults.integer(forKey: storageKey(Keys.defaultMaxStorageGB))
@@ -72,6 +85,7 @@ final class DownloadSettings {
         self.defaults = defaults
         defaults.register(defaults: [
             Keys.preferredFormat: DownloadFormat.original.rawValue,
+            Keys.preferredVersion: "",
             Keys.wifiOnly: true,
             Keys.defaultDeleteWatched: false,
             Keys.defaultMaxStorageGB: 0,
@@ -79,6 +93,7 @@ final class DownloadSettings {
             Keys.keepWatchedDownloads: false,
         ])
         preferredFormat = defaults.string(forKey: Keys.preferredFormat) ?? DownloadFormat.original.rawValue
+        preferredVersionTag = defaults.string(forKey: Keys.preferredVersion) ?? ""
         wifiOnly = defaults.bool(forKey: Keys.wifiOnly)
         defaultDeleteWatched = defaults.bool(forKey: Keys.defaultDeleteWatched)
         defaultMaxStorageGB = defaults.integer(forKey: Keys.defaultMaxStorageGB)
@@ -96,6 +111,30 @@ final class DownloadSettings {
         return DownloadFormat.original.rawValue
     }
 
+    /// The default as one Quality menu tag: the preferred version when the
+    /// default is original and the menu offers that version, otherwise the
+    /// quality from `resolvedFormat`.
+    func resolvedChoiceTag(allowedFormats: [String], versions: [DownloadVersionPreference]) -> String {
+        let quality = resolvedFormat(allowedFormats: allowedFormats)
+        guard quality == DownloadFormat.original.rawValue,
+              let option = preferredVersion?.option(in: versions) else { return quality }
+        return option.tag
+    }
+
+    /// Settings' Quality picker: the default quality, or the original file at
+    /// a preferred version.
+    var defaultChoiceTag: String {
+        get {
+            guard preferredFormat == DownloadFormat.original.rawValue, let preferredVersion else { return preferredFormat }
+            return preferredVersion.tag
+        }
+        set {
+            let choice = DownloadVersionPreference.split(newValue)
+            preferredFormat = choice.quality
+            preferredVersionTag = choice.version?.tag ?? ""
+        }
+    }
+
     /// Bytes per gigabyte (GiB), shared by the storage-cap conversions.
     static let bytesPerGB: Int64 = 1_073_741_824
 
@@ -106,6 +145,7 @@ final class DownloadSettings {
 
     private enum Keys {
         static let preferredFormat = "downloads.preferredFormat"
+        static let preferredVersion = "downloads.preferredVersion"
         static let wifiOnly = "downloads.wifiOnly"
         static let defaultDeleteWatched = "downloads.defaultDeleteWatched"
         static let defaultMaxStorageGB = "downloads.defaultMaxStorageGB"
