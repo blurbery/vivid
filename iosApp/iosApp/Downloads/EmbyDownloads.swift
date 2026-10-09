@@ -1,7 +1,9 @@
 import Foundation
+import OSLog
 
 actor EmbyDownloads {
     static let shared = EmbyDownloads()
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app", category: "Downloads")
 
     enum BatchError: LocalizedError {
         case alreadyDownloaded, noEpisodes
@@ -53,7 +55,7 @@ actor EmbyDownloads {
                 #if os(iOS)
                 guard EmbyDownloadConversion.isAllowed(policy: rawUser["Policy"] as? [String: Any] ?? [:]),
                       body["file_id"] == nil || body["file_id"] is NSNull else { throw EmbyError.unsupportedFeature }
-                conversionOptions = try await EmbyDownloadConversion.availableOptions(connection: connection)
+                conversionOptions = try await EmbyDownloadConversion.availableOptions(connection: connection, itemID: itemID)
                 #else
                 throw EmbyError.unsupportedFeature
                 #endif
@@ -262,6 +264,8 @@ actor EmbyDownloads {
                 // existing original-file downloads. Identity and cancellation
                 // still propagate before returning the fallback capability.
                 try await connection.validate()
+                let status: Int? = if case HTTPError.http(let code, _) = error { code } else { nil }
+                Self.logger.info("Emby conversion unavailable, offering original only (HTTP \(status ?? 0, privacy: .public))")
             }
         }
         #endif
