@@ -296,9 +296,11 @@ struct ContentView: View {
             switch newPhase {
             case .active:
                 TVSavedAccountStore.shared.enteredForeground()
+                DownloadManager.shared.resumeNormalPreparation()
             case .background:
                 TVSavedAccountStore.shared.enteredBackground()
                 VividImagePipeline.shared.prepareForMacSuspension()
+                DownloadManager.shared.handOffQueuedTransfers()
                 // Keep series monitoring alive while backgrounded; only
                 // worth a wake when the profile can download at all.
                 if DownloadManager.shared.downloadsEnabled {

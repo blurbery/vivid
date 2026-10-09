@@ -18,16 +18,8 @@ enum StreamedTranscodeDownload {
             && policy["EnableVideoPlaybackTranscoding"] as? Bool != false
     }
 
-    /// Largest output height for each preset, matching Silo's download ladder
-    /// for H.264 without 4K transcoding.
-    static func maxHeight(_ format: DownloadFormat) -> Int? {
-        switch format {
-        case .original: return nil
-        case .twentyMbps, .tenMbps, .fiveMbps: return 1080
-        case .twoMbps: return 720
-        case .oneMbps: return 480
-        }
-    }
+    /// Largest output height for each preset, on Silo's download ladder.
+    static func maxHeight(_ format: DownloadFormat) -> Int? { format.ladderMaxHeight }
 
     static func audioBitrateKbps(_ format: DownloadFormat) -> Int {
         (format.targetBitrateKbps ?? 0) >= 5_000 ? 192 : 128

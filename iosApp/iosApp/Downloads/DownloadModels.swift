@@ -17,6 +17,9 @@ struct DownloadCapability: Codable, Hashable, Sendable {
     /// Season and series requests accept any of `qualityPresets`, not just
     /// original. Silo advertises it as `bulk_quality`.
     let bulkQuality: Bool
+    /// What each preset produces, when the server says (Silo does, and
+    /// caps it by its 4K setting and the account's playback limit).
+    let qualityOptions: [DownloadQualityOption]
 
     /// Downloads are usable at all only when the feature is on AND this
     /// user is allowed to download.
@@ -44,6 +47,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         case seriesMonitoring
         case monitoringModes
         case bulkQuality
+        case qualityOptions
     }
 
     init(
@@ -55,7 +59,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         seasonDownload: Bool,
         seriesMonitoring: Bool,
         monitoringModes: [String],
-        bulkQuality: Bool = false
+        bulkQuality: Bool = false,
+        qualityOptions: [DownloadQualityOption] = []
     ) {
         self.enabled = enabled
         self.downloadAllowed = downloadAllowed
@@ -66,6 +71,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         self.seriesMonitoring = seriesMonitoring
         self.monitoringModes = monitoringModes
         self.bulkQuality = bulkQuality
+        self.qualityOptions = qualityOptions
     }
 
     init(from decoder: Decoder) throws {
@@ -81,6 +87,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         seriesMonitoring = try container.decodeIfPresent(Bool.self, forKey: .seriesMonitoring) ?? false
         monitoringModes = try container.decodeIfPresent([String].self, forKey: .monitoringModes) ?? []
         bulkQuality = try container.decodeIfPresent(Bool.self, forKey: .bulkQuality) ?? false
+        qualityOptions = (try? container.decodeIfPresent([DownloadQualityOption].self, forKey: .qualityOptions)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -94,6 +101,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         try container.encode(seriesMonitoring, forKey: .seriesMonitoring)
         try container.encode(monitoringModes, forKey: .monitoringModes)
         try container.encode(bulkQuality, forKey: .bulkQuality)
+        try container.encode(qualityOptions, forKey: .qualityOptions)
     }
 }
 
@@ -128,6 +136,38 @@ enum DownloadFormat: String, Codable, CaseIterable, Sendable {
         case .oneMbps: return "1 Mbps"
         }
     }
+
+    /// Tallest output each preset makes, on the same ladder as Silo's
+    /// downloads (Apple's H.264 authoring floors): 20 Mbps keeps 4K, 10 and
+    /// 5 Mbps make 1080p, 2 Mbps 720p and 1 Mbps 480p. A file is never made
+    /// taller than its source.
+    var ladderMaxHeight: Int? {
+        switch self {
+        case .original: return nil
+        case .twentyMbps: return 2160
+        case .tenMbps, .fiveMbps: return 1080
+        case .twoMbps: return 720
+        case .oneMbps: return 480
+        }
+    }
+
+    static func resolutionName(_ height: Int) -> String {
+        height >= 2160 ? "4K" : "\(height)p"
+    }
+
+    /// "4K · 20 Mbps", "1080p · 10 Mbps" or "Original", so the choice says
+    /// what resolution the bitrate brings it down to.
+    func qualityLabel(maxHeight: Int?) -> String {
+        guard self != .original, let height = maxHeight ?? ladderMaxHeight else { return displayName }
+        return "\(Self.resolutionName(height)) · \(displayName)"
+    }
+}
+
+/// One preset's output as the server describes it (Silo's `quality_options`).
+struct DownloadQualityOption: Codable, Hashable, Sendable {
+    let preset: String
+    let bitrateKbps: Int?
+    let maxHeight: Int?
 }
 
 // MARK: - Download row (POST/GET /api/v1/downloads)

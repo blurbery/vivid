@@ -54,6 +54,41 @@ final class DownloadQualityTransferTests: XCTestCase {
         }
     }
 
+    /// Each choice names the resolution its bitrate brings the file down to,
+    /// from the server's own description when it gives one (Silo).
+    func testQualityLabelsNameTheResolution() throws {
+        XCTAssertEqual(DownloadFormat.twentyMbps.qualityLabel(maxHeight: nil), "4K · 20 Mbps")
+        XCTAssertEqual(DownloadFormat.tenMbps.qualityLabel(maxHeight: nil), "1080p · 10 Mbps")
+        XCTAssertEqual(DownloadFormat.fiveMbps.qualityLabel(maxHeight: nil), "1080p · 5 Mbps")
+        XCTAssertEqual(DownloadFormat.twoMbps.qualityLabel(maxHeight: nil), "720p · 2 Mbps")
+        XCTAssertEqual(DownloadFormat.oneMbps.qualityLabel(maxHeight: nil), "480p · 1 Mbps")
+        XCTAssertEqual(DownloadFormat.original.qualityLabel(maxHeight: 2160), "Original")
+        // A Silo server without 4K transcoding reports 1080p for 20 Mbps.
+        XCTAssertEqual(DownloadFormat.twentyMbps.qualityLabel(maxHeight: 1080), "1080p · 20 Mbps")
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let capability = try decoder.decode(DownloadCapability.self, from: Data("""
+        {"enabled":true,"download_allowed":true,"quality_presets":["original","20mbps"],
+         "quality_options":[{"preset":"original"},{"preset":"20mbps","bitrate_kbps":20000,"max_height":1080}]}
+        """.utf8))
+        XCTAssertEqual(capability.qualityOptions.first { $0.preset == "20mbps" }?.maxHeight, 1080)
+        let stored = try JSONDecoder().decode(DownloadCapability.self, from: JSONEncoder().encode(capability))
+        XCTAssertEqual(stored.qualityOptions, capability.qualityOptions)
+    }
+
+    /// The Live Activity animates from where the bar is now to the estimated
+    /// finish, so it keeps moving while Vivid is suspended.
+    func testLiveActivityTimelineStartsAtTheCurrentProgress() throws {
+        let now = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let range = try XCTUnwrap(DownloadLiveActivityController.timeline(
+            fraction: 0.25, remainingBytes: 600_000_000, bytesPerSecond: 1_000_000, now: now))
+        XCTAssertEqual(range.upperBound.timeIntervalSince(now), 600, accuracy: 5)
+        XCTAssertEqual(range.lowerBound.timeIntervalSince(now), -200, accuracy: 5)
+        XCTAssertNil(DownloadLiveActivityController.timeline(fraction: 0.5, remainingBytes: 0, bytesPerSecond: 1_000, now: now))
+        XCTAssertNil(DownloadLiveActivityController.timeline(fraction: 0.5, remainingBytes: 1_000, bytesPerSecond: 0, now: now))
+    }
+
     func testStreamedTranscodeNeedsDownloadAndPlaybackTranscodePermissions() {
         XCTAssertTrue(StreamedTranscodeDownload.isAllowed(policy: ["EnableContentDownloading": true]))
         XCTAssertTrue(StreamedTranscodeDownload.isAllowed(policy: ["EnableContentDownloading": true, "EnableVideoPlaybackTranscoding": true]))
@@ -79,7 +114,8 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertNotEqual(query["PlaySessionId"], again["PlaySessionId"], "A retry never joins an abandoned transcode")
         XCTAssertNil(again["AudioStreamIndex"])
         XCTAssertNil(StreamedTranscodeDownload.query(format: .original, sourceID: "source-1", audioStreamIndex: nil, deviceID: "device-1"))
-        XCTAssertEqual(StreamedTranscodeDownload.maxHeight(.twentyMbps), 1080)
+        XCTAssertEqual(StreamedTranscodeDownload.maxHeight(.twentyMbps), 2160)
+        XCTAssertEqual(StreamedTranscodeDownload.maxHeight(.tenMbps), 1080)
         XCTAssertEqual(StreamedTranscodeDownload.maxHeight(.oneMbps), 480)
     }
 

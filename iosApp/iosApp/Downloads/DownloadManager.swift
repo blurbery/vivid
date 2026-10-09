@@ -148,6 +148,9 @@ final class DownloadManager {
     /// background session, so work started just before the app closes still
     /// reaches the transfer.
     @ObservationIgnored private var backgroundWorkCount = 0
+    /// Set while the app is leaving the foreground, so every queued record
+    /// is prepared at once rather than a few at a time.
+    @ObservationIgnored private var preparesEverything = false
     #if canImport(UIKit)
     @ObservationIgnored private var backgroundWorkID = UIBackgroundTaskIdentifier.invalid
     #endif
@@ -171,6 +174,27 @@ final class DownloadManager {
     /// app can check on them.
     var hasServerPreparingDownloads: Bool { file.records.values.contains { $0.localStatus == .preparing } }
     var canMonitorSeries: Bool { downloadsEnabled && capability?.seriesMonitoring == true }
+
+    /// The tallest output a preset makes on this server: what the server
+    /// reports, or the shared ladder.
+    func maxHeight(for format: DownloadFormat) -> Int? {
+        capability?.qualityOptions.first { $0.preset == format.rawValue }?.maxHeight ?? format.ladderMaxHeight
+    }
+
+    /// "4K · 20 Mbps", "1080p · 10 Mbps" or "Original".
+    func qualityLabel(_ format: DownloadFormat) -> String {
+        format.qualityLabel(maxHeight: maxHeight(for: format))
+    }
+
+    func qualityLabel(rawValue: String) -> String {
+        DownloadFormat(rawValue: rawValue).map(qualityLabel) ?? rawValue
+    }
+
+    /// "About 4.59 GB per hour" for a smaller preset, nil for original.
+    static func sizePerHour(_ format: DownloadFormat) -> String? {
+        StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: 3600)
+            .map { "About \(DownloadFormatting.bytes($0)) per hour" }
+    }
 
     var availableFormats: [DownloadFormat] {
         (capability?.qualityPresets ?? []).compactMap(DownloadFormat.init(rawValue:))
@@ -944,9 +968,21 @@ final class DownloadManager {
 
     // MARK: - Pipeline
 
+    /// Leaving the app: hand every queued download to the background session
+    /// now, while Vivid still has time to run, instead of leaving episodes
+    /// waiting for a wake-up that iOS may delay once the phone locks.
+    func handOffQueuedTransfers() {
+        preparesEverything = true
+        processQueue()
+    }
+
+    func resumeNormalPreparation() {
+        preparesEverything = false
+    }
+
     private func processQueue() {
         let preparingCount = file.records.values.filter { $0.localStatus == .fetchingAssets }.count
-        var slots = max(0, Self.maxConcurrentPreparations - preparingCount)
+        var slots = preparesEverything ? Int.max : max(0, Self.maxConcurrentPreparations - preparingCount)
         guard slots > 0 else { return }
 
         let queued = file.records.values

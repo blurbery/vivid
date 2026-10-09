@@ -30,9 +30,8 @@ struct DownloadsLiveActivity: Widget {
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.percentText)
+                    QueueTrailingText(state: context.state, isStale: context.isStale)
                         .font(.title3.weight(.semibold))
-                        .monospacedDigit()
                         .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -50,12 +49,10 @@ struct DownloadsLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
-                        ProgressView(value: context.state.fraction)
-                            .progressViewStyle(.linear)
-                        Text(context.state.statusText(isStale: context.isStale))
+                        QueueProgress(state: context.state, isStale: context.isStale, style: .linear)
+                        QueueStatusText(state: context.state, isStale: context.isStale)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .monospacedDigit()
                     }
                     .padding(.horizontal, 4)
                 }
@@ -63,12 +60,10 @@ struct DownloadsLiveActivity: Widget {
                 Image(systemName: context.state.phase.symbolName)
                     .foregroundStyle(.tint)
             } compactTrailing: {
-                ProgressView(value: context.state.fraction)
-                    .progressViewStyle(.circular)
+                QueueProgress(state: context.state, isStale: context.isStale, style: .circular)
                     .tint(.blue)
             } minimal: {
-                ProgressView(value: context.state.fraction)
-                    .progressViewStyle(.circular)
+                QueueProgress(state: context.state, isStale: context.isStale, style: .circular)
                     .tint(.blue)
             }
             .widgetURL(Self.deepLink)
@@ -99,19 +94,78 @@ private struct DownloadsLockScreenView: View {
                 }
                 Spacer(minLength: 8)
                 if state.phase != .completed {
-                    Text(state.percentText)
+                    QueueTrailingText(state: state, isStale: isStale)
                         .font(.title3.weight(.semibold))
-                        .monospacedDigit()
                 }
             }
             if state.phase != .completed {
-                ProgressView(value: state.fraction)
-                    .progressViewStyle(.linear)
-                Text(state.statusText(isStale: isStale))
+                QueueProgress(state: state, isStale: isStale, style: .linear)
+                QueueStatusText(state: state, isStale: isStale)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .monospacedDigit()
             }
+        }
+    }
+}
+
+/// The queue's progress. While there's an estimate the system animates it
+/// along the timeline by itself, so it keeps moving while Vivid is suspended;
+/// otherwise it shows the last reported fraction.
+private struct QueueProgress: View {
+    enum Style { case linear, circular }
+    let state: DownloadActivityAttributes.ContentState
+    let isStale: Bool
+    let style: Style
+
+    var body: some View {
+        if let estimate = state.estimate, !isStale {
+            styled(ProgressView(timerInterval: estimate, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() })
+        } else {
+            styled(ProgressView(value: state.fraction))
+        }
+    }
+
+    @ViewBuilder
+    private func styled<V: View>(_ view: V) -> some View {
+        switch style {
+        case .linear: view.progressViewStyle(.linear)
+        case .circular: view.progressViewStyle(.circular)
+        }
+    }
+}
+
+/// Top-right figure: a live time-left countdown while there's an estimate,
+/// otherwise the percentage.
+private struct QueueTrailingText: View {
+    let state: DownloadActivityAttributes.ContentState
+    let isStale: Bool
+
+    var body: some View {
+        if let end = state.estimate?.upperBound, !isStale, end > Date() {
+            Text(timerInterval: Date()...end, countsDown: true)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 72, alignment: .trailing)
+        } else {
+            Text(state.percentText)
+                .monospacedDigit()
+        }
+    }
+}
+
+/// The line under the bar. While there's an estimate it counts down on its
+/// own, since byte counts can't change while Vivid is suspended.
+private struct QueueStatusText: View {
+    let state: DownloadActivityAttributes.ContentState
+    let isStale: Bool
+
+    var body: some View {
+        if let end = state.estimate?.upperBound, !isStale, end > Date() {
+            (Text("About ") + Text(timerInterval: Date()...end, countsDown: true) + Text(" left"))
+                .monospacedDigit()
+        } else {
+            Text(state.statusText(isStale: isStale))
+                .monospacedDigit()
         }
     }
 }

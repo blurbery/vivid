@@ -279,7 +279,7 @@ struct DownloadQualityPicker: View {
     var body: some View {
         Picker(selection: $quality) {
             ForEach(formats, id: \.self) { format in
-                Text(Self.label(format)).tag(format.rawValue)
+                Text(manager.qualityLabel(format)).tag(format.rawValue)
             }
         } label: {
             Label("Quality", systemImage: "slider.horizontal.3")
@@ -289,10 +289,10 @@ struct DownloadQualityPicker: View {
         .onChange(of: manager.availableFormats) { _, _ in clamp() }
     }
 
-    /// The name plus the same per-hour size Download Options shows.
-    static func label(_ format: DownloadFormat) -> String {
-        guard let perHour = StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: 3600) else { return format.displayName }
-        return "\(format.displayName) · about \(DownloadFormatting.bytes(perHour))/hr"
+    /// The chosen quality's size, for the line under the menu (menus show
+    /// one line per choice).
+    static func sizeNote(_ quality: String) -> String? {
+        DownloadFormat(rawValue: quality).flatMap(DownloadManager.sizePerHour).map { "\($0) of video." }
     }
 
     private func clamp() {
@@ -345,7 +345,7 @@ private struct SeriesDownloadOptionsSheet: View {
     }
 
     private var batchQualityLabel: String {
-        DownloadFormat(rawValue: batchQuality)?.displayName ?? batchQuality
+        manager.qualityLabel(rawValue: batchQuality)
     }
 
     private var activeDownloadCount: Int { manager.activeRecords(seriesId: seriesId).count }
@@ -357,7 +357,9 @@ private struct SeriesDownloadOptionsSheet: View {
                     Section {
                         DownloadQualityPicker(quality: $quality)
                     } footer: {
-                        Text("Applies to season and series downloads. Lower bitrates use less storage, and the server prepares the file first.")
+                        Text([DownloadQualityPicker.sizeNote(quality),
+                              "Applies to season and series downloads. Lower bitrates use less storage, and the server prepares the file first."]
+                            .compactMap { $0 }.joined(separator: " "))
                     }
                 }
 
@@ -712,6 +714,8 @@ private struct SeriesEpisodeDownloadPicker: View {
                         Section {
                             DownloadQualityPicker(quality: $quality)
                                 .disabled(isWorking)
+                        } footer: {
+                            if let note = DownloadQualityPicker.sizeNote(quality) { Text(note) }
                         }
                     }
                     Section {

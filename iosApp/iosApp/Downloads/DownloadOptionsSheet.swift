@@ -146,7 +146,7 @@ struct DownloadOptionsSheet: View {
     }
 
     private var summaryDetail: String {
-        let qualityLabel = DownloadFormat(rawValue: quality)?.displayName ?? quality
+        let qualityLabel = manager.qualityLabel(rawValue: quality)
         let versionLabel = fileId == nil
             ? "Auto version"
             : (effectiveVersion.map(DetailPlaybackFormatting.versionPrimaryText) ?? "Selected version")
@@ -279,7 +279,7 @@ struct DownloadOptionsSheet: View {
             if formats.count > 1 {
                 ForEach(formats, id: \.self) { format in
                     optionButton(
-                        title: format.displayName,
+                        title: manager.qualityLabel(format),
                         detail: qualityDetail(for: format),
                         isSelected: quality == format.rawValue
                     ) {
@@ -288,7 +288,7 @@ struct DownloadOptionsSheet: View {
                 }
             } else {
                 optionButton(
-                    title: formats.first?.displayName ?? DownloadFormat.original.displayName,
+                    title: manager.qualityLabel(formats.first ?? .original),
                     detail: qualityDetail(for: formats.first ?? .original),
                     isSelected: true,
                     isEnabled: false
@@ -298,7 +298,7 @@ struct DownloadOptionsSheet: View {
             Text("Quality")
         } footer: {
             if formats.count > 1 {
-                Text("Lower bitrates make a smaller file. The server converts it for this download, which can take longer than the original. Sizes are estimates.")
+                Text("Lower bitrates make a smaller file at the resolution shown, never above the original's. The server converts it for this download, which can take longer than the original. Sizes are estimates.")
             } else {
                 Text("Original keeps the source file. Smaller qualities appear when the server lets this account transcode downloads.")
             }
@@ -310,10 +310,7 @@ struct DownloadOptionsSheet: View {
         case .original:
             return MediaServerProvider.active.usesNativeUser ? "Keep the original file" : "Source quality, with compatibility fallback if needed"
         case .twentyMbps, .tenMbps, .fiveMbps, .twoMbps, .oneMbps:
-            guard let perHour = StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: 3600) else {
-                return "Reduce the bitrate for a smaller offline file"
-            }
-            return "About \(DownloadFormatting.bytes(perHour)) per hour"
+            return DownloadManager.sizePerHour(format) ?? "Reduce the bitrate for a smaller offline file"
         }
     }
 
