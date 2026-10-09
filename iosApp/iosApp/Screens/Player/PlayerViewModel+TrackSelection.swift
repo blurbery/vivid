@@ -103,6 +103,15 @@ extension PlayerViewModel {
         return openSubtitleFiles.entries[id]
     }
 
+    /// Offsets are saved per file version, so a version switch for the same
+    /// item reloads each kept file's offset (zero when none was saved).
+    func refreshOpenSubtitleOffsets(contentID: String, fileID: Int?) {
+        for entry in openSubtitleFiles.entries.values {
+            openSubtitleFiles.setOffset(OpenSubtitlesStore.shared.rememberedOffset(contentID: contentID, fileID: fileID,
+                resultID: Int(entry.id - Self.openSubtitleTrackIDBase)), for: entry.id)
+        }
+    }
+
     /// Changes the selected OpenSubtitles file's own offset. `save` also
     /// keeps it with the remembered file, once the change is committed.
     func setOpenSubtitleOffset(_ milliseconds: Int, save: Bool) {

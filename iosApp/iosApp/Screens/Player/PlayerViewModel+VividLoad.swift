@@ -21,6 +21,8 @@ extension PlayerViewModel {
         lazySubtitleSidecars = [:]
         #if os(iOS) || os(tvOS)
         removeOpenSubtitleFiles(openSubtitleFiles.prepare(contentID: prepared.watchDetail.contentId))
+        // Files kept for the same item take the offset saved for this version.
+        refreshOpenSubtitleOffsets(contentID: prepared.watchDetail.contentId, fileID: prepared.selectedVersion.fileId)
         #endif
         let preferredSubtitles = subtitleOrderingLanguage.map { [$0] } ?? []
         let preferredAudio = VividInitialAudioPreference.languages(

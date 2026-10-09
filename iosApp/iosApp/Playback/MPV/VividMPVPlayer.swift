@@ -781,14 +781,18 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         core?.setProperty("aid", value: String(id))
     }
     private var subtitleDelaySeconds: Double = 0
+    /// The secondary track keeps its own delay, so an OpenSubtitles file's
+    /// offset on the main subtitle doesn't shift the other one.
+    private var secondarySubtitleDelaySeconds: Double = 0
 
-    func applySubtitleSettings(appearance: SubtitleAppearance, delayMilliseconds: Int) {
+    func applySubtitleSettings(appearance: SubtitleAppearance, delayMilliseconds: Int, secondaryDelayMilliseconds: Int? = nil) {
         subtitleDelaySeconds = Double(delayMilliseconds) / 1000
+        secondarySubtitleDelaySeconds = Double(secondaryDelayMilliseconds ?? delayMilliseconds) / 1000
         for (name, value) in LucidSubtitleStyle.options(appearance) {
             core?.setProperty(name, value: value)
         }
         core?.setProperty("sub-delay", value: String(subtitleDelaySeconds - (externalTracks[activeSubtitleTrackIndex ?? -1]?.nativeTimelineOffsetSeconds ?? 0)))
-        core?.setProperty("secondary-sub-delay", value: String(subtitleDelaySeconds - (externalTracks[secondarySubtitleID ?? -1]?.nativeTimelineOffsetSeconds ?? 0)))
+        core?.setProperty("secondary-sub-delay", value: String(secondarySubtitleDelaySeconds - (externalTracks[secondarySubtitleID ?? -1]?.nativeTimelineOffsetSeconds ?? 0)))
         updateExternalCues()
     }
 
@@ -810,7 +814,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func selectSecondarySubtitleTrack(index: Int) {
         secondarySubtitleID = index
         core?.setProperty("secondary-sid", value: subtitleMPVID(index).map(String.init) ?? "no")
-        core?.setProperty("secondary-sub-delay", value: String(subtitleDelaySeconds - (externalTracks[index]?.nativeTimelineOffsetSeconds ?? 0)))
+        core?.setProperty("secondary-sub-delay", value: String(secondarySubtitleDelaySeconds - (externalTracks[index]?.nativeTimelineOffsetSeconds ?? 0)))
         updateExternalCues()
     }
     func clearSubtitle() { activeSubtitleTrackIndex = nil; core?.setProperty("sid", value: "no"); updateExternalCues() }
@@ -824,7 +828,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             primaryCuePublication = primaryPublication
             subtitleCues = primary.cues
         }
-        let secondary = externalCues[secondarySubtitleID ?? -1]?.selection(at: time) ?? .empty
+        let secondary = externalCues[secondarySubtitleID ?? -1]?.selection(at: currentTime - secondarySubtitleDelaySeconds) ?? .empty
         let secondaryPublication = CuePublication(
             trackID: secondary.offsets.isEmpty ? nil : secondarySubtitleID, offsets: secondary.offsets)
         if secondaryPublication != secondaryCuePublication {

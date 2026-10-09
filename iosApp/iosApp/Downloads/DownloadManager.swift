@@ -669,7 +669,12 @@ final class DownloadManager {
             rows = try await VividAPI.shared.createDownload(request)
             guard !rows.isEmpty else { throw DownloadError.emptyRegistrationResponse }
         } catch {
-            if let failure = DownloadFailureReport(stage: .registration, error: error, server: MediaServerProvider.active.rawValue,
+            // A request overtaken by an account, server or profile switch
+            // isn't a failure, and the active provider is no longer its own.
+            if capturedScopeGeneration == registrationScopeGeneration,
+               capturedServerId == scopeServerId, capturedProfileId == scopeProfileId,
+               let failure = DownloadFailureReport(stage: .registration, error: error,
+                                                   server: MediaServerProvider.forServerID(capturedServerId).rawValue,
                                                    quality: quality, batch: isBatch, retries: 0) {
                 AppHealthMonitor.downloadFailed(failure)
             }
