@@ -615,12 +615,14 @@ struct PlayerView: View {
                     primaryUsesMovieTimeline: viewModel.subtitleUsesMovieTimeline(viewModel.selectedSubtitleId),
                     secondaryUsesMovieTimeline: viewModel.subtitleUsesMovieTimeline(viewModel.selectedSecondarySubtitleId, slot: .secondary),
                     appearance: viewModel.settings.effectiveSubtitleAppearance,
-                    subtitleSyncMs: viewModel.settings.subtitleSyncMs
+                    subtitleSyncMs: viewModel.subtitleDelayMs,
+                    secondarySubtitleSyncMs: viewModel.secondarySubtitleDelayMs
                 )
                 .onChange(of: viewModel.settings.effectiveSubtitleAppearance, initial: true) {
                     viewModel.applySubtitleAppearanceToPlayer()
                 }
-                .onChange(of: viewModel.settings.subtitleSyncMs) {
+                .onChange(of: [viewModel.subtitleDelayMs, viewModel.secondarySubtitleDelayMs]) {
+                    // Also follows switching to or from an OpenSubtitles file.
                     viewModel.applySubtitleAppearanceToPlayer()
                 }
             }

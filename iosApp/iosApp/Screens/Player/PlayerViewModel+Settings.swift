@@ -18,8 +18,36 @@ extension PlayerViewModel {
     func applySubtitleAppearanceToPlayer() {
         vividPlaybackController.engine.applySubtitleSettings(
             appearance: settings.effectiveSubtitleAppearance,
-            delayMilliseconds: settings.subtitleSyncMs
+            delayMilliseconds: subtitleDelayMs,
+            secondaryDelayMilliseconds: secondarySubtitleDelayMs
         )
+    }
+
+    /// The secondary subtitle's delay: its own offset when it's an
+    /// OpenSubtitles file, otherwise the normal subtitle delay.
+    var secondarySubtitleDelayMs: Int {
+        #if os(iOS) || os(tvOS)
+        if let id = selectedSecondarySubtitleId, let entry = openSubtitleFiles.entries[id] { return entry.offsetMs }
+        #endif
+        return settings.subtitleSyncMs
+    }
+
+    /// The delay the Subtitle Delay controls show and change: an OpenSubtitles
+    /// file's own offset while it's the main subtitle, otherwise the normal
+    /// subtitle delay.
+    var subtitleDelayMs: Int {
+        #if os(iOS) || os(tvOS)
+        if let entry = selectedOpenSubtitle { return entry.offsetMs }
+        #endif
+        return settings.subtitleSyncMs
+    }
+
+    /// A live change while the control is being adjusted; commit saves it.
+    func previewSubtitleDelay(_ milliseconds: Int) {
+        #if os(iOS) || os(tvOS)
+        if selectedOpenSubtitle != nil { setOpenSubtitleOffset(milliseconds, save: false); return }
+        #endif
+        settings.subtitleSyncMs = milliseconds
     }
 
     @MainActor
@@ -102,6 +130,9 @@ extension PlayerViewModel {
     }
 
     func setSubtitleSyncMilliseconds(_ milliseconds: Int) {
+        #if os(iOS) || os(tvOS)
+        if selectedOpenSubtitle != nil { setOpenSubtitleOffset(milliseconds, save: true); return }
+        #endif
         settings.setSubtitleSyncMs(milliseconds)
         applySubtitleAppearanceToPlayer()
     }

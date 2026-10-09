@@ -38,7 +38,8 @@ struct OfflinePreparedPlayback {
 /// from a stored offline manifest + local media file, so VividEngine loads
 /// with no server session. Vivid probes the delivered file itself; the
 /// manifest supplies catalog metadata and resume context. Chapters and
-/// subtitles come from the downloaded media file.
+/// embedded subtitles come from the downloaded media file; subtitle files
+/// saved beside it are added as external tracks.
 enum OfflinePlaybackBuilder {
     /// Near-end resume points restart from zero, mirroring the session
     /// bridge's suppression window so offline resume feels identical to
@@ -71,7 +72,9 @@ enum OfflinePlaybackBuilder {
             leafContentId: leafId,
             manifest: manifest,
             mediaURL: mediaURL,
-            subtitleURLs: [],
+            subtitleURLs: OfflineSubtitleFiles.sidecars(manifest: manifest, filenames: record.subtitleFilenames) {
+                manager.absoluteFileURL(for: record, filename: $0)
+            },
             resumePosition: resolvedResumePosition(
                 startFromBeginning: startFromBeginning,
                 explicitPosition: resumePositionOverride,
@@ -246,5 +249,48 @@ extension WatchDetail {
         effectiveSubtitleMode = nil
         effectiveShowForcedSubtitles = nil
         effectiveSubtitleTrackSignature = nil
+    }
+}
+
+/// Subtitle files saved beside a download. Downloads keep the server's text
+/// files (external files and, on Silo, subtitles downloaded to the server)
+/// so they work offline; embedded tracks are already in an original file.
+enum OfflineSubtitleFiles {
+    /// Text subtitle files are small; anything bigger isn't one.
+    static let maxBytes = 10 * 1024 * 1024
+    private static let extensions = ["srt": "srt", "subrip": "srt", "vtt": "vtt", "webvtt": "vtt", "ass": "ass", "ssa": "ssa"]
+
+    /// The manifest's text subtitles worth saving, keyed by their position in
+    /// the manifest list, with the file extension to save them under.
+    static func savable(_ subtitles: [OfflineSubtitle]) -> [(index: Int, subtitle: OfflineSubtitle, ext: String)] {
+        subtitles.enumerated().compactMap { index, subtitle in
+            guard let ext = extensions[(subtitle.format ?? "").lowercased()], !isEmbeddedTrack(subtitle.fetchUrl) else { return nil }
+            return (index, subtitle, ext)
+        }
+    }
+
+    static func filename(index: Int, ext: String) -> String { "subtitle-\(index).\(ext)" }
+
+    /// Silo also lists embedded tracks, extracted on request; the media
+    /// file already carries those.
+    private static func isEmbeddedTrack(_ fetchUrl: String) -> Bool {
+        let last = URLComponents(string: fetchUrl)?.path.split(separator: "/").last ?? ""
+        return (last.removingPercentEncoding ?? String(last)).hasPrefix("embedded:")
+    }
+
+    /// Player sidecars for the saved files, in manifest order. Emby and
+    /// Jellyfin files keep their server stream index, so a track has the
+    /// same ID offline as online; Silo files use their manifest position.
+    static func sidecars(manifest: OfflineManifest, filenames: [String: String], fileURL: (String) -> URL?) -> [SubtitleUrl] {
+        var used = Set<Int>()
+        return savable(manifest.subtitles ?? []).compactMap { entry in
+            let index = entry.subtitle.index ?? entry.index
+            guard index >= 0, used.insert(index).inserted,
+                  let filename = filenames[entry.subtitle.fetchUrl], let url = fileURL(filename), url.isFileURL,
+                  FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return SubtitleUrl(index: index, language: entry.subtitle.language, codec: entry.ext,
+                label: entry.subtitle.title ?? "External", source: "external", forced: entry.subtitle.forced,
+                default: entry.subtitle.isDefault, hearingImpaired: entry.subtitle.hearingImpaired, url: url.absoluteString)
+        }
     }
 }

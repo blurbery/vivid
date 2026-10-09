@@ -192,6 +192,8 @@ struct OpenSubtitleSessionFiles {
         let name: String
         let language: String
         let hearingImpaired: Bool
+        /// This file's own timing offset, in milliseconds.
+        var offsetMs = 0
     }
     private(set) var contentID: String?
     private(set) var entries: [Int64: Entry] = [:]
@@ -205,6 +207,9 @@ struct OpenSubtitleSessionFiles {
     }
     mutating func register(_ entry: Entry) -> URL? {
         entries.updateValue(entry, forKey: entry.id)?.url
+    }
+    mutating func setOffset(_ milliseconds: Int, for id: Int64) {
+        entries[id]?.offsetMs = milliseconds
     }
     mutating func clear() -> [URL] {
         let urls = entries.values.map(\.url)

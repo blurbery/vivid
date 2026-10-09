@@ -90,7 +90,7 @@ final class AppHealthStore: Sendable {
     /// details worth keeping.
     static func countsRepeats(_ report: AppHealthReport) -> Bool {
         switch report.kind {
-        case .appError, .playbackFailure:
+        case .appError, .playbackFailure, .downloadFailure:
             return true
         case .hang:
             return report.source == .watchdog
@@ -142,11 +142,12 @@ final class AppHealthStore: Sendable {
     }
 
     /// The file that is sent, in the same form the detail screen shows.
-    func exportData(_ reports: [AppHealthReport]) -> Data {
+    func exportData(_ reports: [AppHealthReport], note: String? = nil) -> Data {
         let export = AppHealthExport(
             format: AppHealthReport.formatVersion,
             exportedAt: now(),
-            reports: reports.map(AppHealthExport.Entry.init)
+            reports: reports.map(AppHealthExport.Entry.init),
+            note: note
         )
         return (try? Self.encoder.encode(export)) ?? Data()
     }
@@ -267,5 +268,7 @@ struct AppHealthExport: Codable {
     let format: Int
     let exportedAt: Date
     let reports: [Entry]
+    /// The tester's own "What happened?" text, when they wrote one.
+    var note: String? = nil
 }
 #endif

@@ -1,7 +1,9 @@
 import Foundation
+import OSLog
 
 actor EmbyDownloads {
     static let shared = EmbyDownloads()
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.vivid.app", category: "Downloads")
 
     enum BatchError: LocalizedError {
         case alreadyDownloaded, noEpisodes
@@ -53,7 +55,7 @@ actor EmbyDownloads {
                 #if os(iOS)
                 guard EmbyDownloadConversion.isAllowed(policy: rawUser["Policy"] as? [String: Any] ?? [:]),
                       body["file_id"] == nil || body["file_id"] is NSNull else { throw EmbyError.unsupportedFeature }
-                conversionOptions = try await EmbyDownloadConversion.availableOptions(connection: connection)
+                conversionOptions = try await EmbyDownloadConversion.availableOptions(connection: connection, itemID: itemID)
                 #else
                 throw EmbyError.unsupportedFeature
                 #endif
@@ -207,12 +209,15 @@ actor EmbyDownloads {
         manifest["subtitles"] = try subtitleStreams.compactMap { stream -> [String:Any]? in
             guard stream["Type"] as? String == "Subtitle", stream["IsExternal"] as? Bool == true,
                   let index = stream["Index"] as? Int, let codec = stream["Codec"] as? String,
-                  ["srt","subrip","ass","ssa","vtt"].contains(codec) else { return nil }
-            let format = codec == "subrip" ? "srt" : codec
+                  ["srt","subrip","ass","ssa","vtt","webvtt"].contains(codec.lowercased()) else { return nil }
+            let format = ServerSubtitleSidecars.format(codec)
             let url = try EmbyConnection.url(serverURL:adapter.connection.serverURL,
                 path:"/Videos/\(EmbyConnection.id(itemID))/\(sourceID)/Subtitles/\(index)/Stream.\(format)")
             var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":true]
             subtitle["language"] = stream["Language"]; subtitle["forced"] = stream["IsForced"]; subtitle["hearingImpaired"] = stream["IsHearingImpaired"]
+            // The stream index and label match the online sidecar, so a
+            // chosen subtitle keeps its track ID offline.
+            subtitle["index"] = index; subtitle["title"] = stream["DisplayTitle"]; subtitle["isDefault"] = stream["IsDefault"]
             return subtitle
         }
         var row: [String:Any] = ["id":id,"contentId":itemID,"mediaFileId":EmbyAdapter.numberID(sourceID),"status":"ready","quality":format.rawValue,"revision":1]
@@ -262,6 +267,8 @@ actor EmbyDownloads {
                 // existing original-file downloads. Identity and cancellation
                 // still propagate before returning the fallback capability.
                 try await connection.validate()
+                let status: Int? = if case HTTPError.http(let code, _) = error { code } else { nil }
+                Self.logger.info("Emby conversion unavailable, offering original only (HTTP \(status ?? 0, privacy: .public))")
             }
         }
         #endif

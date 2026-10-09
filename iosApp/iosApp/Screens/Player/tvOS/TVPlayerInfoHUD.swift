@@ -787,19 +787,14 @@ private struct VideoPane: View {
                         if viewModel.backendCapabilities.supportsSubtitleDelay {
                             HUDSettingRow(
                                 label: "Subtitle delay",
-                                value: HUDPickerOptions.delayLabel(viewModel.settings.subtitleSyncMs)
+                                value: HUDPickerOptions.delayLabel(viewModel.subtitleDelayMs)
                             ) {
                                 presentPicker(
                                     for: .subtitleDelay,
                                     HUDPickerPresentation(
                                         title: "Subtitle Delay",
-                                        options: HUDPickerOptions.delayOptions(
-                                            from: -2_000,
-                                            through: 2_000,
-                                            by: 100,
-                                            including: viewModel.settings.subtitleSyncMs
-                                        ),
-                                        selection: String(viewModel.settings.subtitleSyncMs),
+                                        options: HUDPickerOptions.subtitleDelayOptions(including: viewModel.subtitleDelayMs),
+                                        selection: String(viewModel.subtitleDelayMs),
                                         onSelect: { value in
                                             if let ms = Int(value) {
                                                 viewModel.setSubtitleSyncMilliseconds(ms)
@@ -899,17 +894,14 @@ private enum HUDPickerOptions {
         return (milliseconds > 0 ? "+" : "") + "\(milliseconds) ms"
     }
 
-    static func delayOptions(
-        from lowerBound: Int,
-        through upperBound: Int,
-        by step: Int,
-        including currentValue: Int
-    ) -> [HUDDropdownOption] {
-        var values = Array(stride(from: lowerBound, through: upperBound, by: step))
-        values.append(currentValue)
-        return Set(values)
-            .sorted()
-            .map { .init(id: String($0), label: delayLabel($0)) }
+    /// Subtitle delay up to 10 seconds either way, like iPhone and iPad:
+    /// 100 ms steps within 2 seconds and 500 ms steps beyond, since a
+    /// downloaded file can be several seconds out.
+    static func subtitleDelayOptions(including currentValue: Int) -> [HUDDropdownOption] {
+        let fine = Array(stride(from: -2_000, through: 2_000, by: 100))
+        let coarse = Array(stride(from: 2_500, through: 10_000, by: 500))
+        let values = fine + coarse + coarse.map { -$0 } + [currentValue]
+        return Set(values).sorted().map { HUDDropdownOption(id: String($0), label: delayLabel($0)) }
     }
 }
 
@@ -1739,13 +1731,8 @@ private struct SubtitlesPane: View {
                         for: .delay,
                         HUDPickerPresentation(
                             title: "Subtitle Delay",
-                            options: HUDPickerOptions.delayOptions(
-                                from: -2_000,
-                                through: 2_000,
-                                by: 100,
-                                including: viewModel.settings.subtitleSyncMs
-                            ),
-                            selection: String(viewModel.settings.subtitleSyncMs),
+                            options: HUDPickerOptions.subtitleDelayOptions(including: viewModel.subtitleDelayMs),
+                            selection: String(viewModel.subtitleDelayMs),
                             onSelect: { value in
                                 if let ms = Int(value) {
                                     viewModel.setSubtitleSyncMilliseconds(ms)
@@ -1825,7 +1812,7 @@ private struct SubtitlesPane: View {
     }
 
     private var delayText: String {
-        HUDPickerOptions.delayLabel(viewModel.settings.subtitleSyncMs)
+        HUDPickerOptions.delayLabel(viewModel.subtitleDelayMs)
     }
 }
 

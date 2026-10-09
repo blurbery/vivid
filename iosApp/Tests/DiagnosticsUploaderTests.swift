@@ -38,4 +38,41 @@ final class DiagnosticsUploaderTests: XCTestCase {
         XCTAssertEqual(DiagnosticsUploader.baseURL.appendingPathComponent("playback").absoluteString,
                        "https://diagnostics.vividapp.co/v1/reports/playback")
     }
+
+    func testNoteIsSentAsWrittenWithinTheRelaysRules() {
+        XCTAssertNil(DiagnosticsNote.cleaned(""))
+        XCTAssertNil(DiagnosticsNote.cleaned("  \n\t "), "Blank is the same as no note")
+        XCTAssertEqual(DiagnosticsNote.cleaned("  It froze after a seek.\r\nTwice.  "), "It froze after a seek.\nTwice.")
+        XCTAssertEqual(DiagnosticsNote.cleaned("bell\u{07} flip\u{202E}ped"), "bell flipped")
+        let long = String(repeating: "😀", count: DiagnosticsNote.maxCharacters + 20)
+        XCTAssertEqual(DiagnosticsNote.cleaned(long)?.unicodeScalars.count, DiagnosticsNote.maxCharacters)
+        XCTAssertEqual(DiagnosticsNote.limited(long).unicodeScalars.count, DiagnosticsNote.maxCharacters)
+        XCTAssertEqual(DiagnosticsNote.limited("short"), "short")
+    }
+
+    func testANoteIsOnlyAddedWhenWritten() throws {
+        let date = Date(timeIntervalSince1970: 1_790_000_000)
+        // The encoder the app sends with, read back as JSON rather than
+        // matched as text, so formatting changes don't matter.
+        func sent(_ export: AppHealthExport) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: AppHealthStore.encoder.encode(export)) as? [String: Any])
+        }
+        let plain = try sent(AppHealthExport(format: 1, exportedAt: date, reports: []))
+        XCTAssertFalse(plain.keys.contains("note"), "Without a note the file is unchanged")
+        let noted = try sent(AppHealthExport(format: 1, exportedAt: date, reports: [], note: "Stuck after a seek"))
+        XCTAssertEqual(noted["note"] as? String, "Stuck after a seek")
+    }
+
+    @MainActor
+    func testThePlaybackRecordIsSavedWithoutTheNote() throws {
+        var report = PlaybackSessionReport(
+            startedAt: Date(timeIntervalSince1970: 1_790_000_000), updatedAt: Date(timeIntervalSince1970: 1_790_000_000),
+            app: AppHealthAppInfo(version: "0.14.3", build: "65", os: "iOS 27.0", device: "iPhone18,2"),
+            setup: .init(), media: .init(), totals: .init(), timeline: [], notMeasured: [])
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(PlaybackSessionRecorder.encode(report))) as? [String: Any])
+        XCTAssertFalse(saved.keys.contains("note"))
+        report.note = DiagnosticsNote.cleaned("Video froze")
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(PlaybackSessionRecorder.encode(report))) as? [String: Any])
+        XCTAssertEqual(sent["note"] as? String, "Video froze")
+    }
 }

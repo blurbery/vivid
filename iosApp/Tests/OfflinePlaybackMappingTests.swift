@@ -19,7 +19,8 @@ final class OfflinePlaybackMappingTests: XCTestCase {
         selectedAudioTrackIndex: Int? = nil,
         targetBitrateKbps: Int? = nil,
         fileSize: Int64? = 1_000_000_000,
-        durationSeconds: Double? = 1358.176
+        durationSeconds: Double? = 1358.176,
+        subtitlesJSON: String? = nil
     ) throws -> OfflineManifest {
         var fields = [
             "\"download_id\": \"d1\"",
@@ -35,6 +36,7 @@ final class OfflinePlaybackMappingTests: XCTestCase {
         if let fileSize { fields.append("\"file_size\": \(fileSize)") }
         if let durationSeconds { fields.append("\"duration_seconds\": \(durationSeconds)") }
         if let audioTracksJSON { fields.append("\"audio_tracks\": \(audioTracksJSON)") }
+        if let subtitlesJSON { fields.append("\"subtitles\": \(subtitlesJSON)") }
         if let selectedAudioTrackIndex {
             fields.append("\"selected_audio_track_index\": \(selectedAudioTrackIndex)")
         }
@@ -74,6 +76,48 @@ final class OfflinePlaybackMappingTests: XCTestCase {
       "default": true
     }]
     """
+
+    // MARK: - Saved subtitle files
+
+    func testSavedSubtitleFilesBecomeLocalSidecars() throws {
+        let manifest = try manifest(subtitlesJSON: """
+        [{"language": "en", "title": "English", "format": "subrip", "external": true, "fetch_url": "/api/v2/downloads/d1/subtitles/external:0"},
+         {"language": "fr", "format": "pgs", "fetch_url": "/api/v2/downloads/d1/subtitles/embedded:1"},
+         {"language": "de", "format": "ass", "fetch_url": "/api/v2/downloads/d1/subtitles/embedded:2"},
+         {"language": "es", "format": "vtt", "fetch_url": "/api/v2/downloads/d1/subtitles/downloaded:7"},
+         {"language": "it", "format": "srt", "external": true, "index": 9, "title": "Italian (SRT)", "isDefault": true, "fetch_url": "https://media.example.com/emby/Videos/1/ms/Subtitles/9/Stream.srt"},
+         {"language": "pt", "format": "srt", "external": true, "fetch_url": "https://media.example.com/emby/Videos/1/ms/Subtitles/11/Stream.srt"}]
+        """)
+        // Embedded tracks are in the media file already, and PGS isn't text.
+        XCTAssertEqual(OfflineSubtitleFiles.savable(manifest.subtitles ?? []).map(\.index), [0, 3, 4, 5])
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for name in ["subtitle-0.srt", "subtitle-3.vtt", "subtitle-4.srt"] {
+            try Data("1\n00:00:01,000 --> 00:00:02,000\nHi\n".utf8).write(to: directory.appendingPathComponent(name))
+        }
+        let filenames = [
+            "/api/v2/downloads/d1/subtitles/external:0": "subtitle-0.srt",
+            "/api/v2/downloads/d1/subtitles/downloaded:7": "subtitle-3.vtt",
+            "https://media.example.com/emby/Videos/1/ms/Subtitles/9/Stream.srt": "subtitle-4.srt",
+            // Recorded but missing on disk, so it isn't offered.
+            "https://media.example.com/emby/Videos/1/ms/Subtitles/11/Stream.srt": "subtitle-5.srt",
+        ]
+        let sidecars = OfflineSubtitleFiles.sidecars(manifest: manifest, filenames: filenames) { directory.appendingPathComponent($0) }
+        // Silo files use their manifest position; an Emby or Jellyfin file
+        // keeps its server stream index, the ID it has when streaming.
+        XCTAssertEqual(sidecars.map(\.index), [0, 3, 9])
+        XCTAssertEqual(sidecars.map(\.codec), ["srt", "vtt", "srt"])
+        XCTAssertEqual(sidecars.map(\.label), ["English", "External", "Italian (SRT)"])
+        XCTAssertEqual(sidecars.map(\.language), ["en", "es", "it"])
+        XCTAssertEqual(sidecars.map(\.default), [nil, nil, true], "The server's default flag survives offline")
+        XCTAssertTrue(sidecars.allSatisfy { URL(string: $0.url)?.isFileURL == true })
+
+        let session = OfflinePlaybackBuilder.makePreparedPlayback(leafContentId: "leaf", manifest: manifest,
+            mediaURL: URL(fileURLWithPath: "/tmp/media.mkv"), subtitleURLs: sidecars, resumePosition: nil).session
+        XCTAssertEqual(session.subtitleUrls?.count, 3)
+    }
 
     // MARK: - Audio track identity
 

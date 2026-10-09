@@ -21,6 +21,9 @@ struct PlaybackSessionReport: Codable, Equatable {
     /// are left out to keep the report small.
     var timeline: [Minute]
     var notMeasured: [String]
+    /// The tester's own "What happened?" text, added only to the copy being
+    /// sent. The saved record never carries it.
+    var note: String?
 
     struct Setup: Codable, Equatable {
         /// hdmi, airplay, bluetooth, speaker, headphones, usb, car or other.
@@ -111,6 +114,15 @@ struct PlaybackSessionReport: Codable, Equatable {
         var audioFaults: [String: Int] = [:]
         var lowestNetworkKbps: Int?
         var endReason: String?
+        /// Seconds paused after playback started. Optional so records saved
+        /// before these fields existed still load.
+        var pausedSeconds: Double?
+        /// Seconds waiting for the player to load after opening, seeking or
+        /// resuming. That isn't a rebuffer, but a long wait is how playback
+        /// stuck after a seek shows.
+        var waitSeconds: Double?
+        /// The longest single wait of that kind.
+        var longestWaitSeconds: Double?
     }
 
     struct Minute: Codable, Equatable {
@@ -132,6 +144,9 @@ struct PlaybackSessionReport: Codable, Equatable {
 }
 
 extension PlaybackSessionReport {
+    /// A wait to load this long gets a mention in the headline.
+    static let longWaitSeconds: Double = 10
+
     /// A short headline for the Diagnostics list and the email subject.
     var headline: String {
         var parts: [String] = []
@@ -141,6 +156,7 @@ extension PlaybackSessionReport {
         if let dropped = totals.droppedFrames, dropped > 0 { parts.append("\(dropped) dropped frames") }
         if totals.rebuffers > 0 { parts.append("\(totals.rebuffers) rebuffers") }
         if totals.stalls > 0 { parts.append("\(totals.stalls) stalls") }
+        if let wait = totals.longestWaitSeconds, wait >= Self.longWaitSeconds { parts.append("waited \(Int(wait)) s to load") }
         let faults = totals.audioFaults.values.reduce(0, +)
         if faults > 0 { parts.append("\(faults) audio faults") }
         return parts.joined(separator: " · ")
@@ -191,6 +207,13 @@ extension PlaybackSessionReport {
         rows.append(("Worst A/V sync", totals.maxAvSyncMs.map { "\(Int($0)) ms" } ?? missing))
         rows.append(("Rebuffering", totals.rebuffers == 0 ? "None" : "\(totals.rebuffers) times, \(Int(totals.rebufferSeconds)) s"))
         rows.append(("Stalls", totals.stalls == 0 ? "None" : "\(totals.stalls) times, \(Int(totals.stallSeconds)) s"))
+        if let wait = totals.waitSeconds {
+            let longest = totals.longestWaitSeconds.map { ", longest \(Int($0)) s" } ?? ""
+            rows.append(("Waiting to load", wait < 1 ? "None" : "\(Int(wait)) s\(longest)"))
+        }
+        if let paused = totals.pausedSeconds {
+            rows.append(("Paused", paused < 1 ? "None" : Duration.seconds(paused).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))))
+        }
         let startup = [totals.firstFrameSeconds.map { "first frame \($0) s" }, totals.playbackStartSeconds.map { "playing \($0) s" }]
             .compactMap { $0 }.joined(separator: ", ")
         rows.append(("Startup", startup.isEmpty ? missing : startup))

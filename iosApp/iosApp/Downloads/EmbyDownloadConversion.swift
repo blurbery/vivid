@@ -25,8 +25,14 @@ enum EmbyDownloadConversion {
         return Options(profile: profile, quality: quality)
     }
 
-    static func availableOptions(connection: EmbyConnection) async throws -> Options {
+    /// Conversion options for this device. Emby builds them from the items
+    /// being synced and answers 500 when `ItemIds` is missing, so registration
+    /// passes the item it will convert and the capability check samples one
+    /// video from the library.
+    static func availableOptions(connection: EmbyConnection, itemID: String? = nil) async throws -> Options {
         guard let user = connection.userID else { throw EmbyError.signInRequired }
+        let sampleID: String
+        if let itemID { sampleID = itemID } else { sampleID = try await sampleItemID(connection: connection, user: user) }
         // A sync target must belong to this installation's existing Emby
         // session. Never register another device or change another session.
         guard let sessions = try await connection.request("GET", "/Sessions", query: ["DeviceId": EmbyConnection.deviceID]) as? [[String: Any]],
@@ -45,8 +51,18 @@ enum EmbyDownloadConversion {
             ]
         ])
         return try options(from: await connection.object("GET", "/Sync/Options", query: [
-            "UserId": user, "TargetId": EmbyConnection.deviceID
+            "UserId": user, "TargetId": EmbyConnection.deviceID, "ItemIds": try EmbyConnection.id(sampleID)
         ]))
+    }
+
+    /// Any movie or episode this account can see, for the capability check.
+    private static func sampleItemID(connection: EmbyConnection, user: String) async throws -> String {
+        let result = try await connection.object("GET", "/Users/\(user)/Items", query: [
+            "Recursive": "true", "IncludeItemTypes": "Movie,Episode", "Limit": "1",
+            "EnableImages": "false", "EnableUserData": "false"
+        ])
+        guard let id = (result["Items"] as? [[String: Any]])?.first?["Id"] as? String else { throw EmbyError.unsupportedFeature }
+        return id
     }
 
     static func request(itemID: String, userID: String, format: DownloadFormat, options: Options) throws -> [String: Any] {

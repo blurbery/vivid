@@ -34,7 +34,12 @@ struct PlaybackSessionAccumulator {
     /// False while the app is in the background playing audio only, when
     /// video frame counts and A/V sync mean nothing.
     private var videoVisible = true
-    private var bufferingSince: TimeInterval?
+    /// A seek the viewer is waiting on, before (or without) the player
+    /// reporting buffering. Time spent here is loading, not a pause.
+    private var seeking = false
+    /// The current stretch of waiting, counted with the same capped ticks as
+    /// `waitSeconds`, so a suspended app can't turn it into an hour.
+    private var currentWaitSeconds: TimeInterval = 0
     /// Buffering before the first played second is startup, not a rebuffer.
     private var bufferingIsRebuffer = false
     private var lastAvSyncMs: Double?
@@ -53,11 +58,18 @@ struct PlaybackSessionAccumulator {
         startedAt = now
         warmupUntil = now + Self.warmupSeconds
         lastTick = now
+        totals.pausedSeconds = 0
+        totals.waitSeconds = 0
+        totals.longestWaitSeconds = 0
     }
 
     private var minuteIndex: Int { min(Int(totals.playedSeconds / 60), Self.maxTimelineMinutes - 1) }
 
     private func inWarmup(_ now: TimeInterval) -> Bool { now < warmupUntil }
+
+    /// Loading the viewer is waiting on: buffering that isn't a rebuffer, or
+    /// a seek the player hasn't reported buffering for.
+    private var isWaiting: Bool { buffering ? !bufferingIsRebuffer : seeking }
 
     mutating func markWarmup(at now: TimeInterval) {
         warmupUntil = max(warmupUntil, now + Self.warmupSeconds)
@@ -69,14 +81,24 @@ struct PlaybackSessionAccumulator {
         defer { lastTick = now }
         guard let lastTick, now > lastTick else { return }
         let elapsed = min(now - lastTick, 5)
+        if isWaiting {
+            // Loading after opening, seeking or resuming isn't a rebuffer,
+            // but it's still time the viewer spent waiting.
+            totals.waitSeconds = (totals.waitSeconds ?? 0) + elapsed
+            currentWaitSeconds += elapsed
+            totals.longestWaitSeconds = max(totals.longestWaitSeconds ?? 0, currentWaitSeconds)
+            return
+        }
         if buffering {
-            guard bufferingIsRebuffer else { return }
             totals.rebufferSeconds += elapsed
             let index = minuteIndex
             minutes[index, default: .init(minute: index)].rebufferSeconds += elapsed
             return
         }
-        guard playing else { return }
+        guard playing else {
+            if playheadStarted { totals.pausedSeconds = (totals.pausedSeconds ?? 0) + elapsed }
+            return
+        }
         guard playheadStarted else {
             totals.warmupSeconds += elapsed
             return
@@ -152,11 +174,18 @@ struct PlaybackSessionAccumulator {
             // switch is expected; only a stall in steady playback counts.
             bufferingIsRebuffer = totals.playedSeconds > 0 && !inWarmup(now)
             if bufferingIsRebuffer { totals.rebuffers += 1 }
-            bufferingSince = now
         } else {
-            bufferingSince = nil
             markWarmup(at: now)
         }
+        if !isWaiting { currentWaitSeconds = 0 }
+    }
+
+    /// A seek is in progress while the viewer wants playback. Seeks while
+    /// paused aren't reported, so they stay paused time.
+    mutating func setSeeking(_ isSeeking: Bool, at now: TimeInterval) {
+        tick(at: now)
+        seeking = isSeeking
+        if !isWaiting { currentWaitSeconds = 0 }
     }
 
     mutating func seeked(at now: TimeInterval) {

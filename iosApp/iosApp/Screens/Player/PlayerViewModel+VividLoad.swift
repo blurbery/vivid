@@ -21,6 +21,8 @@ extension PlayerViewModel {
         lazySubtitleSidecars = [:]
         #if os(iOS) || os(tvOS)
         removeOpenSubtitleFiles(openSubtitleFiles.prepare(contentID: prepared.watchDetail.contentId))
+        // Files kept for the same item take the offset saved for this version.
+        refreshOpenSubtitleOffsets(contentID: prepared.watchDetail.contentId, fileID: prepared.selectedVersion.fileId)
         #endif
         let preferredSubtitles = subtitleOrderingLanguage.map { [$0] } ?? []
         let preferredAudio = VividInitialAudioPreference.languages(
@@ -156,6 +158,20 @@ extension PlayerViewModel {
                     isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
                     isDefault: sidecar.default ?? false, httpHeaders: streamRequest.headers,
                     formatHint: sidecar.codec), appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
+            }
+        }
+        // A download keeps its subtitle files beside the media. Only local
+        // files inside the downloads folder are added, with no request headers.
+        if streamRequest.url.isFileURL {
+            let downloads = DownloadFilePaths.rootDirectory().standardizedFileURL.path + "/"
+            for sidecar in prepared.session.subtitleUrls ?? [] {
+                guard let url = URL(string: sidecar.url), url.isFileURL,
+                      url.standardizedFileURL.path.hasPrefix(downloads) else { continue }
+                vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url,
+                    name: sidecar.label ?? "External", language: sidecar.language,
+                    isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
+                    isDefault: sidecar.default ?? false, formatHint: sidecar.codec),
+                    appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
             }
         }
         // Silo publishes its external subtitle files in the plan. They're

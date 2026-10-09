@@ -170,6 +170,33 @@ final class EmbyAdapterTests: XCTestCase {
         }
     }
 
+    /// Regression: the capability check sent no `ItemIds`, Emby answered
+    /// 500, and converted qualities were never offered.
+    func testCapabilityOffersConvertedQualitiesWhenEmbyAllowsConversion() async throws {
+        let adapter = stubbedAdapter { request in
+            let url = try XCTUnwrap(request.url)
+            let query = Dictionary(uniqueKeysWithValues: (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+            switch url.path {
+            case "/emby/Users/user-1":
+                return (200, ["Policy": ["EnableContentDownloading": true, "EnableSyncTranscoding": true]])
+            case "/emby/Users/user-1/Items": return (200, ["Items": [["Id": "sample-1"]]])
+            case "/emby/Sessions": return (200, [["Id": "current-session", "DeviceId": EmbyConnection.deviceID, "UserId": "user-1"]])
+            case "/emby/Sessions/Capabilities/Full": return (200, [:])
+            case "/emby/Sync/Options":
+                guard query["ItemIds"] == "sample-1" else { return (500, [:]) }
+                return (200, [
+                    "ProfileOptions": [["Id": "mobile", "EnableQualityOptions": true, "IsDefault": true]],
+                    "QualityOptions": [["Id": "original", "IsOriginalQuality": true], ["Id": "high", "IsDefault": true]]
+                ])
+            default: throw URLError(.badURL)
+            }
+        }
+        let raw = try await adapter.route(method: "GET", path: "/api/v1/downloads/capability", query: [:], body: nil)
+        let capability: DownloadCapability = try EmbyAdapter.decode(raw)
+        XCTAssertEqual(capability.qualityPresets, DownloadFormat.allCases.map(\.rawValue))
+        XCTAssertTrue(capability.transcodeEnabled)
+    }
+
     func testUnavailableEmbyConversionPreservesOriginalDownloads() async throws {
         for failure in [500, 404] {
             let adapter = stubbedAdapter { request in
@@ -189,6 +216,7 @@ final class EmbyAdapterTests: XCTestCase {
 
     func testDownloadConversionNegotiatesOnlyThisDeviceAndAccount() async throws {
         var paths: [String] = []
+        var syncItems: [String] = []
         let adapter = stubbedAdapter { request in
             let url = try XCTUnwrap(request.url)
             paths.append(url.path)
@@ -205,9 +233,17 @@ final class EmbyAdapterTests: XCTestCase {
                 XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(query["Id"], "current-session")
                 return (200, [:])
+            case "/emby/Users/user-1/Items":
+                XCTAssertEqual(query["Limit"], "1")
+                XCTAssertEqual(query["IncludeItemTypes"], "Movie,Episode")
+                return (200, ["Items": [["Id": "sample-1"]]])
             case "/emby/Sync/Options":
                 XCTAssertEqual(query["UserId"], "user-1")
                 XCTAssertEqual(query["TargetId"], EmbyConnection.deviceID)
+                // Emby 4.9 builds the options from the items and fails with
+                // a 500 when none are named.
+                guard let items = query["ItemIds"] else { return (500, [:]) }
+                syncItems.append(items)
                 return (200, [
                     "ProfileOptions": [["Id": "original", "EnableQualityOptions": false], ["Id": "mobile", "EnableQualityOptions": true]],
                     "QualityOptions": [["Id": "original", "IsOriginalQuality": true], ["Id": "high", "IsDefault": true, "IsOriginalQuality": false]]
@@ -218,7 +254,12 @@ final class EmbyAdapterTests: XCTestCase {
         let options = try await EmbyDownloadConversion.availableOptions(connection: adapter.connection)
         XCTAssertEqual(options.profile, "mobile")
         XCTAssertEqual(options.quality, "high")
+        XCTAssertEqual(paths, ["/emby/Users/user-1/Items", "/emby/Sessions", "/emby/Sessions/Capabilities/Full", "/emby/Sync/Options"])
+        paths.removeAll()
+        // Registration names the item it will convert, so no sample lookup.
+        _ = try await EmbyDownloadConversion.availableOptions(connection: adapter.connection, itemID: "episode-7")
         XCTAssertEqual(paths, ["/emby/Sessions", "/emby/Sessions/Capabilities/Full", "/emby/Sync/Options"])
+        XCTAssertEqual(syncItems, ["sample-1", "episode-7"])
         let body = try EmbyDownloadConversion.request(itemID: "movie-1", userID: "user-1", format: .twoMbps, options: options)
         XCTAssertEqual(body["Bitrate"] as? Int, 2_000_000)
         XCTAssertEqual(body["ItemIds"] as? [String], ["movie-1"])
@@ -236,7 +277,7 @@ final class EmbyAdapterTests: XCTestCase {
             return (200, [["Id": "other-account", "DeviceId": EmbyConnection.deviceID, "UserId": "user-2"]])
         }
         do {
-            _ = try await EmbyDownloadConversion.availableOptions(connection: adapter.connection)
+            _ = try await EmbyDownloadConversion.availableOptions(connection: adapter.connection, itemID: "movie-1")
             XCTFail("A different account's session must never be changed")
         } catch EmbyError.unsupportedFeature { }
     }
@@ -330,6 +371,28 @@ final class EmbyAdapterTests: XCTestCase {
         }
         XCTAssertEqual(EmbyDownloads.BatchError.noEpisodes.localizedDescription, "No downloadable episodes were found.")
         XCTAssertEqual(EmbyDownloads.BatchError.alreadyDownloaded.localizedDescription, "All available episodes are already downloaded.")
+    }
+
+    /// Offline subtitle files keep the stream index, label and default flag
+    /// the online sidecar uses, and WebVTT files are kept too.
+    func testDownloadManifestKeepsServerSubtitleFiles() throws {
+        let streams: [[String: Any]] = [
+            ["Type": "Subtitle", "Index": 3, "Codec": "subrip", "IsExternal": true, "Language": "eng",
+             "DisplayTitle": "English (SRT)", "IsDefault": true],
+            ["Type": "Subtitle", "Index": 4, "Codec": "webvtt", "IsExternal": true, "Language": "fre"],
+            ["Type": "Subtitle", "Index": 5, "Codec": "pgssub", "IsExternal": true],
+            ["Type": "Subtitle", "Index": 6, "Codec": "subrip", "IsExternal": false],
+        ]
+        let items: [[String: Any]] = [["Id": "episode-1", "Name": "One", "Type": "Episode",
+                                       "MediaSources": [["Id": "source-1", "Size": 1234, "MediaStreams": streams]]]]
+        let built = try EmbyDownloads.batchEpisodes(items, body: ["content_id": "series-1", "series": true], adapter: adapter)
+        let manifest = try XCTUnwrap(built.first?.entry["manifest"] as? [String: Any])
+        let subtitles = try XCTUnwrap(manifest["subtitles"] as? [[String: Any]])
+        XCTAssertEqual(subtitles.map { $0["index"] as? Int }, [3, 4], "Image and embedded subtitles aren't files to save")
+        XCTAssertEqual(subtitles.map { $0["format"] as? String }, ["srt", "vtt"])
+        XCTAssertEqual(subtitles[0]["title"] as? String, "English (SRT)")
+        XCTAssertEqual(subtitles[0]["isDefault"] as? Bool, true)
+        XCTAssertTrue((subtitles[1]["fetchUrl"] as? String)?.hasSuffix("/Subtitles/4/Stream.vtt") == true)
     }
 
     func testBatchEpisodesCarryTheRequestBatchIDInServerOrder() throws {

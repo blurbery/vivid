@@ -12,6 +12,9 @@ struct VividSubtitleOverlay: View {
     let secondaryUsesMovieTimeline: Bool
     let appearance: SubtitleAppearance
     let subtitleSyncMs: Int
+    /// The secondary layer's own delay; an OpenSubtitles file's offset on
+    /// the main subtitle doesn't apply to it.
+    var secondarySubtitleSyncMs: Int? = nil
 
     @State private var primary: [SubtitleCue] = []
     @State private var secondary: [SubtitleCue] = []
@@ -19,12 +22,6 @@ struct VividSubtitleOverlay: View {
 
     private var renderStyle: VividSubtitleRenderStyle {
         VividSubtitleRenderStyle(appearance: appearance)
-    }
-
-    /// Positive delay means captions appear later, so the cue clock is moved
-    /// backwards. This preserves the positive-delay subtitle convention.
-    private var subtitleDelaySeconds: Double {
-        Double(subtitleSyncMs) / 1_000
     }
 
     private var hasCues: Bool { !primary.isEmpty || !secondary.isEmpty }
@@ -36,9 +33,10 @@ struct VividSubtitleOverlay: View {
                 let movieTime = sourceTime()
                 ZStack {
                     cueLayer(activeCues(in: primary, usesMovieTimeline: primaryUsesMovieTimeline,
-                                        movieTime: movieTime), videoRect: videoRect, secondary: false)
+                                        movieTime: movieTime, delayMs: subtitleSyncMs), videoRect: videoRect, secondary: false)
                     cueLayer(activeCues(in: secondary, usesMovieTimeline: secondaryUsesMovieTimeline,
-                                        movieTime: movieTime), videoRect: videoRect, secondary: true)
+                                        movieTime: movieTime, delayMs: secondarySubtitleSyncMs ?? subtitleSyncMs),
+                             videoRect: videoRect, secondary: true)
                 }
             }
         }
@@ -56,15 +54,17 @@ struct VividSubtitleOverlay: View {
         if hasCues { vividSourceTime = engine.clock.currentTime }
     }
 
+    /// Positive delay means captions appear later, so the cue clock is moved
+    /// backwards. This preserves the positive-delay subtitle convention.
     static func renderClock(movieTime: Double, engineTime: Double, usesMovieTimeline: Bool, delaySeconds: Double) -> Double {
         (usesMovieTimeline ? movieTime : engineTime) - delaySeconds
     }
 
-    private func activeCues(in cues: [SubtitleCue], usesMovieTimeline: Bool, movieTime: Double) -> [SubtitleCue] {
+    private func activeCues(in cues: [SubtitleCue], usesMovieTimeline: Bool, movieTime: Double, delayMs: Int) -> [SubtitleCue] {
         // Complete sidecars use original movie timestamps; embedded cues use
         // the served stream's clock, which may be rebased by a server remux.
         let renderClock = Self.renderClock(movieTime: movieTime, engineTime: vividSourceTime,
-                                          usesMovieTimeline: usesMovieTimeline, delaySeconds: subtitleDelaySeconds)
+                                          usesMovieTimeline: usesMovieTimeline, delaySeconds: Double(delayMs) / 1_000)
         return cues.filter { $0.startTime <= renderClock && renderClock < $0.endTime }
     }
 

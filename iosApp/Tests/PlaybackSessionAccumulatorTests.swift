@@ -272,6 +272,109 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
     }
 
     @MainActor
+    func testStuckLoadingAfterASeekIsRecordedAsAWaitAndHeadlined() {
+        var session = playing()
+        for second in 1...10 { session.tick(at: TimeInterval(second)) }
+        session.seeked(at: 10)
+        session.setBuffering(true, at: 11)
+        for second in 12...31 { session.tick(at: TimeInterval(second)) }
+        session.ended(reason: "stopped", at: 31)
+        XCTAssertEqual(session.totals.rebuffers, 0, "Loading after a seek still isn't a rebuffer")
+        XCTAssertEqual(session.totals.playedSeconds, 11, accuracy: 0.001, "Including the second before loading began")
+        XCTAssertEqual(session.totals.waitSeconds ?? 0, 20, accuracy: 0.001)
+        XCTAssertEqual(session.totals.longestWaitSeconds ?? 0, 20, accuracy: 0.001)
+        XCTAssertEqual(session.totals.pausedSeconds, 0)
+        let report = PlaybackSessionReport(
+            startedAt: Date(timeIntervalSince1970: 1_790_000_000), updatedAt: Date(timeIntervalSince1970: 1_790_000_000),
+            app: AppHealthAppInfo(version: "0.14.3", build: "65", os: "iOS 27.0", device: "iPhone18,2"),
+            setup: .init(), media: .init(), totals: session.totals, timeline: [], notMeasured: [])
+        XCTAssertTrue(report.headline.contains("waited 20 s to load"))
+        XCTAssertTrue(report.summaryRows.contains { $0.label == "Waiting to load" && $0.value == "20 s, longest 20 s" })
+    }
+
+    func testShortWaitsAreRecordedButNotHeadlined() {
+        var session = playing()
+        session.seeked(at: 10)
+        session.setBuffering(true, at: 10)
+        session.setBuffering(false, at: 12)
+        XCTAssertEqual(session.totals.waitSeconds ?? 0, 2, accuracy: 0.001)
+        XCTAssertEqual(session.totals.longestWaitSeconds ?? 0, 2, accuracy: 0.001)
+        let report = PlaybackSessionReport(
+            startedAt: Date(timeIntervalSince1970: 1_790_000_000), updatedAt: Date(timeIntervalSince1970: 1_790_000_000),
+            app: AppHealthAppInfo(version: "0.14.3", build: "65", os: "iOS 27.0", device: "iPhone18,2"),
+            setup: .init(), media: .init(), totals: session.totals, timeline: [], notMeasured: [])
+        XCTAssertFalse(report.headline.contains("waited"))
+    }
+
+    /// The player reports "not playing" while a seek runs, before any
+    /// buffering; that is loading the viewer waits on, not a pause.
+    func testSlowSeekWithoutBufferingIsAWaitNotAPause() {
+        var session = playing()
+        for second in 1...10 { session.tick(at: TimeInterval(second)) }
+        session.seeked(at: 10)
+        session.setPlaying(false, at: 10)
+        session.setSeeking(true, at: 10)
+        for second in 11...30 { session.tick(at: TimeInterval(second)) }
+        session.setSeeking(false, at: 30)
+        session.setPlaying(true, at: 30)
+        XCTAssertEqual(session.totals.pausedSeconds ?? 0, 0, accuracy: 0.001)
+        XCTAssertEqual(session.totals.waitSeconds ?? 0, 20, accuracy: 0.001)
+        XCTAssertEqual(session.totals.longestWaitSeconds ?? 0, 20, accuracy: 0.001)
+        XCTAssertEqual(session.totals.playedSeconds, 10, accuracy: 0.001)
+    }
+
+    /// A wait that spans the seek and the buffering after it is one wait.
+    func testSeekThenBufferingIsOneWait() {
+        var session = playing()
+        session.seeked(at: 10)
+        session.setPlaying(false, at: 10)
+        session.setSeeking(true, at: 10)
+        for second in 11...14 { session.tick(at: TimeInterval(second)) }
+        session.setBuffering(true, at: 14)
+        session.setSeeking(false, at: 14)
+        for second in 15...22 { session.tick(at: TimeInterval(second)) }
+        session.setBuffering(false, at: 22)
+        session.setPlaying(true, at: 22)
+        session.setSeeking(true, at: 40)
+        session.setSeeking(false, at: 42)
+        XCTAssertEqual(session.totals.waitSeconds ?? 0, 14, accuracy: 0.001)
+        XCTAssertEqual(session.totals.longestWaitSeconds ?? 0, 12, accuracy: 0.001)
+    }
+
+    /// The app being suspended mid-load mustn't turn into an hour-long wait.
+    func testLongestWaitUsesTheSameCappedTimeAsTheTotal() {
+        var session = PlaybackSessionAccumulator(startedAt: 0)
+        session.setBuffering(true, at: 1)
+        session.tick(at: 3_601)
+        XCTAssertEqual(session.totals.waitSeconds ?? 0, 5, accuracy: 0.001)
+        XCTAssertEqual(session.totals.longestWaitSeconds ?? 0, 5, accuracy: 0.001)
+    }
+
+    func testPausedTimeIsRecordedOnlyAfterPlaybackStarts() {
+        var session = PlaybackSessionAccumulator(startedAt: 0)
+        for second in 1...5 { session.tick(at: TimeInterval(second)) } // still opening
+        XCTAssertEqual(session.totals.pausedSeconds, 0)
+        session.setPlaying(true, at: 5)
+        session.position(nil, at: 5)
+        for second in 6...10 { session.tick(at: TimeInterval(second)) }
+        session.setPlaying(false, at: 10)
+        for second in 11...40 { session.tick(at: TimeInterval(second)) }
+        session.ended(reason: "stopped", at: 40)
+        XCTAssertEqual(session.totals.pausedSeconds ?? 0, 30, accuracy: 0.001)
+        XCTAssertEqual(session.totals.playedSeconds, 5, accuracy: 0.001)
+        XCTAssertEqual(session.totals.waitSeconds, 0)
+    }
+
+    func testTotalsSavedBeforeWaitAndPauseFieldsStillLoad() throws {
+        let saved = Data(#"{"audioFaults":{},"audioOutputChanges":0,"avSyncOver100msSeconds":0,"decoderDroppedFrames":0,"delayedFrames":0,"displaySwitches":0,"droppedFrames":0,"endReason":"stopped","firstFrameSeconds":0.7,"lowestNetworkKbps":8,"playbackStartSeconds":2,"playedSeconds":1.5,"rebufferSeconds":0,"rebuffers":0,"reloads":0,"seeks":1,"stallSeconds":0,"stalls":0,"warmupSeconds":2.9}"#.utf8)
+        let totals = try JSONDecoder().decode(PlaybackSessionReport.Totals.self, from: saved)
+        XCTAssertEqual(totals.seeks, 1)
+        XCTAssertNil(totals.pausedSeconds)
+        XCTAssertNil(totals.waitSeconds)
+        XCTAssertNil(totals.longestWaitSeconds)
+    }
+
+    @MainActor
     func testReportNeverContainsAddressesAndListsWhatWasNotMeasured() throws {
         var session = playing()
         session.counter(.dropped, value: 0, at: 6)

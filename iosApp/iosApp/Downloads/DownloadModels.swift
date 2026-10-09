@@ -499,6 +499,13 @@ struct OfflineAudioTrack: Codable, Hashable, Sendable {
 /// origin (`external:{index}` or `downloaded:{id}`).
 struct OfflineSubtitle: Codable, Hashable, Sendable {
     let language: String?
+    /// The track's label: Silo's title or Emby's and Jellyfin's display title.
+    var title: String? = nil
+    /// Emby's and Jellyfin's subtitle stream index, the same one their online
+    /// sidecars use. Silo manifests leave it out.
+    var index: Int? = nil
+    /// The server's default flag, so automatic selection matches streaming.
+    var isDefault: Bool? = nil
     let format: String?
     let forced: Bool?
     let hearingImpaired: Bool?
@@ -676,6 +683,10 @@ struct DownloadRecord: Codable, Identifiable, Hashable, Sendable {
     /// transfer. Default `nil` keeps Codable backward-compatible with
     /// stores written before pause existed.
     var resumeDataFilename: String? = nil
+    /// Set once the manifest's subtitle files have been fetched, or found
+    /// to be unavailable, so downloads made before subtitles were saved are
+    /// backfilled once rather than on every launch.
+    var subtitlesChecked: Bool? = nil
 
     // Display fields cached so the Downloads list renders before the
     // manifest is fetched and offline.

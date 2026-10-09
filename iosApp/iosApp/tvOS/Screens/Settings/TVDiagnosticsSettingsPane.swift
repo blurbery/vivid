@@ -222,6 +222,7 @@ private struct TVLatestPlaybackPage: View {
     @FocusState private var focusedSection: Int?
     @FocusState private var sendFocused: Bool
     @State private var status: DiagnosticsSendStatus = .idle
+    @State private var note = ""
 
     private var sections: [(title: String, lines: [String])] {
         var sections: [(String, [String])] = [
@@ -252,10 +253,11 @@ private struct TVLatestPlaybackPage: View {
                 TVSettingsPageHeader(title: "Latest Playback",
                                      subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened))
                 TVSettingsGroup {
+                    TVDiagnosticsNoteRow(text: $note)
                     TVDiagnosticsSendRow(title: "Send Latest Playback", status: status, action: send)
                         .focused($sendFocused)
                 }
-                TVSettingsFooter("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses.")
+                TVSettingsFooter("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
                     VStack(alignment: .leading, spacing: 10) {
                         Text(section.title).font(.system(size: 27, weight: .semibold))
@@ -285,7 +287,9 @@ private struct TVLatestPlaybackPage: View {
     }
 
     private func send() {
-        guard !status.isSending, let data = PlaybackSessionRecorder.encode(report) else { return }
+        var sent = report
+        sent.note = DiagnosticsNote.cleaned(note)
+        guard !status.isSending, let data = PlaybackSessionRecorder.encode(sent) else { return }
         status = .sending
         Task {
             do {
@@ -293,6 +297,22 @@ private struct TVLatestPlaybackPage: View {
             } catch {
                 status = .failed(error as? DiagnosticsUploader.Failure ?? .unavailable)
             }
+        }
+    }
+}
+
+/// The optional "What happened?" note, sent with the report. Kept in the
+/// page's state so the system text entry screen can't clear it.
+private struct TVDiagnosticsNoteRow: View {
+    @Binding var text: String
+
+    var body: some View {
+        TVSettingsFieldRow(title: "What happened?", detail: "Optional. Describe what you saw, in a sentence or two.") {
+            TextField("What happened?", text: $text)
+                .onChange(of: text) { _, new in
+                    let limited = DiagnosticsNote.limited(new)
+                    if limited != new { text = limited }
+                }
         }
     }
 }
@@ -320,6 +340,7 @@ private struct TVDiagnosticsSendPage: View {
     /// Fixed when the page opens, so marking them sent can't swap the list.
     @State private var reports: [AppHealthReport]
     @State private var status: DiagnosticsSendStatus = .idle
+    @State private var note = ""
     @FocusState private var sendFocused: Bool
 
     init(reports: [AppHealthReport]) { _reports = State(initialValue: reports) }
@@ -330,6 +351,7 @@ private struct TVDiagnosticsSendPage: View {
                 TVSettingsPageHeader(title: "Send to Vivid",
                                      subtitle: reports.count == 1 ? "1 report" : "\(reports.count) reports")
                 TVSettingsGroup {
+                    TVDiagnosticsNoteRow(text: $note)
                     TVDiagnosticsSendRow(title: "Send", status: status, action: send)
                         .focused($sendFocused)
                     NavigationLink { TVDiagnosticsQRPage(reports: reports) } label: {
@@ -337,7 +359,7 @@ private struct TVDiagnosticsSendPage: View {
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                 }
-                TVSettingsFooter("Sends these reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Open a report in Diagnostics to see exactly what it contains.")
+                TVSettingsFooter("Sends these reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Open a report in Diagnostics to see exactly what it contains. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
                 TVSettingsSectionHeader("WHAT IS SENT")
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(AppHealthReportGroup.grouping(reports)) { group in
@@ -360,8 +382,9 @@ private struct TVDiagnosticsSendPage: View {
         guard !status.isSending, !reports.isEmpty else { return }
         status = .sending
         let reports = reports
+        let note = DiagnosticsNote.cleaned(note)
         Task {
-            let data = await Task.detached(priority: .userInitiated) { AppHealthStore.shared.exportData(reports) }.value
+            let data = await Task.detached(priority: .userInitiated) { AppHealthStore.shared.exportData(reports, note: note) }.value
             do {
                 let reference = try await DiagnosticsUploader.send(data, kind: .problems)
                 AppHealthSendState.markSent(reports)
