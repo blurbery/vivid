@@ -196,7 +196,8 @@ final class DownloadManager {
     /// "About 4.59 GB per hour" for a smaller preset, nil for original.
     static func sizePerHour(_ format: DownloadFormat) -> String? {
         StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: 3600)
-            .map { "About \(DownloadFormatting.bytes($0)) per hour" }
+            // Not `DownloadFormatting`, which only the iOS views compile.
+            .map { "About \(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)) per hour" }
     }
 
     var availableFormats: [DownloadFormat] {
