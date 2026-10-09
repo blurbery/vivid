@@ -563,6 +563,18 @@ private struct SeriesDownloadOptionsSheet: View {
     }
 
     private func optionLabel(title: String, detail: String, icon: String) -> some View {
+        DownloadOptionRow(title: title, detail: detail, icon: icon)
+    }
+}
+
+/// An icon row with a title, detail line and chevron. The series and movie
+/// download sheets share it.
+struct DownloadOptionRow: View {
+    let title: String
+    let detail: String
+    let icon: String
+
+    var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .semibold))

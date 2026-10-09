@@ -159,6 +159,7 @@ struct DownloadActionButton: View {
                     versions: versions,
                     selectedVersionFileId: selectedVersionFileId,
                     lastVersionFileId: lastVersionFileId,
+                    isMovie: !isEpisode,
                     onStart: startDownload
                 )
             }
