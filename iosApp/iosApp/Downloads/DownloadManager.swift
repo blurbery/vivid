@@ -81,8 +81,10 @@ final class DownloadManager {
     /// a manifest request failed for the rest.
     private var preparingDetailsFetched: Set<String> = []
     private var preparingDetailsAttempts: [String: Int] = [:]
-    /// Downloads deleted this session. A list that was in flight during a
-    /// delete can still return the row, which must not come back.
+    /// Downloads deleted in the current scope. A list that was in flight
+    /// during a delete can still return the row, which must not come back.
+    /// Cleared on a scope change, which also drops any list in flight; each
+    /// scope's unsent deletes stay in its own `pendingServerDeletes`.
     private var deletedDownloadIds: Set<String> = []
     private var pollTask: Task<Void, Never>?
     private var lastProgressPersist = Date.distantPast
@@ -618,6 +620,7 @@ final class DownloadManager {
         pendingResumeIds.removeAll()
         preparingDetailsFetched.removeAll()
         preparingDetailsAttempts.removeAll()
+        deletedDownloadIds.removeAll()
         invalidatePendingRegistrations()
         scopeLoadTask?.cancel()
         scopeLoadTask = nil
