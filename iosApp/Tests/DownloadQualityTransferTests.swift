@@ -213,4 +213,97 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertNil(DownloadManager.serverFileSize(ready, provider: .emby, currentSize: 900_000_000, bytesDownloaded: 0, localStatus: .queued))
         XCTAssertEqual(DownloadManager.serverFileSize(ready, provider: .jellyfin, currentSize: 0, bytesDownloaded: 0, localStatus: .queued), prepared)
     }
+
+    /// Versions are matched by resolution class, whatever spelling the
+    /// server uses: Silo's "2160p", Emby's and Jellyfin's heights, or "4K".
+    func testVersionClassesAcceptEachServersResolution() {
+        let cases: [(String?, Int?)] = [("2160p", 2160), ("4K", 2160), ("uhd", 2160), ("1920x1080", 1080), ("1080", 1080),
+                                        ("720p", 720), ("576p", 480), ("480p", 480), (nil, nil), ("", nil), ("unknown", nil)]
+        for (resolution, height) in cases {
+            XCTAssertEqual(DownloadVersionPreference.heightClass(of: resolution), height, "\(resolution ?? "nil")")
+        }
+    }
+
+    /// The menu lists one version per class, highest first, and only tells
+    /// HDR apart where a class has both. Tags survive the round trip.
+    func testVersionOptionsComeFromTheEpisodesFiles() throws {
+        func file(_ id: Int, _ resolution: String?, hdr: Bool?) -> EpisodeFile {
+            EpisodeFile(fileId: id, resolution: resolution, codecVideo: nil, hdr: hdr, audioChannels: nil, container: nil, fileSize: nil)
+        }
+        let files = [file(1, "1080p", hdr: false), file(2, "2160p", hdr: true), file(3, "2160p", hdr: false),
+                     file(4, "1080p", hdr: nil), file(5, "720p", hdr: nil), file(6, nil, hdr: true)]
+        let options = DownloadVersionPreference.options(for: files)
+        XCTAssertEqual(options.map(\.label), ["4K HDR", "4K", "1080p", "720p"])
+        for option in options {
+            XCTAssertEqual(DownloadVersionPreference(tag: option.tag), option)
+        }
+        for invalid in ["original", "10mbps", "original@999", "original@1080-dv", "original@"] {
+            XCTAssertNil(DownloadVersionPreference(tag: invalid), invalid)
+        }
+        XCTAssertEqual(DownloadVersionPreference.split("original@1080").quality, "original")
+        XCTAssertEqual(DownloadVersionPreference.split("original@1080").version?.height, 1080)
+        XCTAssertEqual(DownloadVersionPreference.split("5mbps").quality, "5mbps")
+        XCTAssertNil(DownloadVersionPreference.split("5mbps").version)
+    }
+
+    /// Each episode gets the file with the same class and HDR, then the same
+    /// class either way; without one the server picks.
+    func testVersionMatchingFallsBackWithinTheClassThenToTheServer() {
+        func file(_ id: Int, _ resolution: String, hdr: Bool) -> EpisodeFile {
+            EpisodeFile(fileId: id, resolution: resolution, codecVideo: nil, hdr: hdr, audioChannels: nil, container: nil, fileSize: nil)
+        }
+        let sdr4K = DownloadVersionPreference(height: 2160, hdr: false)
+        XCTAssertEqual(sdr4K.file(in: [file(1, "2160p", hdr: true), file(2, "2160p", hdr: false)])?.fileId, 2)
+        XCTAssertEqual(sdr4K.file(in: [file(1, "2160p", hdr: true), file(3, "1080p", hdr: false)])?.fileId, 1)
+        XCTAssertNil(DownloadVersionPreference(height: 720, hdr: nil).file(in: [file(1, "2160p", hdr: true)]))
+
+        let defaultVersion = DownloadVersionPreference(height: 2160, hdr: nil)
+        let menu = [DownloadVersionPreference(height: 2160, hdr: true), DownloadVersionPreference(height: 2160, hdr: false),
+                    DownloadVersionPreference(height: 1080, hdr: nil)]
+        XCTAssertEqual(defaultVersion.option(in: menu), DownloadVersionPreference(height: 2160, hdr: false))
+        XCTAssertEqual(DownloadVersionPreference(height: 1080, hdr: nil).option(in: menu)?.label, "1080p")
+        XCTAssertNil(DownloadVersionPreference(height: 720, hdr: nil).option(in: menu))
+    }
+
+    /// Settings keeps the version apart from the quality the server sees, and
+    /// the default lands on a matching menu option when there is one.
+    func testDefaultVersionIsStoredApartFromTheQuality() throws {
+        let suiteName = "download-default-version-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { UserDefaults().removePersistentDomain(forName: suiteName) }
+
+        let settings = DownloadSettings(defaults: defaults)
+        XCTAssertEqual(settings.defaultChoiceTag, "original")
+        settings.defaultChoiceTag = "original@1080"
+        XCTAssertEqual(settings.preferredFormat, "original")
+        XCTAssertEqual(settings.preferredVersion, DownloadVersionPreference(height: 1080, hdr: nil))
+
+        let restored = DownloadSettings(defaults: defaults)
+        XCTAssertEqual(restored.defaultChoiceTag, "original@1080")
+        let menu = [DownloadVersionPreference(height: 2160, hdr: true), DownloadVersionPreference(height: 1080, hdr: nil)]
+        XCTAssertEqual(restored.resolvedChoiceTag(allowedFormats: ["original", "5mbps"], versions: menu), "original@1080")
+        XCTAssertEqual(restored.resolvedChoiceTag(allowedFormats: ["original"], versions: []), "original")
+
+        restored.defaultChoiceTag = "5mbps"
+        XCTAssertEqual(restored.preferredFormat, "5mbps")
+        XCTAssertNil(restored.preferredVersion)
+        XCTAssertEqual(restored.resolvedChoiceTag(allowedFormats: ["original", "5mbps"], versions: menu), "5mbps")
+    }
+
+    /// A list of episodes reports what wasn't added rather than failing whole.
+    @MainActor
+    func testEpisodeListReportsWhatWasNotAdded() {
+        var result = DownloadManager.EpisodeRegistrationResult()
+        result.added = 3
+        XCTAssertNil(result.problem)
+        result.failures = [DownloadError.emptyRegistrationResponse]
+        XCTAssertEqual(result.problem, "1 episode couldn't be added: The server didn't create a download. 3 episodes were added.")
+        var skippedOnly = DownloadManager.EpisodeRegistrationResult()
+        skippedOnly.skipped = 2
+        XCTAssertEqual(skippedOnly.problem, "These episodes are already downloaded or on their way.")
+        var switched = DownloadManager.EpisodeRegistrationResult()
+        switched.added = 1
+        switched.stoppedBySwitch = true
+        XCTAssertEqual(switched.problem, "The server or profile changed, so the rest weren't added. 1 episode was added.")
+    }
 }

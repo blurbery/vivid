@@ -81,6 +81,10 @@ final class DownloadManager {
     /// a manifest request failed for the rest.
     private var preparingDetailsFetched: Set<String> = []
     private var preparingDetailsAttempts: [String: Int] = [:]
+    /// Set while `downloadEpisodes` registers a list. Transfers wait for the
+    /// whole list: Silo counts transferring files against its per-user
+    /// limit, so starting them early would get the rest of the list refused.
+    private var queueHolds = 0
     /// Downloads deleted in the current scope. A list that was in flight
     /// during a delete can still return the row, which must not come back.
     /// Cleared on a scope change, which also drops any list in flight; each
@@ -773,6 +777,93 @@ final class DownloadManager {
         )
     }
 
+    struct EpisodeRegistrationResult {
+        var added = 0
+        var skipped = 0
+        var failures: [Error] = []
+        var stoppedBySwitch = false
+
+        /// What to tell the user, or nil when everything asked for was added.
+        var problem: String? {
+            let addedText = "\(added) episode\(added == 1 ? " was" : "s were") added."
+            if stoppedBySwitch {
+                return "The server or profile changed, so the rest weren't added. " + addedText
+            }
+            if let first = failures.first {
+                let count = failures.count
+                return "\(count) episode\(count == 1 ? "" : "s") couldn't be added: \(first.localizedDescription) " + addedText
+            }
+            if added == 0, skipped > 0 {
+                return "These episodes are already downloaded or on their way."
+            }
+            return nil
+        }
+    }
+
+    /// Registers episodes one request each: hand-picked episodes, or every
+    /// episode of a season or series at a chosen original version, which
+    /// Silo's season and series requests can't express. Each episode gets
+    /// the file matching `version` (nil, or no match, leaves the pick to the
+    /// server). Episodes already downloaded or on their way, and episodes
+    /// with no file, are skipped; a failure doesn't stop the rest. Stops if
+    /// the server or profile changes part way through.
+    func downloadEpisodes(
+        _ episodes: [EpisodeListItem],
+        seriesId: String,
+        seriesTitle: String?,
+        posterThumbhash: String?,
+        preferredPosterPath: String?,
+        quality: String,
+        version: DownloadVersionPreference?
+    ) async -> EpisodeRegistrationResult {
+        var result = EpisodeRegistrationResult()
+        let serverId = ServerRegistry.shared.activeServerId
+        let profileId = await TokenStore.shared.getProfileId()
+        queueHolds += 1
+        defer {
+            queueHolds -= 1
+            processQueue()
+        }
+        for episode in episodes {
+            guard ServerRegistry.shared.activeServerId == serverId,
+                  await TokenStore.shared.getProfileId() == profileId else {
+                result.stoppedBySwitch = true
+                break
+            }
+            // An empty list means the episode has no file (missing or not
+            // aired yet); nil only means the server didn't say.
+            let files = episode.files ?? []
+            let existing = record(forContentId: episode.contentId)
+            guard episode.files?.isEmpty != true, existing == nil || existing?.localStatus == .failed,
+                  !isRegistering(contentId: episode.contentId) else {
+                result.skipped += 1
+                continue
+            }
+            do {
+                try await downloadEpisode(
+                    seriesId: seriesId,
+                    episodeId: episode.contentId,
+                    displayTitle: episode.title ?? "Episode \(episode.episodeNumber)",
+                    displaySubtitle: "S\(episode.seasonNumber) · E\(episode.episodeNumber)",
+                    seriesTitle: seriesTitle,
+                    posterThumbhash: posterThumbhash,
+                    preferredPosterPath: preferredPosterPath,
+                    fileId: version?.file(in: files)?.fileId,
+                    quality: version == nil ? quality : DownloadFormat.original.rawValue
+                )
+                result.added += 1
+            } catch DownloadError.registrationAlreadyInFlight {
+                result.skipped += 1
+            } catch DownloadError.scopeChangedDuringRegistration {
+                result.stoppedBySwitch = true
+                break
+            } catch {
+                result.failures.append(error)
+            }
+        }
+        return result
+    }
+
     private func requestDownload(
         contentId: String,
         episodeId: String? = nil,
@@ -1036,6 +1127,8 @@ final class DownloadManager {
     }
 
     private func processQueue() {
+        // Held while a list of episodes is registered one by one.
+        guard queueHolds == 0 else { return }
         let preparingCount = file.records.values.filter { $0.localStatus == .fetchingAssets }.count
         var slots = preparesEverything ? Int.max : max(0, Self.maxConcurrentPreparations - preparingCount)
         guard slots > 0 else { return }

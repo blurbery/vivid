@@ -269,7 +269,14 @@ struct SeriesDownloadMenuButton: View {
 /// Inline quality choice for season, series and multi-episode downloads,
 /// listing what the server offers for this account.
 struct DownloadQualityPicker: View {
+    /// A quality preset, or a version tag when `versions` are offered.
     @Binding var quality: String
+    /// Original-file versions offered at the top of the menu, for seasons,
+    /// series and Choose Episodes. Shown when there are at least two.
+    var versions: [DownloadVersionPreference] = []
+    /// Whether the smaller qualities are offered: season and series
+    /// requests only take them where the server allows it.
+    var showsSmaller = true
     private var manager: DownloadManager { DownloadManager.shared }
 
     private var formats: [DownloadFormat] {
@@ -277,17 +284,58 @@ struct DownloadQualityPicker: View {
         return available.isEmpty ? [.original] : available
     }
 
+    private var offersVersions: Bool { versions.count > 1 }
+
+    private var smaller: [DownloadFormat] {
+        showsSmaller ? formats.filter { $0 != .original } : []
+    }
+
     var body: some View {
-        Picker(selection: $quality) {
-            ForEach(formats, id: \.self) { format in
-                Text(manager.qualityLabel(format)).tag(format.rawValue)
+        Group {
+            if offersVersions {
+                Picker(selection: $quality) {
+                    Section("Original file") {
+                        Text("Auto (server's pick)").tag(DownloadFormat.original.rawValue)
+                        ForEach(versions, id: \.self) { version in
+                            Text(version.label).tag(version.tag)
+                        }
+                    }
+                    if !smaller.isEmpty {
+                        Section("Smaller") {
+                            ForEach(smaller, id: \.self) { format in
+                                Text(manager.qualityLabel(format)).tag(format.rawValue)
+                            }
+                        }
+                    }
+                } label: {
+                    label
+                } currentValueLabel: {
+                    Text(title(for: quality))
+                }
+            } else {
+                Picker(selection: $quality) {
+                    ForEach(formats, id: \.self) { format in
+                        Text(manager.qualityLabel(format)).tag(format.rawValue)
+                    }
+                } label: {
+                    label
+                }
             }
-        } label: {
-            Label("Quality", systemImage: "slider.horizontal.3")
         }
         .pickerStyle(.menu)
         .onAppear(perform: clamp)
         .onChange(of: manager.availableFormats) { _, _ in clamp() }
+        .onChange(of: versions) { _, _ in clamp() }
+    }
+
+    private var label: some View {
+        Label("Quality", systemImage: "slider.horizontal.3")
+    }
+
+    /// The closed menu's text, for example "1080p original".
+    private func title(for tag: String) -> String {
+        if let version = DownloadVersionPreference(tag: tag) { return "\(version.label) original" }
+        return manager.qualityLabel(rawValue: tag)
     }
 
     /// The chosen quality's size, for the line under the menu (menus show
@@ -296,10 +344,32 @@ struct DownloadQualityPicker: View {
         DownloadFormat(rawValue: quality).flatMap(DownloadManager.sizePerHour).map { "\($0) of video." }
     }
 
-    private func clamp() {
-        guard !formats.contains(where: { $0.rawValue == quality }) else { return }
-        quality = DownloadSettings.shared.resolvedFormat(allowedFormats: manager.capability?.qualityPresets ?? [])
+    /// The line under the menu when a version is chosen.
+    static func versionNote(_ quality: String) -> String? {
+        DownloadVersionPreference(tag: quality).map {
+            "Original \($0.label) files. Episodes without one use the server's usual version."
+        }
     }
+
+    private var choices: [String] {
+        guard offersVersions else { return formats.map(\.rawValue) }
+        return [DownloadFormat.original.rawValue] + versions.map(\.tag) + smaller.map(\.rawValue)
+    }
+
+    private func clamp() {
+        guard !choices.contains(quality) else { return }
+        let resolved = DownloadSettings.shared.resolvedChoiceTag(
+            allowedFormats: manager.capability?.qualityPresets ?? [],
+            versions: offersVersions ? versions : []
+        )
+        quality = choices.contains(resolved) ? resolved : DownloadFormat.original.rawValue
+    }
+}
+
+/// A list of episodes was only partly added (see
+/// `DownloadManager.EpisodeRegistrationResult.problem`).
+private struct EpisodeDownloadProblem: LocalizedError {
+    let errorDescription: String?
 }
 
 private enum SeriesDownloadSheet: Identifiable {
@@ -339,14 +409,27 @@ private struct SeriesDownloadOptionsSheet: View {
     @State private var quality = DownloadSettings.shared.preferredFormat
     @State private var confirmingCancel = false
 
-    /// The quality season and series downloads will use: the picked one where
-    /// the server takes it for batches, otherwise original.
+    /// Original-file versions among the episodes loaded so far.
+    private var versionOptions: [DownloadVersionPreference] {
+        DownloadVersionPreference.options(for: cachedEpisodesBySeason.values.flatMap { $0 }.flatMap { $0.files ?? [] })
+    }
+
+    /// The version picked in the menu, when it offers versions.
+    private var chosenVersion: DownloadVersionPreference? {
+        versionOptions.count > 1 ? DownloadVersionPreference(tag: quality) : nil
+    }
+
+    /// The quality season and series downloads will use: original for a
+    /// version, the picked quality where the server takes it for batches,
+    /// otherwise original.
     private var batchQuality: String {
-        manager.canChooseBatchQuality ? quality : DownloadFormat.original.rawValue
+        guard chosenVersion == nil, manager.canChooseBatchQuality,
+              DownloadVersionPreference(tag: quality) == nil else { return DownloadFormat.original.rawValue }
+        return quality
     }
 
     private var batchQualityLabel: String {
-        manager.qualityLabel(rawValue: batchQuality)
+        chosenVersion.map { "\($0.label) original" } ?? manager.qualityLabel(rawValue: batchQuality)
     }
 
     private var activeDownloadCount: Int { manager.activeRecords(seriesId: seriesId).count }
@@ -354,13 +437,21 @@ private struct SeriesDownloadOptionsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                if manager.canChooseBatchQuality {
+                if manager.canChooseBatchQuality || versionOptions.count > 1 {
                     Section {
-                        DownloadQualityPicker(quality: $quality)
+                        DownloadQualityPicker(
+                            quality: $quality,
+                            versions: versionOptions,
+                            showsSmaller: manager.canChooseBatchQuality
+                        )
                     } footer: {
-                        Text([DownloadQualityPicker.sizeNote(quality),
-                              "Applies to season and series downloads. Lower bitrates use less storage, and the server prepares the file first."]
-                            .compactMap { $0 }.joined(separator: " "))
+                        if chosenVersion != nil, let note = DownloadQualityPicker.versionNote(quality) {
+                            Text(note)
+                        } else if manager.canChooseBatchQuality {
+                            Text([DownloadQualityPicker.sizeNote(quality),
+                                  "Applies to season and series downloads. Lower bitrates use less storage, and the server prepares the file first."]
+                                .compactMap { $0 }.joined(separator: " "))
+                        }
                     }
                 }
 
@@ -402,7 +493,12 @@ private struct SeriesDownloadOptionsSheet: View {
                             icon: "arrow.down.square.on.square"
                         ) {
                             let quality = batchQuality
+                            let version = chosenVersion
                             startDownload {
+                                if let version {
+                                    try await downloadEpisodes(at: version, seasons: [selectedSeason])
+                                    return
+                                }
                                 try await manager.downloadSeason(
                                     seriesId: seriesId,
                                     seasonNumber: selectedSeason.seasonNumber,
@@ -421,7 +517,13 @@ private struct SeriesDownloadOptionsSheet: View {
                         icon: "arrow.down.circle"
                     ) {
                         let quality = batchQuality
+                        let version = chosenVersion
+                        let seasons = availableSeasons
                         startDownload {
+                            if let version {
+                                try await downloadEpisodes(at: version, seasons: seasons)
+                                return
+                            }
                             try await manager.downloadSeries(
                                 seriesId: seriesId,
                                 seriesTitle: seriesTitle,
@@ -498,7 +600,10 @@ private struct SeriesDownloadOptionsSheet: View {
                 // Straight after launch or a server switch the permission may
                 // not be loaded yet; the season and quality options need it.
                 _ = await manager.prepareForDownload()
-                quality = DownloadSettings.shared.resolvedFormat(allowedFormats: manager.capability?.qualityPresets ?? [])
+                quality = DownloadSettings.shared.resolvedChoiceTag(
+                    allowedFormats: manager.capability?.qualityPresets ?? [],
+                    versions: versionOptions.count > 1 ? versionOptions : []
+                )
             }
             .confirmationDialog(
                 activeDownloadCount == 1 ? "Cancel this download?" : "Cancel \(activeDownloadCount) downloads?",
@@ -527,6 +632,29 @@ private struct SeriesDownloadOptionsSheet: View {
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    /// Season and series requests can't name a version, so each episode is
+    /// registered with its matching file.
+    private func downloadEpisodes(at version: DownloadVersionPreference, seasons: [Season]) async throws {
+        var episodes: [EpisodeListItem] = []
+        for season in seasons {
+            if let cached = cachedEpisodesBySeason[season.seasonNumber], !cached.isEmpty {
+                episodes += cached
+            } else {
+                episodes += try await VividAPI.shared.episodes(seriesId: seriesId, seasonNumber: season.seasonNumber).episodes
+            }
+        }
+        let result = await manager.downloadEpisodes(
+            episodes.sorted { ($0.seasonNumber, $0.episodeNumber) < ($1.seasonNumber, $1.episodeNumber) },
+            seriesId: seriesId,
+            seriesTitle: seriesTitle,
+            posterThumbhash: posterThumbhash,
+            preferredPosterPath: preferredPosterPath,
+            quality: DownloadFormat.original.rawValue,
+            version: version
+        )
+        if let problem = result.problem { throw EpisodeDownloadProblem(errorDescription: problem) }
     }
 
     private var availableSeasons: [Season] {
@@ -668,9 +796,7 @@ private struct SeriesEpisodeDownloadPicker: View {
     @State private var isLoading = false
     @State private var isWorking = false
     @State private var errorMessage: String?
-    @State private var quality = DownloadSettings.shared.resolvedFormat(
-        allowedFormats: DownloadManager.shared.capability?.qualityPresets ?? []
-    )
+    @State private var quality: String
 
     init(
         seriesId: String,
@@ -686,6 +812,16 @@ private struct SeriesEpisodeDownloadPicker: View {
         self.posterThumbhash = posterThumbhash
         self.preferredPosterPath = preferredPosterPath
         _episodes = State(initialValue: Self.sorted(initialEpisodes))
+        let versions = DownloadVersionPreference.options(for: initialEpisodes.flatMap { $0.files ?? [] })
+        _quality = State(initialValue: DownloadSettings.shared.resolvedChoiceTag(
+            allowedFormats: DownloadManager.shared.capability?.qualityPresets ?? [],
+            versions: versions.count > 1 ? versions : []
+        ))
+    }
+
+    /// Original-file versions among this season's episodes.
+    private var versionOptions: [DownloadVersionPreference] {
+        DownloadVersionPreference.options(for: episodes.flatMap { $0.files ?? [] })
     }
 
     private var selectableEpisodeIds: Set<String> {
@@ -723,12 +859,14 @@ private struct SeriesEpisodeDownloadPicker: View {
                 )
             } else {
                 List {
-                    if manager.availableFormats.count > 1 {
+                    if manager.availableFormats.count > 1 || versionOptions.count > 1 {
                         Section {
-                            DownloadQualityPicker(quality: $quality)
+                            DownloadQualityPicker(quality: $quality, versions: versionOptions)
                                 .disabled(isWorking)
                         } footer: {
-                            if let note = DownloadQualityPicker.sizeNote(quality) { Text(note) }
+                            if let note = DownloadQualityPicker.versionNote(quality) ?? DownloadQualityPicker.sizeNote(quality) {
+                                Text(note)
+                            }
                         }
                     }
                     Section {
@@ -976,32 +1114,28 @@ private struct SeriesEpisodeDownloadPicker: View {
         let targets = selectedEpisodes
         guard !targets.isEmpty, !isWorking else { return }
         // One choice applies to the whole selection.
-        let quality = quality
+        let choice = DownloadVersionPreference.split(quality)
+        let version = versionOptions.count > 1 ? choice.version : nil
         isWorking = true
         Task {
-            do {
-                for episode in targets {
-                    guard isSelectable(episode) else {
-                        selectedEpisodeIds.remove(episode.contentId)
-                        continue
-                    }
-                    try await manager.downloadEpisode(
-                        seriesId: seriesId,
-                        episodeId: episode.contentId,
-                        displayTitle: episode.title ?? "Episode \(episode.episodeNumber)",
-                        displaySubtitle: "S\(episode.seasonNumber) · E\(episode.episodeNumber)",
-                        seriesTitle: seriesTitle,
-                        posterThumbhash: posterThumbhash,
-                        preferredPosterPath: preferredPosterPath,
-                        quality: quality
-                    )
-                    selectedEpisodeIds.remove(episode.contentId)
-                }
-                dismiss()
-            } catch {
-                errorMessage = error.localizedDescription
+            let result = await manager.downloadEpisodes(
+                targets,
+                seriesId: seriesId,
+                seriesTitle: seriesTitle,
+                posterThumbhash: posterThumbhash,
+                preferredPosterPath: preferredPosterPath,
+                quality: choice.quality,
+                version: version
+            )
+            selectedEpisodeIds = selectedEpisodeIds.filter { id in
+                episodes.contains { $0.contentId == id && isSelectable($0) }
             }
             isWorking = false
+            if let problem = result.problem {
+                errorMessage = problem
+            } else {
+                dismiss()
+            }
         }
     }
 
