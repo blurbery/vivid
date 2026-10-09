@@ -58,13 +58,13 @@ struct DownloadActiveRow: View {
                         .foregroundColor(.vividSecondaryText)
                         .lineLimit(1)
                 }
-                if record.localStatus == .downloading || record.localStatus == .paused {
+                if let barFraction {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.vividOnSurface.opacity(0.12))
                             Capsule()
                                 .fill(Color.vividOnSurface.opacity(record.localStatus == .paused ? 0.52 : 0.92))
-                                .frame(width: geometry.size.width * record.progressFraction)
+                                .frame(width: geometry.size.width * barFraction)
                         }
                     }
                     .frame(height: 4)
@@ -150,6 +150,15 @@ struct DownloadActiveRow: View {
         case .completed: return DownloadFormatting.bytes(record.fileSize)
         case .failed: return "Failed"
         case .revoked: return "No longer available"
+        }
+    }
+
+    /// The transfer's progress, or the server's while it prepares the file.
+    private var barFraction: Double? {
+        switch record.localStatus {
+        case .downloading, .paused: return record.progressFraction
+        case .preparing: return record.preparation?.progress.map { min(max($0, 0), 1) }
+        case .registering, .queued, .fetchingAssets, .completed, .failed, .revoked: return nil
         }
     }
 
