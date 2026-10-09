@@ -48,9 +48,11 @@ struct DownloadActivityAttributes: ActivityAttributes {
         var estimateStart: Date?
         var estimatedEnd: Date?
 
-        /// The timeline, when there is one worth animating.
+        /// The timeline, when there is one worth animating. Once its end has
+        /// passed, the bar falls back to the reported fraction like the text.
         var estimate: ClosedRange<Date>? {
-            guard phase == .downloading, let estimateStart, let estimatedEnd, estimateStart < estimatedEnd else { return nil }
+            guard phase == .downloading, let estimateStart, let estimatedEnd, estimateStart < estimatedEnd,
+                  estimatedEnd > Date() else { return nil }
             return estimateStart...estimatedEnd
         }
     }

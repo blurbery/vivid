@@ -77,8 +77,13 @@ final class DownloadManager {
     private let sessionDelegate = DownloadSessionDelegate()
     private var intentionalCancels: Set<Int> = []
     /// Preparing downloads whose poster and size estimate were already
-    /// fetched this session (`prefetchPreparingDetails`).
+    /// fetched this session (`prefetchPreparingDetails`), and how many times
+    /// a manifest request failed for the rest.
     private var preparingDetailsFetched: Set<String> = []
+    private var preparingDetailsAttempts: [String: Int] = [:]
+    /// Downloads deleted this session. A list that was in flight during a
+    /// delete can still return the row, which must not come back.
+    private var deletedDownloadIds: Set<String> = []
     private var pollTask: Task<Void, Never>?
     private var lastProgressPersist = Date.distantPast
     /// Session events that arrive before the first scope activation loads the
@@ -426,6 +431,7 @@ final class DownloadManager {
     /// registry and go out the next time it's active.
     private func deleteServerRows(_ ids: [String]) {
         guard !scopeServerId.isEmpty, !ids.isEmpty else { return }
+        deletedDownloadIds.formUnion(ids)
         file.pendingServerDeletes = Array(Set(file.pendingServerDeletes ?? []).union(ids))
         persist()
         flushPendingServerDeletes()
@@ -611,6 +617,7 @@ final class DownloadManager {
         pendingPauseIds.removeAll()
         pendingResumeIds.removeAll()
         preparingDetailsFetched.removeAll()
+        preparingDetailsAttempts.removeAll()
         invalidatePendingRegistrations()
         scopeLoadTask?.cancel()
         scopeLoadTask = nil
@@ -1014,6 +1021,9 @@ final class DownloadManager {
     /// now, while Vivid still has time to run, instead of leaving episodes
     /// waiting for a wake-up that iOS may delay once the phone locks.
     func handOffQueuedTransfers() {
+        // Nothing to hand off for a signed-out scope or an account that
+        // can't download; retained records stay where they are.
+        guard !scopeServerId.isEmpty, downloadsEnabled else { return }
         preparesEverything = true
         processQueue()
     }
@@ -1735,15 +1745,20 @@ final class DownloadManager {
         guard MediaServerProvider.forServerID(scopeServerId) == .silo else { return }
         let pending = file.records.values.filter {
             $0.localStatus == .preparing && !preparingDetailsFetched.contains($0.id)
+                && preparingDetailsAttempts[$0.id, default: 0] < 3
         }
         guard !pending.isEmpty, let auth = await scopeAuth() else { return }
         let generation = registrationScopeGeneration
         for record in pending {
-            preparingDetailsFetched.insert(record.id)
+            guard pipelineIsCurrent(recordId: record.id, generation: generation) else { continue }
+            // A failed request is tried again on a later poll, up to three times.
+            guard let manifest = try? await VividAPI.shared.fetchManifest(downloadId: record.id, auth: auth) else {
+                preparingDetailsAttempts[record.id, default: 0] += 1
+                continue
+            }
             guard pipelineIsCurrent(recordId: record.id, generation: generation),
-                  let manifest = try? await VividAPI.shared.fetchManifest(downloadId: record.id, auth: auth),
-                  pipelineIsCurrent(recordId: record.id, generation: generation),
                   var current = file.records[record.id], current.localStatus == .preparing else { continue }
+            preparingDetailsFetched.insert(record.id)
             if current.fileSize <= 0,
                let format = DownloadFormat(rawValue: current.format), format != .original,
                let estimate = StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: manifest.durationSeconds) {
@@ -1767,7 +1782,6 @@ final class DownloadManager {
         // this account's downloads as removed.
         guard let auth = await scopeAuth(), generation == registrationScopeGeneration else { return }
         flushPendingServerDeletes()
-        let pendingDeletes = Set(file.pendingServerDeletes ?? [])
         let rows: [ServerDownloadRow]
         do {
             rows = try await VividAPI.shared.listDownloads(auth: auth)
@@ -1775,6 +1789,9 @@ final class DownloadManager {
             return
         }
         guard generation == registrationScopeGeneration else { return }
+        // Read after the list returns: a delete made while it was in flight
+        // must still keep its row from being picked up again.
+        let pendingDeletes = Set(file.pendingServerDeletes ?? []).union(deletedDownloadIds)
         let byId = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var unreportedCompletions: [DownloadRecord] = []
 
@@ -2379,6 +2396,7 @@ final class DownloadManager {
             type: type,
             seriesId: nil,
             posterThumbhash: nil,
+            preparation: row.status == "preparing" ? row.preparation : nil,
             container: nil,
             stableIdentity: nil,
             registeredAt: row.createdAt ?? Date(),

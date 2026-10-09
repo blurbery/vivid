@@ -179,12 +179,22 @@ extension VividAPI {
     /// A presigned artwork link: no credentials, image responses only, and
     /// capped at 20 MB.
     static func signedArtworkData(_ url: URL) async throws -> Data {
-        let (data, response) = try await signedArtworkSession.data(from: url)
+        let limit = 20_000_000
+        let (bytes, response) = try await signedArtworkSession.bytes(from: url)
         guard let http = response as? HTTPURLResponse else { throw HTTPError.invalidURL(url.absoluteString) }
         guard (200..<300).contains(http.statusCode) else { throw HTTPError.http(statusCode: http.statusCode, body: nil) }
-        guard (http.mimeType ?? "").hasPrefix("image/"), !data.isEmpty, data.count <= 20_000_000 else {
+        guard (http.mimeType ?? "").hasPrefix("image/"), http.expectedContentLength <= Int64(limit) else {
             throw HTTPError.invalidURL(url.absoluteString)
         }
+        // Read as it arrives and stop at the limit, so an oversized
+        // response is never held in memory whole.
+        var data = Data()
+        if http.expectedContentLength > 0 { data.reserveCapacity(Int(http.expectedContentLength)) }
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > limit { throw HTTPError.invalidURL(url.absoluteString) }
+        }
+        guard !data.isEmpty else { throw HTTPError.invalidURL(url.absoluteString) }
         return data
     }
 

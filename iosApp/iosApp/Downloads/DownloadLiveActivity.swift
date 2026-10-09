@@ -202,7 +202,9 @@ final class DownloadLiveActivityController {
             }
         }
 
-        let timeline = phase == .downloading
+        // A paused download in the queue won't finish, so there's no
+        // completion time worth animating towards.
+        let timeline = phase == .downloading && !activeRecords.contains(where: { $0.localStatus == .paused })
             ? Self.timeline(fraction: fraction, remainingBytes: bytesExpected - bytesDownloaded, bytesPerSecond: totalBytesPerSecond)
             : nil
         return DownloadActivityAttributes.ContentState(
