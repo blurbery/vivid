@@ -76,6 +76,9 @@ final class DownloadManager {
 
     private let sessionDelegate = DownloadSessionDelegate()
     private var intentionalCancels: Set<Int> = []
+    /// Preparing downloads whose poster and size estimate were already
+    /// fetched this session (`prefetchPreparingDetails`).
+    private var preparingDetailsFetched: Set<String> = []
     private var pollTask: Task<Void, Never>?
     private var lastProgressPersist = Date.distantPast
     /// Session events that arrive before the first scope activation loads the
@@ -606,6 +609,7 @@ final class DownloadManager {
         retryTasks.removeAll()
         pendingPauseIds.removeAll()
         pendingResumeIds.removeAll()
+        preparingDetailsFetched.removeAll()
         invalidatePendingRegistrations()
         scopeLoadTask?.cancel()
         scopeLoadTask = nil
@@ -1713,9 +1717,41 @@ final class DownloadManager {
             defer { self.pollTask = nil }
             while !Task.isCancelled {
                 guard self.file.records.values.contains(where: { $0.localStatus == .preparing }) else { break }
+                await self.prefetchPreparingDetails()
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                 if Task.isCancelled { break }
                 await self.reconcileWithServer(triggerPipeline: true)
+            }
+        }
+    }
+
+    /// While Silo prepares a download, fetch its artwork so the row shows
+    /// the poster rather than a blur, and for a smaller quality estimate the
+    /// prepared file's size from the runtime: until the file is ready the
+    /// server reports the source file's size. Once per download; the normal
+    /// pipeline fetches the artwork again when the file is ready.
+    private func prefetchPreparingDetails() async {
+        guard MediaServerProvider.forServerID(scopeServerId) == .silo else { return }
+        let pending = file.records.values.filter {
+            $0.localStatus == .preparing && !preparingDetailsFetched.contains($0.id)
+        }
+        guard !pending.isEmpty, let auth = await scopeAuth() else { return }
+        let generation = registrationScopeGeneration
+        for record in pending {
+            preparingDetailsFetched.insert(record.id)
+            guard pipelineIsCurrent(recordId: record.id, generation: generation),
+                  let manifest = try? await VividAPI.shared.fetchManifest(downloadId: record.id, auth: auth),
+                  pipelineIsCurrent(recordId: record.id, generation: generation),
+                  var current = file.records[record.id], current.localStatus == .preparing else { continue }
+            if current.fileSize <= 0,
+               let format = DownloadFormat(rawValue: current.format), format != .original,
+               let estimate = StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: manifest.durationSeconds) {
+                current.fileSize = estimate
+                file.records[record.id] = current
+                persist()
+            }
+            if current.posterFilename == nil {
+                await fetchArtwork(manifest, recordId: record.id, generation: generation, auth: auth)
             }
         }
     }
@@ -2270,11 +2306,42 @@ final class DownloadManager {
         record.targetBitrateKbps = row.targetBitrateKbps
         record.revision = row.revision ?? record.revision
         record.serverStatus = row.status
-        if let size = row.fileSize, size > 0, record.fileSize <= 0 {
+        record.preparation = row.status == "preparing" ? row.preparation : nil
+        if let size = Self.serverFileSize(
+            row,
+            provider: MediaServerProvider.forServerID(scopeServerId),
+            currentSize: record.fileSize,
+            bytesDownloaded: record.bytesDownloaded,
+            localStatus: record.localStatus
+        ) {
             record.fileSize = size
         }
         if let completedAt = row.completedAt {
             record.downloadedAt = completedAt
+        }
+    }
+
+    /// The size to take from a server row, or nil to keep the record's.
+    /// Silo's size can change before the transfer starts (a prepared file
+    /// replaces the source's size when it's ready), so it's refreshed until
+    /// bytes arrive. While Silo is still preparing a smaller quality it
+    /// reports the source file's size, which is skipped in favour of the
+    /// runtime estimate. Other servers keep the first size they report.
+    nonisolated static func serverFileSize(
+        _ row: ServerDownloadRow,
+        provider: MediaServerProvider,
+        currentSize: Int64,
+        bytesDownloaded: Int64,
+        localStatus: LocalDownloadStatus
+    ) -> Int64? {
+        guard let size = row.fileSize, size > 0 else { return nil }
+        let isSilo = provider == .silo
+        if isSilo, row.status == "preparing", row.quality != DownloadFormat.original.rawValue { return nil }
+        if currentSize <= 0 { return size }
+        guard isSilo, bytesDownloaded == 0 else { return nil }
+        switch localStatus {
+        case .registering, .preparing, .queued: return size
+        case .fetchingAssets, .downloading, .paused, .completed, .failed, .revoked: return nil
         }
     }
 
@@ -2292,7 +2359,13 @@ final class DownloadManager {
             revision: row.revision,
             serverStatus: row.status,
             localStatus: mapInitialStatus(row.status),
-            fileSize: row.fileSize ?? 0,
+            fileSize: Self.serverFileSize(
+                row,
+                provider: MediaServerProvider.forServerID(scopeServerId),
+                currentSize: 0,
+                bytesDownloaded: 0,
+                localStatus: .registering
+            ) ?? 0,
             bytesDownloaded: 0,
             mediaFilename: nil,
             manifestFilename: nil,

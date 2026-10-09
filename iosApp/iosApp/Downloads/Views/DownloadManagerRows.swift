@@ -145,7 +145,7 @@ struct DownloadActiveRow: View {
         case .paused:
             return "Paused · \(percentText) · \(sizeText)"
         case .registering, .queued: return "Queued"
-        case .preparing: return "Preparing on server…"
+        case .preparing: return record.preparation?.statusText ?? "Preparing on server…"
         case .fetchingAssets: return "Starting…"
         case .completed: return DownloadFormatting.bytes(record.fileSize)
         case .failed: return "Failed"

@@ -166,4 +166,51 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertNil(StreamedTranscodeDownload.format(of: original))
         XCTAssertEqual((original["manifest"] as? [String: Any])?["container"] as? String, "mkv")
     }
+
+    /// Silo reports how far it has got preparing a download. A malformed
+    /// report must never fail the row it's attached to.
+    func testSiloPreparationDecodesAndDescribesProgress() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func row(_ preparation: String) throws -> ServerDownloadRow {
+            try decoder.decode(ServerDownloadRow.self, from: Data("""
+            {"id":"d1","content_id":"c1","media_file_id":7,"status":"preparing","quality":"2mbps"\(preparation)}
+            """.utf8))
+        }
+        let running = try XCTUnwrap(row(#","preparation":{"state":"running","progress":0.654,"remaining_seconds":250}"#).preparation)
+        XCTAssertEqual(running.statusText, "Preparing on server · 65% · 4 min left")
+        let queued = try XCTUnwrap(row(#","preparation":{"state":"queued","queue_position":2}"#).preparation)
+        XCTAssertEqual(queued.queuePosition, 2)
+        XCTAssertTrue(queued.statusText.hasPrefix("Waiting on server · "))
+        XCTAssertEqual(try XCTUnwrap(row(#","preparation":{"state":"running"}"#).preparation).statusText, "Preparing on server…")
+        XCTAssertNil(try row("").preparation)
+        XCTAssertNil(try row(#","preparation":{"progress":"half"}"#).preparation)
+        let stored = try JSONDecoder().decode(DownloadPreparationStatus.self, from: JSONEncoder().encode(running))
+        XCTAssertEqual(stored, running, "The report survives the on-device store")
+    }
+
+    /// While Silo prepares a smaller quality it reports the source file's
+    /// size, which must not be shown; the prepared file's size replaces it
+    /// once ready, until bytes arrive. Other servers keep their first size.
+    func testSiloDownloadSizeFollowsThePreparedFile() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        func row(status: String, quality: String, size: Int64) throws -> ServerDownloadRow {
+            try decoder.decode(ServerDownloadRow.self, from: Data("""
+            {"id":"d1","content_id":"c1","media_file_id":7,"status":"\(status)","quality":"\(quality)","file_size":\(size)}
+            """.utf8))
+        }
+        let source: Int64 = 7_300_000_000
+        let prepared: Int64 = 800_000_000
+        let preparing = try row(status: "preparing", quality: "2mbps", size: source)
+        XCTAssertNil(DownloadManager.serverFileSize(preparing, provider: .silo, currentSize: 0, bytesDownloaded: 0, localStatus: .registering))
+        XCTAssertNil(DownloadManager.serverFileSize(preparing, provider: .silo, currentSize: 900_000_000, bytesDownloaded: 0, localStatus: .preparing))
+        let ready = try row(status: "ready", quality: "2mbps", size: prepared)
+        XCTAssertEqual(DownloadManager.serverFileSize(ready, provider: .silo, currentSize: 900_000_000, bytesDownloaded: 0, localStatus: .preparing), prepared)
+        XCTAssertNil(DownloadManager.serverFileSize(ready, provider: .silo, currentSize: prepared, bytesDownloaded: 1, localStatus: .downloading))
+        let original = try row(status: "preparing", quality: "original", size: source)
+        XCTAssertEqual(DownloadManager.serverFileSize(original, provider: .silo, currentSize: 0, bytesDownloaded: 0, localStatus: .registering), source)
+        XCTAssertNil(DownloadManager.serverFileSize(ready, provider: .emby, currentSize: 900_000_000, bytesDownloaded: 0, localStatus: .queued))
+        XCTAssertEqual(DownloadManager.serverFileSize(ready, provider: .jellyfin, currentSize: 0, bytesDownloaded: 0, localStatus: .queued), prepared)
+    }
 }

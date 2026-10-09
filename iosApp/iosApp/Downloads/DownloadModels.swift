@@ -192,6 +192,8 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
     let revision: Int?
     let createdAt: Date?
     let completedAt: Date?
+    /// Silo's progress on a download it's still preparing.
+    let preparation: DownloadPreparationStatus?
 
     /// Compatibility alias for local code that still names the stored
     /// requested quality `format`.
@@ -216,6 +218,7 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
         case revision
         case createdAt
         case completedAt
+        case preparation
     }
 
     init(from decoder: Decoder) throws {
@@ -225,6 +228,8 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
         episodeId = try container.decodeIfPresent(String.self, forKey: .episodeId)
         batchId = try container.decodeIfPresent(String.self, forKey: .batchId)
         deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId)
+        // Optional extra: a malformed report never fails the row.
+        preparation = (try? container.decodeIfPresent(DownloadPreparationStatus.self, forKey: .preparation)) ?? nil
         mediaFileId = try container.decodeIfPresent(Int.self, forKey: .mediaFileId) ?? 0
         fileSize = try container.decodeIfPresent(Int64.self, forKey: .fileSize)
         bytesSent = try container.decodeIfPresent(Int64.self, forKey: .bytesSent)
@@ -239,6 +244,55 @@ struct ServerDownloadRow: Decodable, Hashable, Sendable {
         revision = try container.decodeIfPresent(Int.self, forKey: .revision)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+    }
+}
+
+/// How far the server has got preparing a download (Silo's `preparation`):
+/// its place in the queue, or the running encode's progress.
+struct DownloadPreparationStatus: Codable, Hashable, Sendable {
+    /// `queued`, `running`, `retrying` or `paused`.
+    let state: String
+    let queuePosition: Int?
+    /// Encoded fraction, 0 to 1.
+    let progress: Double?
+    let remainingSeconds: Int?
+}
+
+extension DownloadPreparationStatus {
+    /// Row status while the server prepares the file, for example
+    /// "Preparing on server · 65% · 4 min left" or "Waiting on server · 2nd in line".
+    var statusText: String {
+        switch state {
+        case "queued":
+            guard let queuePosition, queuePosition > 0 else { return "Waiting on server…" }
+            return "Waiting on server · \(Self.ordinal(queuePosition)) in line"
+        case "retrying":
+            return "Retrying on server…"
+        case "paused":
+            return "Paused on server"
+        default:
+            var parts: [String] = []
+            if let progress {
+                parts.append("\(Int((min(max(progress, 0), 1) * 100).rounded(.down)))%")
+            }
+            if let remainingSeconds, remainingSeconds >= 0 {
+                parts.append(Self.remainingText(seconds: remainingSeconds))
+            }
+            return parts.isEmpty ? "Preparing on server…" : (["Preparing on server"] + parts).joined(separator: " · ")
+        }
+    }
+
+    private static func ordinal(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .ordinal
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private static func remainingText(seconds: Int) -> String {
+        let minutes = Int((Double(seconds) / 60).rounded())
+        if minutes < 1 { return "under 1 min left" }
+        if minutes < 60 { return "\(minutes) min left" }
+        return "\(minutes / 60) hr \(minutes % 60) min left"
     }
 }
 
@@ -767,6 +821,8 @@ struct DownloadRecord: Codable, Identifiable, Hashable, Sendable {
     /// art; keeping the parent endpoint lets every single/season/series
     /// transfer use the same main series poster in Downloads.
     var preferredPosterPath: String? = nil
+    /// The server's latest report while it prepares this download.
+    var preparation: DownloadPreparationStatus? = nil
     var container: String?               // media container, drives file ext + engine
 
     var stableIdentity: StableIdentity?
