@@ -85,7 +85,7 @@ final class OfflinePlaybackMappingTests: XCTestCase {
          {"language": "fr", "format": "pgs", "fetch_url": "/api/v2/downloads/d1/subtitles/embedded:1"},
          {"language": "de", "format": "ass", "fetch_url": "/api/v2/downloads/d1/subtitles/embedded:2"},
          {"language": "es", "format": "vtt", "fetch_url": "/api/v2/downloads/d1/subtitles/downloaded:7"},
-         {"language": "it", "format": "srt", "external": true, "index": 9, "title": "Italian (SRT)", "fetch_url": "https://media.example.com/emby/Videos/1/ms/Subtitles/9/Stream.srt"},
+         {"language": "it", "format": "srt", "external": true, "index": 9, "title": "Italian (SRT)", "isDefault": true, "fetch_url": "https://media.example.com/emby/Videos/1/ms/Subtitles/9/Stream.srt"},
          {"language": "pt", "format": "srt", "external": true, "fetch_url": "https://media.example.com/emby/Videos/1/ms/Subtitles/11/Stream.srt"}]
         """)
         // Embedded tracks are in the media file already, and PGS isn't text.
@@ -111,6 +111,7 @@ final class OfflinePlaybackMappingTests: XCTestCase {
         XCTAssertEqual(sidecars.map(\.codec), ["srt", "vtt", "srt"])
         XCTAssertEqual(sidecars.map(\.label), ["English", "External", "Italian (SRT)"])
         XCTAssertEqual(sidecars.map(\.language), ["en", "es", "it"])
+        XCTAssertEqual(sidecars.map(\.default), [nil, nil, true], "The server's default flag survives offline")
         XCTAssertTrue(sidecars.allSatisfy { URL(string: $0.url)?.isFileURL == true })
 
         let session = OfflinePlaybackBuilder.makePreparedPlayback(leafContentId: "leaf", manifest: manifest,

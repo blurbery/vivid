@@ -998,9 +998,11 @@ final class DownloadManager {
                 continue
             }
             guard pipelineIsCurrent(recordId: recordId, generation: generation),
-                  !data.isEmpty, data.count <= OfflineSubtitleFiles.maxBytes,
-                  let url = absoluteFileURLForNewAsset(recordId: recordId, filename: filename),
-                  (try? data.write(to: url, options: .atomic)) != nil else { continue }
+                  !data.isEmpty, data.count <= OfflineSubtitleFiles.maxBytes else { continue }
+            // A storage failure can clear up (for example once space is
+            // freed), so it's tried again rather than marked checked.
+            guard let url = absoluteFileURLForNewAsset(recordId: recordId, filename: filename),
+                  (try? data.write(to: url, options: .atomic)) != nil else { retryLater = true; continue }
             saved[entry.subtitle.fetchUrl] = filename
         }
         guard pipelineIsCurrent(recordId: recordId, generation: generation), var record = file.records[recordId] else { return }
@@ -1423,7 +1425,9 @@ final class DownloadManager {
                     }
                 case "failed":
                     if record.localStatus != .completed {
-                        if record.localStatus != .failed {
+                        // The merge above may already have reset a newer
+                        // revision to failed, so compare the earlier status.
+                        if original.localStatus != .failed {
                             reportFailure(.conversion, status: nil, urlErrorCode: nil, error: "server_failed", record: record)
                         }
                         record.localStatus = .failed

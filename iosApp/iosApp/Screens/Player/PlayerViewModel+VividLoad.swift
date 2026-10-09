@@ -168,7 +168,8 @@ extension PlayerViewModel {
                 vividPlaybackController.addExternalSubtitleTrack(ExternalSubtitleTrack(url: url,
                     name: sidecar.label ?? "External", language: sidecar.language,
                     isForced: sidecar.forced ?? false, isHearingImpaired: sidecar.hearingImpaired ?? false,
-                    formatHint: sidecar.codec), appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
+                    isDefault: sidecar.default ?? false, formatHint: sidecar.codec),
+                    appTrackID: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: sidecar.index))
             }
         }
         // Silo publishes its external subtitle files in the plan. They're

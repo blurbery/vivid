@@ -373,6 +373,28 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(EmbyDownloads.BatchError.alreadyDownloaded.localizedDescription, "All available episodes are already downloaded.")
     }
 
+    /// Offline subtitle files keep the stream index, label and default flag
+    /// the online sidecar uses, and WebVTT files are kept too.
+    func testDownloadManifestKeepsServerSubtitleFiles() throws {
+        let streams: [[String: Any]] = [
+            ["Type": "Subtitle", "Index": 3, "Codec": "subrip", "IsExternal": true, "Language": "eng",
+             "DisplayTitle": "English (SRT)", "IsDefault": true],
+            ["Type": "Subtitle", "Index": 4, "Codec": "webvtt", "IsExternal": true, "Language": "fre"],
+            ["Type": "Subtitle", "Index": 5, "Codec": "pgssub", "IsExternal": true],
+            ["Type": "Subtitle", "Index": 6, "Codec": "subrip", "IsExternal": false],
+        ]
+        let items: [[String: Any]] = [["Id": "episode-1", "Name": "One", "Type": "Episode",
+                                       "MediaSources": [["Id": "source-1", "Size": 1234, "MediaStreams": streams]]]]
+        let built = try EmbyDownloads.batchEpisodes(items, body: ["content_id": "series-1", "series": true], adapter: adapter)
+        let manifest = try XCTUnwrap(built.first?.entry["manifest"] as? [String: Any])
+        let subtitles = try XCTUnwrap(manifest["subtitles"] as? [[String: Any]])
+        XCTAssertEqual(subtitles.map { $0["index"] as? Int }, [3, 4], "Image and embedded subtitles aren't files to save")
+        XCTAssertEqual(subtitles.map { $0["format"] as? String }, ["srt", "vtt"])
+        XCTAssertEqual(subtitles[0]["title"] as? String, "English (SRT)")
+        XCTAssertEqual(subtitles[0]["isDefault"] as? Bool, true)
+        XCTAssertTrue((subtitles[1]["fetchUrl"] as? String)?.hasSuffix("/Subtitles/4/Stream.vtt") == true)
+    }
+
     func testBatchEpisodesCarryTheRequestBatchIDInServerOrder() throws {
         let sources: [[String: Any]] = [["Id": "source-1", "Size": 1234]]
         let items: [[String: Any]] = [

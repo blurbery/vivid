@@ -546,6 +546,33 @@ final class MDBListClientTests: XCTestCase {
     }
 
     @MainActor
+    func testARememberedSubtitleKeepsItsOwnTimingOffset() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vivid.tests.opensubtitles.\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let data = Data("1\n00:00:01,000 --> 00:00:02,000\nHello\n".utf8)
+        let first = OpenSubtitleResult(id: 42, name: "Release", language: "en", hearingImpaired: false)
+        var memory = OpenSubtitlesSelectionMemory(directory: directory)
+        memory.remember(first, data: data, scope: "scope", contentID: "movie", fileID: 3)
+        XCTAssertEqual(memory.offset(scope: "scope", contentID: "movie", fileID: 3, resultID: 42), 0)
+        memory.setOffset(-3_500, scope: "scope", contentID: "movie", fileID: 3, resultID: 42)
+
+        // Choosing the same file again, or relaunching, keeps the offset.
+        memory.remember(first, data: data, scope: "scope", contentID: "movie", fileID: 3)
+        memory = OpenSubtitlesSelectionMemory(directory: directory)
+        XCTAssertEqual(memory.offset(scope: "scope", contentID: "movie", fileID: 3, resultID: 42), -3_500)
+        XCTAssertEqual(memory.offset(scope: "scope", contentID: "movie", fileID: 4, resultID: 42), 0, "Another version has its own timing")
+
+        // A different file has its own timing, so it starts at zero.
+        let second = OpenSubtitleResult(id: 7, name: "Other", language: "en", hearingImpaired: false)
+        memory.setOffset(900, scope: "scope", contentID: "movie", fileID: 3, resultID: 7)
+        XCTAssertEqual(memory.offset(scope: "scope", contentID: "movie", fileID: 3, resultID: 42), -3_500, "Only the remembered file's offset changes")
+        memory.remember(second, data: data, scope: "scope", contentID: "movie", fileID: 3)
+        XCTAssertEqual(memory.offset(scope: "scope", contentID: "movie", fileID: 3, resultID: 7), 0)
+        XCTAssertEqual(memory.offset(scope: "scope", contentID: "movie", fileID: 3, resultID: 42), 0)
+    }
+
+    @MainActor
     func testRememberedSubtitlesAreBoundedAndDropMissingFiles() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("vivid.tests.opensubtitles.\(UUID().uuidString)", isDirectory: true)

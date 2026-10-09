@@ -290,7 +290,7 @@ enum OfflineSubtitleFiles {
                   FileManager.default.fileExists(atPath: url.path) else { return nil }
             return SubtitleUrl(index: index, language: entry.subtitle.language, codec: entry.ext,
                 label: entry.subtitle.title ?? "External", source: "external", forced: entry.subtitle.forced,
-                hearingImpaired: entry.subtitle.hearingImpaired, url: url.absoluteString)
+                default: entry.subtitle.isDefault, hearingImpaired: entry.subtitle.hearingImpaired, url: url.absoluteString)
         }
     }
 }

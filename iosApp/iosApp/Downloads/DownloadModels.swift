@@ -504,6 +504,8 @@ struct OfflineSubtitle: Codable, Hashable, Sendable {
     /// Emby's and Jellyfin's subtitle stream index, the same one their online
     /// sidecars use. Silo manifests leave it out.
     var index: Int? = nil
+    /// The server's default flag, so automatic selection matches streaming.
+    var isDefault: Bool? = nil
     let format: String?
     let forced: Bool?
     let hearingImpaired: Bool?

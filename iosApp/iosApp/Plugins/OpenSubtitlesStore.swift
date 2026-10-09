@@ -54,6 +54,17 @@ final class OpenSubtitlesStore {
         return OpenSubtitlesSelectionMemory.shared.restore(scope: scope, contentID: contentID, fileID: fileID)
     }
 
+    func rememberedOffset(contentID: String, fileID: Int?, resultID: Int) -> Int {
+        guard isConnected, let scope else { return 0 }
+        return OpenSubtitlesSelectionMemory.shared.offset(scope: scope, contentID: contentID, fileID: fileID, resultID: resultID)
+    }
+
+    func rememberOffset(_ milliseconds: Int, contentID: String, fileID: Int?, resultID: Int) {
+        guard isConnected, let scope else { return }
+        OpenSubtitlesSelectionMemory.shared.setOffset(milliseconds, scope: scope, contentID: contentID,
+                                                      fileID: fileID, resultID: resultID)
+    }
+
     func forgetSelection(contentID: String, fileID: Int?) {
         guard let scope else { return }
         OpenSubtitlesSelectionMemory.shared.forget(scope: scope, contentID: contentID, fileID: fileID)

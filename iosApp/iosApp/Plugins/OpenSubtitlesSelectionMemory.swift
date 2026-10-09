@@ -15,6 +15,9 @@ final class OpenSubtitlesSelectionMemory {
         let language: String
         let hearingImpaired: Bool
         var savedAt: Date
+        /// The timing offset set for this file, in milliseconds. Downloaded
+        /// files are often a few seconds out for a given release.
+        var offsetMs: Int? = nil
     }
 
     static let shared = OpenSubtitlesSelectionMemory()
@@ -91,6 +94,24 @@ final class OpenSubtitlesSelectionMemory {
         let result = OpenSubtitleResult(id: record.resultID, name: record.name,
             language: record.language, hearingImpaired: record.hearingImpaired)
         return (result, data)
+    }
+
+    /// The saved offset for this item's remembered file, when it's still the
+    /// same OpenSubtitles result.
+    func offset(scope: String, contentID: String, fileID: Int?, resultID: Int) -> Int {
+        guard let record = record(scope: scope, contentID: contentID, fileID: fileID),
+              record.resultID == resultID else { return 0 }
+        return record.offsetMs ?? 0
+    }
+
+    /// Saves the offset with the remembered file. A different file starts at
+    /// zero again, since its timing is its own.
+    func setOffset(_ milliseconds: Int, scope: String, contentID: String, fileID: Int?, resultID: Int) {
+        let key = Self.key(contentID: contentID, fileID: fileID)
+        var records = records(for: scope)
+        guard let index = records.firstIndex(where: { $0.key == key && $0.resultID == resultID }) else { return }
+        records[index].offsetMs = milliseconds == 0 ? nil : milliseconds
+        save(records, scope: scope)
     }
 
     func forget(scope: String, contentID: String, fileID: Int?) {

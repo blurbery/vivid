@@ -209,15 +209,15 @@ actor EmbyDownloads {
         manifest["subtitles"] = try subtitleStreams.compactMap { stream -> [String:Any]? in
             guard stream["Type"] as? String == "Subtitle", stream["IsExternal"] as? Bool == true,
                   let index = stream["Index"] as? Int, let codec = stream["Codec"] as? String,
-                  ["srt","subrip","ass","ssa","vtt"].contains(codec) else { return nil }
-            let format = codec == "subrip" ? "srt" : codec
+                  ["srt","subrip","ass","ssa","vtt","webvtt"].contains(codec.lowercased()) else { return nil }
+            let format = ServerSubtitleSidecars.format(codec)
             let url = try EmbyConnection.url(serverURL:adapter.connection.serverURL,
                 path:"/Videos/\(EmbyConnection.id(itemID))/\(sourceID)/Subtitles/\(index)/Stream.\(format)")
             var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":true]
             subtitle["language"] = stream["Language"]; subtitle["forced"] = stream["IsForced"]; subtitle["hearingImpaired"] = stream["IsHearingImpaired"]
             // The stream index and label match the online sidecar, so a
             // chosen subtitle keeps its track ID offline.
-            subtitle["index"] = index; subtitle["title"] = stream["DisplayTitle"]
+            subtitle["index"] = index; subtitle["title"] = stream["DisplayTitle"]; subtitle["isDefault"] = stream["IsDefault"]
             return subtitle
         }
         var row: [String:Any] = ["id":id,"contentId":itemID,"mediaFileId":EmbyAdapter.numberID(sourceID),"status":"ready","quality":format.rawValue,"revision":1]

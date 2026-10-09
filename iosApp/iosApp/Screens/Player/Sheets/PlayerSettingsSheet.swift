@@ -199,14 +199,14 @@ struct PlayerSettingsSheet: View {
                     RangeSpinner(
                         title: "Subtitle Delay",
                         value: Binding(
-                            get: { viewModel.settings.subtitleSyncMs },
-                            set: { viewModel.settings.subtitleSyncMs = $0 }
+                            get: { viewModel.subtitleDelayMs },
+                            set: { viewModel.previewSubtitleDelay($0) }
                         ),
                         range: -10000...10000,
                         step: 100,
                         display: { formatMs($0) },
                         onCommit: {
-                            viewModel.setSubtitleSyncMilliseconds(viewModel.settings.subtitleSyncMs)
+                            viewModel.setSubtitleSyncMilliseconds(viewModel.subtitleDelayMs)
                         }
                     )
                 }
@@ -582,14 +582,14 @@ struct PlayerSettingsSheet: View {
                     RangeSpinner(
                         title: "Subtitle delay",
                         value: Binding(
-                            get: { viewModel.settings.subtitleSyncMs },
-                            set: { viewModel.settings.subtitleSyncMs = $0 }
+                            get: { viewModel.subtitleDelayMs },
+                            set: { viewModel.previewSubtitleDelay($0) }
                         ),
                         range: -10000...10000,
                         step: 100,
                         display: { formatMs($0) },
                         onCommit: {
-                            viewModel.setSubtitleSyncMilliseconds(viewModel.settings.subtitleSyncMs)
+                            viewModel.setSubtitleSyncMilliseconds(viewModel.subtitleDelayMs)
                         }
                     )
                 }
