@@ -55,7 +55,11 @@ actor EmbyDownloads {
             let fileRequested = !(body["file_id"] == nil || body["file_id"] is NSNull)
             if format != .original {
                 #if os(iOS)
-                conversionOptions = fileRequested ? nil
+                // The playback transcoder streams the file in the background
+                // session, so it keeps going with the app closed. Emby's
+                // conversion service, which only advances while Vivid checks
+                // on it, is the fallback for accounts that can't transcode.
+                conversionOptions = fileRequested || StreamedTranscodeDownload.isAllowed(policy: policy) ? nil
                     : try await self.conversionOptions(connection: connection, policy: policy, itemID: itemID)
                 guard conversionOptions != nil || StreamedTranscodeDownload.isAllowed(policy: policy) else { throw EmbyError.unsupportedFeature }
                 #else
@@ -84,8 +88,8 @@ actor EmbyDownloads {
                 row["targetBitrateKbps"] = format.targetBitrateKbps
             }
             entry["row"] = row
-            // Without a conversion service the server's playback transcoder
-            // streams the smaller file instead.
+            // Without a conversion job the playback transcoder streams the
+            // smaller file instead.
             if conversionOptions == nil { StreamedTranscodeDownload.apply(format, to: &entry, source: source) }
             try await connection.validate()
             var current = try records(connection)
@@ -127,9 +131,9 @@ actor EmbyDownloads {
     }
 
     /// Series and season batches register each present episode. Original files
-    /// are saved in one write; a smaller quality gets a conversion job per
-    /// episode where the account has Emby's conversion service, or streams
-    /// through the playback transcoder otherwise.
+    /// are saved in one write; a smaller quality streams through the playback
+    /// transcoder, or gets a conversion job per episode for an account that
+    /// can only use Emby's conversion service.
     private func registerEpisodes(connection: EmbyConnection, user: String, body: [String:Any], policy: [String:Any]) async throws -> Any {
         let season = body["season_number"] as? Int
         guard let format = DownloadFormat(rawValue: body["quality"] as? String ?? "original"),
@@ -145,7 +149,8 @@ actor EmbyDownloads {
         var conversionOptions: EmbyDownloadConversion.Options?
         if format != .original {
             #if os(iOS)
-            if let sample = Self.downloadableEpisodes(items).first?["Id"] as? String {
+            if !StreamedTranscodeDownload.isAllowed(policy: policy),
+               let sample = Self.downloadableEpisodes(items).first?["Id"] as? String {
                 conversionOptions = try await self.conversionOptions(connection: connection, policy: policy, itemID: sample)
             }
             guard conversionOptions != nil || StreamedTranscodeDownload.isAllowed(policy: policy) else { throw EmbyError.unsupportedFeature }
