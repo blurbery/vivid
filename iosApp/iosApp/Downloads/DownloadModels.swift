@@ -14,10 +14,20 @@ struct DownloadCapability: Codable, Hashable, Sendable {
     let seasonDownload: Bool
     let seriesMonitoring: Bool
     let monitoringModes: [String]
+    /// Season and series requests accept any of `qualityPresets`, not just
+    /// original. Silo advertises it as `bulk_quality`.
+    let bulkQuality: Bool
 
     /// Downloads are usable at all only when the feature is on AND this
     /// user is allowed to download.
     var isUsable: Bool { enabled && downloadAllowed }
+
+    /// A server without the downloads API, so the controls show as unavailable
+    /// rather than as still checking.
+    static let unsupported = DownloadCapability(
+        enabled: false, downloadAllowed: false, qualityPresets: [], transcodeEnabled: false,
+        transcodeUserAllowed: false, seasonDownload: false, seriesMonitoring: false, monitoringModes: []
+    )
 
     /// Compatibility alias for stores written before the server renamed
     /// public download choices from formats to quality presets.
@@ -33,6 +43,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         case seasonDownload
         case seriesMonitoring
         case monitoringModes
+        case bulkQuality
     }
 
     init(
@@ -43,7 +54,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         transcodeUserAllowed: Bool,
         seasonDownload: Bool,
         seriesMonitoring: Bool,
-        monitoringModes: [String]
+        monitoringModes: [String],
+        bulkQuality: Bool = false
     ) {
         self.enabled = enabled
         self.downloadAllowed = downloadAllowed
@@ -53,6 +65,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         self.seasonDownload = seasonDownload
         self.seriesMonitoring = seriesMonitoring
         self.monitoringModes = monitoringModes
+        self.bulkQuality = bulkQuality
     }
 
     init(from decoder: Decoder) throws {
@@ -67,6 +80,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         seasonDownload = try container.decodeIfPresent(Bool.self, forKey: .seasonDownload) ?? false
         seriesMonitoring = try container.decodeIfPresent(Bool.self, forKey: .seriesMonitoring) ?? false
         monitoringModes = try container.decodeIfPresent([String].self, forKey: .monitoringModes) ?? []
+        bulkQuality = try container.decodeIfPresent(Bool.self, forKey: .bulkQuality) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -79,6 +93,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         try container.encode(seasonDownload, forKey: .seasonDownload)
         try container.encode(seriesMonitoring, forKey: .seriesMonitoring)
         try container.encode(monitoringModes, forKey: .monitoringModes)
+        try container.encode(bulkQuality, forKey: .bulkQuality)
     }
 }
 
@@ -687,6 +702,10 @@ struct DownloadRecord: Codable, Identifiable, Hashable, Sendable {
     /// to be unavailable, so downloads made before subtitles were saved are
     /// backfilled once rather than on every launch.
     var subtitlesChecked: Bool? = nil
+    /// Set once every advertised artwork file is saved. Artwork is fetched
+    /// after the media transfer starts, so a download that was closed early
+    /// is backfilled rather than left without a poster.
+    var artworkChecked: Bool? = nil
 
     // Display fields cached so the Downloads list renders before the
     // manifest is fetched and offline.

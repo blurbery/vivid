@@ -139,12 +139,14 @@ struct DownloadActiveRow: View {
     private var statusLine: String {
         switch record.localStatus {
         case .downloading:
+            // Queued in the background session behind other transfers.
+            if record.bytesDownloaded == 0, rateParts.isEmpty { return "Waiting to download…" }
             return ([percentText, sizeText] + rateParts).joined(separator: " · ")
         case .paused:
             return "Paused · \(percentText) · \(sizeText)"
         case .registering, .queued: return "Queued"
         case .preparing: return "Preparing on server…"
-        case .fetchingAssets: return "Finishing…"
+        case .fetchingAssets: return "Starting…"
         case .completed: return DownloadFormatting.bytes(record.fileSize)
         case .failed: return "Failed"
         case .revoked: return "No longer available"

@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 import OSLog
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum DownloadError: LocalizedError {
     case unavailable
@@ -40,7 +43,11 @@ final class DownloadManager {
         category: "Downloads"
     )
 
-    private static let maxConcurrentTransfers = 3
+    /// Records preparing at once (manifest fetch and transfer hand-off).
+    /// Media transfers themselves aren't capped here: they go straight to the
+    /// background session, which spaces its own connections, so a whole
+    /// season keeps downloading after the app is closed.
+    private static let maxConcurrentPreparations = 3
     private static let maxRetries = 4
 
     /// In-memory persisted blob. `private(set)` so the `@Observable` macro
@@ -50,6 +57,8 @@ final class DownloadManager {
             rebuildDownloadedIndex()
             let enabled = file.capability?.isUsable == true
             if enabled != downloadsEnabled { downloadsEnabled = enabled }
+            let known = file.capability != nil
+            if known != capabilityKnown { capabilityKnown = known }
             syncLiveActivity()
         }
     }
@@ -124,6 +133,24 @@ final class DownloadManager {
     /// whole `file` blob — reassigned on every transfer progress tick — as
     /// their observed state.
     private(set) var downloadsEnabled: Bool = false
+    /// Stored mirror of `capability != nil`: whether this account's download
+    /// permission has been answered yet. Until it has, download controls stay
+    /// usable and check again on tap instead of claiming downloads are off.
+    private(set) var capabilityKnown = false
+    private(set) var capabilityChecksInFlight = 0
+    /// The last permission check failed and nothing earlier is known.
+    private(set) var capabilityCheckFailed = false
+    var isCheckingCapability: Bool { capabilityChecksInFlight > 0 }
+    /// Downloads are known to be off for this account, so the controls show
+    /// crossed out rather than disappearing.
+    var downloadsDisallowed: Bool { capabilityKnown && !downloadsEnabled }
+    /// Background time held while a download is registered or handed to the
+    /// background session, so work started just before the app closes still
+    /// reaches the transfer.
+    @ObservationIgnored private var backgroundWorkCount = 0
+    #if canImport(UIKit)
+    @ObservationIgnored private var backgroundWorkID = UIBackgroundTaskIdentifier.invalid
+    #endif
     /// Leaf ids currently waiting for POST /downloads to return. This belongs
     /// to the manager (rather than one button) so a detail rebuild cannot make
     /// the preparing indicator disappear during registration.
@@ -138,6 +165,11 @@ final class DownloadManager {
     private var registrationScopeGeneration: UInt64 = 0
     private var pipelineTasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     var canDownloadSeason: Bool { downloadsEnabled && capability?.seasonDownload == true }
+    /// Season and series downloads may use a smaller quality, not just original.
+    var canChooseBatchQuality: Bool { downloadsEnabled && capability?.bulkQuality == true && availableFormats.count > 1 }
+    /// Downloads the server is still converting, which only advance while the
+    /// app can check on them.
+    var hasServerPreparingDownloads: Bool { file.records.values.contains { $0.localStatus == .preparing } }
     var canMonitorSeries: Bool { downloadsEnabled && capability?.seriesMonitoring == true }
 
     var availableFormats: [DownloadFormat] {
@@ -364,6 +396,22 @@ final class DownloadManager {
         refreshStorageUsage()
     }
 
+    /// Unfinished downloads (queued, preparing, transferring or paused) of one
+    /// series, matched by series or by the batch's series content id.
+    func activeRecords(seriesId: String) -> [DownloadRecord] {
+        records.filter { $0.localStatus.isActive && ($0.seriesId == seriesId || $0.contentId == seriesId) }
+    }
+
+    /// Cancel every unfinished download of a series. Finished episodes stay.
+    func cancelActiveDownloads(seriesId: String) {
+        deleteDownloads(ids: activeRecords(seriesId: seriesId).map(\.id))
+    }
+
+    /// Cancel every unfinished download in this profile. Finished ones stay.
+    func cancelAllActiveDownloads() {
+        deleteDownloads(ids: activeRecords.map(\.id))
+    }
+
     /// One-time hydration of `seasonNumber`/`episodeNumber`/`seriesTitle` for
     /// episode downloads created before those fields existed. A cheap no-op
     /// once every record carries them.
@@ -409,6 +457,10 @@ final class DownloadManager {
             invalidatePendingRegistrations()
             scopeServerId = serverId
             scopeProfileId = profileId
+            capabilityCheckFailed = false
+            // Transfers that finish while the new scope's registry loads are
+            // held and replayed against it, as on a cold launch.
+            sessionEventsHeld = true
         }
 
         let loadTask: Task<DownloadStoreFile, Never>
@@ -459,7 +511,16 @@ final class DownloadManager {
         guard downloadsEnabled else { return }
         await reconcileWithServer(triggerPipeline: true)
         await runMonitoringAndProgressSync()
-        await backfillSubtitlesIfNeeded()
+        await backfillAssetsIfNeeded()
+    }
+
+    /// Load the active server's scope and permission before a download
+    /// request, so a tap straight after launch or a server switch never runs
+    /// against an empty or stale scope.
+    func prepareForDownload() async -> Bool {
+        guard await activateScopeIfNeeded() else { return false }
+        if !capabilityKnown || capabilityCheckFailed { await refreshCapability() }
+        return downloadsEnabled
     }
 
     /// Profile/server switched — load the new scope and refresh.
@@ -490,6 +551,7 @@ final class DownloadManager {
         scopeLoadProfileId = ""
         scopeServerId = ""
         scopeProfileId = ""
+        capabilityCheckFailed = false
         file = .empty
         rateSamples.removeAll()
         transferRates.removeAll()
@@ -516,12 +578,31 @@ final class DownloadManager {
 
     func refreshCapability() async {
         guard !scopeServerId.isEmpty else { return }
+        let serverId = scopeServerId
+        let profileId = scopeProfileId
+        let generation = registrationScopeGeneration
+        capabilityChecksInFlight += 1
+        defer { capabilityChecksInFlight -= 1 }
         do {
             let capability = try await VividAPI.shared.downloadCapability()
+            // A switch during the request makes this answer another account's.
+            guard generation == registrationScopeGeneration, serverId == scopeServerId, profileId == scopeProfileId else { return }
             file.capability = capability
             file.capabilityFetchedAt = Date()
+            capabilityCheckFailed = false
             persist()
         } catch {
+            guard generation == registrationScopeGeneration, serverId == scopeServerId, profileId == scopeProfileId else { return }
+            if case HTTPError.http(let status, _) = error, status == 404 || status == 501 {
+                // A server without the downloads API: show the controls as
+                // unavailable instead of checking forever.
+                file.capability = .unsupported
+                file.capabilityFetchedAt = Date()
+                capabilityCheckFailed = false
+                persist()
+                return
+            }
+            if file.capability == nil { capabilityCheckFailed = true }
             Self.logger.debug("capability refresh failed: \(String(describing: error), privacy: .public)")
         }
     }
@@ -578,10 +659,12 @@ final class DownloadManager {
         seasonNumber: Int,
         seriesTitle: String?,
         posterThumbhash: String?,
-        preferredPosterPath: String?
+        preferredPosterPath: String?,
+        quality: String? = nil
     ) async throws {
         try await requestDownload(
             contentId: seriesId,
+            quality: quality,
             series: true,
             seasonNumber: seasonNumber,
             seriesId: seriesId,
@@ -595,10 +678,12 @@ final class DownloadManager {
         seriesId: String,
         seriesTitle: String?,
         posterThumbhash: String?,
-        preferredPosterPath: String?
+        preferredPosterPath: String?,
+        quality: String? = nil
     ) async throws {
         try await requestDownload(
             contentId: seriesId,
+            quality: quality,
             series: true,
             seriesId: seriesId,
             seriesTitle: seriesTitle,
@@ -622,7 +707,7 @@ final class DownloadManager {
         posterThumbhash: String? = nil,
         preferredPosterPath: String? = nil
     ) async throws {
-        guard downloadsEnabled else { throw DownloadError.unavailable }
+        guard await prepareForDownload() else { throw DownloadError.unavailable }
 
         let registrationContentId = episodeId ?? contentId
         guard pendingRegistrationTokens[registrationContentId] == nil else {
@@ -634,17 +719,20 @@ final class DownloadManager {
         let capturedProfileId = scopeProfileId
         pendingRegistrationTokens[registrationContentId] = registrationToken
         pendingRegistrationContentIds.insert(registrationContentId)
+        beginBackgroundWork()
         defer {
             finishPendingRegistration(
                 contentId: registrationContentId,
                 token: registrationToken
             )
+            endBackgroundWork()
         }
 
-        // Series/season batches are original-quality only per the server
-        // contract; single items may use any advertised public quality preset.
+        // Series/season batches take a smaller quality only where the server
+        // says so (`bulkQuality`); otherwise they stay original. Single items
+        // may use any advertised public quality preset.
         let isBatch = series || seasonNumber != nil
-        let quality = isBatch
+        let quality = isBatch && capability?.bulkQuality != true
             ? DownloadFormat.original.rawValue
             : resolvedDownloadQuality(requestedQuality)
 
@@ -844,10 +932,8 @@ final class DownloadManager {
     // MARK: - Pipeline
 
     private func processQueue() {
-        let activeCount = file.records.values.filter {
-            $0.localStatus == .downloading || $0.localStatus == .fetchingAssets
-        }.count
-        var slots = max(0, Self.maxConcurrentTransfers - activeCount)
+        let preparingCount = file.records.values.filter { $0.localStatus == .fetchingAssets }.count
+        var slots = max(0, Self.maxConcurrentPreparations - preparingCount)
         guard slots > 0 else { return }
 
         let queued = file.records.values
@@ -874,7 +960,7 @@ final class DownloadManager {
             try? FileManager.default.removeItem(at: url)
             record.resumeDataFilename = nil
             if let resumeData {
-                record.taskIdentifier = sessionDelegate.resume(data: resumeData)
+                record.taskIdentifier = sessionDelegate.resume(data: resumeData, tag: taskTag(recordId: record.id))
                 record.localStatus = .downloading
                 file.records[record.id] = record
                 persist()
@@ -903,25 +989,53 @@ final class DownloadManager {
     }
 
     private func startMediaPipeline(recordId: String, generation: UInt64) async {
-        guard pipelineIsCurrent(recordId: recordId, generation: generation),
-              let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+        guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
+        beginBackgroundWork()
+        var holdsBackgroundWork = true
+        defer { if holdsBackgroundWork { endBackgroundWork() } }
+        guard let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
               pipelineIsCurrent(recordId: recordId, generation: generation),
-              auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return }
+              auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else {
+            requeueStalledPipeline(recordId: recordId, generation: generation)
+            return
+        }
         do {
             let manifest = try await VividAPI.shared.fetchManifest(downloadId: recordId, auth: auth)
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             await persistManifest(manifest, recordId: recordId, generation: generation)
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             applyManifestDisplay(manifest, recordId: recordId)
+            // The file goes to the background session first, so it keeps
+            // downloading once the app is closed. Artwork and subtitles are
+            // small best-effort extras and must never hold the file back.
+            try await startMediaTransfer(recordId: recordId, generation: generation, auth: auth)
+            holdsBackgroundWork = false
+            endBackgroundWork()
+            processQueue()
+            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             await fetchArtwork(manifest, recordId: recordId, generation: generation, auth: auth)
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             await fetchSubtitles(manifest, recordId: recordId, generation: generation, auth: auth)
-            guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
-            try await startMediaTransfer(recordId: recordId, generation: generation, auth: auth)
         } catch {
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             handlePipelineError(error, recordId: recordId)
         }
+    }
+
+    /// No usable sign-in for this scope right now. Put the record back in the
+    /// queue instead of leaving it marked as preparing with no work behind
+    /// it, where it would sit forever and hold a preparation slot.
+    private func requeueStalledPipeline(recordId: String, generation: UInt64) {
+        guard generation == registrationScopeGeneration,
+              var record = file.records[recordId], record.localStatus == .fetchingAssets else { return }
+        record.localStatus = .queued
+        file.records[recordId] = record
+        persist()
+    }
+
+    private func taskTag(recordId: String) -> DownloadTaskTag? {
+        guard !scopeServerId.isEmpty, !scopeProfileId.isEmpty else { return nil }
+        return DownloadTaskTag(serverId: scopeServerId, profileId: scopeProfileId, recordId: recordId)
     }
 
     private func startMediaTransfer(recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async throws {
@@ -935,7 +1049,7 @@ final class DownloadManager {
         )
         guard pipelineIsCurrent(recordId: recordId, generation: generation),
               var record = file.records[recordId] else { return }
-        let taskId = sessionDelegate.start(request: request)
+        let taskId = sessionDelegate.start(request: request, tag: taskTag(recordId: recordId))
         record.taskIdentifier = taskId
         record.localStatus = .downloading
         file.records[recordId] = record
@@ -1017,21 +1131,30 @@ final class DownloadManager {
         persist()
     }
 
-    /// Completed downloads made before subtitle files were saved get them
-    /// once, while the server is reachable.
-    private func backfillSubtitlesIfNeeded() async {
+    /// Downloads made before subtitle files were saved, or whose artwork and
+    /// subtitles didn't finish before the app was closed (they're fetched
+    /// after the file starts), get them once while the server is reachable.
+    private func backfillAssetsIfNeeded() async {
         let pending = file.records.values.filter {
             // Revoked downloads stay playable offline, so they get theirs too.
-            ($0.localStatus == .completed || $0.localStatus == .revoked)
-                && $0.subtitlesChecked != true && $0.manifestFilename != nil
+            ($0.localStatus == .completed || $0.localStatus == .revoked || $0.localStatus == .downloading)
+                && $0.manifestFilename != nil
+                && ($0.subtitlesChecked != true || ($0.artworkChecked != true && $0.posterFilename == nil))
+                && pipelineTasks[$0.id] == nil
         }
         guard !pending.isEmpty, let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
               auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return }
         let generation = registrationScopeGeneration
         for record in pending {
             guard generation == registrationScopeGeneration, file.records[record.id] != nil,
+                  pipelineTasks[record.id] == nil,
                   let manifest = await loadManifest(for: record) else { continue }
-            await fetchSubtitles(manifest, recordId: record.id, generation: generation, auth: auth)
+            if record.artworkChecked != true, record.posterFilename == nil {
+                await fetchArtwork(manifest, recordId: record.id, generation: generation, auth: auth)
+            }
+            if file.records[record.id]?.subtitlesChecked != true {
+                await fetchSubtitles(manifest, recordId: record.id, generation: generation, auth: auth)
+            }
         }
     }
 
@@ -1042,6 +1165,7 @@ final class DownloadManager {
             ("backdrop", manifest.artworkUrls?.backdrop, "backdrop.jpg"),
             ("logo", manifest.artworkUrls?.logo, "logo.png"),
         ]
+        var fetchedAll = true
         for entry in kinds {
             guard pipelineIsCurrent(recordId: recordId, generation: generation) else { return }
             // Only fetch artwork the manifest actually advertises. The server
@@ -1052,6 +1176,7 @@ final class DownloadManager {
                   pipelineIsCurrent(recordId: recordId, generation: generation),
                   !data.isEmpty,
                   let url = absoluteFileURLForNewAsset(recordId: recordId, filename: entry.filename) else {
+                fetchedAll = false
                 continue
             }
             try? data.write(to: url, options: .atomic)
@@ -1064,10 +1189,13 @@ final class DownloadManager {
             }
             file.records[recordId] = record
         }
+        // Anything missed is tried again by the asset backfill.
+        if fetchedAll, pipelineIsCurrent(recordId: recordId, generation: generation), var record = file.records[recordId] {
+            record.artworkChecked = true
+            file.records[recordId] = record
+        }
         persist()
     }
-
-
 
     private func handlePipelineError(_ error: Error, recordId: String) {
         guard var record = file.records[recordId] else { return }
@@ -1182,8 +1310,8 @@ final class DownloadManager {
             return
         }
         switch event {
-        case let .progress(taskId, written, total):
-            guard var record = recordByTask(taskId) else { return }
+        case let .progress(taskId, written, total, tag):
+            guard var record = recordByTask(taskId, tag: tag) else { return }
             updateTransferRate(recordId: record.id, bytes: written)
             // Publish to the observable blob at a readable cadence — the raw
             // callbacks fire many times per second and each reassignment
@@ -1198,12 +1326,12 @@ final class DownloadManager {
             file.records[record.id] = record
             persistProgressThrottled()
 
-        case let .finished(taskId, stagedURL, _):
-            handleMediaFinished(taskId: taskId, stagedURL: stagedURL)
+        case let .finished(taskId, stagedURL, _, tag):
+            handleMediaFinished(taskId: taskId, stagedURL: stagedURL, tag: tag)
 
-        case let .failed(taskId, statusCode, resumeData, message, urlErrorCode):
+        case let .failed(taskId, statusCode, resumeData, message, urlErrorCode, tag):
             handleMediaFailure(taskId: taskId, statusCode: statusCode, resumeData: resumeData, message: message,
-                               urlErrorCode: urlErrorCode)
+                               urlErrorCode: urlErrorCode, tag: tag)
 
         case .allEventsDelivered:
             // Flush queued store writes before handing control back — iOS
@@ -1231,10 +1359,14 @@ final class DownloadManager {
         }
     }
 
-    private func handleMediaFinished(taskId: Int, stagedURL: URL) {
+    private func handleMediaFinished(taskId: Int, stagedURL: URL, tag: DownloadTaskTag? = nil) {
         intentionalCancels.remove(taskId)
-        guard var record = recordByTask(taskId) else {
-            try? FileManager.default.removeItem(at: stagedURL)
+        guard var record = recordByTask(taskId, tag: tag) else {
+            if let tag, !tag.isScope(serverId: scopeServerId, profileId: scopeProfileId) {
+                finishOutOfScope(tag: tag, taskId: taskId, stagedURL: stagedURL)
+            } else {
+                try? FileManager.default.removeItem(at: stagedURL)
+            }
             return
         }
         clearTransferRate(recordId: record.id)
@@ -1263,9 +1395,10 @@ final class DownloadManager {
         record.downloadedAt = Date()
         record.taskIdentifier = nil
         record.lastError = nil
-        if record.fileSize <= 0 {
-            record.fileSize = fileSizeOnDisk(destination)
-        }
+        // The file on disk is the truth: a transcode streamed without a
+        // length only had an estimate until now.
+        let sizeOnDisk = fileSizeOnDisk(destination)
+        if sizeOnDisk > 0 { record.fileSize = sizeOnDisk }
         record.bytesDownloaded = record.fileSize
         file.records[record.id] = record
         persist()
@@ -1279,9 +1412,15 @@ final class DownloadManager {
         Task { await self.enforceRetention() }
     }
 
-    private func handleMediaFailure(taskId: Int, statusCode: Int?, resumeData: Data?, message: String, urlErrorCode: Int? = nil) {
+    private func handleMediaFailure(taskId: Int, statusCode: Int?, resumeData: Data?, message: String, urlErrorCode: Int? = nil,
+                                    tag: DownloadTaskTag? = nil) {
         if intentionalCancels.remove(taskId) != nil { return }
-        guard var record = recordByTask(taskId) else { return }
+        guard var record = recordByTask(taskId, tag: tag) else {
+            if let tag, !tag.isScope(serverId: scopeServerId, profileId: scopeProfileId) {
+                requeueOutOfScope(tag: tag, taskId: taskId, resumeData: resumeData)
+            }
+            return
+        }
         record.taskIdentifier = nil
         clearTransferRate(recordId: record.id)
 
@@ -1344,6 +1483,76 @@ final class DownloadManager {
         }
     }
 
+    /// A transfer for another server or profile finished after the user
+    /// switched away. Its file is saved into that scope's own registry, so
+    /// the download is there when they switch back instead of being thrown
+    /// away and fetched again.
+    private func finishOutOfScope(tag: DownloadTaskTag, taskId: Int, stagedURL: URL) {
+        Task { @MainActor in
+            var other = await DownloadStore.shared.load(serverId: tag.serverId, profileId: tag.profileId)
+            if tag.isScope(serverId: self.scopeServerId, profileId: self.scopeProfileId) {
+                // Switched back while the registry loaded: handle it in scope.
+                self.handleSessionEvent(.finished(taskId: taskId, stagedURL: stagedURL, statusCode: 200, tag: tag))
+                return
+            }
+            guard var record = other.records[tag.recordId], record.taskIdentifier == taskId else {
+                try? FileManager.default.removeItem(at: stagedURL)
+                return
+            }
+            let filename = "media.\(self.mediaExtension(for: record))"
+            let destination = DownloadFilePaths.fileURL(serverId: tag.serverId, profileId: tag.profileId,
+                                                        downloadId: record.id, filename: filename)
+            try? FileManager.default.removeItem(at: destination)
+            record.taskIdentifier = nil
+            do {
+                try FileManager.default.moveItem(at: stagedURL, to: destination)
+                record.mediaFilename = filename
+                record.localStatus = .completed
+                record.downloadedAt = Date()
+                record.lastError = nil
+                let size = self.fileSizeOnDisk(destination)
+                if size > 0 { record.fileSize = size }
+                record.bytesDownloaded = record.fileSize
+            } catch {
+                try? FileManager.default.removeItem(at: stagedURL)
+                record.localStatus = .queued
+            }
+            other.records[record.id] = record
+            await DownloadStore.shared.save(other, serverId: tag.serverId, profileId: tag.profileId)
+            self.adoptOutOfScopeUpdate(record, tag: tag, taskId: taskId)
+        }
+    }
+
+    /// A transfer for another scope failed or was interrupted: queue it again
+    /// in that scope, keeping any resume data, so it restarts on return.
+    private func requeueOutOfScope(tag: DownloadTaskTag, taskId: Int, resumeData: Data?) {
+        Task { @MainActor in
+            var other = await DownloadStore.shared.load(serverId: tag.serverId, profileId: tag.profileId)
+            guard !tag.isScope(serverId: self.scopeServerId, profileId: self.scopeProfileId),
+                  var record = other.records[tag.recordId], record.taskIdentifier == taskId else { return }
+            record.taskIdentifier = nil
+            record.localStatus = .queued
+            if let resumeData {
+                let url = DownloadFilePaths.fileURL(serverId: tag.serverId, profileId: tag.profileId,
+                                                    downloadId: record.id, filename: "resume.bin")
+                if (try? resumeData.write(to: url, options: .atomic)) != nil { record.resumeDataFilename = "resume.bin" }
+            }
+            other.records[record.id] = record
+            await DownloadStore.shared.save(other, serverId: tag.serverId, profileId: tag.profileId)
+            self.adoptOutOfScopeUpdate(record, tag: tag, taskId: taskId)
+        }
+    }
+
+    /// The user may have switched back to that scope while its registry was
+    /// being saved, loading the older copy. Carry the update over.
+    private func adoptOutOfScopeUpdate(_ record: DownloadRecord, tag: DownloadTaskTag, taskId: Int) {
+        guard tag.isScope(serverId: scopeServerId, profileId: scopeProfileId),
+              file.records[record.id]?.taskIdentifier == taskId else { return }
+        file.records[record.id] = record
+        persist()
+        processQueue()
+    }
+
     private func scheduleRetry(recordId: String, resumeData: Data?, refreshToken: Bool) {
         let generation = registrationScopeGeneration
         let attempt = file.records[recordId]?.retryCount ?? 1
@@ -1369,7 +1578,7 @@ final class DownloadManager {
                   self.file.records[recordId]?.taskIdentifier == nil,
                   self.file.records[recordId]?.localStatus == record.localStatus else { return }
             if let resumeData {
-                let taskId = self.sessionDelegate.resume(data: resumeData)
+                let taskId = self.sessionDelegate.resume(data: resumeData, tag: self.taskTag(recordId: recordId))
                 guard var rec = self.file.records[recordId] else { return }
                 rec.taskIdentifier = taskId
                 rec.localStatus = .downloading
@@ -1908,6 +2117,7 @@ final class DownloadManager {
         record.logoFilename = nil
         record.subtitleFilenames = [:]
         record.subtitlesChecked = nil
+        record.artworkChecked = nil
         record.resumeDataFilename = nil
         record.container = nil
         record.stableIdentity = nil
@@ -1999,8 +2209,40 @@ final class DownloadManager {
         persist()
     }
 
-    private func recordByTask(_ taskId: Int) -> DownloadRecord? {
-        file.records.values.first { $0.taskIdentifier == taskId }
+    /// A tagged transfer only ever belongs to its own scope's record; an
+    /// untagged one (started by an older build) is matched by identifier.
+    private func recordByTask(_ taskId: Int, tag: DownloadTaskTag? = nil) -> DownloadRecord? {
+        if let tag {
+            guard tag.isScope(serverId: scopeServerId, profileId: scopeProfileId),
+                  let record = file.records[tag.recordId], record.taskIdentifier == taskId else { return nil }
+            return record
+        }
+        return file.records.values.first { $0.taskIdentifier == taskId }
+    }
+
+    // MARK: - Background time
+
+    private func beginBackgroundWork() {
+        backgroundWorkCount += 1
+        #if canImport(UIKit)
+        guard backgroundWorkID == .invalid else { return }
+        backgroundWorkID = UIApplication.shared.beginBackgroundTask(withName: "Vivid downloads") { [weak self] in
+            MainActor.assumeIsolated { self?.releaseBackgroundTime() }
+        }
+        #endif
+    }
+
+    private func endBackgroundWork() {
+        backgroundWorkCount = max(0, backgroundWorkCount - 1)
+        if backgroundWorkCount == 0 { releaseBackgroundTime() }
+    }
+
+    private func releaseBackgroundTime() {
+        #if canImport(UIKit)
+        guard backgroundWorkID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundWorkID)
+        backgroundWorkID = .invalid
+        #endif
     }
 
     private func mediaExtension(for record: DownloadRecord) -> String {

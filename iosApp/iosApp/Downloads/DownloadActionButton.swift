@@ -8,6 +8,35 @@ struct EpisodeDownloadContext {
     let posterThumbhash: String?
 }
 
+/// The download glyph with an X through it. Shown where downloads are off
+/// for the account, so the control keeps its place instead of vanishing.
+struct DownloadUnavailableGlyph: View {
+    var size: CGFloat
+
+    var body: some View {
+        ZStack {
+            Image(systemName: "arrow.down.to.line")
+                .font(.system(size: size, weight: .regular))
+                .foregroundColor(.white.opacity(0.35))
+            Image(systemName: "xmark")
+                .font(.system(size: size * 1.05, weight: .light))
+                .foregroundColor(.white.opacity(0.85))
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    /// Explains a crossed-out download control when it's tapped.
+    func downloadsUnavailableAlert(isPresented: Binding<Bool>) -> some View {
+        alert("Downloads Unavailable", isPresented: isPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Downloads aren't enabled for this account. The server's admin can allow them.")
+        }
+    }
+}
+
 /// Per-item download control. Reads the live record straight from
 /// `DownloadManager.shared` (an `@Observable` singleton), so it reflects
 /// download progress without the detail view model having to thread any
@@ -66,6 +95,7 @@ struct DownloadActionButton: View {
     @State private var startNotice: String?
     @State private var startFeedbackCount = 0
     @State private var failFeedbackCount = 0
+    @State private var showUnavailable = false
 
     /// Detail action-row button, driven by the screen's `ItemDetail`.
     init(
@@ -166,6 +196,12 @@ struct DownloadActionButton: View {
             circleLabel(icon: "arrow.down.circle", active: true, showSpinner: true)
                 .accessibilityLabel("Registering download")
                 .allowsHitTesting(false)
+        } else if record == nil, manager.downloadsDisallowed {
+            Button { showUnavailable = true } label: { unavailableLabel }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Download unavailable")
+                .accessibilityHint("Downloads aren't enabled for this account")
+                .downloadsUnavailableAlert(isPresented: $showUnavailable)
         } else {
             switch record?.localStatus {
             case .none:
@@ -266,11 +302,38 @@ struct DownloadActionButton: View {
 
     // MARK: - Actions
 
+    @ViewBuilder
+    private var unavailableLabel: some View {
+        if style == .labeled {
+            labeledGlyph(tint: .white, active: false) { DownloadUnavailableGlyph(size: 19) }
+        } else {
+            ZStack {
+                Circle()
+                    .fill(circleFill(active: false))
+                    .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                DownloadUnavailableGlyph(size: iconPointSize)
+            }
+            .frame(width: diameter, height: diameter)
+        }
+    }
+
     /// One-tap entry: start immediately with defaults unless the size that
     /// would land on disk (max of the Auto range, or the exact size of the
-    /// selected version) warrants confirming first.
+    /// selected version) warrants confirming first. Straight after launch or
+    /// a server switch the account's permission may not be known yet, so it
+    /// is checked first instead of failing the tap.
     private func handleDownloadTap() {
         guard !isRegistrationPending, record == nil else { return }
+        guard manager.capabilityKnown, !manager.capabilityCheckFailed else {
+            Task {
+                guard await manager.prepareForDownload() else {
+                    if manager.downloadsDisallowed { showUnavailable = true } else { announceStartFailure() }
+                    return
+                }
+                handleDownloadTap()
+            }
+            return
+        }
         if style != .compact || manager.availableFormats.count > 1 {
             optionsPresented.wrappedValue = true
             return
@@ -447,7 +510,7 @@ struct DownloadActionButton: View {
     private var captionText: String {
         if isRegistrationPending, record == nil { return "Preparing" }
         switch record?.localStatus {
-        case .none: return "Download"
+        case .none: return manager.downloadsDisallowed ? "Unavailable" : "Download"
         case .downloading: return "Downloading"
         case .paused: return "Paused"
         case .registering, .preparing, .queued, .fetchingAssets: return "Preparing"

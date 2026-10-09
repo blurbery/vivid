@@ -298,11 +298,9 @@ struct DownloadOptionsSheet: View {
             Text("Quality")
         } footer: {
             if formats.count > 1 {
-                Text("Lower bitrates use less storage. The server prepares the file before download starts. This choice applies only to this download.")
+                Text("Lower bitrates make a smaller file. The server converts it for this download, which can take longer than the original. Sizes are estimates.")
             } else {
-                Text(MediaServerProvider.active == .jellyfin ? "Jellyfin downloads keep the original file and source quality." : MediaServerProvider.active == .emby
-                     ? "Smaller downloads need Emby's conversion service and permission for this account. Original keeps the source quality."
-                     : "Smaller downloads appear when your server allows download transcoding.")
+                Text("Original keeps the source file. Smaller qualities appear when the server lets this account transcode downloads.")
             }
         }
     }
@@ -312,7 +310,10 @@ struct DownloadOptionsSheet: View {
         case .original:
             return MediaServerProvider.active.usesNativeUser ? "Keep the original file" : "Source quality, with compatibility fallback if needed"
         case .twentyMbps, .tenMbps, .fiveMbps, .twoMbps, .oneMbps:
-            return "Reduce the bitrate for a smaller offline file"
+            guard let perHour = StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: 3600) else {
+                return "Reduce the bitrate for a smaller offline file"
+            }
+            return "About \(DownloadFormatting.bytes(perHour)) per hour"
         }
     }
 

@@ -17,6 +17,7 @@ struct DownloadsView: View {
     /// Confirmation gate for the bulk/context-menu deletes — downloads are
     /// costly to re-fetch, so a stray tap must not remove them outright.
     @State private var pendingDeletion: PendingDeletion?
+    @State private var confirmingCancelAll = false
 
     private struct PendingDeletion: Identifiable {
         let id = UUID()
@@ -27,11 +28,17 @@ struct DownloadsView: View {
     var body: some View {
         Group {
             if !manager.downloadsEnabled {
-                EmptyStateView(
-                    icon: "arrow.down.circle",
-                    title: "Downloads Unavailable",
-                    subtitle: "Downloads aren't enabled for this profile."
-                )
+                if manager.downloadsDisallowed {
+                    EmptyStateView(
+                        icon: "arrow.down.circle",
+                        title: "Downloads Unavailable",
+                        subtitle: "Downloads aren't enabled for this account."
+                    )
+                } else if manager.capabilityCheckFailed && !manager.isCheckingCapability {
+                    checkFailedState
+                } else {
+                    checkingState
+                }
             } else if manager.records.isEmpty && manager.subscriptions.isEmpty {
                 noDownloadsState
             } else {
@@ -39,6 +46,11 @@ struct DownloadsView: View {
             }
         }
         .background(VividAppBackdrop())
+        .task {
+            // Opening the tab answers "can I download here?" for the active
+            // server now, rather than after the next foreground.
+            if !manager.downloadsEnabled { await manager.onAppActive() }
+        }
         .navigationTitle(isSelecting ? "\(selection.count) Selected" : "Downloads")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
@@ -108,6 +120,48 @@ struct DownloadsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var checkingState: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+            Text("Checking Downloads")
+                .font(.vividSubheadline)
+                .foregroundColor(.vividOnSurface)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var checkFailedState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.arrow.circlepath")
+                .font(.system(size: 44))
+                .foregroundColor(.vividOnSurface.opacity(0.3))
+            Text("Couldn't Check Downloads")
+                .font(.vividSubheadline)
+                .foregroundColor(.vividOnSurface)
+            Text("The server didn't answer. Check your connection and try again.")
+                .font(.vividCaption)
+                .foregroundColor(.vividSecondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, VividTheme.largePadding)
+            Button {
+                Task { await manager.onAppActive() }
+            } label: {
+                Text("Try Again")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.vividOnSurface)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(Color.vividChromeSelectedFill)
+                            .overlay(Capsule().stroke(Color.vividChromeSelectedBorder, lineWidth: 1))
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var content: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
@@ -126,7 +180,7 @@ struct DownloadsView: View {
                 }
 
                 if !manager.activeRecords.isEmpty {
-                    sectionLabel("In Progress", count: manager.activeRecords.count)
+                    inProgressLabel(count: manager.activeRecords.count)
                     ForEach(manager.activeRecords) { record in
                         DownloadActiveRow(
                             record: record,
@@ -268,6 +322,41 @@ struct DownloadsView: View {
                 Label("Stop Monitoring", systemImage: "xmark.circle")
             }
         }
+    }
+
+    /// The In Progress header, with Cancel All once a season or several
+    /// downloads are queued. Finished downloads are never touched.
+    private func inProgressLabel(count: Int) -> some View {
+        HStack {
+            Text("IN PROGRESS")
+                .font(.system(size: 12.5, weight: .semibold))
+                .tracking(0.3)
+                .foregroundColor(.vividSecondaryText)
+            Spacer()
+            if count > 1, !isSelecting {
+                Button("Cancel All") { confirmingCancelAll = true }
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(.vividOnSurface)
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 8)
+                    .confirmationDialog(
+                        "Cancel \(count) downloads?",
+                        isPresented: $confirmingCancelAll,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Cancel Downloads", role: .destructive) { manager.cancelAllActiveDownloads() }
+                        Button("Keep Downloading", role: .cancel) {}
+                    } message: {
+                        Text("Finished downloads are kept.")
+                    }
+            }
+            Text("\(count)")
+                .font(.system(size: 12.5))
+                .foregroundColor(.vividOnSurface.opacity(0.38))
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
     }
 
     private func sectionLabel(_ text: String, count: Int) -> some View {

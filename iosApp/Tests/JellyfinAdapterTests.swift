@@ -6,6 +6,7 @@ final class JellyfinAdapterTests: XCTestCase {
     private let user = "11111111111111111111111111111111"
     private let item = "22222222222222222222222222222222"
     private let source = "33333333333333333333333333333333"
+    private var transcodeAllowed = false
 
     override func tearDown() {
         session?.invalidateAndCancel()
@@ -541,17 +542,24 @@ final class JellyfinAdapterTests: XCTestCase {
         let adapter = adapter { request in
             switch request.url!.path {
             case "/jellyfin/Items/Filters": return (200, ["Genres":["Drama"],"OfficialRatings":["PG"]])
-            case "/jellyfin/Users/" + self.user: return (200, ["Policy":["EnableContentDownloading":true]])
+            case "/jellyfin/Users/" + self.user:
+                return (200, ["Policy":["EnableContentDownloading":true,"EnableVideoPlaybackTranscoding":self.transcodeAllowed]])
             default: XCTFail("Unexpected endpoint"); return (500, [:])
             }
         }
         let filters = try await adapter.route(method:"GET",path:"/api/v1/catalog/filters",query:[:],body:nil) as? [String:Any]
         XCTAssertEqual(filters?["genres"] as? [String], ["Drama"])
-        let capability = try await adapter.route(method:"GET",path:"/api/v1/downloads/capability",query:[:],body:nil) as? [String:Any]
-        XCTAssertEqual(capability?["qualityPresets"] as? [String], ["original"])
-        XCTAssertEqual(capability?["transcodeEnabled"] as? Bool, false)
-        XCTAssertEqual(capability?["seasonDownload"] as? Bool, true)
-        XCTAssertEqual(capability?["seriesMonitoring"] as? Bool, false)
+        // Smaller qualities come from the playback transcoder, so they follow
+        // the account's transcoding permission, for single items and batches.
+        for allowed in [false, true] {
+            transcodeAllowed = allowed
+            let capability = try await adapter.route(method:"GET",path:"/api/v1/downloads/capability",query:[:],body:nil) as? [String:Any]
+            XCTAssertEqual(capability?["qualityPresets"] as? [String], allowed ? DownloadFormat.allCases.map(\.rawValue) : ["original"])
+            XCTAssertEqual(capability?["transcodeEnabled"] as? Bool, allowed)
+            XCTAssertEqual(capability?["bulkQuality"] as? Bool, allowed)
+            XCTAssertEqual(capability?["seasonDownload"] as? Bool, true)
+            XCTAssertEqual(capability?["seriesMonitoring"] as? Bool, false)
+        }
     }
 
     func testBatchDownloadsKeepOnlyPresentEpisodesWithAUsableSource() {
@@ -570,17 +578,17 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(JellyfinDownloads.downloadableEpisodes(items).compactMap { $0["Id"] as? String }, ["episode-1", "episode-7"])
     }
 
-    func testBatchDownloadRejectsConversionAndFileChoicesBeforeListingEpisodes() async throws {
+    func testBatchDownloadRejectsUnpermittedQualityAndFileChoicesBeforeListingEpisodes() async throws {
         let base: [String: Any] = ["content_id": item, "series": true, "batch_id": "batch-1"]
         for extra in [["quality": "2mbps"], ["file_id": 7], ["episode_id": item], ["season_number": "2"]] as [[String: Any]] {
             var paths: [String] = []
             let adapter = adapter { request in
                 paths.append(request.url!.path)
-                return (200, ["Policy": ["EnableContentDownloading": true]])
+                return (200, ["Policy": ["EnableContentDownloading": true, "EnableVideoPlaybackTranscoding": false]])
             }
             do {
                 _ = try await adapter.route(method: "POST", path: "/api/v1/downloads", query: [:], body: base.merging(extra) { _, new in new })
-                XCTFail("Batches are original-quality only and choose each episode's file")
+                XCTFail("A smaller batch quality needs transcode permission, and batches choose each episode's file")
             } catch JellyfinError.unsupportedFeature { }
             XCTAssertEqual(paths, ["/jellyfin/Users/\(user)"], "No episode listing")
             session?.invalidateAndCancel()
@@ -642,6 +650,24 @@ final class JellyfinAdapterTests: XCTestCase {
                 XCTAssertEqual(row["quality"] as? String, "original")
             }
         }
+    }
+
+    func testBatchEpisodesStreamTheChosenQuality() throws {
+        let adapter = adapter { _ in XCTFail("Building registrations makes no requests"); return (500, [:]) }
+        let sources: [[String: Any]] = [["Id": source, "Size": 1234, "RunTimeTicks": 36_000_000_000, "DefaultAudioStreamIndex": 2]]
+        let items: [[String: Any]] = [["Id": "episode-1", "Name": "One", "Type": "Episode", "MediaSources": sources]]
+        let body: [String: Any] = ["content_id": item, "season_number": 1, "batch_id": "batch-1"]
+        let built = try JellyfinDownloads.batchEpisodes(items, body: body, format: .fiveMbps, adapter: adapter)
+        let episode = try XCTUnwrap(built.first)
+        XCTAssertEqual(StreamedTranscodeDownload.format(of: episode.entry), .fiveMbps)
+        XCTAssertEqual(episode.entry["audioStreamIndex"] as? Int, 2)
+        for row in [episode.row, try XCTUnwrap(episode.entry["row"] as? [String: Any])] {
+            XCTAssertEqual(row["quality"] as? String, "5mbps")
+            XCTAssertEqual(row["contentId"] as? String, item, "Episode rows still name their series")
+            XCTAssertEqual(row["batchId"] as? String, "batch-1")
+            XCTAssertEqual(row["fileSize"] as? Int64, StreamedTranscodeDownload.estimatedBytes(format: .fiveMbps, durationSeconds: 3600))
+        }
+        XCTAssertEqual((episode.entry["manifest"] as? [String: Any])?["container"] as? String, "mp4")
     }
 
     func testBatchRetriesUnfinishedStoredEpisodesAndSkipsTheRest() {

@@ -170,16 +170,14 @@ struct SeasonDetailContent<BelowOverview: View>: View {
                 }
             }
 
-            if DownloadManager.shared.downloadsEnabled {
-                SeriesDownloadMenuButton(
-                    detail: detail,
-                    seasons: seasons,
-                    selectedSeason: selectedSeason ?? seasons.first(where: { $0.seasonNumber == detail.seasonNumber }),
-                    episodes: episodes,
-                    episodesBySeason: episodesBySeason,
-                    style: .labeled
-                )
-            }
+            SeriesDownloadMenuButton(
+                detail: detail,
+                seasons: seasons,
+                selectedSeason: selectedSeason ?? seasons.first(where: { $0.seasonNumber == detail.seasonNumber }),
+                episodes: episodes,
+                episodesBySeason: episodesBySeason,
+                style: .labeled
+            )
 
 
         }
