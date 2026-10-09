@@ -340,6 +340,11 @@ struct OpenSubtitlesMenu: View {
         return preference
     }
 
+    private var languageOptions: [PlaybackLanguageOption] {
+        PlaybackLanguageOption.options(for: .playbackSubtitleLanguage, currentValue: language)
+            .filter { $0.code != PlaybackPrefSentinel.originalLanguage }
+    }
+
     private var searchKey: String {
         "\(currentContext()?.contentID ?? ""):\(currentContext()?.fileID ?? -1):\(currentContext()?.generation ?? 0):\(language):\(store.revision):\(retry)"
     }
@@ -349,12 +354,16 @@ struct OpenSubtitlesMenu: View {
             if !store.isConnected {
                 Button("Connect OpenSubtitles") { showConnection = true }
             } else {
-                Picker("Language", selection: $language) {
-                    ForEach(PlaybackLanguageOption.options(for: .playbackSubtitleLanguage, currentValue: language)
-                        .filter { $0.code != PlaybackPrefSentinel.originalLanguage }) { option in
-                        Text(option.label).tag(option.code)
+                // The language list is long, so it gets its own submenu and
+                // the results sit straight under it.
+                Menu("Language · " + (languageOptions.first { $0.code == language }?.label ?? language)) {
+                    Picker("Language", selection: $language) {
+                        ForEach(languageOptions) { option in
+                            Text(option.label).tag(option.code)
+                        }
                     }
                 }
+                Divider()
                 if busy { Text("Working…") }
                 else if let message { Text(message) }
                 else if results.isEmpty { Text("No matching subtitles") }
