@@ -653,6 +653,18 @@ final class AppHealthReportTests: XCTestCase {
         XCTAssertTrue(AppHealthMonitor.shouldReportDownloadFailure(refused, context: context))
     }
 
+    func testOnlyLastingSubtitleFetchFailuresStopTheBackfill() {
+        let retryable: [Error] = [
+            URLError(.timedOut), HTTPError.requestIdentityChanged, EmbyError.signInRequired, JellyfinError.signInRequired,
+            HTTPError.http(statusCode: 401, body: nil), HTTPError.http(statusCode: 429, body: nil),
+            HTTPError.http(statusCode: 503, body: nil),
+        ]
+        for error in retryable { XCTAssertTrue(DownloadFailureReport.isRetryable(error), "\(error)") }
+        let lasting: [Error] = [HTTPError.http(statusCode: 403, body: nil), HTTPError.http(statusCode: 404, body: nil),
+                                EmbyError.invalidURL, DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))]
+        for error in lasting { XCTAssertFalse(DownloadFailureReport.isRetryable(error), "\(error)") }
+    }
+
     func testRepeatedDownloadFailuresAreCountedOnOneReport() {
         let now = Date(timeIntervalSince1970: 1_790_000_000)
         let store = AppHealthStore(directory: directory, limits: .init(maxReports: 10, maxBytes: 1_000_000, maxAge: 7 * 86_400), now: { now })

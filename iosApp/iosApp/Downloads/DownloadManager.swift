@@ -986,9 +986,10 @@ final class DownloadManager {
 
     /// Save the manifest's subtitle files beside the download so they're
     /// available offline. Best effort, like artwork: a file that can't be
-    /// fetched never fails the download. A network failure, cancellation or
-    /// account switch leaves the record unchecked so a later backfill tries
-    /// again; a file the server refuses is not retried.
+    /// fetched never fails the download. A failure that could clear up (see
+    /// `DownloadFailureReport.isRetryable`, including an expired sign-in)
+    /// leaves the record unchecked so a later backfill tries again; a file
+    /// the server refuses is not retried.
     private func fetchSubtitles(_ manifest: OfflineManifest, recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async {
         var saved = file.records[recordId]?.subtitleFilenames ?? [:]
         var retryLater = false
@@ -998,8 +999,7 @@ final class DownloadManager {
             let data: Data
             do { data = try await VividAPI.shared.fetchDownloadAssetData(path: entry.subtitle.fetchUrl, auth: auth) }
             catch {
-                let classified = DownloadFailureReport.classify(error)
-                if classified == nil || classified?.urlErrorCode != nil { retryLater = true }
+                if DownloadFailureReport.isRetryable(error) { retryLater = true }
                 continue
             }
             guard pipelineIsCurrent(recordId: recordId, generation: generation),

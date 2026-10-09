@@ -130,6 +130,16 @@ struct DownloadFailureReport: Equatable {
         }
     }
 
+    /// Whether a fetch that failed this way could work later: cancellation,
+    /// an account switch, a network failure, an expired sign-in, or the
+    /// server being busy or failing. A refusal such as 403 or 404 isn't.
+    static func isRetryable(_ error: Error) -> Bool {
+        guard let classified = classify(error) else { return true }
+        if classified.urlErrorCode != nil || classified.token == "sign_in_required" { return true }
+        guard let status = classified.status else { return false }
+        return [401, 408, 429].contains(status) || (500...599).contains(status)
+    }
+
     /// Lowercase letters, digits and underscores only, at most 32 long.
     private static func token(_ raw: String) -> String {
         let cleaned = String(raw.lowercased().unicodeScalars.map { scalar -> Character in
