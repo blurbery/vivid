@@ -449,7 +449,10 @@ final class DownloadManager {
             releaseHeldSessionEvents()
             return false
         }
-        if serverId == scopeServerId, profileId == scopeProfileId, !file.records.isEmpty || file.capability != nil {
+        // A load still in flight for this scope means `file` is the previous
+        // account's, so wait for it below instead of returning early.
+        if serverId == scopeServerId, profileId == scopeProfileId, scopeLoadTask == nil,
+           !file.records.isEmpty || file.capability != nil {
             releaseHeldSessionEvents()
             return true
         }
@@ -583,8 +586,11 @@ final class DownloadManager {
         let generation = registrationScopeGeneration
         capabilityChecksInFlight += 1
         defer { capabilityChecksInFlight -= 1 }
+        // Mid-switch the active sign-in can already be the next account's;
+        // the activation for that account checks it instead.
+        guard let auth = await scopeAuth() else { return }
         do {
-            let capability = try await VividAPI.shared.downloadCapability()
+            let capability = try await VividAPI.shared.downloadCapability(auth: auth)
             // A switch during the request makes this answer another account's.
             guard generation == registrationScopeGeneration, serverId == scopeServerId, profileId == scopeProfileId else { return }
             file.capability = capability
@@ -707,7 +713,14 @@ final class DownloadManager {
         posterThumbhash: String? = nil,
         preferredPosterPath: String? = nil
     ) async throws {
+        // The item belongs to the account that was active when it was asked
+        // for; a switch while preparing must not send it to the next one.
+        let requestedServerId = ServerRegistry.shared.activeServerId ?? ""
+        let requestedProfileId = await TokenStore.shared.getProfileId() ?? ""
         guard await prepareForDownload() else { throw DownloadError.unavailable }
+        guard requestedServerId == scopeServerId, requestedProfileId == scopeProfileId else {
+            throw DownloadError.scopeChangedDuringRegistration
+        }
 
         let registrationContentId = episodeId ?? contentId
         guard pendingRegistrationTokens[registrationContentId] == nil else {
@@ -1033,6 +1046,13 @@ final class DownloadManager {
         persist()
     }
 
+    /// The active sign-in, only while it belongs to this manager's scope.
+    private func scopeAuth() async -> CapturedOrdinaryRequestAuth? {
+        guard let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+              !scopeServerId.isEmpty, auth.account.serverId == scopeServerId, auth.profileId == scopeProfileId else { return nil }
+        return auth
+    }
+
     private func taskTag(recordId: String) -> DownloadTaskTag? {
         guard !scopeServerId.isEmpty, !scopeProfileId.isEmpty else { return nil }
         return DownloadTaskTag(serverId: scopeServerId, profileId: scopeProfileId, recordId: recordId)
@@ -1139,7 +1159,7 @@ final class DownloadManager {
             // Revoked downloads stay playable offline, so they get theirs too.
             ($0.localStatus == .completed || $0.localStatus == .revoked || $0.localStatus == .downloading)
                 && $0.manifestFilename != nil
-                && ($0.subtitlesChecked != true || ($0.artworkChecked != true && $0.posterFilename == nil))
+                && ($0.subtitlesChecked != true || needsArtwork($0))
                 && pipelineTasks[$0.id] == nil
         }
         guard !pending.isEmpty, let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
@@ -1149,13 +1169,19 @@ final class DownloadManager {
             guard generation == registrationScopeGeneration, file.records[record.id] != nil,
                   pipelineTasks[record.id] == nil,
                   let manifest = await loadManifest(for: record) else { continue }
-            if record.artworkChecked != true, record.posterFilename == nil {
+            if needsArtwork(record) {
                 await fetchArtwork(manifest, recordId: record.id, generation: generation, auth: auth)
             }
             if file.records[record.id]?.subtitlesChecked != true {
                 await fetchSubtitles(manifest, recordId: record.id, generation: generation, auth: auth)
             }
         }
+    }
+
+    /// Artwork that was only partly saved, or never fetched. Downloads from
+    /// before the flag existed that already have a poster are left alone.
+    private func needsArtwork(_ record: DownloadRecord) -> Bool {
+        record.artworkChecked == false || (record.artworkChecked == nil && record.posterFilename == nil)
     }
 
     private func fetchArtwork(_ manifest: OfflineManifest, recordId: String, generation: UInt64, auth: CapturedOrdinaryRequestAuth) async {
@@ -1172,14 +1198,20 @@ final class DownloadManager {
             // omits artwork_urls.* (omitempty) when a title has no poster/
             // backdrop/logo, so synthesizing a path here would guarantee a 404.
             guard let path = entry.path else { continue }
-            guard let data = try? await VividAPI.shared.fetchDownloadAssetData(path: path, auth: auth),
-                  pipelineIsCurrent(recordId: recordId, generation: generation),
-                  !data.isEmpty,
-                  let url = absoluteFileURLForNewAsset(recordId: recordId, filename: entry.filename) else {
+            let data: Data
+            do { data = try await VividAPI.shared.fetchDownloadAssetData(path: path, auth: auth) }
+            catch {
+                // Missing artwork (a 404) isn't retried; a failure that can
+                // clear up is, by the asset backfill.
+                if DownloadFailureReport.isRetryable(error) { fetchedAll = false }
+                continue
+            }
+            guard pipelineIsCurrent(recordId: recordId, generation: generation), !data.isEmpty else { continue }
+            guard let url = absoluteFileURLForNewAsset(recordId: recordId, filename: entry.filename),
+                  (try? data.write(to: url, options: .atomic)) != nil else {
                 fetchedAll = false
                 continue
             }
-            try? data.write(to: url, options: .atomic)
             guard var record = file.records[recordId] else { continue }
             switch entry.kind {
             case "poster": record.posterFilename = entry.filename
@@ -1190,8 +1222,8 @@ final class DownloadManager {
             file.records[recordId] = record
         }
         // Anything missed is tried again by the asset backfill.
-        if fetchedAll, pipelineIsCurrent(recordId: recordId, generation: generation), var record = file.records[recordId] {
-            record.artworkChecked = true
+        if pipelineIsCurrent(recordId: recordId, generation: generation), var record = file.records[recordId] {
+            record.artworkChecked = fetchedAll
             file.records[recordId] = record
         }
         persist()
@@ -1614,18 +1646,29 @@ final class DownloadManager {
     func reconcileWithServer(triggerPipeline: Bool) async {
         guard !scopeServerId.isEmpty, downloadsEnabled else { return }
         let generation = registrationScopeGeneration
+        // Pin the list to this scope's account: during a switch the active
+        // sign-in can already be the next server's, whose rows would mark
+        // this account's downloads as removed.
+        guard let auth = await scopeAuth(), generation == registrationScopeGeneration else { return }
         let rows: [ServerDownloadRow]
         do {
-            rows = try await VividAPI.shared.listDownloads()
+            rows = try await VividAPI.shared.listDownloads(auth: auth)
         } catch {
             return
         }
         guard generation == registrationScopeGeneration else { return }
         let byId = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var unreportedCompletions: [DownloadRecord] = []
 
         for (id, original) in file.records {
             if let row = byId[id] {
                 var record = mergeExistingRecord(original, with: row)
+                // A transfer that finished while another account was active
+                // (or while a status update failed) still reads as pending on
+                // the server, where it counts against the download limit.
+                if record.localStatus == .completed, row.status == "ready" || row.status == "downloading" {
+                    unreportedCompletions.append(record)
+                }
                 switch row.status {
                 case "ready":
                     if record.localStatus == .preparing || record.localStatus == .registering {
@@ -1664,6 +1707,14 @@ final class DownloadManager {
             file.records[row.id] = makeRecord(from: row, type: row.episodeId != nil ? "episode" : nil)
         }
         persist()
+        if !unreportedCompletions.isEmpty {
+            Task {
+                for record in unreportedCompletions {
+                    try? await VividAPI.shared.patchDownloadStatus(id: record.id, status: "completed", revision: record.revision,
+                                                                   updatedAt: record.downloadedAt ?? Date(), auth: auth)
+                }
+            }
+        }
 
         await reconnectActiveTasks()
         if triggerPipeline {

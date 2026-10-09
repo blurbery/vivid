@@ -76,10 +76,12 @@ actor EmbyDownloads {
             guard let source, let sourceID = source["Id"] as? String else { throw EmbyError.playbackUnavailable }
             let id = "emby-" + UUID().uuidString
             var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:format,adapter:adapter)
+            var createdJobID: String?
             if let conversionOptions {
                 let request = try EmbyDownloadConversion.request(itemID: itemID, userID: user, format: format, options: conversionOptions)
                 let result = try await connection.object("POST", "/Sync/Jobs", body: request)
                 let conversion = try EmbyDownloadConversion.creation(result)
+                createdJobID = conversion.jobID
                 entry["syncJobID"] = conversion.jobID
                 entry["syncItemID"] = conversion.itemID
                 entry["sourceItem"] = raw
@@ -91,10 +93,15 @@ actor EmbyDownloads {
             // Without a conversion job the playback transcoder streams the
             // smaller file instead.
             if conversionOptions == nil { StreamedTranscodeDownload.apply(format, to: &entry, source: source) }
-            try await connection.validate()
-            var current = try records(connection)
-            current[id] = entry
-            try save(current,connection:connection)
+            do {
+                try await connection.validate()
+                var current = try records(connection)
+                current[id] = entry
+                try save(current,connection:connection)
+            } catch {
+                if let createdJobID { discardUntrackedJob(createdJobID, connection: connection) }
+                throw error
+            }
             return ["downloads":[entry["row"] ?? row]]
         }
         if path.count == 3, method == "GET" {
@@ -202,10 +209,15 @@ actor EmbyDownloads {
                 row["fileSize"] = 0
                 row["targetBitrateKbps"] = format.targetBitrateKbps
                 entry["row"] = row
-                try await connection.validate()
-                var current = try records(connection)
-                current[episode.id] = entry
-                try save(current, connection: connection)
+                do {
+                    try await connection.validate()
+                    var current = try records(connection)
+                    current[episode.id] = entry
+                    try save(current, connection: connection)
+                } catch {
+                    discardUntrackedJob(conversion.jobID, connection: connection)
+                    throw error
+                }
                 rows.append(row)
             } catch is CancellationError {
                 throw CancellationError()
@@ -218,6 +230,15 @@ actor EmbyDownloads {
         }
         if rows.isEmpty, let firstError { throw firstError }
         return ["downloads": rows]
+    }
+
+    /// A conversion job created just before a cancellation or account switch
+    /// was never saved, so nothing would track or clean it up. Remove it with
+    /// the token that created it, outside the cancelled request.
+    private func discardUntrackedJob(_ jobID: String, connection: EmbyConnection) {
+        let owner = EmbyConnection(serverURL: connection.serverURL, token: connection.token, userID: connection.userID,
+                                   identity: nil, sessionOverride: connection.sessionOverride)
+        Task { _ = try? await owner.request("DELETE", "/Sync/Jobs/\(EmbyConnection.id(jobID))") }
     }
 
     /// Emby's conversion service for this account and item, or nil when it
@@ -299,14 +320,18 @@ actor EmbyDownloads {
         _ = try EmbyConnection.id(sourceID)
         var manifest = try Self.manifest(id:id,raw:raw,source:source,adapter:adapter)
         let subtitleStreams = source["MediaStreams"] as? [[String:Any]] ?? []
+        // A transcoded file leaves out the source's embedded text subtitles,
+        // so those are saved as files too (the server extracts them).
+        let keepsEmbedded = format == .original
         manifest["subtitles"] = try subtitleStreams.compactMap { stream -> [String:Any]? in
-            guard stream["Type"] as? String == "Subtitle", stream["IsExternal"] as? Bool == true,
+            let external = stream["IsExternal"] as? Bool == true
+            guard stream["Type"] as? String == "Subtitle", external || !keepsEmbedded,
                   let index = stream["Index"] as? Int, let codec = stream["Codec"] as? String,
                   ["srt","subrip","ass","ssa","vtt","webvtt"].contains(codec.lowercased()) else { return nil }
             let format = ServerSubtitleSidecars.format(codec)
             let url = try EmbyConnection.url(serverURL:adapter.connection.serverURL,
                 path:"/Videos/\(EmbyConnection.id(itemID))/\(sourceID)/Subtitles/\(index)/Stream.\(format)")
-            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":true]
+            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":external]
             subtitle["language"] = stream["Language"]; subtitle["forced"] = stream["IsForced"]; subtitle["hearingImpaired"] = stream["IsHearingImpaired"]
             // The stream index and label match the online sidecar, so a
             // chosen subtitle keeps its track ID offline.

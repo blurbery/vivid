@@ -654,10 +654,23 @@ final class JellyfinAdapterTests: XCTestCase {
 
     func testBatchEpisodesStreamTheChosenQuality() throws {
         let adapter = adapter { _ in XCTFail("Building registrations makes no requests"); return (500, [:]) }
-        let sources: [[String: Any]] = [["Id": source, "Size": 1234, "RunTimeTicks": 36_000_000_000, "DefaultAudioStreamIndex": 2]]
+        let streams: [[String: Any]] = [
+            ["Type": "Subtitle", "Index": 3, "Codec": "subrip", "Language": "eng", "IsExternal": false],
+            ["Type": "Subtitle", "Index": 4, "Codec": "PGSSUB", "Language": "eng", "IsExternal": false]
+        ]
+        let sources: [[String: Any]] = [["Id": source, "Size": 1234, "RunTimeTicks": 36_000_000_000, "DefaultAudioStreamIndex": 2,
+                                         "MediaStreams": streams]]
         let items: [[String: Any]] = [["Id": "episode-1", "Name": "One", "Type": "Episode", "MediaSources": sources]]
         let body: [String: Any] = ["content_id": item, "season_number": 1, "batch_id": "batch-1"]
+        // An original file already carries its embedded subtitles; a transcode
+        // leaves them out, so the text one is saved beside it (never the bitmap).
+        let original = try XCTUnwrap(JellyfinDownloads.batchEpisodes(items, body: body, adapter: adapter).first)
+        XCTAssertEqual(((original.entry["manifest"] as? [String: Any])?["subtitles"] as? [[String: Any]])?.count, 0)
         let built = try JellyfinDownloads.batchEpisodes(items, body: body, format: .fiveMbps, adapter: adapter)
+        let subtitles = try XCTUnwrap((built.first?.entry["manifest"] as? [String: Any])?["subtitles"] as? [[String: Any]])
+        XCTAssertEqual(subtitles.map { $0["index"] as? Int }, [3])
+        XCTAssertEqual(subtitles.first?["external"] as? Bool, false)
+        XCTAssertEqual(subtitles.first?["format"] as? String, "srt")
         let episode = try XCTUnwrap(built.first)
         XCTAssertEqual(StreamedTranscodeDownload.format(of: episode.entry), .fiveMbps)
         XCTAssertEqual(episode.entry["audioStreamIndex"] as? Int, 2)

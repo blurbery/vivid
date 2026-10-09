@@ -325,8 +325,13 @@ struct DownloadActionButton: View {
     private func handleDownloadTap() {
         guard !isRegistrationPending, record == nil else { return }
         guard manager.capabilityKnown, !manager.capabilityCheckFailed else {
+            // This item belongs to the server shown when it was tapped; a
+            // switch while checking must not send it to the next one.
+            let tappedServerId = ServerRegistry.shared.activeServerId
             Task {
-                guard await manager.prepareForDownload() else {
+                let ready = await manager.prepareForDownload()
+                guard ServerRegistry.shared.activeServerId == tappedServerId else { return }
+                guard ready else {
                     if manager.downloadsDisallowed { showUnavailable = true } else { announceStartFailure() }
                     return
                 }

@@ -89,8 +89,10 @@ extension VividAPI {
 
     // MARK: - Capability
 
-    func downloadCapability() async throws -> DownloadCapability {
-        try await http.get("/api/v1/downloads/capability")
+    /// `auth` pins the request to one account, so an answer can't come
+    /// from a server the app switched to mid-request.
+    func downloadCapability(auth: CapturedOrdinaryRequestAuth? = nil) async throws -> DownloadCapability {
+        try await http.get("/api/v1/downloads/capability", expectedAuth: auth)
     }
 
     // MARK: - Download registry
@@ -107,8 +109,8 @@ extension VividAPI {
 
     /// The calling device's managed entries. Primary poll-for-readiness and
     /// reconcile-on-launch call.
-    func listDownloads() async throws -> [ServerDownloadRow] {
-        let response: ServerDownloadsResponse = try await http.get("/api/v1/downloads")
+    func listDownloads(auth: CapturedOrdinaryRequestAuth? = nil) async throws -> [ServerDownloadRow] {
+        let response: ServerDownloadsResponse = try await http.get("/api/v1/downloads", expectedAuth: auth)
         return response.downloads
     }
 

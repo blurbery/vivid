@@ -180,14 +180,18 @@ actor JellyfinDownloads {
         _ = try JellyfinConnection.id(sourceID)
         var manifest = try Self.manifest(id:id,raw:raw,source:source,adapter:adapter)
         let subtitleStreams = source["MediaStreams"] as? [[String:Any]] ?? []
+        // A transcoded file leaves out the source's embedded text subtitles,
+        // so those are saved as files too (the server extracts them).
+        let keepsEmbedded = format == .original
         manifest["subtitles"] = try subtitleStreams.compactMap { stream -> [String:Any]? in
-            guard stream["Type"] as? String == "Subtitle", stream["IsExternal"] as? Bool == true,
+            let external = stream["IsExternal"] as? Bool == true
+            guard stream["Type"] as? String == "Subtitle", external || !keepsEmbedded,
                   let index = stream["Index"] as? Int, let codec = stream["Codec"] as? String,
                   ["srt","subrip","ass","ssa","vtt","webvtt"].contains(codec.lowercased()) else { return nil }
             let format = ServerSubtitleSidecars.format(codec)
             let url = try JellyfinConnection.url(serverURL:adapter.connection.serverURL,
                 path:"/Videos/\(JellyfinConnection.id(itemID))/\(sourceID)/Subtitles/\(index)/Stream.\(format)")
-            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":true]
+            var subtitle: [String:Any] = ["fetchUrl":url.absoluteString,"format":format,"external":external]
             subtitle["language"] = stream["Language"]; subtitle["forced"] = stream["IsForced"]; subtitle["hearingImpaired"] = stream["IsHearingImpaired"]
             // The stream index and label match the online sidecar, so a
             // chosen subtitle keeps its track ID offline.

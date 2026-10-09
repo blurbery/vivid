@@ -120,7 +120,7 @@ struct SeriesDownloadMenuButton: View {
 
     /// Downloads are off for this account and nothing is in flight, so the
     /// control shows crossed out instead of disappearing.
-    private var showsUnavailable: Bool { manager.downloadsDisallowed && !isDownloading && !isMonitored }
+    private var showsUnavailable: Bool { manager.downloadsDisallowed && !isDownloading }
 
     @ViewBuilder
     private var unavailableLabel: some View {
@@ -163,7 +163,8 @@ struct SeriesDownloadMenuButton: View {
             }
         }
         .downloadsUnavailableAlert(isPresented: $showUnavailable)
-        .accessibilityLabel("Download or monitor series")
+        .accessibilityLabel(showsUnavailable ? "Download unavailable" : "Download or monitor series")
+        .accessibilityHint(showsUnavailable ? "Downloads aren't enabled for this account" : "")
         .accessibilityValue(isMonitored ? "Monitored" : "Not monitored")
         // Chaining sheets from `onDismiss` waits out the real dismiss
         // animation instead of guessing a delay — a fixed sleep silently
@@ -278,7 +279,7 @@ struct DownloadQualityPicker: View {
     var body: some View {
         Picker(selection: $quality) {
             ForEach(formats, id: \.self) { format in
-                Text(format.displayName).tag(format.rawValue)
+                Text(Self.label(format)).tag(format.rawValue)
             }
         } label: {
             Label("Quality", systemImage: "slider.horizontal.3")
@@ -286,6 +287,12 @@ struct DownloadQualityPicker: View {
         .pickerStyle(.menu)
         .onAppear(perform: clamp)
         .onChange(of: manager.availableFormats) { _, _ in clamp() }
+    }
+
+    /// The name plus the same per-hour size Download Options shows.
+    static func label(_ format: DownloadFormat) -> String {
+        guard let perHour = StreamedTranscodeDownload.estimatedBytes(format: format, durationSeconds: 3600) else { return format.displayName }
+        return "\(format.displayName) · about \(DownloadFormatting.bytes(perHour))/hr"
     }
 
     private func clamp() {
@@ -704,6 +711,7 @@ private struct SeriesEpisodeDownloadPicker: View {
                     if manager.availableFormats.count > 1 {
                         Section {
                             DownloadQualityPicker(quality: $quality)
+                                .disabled(isWorking)
                         }
                     }
                     Section {
@@ -739,6 +747,11 @@ private struct SeriesEpisodeDownloadPicker: View {
             if !episodes.isEmpty {
                 downloadBar
             }
+        }
+        .task {
+            // Reached quickly from the series sheet, the permission and its
+            // qualities may still be loading.
+            _ = await manager.prepareForDownload()
         }
         .task { await loadEpisodesIfNeeded() }
         .alert(
@@ -945,6 +958,8 @@ private struct SeriesEpisodeDownloadPicker: View {
     private func startSelectedDownloads() {
         let targets = selectedEpisodes
         guard !targets.isEmpty, !isWorking else { return }
+        // One choice applies to the whole selection.
+        let quality = quality
         isWorking = true
         Task {
             do {
