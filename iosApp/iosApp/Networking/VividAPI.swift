@@ -496,7 +496,12 @@ actor VividAPI {
     }
 
     func itemDetail(contentId: String) async throws -> ItemDetail {
-        try await titleDetail("/api/v1/catalog/items/\(contentId)")
+        let path = "/api/v1/catalog/items/\(contentId)"
+        let query = await imageSizeQuery
+        if let data = try await siloTitleDetailData(path, query: query) {
+            return try Self.decodeTitleDetail(ItemDetail.self, from: data)
+        }
+        return try await http.get(path, query: query)
     }
 
     func catalogFilters(libraryId: Int?, includeTechnical: Bool = true) async throws -> CatalogFilters {
@@ -526,26 +531,32 @@ actor VividAPI {
     }
 
     func watchDetail(contentId: String) async throws -> WatchDetail {
-        try await titleDetail("/api/v1/watch/\(contentId)")
+        let path = "/api/v1/watch/\(contentId)"
+        let query = await imageSizeQuery
+        if let data = try await siloTitleDetailData(path, query: query) {
+            return try Self.decodeTitleDetail(WatchDetail.self, from: data)
+        }
+        return try await http.get(path, query: query)
     }
 
     /// On Silo, the audio and subtitle defaults in a title's details come
     /// from this device's memory rather than Silo's, as on Emby and Jellyfin.
-    private func titleDetail<T: Decodable>(_ path: String) async throws -> T {
-        let query = await imageSizeQuery
-        guard let scope = try await siloTrackScope() else {
-            return try await http.get(path, query: query)
-        }
+    /// Nil on other servers, whose providers keep their own.
+    private func siloTitleDetailData(_ path: String, query: [String: String]) async throws -> Data? {
+        guard let scope = try await siloTrackScope() else { return nil }
         let data = try await http.getData(path, query: query)
-        let rewritten = try await localTrackPreferences.rewrite(
+        return try await localTrackPreferences.rewrite(
             data,
             serverId: scope.serverId,
             profileId: scope.profileId
         )
+    }
+
+    private static func decodeTitleDetail<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         do {
-            return try Self.titleDetailDecoder.decode(T.self, from: rewritten)
+            return try titleDetailDecoder.decode(type, from: data)
         } catch {
-            throw HTTPError.decodingFailed(type: String(describing: T.self), underlying: error)
+            throw HTTPError.decodingFailed(type: String(describing: type), underlying: error)
         }
     }
 
