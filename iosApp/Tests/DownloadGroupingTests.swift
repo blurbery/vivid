@@ -39,23 +39,23 @@ final class DownloadGroupingTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: domain) }
         let settings = DownloadSettings(defaults: defaults)
         settings.reload(for: "server-a/profile-a")
-        settings.preferredFormat = "5mbps"
+        settings.defaultMaxStorageGB = 50
         settings.wifiOnly = false
         settings.keepWatchedDownloads = true
         settings.reload(for: "server-a/profile-b")
-        XCTAssertEqual(settings.preferredFormat, "original")
+        XCTAssertEqual(settings.defaultMaxStorageGB, 0)
         XCTAssertTrue(settings.wifiOnly)
         XCTAssertFalse(settings.keepWatchedDownloads)
-        settings.preferredFormat = "10mbps"
+        settings.defaultMaxStorageGB = 100
         settings.reload(for: "server-a/profile-a")
-        XCTAssertEqual(settings.preferredFormat, "5mbps")
+        XCTAssertEqual(settings.defaultMaxStorageGB, 50)
         XCTAssertFalse(settings.wifiOnly)
         XCTAssertTrue(settings.keepWatchedDownloads)
         settings.reload(for: "server-b/profile-a")
-        XCTAssertEqual(settings.preferredFormat, "original")
+        XCTAssertEqual(settings.defaultMaxStorageGB, 0)
         XCTAssertTrue(settings.wifiOnly)
         settings.reload(for: "server-a/profile-b")
-        XCTAssertEqual(settings.preferredFormat, "10mbps")
+        XCTAssertEqual(settings.defaultMaxStorageGB, 100)
     }
 
     // MARK: - Factories

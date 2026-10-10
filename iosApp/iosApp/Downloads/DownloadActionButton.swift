@@ -75,8 +75,6 @@ struct DownloadActionButton: View {
     private let versions: [FileVersion]
     /// Candidate file sizes feeding the pre-download large-file guard.
     private let candidateFileSizes: [Int64]
-    /// An episode card's files, for Settings' default version.
-    private let episodeFiles: [EpisodeFile]
     private let selectedVersionFileId: Int?
     private let lastVersionFileId: Int?
     /// Owned by the detail screen so its overflow menu can open the same
@@ -121,7 +119,6 @@ struct DownloadActionButton: View {
         posterThumbhash = detail.posterThumbhash
         self.versions = versions
         candidateFileSizes = versions.compactMap(\.fileSize)
-        episodeFiles = []
         self.selectedVersionFileId = selectedVersionFileId
         lastVersionFileId = detail.userData?.lastFileId
         _showOptions = showOptions
@@ -146,7 +143,6 @@ struct DownloadActionButton: View {
         posterThumbhash = context.posterThumbhash
         versions = []
         candidateFileSizes = (episode.files ?? []).compactMap(\.fileSize)
-        episodeFiles = episode.files ?? []
         selectedVersionFileId = nil
         lastVersionFileId = nil
         _showOptions = .constant(false)
@@ -253,7 +249,7 @@ struct DownloadActionButton: View {
                 .accessibilityLabel("Download paused")
                 .accessibilityValue(progressAccessibilityValue)
 
-            case .registering, .preparing, .queued, .fetchingAssets:
+            case .registering, .preparing, .queued, .fetchingAssets, .waiting:
                 Menu {
                     Button(role: .destructive) { confirmingCancel = true } label: {
                         Label("Cancel Download", systemImage: "xmark.circle")
@@ -359,16 +355,12 @@ struct DownloadActionButton: View {
         startWithDefaults()
     }
 
-    /// The version picked on the detail screen (Auto when none — matching
-    /// what the options sheet preselects) + the global Downloads quality
-    /// preference, clamped to what the server currently offers.
+    /// The version picked on the detail screen (Auto when none, matching
+    /// what the options sheet preselects) at original quality.
     private func startWithDefaults() {
         startDownload(DownloadRequestOptions(
-            fileId: selectedVersionFileId
-                ?? DownloadSettings.shared.preferredVersion?.version(in: versions)?.fileId,
-            quality: DownloadSettings.shared.resolvedFormat(
-                allowedFormats: manager.capability?.qualityPresets ?? []
-            )
+            fileId: selectedVersionFileId,
+            quality: DownloadFormat.original.rawValue
         ))
     }
 
@@ -400,11 +392,7 @@ struct DownloadActionButton: View {
     }
 
     private func startDownload(_ options: DownloadRequestOptions) {
-        // An episode card's sheet has no versions to choose from, so Settings'
-        // default version picks the file for an original download.
-        let fileId = options.fileId ?? (options.quality == DownloadFormat.original.rawValue
-            ? DownloadSettings.shared.preferredVersion?.file(in: episodeFiles)?.fileId
-            : nil)
+        let fileId = options.fileId
         Task {
             do {
                 if isEpisode {
@@ -529,7 +517,7 @@ struct DownloadActionButton: View {
         case .none: return manager.downloadsDisallowed ? "Unavailable" : "Download"
         case .downloading: return "Downloading"
         case .paused: return "Paused"
-        case .registering, .preparing, .queued, .fetchingAssets: return "Preparing"
+        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return "Preparing"
         case .completed, .revoked: return "Downloaded"
         case .failed: return "Failed"
         }

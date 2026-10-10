@@ -99,6 +99,9 @@ extension DownloadManager {
         var skipped = 0
         var failures: [Error] = []
         var stoppedBySwitch = false
+        /// Refused because Silo was at this account's download limit; they
+        /// start when it has room.
+        var waiting = 0
 
         /// What to tell the user, or nil when everything asked for was added.
         var problem: String? {
@@ -110,7 +113,7 @@ extension DownloadManager {
                 let count = failures.count
                 return "\(count) episode\(count == 1 ? "" : "s") couldn't be added: \(first.localizedDescription) " + addedText
             }
-            if added == 0, skipped > 0 {
+            if added == 0, waiting == 0, skipped > 0 {
                 return "Nothing new to add. These episodes are already downloaded, on their way, or don't have a file yet."
             }
             return nil
@@ -118,12 +121,14 @@ extension DownloadManager {
     }
 
     /// Registers episodes one request each: hand-picked episodes, or every
-    /// episode of a season or series at a chosen original version, which
-    /// Silo's season and series requests can't express. Each episode gets
-    /// the file matching `version` (nil, or no match, leaves the pick to the
-    /// server). Episodes already downloaded or on their way, and episodes
-    /// with no file, are skipped; a failure doesn't stop the rest. Stops if
-    /// the server or profile changes part way through.
+    /// episode of a season or series at a chosen version or at a smaller
+    /// quality the server's season and series requests don't take. Each
+    /// episode gets the file matching `version` (nil, or no match, leaves the
+    /// pick to the server), at `quality`. Episodes already downloaded, on
+    /// their way or waiting, and episodes with no file, are skipped; a
+    /// failure doesn't stop the rest. When Silo is at the account's download
+    /// limit, the rest wait their turn. Stops if the server or profile
+    /// changes part way through.
     func downloadEpisodes(
         _ episodes: [EpisodeListItem],
         seriesId: String,
@@ -145,23 +150,19 @@ extension DownloadManager {
             processQueue()
             startHeldRetries()
         }
-        for episode in episodes {
+        for (index, episode) in episodes.enumerated() {
             guard await DownloadScope.current() == scope else {
                 result.stoppedBySwitch = true
                 break
             }
-            // An empty list means the episode has no file (missing or not
-            // aired yet); nil only means the server didn't say.
-            let existing = record(forContentId: episode.contentId)
-            guard episode.files?.isEmpty != true, existing == nil || existing?.localStatus == .failed,
-                  !isRegistering(contentId: episode.contentId) else {
+            guard canRegister(episode) else {
                 result.skipped += 1
                 continue
             }
+            var files = episode.files ?? []
             do {
                 // Emby's lists carry one source per episode, so a version is
                 // matched against every file the episode has.
-                var files = episode.files ?? []
                 if version != nil, !episode.hasEveryFile, !EpisodeSourceFiles.listsEveryFile {
                     files = try await VividAPI.shared.episodeFiles(contentId: episode.contentId)
                     guard await DownloadScope.current() == scope else {
@@ -178,7 +179,7 @@ extension DownloadManager {
                     posterThumbhash: posterThumbhash,
                     preferredPosterPath: preferredPosterPath,
                     fileId: version?.file(in: files)?.fileId,
-                    quality: version == nil ? quality : DownloadFormat.original.rawValue,
+                    quality: quality,
                     scope: scope
                 )
                 result.added += 1
@@ -186,6 +187,37 @@ extension DownloadManager {
                 result.skipped += 1
             } catch DownloadError.scopeChangedDuringRegistration {
                 result.stoppedBySwitch = true
+                break
+            } catch where DownloadError.isAccountLimit(error) {
+                // Silo is at this account's limit: this episode and the rest
+                // wait their turn, each at the file it would have had.
+                var waiting: [WaitingDownload] = []
+                for candidate in episodes[index...] where candidate.contentId == episode.contentId || canRegister(candidate) {
+                    var candidateFiles = candidate.contentId == episode.contentId ? files : candidate.files ?? []
+                    if candidate.contentId != episode.contentId, version != nil, !candidate.hasEveryFile, !EpisodeSourceFiles.listsEveryFile {
+                        candidateFiles = (try? await VividAPI.shared.episodeFiles(contentId: candidate.contentId)) ?? candidateFiles
+                    }
+                    waiting.append(WaitingDownload(
+                        id: candidate.contentId,
+                        seriesId: seriesId,
+                        title: candidate.title ?? "Episode \(candidate.episodeNumber)",
+                        subtitle: "S\(candidate.seasonNumber) · E\(candidate.episodeNumber)",
+                        seriesTitle: seriesTitle,
+                        seasonNumber: candidate.seasonNumber,
+                        episodeNumber: candidate.episodeNumber,
+                        posterThumbhash: posterThumbhash,
+                        preferredPosterPath: preferredPosterPath,
+                        fileId: version?.file(in: candidateFiles)?.fileId,
+                        quality: quality,
+                        queuedAt: Date()
+                    ))
+                }
+                guard await DownloadScope.current() == scope else {
+                    result.stoppedBySwitch = true
+                    break
+                }
+                addWaiting(waiting)
+                result.waiting = waiting.count
                 break
             } catch {
                 // A request cut short by a switch isn't a download failure.
@@ -197,6 +229,17 @@ extension DownloadManager {
             }
         }
         return result
+    }
+
+    /// Not downloaded, on its way or waiting, and known to have a file: an
+    /// empty list means it has none (missing or not aired yet); nil only
+    /// means the server didn't say. A failed download can be asked for again.
+    private func canRegister(_ episode: EpisodeListItem) -> Bool {
+        let existing = record(forContentId: episode.contentId)
+        return episode.files?.isEmpty != true
+            && (existing == nil || existing?.localStatus == .failed)
+            && !isRegistering(contentId: episode.contentId)
+            && !isWaiting(contentId: episode.contentId)
     }
 
     private func requestDownload(
@@ -329,7 +372,7 @@ extension DownloadManager {
         if let requestedQuality, allowed.contains(requestedQuality) {
             return requestedQuality
         }
-        return DownloadSettings.shared.resolvedFormat(allowedFormats: allowed)
+        return DownloadFormat.original.rawValue
     }
 
     func deleteDownload(id: String) {
@@ -354,6 +397,7 @@ extension DownloadManager {
         deleteServerRows([id])
         processQueue()
         refreshStorageUsage()
+        nudgeWaitingDownloads()
     }
 
     func deleteDownload(forContentId contentId: String) {

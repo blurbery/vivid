@@ -20,6 +20,10 @@ struct DownloadCapability: Codable, Hashable, Sendable {
     /// What each preset produces, when the server says (Silo does, and
     /// caps it by its 4K setting and the account's playback limit).
     let qualityOptions: [DownloadQualityOption]
+    /// A smaller download can be made from a chosen version. Emby's
+    /// conversion service, the fallback for accounts that can't transcode
+    /// playback, always picks its own source.
+    let versionTranscodes: Bool
 
     /// Downloads are usable at all only when the feature is on AND this
     /// user is allowed to download.
@@ -48,6 +52,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         case monitoringModes
         case bulkQuality
         case qualityOptions
+        case versionTranscodes
     }
 
     init(
@@ -60,7 +65,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         seriesMonitoring: Bool,
         monitoringModes: [String],
         bulkQuality: Bool = false,
-        qualityOptions: [DownloadQualityOption] = []
+        qualityOptions: [DownloadQualityOption] = [],
+        versionTranscodes: Bool = true
     ) {
         self.enabled = enabled
         self.downloadAllowed = downloadAllowed
@@ -72,6 +78,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         self.monitoringModes = monitoringModes
         self.bulkQuality = bulkQuality
         self.qualityOptions = qualityOptions
+        self.versionTranscodes = versionTranscodes
     }
 
     init(from decoder: Decoder) throws {
@@ -88,6 +95,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         monitoringModes = try container.decodeIfPresent([String].self, forKey: .monitoringModes) ?? []
         bulkQuality = try container.decodeIfPresent(Bool.self, forKey: .bulkQuality) ?? false
         qualityOptions = (try? container.decodeIfPresent([DownloadQualityOption].self, forKey: .qualityOptions)) ?? []
+        versionTranscodes = try container.decodeIfPresent(Bool.self, forKey: .versionTranscodes) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
@@ -102,6 +110,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         try container.encode(monitoringModes, forKey: .monitoringModes)
         try container.encode(bulkQuality, forKey: .bulkQuality)
         try container.encode(qualityOptions, forKey: .qualityOptions)
+        try container.encode(versionTranscodes, forKey: .versionTranscodes)
     }
 }
 
@@ -746,6 +755,10 @@ enum LocalDownloadStatus: String, Codable, Sendable {
     /// Server revoked future serves (409). An already-downloaded file
     /// stays playable.
     case revoked
+    /// Not on the server yet: Silo was at this account's download limit, so
+    /// it waits its turn. Only on rows built from a `WaitingDownload`; never
+    /// stored in `records`.
+    case waiting
 
     var isTerminalSuccess: Bool { self == .completed }
     /// `paused` counts as active so it stays in the in-progress UI, but the
@@ -753,7 +766,7 @@ enum LocalDownloadStatus: String, Codable, Sendable {
     /// the row and blocks any automatic restart.
     var isActive: Bool {
         switch self {
-        case .registering, .preparing, .queued, .downloading, .paused, .fetchingAssets:
+        case .registering, .preparing, .queued, .downloading, .paused, .fetchingAssets, .waiting:
             return true
         case .completed, .failed, .revoked:
             return false
@@ -894,6 +907,37 @@ struct LocalProgressEntry: Codable, Sendable {
     var updatedAt: Date
 }
 
+/// An episode waiting for room under Silo's per-account download limit,
+/// with everything needed to ask for it again exactly as chosen.
+struct WaitingDownload: Codable, Hashable, Sendable, Identifiable {
+    /// The episode's content id.
+    let id: String
+    let seriesId: String
+    let title: String?
+    let subtitle: String?
+    let seriesTitle: String?
+    let seasonNumber: Int?
+    let episodeNumber: Int?
+    let posterThumbhash: String?
+    let preferredPosterPath: String?
+    let fileId: Int?
+    let quality: String
+    let queuedAt: Date
+
+    /// A row for the Downloads list, which shows it with the others in
+    /// progress.
+    var displayRecord: DownloadRecord {
+        DownloadRecord(
+            id: "waiting-\(id)", contentId: seriesId, episodeId: id, batchId: nil, mediaFileId: fileId ?? 0,
+            format: quality, serverStatus: "waiting", localStatus: .waiting, fileSize: 0, bytesDownloaded: 0,
+            subtitleFilenames: [:], title: title, subtitle: subtitle, type: "episode", seriesId: seriesId,
+            seriesTitle: seriesTitle, seasonNumber: seasonNumber, episodeNumber: episodeNumber,
+            posterThumbhash: posterThumbhash, preferredPosterPath: preferredPosterPath, container: nil,
+            registeredAt: queuedAt, retryCount: 0
+        )
+    }
+}
+
 /// The entire on-disk store blob for one `(server, profile)` scope.
 struct DownloadStoreFile: Codable, Sendable {
     var version: Int
@@ -909,6 +953,9 @@ struct DownloadStoreFile: Codable, Sendable {
     /// deleted with this account's sign-in. Kept until the server confirms,
     /// so a removed download can't come back as an out-of-band row.
     var pendingServerDeletes: [String]? = nil
+    /// Episodes Silo refused because this account was at its download
+    /// limit, in the order they were asked for.
+    var waitingDownloads: [WaitingDownload]? = nil
 
     static let currentVersion = 1
 

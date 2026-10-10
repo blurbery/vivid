@@ -90,6 +90,8 @@ extension DownloadManager {
         await refreshCapability()
         guard downloadsEnabled else { return }
         await reconcileWithServer(triggerPipeline: true)
+        await startWaitingDownloads()
+        scheduleWaitingDownloads()
         await runMonitoringAndProgressSync()
         await backfillAssetsIfNeeded()
     }
@@ -122,6 +124,8 @@ extension DownloadManager {
     private func deactivate() {
         pollTask?.cancel()
         pollTask = nil
+        waitingTask?.cancel()
+        waitingTask = nil
         for task in retryTasks.values { task.cancel() }
         retryTasks.removeAll()
         pendingPauseIds.removeAll()

@@ -73,8 +73,15 @@ extension DownloadManager {
     /// On-disk poster image for a record — present once the asset pipeline
     /// has fetched artwork, which runs before the media transfer starts, so
     /// in-progress rows can show real art rather than a placeholder.
+    /// An episode waiting for room on the server, or still preparing, has no
+    /// artwork of its own yet; it shows its series' poster from another
+    /// download of the series.
     func posterImageURL(for record: DownloadRecord) -> URL? {
-        record.posterFilename.flatMap { absoluteFileURL(for: record, filename: $0) }
+        if let filename = record.posterFilename { return absoluteFileURL(for: record, filename: filename) }
+        guard let seriesId = record.seriesId,
+              let sibling = file.records.values.first(where: { $0.seriesId == seriesId && $0.posterFilename != nil }),
+              let filename = sibling.posterFilename else { return nil }
+        return absoluteFileURL(for: sibling, filename: filename)
     }
 
     func transferRate(id: String) -> Double? {

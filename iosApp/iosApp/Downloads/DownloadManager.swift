@@ -33,6 +33,14 @@ enum DownloadError: LocalizedError {
         case .scopeChangedDuringRegistration: return "The active profile changed before the download could start."
         }
     }
+
+    /// Silo refused a download because this account already has as many in
+    /// progress as its server allows (HTTP 429). Its quota for a period is a
+    /// different refusal, which waiting a few minutes won't clear.
+    static func isAccountLimit(_ error: Error) -> Bool {
+        guard case HTTPError.http(429, let body) = error, let body = body?.lowercased() else { return false }
+        return body.contains("download_limit_exceeded") || body.contains("concurrent download limit")
+    }
 }
 
 /// Coordinates the offline-downloads feature: capability gating, the local
@@ -101,6 +109,9 @@ final class DownloadManager {
     /// Retries that came due while `queueHolds` was set; they start when the
     /// hold ends, for the same reason the queue waits.
     var heldRetries: [() -> Void] = []
+    /// Retries waiting downloads while any are left (see `scheduleWaitingDownloads`).
+    var waitingTask: Task<Void, Never>?
+    var isStartingWaiting = false
     /// Downloads deleted in the current scope. A list that was in flight
     /// during a delete can still return the row, which must not come back.
     /// Cleared on a scope change, which also drops any list in flight; each

@@ -192,6 +192,7 @@ final class EmbyAdapterTests: XCTestCase {
             XCTAssertEqual(capability.qualityPresets, permission.smaller ? DownloadFormat.allCases.map(\.rawValue) : ["original"])
             XCTAssertEqual(capability.transcodeEnabled, permission.smaller)
             XCTAssertEqual(capability.bulkQuality, permission.smaller, "Seasons offer the same qualities as single items")
+            XCTAssertEqual(capability.versionTranscodes, permission.smaller, "A streamed transcode uses the chosen version")
             XCTAssertTrue(capability.seasonDownload)
             XCTAssertFalse(capability.seriesMonitoring)
             testSession?.invalidateAndCancel()
@@ -223,6 +224,7 @@ final class EmbyAdapterTests: XCTestCase {
         let raw = try await adapter.route(method: "GET", path: "/api/v1/downloads/capability", query: [:], body: nil)
         let capability: DownloadCapability = try EmbyAdapter.decode(raw)
         XCTAssertEqual(capability.qualityPresets, DownloadFormat.allCases.map(\.rawValue))
+        XCTAssertFalse(capability.versionTranscodes, "Emby's conversion service picks its own source")
         XCTAssertTrue(capability.transcodeEnabled)
     }
 

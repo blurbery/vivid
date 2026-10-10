@@ -114,6 +114,7 @@ extension DownloadManager {
         deleteServerRows(ids)
         processQueue()
         refreshStorageUsage()
+        nudgeWaitingDownloads()
     }
 
     /// Delete server rows with this scope's own sign-in. If the sign-in has
@@ -159,13 +160,17 @@ extension DownloadManager {
         records.filter { $0.localStatus.isActive && ($0.seriesId == seriesId || $0.contentId == seriesId) }
     }
 
-    /// Cancel every unfinished download of a series. Finished episodes stay.
+    /// Cancel every unfinished download of a series, including any waiting
+    /// for room on the server. Finished episodes stay.
     func cancelActiveDownloads(seriesId: String) {
+        cancelWaiting(seriesId: seriesId)
         deleteDownloads(ids: activeRecords(seriesId: seriesId).map(\.id))
     }
 
-    /// Cancel every unfinished download in this profile. Finished ones stay.
+    /// Cancel every unfinished download in this profile, including any
+    /// waiting for room on the server. Finished ones stay.
     func cancelAllActiveDownloads() {
+        cancelAllWaiting()
         deleteDownloads(ids: activeRecords.map(\.id))
     }
 

@@ -224,8 +224,8 @@ final class DownloadQualityTransferTests: XCTestCase {
         }
     }
 
-    /// The menu lists one version per class, highest first, and only tells
-    /// HDR apart where a class has both. Tags survive the round trip.
+    /// Versions list one per class, highest first, and only tell HDR apart
+    /// where a class has both.
     func testVersionOptionsComeFromTheEpisodesFiles() throws {
         func file(_ id: Int, _ resolution: String?, hdr: Bool?) -> EpisodeFile {
             EpisodeFile(fileId: id, resolution: resolution, codecVideo: nil, hdr: hdr, audioChannels: nil, container: nil, fileSize: nil)
@@ -234,16 +234,61 @@ final class DownloadQualityTransferTests: XCTestCase {
                      file(4, "1080p", hdr: nil), file(5, "720p", hdr: nil), file(6, nil, hdr: true)]
         let options = DownloadVersionPreference.options(for: files)
         XCTAssertEqual(options.map(\.label), ["4K HDR", "4K", "1080p", "720p"])
-        for option in options {
-            XCTAssertEqual(DownloadVersionPreference(tag: option.tag), option)
+    }
+
+    /// A 4K version only offers 4K transcodes; a smaller one offers the
+    /// ladder below it; Auto offers everything. Silo's own heights count.
+    func testQualitiesFollowTheChosenVersion() {
+        let all = DownloadFormat.allCases
+        let ladder: (DownloadFormat) -> Int? = { $0.ladderMaxHeight }
+        func offered(_ height: Int?, maxHeight: ((DownloadFormat) -> Int?)? = nil) -> [String] {
+            DownloadVersionPreference.formats(all, versionHeight: height, maxHeight: maxHeight ?? ladder).map(\.rawValue)
         }
-        for invalid in ["original", "10mbps", "original@999", "original@1080-dv", "original@"] {
-            XCTAssertNil(DownloadVersionPreference(tag: invalid), invalid)
+        XCTAssertEqual(offered(nil), all.map(\.rawValue))
+        XCTAssertEqual(offered(2160), ["original", "20mbps"])
+        XCTAssertEqual(offered(1080), ["original", "10mbps", "5mbps", "2mbps", "1mbps"])
+        XCTAssertEqual(offered(720), ["original", "2mbps", "1mbps"])
+        XCTAssertEqual(offered(480), ["original", "1mbps"])
+        // A server that caps 20 Mbps at 1080p has no 4K transcode to offer.
+        let capped: (DownloadFormat) -> Int? = { $0 == .twentyMbps ? 1080 : $0.ladderMaxHeight }
+        XCTAssertEqual(offered(2160, maxHeight: capped), ["original"])
+        XCTAssertEqual(offered(1080, maxHeight: capped), ["original", "20mbps", "10mbps", "5mbps", "2mbps", "1mbps"])
+    }
+
+    /// Season and series versions are named like a movie's, with how many
+    /// episodes have one and roughly how much they'd download.
+    func testSeriesVersionsCountTheirEpisodes() {
+        func episode(_ number: Int, _ files: [EpisodeFile]?) -> EpisodeListItem {
+            EpisodeListItem(contentId: "e\(number)", seasonNumber: 1, episodeNumber: number, title: nil, overview: nil, airDate: nil,
+                            runtime: nil, imdbId: nil, tmdbId: nil, tvdbId: nil, stillUrl: nil, stillThumbhash: nil, userData: nil, files: files)
         }
-        XCTAssertEqual(DownloadVersionPreference.split("original@1080").quality, "original")
-        XCTAssertEqual(DownloadVersionPreference.split("original@1080").version?.height, 1080)
-        XCTAssertEqual(DownloadVersionPreference.split("5mbps").quality, "5mbps")
-        XCTAssertNil(DownloadVersionPreference.split("5mbps").version)
+        func file(_ id: Int, _ resolution: String, _ codec: String, hdr: Bool, size: Int64) -> EpisodeFile {
+            EpisodeFile(fileId: id, resolution: resolution, codecVideo: codec, hdr: hdr, audioChannels: nil, container: nil, fileSize: size)
+        }
+        let gb: Int64 = 1_000_000_000
+        let versions = SeriesDownloadVersion.versions(in: [
+            episode(1, [file(1, "2160p", "hevc", hdr: true, size: 10 * gb), file(2, "1080p", "h264", hdr: false, size: 5 * gb)]),
+            episode(2, [file(3, "2160p", "hevc", hdr: true, size: 10 * gb), file(4, "1080p", "hevc", hdr: false, size: 4 * gb)]),
+            episode(3, [file(5, "2160p", "hevc", hdr: true, size: 10 * gb)]),
+            episode(4, []),
+            episode(5, nil),
+        ])
+        XCTAssertEqual(versions.map(\.title), ["2160p · HEVC · HDR", "1080p"])
+        XCTAssertEqual(versions.map(\.episodes), [3, 2])
+        XCTAssertEqual(versions.map(\.totalEpisodes), [3, 3])
+        XCTAssertEqual(versions.map(\.bytes), [30 * gb, 9 * gb])
+        XCTAssertTrue(versions[0].detail.hasPrefix("All 3 episodes · about "))
+        XCTAssertTrue(versions[1].detail.hasPrefix("2 of 3 episodes · about "))
+        XCTAssertEqual(SeriesDownloadVersion.rowDetail(versions, chosen: nil), "Auto · 2160p · HEVC · HDR, 1080p")
+        XCTAssertTrue(SeriesDownloadVersion.rowDetail(versions, chosen: versions[1].version).hasPrefix("1080p · 2 of 3 episodes"))
+
+        // A file that doesn't say its codec keeps the codec off the name.
+        let unknownCodec = EpisodeFile(fileId: 9, resolution: "2160p", codecVideo: nil, hdr: true, audioChannels: nil, container: nil, fileSize: nil)
+        let partly = SeriesDownloadVersion.versions(in: [
+            episode(1, [file(1, "2160p", "hevc", hdr: true, size: gb)]),
+            episode(2, [unknownCodec]),
+        ])
+        XCTAssertEqual(partly.map(\.title), ["2160p · HDR"])
     }
 
     /// Each episode gets the file with the same class and HDR, then the same
@@ -263,38 +308,53 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertEqual(sdr4K.file(in: [file(1, "2160p", hdr: true), unknown, file(5, "2160p", hdr: false)])?.fileId, 5)
         XCTAssertEqual(sdr4K.file(in: [file(1, "2160p", hdr: true), unknown])?.fileId, 1)
         XCTAssertEqual(DownloadVersionPreference.options(for: [file(1, "2160p", hdr: true), unknown]).map(\.label), ["4K HDR"])
-
-        let defaultVersion = DownloadVersionPreference(height: 2160, hdr: nil)
-        let menu = [DownloadVersionPreference(height: 2160, hdr: true), DownloadVersionPreference(height: 2160, hdr: false),
-                    DownloadVersionPreference(height: 1080, hdr: nil)]
-        XCTAssertEqual(defaultVersion.option(in: menu), DownloadVersionPreference(height: 2160, hdr: false))
-        XCTAssertEqual(DownloadVersionPreference(height: 1080, hdr: nil).option(in: menu)?.label, "1080p")
-        XCTAssertNil(DownloadVersionPreference(height: 720, hdr: nil).option(in: menu))
     }
 
-    /// Settings keeps the version apart from the quality the server sees, and
-    /// the default lands on a matching menu option when there is one.
-    func testDefaultVersionIsStoredApartFromTheQuality() throws {
-        let suiteName = "download-default-version-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { UserDefaults().removePersistentDomain(forName: suiteName) }
+    /// Only Silo's limit on downloads in progress sends the rest to wait;
+    /// its quota for a period and other errors still fail, and episodes left
+    /// waiting aren't reported as a problem.
+    func testOnlySilosAccountLimitWaits() {
+        XCTAssertTrue(DownloadError.isAccountLimit(HTTPError.http(
+            statusCode: 429, body: #"{"error":"download_limit_exceeded","message":"Maximum concurrent downloads reached"}"#)))
+        XCTAssertTrue(DownloadError.isAccountLimit(HTTPError.http(
+            statusCode: 429, body: #"{"type":"rate_limited","detail":"concurrent download limit reached"}"#)))
+        XCTAssertFalse(DownloadError.isAccountLimit(HTTPError.http(
+            statusCode: 429, body: #"{"error":"download_quota_exceeded","message":"Download quota exceeded for this period"}"#)))
+        XCTAssertFalse(DownloadError.isAccountLimit(HTTPError.http(statusCode: 500, body: "concurrent download limit reached")))
+        XCTAssertFalse(DownloadError.isAccountLimit(DownloadError.unavailable))
 
-        let settings = DownloadSettings(defaults: defaults)
-        XCTAssertEqual(settings.defaultChoiceTag, "original")
-        settings.defaultChoiceTag = "original@1080"
-        XCTAssertEqual(settings.preferredFormat, "original")
-        XCTAssertEqual(settings.preferredVersion, DownloadVersionPreference(height: 1080, hdr: nil))
+        var result = DownloadManager.EpisodeRegistrationResult()
+        result.added = 1
+        result.waiting = 3
+        XCTAssertNil(result.problem)
+        var waitingOnly = DownloadManager.EpisodeRegistrationResult()
+        waitingOnly.skipped = 2
+        waitingOnly.waiting = 4
+        XCTAssertNil(waitingOnly.problem, "Waiting episodes aren't 'nothing new to add'")
+    }
 
-        let restored = DownloadSettings(defaults: defaults)
-        XCTAssertEqual(restored.defaultChoiceTag, "original@1080")
-        let menu = [DownloadVersionPreference(height: 2160, hdr: true), DownloadVersionPreference(height: 1080, hdr: nil)]
-        XCTAssertEqual(restored.resolvedChoiceTag(allowedFormats: ["original", "5mbps"], versions: menu), "original@1080")
-        XCTAssertEqual(restored.resolvedChoiceTag(allowedFormats: ["original"], versions: []), "original")
+    /// Stores written before waiting downloads existed still load, a waiting
+    /// episode survives a save, and it shows as waiting in progress.
+    func testWaitingDownloadsSurviveTheStore() throws {
+        let old = try JSONDecoder().decode(DownloadStoreFile.self, from: JSONEncoder().encode(DownloadStoreFile.empty))
+        XCTAssertNil(old.waitingDownloads)
 
-        restored.defaultChoiceTag = "5mbps"
-        XCTAssertEqual(restored.preferredFormat, "5mbps")
-        XCTAssertNil(restored.preferredVersion)
-        XCTAssertEqual(restored.resolvedChoiceTag(allowedFormats: ["original", "5mbps"], versions: menu), "5mbps")
+        let item = WaitingDownload(
+            id: "episode-2", seriesId: "series-1", title: "The Target", subtitle: "S1 · E2", seriesTitle: "Fallout",
+            seasonNumber: 1, episodeNumber: 2, posterThumbhash: nil, preferredPosterPath: nil, fileId: 42,
+            quality: "2mbps", queuedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        var store = DownloadStoreFile.empty
+        store.waitingDownloads = [item]
+        let restored = try JSONDecoder().decode(DownloadStoreFile.self, from: JSONEncoder().encode(store))
+        XCTAssertEqual(restored.waitingDownloads, [item])
+
+        let row = item.displayRecord
+        XCTAssertEqual(row.localStatus, .waiting)
+        XCTAssertTrue(row.localStatus.isActive)
+        XCTAssertEqual(row.episodeId, "episode-2")
+        XCTAssertEqual(row.seriesId, "series-1")
+        XCTAssertEqual(row.format, "2mbps")
     }
 
     /// A list of episodes reports what wasn't added rather than failing whole.

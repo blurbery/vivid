@@ -36,10 +36,8 @@ struct DownloadOptionsSheet: View {
         self.isEpisode = isEpisode
         self.onStart = onStart
 
-        // Settings' default version applies when no version is set yet.
-        _fileId = State(initialValue: selectedVersionFileId
-            ?? DownloadSettings.shared.preferredVersion?.version(in: versions)?.fileId)
-        _quality = State(initialValue: DownloadSettings.shared.preferredFormat)
+        _fileId = State(initialValue: selectedVersionFileId)
+        _quality = State(initialValue: DownloadFormat.original.rawValue)
     }
 
     private var formats: [DownloadFormat] {
@@ -47,7 +45,25 @@ struct DownloadOptionsSheet: View {
         return available.isEmpty ? [.original] : available
     }
 
-    private var isEmbyConversion: Bool { MediaServerProvider.active == .emby && quality != DownloadFormat.original.rawValue }
+    /// Emby's conversion service, for accounts that can't transcode
+    /// playback, picks its own source for a smaller download.
+    private var isEmbyConversion: Bool {
+        MediaServerProvider.active == .emby && quality != DownloadFormat.original.rawValue
+            && manager.capability?.versionTranscodes == false
+    }
+
+    /// The chosen version's resolution class, which decides the smaller
+    /// qualities on offer; nil for Auto.
+    private var versionHeight: Int? {
+        guard fileId != nil, !isEmbyConversion else { return nil }
+        return choices.effectiveVersion.flatMap { DownloadVersionPreference.heightClass(of: $0.resolution) }
+    }
+
+    /// The chosen version has a smaller copy to offer.
+    private var showsQuality: Bool { DownloadQualityPicker.offersSmaller(versionHeight: versionHeight) }
+
+    /// The quality the download uses, for the chosen version.
+    private var chosenQuality: String { DownloadQualityPicker.resolved(quality, versionHeight: versionHeight) }
 
     private var choices: DownloadVersionChoices {
         DownloadVersionChoices(versions: versions, fileId: fileId, lastVersionFileId: lastVersionFileId)
@@ -82,23 +98,41 @@ struct DownloadOptionsSheet: View {
     }
 
     private func start() {
-        onStart(DownloadRequestOptions(fileId: isEmbyConversion ? nil : fileId, quality: quality))
+        onStart(DownloadRequestOptions(fileId: isEmbyConversion ? nil : fileId, quality: chosenQuality))
         dismiss()
     }
 
     // MARK: - Layout
 
-    /// The series download sheet's layout: a quality menu over a Download
-    /// row, with versions on their own page.
+    /// The layout every download sheet shares: Choose Version, then a
+    /// Quality menu for that version, over the Download row.
     private var form: some View {
         Form {
-            if formats.count > 1 {
+            if !versions.isEmpty || formats.count > 1 {
                 Section {
-                    DownloadQualityPicker(quality: $quality)
+                    if !versions.isEmpty {
+                        NavigationLink {
+                            DownloadVersionPage(
+                                versions: versions,
+                                lastVersionFileId: lastVersionFileId,
+                                quality: quality,
+                                isEmbyConversion: isEmbyConversion,
+                                fileId: $fileId
+                            )
+                        } label: {
+                            DownloadOptionRow(title: "Choose Version", detail: chooseVersionDetail, icon: "square.stack")
+                        }
+                        .disabled(isEmbyConversion)
+                    }
+                    if showsQuality {
+                        DownloadQualityPicker(quality: $quality, versionHeight: versionHeight)
+                    }
                 } footer: {
-                    Text([DownloadQualityPicker.sizeNote(quality),
-                          "Lower bitrates make a smaller file at the resolution shown, never above the original's. The server prepares the file first, which can take longer. Sizes are estimates."]
-                        .compactMap { $0 }.joined(separator: " "))
+                    if showsQuality {
+                        Text(DownloadQualityPicker.footer(quality: chosenQuality, versionHeight: versionHeight))
+                    } else if formats.count > 1 {
+                        Text(DownloadQualityPicker.noSmallerNote)
+                    }
                 }
             }
 
@@ -107,21 +141,6 @@ struct DownloadOptionsSheet: View {
                     DownloadOptionRow(title: isEpisode ? "Download Episode" : "Download Movie", detail: downloadDetail, icon: "arrow.down.to.line")
                 }
                 .buttonStyle(.plain)
-
-                if !versions.isEmpty {
-                    NavigationLink {
-                        DownloadVersionPage(
-                            versions: versions,
-                            lastVersionFileId: lastVersionFileId,
-                            quality: quality,
-                            isEmbyConversion: isEmbyConversion,
-                            fileId: $fileId
-                        )
-                    } label: {
-                        DownloadOptionRow(title: "Choose Version", detail: chooseVersionDetail, icon: "square.stack")
-                    }
-                    .disabled(isEmbyConversion)
-                }
             } header: {
                 Text("Download")
             } footer: {
@@ -132,8 +151,8 @@ struct DownloadOptionsSheet: View {
     }
 
     private var downloadDetail: String {
-        var parts = [manager.qualityLabel(rawValue: quality), choices.versionLabel]
-        if let estimate = choices.estimate(quality: quality) {
+        var parts = [manager.qualityLabel(rawValue: chosenQuality), choices.versionLabel]
+        if let estimate = choices.estimate(quality: chosenQuality) {
             parts.append(estimate.isRange ? "\(estimate.sizeLabel) depending on server choice" : estimate.sizeLabel)
         }
         return parts.joined(separator: " · ")
@@ -170,9 +189,7 @@ struct DownloadOptionsSheet: View {
     private func clampQuality() {
         if isEmbyConversion { fileId = nil }
         guard !formats.contains(where: { $0.rawValue == quality }) else { return }
-        quality = DownloadSettings.shared.resolvedFormat(
-            allowedFormats: manager.capability?.qualityPresets ?? []
-        )
+        quality = DownloadFormat.original.rawValue
     }
 }
 
@@ -474,7 +491,7 @@ private struct DownloadIncludedMediaSection: View {
 }
 
 /// A selectable row with a checkmark when chosen.
-private struct DownloadChoiceRow: View {
+struct DownloadChoiceRow: View {
     let title: String
     let detail: String?
     let isSelected: Bool

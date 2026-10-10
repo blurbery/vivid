@@ -150,6 +150,7 @@ struct DownloadActiveRow: View {
         case .completed: return DownloadFormatting.bytes(record.fileSize)
         case .failed: return "Failed"
         case .revoked: return "No longer available"
+        case .waiting: return "Waiting for your server"
         }
     }
 
@@ -158,7 +159,7 @@ struct DownloadActiveRow: View {
         switch record.localStatus {
         case .downloading, .paused: return record.progressFraction
         case .preparing: return record.preparation?.progress.map { min(max($0, 0), 1) }
-        case .registering, .queued, .fetchingAssets, .completed, .failed, .revoked: return nil
+        case .registering, .queued, .fetchingAssets, .completed, .failed, .revoked, .waiting: return nil
         }
     }
 
