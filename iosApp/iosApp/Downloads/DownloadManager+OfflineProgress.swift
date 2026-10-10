@@ -90,7 +90,12 @@ extension DownloadManager {
             // A pull for a newly active scope returns early while this one
             // holds the flag, so run it now rather than at the next foreground.
             if startGeneration != registrationScopeGeneration, !scopeServerId.isEmpty {
-                Task { await self.pullProgressDeltas() }
+                Task {
+                    // Let the new scope's registry finish loading first, so
+                    // the pull reads and saves that account's file.
+                    guard await self.activateScopeIfNeeded() else { return }
+                    await self.pullProgressDeltas()
+                }
             }
         }
         do {
