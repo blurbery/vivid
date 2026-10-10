@@ -144,7 +144,7 @@ struct MobilePlayerControls: View {
                         }
                     )
                 )
-                .presentationDetents([.large])
+                .vividGlassSheet(startsTall: true, overVideo: true)
             }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { viewportSize = $0 }

@@ -23,6 +23,24 @@ extension View {
         #endif
     }
 
+    /// Matches the detail page Play button's surface: dark-tinted interactive
+    /// glass with a light diagonal edge. Sheets and download screens use it
+    /// for their main actions so they read as the same kind of button.
+    func vividPrimaryGlass(in shape: some InsettableShape) -> some View {
+        self
+            .vividGlass(in: shape, tint: .black.opacity(0.26), interactive: true)
+            .overlay {
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.65), .white.opacity(0.14), .white.opacity(0.38)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+            }
+    }
+
     /// Glass for surfaces drawn over LIVE VIDEO (player HUD, controls,
     /// notices). Backdrop-sampling effects — glassEffect and the legacy
     /// materials alike — make the render server re-sample and re-blur the

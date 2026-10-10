@@ -29,15 +29,13 @@ struct DownloadReclaimSheet: View {
                     list
                 }
             }
-            .vividPageBackground()
+            .background(Color.clear)
             .navigationTitle("Free Up Space")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
+                VividSheetCloseItem { dismiss() }
                 if !records.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
                         Button(allSelected ? "Deselect All" : "Select All") { toggleAll() }
@@ -47,6 +45,7 @@ struct DownloadReclaimSheet: View {
             .safeAreaInset(edge: .bottom) { bottomBar }
             .vividToolbarColorSchemeDark()
         }
+        .vividGlassSheet(startsTall: true)
     }
 
     private var list: some View {
@@ -120,9 +119,7 @@ struct DownloadReclaimSheet: View {
                     .font(.system(size: 15))
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(selected.isEmpty ? Color.vividDisabled : Color.vividOnSurface)
-                    .foregroundColor(.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .downloadMenuActionSurface(cornerRadius: 15, isEnabled: !selected.isEmpty)
                 }
                 .buttonStyle(.plain)
                 .disabled(selected.isEmpty)

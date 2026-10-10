@@ -306,14 +306,7 @@ struct DownloadsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.vividSurfaceVariant)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.vividOutline, lineWidth: 1)
-                )
-        )
+        .downloadGlassCard(cornerRadius: 16)
         .padding(.horizontal, 16)
         .contextMenu {
             Button(role: .destructive) {
@@ -413,9 +406,7 @@ struct DownloadsView: View {
                 .font(.system(size: 15))
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(Color.vividOnSurface)
-                .foregroundColor(.black)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .downloadMenuActionSurface(cornerRadius: 16)
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 16)

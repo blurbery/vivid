@@ -63,6 +63,9 @@ struct OfflineSeriesBrowseView: View {
                     title: group.title,
                     eyebrow: heroEyebrow(group),
                     posterThumbhash: group.posterThumbhash,
+                    posterURL: group.allRecords.lazy
+                        .compactMap { manager.posterImageURL(for: $0) }
+                        .first,
                     availability: "Downloaded · \(group.episodeCount) episode\(group.episodeCount == 1 ? "" : "s") · \(DownloadFormatting.bytes(group.totalBytes))",
                     isMonitored: group.isMonitored,
                     playTitle: playTitle(season),
@@ -271,11 +274,7 @@ struct OfflineDownloadDetailView: View {
     private func still(_ record: DownloadRecord) -> some View {
         Button { play(record) } label: {
             ZStack {
-                LinearGradient(
-                    colors: [Color.vividSurfaceElevated, Color.vividBackground],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                Color.clear
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 50))
                     .foregroundColor(.white.opacity(0.92))
@@ -293,10 +292,13 @@ struct OfflineDownloadDetailView: View {
                 }
             }
             .frame(height: 190)
-            .clipped()
+            .downloadGlassCard(cornerRadius: 20)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
         .accessibilityLabel("Play")
     }
 
@@ -319,31 +321,20 @@ struct OfflineDownloadDetailView: View {
 
     private func playRow(_ record: DownloadRecord) -> some View {
         HStack(spacing: 11) {
-            Button { play(record) } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                    Text(playLabel(record)).fontWeight(.bold)
-                }
-                .font(.system(size: 14.5))
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .background(Color.vividOnSurface)
-                .foregroundColor(.black)
-                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            // The detail page's own Play button, so downloads play the same way.
+            PhonePrimaryPillButton(icon: "play.fill", title: playLabel(record), action: { play(record) }, fullWidth: true)
 
             if resumeFraction(record) != nil {
                 Button { playFromStart(record) } label: {
                     Image(systemName: "gobackward")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
-                        .frame(width: 46, height: 46)
+                        .frame(width: 52, height: 52)
                         .background(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(Color.vividChromeRestingFill)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                                         .stroke(Color.vividChromeRestingBorder, lineWidth: 1)
                                 )
                         )
@@ -490,13 +481,13 @@ struct OfflineDownloadDetailView: View {
 
 // MARK: - Shared hero
 
-/// A compact cinematic header for the offline browse screens. The downloaded
-/// poster's ThumbHash keeps its artwork identity available before local poster
-/// data is ready.
+/// A compact glass header card for the offline browse screens. The downloaded
+/// poster's ThumbHash shows until the poster saved with the download loads.
 private struct OfflineBrowseHero: View {
     let title: String
     let eyebrow: String
     let posterThumbhash: String?
+    let posterURL: URL?
     let availability: String
     var isMonitored: Bool = false
     let playTitle: String
@@ -505,7 +496,7 @@ private struct OfflineBrowseHero: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .bottom, spacing: 14) {
-                DownloadPosterThumb(thumbhash: posterThumbhash, width: 72, corner: 10)
+                DownloadPosterThumb(thumbhash: posterThumbhash, fileURL: posterURL, width: 72, corner: 10)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 7) {
                         Text(eyebrow)
@@ -539,28 +530,12 @@ private struct OfflineBrowseHero: View {
                     .overlay(Capsule().stroke(Color.vividChromeSelectedBorder, lineWidth: 1))
             )
 
-            Button(action: onPlay) {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill")
-                    Text(playTitle).fontWeight(.bold)
-                }
-                .font(.system(size: 15))
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Color.vividOnSurface)
-                .foregroundColor(.black)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            PhonePrimaryPillButton(icon: "play.fill", title: playTitle, action: onPlay, fullWidth: true)
         }
-        .padding(20)
-        .background(
-            LinearGradient(
-                colors: [Color.vividSurfaceVariant, Color.vividBackground],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .padding(18)
+        .downloadGlassCard(cornerRadius: 20)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 }
 #endif

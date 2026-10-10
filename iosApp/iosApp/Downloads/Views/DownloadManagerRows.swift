@@ -341,14 +341,7 @@ struct DownloadAttentionRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.vividSurfaceVariant)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.vividOutline, lineWidth: 1)
-                )
-        )
+        .downloadGlassCard(cornerRadius: 16)
         .padding(.horizontal, 16)
     }
 }
@@ -442,14 +435,7 @@ struct DownloadSeriesRow: View {
                 }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(expanded ? Color.vividSurfaceElevated : Color.vividSurfaceVariant)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.vividOutline, lineWidth: 1)
-                )
-        )
+        .downloadGlassCard(cornerRadius: 18, highlighted: expanded)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .padding(.horizontal, 16)
     }
@@ -506,13 +492,14 @@ struct DownloadSeriesRow: View {
 
     private var posterStack: some View {
         ZStack(alignment: .leading) {
+            // Light stack tiles read on the glass card under every theme.
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.vividSurfaceVariant)
+                .fill(Color.vividOnSurface.opacity(0.18))
                 .frame(width: 46, height: 62)
                 .offset(x: 9)
                 .opacity(0.45)
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.vividSurface)
+                .fill(Color.vividOnSurface.opacity(0.22))
                 .frame(width: 46, height: 64)
                 .offset(x: 4)
                 .opacity(0.7)

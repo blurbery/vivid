@@ -55,7 +55,10 @@ struct TrackSelectionSheet: View {
             .scrollIndicators(.visible)
         }
         .task { OpenSubtitlesStore.shared.reload() }
-        .sheet(isPresented: $showOpenSubtitles) { OpenSubtitlesSearchView(viewModel: viewModel) }
+        .sheet(isPresented: $showOpenSubtitles) {
+            OpenSubtitlesSearchView(viewModel: viewModel)
+                .vividGlassSheet(startsTall: true, overVideo: true)
+        }
 
     }
 

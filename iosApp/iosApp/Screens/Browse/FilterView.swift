@@ -31,7 +31,7 @@ struct FilterView: View {
             .listStyle(.plain)
             .filterScrollContentBackgroundHidden()
             .environment(\.defaultMinListRowHeight, 50)
-            .vividPageBackground()
+            .background(Color.clear)
             .navigationTitle("Filter")
             .vividNavigationTitleDisplayMode(.inline)
             .toolbar {
@@ -41,10 +41,8 @@ struct FilterView: View {
                         .disabled(!draft.canResetFilters)
                 }
             }
-            .vividNavigationBarSurfaceBackground()
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .vividGlassSheet()
         .task { await viewModel.loadFacetsIfNeeded() }
         .onDisappear { commitIfChanged() }
     }
@@ -282,10 +280,9 @@ private struct FacetValuePicker: View {
         .listStyle(.plain)
         .filterScrollContentBackgroundHidden()
         .environment(\.defaultMinListRowHeight, 50)
-        .vividPageBackground()
+        .background(Color.clear)
         .navigationTitle(facet.title)
         .vividNavigationTitleDisplayMode(.inline)
-        .vividNavigationBarSurfaceBackground()
         .toolbar {
             if !draft.selectedValues(facet).isEmpty {
                 ToolbarItem(placement: .primaryAction) {
