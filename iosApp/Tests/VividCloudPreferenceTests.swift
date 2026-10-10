@@ -2,6 +2,25 @@ import XCTest
 @testable import Vivid
 
 final class VividCloudPreferenceTests: XCTestCase {
+    /// Older Vivid builds write every `setting|` entry back to Silo's shared
+    /// rows, so Vivid's own Silo interface settings must never use that name.
+    @MainActor
+    func testSiloInterfaceSettingsUseTheirOwnVaultName() {
+        let siloMenu = VividCloudPreferences.settingName(serverId: "silo", profileId: "p", key: "nav.primary_menu")
+        let siloCards = VividCloudPreferences.settingName(serverId: "silo", profileId: "p", key: "ui.card_presentation")
+        let siloMetadata = VividCloudPreferences.settingName(serverId: "silo", profileId: "p", key: "catalog.metadata_language")
+        let embyMenu = VividCloudPreferences.settingName(serverId: "emby:server", profileId: "p", key: "nav.primary_menu")
+
+        XCTAssertTrue(siloMenu.hasPrefix("vivid-setting|"))
+        XCTAssertTrue(siloCards.hasPrefix("vivid-setting|"))
+        XCTAssertTrue(siloMetadata.hasPrefix("setting|"))
+        XCTAssertTrue(embyMenu.hasPrefix("setting|"))
+        XCTAssertNotEqual(
+            siloMenu,
+            VividCloudPreferences.settingName(serverId: "silo", profileId: "other", key: "nav.primary_menu")
+        )
+    }
+
     func testPluginCredentialScopePreservesAccountAndProfileIsolation() {
         let scope = VividCloudPreferences.pluginScope(server: "server", user: "user", profile: "profile")
         XCTAssertEqual(scope, "535ebf95cd5b844ea8e78b0b4ca88838b3b430f6cd2995f37a08f0a083896547")

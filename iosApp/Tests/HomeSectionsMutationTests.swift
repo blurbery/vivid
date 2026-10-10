@@ -52,6 +52,32 @@ final class HomeSectionsMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testSiloRowOrderStaysVividsWhenTheServerReordersHome() throws {
+        let key = "test.home-silo-order.\(UUID().uuidString)"
+        let defaults = SharedDefaults.shared
+        defer { defaults.removeObject(forKey: key) }
+        let item = try makeItem(contentId: "item")
+        let row = { (id: String) in self.makeSection(id: id, type: "latest", totalCount: 1, items: [item]) }
+
+        let silo = HomeSectionPreferences(defaults: defaults, storageKey: { key })
+        silo.enforceVisibleRowLimit(in: ["a", "b", "c"].map(row), provider: .silo)
+        XCTAssertEqual(silo.arrangedSections(["a", "b", "c"].map(row)).map(\.id), ["a", "b", "c"])
+
+        // Silo reorders its Home and adds a row: Vivid keeps its order and
+        // the new row joins the end.
+        let reordered = ["new", "c", "a", "b"].map(row)
+        silo.enforceVisibleRowLimit(in: reordered, provider: .silo)
+        XCTAssertEqual(silo.arrangedSections(reordered).map(\.id), ["a", "b", "c", "new"])
+
+        // Emby still follows its server's order for rows Vivid hasn't placed.
+        let embyKey = "test.home-emby-order.\(UUID().uuidString)"
+        defer { defaults.removeObject(forKey: embyKey) }
+        let emby = HomeSectionPreferences(defaults: defaults, storageKey: { embyKey })
+        emby.enforceVisibleRowLimit(in: ["a", "b", "c"].map(row), provider: .emby)
+        XCTAssertEqual(emby.arrangedSections(["c", "a", "b"].map(row)).map(\.id), ["c", "a", "b"])
+    }
+
+    @MainActor
     func testRowLimitSavesStableBytesAndKeepsSettingsSavedElsewhere() throws {
         let key = "test.home-sync.\(UUID().uuidString)"
         let defaults = SharedDefaults.shared

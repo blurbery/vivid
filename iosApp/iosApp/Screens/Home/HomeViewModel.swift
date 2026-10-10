@@ -3,7 +3,8 @@ import Foundation
 /// Device-local, per-server/profile Home row visibility and order. The server
 /// remains authoritative for which rows exist and what they contain; this
 /// projection only arranges the rows it returns. Unknown/new server rows append
-/// in server order, subject to the shared Home visible-row limit. Only rows
+/// in server order, subject to the shared Home visible-row limit. On Silo, the
+/// order rows are first shown in is saved, so later server reordering is ignored. Only rows
 /// this layout has never seen can be hidden by that limit; a row that has
 /// already been shown stays visible until the user hides it.
 @Observable
@@ -23,7 +24,10 @@ final class HomeSectionPreferences {
     /// definitions and order. Rows already seen are never hidden here, so a
     /// refresh that adds, removes or reorders rows cannot switch off rows that
     /// were showing. Spotlight reads its sources independently of this preference.
-    func enforceVisibleRowLimit(in sections: [ResolvedSection]) {
+    func enforceVisibleRowLimit(
+        in sections: [ResolvedSection],
+        provider: MediaServerProvider = .active
+    ) {
         refresh()
         // Another device or Settings may have saved this layout since it was
         // loaded; build on that version so this save cannot overwrite it.
@@ -37,11 +41,22 @@ final class HomeSectionPreferences {
         let capacity = max(0, Self.maximumVisibleRows - seenVisibleCount)
         let overflow = newRows.filter { isVisible($0.id) }.dropFirst(capacity).map(\.id)
         let unseen = Set(arranged.map(\.id)).subtracting(seenSectionIds)
-        guard !overflow.isEmpty || !unseen.isEmpty || needsMigrationSave else { return }
+        // On Silo, Vivid keeps rows in the order it first showed them, so
+        // reordering Home on the Silo server can't move them. New rows join
+        // the end. Emby and Jellyfin still follow their server's order.
+        let ranked = Set(orderedSectionIds)
+        let unranked = provider == .silo
+            ? arranged.map(\.id).filter { !ranked.contains($0) }
+            : []
+        guard !overflow.isEmpty || !unseen.isEmpty || !unranked.isEmpty || needsMigrationSave else { return }
         seenSectionIds.formUnion(unseen)
         needsMigrationSave = false
         if !overflow.isEmpty {
             hiddenSectionIds.formUnion(overflow)
+            layoutRevision &+= 1
+        }
+        if !unranked.isEmpty {
+            orderedSectionIds.append(contentsOf: unranked)
             layoutRevision &+= 1
         }
         persist()
