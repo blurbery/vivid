@@ -152,4 +152,42 @@ struct AppleQualityAxes: Equatable {
         }
         return fallbackBitrateKbps.flatMap { $0 > 0 ? $0 : nil }
     }
+
+    /// Resolve the bandwidth cap for a load that may carry the current
+    /// playback's quality forward instead of a fresh in-player choice.
+    ///
+    /// A carried override is not a new choice, so its id must not be split
+    /// again: the active quality is often a bare resolution, and this client's
+    /// tier table would turn a 1080p preference into a 10 Mbps cap (or Auto on
+    /// a 720p file into 2 Mbps) that playback never ran with. A carried cap only
+    /// applies alongside an override; without one the load is an ordinary start.
+    static func resolvedBitrateCap(
+        qualityOverride: String?,
+        carriedCap: CarriedBandwidthCap?,
+        fallbackBitrateKbps: Int?
+    ) -> Int? {
+        guard qualityOverride != nil, let carriedCap else {
+            return resolvedBitrateCap(
+                qualityOverride: qualityOverride,
+                fallbackBitrateKbps: fallbackBitrateKbps
+            )
+        }
+        switch carriedCap {
+        case .savedSetting:
+            return resolvedBitrateCap(qualityOverride: nil, fallbackBitrateKbps: fallbackBitrateKbps)
+        case .inEffect(let bitrateKbps):
+            return bitrateKbps.flatMap { $0 > 0 ? $0 : nil }
+        }
+    }
+}
+
+/// The bandwidth cap a playback ran with, so a load that carries its quality
+/// forward (the next episode, or a retried, renewed or recovered session) can
+/// repeat that cap exactly.
+enum CarriedBandwidthCap: Equatable {
+    /// Not known for this playback (for example an offline file): use the
+    /// saved Settings cap, as a start without an override would.
+    case savedSetting
+    /// The cap the playback was requested with; nil is uncapped.
+    case inEffect(Int?)
 }

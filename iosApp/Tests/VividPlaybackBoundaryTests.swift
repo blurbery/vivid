@@ -462,6 +462,41 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         }
     }
 
+    func testAudioSessionActivationRetriesBrieflyExceptForPermanentRefusals() {
+        let delays = VividMPVPlayer.audioSessionActivationRetryDelays
+        XCTAssertEqual(delays.count, 4)
+        XCTAssertLessThanOrEqual(delays.reduce(Duration.zero, +), .seconds(4),
+                                 "A refused activation must still fail promptly")
+        for code: AVAudioSession.ErrorCode in [.cannotStartPlaying, .insufficientPriority,
+                                               .cannotInterruptOthers, .isBusy, .mediaServicesFailed] {
+            XCTAssertTrue(VividMPVPlayer.isRetryableAudioSessionActivationError(
+                NSError(domain: NSOSStatusErrorDomain, code: code.rawValue)), "\(code.rawValue)")
+        }
+        for code: AVAudioSession.ErrorCode in [.badParam, .missingEntitlement, .incompatibleCategory] {
+            XCTAssertFalse(VividMPVPlayer.isRetryableAudioSessionActivationError(
+                NSError(domain: NSOSStatusErrorDomain, code: code.rawValue)), "\(code.rawValue)")
+        }
+    }
+
+    func testRouteIndependentLoadFailuresDoNotStepDownTheV3Route() {
+        func disposition(_ kind: PlaybackErrorKind) -> (Bool, String) {
+            let failure = PlaybackErrorInfo(kind: kind, message: "failed")
+            let recovery = PlayerViewModel.protocolV3LoadFailureRecovery(
+                VividPlaybackController.LoadFailure(failure: failure, underlying: failure))
+            return (recovery.shouldAdvanceRoute, recovery.classification)
+        }
+        // A refused audio session fails the same way on every route, so it
+        // must not ask the server for a lower-quality recipe.
+        XCTAssertEqual(disposition(.audioSessionUnavailable).0, false)
+        XCTAssertEqual(disposition(.audioSessionUnavailable).1, "audioSessionUnavailable")
+        XCTAssertEqual(disposition(.sourceRateLimited).0, false)
+        // Genuine media failures still move down the ladder.
+        for kind: PlaybackErrorKind in [.softwarePipelineFailed, .nativeItemFailed, .sourceRefused,
+                                        .vodSourceFailed, .dolbyVisionRequiresHardware] {
+            XCTAssertEqual(disposition(kind).0, true, kind.rawValue)
+        }
+    }
+
     func testExpiredBearerRecoveryRejectsNonAuthenticationFailures() {
         XCTAssertFalse(PlaybackErrorInfo.isHTTPAuthenticationFailure(
             NSError(domain: "UnrelatedDecoder", code: 401)

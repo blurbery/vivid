@@ -36,7 +36,7 @@ extension PlayerViewModel {
         guard protocolV3ReplanTask == nil else { return }
         if !attemptProtocolV3Replan(
             position: currentTime,
-            classification: protocolV3FailureClassification(message),
+            classification: Self.protocolV3FailureClassification(message),
             message: message
         ) {
             finalizeTerminalPlaybackError(message)
@@ -232,7 +232,10 @@ extension PlayerViewModel {
                    recoveryGeneration == self.streamLoadGeneration {
                     self.protocolV3ReplanTask = nil
                     if shouldFallbackToReplan {
-                        if finalClassification == "authentication" {
+                        // A refused audio session would refuse every route too,
+                        // so it stops at Retry instead of stepping down a rung.
+                        if finalClassification == "authentication"
+                            || finalClassification == PlaybackErrorKind.audioSessionUnavailable.rawValue {
                             self.finalizeTerminalPlaybackError(finalMessage)
                         } else if !self.attemptProtocolV3Replan(
                             position: self.currentTime.isFinite ? max(0, self.currentTime) : resumePosition,
@@ -293,6 +296,7 @@ extension PlayerViewModel {
                     selectedVersion: selectedVersion,
                     session: session,
                     activeQualityId: self.activeQualityId,
+                    bandwidthCap: self.activeBandwidthCap,
                     protocolV3: protocolV3
                 )
                 guard let streamRequest = await self.makeStreamRequest(
@@ -612,6 +616,7 @@ extension PlayerViewModel {
             let priorDuration = self.duration
             let priorCurrentTime = self.currentTime
             let priorActiveQualityId = self.activeQualityId
+            let priorActiveBandwidthCap = self.activeBandwidthCap
             let priorQualityOptions = self.qualityOptions
             let priorResolvedServerUrl = self.resolvedServerUrl
             let priorPrefsForCurrentItem = self.prefsForCurrentItem
@@ -706,6 +711,7 @@ extension PlayerViewModel {
                 self.duration = prepared.session.durationSeconds ?? prepared.selectedVersion.duration ?? self.duration
                 self.currentTime = self.movieTime(for: prepared.session)
                 self.activeQualityId = prepared.activeQualityId
+                self.activeBandwidthCap = prepared.bandwidthCap
                 self.qualityOptions = prepared.nativeQualityOptions ?? ApplePlaybackQuality.playbackOptions(
                     serverQualities: prepared.protocolV3?.plan.availableQualities ?? [],
                     fallbackVersion: prepared.selectedVersion
@@ -740,6 +746,7 @@ extension PlayerViewModel {
                 uncommittedPrepared = nil
                 if completesQualitySwitch {
                     self.lastLoadRequest?.preferredQualityOverride = prepared.activeQualityId
+                    self.lastLoadRequest?.carriedBandwidthCap = prepared.bandwidthCap
                 }
                 if previousSessionId != prepared.session.sessionId {
                     await self.realtimeClient.unbind()
@@ -771,6 +778,7 @@ extension PlayerViewModel {
                     self.duration = priorDuration
                     self.currentTime = priorCurrentTime
                     self.activeQualityId = priorActiveQualityId
+                    self.activeBandwidthCap = priorActiveBandwidthCap
                     self.qualityOptions = priorQualityOptions
                     self.resolvedServerUrl = priorResolvedServerUrl
                     self.prefsForCurrentItem = priorPrefsForCurrentItem
@@ -778,7 +786,7 @@ extension PlayerViewModel {
                 }
                 return
             } catch {
-                let loadFailure = self.protocolV3LoadFailureRecovery(error)
+                let loadFailure = Self.protocolV3LoadFailureRecovery(error)
                 if let uncommittedPrepared {
                     if loadFailure.shouldAdvanceRoute {
                         // Vivid rejected the replacement before it could
@@ -812,6 +820,7 @@ extension PlayerViewModel {
                     self.duration = priorDuration
                     self.currentTime = priorCurrentTime
                     self.activeQualityId = priorActiveQualityId
+                    self.activeBandwidthCap = priorActiveBandwidthCap
                     self.qualityOptions = priorQualityOptions
                     self.resolvedServerUrl = priorResolvedServerUrl
                     self.prefsForCurrentItem = priorPrefsForCurrentItem
@@ -834,7 +843,7 @@ extension PlayerViewModel {
         return true
     }
 
-    private func protocolV3FailureClassification(_ message: String) -> String {
+    private static func protocolV3FailureClassification(_ message: String) -> String {
         let value = message.lowercased()
         if value.contains("decoder") || value.contains("videotoolbox") || value.contains("-129") {
             return "decoder_error"
@@ -851,7 +860,15 @@ extension PlayerViewModel {
         return "playback_error"
     }
 
-    func protocolV3LoadFailureRecovery(
+    /// Typed failures that say nothing about whether another route would play.
+    /// Rate limiting is a retry-later condition at the same origin, and a
+    /// refused audio session fails the same way on every route.
+    static let routeIndependentFailureKinds: Set<PlaybackErrorKind> = [
+        .sourceRateLimited,
+        .audioSessionUnavailable,
+    ]
+
+    static func protocolV3LoadFailureRecovery(
         _ error: Error
     ) -> (shouldAdvanceRoute: Bool, classification: String, message: String) {
         if let error = error as? ApplePlaybackV3PlanError,
@@ -863,12 +880,12 @@ extension PlayerViewModel {
         }
         if let loadFailure = error as? VividPlaybackController.LoadFailure {
             let failure = loadFailure.failure
-            // Vivid defines rate limiting as a retry-later condition at the
-            // same origin, not evidence that another decode/remux rung is
-            // suitable. All other typed open failures are useful V3 ladder
-            // evidence and remain bounded by the bridge's attempt limit.
+            // Route-independent failures are not evidence that another
+            // decode/remux rung is suitable. All other typed open failures are
+            // useful V3 ladder evidence and remain bounded by the bridge's
+            // attempt limit.
             return (
-                failure.kind != .sourceRateLimited,
+                !routeIndependentFailureKinds.contains(failure.kind),
                 failure.kind.rawValue,
                 failure.message
             )

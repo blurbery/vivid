@@ -734,6 +734,74 @@ final class PlayerSettingsTests: XCTestCase {
         )
     }
 
+    func testCarriedQualityRepeatsTheCapPlaybackRanWith() {
+        // Up Next and session renewal carry the active quality, which is often
+        // a bare resolution. Splitting it again would cap an uncapped 1080p
+        // preference at the 1080p tier's 10 Mbps and Auto on a 720p file at
+        // 2 Mbps, so the server would transcode files it had sent as-is.
+        XCTAssertNil(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: "1080p", carriedCap: .inEffect(nil), fallbackBitrateKbps: nil))
+        XCTAssertNil(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: "720p", carriedCap: .inEffect(nil), fallbackBitrateKbps: nil))
+        XCTAssertNil(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: "1080p-high", carriedCap: .inEffect(0), fallbackBitrateKbps: 6_000),
+            "zero is the uncapped sentinel, never a cap")
+        XCTAssertEqual(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: "1080p-8", carriedCap: .inEffect(6_000), fallbackBitrateKbps: nil), 6_000,
+            "a foreign 1080p/6 Mbps cap must not widen to the 8 Mbps rung on renewal")
+        XCTAssertEqual(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: "auto", carriedCap: .inEffect(6_000), fallbackBitrateKbps: 6_000), 6_000,
+            "Auto with a stored cap keeps that cap on renewal")
+        for mode in PlaybackFallbackMode.allCases {
+            for (id, cap) in [(mode.rawValue, mode.maximumKbps), (mode.fallbackID, mode.fallbackKbps)] {
+                XCTAssertEqual(AppleQualityAxes.resolvedBitrateCap(
+                    qualityOverride: id, carriedCap: .inEffect(cap), fallbackBitrateKbps: nil), cap, id)
+            }
+        }
+        // Not known for the current playback (an offline file): the saved cap.
+        XCTAssertEqual(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: "1080p", carriedCap: .savedSetting, fallbackBitrateKbps: 4_000), 4_000)
+        XCTAssertNil(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: "1080p", carriedCap: .savedSetting, fallbackBitrateKbps: nil))
+        // A carried cap never applies without an override: that load is an
+        // ordinary start and keeps the saved cap.
+        XCTAssertEqual(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: nil, carriedCap: .inEffect(nil), fallbackBitrateKbps: 6_000), 6_000)
+    }
+
+    func testFreshInPlayerChoicesStillDeriveTheirOwnCap() {
+        let cases: [(String, Int?)] = [
+            ("vivid-2160p", 80_000), ("vivid-2160p-fallback", 20_000),
+            ("vivid-1080p", 10_000), ("vivid-1080p-fallback", 4_000),
+            ("vivid-720p", 4_000), ("vivid-720p-fallback", 1_500),
+            ("original", nil), ("2160p", nil), ("auto", nil), ("1080p-high", 20_000),
+        ]
+        for (id, cap) in cases {
+            let resolved = AppleQualityAxes.resolvedBitrateCap(
+                qualityOverride: id, carriedCap: nil, fallbackBitrateKbps: 3_000)
+            XCTAssertEqual(resolved, cap, id)
+            XCTAssertEqual(resolved, AppleQualityAxes.resolvedBitrateCap(
+                qualityOverride: id, fallbackBitrateKbps: 3_000), id)
+        }
+        XCTAssertEqual(AppleQualityAxes.resolvedBitrateCap(
+            qualityOverride: nil, carriedCap: nil, fallbackBitrateKbps: 6_000), 6_000)
+    }
+
+    func testNextEpisodeOnAutoResolvesItsOwnBestVersion() {
+        // Auto, a Settings tier or the current file's resolution must not pin
+        // the next episode: a 4K-only next episode would otherwise be
+        // transcoded down to this episode's 1080p.
+        for active in ["auto", "", "1080p", "1080p-high", "1080p-8", "720p", "480p", "2160p", "4k"] {
+            XCTAssertNil(ApplePlaybackQuality.nextEpisodeQualityOverride(activeQualityId: active), active)
+        }
+        XCTAssertEqual(ApplePlaybackQuality.nextEpisodeQualityOverride(activeQualityId: "original"), "original")
+        for mode in PlaybackFallbackMode.allCases {
+            for id in [mode.rawValue, mode.fallbackID] {
+                XCTAssertEqual(ApplePlaybackQuality.nextEpisodeQualityOverride(activeQualityId: id), id)
+            }
+        }
+    }
+
     func testUnknownResolutionsStillResolveToAuto() throws {
         XCTAssertEqual(AppleQualityAxes.join(resolution: nil, bitrateKbps: 4000), "auto")
         // A member added by a newer server that this build has never seen.
@@ -774,6 +842,25 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertFalse(recovery.startFromBeginning)
         XCTAssertNil(recovery.offlineDownloadId)
         XCTAssertEqual(recovery.preferredQualityOverride, "720p-high")
+        XCTAssertNil(recovery.carriedBandwidthCap)
+    }
+
+    func testRecoveryLoadRequestsKeepTheCarriedCap() {
+        var original = PlayerViewModel.LoadRequest(
+            contentId: "episode-2", preferredFileId: nil, preferredAudioTrackIndex: nil,
+            preferredSubtitleTrackIndex: nil, preferredSidecarSubtitleTrackId: nil,
+            startFromBeginning: false, preferredQualityOverride: "1080p"
+        )
+        for cap in [CarriedBandwidthCap.inEffect(nil), .inEffect(6_000), .savedSetting] {
+            original.carriedBandwidthCap = cap
+            let recovery = original.copyForRecovery(
+                preferredFileId: 12, preferredAudioTrackIndex: nil,
+                preferredSubtitleTrackIndex: nil, preferredSidecarSubtitleTrackId: nil,
+                offlineDownloadId: nil
+            )
+            XCTAssertEqual(recovery.preferredQualityOverride, "1080p")
+            XCTAssertEqual(recovery.carriedBandwidthCap, cap)
+        }
     }
 
     // MARK: - Helpers

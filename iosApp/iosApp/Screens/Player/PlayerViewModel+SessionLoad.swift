@@ -76,6 +76,7 @@ extension PlayerViewModel {
         cancelPendingIntroAutoSkip()
         qualityOptions = [ApplePlaybackQuality.auto]
         activeQualityId = ApplePlaybackQuality.autoId
+        activeBandwidthCap = .savedSetting
         isQualitySwitching = false
         qualitySwitchError = nil
         currentWatchDetail = nil
@@ -213,7 +214,8 @@ extension PlayerViewModel {
         let adopted = lastLoadRequest.adoptingProtocolV3Intent(
             plan: protocolV3.plan,
             selectedVersion: prepared.selectedVersion,
-            activeQualityId: prepared.activeQualityId
+            activeQualityId: prepared.activeQualityId,
+            bandwidthCap: prepared.bandwidthCap
         )
         self.lastLoadRequest = adopted
 
@@ -487,6 +489,7 @@ extension PlayerViewModel {
                     fallbackVersion: prepared.selectedVersion
                 )
                 self.activeQualityId = prepared.activeQualityId
+                self.activeBandwidthCap = prepared.bandwidthCap
                 self.isQualitySwitching = false
                 self.qualitySwitchError = nil
                 self.duration = session.durationSeconds ?? prepared.selectedVersion.duration ?? 0
@@ -553,7 +556,7 @@ extension PlayerViewModel {
                 }
                 return
             } catch let error {
-                let loadFailure = self.protocolV3LoadFailureRecovery(error)
+                let loadFailure = Self.protocolV3LoadFailureRecovery(error)
                 if let uncommittedPrepared {
                     // `errorInfo` may already have been published for this
                     // epoch, but the committed-load gate prevents that event
@@ -618,7 +621,8 @@ extension PlayerViewModel {
                     resumePosition: resumePosition,
                     allowNearEndResume: allowNearEndResume,
                     prefersLastUsedVersion: request.prefersLastUsedVersion,
-                    preferredQualityOverride: request.preferredQualityOverride
+                    preferredQualityOverride: request.preferredQualityOverride,
+                    carriedBandwidthCap: request.carriedBandwidthCap
                 )
             }
             let timeoutTask = Task<Void, Never> { [startTask] in
@@ -647,7 +651,8 @@ extension PlayerViewModel {
                 resumePosition: resumePosition,
                 allowNearEndResume: allowNearEndResume,
                 prefersLastUsedVersion: request.prefersLastUsedVersion,
-                preferredQualityOverride: request.preferredQualityOverride
+                preferredQualityOverride: request.preferredQualityOverride,
+                carriedBandwidthCap: request.carriedBandwidthCap
             )
         }
     }

@@ -78,7 +78,8 @@ struct PlayerSettings {
 }
 enum PlaybackFallbackMode: String { case auto; static func matching(_ s: String?) -> Self? { nil } }
 enum ApplePlaybackQuality { static func protocolV3QualityId(_ s: String?) -> String { "auto" } }
-enum AppleQualityAxes { static func resolvedBitrateCap(qualityOverride: String?, fallbackBitrateKbps: Int?) -> Int? { nil } }
+enum CarriedBandwidthCap { case savedSetting; case inEffect(Int?) }
+enum AppleQualityAxes { static func resolvedBitrateCap(qualityOverride: String?, carriedCap: CarriedBandwidthCap?, fallbackBitrateKbps: Int?) -> Int? { nil } }
 enum VividInitialAudioPreference {
     static func selectedOrdinal(manual: Int?, tracks: [AudioTrack], preferredLanguage: String?) -> Int? { manual }
 }

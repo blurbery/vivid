@@ -126,7 +126,7 @@ final class JellyfinPlayback {
         let playback = JellyfinPlayback(connection:connection,itemID:detail.contentId,sourceID:sourceID,playSessionID:playSessionID,
             stream:stream,method:method,audioIndex:audioIndex,subtitleIndex:subtitleIndex,position:start)
         try await connection.validate()
-        return (PreparedPlayback(watchDetail:detail,selectedVersion:version,session:session,activeQualityId:quality ?? ApplePlaybackQuality.autoId, nativeAudioStreamIndex:direct ? audioIndex.flatMap(Int32.init(exactly:)) : nil, nativeHLS:!direct, nativeQualityOptions:playable["SupportsTranscoding"] as? Bool == true ? ApplePlaybackQuality.settingsOptions : [ApplePlaybackQuality.auto,ApplePlaybackQuality.original]),playback)
+        return (PreparedPlayback(watchDetail:detail,selectedVersion:version,session:session,activeQualityId:quality ?? ApplePlaybackQuality.autoId, bandwidthCap:.inEffect(bitrateKbps), nativeAudioStreamIndex:direct ? audioIndex.flatMap(Int32.init(exactly:)) : nil, nativeHLS:!direct, nativeQualityOptions:playable["SupportsTranscoding"] as? Bool == true ? ApplePlaybackQuality.settingsOptions : [ApplePlaybackQuality.auto,ApplePlaybackQuality.original]),playback)
     }
 
     func ping() async throws {

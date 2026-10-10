@@ -148,6 +148,45 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var audioTraceTask: Task<Void, Never>?
     #endif
 
+    /// Waits between audio session activation attempts on one load. Activation
+    /// can be refused for a moment while a new output route settles (HDMI or
+    /// eARC renegotiation, a soundbar or headphones switching).
+    nonisolated static let audioSessionActivationRetryDelays: [Duration] = [
+        .milliseconds(250), .milliseconds(500), .seconds(1), .seconds(2),
+    ]
+
+    /// Bad parameters, a missing entitlement or an incompatible category fail
+    /// the same way every time, so only other refusals are retried.
+    nonisolated static func isRetryableAudioSessionActivationError(_ error: Error) -> Bool {
+        let code = (error as NSError).code
+        return ![
+            AVAudioSession.ErrorCode.badParam,
+            .missingEntitlement,
+            .incompatibleCategory,
+        ].contains { $0.rawValue == code }
+    }
+
+    private func activateAudioSession(_ session: AVAudioSession, token: UInt64) async throws {
+        var delays = Self.audioSessionActivationRetryDelays[...]
+        while true {
+            do {
+                // Preserve the active route across episode changes and audio-output reloads.
+                if session.category != .playback || session.mode != .moviePlayback
+                    || session.routeSharingPolicy != .longFormAudio {
+                    try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+                }
+                try session.setActive(true)
+                return
+            } catch {
+                guard Self.isRetryableAudioSessionActivationError(error),
+                      let delay = delays.popFirst() else { throw error }
+                trace?.event("mpv_audio_session_retry", fields: "code=\((error as NSError).code)")
+                try await Task.sleep(for: delay)
+                guard generation == token else { throw CancellationError() }
+            }
+        }
+    }
+
     func load(url: URL, startPosition: Double = 0, options: LoadOptions = LoadOptions(),
               audioSourceStreamIndex: Int32? = nil) async throws {
         // A reload of the same source (audio recovery, header refresh)
@@ -177,12 +216,19 @@ final class VividMPVPlayer: NSObject, ObservableObject {
             fail(error); throw error
         }
         let session = AVAudioSession.sharedInstance()
-        // Preserve the active route across episode changes and audio-output reloads.
-        if session.category != .playback || session.mode != .moviePlayback
-            || session.routeSharingPolicy != .longFormAudio {
-            try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormAudio)
+        do {
+            try await activateAudioSession(session, token: token)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Typed apart from media failures: a refused audio session fails
+            // the same way on every route, so recovery must not step down.
+            let native = error as NSError
+            let failure = PlaybackErrorInfo(kind: .audioSessionUnavailable,
+                message: "Audio output isn't available right now. Try again in a moment.",
+                underlyingDomain: native.domain, underlyingCode: native.code)
+            fail(failure); throw failure
         }
-        try session.setActive(true)
         let sessionToken = UUID()
         audioSessionToken = sessionToken
         Self.audioSessionOwner = sessionToken
