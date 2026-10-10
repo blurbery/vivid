@@ -86,6 +86,7 @@ struct ContentView: View {
                 showsCloudRestore = false
                 router.resetToLogin()
             }
+            .vividGlassSheet(startsTall: true)
         }
         #endif
         .environmentObject(overlayPrefs)

@@ -211,20 +211,23 @@ struct CollectionsView: View {
                 Spacer()
             }
             .padding(VividTheme.padding)
-            .vividBackground()
+            .background(Color.clear)
             .navigationTitle("New Collection")
             .vividNavigationTitleDisplayMode(.inline)
             .toolbar {
+                #if os(tvOS)
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         viewModel.showCreateSheet = false
                     }
                     .foregroundColor(.vividSecondaryText)
                 }
+                #else
+                VividSheetCloseItem { viewModel.showCreateSheet = false }
+                #endif
             }
-            .vividNavigationBarSurfaceBackground()
         }
-        .presentationDetents([.medium])
+        .vividGlassSheet()
     }
 }
 
@@ -240,22 +243,25 @@ private struct GroupActionSheet: View {
     var body: some View {
         NavigationStack {
             content
-                .vividBackground()
+                .background(Color.clear)
                 .vividNavigationTitleDisplayMode(.inline)
                 .toolbar {
+                    #if os(tvOS)
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") { dismiss() }
                             .foregroundColor(.vividSecondaryText)
                     }
+                    #else
+                    VividSheetCloseItem { dismiss() }
+                    #endif
                     ToolbarItem(placement: .confirmationAction) {
                         Button(confirmLabel) { Task { await confirm() } }
                             .foregroundColor(.vividPrimary)
                             .disabled(!canConfirm)
                     }
                 }
-                .vividNavigationBarSurfaceBackground()
         }
-        .presentationDetents([.medium])
+        .vividGlassSheet()
         .onAppear {
             switch action {
             case .rename(let g): name = g.name

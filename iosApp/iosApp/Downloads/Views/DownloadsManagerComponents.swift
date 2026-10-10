@@ -160,12 +160,14 @@ struct DownloadReclaimBanner: View {
             }
             .padding(13)
             .background(
+                Color.clear.vividGlass(
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+                    tint: Color.white.opacity(0.025)
+                )
+            )
+            .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.vividSurfaceVariant)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.vividChromeSelectedBorder, lineWidth: 1)
-                    )
+                    .stroke(Color.vividChromeSelectedBorder, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }

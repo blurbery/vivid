@@ -119,8 +119,10 @@ struct OpenSubtitlesSearchView: View {
                     }
                 }
             }
+            .vividScrollContentBackgroundHidden()
+            .background(Color.clear)
             .navigationTitle("OpenSubtitles")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { focusedField = nil; dismiss() } } }
+            .toolbar { VividSheetCloseItem { focusedField = nil; dismiss() } }
             .task { query = currentContext()?.query.title ?? ""; OpenSubtitlesStore.shared.reload() }
             .onAppear { store.reload() }
             .onDisappear { focusedField = nil; operation?.cancel() }
@@ -197,6 +199,7 @@ private struct OpenSubtitleDetailSearch: ViewModifier {
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
             LucidDetailSubtitleMenu(context: context, serverRows: ServerSubtitleSidecars.detailRows(serverSubtitles))
+                .vividGlassSheet(startsTall: true)
         }
     }
 }
@@ -257,8 +260,10 @@ private struct LucidDetailSubtitleMenu: View {
                     }
                 }
             }
+            .vividScrollContentBackgroundHidden()
+            .background(Color.clear)
             .navigationTitle("Subtitles")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .toolbar { VividSheetCloseItem { dismiss() } }
         }
         .task(id: "\(context?.contentID ?? ""):\(context?.fileID ?? -1):\(retry)") {
             loading = true; message = nil; tracks = []

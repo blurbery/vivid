@@ -64,9 +64,7 @@ struct DownloadOptionsSheet: View {
             .vividPageBackground()
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                VividSheetCloseItem { dismiss() }
             }
             .onAppear(perform: clampQuality)
             .onChange(of: quality) { _, _ in
@@ -80,11 +78,7 @@ struct DownloadOptionsSheet: View {
                 clampQuality()
             }
         }
-        #if os(iOS)
-        .presentationBackground { Color.clear.vividGlass(in: Rectangle()) }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        #endif
+        .vividGlassSheet()
     }
 
     private func start() {

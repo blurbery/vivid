@@ -94,12 +94,12 @@ struct PlayerSettingsSheet: View {
                 sessionSection
                 advancedSection
             }
+            .vividScrollContentBackgroundHidden()
+            .background(Color.clear)
             .navigationTitle("Playback Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
+                VividSheetCloseItem { dismiss() }
             }
         }
         // The sheet floats over an always-dark player; pin dark so the
@@ -178,6 +178,8 @@ struct PlayerSettingsSheet: View {
                 }
             }
         }
+        .vividScrollContentBackgroundHidden()
+        .background(Color.clear)
         .navigationTitle("Quality")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -322,6 +324,8 @@ struct PlayerSettingsSheet: View {
             }
             .disabled(editingDisabled)
         }
+        .vividScrollContentBackgroundHidden()
+        .background(Color.clear)
         .navigationTitle("Subtitle Appearance")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -448,6 +452,8 @@ struct PlayerSettingsSheet: View {
                 }
             }
         }
+        .vividScrollContentBackgroundHidden()
+        .background(Color.clear)
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
     }

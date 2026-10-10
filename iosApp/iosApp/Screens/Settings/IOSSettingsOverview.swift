@@ -268,9 +268,12 @@ struct PhoneSavedAccountCards: View {
                             Task { await store.select(account, router: router) }
                         } else { pinError = store.error ?? "Incorrect PIN"; pin = "" }
                     }
-                }.navigationTitle(account.username)
-                .toolbar { Button("Cancel") { selectedForPIN = nil; pin = "" } }
-            }.presentationDetents([.medium])
+                }
+                .vividScrollContentBackgroundHidden()
+                .background(Color.clear)
+                .navigationTitle(account.username)
+                .toolbar { VividSheetCloseItem { selectedForPIN = nil; pin = "" } }
+            }.vividGlassSheet()
         }
     }
     private var avatarSize: CGFloat { isSettings ? 72 : 88 }

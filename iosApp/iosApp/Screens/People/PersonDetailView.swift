@@ -636,13 +636,10 @@ private struct PhonePersonDetailContent: View {
                                 .navigationTitle(person.name)
                                 .navigationBarTitleDisplayMode(.inline)
                                 .toolbar {
-                                    ToolbarItem(placement: .confirmationAction) {
-                                        Button("Done") { showsFullBiography = false }
-                                    }
+                                    VividSheetCloseItem { showsFullBiography = false }
                                 }
                             }
-                            .presentationDetents([.medium, .large])
-                            .presentationDragIndicator(.visible)
+                            .vividGlassSheet()
                         }
                         #endif
                 }

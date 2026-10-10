@@ -519,16 +519,11 @@ private struct LibraryPickerSheet: View {
                         Button("Done") { dismiss() }
                     }
                     #else
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { dismiss() }
-                    }
+                    VividSheetCloseItem { dismiss() }
                     #endif
                 }
         }
-        #if !os(macOS)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        #endif
+        .vividGlassSheet()
         #endif
     }
 
@@ -547,7 +542,11 @@ private struct LibraryPickerSheet: View {
             .padding(.horizontal, VividTheme.padding)
             .padding(.vertical, VividTheme.padding)
         }
+        #if os(tvOS)
         .background(VividAppBackdrop())
+        #else
+        .background(Color.clear)
+        #endif
         .navigationTitle("Libraries")
     }
 }

@@ -605,9 +605,7 @@ private struct SeriesDownloadOptionsSheet: View {
             .vividPageBackground()
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                VividSheetCloseItem { dismiss() }
             }
             .task {
                 // Straight after launch or a server switch the permission may
@@ -632,11 +630,7 @@ private struct SeriesDownloadOptionsSheet: View {
                 Text("Finished episodes are kept.")
             }
         }
-        #if os(iOS)
-        .presentationBackground { Color.clear.vividGlass(in: Rectangle()) }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        #endif
+        .vividGlassSheet()
         .alert(
             "Download Failed",
             isPresented: Binding(
@@ -978,7 +972,7 @@ private struct SeriesEpisodeDownloadPicker: View {
                 if isWorking {
                     ProgressView()
                         .controlSize(.small)
-                        .tint(.black)
+                        .tint(.white)
                 } else {
                     Image(systemName: "arrow.down.to.line")
                 }
@@ -988,9 +982,7 @@ private struct SeriesEpisodeDownloadPicker: View {
             .font(.system(size: 15))
             .frame(maxWidth: .infinity)
             .frame(height: 50)
-            .background(selectedEpisodes.isEmpty ? Color.vividDisabled : Color.vividOnSurface)
-            .foregroundColor(.black)
-            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .downloadMenuActionSurface(cornerRadius: 15, isEnabled: !selectedEpisodes.isEmpty)
         }
         .buttonStyle(.plain)
         .disabled(selectedEpisodes.isEmpty || isWorking)
@@ -1261,9 +1253,7 @@ struct SeriesMonitorSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                VividSheetCloseItem { dismiss() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
                         .disabled(isSaving || (mode == .specificSeasons && selectedSeasons.isEmpty))
@@ -1282,10 +1272,7 @@ struct SeriesMonitorSheet: View {
                 Text(saveError ?? "")
             }
         }
-        #if os(iOS)
-        .presentationBackground { Color.clear.vividGlass(in: Rectangle()) }
-        .presentationDragIndicator(.visible)
-        #endif
+        .vividGlassSheet(startsTall: true)
     }
 
     /// Common caps, plus the stored value when it doesn't match one —
