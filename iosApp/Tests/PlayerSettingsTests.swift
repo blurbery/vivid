@@ -787,6 +787,21 @@ final class PlayerSettingsTests: XCTestCase {
             qualityOverride: nil, carriedCap: nil, fallbackBitrateKbps: 6_000), 6_000)
     }
 
+    func testNextEpisodeOnAutoResolvesItsOwnBestVersion() {
+        // Auto, a Settings tier or the current file's resolution must not pin
+        // the next episode: a 4K-only next episode would otherwise be
+        // transcoded down to this episode's 1080p.
+        for active in ["auto", "", "1080p", "1080p-high", "1080p-8", "720p", "480p", "2160p", "4k"] {
+            XCTAssertNil(ApplePlaybackQuality.nextEpisodeQualityOverride(activeQualityId: active), active)
+        }
+        XCTAssertEqual(ApplePlaybackQuality.nextEpisodeQualityOverride(activeQualityId: "original"), "original")
+        for mode in PlaybackFallbackMode.allCases {
+            for id in [mode.rawValue, mode.fallbackID] {
+                XCTAssertEqual(ApplePlaybackQuality.nextEpisodeQualityOverride(activeQualityId: id), id)
+            }
+        }
+    }
+
     func testUnknownResolutionsStillResolveToAuto() throws {
         XCTAssertEqual(AppleQualityAxes.join(resolution: nil, bitrateKbps: 4000), "auto")
         // A member added by a newer server that this build has never seen.

@@ -467,9 +467,11 @@ extension PlayerViewModel {
             preferredSidecarSubtitleTrackId: nil,
             startFromBeginning: false
         )
-        request.preferredQualityOverride = nextEpisodeQualityOverride
-        // The carried quality is often a bare resolution; keep the cap this
-        // episode actually ran with instead of reading one from the tier table.
+        request.preferredQualityOverride = ApplePlaybackQuality.nextEpisodeQualityOverride(
+            activeQualityId: activeQualityId
+        )
+        // Keep the cap this episode actually ran with instead of reading one
+        // from the tier table. Ignored when nothing carries over.
         request.carriedBandwidthCap = activeBandwidthCap
         beginFreshLoad(
             request: request,
@@ -477,22 +479,6 @@ extension PlayerViewModel {
             finalizeCurrentSession: true,
             origin: .autoplay
         )
-    }
-
-    /// File ids do not carry across episodes, but their effective quality can.
-    /// Preserve an explicit in-player rung; when playback is on Auto, carry
-    /// the source resolution Auto actually selected. The normal ranked
-    /// fallback remains in force if the next episode has no compatible match.
-    private var nextEpisodeQualityOverride: String? {
-        let active = ApplePlaybackQuality.protocolV3QualityId(activeQualityId)
-        if active != ApplePlaybackQuality.autoId {
-            return active
-        }
-        guard let resolution = currentSelectedVersion?.resolution,
-              !resolution.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        return ApplePlaybackQuality.protocolV3QualityId(resolution)
     }
 
     func playOnDeckItemNow(_ item: PlayerOnDeckItem) {

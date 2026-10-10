@@ -343,6 +343,22 @@ enum ApplePlaybackQuality {
         return autoId
     }
 
+    /// The quality the next episode inherits from the current one, if any.
+    ///
+    /// Original and the capped modes (including a buffering fallback) carry
+    /// over. Auto, a Settings tier and this file's own resolution don't: the
+    /// next episode resolves its quality afresh from Settings, exactly as
+    /// pressing Play on it would, so Auto picks that episode's best version
+    /// (4K or 1080p) and plays it directly instead of being pinned to this
+    /// episode's resolution and transcoded down to it.
+    static func nextEpisodeQualityOverride(activeQualityId: String) -> String? {
+        let active = protocolV3QualityId(activeQualityId)
+        if active == originalId || PlaybackFallbackMode.matching(active) != nil {
+            return active
+        }
+        return nil
+    }
+
     static func activeProtocolV3QualityId(
         requestedQualityId: String?,
         availableQualities: [PlaybackV3AvailableQuality]
