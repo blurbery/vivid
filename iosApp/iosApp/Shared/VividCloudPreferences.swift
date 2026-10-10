@@ -121,8 +121,21 @@ final class VividCloudPreferences {
                                    clientFamily: AppleDeviceIdentity.current.clientFamily)
     }
 
-    private func settingPrefix(_ identity: HTTPRequestIdentity) -> String {
-        "setting|" + Data("\(identity.serverId)|\(identity.profileId)".utf8).base64EncodedString() + "|"
+    /// The vault name for one server-backed setting. On Silo, Vivid's own
+    /// interface settings use a separate name: older Vivid builds would
+    /// otherwise write them back to Silo's shared rows (changing Silo's own
+    /// apps), and values captured from Silo under the old name stay out of
+    /// the device store.
+    static func settingName(serverId: String, profileId: String, key: String) -> String {
+        let owner = SiloLocalInterfaceSettings.applies(toServerID: serverId)
+            && SiloLocalInterfaceSettings.owns(key)
+            ? "vivid-setting|"
+            : "setting|"
+        return owner + Data("\(serverId)|\(profileId)".utf8).base64EncodedString() + "|" + key
+    }
+
+    private func settingName(_ identity: HTTPRequestIdentity, key: String) -> String {
+        Self.settingName(serverId: identity.serverId, profileId: identity.profileId, key: key)
     }
 
     /// Server-backed UI, metadata and download preferences use the same vault.
@@ -137,7 +150,7 @@ final class VividCloudPreferences {
         settingRows = Dictionary(response.settings.map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
         var changed = false
         for row in response.settings where VividCloudPreferencePolicy.isSharedSetting(row.key) && !row.constrained {
-            let key = settingPrefix(identity) + row.key
+            let key = settingName(identity, key: row.key)
             let value = try Self.encoder.encode(row.value)
             let observationKey = "vivid.cloud.observed." + key
             let previous = UserDefaults.standard.data(forKey: observationKey)
@@ -159,7 +172,7 @@ final class VividCloudPreferences {
         guard activeSettingsIdentity() == identity else { throw CancellationError() }
         var changed = false
         for row in settingRows.values where VividCloudPreferencePolicy.isSharedSetting(row.key) && !row.constrained {
-            let name = settingPrefix(identity) + row.key
+            let name = settingName(identity, key: row.key)
             guard let key = SettingKey(rawValue: row.key), let data = entries[name]?.value else { continue }
             let value = try JSONDecoder().decode(SettingJSONValue.self, from: data)
             guard value != row.value else { continue }
@@ -265,9 +278,9 @@ final class VividCloudPreferences {
         let defaults = defaultsKeys(accounts: [account])
         let credentials = credentialKeys(accounts: [account])
         let profile = account.profile?.id ?? ""
-        let settingsPrefix = "setting|" + Data("\(account.serverID)|\(profile)".utf8).base64EncodedString() + "|"
+        let scope = Data("\(account.serverID)|\(profile)".utf8).base64EncodedString() + "|"
         let eligible = Set(defaults.map { "defaults|" + $0 } + credentials.map { "keychain|" + $0 })
-            .union(entries.keys.filter { $0.hasPrefix(settingsPrefix) })
+            .union(entries.keys.filter { $0.hasPrefix("setting|" + scope) || $0.hasPrefix("vivid-setting|" + scope) })
         for key in eligible {
             entries[key] = VividCloudPreference(value: nil, modifiedAt: Date(), writer: writer)
         }
