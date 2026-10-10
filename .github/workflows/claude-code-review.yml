@@ -2,8 +2,10 @@ name: Claude Code Review
 
 # Reviews each pull request once with a single Claude Sonnet pass and posts
 # inline comments plus a short summary. Skips drafts, bots, fork PRs (GitHub
-# withholds secrets from them) and Markdown-only changes. Needs an
-# ANTHROPIC_API_KEY repository secret; without one the job does nothing.
+# withholds secrets from them) and Markdown-only changes. Uses the
+# CLAUDE_CODE_OAUTH_TOKEN secret (a Claude subscription token from
+# `claude setup-token`), or ANTHROPIC_API_KEY when that isn't set. Without
+# either, the job does nothing.
 
 on:
   pull_request:
@@ -27,21 +29,21 @@ jobs:
       contents: read
       pull-requests: write
     env:
-      HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      HAS_CREDENTIALS: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
     steps:
-      - name: Skip without an API key
-        if: env.HAS_API_KEY != 'true'
-        run: echo "::notice::Add an ANTHROPIC_API_KEY repository secret to turn on Claude reviews."
+      - name: Skip without credentials
+        if: env.HAS_CREDENTIALS != 'true'
+        run: echo "::notice::Add a CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) repository secret to turn on Claude reviews."
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        if: env.HAS_API_KEY == 'true'
+        if: env.HAS_CREDENTIALS == 'true'
         with:
           fetch-depth: 1
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
-        if: env.HAS_API_KEY == 'true'
+        if: env.HAS_CREDENTIALS == 'true'
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          show_full_output: "true"
           prompt: |
             You're reviewing pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}. The PR branch is checked out in the working directory.
 
