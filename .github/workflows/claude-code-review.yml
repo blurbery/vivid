@@ -116,6 +116,30 @@ jobs:
       # workspaces, so use the ANTHROPIC_WORKSPACE_ID secret if it's set, or
       # else the Default workspace. Keys tied to one workspace can't list them
       # and need no header. The ID is masked so it never shows in the log.
+      # Temporary: one tiny Claude API call to check the API credit applies.
+      - name: Smoke test the Claude API
+        if: env.HAS_CREDENTIALS == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+        run: |
+          if [ -n "$ANTHROPIC_WORKSPACE_ID" ]; then echo "::add-mask::$ANTHROPIC_WORKSPACE_ID"; fi
+          pip install --quiet --disable-pip-version-check "anthropic==1.11.0"
+          python3 - <<'PY'
+          import os
+          import anthropic
+          workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+          client = anthropic.Anthropic(default_headers={"anthropic-workspace-id": workspace} if workspace else None)
+          try:
+              r = client.messages.create(
+                  model="claude-sonnet-5-5",
+                  max_tokens=20,
+                  messages=[{"role": "user", "content": "Reply with the single word OK."}],
+              )
+              print("SMOKE OK", r.stop_reason, r.usage.input_tokens, r.usage.output_tokens)
+          except anthropic.APIStatusError as e:
+              print("SMOKE FAILED", e.status_code, e.message)
+          PY
       - name: Pick the API workspace
         if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
         env:
