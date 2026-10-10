@@ -47,7 +47,6 @@ struct FileVersion {
     let resolution: String? = nil
     let codecVideo: String? = nil
     let bitrate: Int? = nil
-    let effectiveAudioTrackIndex: Int? = nil
 }
 struct UserData { let lastResolution: String? = nil; let positionSeconds: Double? = nil; let lastFileId: Int? = nil }
 struct WatchDetail {
@@ -82,7 +81,7 @@ enum ApplePlaybackQuality { static func protocolV3QualityId(_ s: String?) -> Str
 enum CarriedBandwidthCap { case savedSetting; case inEffect(Int?) }
 enum AppleQualityAxes { static func resolvedBitrateCap(qualityOverride: String?, carriedCap: CarriedBandwidthCap?, fallbackBitrateKbps: Int?) -> Int? { nil } }
 enum VividInitialAudioPreference {
-    static func selectedOrdinal(manual: Int?, remembered: Int? = nil, tracks: [AudioTrack], preferredLanguage: String?) -> Int? { manual ?? remembered }
+    static func selectedOrdinal(manual: Int?, tracks: [AudioTrack], preferredLanguage: String?) -> Int? { manual }
 }
 actor TokenStore { static let shared = TokenStore(); func getProfileId() -> String? { "profile" } }
 struct PlaybackV3TerminalFailure: Error { let reason: String; let message: String; let retryable: Bool }
