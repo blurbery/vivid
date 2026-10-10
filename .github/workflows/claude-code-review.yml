@@ -1,17 +1,16 @@
 name: Claude Code Review
 
-# Reviews pull requests with Claude Sonnet and posts inline comments plus one
-# summary comment. The first run reviews the whole PR. Each later push is
-# reviewed from the last reviewed commit, so only new changes are read; after a
-# force-push or rebase the whole PR is reviewed again. The summary comment
-# (marked <!-- claude-review sha=... -->) records the reviewed commit and is
-# updated in place. A newer push cancels a review that's still running. Skips
+# Reviews pull requests through the Claude API (scripts/ci/claude-review.py)
+# and posts inline comments plus one summary comment. The first run reviews the
+# whole PR. Each later push is reviewed from the last reviewed commit, so only
+# new changes are read and earlier fixes are checked; after a force-push or
+# rebase the whole PR is reviewed again. The summary comment (marked
+# <!-- claude-review sha=... -->) records the reviewed commit and is updated in
+# place. Each run stops at a cost limit and keeps what it found so far. Skips
 # drafts, bots, fork PRs (GitHub withholds secrets from them) and
-# Markdown-only changes. Uses the ANTHROPIC_API_KEY secret, so reviews come out
-# of API credits, or CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription token from
-# `claude setup-token`) when that isn't set. Without either, the job does
-# nothing. A personal API key that covers several workspaces gets the workspace
-# header it needs automatically (see "Pick the API workspace").
+# Markdown-only changes. Needs the ANTHROPIC_API_KEY secret (reviews come out
+# of API credits), plus ANTHROPIC_WORKSPACE_ID for a key that covers several
+# workspaces. Without a key, the job does nothing.
 
 on:
   pull_request:
@@ -19,9 +18,11 @@ on:
     paths-ignore:
       - "**/*.md"
 
+# A newer push waits for the running review rather than cancelling it, so the
+# credit already spent isn't wasted. Reviews still queued are replaced.
 concurrency:
   group: claude-code-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -35,12 +36,13 @@ jobs:
       contents: read
       pull-requests: write
     env:
-      HAS_CREDENTIALS: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+      HAS_CREDENTIALS: ${{ secrets.ANTHROPIC_API_KEY != '' }}
       REVIEW_MODEL: claude-sonnet-5-5
+      REVIEW_EFFORT: low
     steps:
       - name: Skip without credentials
         if: env.HAS_CREDENTIALS != 'true'
-        run: echo "::notice::Add an ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) repository secret to turn on Claude reviews."
+        run: echo "::notice::Add an ANTHROPIC_API_KEY repository secret to turn on Claude reviews."
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: env.HAS_CREDENTIALS == 'true'
         with:
@@ -109,117 +111,28 @@ jobs:
           {
             echo "mode=$mode"
             echo "from=$from"
+            echo "merge_base=$merge_base"
             echo "comment_id=$comment_id"
           } >> "$GITHUB_OUTPUT"
-      # A personal API key that covers several workspaces is rejected unless
-      # each request names a workspace. Such a key can list the organisation's
-      # workspaces, so use the ANTHROPIC_WORKSPACE_ID secret if it's set, or
-      # else the Default workspace. Keys tied to one workspace can't list them
-      # and need no header. The ID is masked so it never shows in the log.
-      # Temporary: one tiny Claude API call to check the API credit applies.
-      - name: Smoke test the Claude API
-        if: env.HAS_CREDENTIALS == 'true'
+      - name: Review with Claude
+        id: claude
+        if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          # Cost limits per run in US$: a whole PR, or only the new commits.
+          REVIEW_MAX_COST_USD: ${{ steps.prep.outputs.mode == 'incremental' && '0.75' || '1.50' }}
         run: |
           if [ -n "$ANTHROPIC_WORKSPACE_ID" ]; then echo "::add-mask::$ANTHROPIC_WORKSPACE_ID"; fi
           pip install --quiet --disable-pip-version-check "anthropic==1.11.0"
-          python3 - <<'PY'
-          import os
-          import anthropic
-          workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
-          client = anthropic.Anthropic(default_headers={"anthropic-workspace-id": workspace} if workspace else None)
-          try:
-              r = client.messages.create(
-                  model="claude-sonnet-5-5",
-                  max_tokens=20,
-                  messages=[{"role": "user", "content": "Reply with the single word OK."}],
-              )
-              print("SMOKE OK", r.stop_reason, r.usage.input_tokens, r.usage.output_tokens)
-          except anthropic.APIStatusError as e:
-              print("SMOKE FAILED", e.status_code, e.message)
-          PY
-      - name: Pick the API workspace
-        if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
-        run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then exit 0; fi
-          if [ -z "$WORKSPACE_ID" ]; then
-            body="$RUNNER_TEMP/workspaces.json"
-            status=$(curl -sS -o "$body" -w '%{http_code}' \
-              "https://api.anthropic.com/v1/organizations/workspaces?include_default=true&limit=100" \
-              -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01") || status=000
-            if [ "$status" = 200 ]; then
-              WORKSPACE_ID=$(jq -r '[.data[] | select(.name == "Default")][0].id // empty' "$body")
-              if [ -z "$WORKSPACE_ID" ]; then
-                echo "Listed $(jq '.data | length' "$body") workspaces, but none is called Default."
-              fi
-            else
-              echo "Couldn't list workspaces (HTTP $status): $(jq -r '(.error.message // "") | .[0:300]' "$body" 2>/dev/null || true)"
-            fi
-            rm -f "$body"
-          fi
-          if [ -n "$WORKSPACE_ID" ]; then
-            echo "::add-mask::$WORKSPACE_ID"
-            echo "ANTHROPIC_CUSTOM_HEADERS=anthropic-workspace-id: $WORKSPACE_ID" >> "$GITHUB_ENV"
-            echo "Sending the workspace header with each request."
-          else
-            echo "No workspace header sent."
-          fi
-      - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
-        id: claude
-        if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            You're reviewing pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}. Its head commit is checked out in the working directory, with full git history.
-
-            ${{ steps.prep.outputs.mode == 'incremental' && format('You reviewed this PR before, at commit {0}. Review only what has changed since then.', steps.prep.outputs.from) || 'This is the first review of this PR, so review every change it makes.' }}
-
-            These files in .claude-review/ are prepared for you:
-            - pr.md: the PR title and description.
-            - diff.patch: the changes to review, without generated Xcode project files.
-            - files.txt: every file the PR changes.
-            - comments.md: review comments already on the PR, from you and from others, with replies.
-
-            How to review:
-            1. Read pr.md, then AGENTS.md and CONTRIBUTING.md for the project's rules.
-            2. Read diff.patch. Then open every changed source file in full, not just the changed lines. For each changed function, type or property, use Grep to find its callers and read those call sites. Follow the code far enough to know what actually happens at runtime.
-            3. Look hard for these kinds of bug:
-               - Async races: state read before an `await` and used after it (a copied list being looped over, a flag, a selection) when something else can change it in between.
-               - Cancellation: an item cancelled or removed while its request is in flight still completes and acts afterwards, or a retry outlives its cancellation.
-               - Account, server or profile switches part-way through: a result started under the old one is written into the new one, or reported as an error there.
-               - Error handling: temporary failures (offline, timeouts, 401, 408, 429, 5xx) treated as permanent, or a failed lookup treated as "nothing found" so the code carries on with a wrong default.
-               - UI states that miss a case: a button, menu item or message offered or worded wrongly for an item that's waiting, registering, failed, skipped or already downloaded.
-               - Data assumptions: missing metadata dropped or defaulted so a label claims something not every item has, unknown values treated as a known value, or a filter applied in one place but not another.
-               - Partial data: choices built from what's loaded so far (cached pages, the first season) while the rest is still loading.
-               - Documentation that says something the code doesn't do.
-               - Also ordinary bugs, crashes, regressions, security problems, private details (keys, tokens, personal names or emails, server addresses, home-folder paths) and clear breaks of the AGENTS.md rules.
-            4. Before posting anything, check it again against the code. Trace the real path, confirm the trigger can happen (find a caller that reaches it), and drop the finding if you can't show how it goes wrong. Skip style nitpicks, requests for more tests and anything the compiler would catch. Don't repeat a finding that's already in comments.md, even in different words, and accept a reply explaining why something isn't a problem unless the code clearly shows otherwise.
-            5. Post each finding as an inline comment on the changed line with mcp__github_inline_comment__create_inline_comment. Start with its priority: **P1** for a crash, data loss, a security problem or a core feature broken; **P2** for wrong behaviour a user can run into; **P3** for minor issues and documentation. Then say what goes wrong, the situation that triggers it and how to fix it, in two to four sentences.
-            6. Your final message is posted for you as the summary comment, so don't post one yourself. Write only the summary: one line on what you reviewed, then the findings as a short list by priority with file names, or one line saying nothing needs fixing. Mention anything you couldn't check.
-
-            Write in Australian English without em dashes.
-          claude_args: >-
-            --model ${{ env.REVIEW_MODEL }}
-            --max-turns 60
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*)"
-      # The action hides Claude's output, so an API error such as "Credit
-      # balance is too low" would otherwise only show as a failed step.
-      - name: Show why the review failed
-        if: failure() && steps.claude.outcome == 'failure'
-        run: |
-          file="$RUNNER_TEMP/claude-execution-output.json"
-          if [ -f "$file" ]; then
-            reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // "") | .[0:500]' "$file")
-          fi
-          echo "::error::Claude review failed: ${reason:-no result message}"
-      - name: Post the summary
+          python3 scripts/ci/claude-review.py \
+            --pr "${{ github.event.pull_request.number }}" \
+            --mode "${{ steps.prep.outputs.mode }}" \
+            --from "${{ steps.prep.outputs.from }}" \
+            --head "${{ github.event.pull_request.head.sha }}" \
+            --merge-base "${{ steps.prep.outputs.merge_base }}" \
+            --out "$RUNNER_TEMP/review.json"
+      - name: Post the review
         if: steps.claude.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -229,27 +142,65 @@ jobs:
           MODE: ${{ steps.prep.outputs.mode }}
           FROM: ${{ steps.prep.outputs.from }}
           COMMENT_ID: ${{ steps.prep.outputs.comment_id }}
-          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-          COST_NOTE: ${{ secrets.ANTHROPIC_API_KEY != '' && 'of API credit' || 'at API rates, on the subscription' }}
         run: |
           set -euo pipefail
-          result=$(jq -c '[.[] | select(.type == "result")] | last // {}' "$EXECUTION_FILE")
-          summary=$(jq -r '.result // empty' <<< "$result")
-          if [ "$(jq -r '.subtype // empty' <<< "$result")" != "success" ] || [ -z "$summary" ]; then
-            echo "::warning::Claude didn't finish the review, so the summary wasn't updated. The next push reviews this range again."
-            exit 0
-          fi
-          turns=$(jq -r '.num_turns // "?"' <<< "$result")
-          cost=$(printf '%.2f' "$(jq -r '.total_cost_usd // 0' <<< "$result")")
+          review="$RUNNER_TEMP/review.json"
+          payload="$RUNNER_TEMP/payload.json"
           if [ "$MODE" = incremental ]; then
             scope="new commits ${FROM:0:7}..${HEAD_SHA:0:7}"
           else
             scope="whole PR at ${HEAD_SHA:0:7}"
           fi
-          body=$(printf '<!-- claude-review sha=%s -->\n**Claude review** of the %s\n\n%s\n\n<sub>%s, %s turns, about US$%s %s</sub>\n' \
-            "$HEAD_SHA" "$scope" "$summary" "$REVIEW_MODEL" "$turns" "$cost" "$COST_NOTE")
+
+          # Findings on changed lines go in one review with inline comments.
+          # GitHub rejects the whole review if any line isn't in the diff, so
+          # the script only marks lines it found in the diff as inline.
+          jq --arg sha "$HEAD_SHA" --arg scope "$scope" '{
+              commit_id: $sha,
+              event: "COMMENT",
+              body: "Claude review of the \($scope). The summary comment lists everything found.",
+              comments: [.findings[] | select(.inline) | {path, line, side: "RIGHT", body: "**\(.priority)** \(.title)\n\n\(.body)"}]
+            }' "$review" > "$payload"
+          inline_posted=false
+          if [ "$(jq '.comments | length' "$payload")" -gt 0 ]; then
+            if gh api --method POST "repos/$REPO/pulls/$PR/reviews" --input "$payload" > /dev/null; then
+              inline_posted=true
+            else
+              echo "::warning::Couldn't post the inline comments, so they're listed in the summary instead."
+            fi
+          fi
+
+          others=$(jq -r --argjson all "$([ "$inline_posted" = true ] && echo false || echo true)" '
+            [.findings[] | select($all or (.inline | not))]
+            | map("- **\(.priority)** `\(.path):\(.line)`: \(.title) \(.body)") | join("\n")' "$review")
+          case "$(jq -r '.stopped // ""' "$review")" in
+            cost) note="Stopped early at the cost limit, so not everything was checked." ;;
+            turns) note="Stopped early at the turn limit, so not everything was checked." ;;
+            refusal) note="Claude declined to continue part-way, so not everything was checked." ;;
+            *) note="" ;;
+          esac
+          footer=$(jq -r '"\(.model), \(.effort) effort, \(.turns) turns, about US$\(.cost_usd * 100 | round / 100) of API credit"' "$review")
+
+          {
+            echo "<!-- claude-review sha=$HEAD_SHA -->"
+            echo "**Claude review** of the $scope"
+            echo
+            jq -r '.summary' "$review"
+            if [ -n "$others" ]; then
+              echo
+              if [ "$inline_posted" = true ]; then echo "Not on a changed line:"; else echo "Findings:"; fi
+              echo "$others"
+            fi
+            if [ -n "$note" ]; then
+              echo
+              echo "_${note}_"
+            fi
+            echo
+            echo "<sub>${footer}</sub>"
+          } > "$RUNNER_TEMP/summary.md"
+
           if [ -n "$COMMENT_ID" ]; then
-            gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="$body" > /dev/null
+            gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -F body=@"$RUNNER_TEMP/summary.md" > /dev/null
           else
-            gh pr comment "$PR" --repo "$REPO" --body "$body"
+            gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/summary.md"
           fi
