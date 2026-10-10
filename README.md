@@ -61,6 +61,10 @@ The mobile app uses a configurable glass tab bar, a looping Home spotlight and l
 
 Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keeps its own controls, episode countdown, subtitles and optional intro, recap and credits skips. See the [playback guide](docs/playback/README.md) for audio preferences and current device coverage.
 
+## Plugins
+
+Optional plugins add more on top of your server, using your own free keys. TMDb brings trailers, ratings, Studios & Networks and collection rows. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
+
 > [!IMPORTANT]
 > Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.
 
