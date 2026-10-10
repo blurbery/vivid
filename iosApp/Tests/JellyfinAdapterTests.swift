@@ -393,6 +393,26 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(response.hasMore, true)
     }
 
+    func testSearchAllScopeIncludesMoviesAndSeries() async throws {
+        var types: [String] = []
+        let adapter = adapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            types.append(query.first { $0.name == "IncludeItemTypes" }?.value ?? "")
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        let cases: [(String?, String)] = [("video", "Movie,Series"), (nil, "Movie,Series"), ("unknown", "Movie,Series"),
+                                          ("movie", "Movie"), ("series", "Series"), ("episode", "Episode")]
+        for (type, expected) in cases {
+            var input = ["source": "query", "q": "night"]
+            input["type"] = type
+            _ = try await adapter.catalog(input)
+            XCTAssertEqual(types, [expected], "type=\(type ?? "none")")
+            types.removeAll()
+        }
+        _ = try await adapter.catalog(["source": "history", "type": "video"])
+        XCTAssertEqual(types, ["Movie,Episode"], "History keeps its own item types")
+    }
+
     func testLibraryDirectoryIsIsolatedByUserServerAndLoginEpochAndExpires() async throws {
         let directory = JellyfinLibraryDirectory()
         let epoch = UUID()
