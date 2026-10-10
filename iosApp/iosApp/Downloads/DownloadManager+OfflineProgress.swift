@@ -84,7 +84,15 @@ extension DownloadManager {
     func pullProgressDeltas() async {
         guard !progressBootstrapInFlight else { return }
         progressBootstrapInFlight = true
-        defer { progressBootstrapInFlight = false }
+        let startGeneration = registrationScopeGeneration
+        defer {
+            progressBootstrapInFlight = false
+            // A pull for a newly active scope returns early while this one
+            // holds the flag, so run it now rather than at the next foreground.
+            if startGeneration != registrationScopeGeneration, !scopeServerId.isEmpty {
+                Task { await self.pullProgressDeltas() }
+            }
+        }
         do {
             if let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
                MediaServerProvider.forServerID(auth.account.serverId) == .silo,
