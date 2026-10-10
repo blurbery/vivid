@@ -341,6 +341,11 @@ class PlayerViewModel {
     var playbackFallbackGate = PlaybackFallbackGate()
     var qualityFallbackTask: Task<Void, Never>?
     var activeQualityId: String = ApplePlaybackQuality.autoId
+    /// The cap the current playback was requested with. It moves in step with
+    /// `activeQualityId` so a load that carries that quality forward repeats
+    /// the same cap.
+    @ObservationIgnored
+    var activeBandwidthCap: CarriedBandwidthCap = .savedSetting
     var isQualitySwitching = false
     var qualitySwitchError: String?
     var isScrubbing = false
@@ -755,6 +760,11 @@ class PlayerViewModel {
         /// Explicit quality for this load (mid-stream quality-change replan);
         /// wins over `PlayerSettings.preferredQuality` in the bridge.
         var preferredQualityOverride: String? = nil
+        /// Set when `preferredQualityOverride` carries the current playback's
+        /// quality forward rather than a new in-player choice: the load repeats
+        /// this cap instead of deriving one from the override id. Nil means the
+        /// override is a fresh choice (or there is none).
+        var carriedBandwidthCap: CarriedBandwidthCap? = nil
         /// Continue Watching only: select the server's last-used source file
         /// before applying the profile-wide automatic quality preference.
         var prefersLastUsedVersion = false
@@ -778,7 +788,8 @@ class PlayerViewModel {
                 preferredSidecarSubtitleTrackId: preferredSidecarSubtitleTrackId,
                 startFromBeginning: false,
                 offlineDownloadId: offlineDownloadId,
-                preferredQualityOverride: preferredQualityOverride
+                preferredQualityOverride: preferredQualityOverride,
+                carriedBandwidthCap: carriedBandwidthCap
             )
             // A completed download can be selected after the last server plan.
             // Ask the replacement session for that combined ordinal; retaining
@@ -805,7 +816,8 @@ class PlayerViewModel {
         func adoptingProtocolV3Intent(
             plan: PlaybackV3Plan,
             selectedVersion: FileVersion,
-            activeQualityId: String
+            activeQualityId: String,
+            bandwidthCap: CarriedBandwidthCap = .savedSetting
         ) -> LoadRequest {
             // Shared resolution order; see
             // `PlaybackV3Plan.selectedSubtitleInventoryItem`. An `off` plan
@@ -840,6 +852,8 @@ class PlayerViewModel {
             )
             request.preferredProtocolV3SubtitleIndex = selectedSubtitleIndex
             request.preferredQualityOverride = activeQualityId
+            // Renewal repeats this plan's quality, so it keeps the plan's cap.
+            request.carriedBandwidthCap = bandwidthCap
             return request
         }
     }

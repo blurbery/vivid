@@ -257,6 +257,35 @@ final class PlaybackProtocolV3Tests: XCTestCase {
         XCTAssertEqual(intent.embeddedSubtitleIndex, 11)
     }
 
+    func testRenewalRepeatsThePlanQualityWithItsOwnCap() {
+        // A 1080p preference that played the source untouched must not come
+        // back from a renewal as the 1080p tier's 10 Mbps cap.
+        let plan = makePlan(container: "mkv")
+        let version = makeVersion(container: "mkv", videoCodec: "h264", audioCodec: "aac")
+        let request = PlayerViewModel.LoadRequest(
+            contentId: "episode", preferredFileId: 42, preferredAudioTrackIndex: nil,
+            preferredSubtitleTrackIndex: nil, preferredSidecarSubtitleTrackId: nil,
+            startFromBeginning: false
+        )
+        for cap in [CarriedBandwidthCap.inEffect(nil), .inEffect(4_000)] {
+            let adopted = request.adoptingProtocolV3Intent(
+                plan: plan, selectedVersion: version, activeQualityId: "1080p", bandwidthCap: cap
+            )
+            XCTAssertEqual(adopted.preferredQualityOverride, "1080p")
+            XCTAssertEqual(adopted.carriedBandwidthCap, cap)
+            let renewal = adopted.copyForRecovery(
+                preferredFileId: 42, preferredAudioTrackIndex: nil,
+                preferredSubtitleTrackIndex: nil, preferredSidecarSubtitleTrackId: nil,
+                offlineDownloadId: nil
+            )
+            XCTAssertEqual(renewal.carriedBandwidthCap, cap)
+        }
+        let unknown = request.adoptingProtocolV3Intent(
+            plan: plan, selectedVersion: version, activeQualityId: "1080p"
+        )
+        XCTAssertEqual(unknown.carriedBandwidthCap, .savedSetting)
+    }
+
     func testNativeEmbeddedDecisionRejectsRepackagedSourceAndInvalidIdentity() {
         for (delivery, index) in [("server_remux_progressive", 11), ("original_http", -1)] {
             let plan = makePlan(

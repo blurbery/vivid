@@ -145,6 +145,9 @@ extension PlayerViewModel {
             serverSubtitlesDisabled: hasDisabledServerSubtitlesForResume
         )
         request.preferredQualityOverride = resolvedQualityId
+        // A new choice derives its own cap; a cap carried from earlier
+        // playback must not apply to it.
+        request.carriedBandwidthCap = nil
         beginFreshLoad(
             request: request,
             progressPosition: target,

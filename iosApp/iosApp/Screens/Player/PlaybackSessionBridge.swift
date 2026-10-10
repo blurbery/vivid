@@ -9,6 +9,10 @@ struct PreparedPlayback {
     let selectedVersion: FileVersion
     let session: PlaybackSessionResponse
     let activeQualityId: String
+    /// The bandwidth cap this playback was requested with. Loads that carry
+    /// `activeQualityId` forward repeat it rather than re-deriving a cap from
+    /// the id.
+    let bandwidthCap: CarriedBandwidthCap
     let protocolV3: PreparedPlaybackV3?
     let nativeAudioStreamIndex: Int32?
     let nativeHLS: Bool
@@ -19,6 +23,7 @@ struct PreparedPlayback {
         selectedVersion: FileVersion,
         session: PlaybackSessionResponse,
         activeQualityId: String = ApplePlaybackQuality.autoId,
+        bandwidthCap: CarriedBandwidthCap = .savedSetting,
         protocolV3: PreparedPlaybackV3? = nil,
         nativeAudioStreamIndex: Int32? = nil,
         nativeHLS: Bool = false,
@@ -28,6 +33,7 @@ struct PreparedPlayback {
         self.selectedVersion = selectedVersion
         self.session = session
         self.activeQualityId = activeQualityId
+        self.bandwidthCap = bandwidthCap
         self.protocolV3 = protocolV3
         self.nativeAudioStreamIndex = nativeAudioStreamIndex
         self.nativeHLS = nativeHLS
@@ -767,7 +773,8 @@ actor PlaybackSessionBridge {
         resumePosition: Double? = nil,
         allowNearEndResume: Bool = false,
         prefersLastUsedVersion: Bool = false,
-        preferredQualityOverride: String? = nil
+        preferredQualityOverride: String? = nil,
+        carriedBandwidthCap: CarriedBandwidthCap? = nil
     ) async throws -> PreparedPlayback {
         let jellyfinAttempt = UUID()
         jellyfinStartAttempt = jellyfinAttempt
@@ -807,8 +814,11 @@ actor PlaybackSessionBridge {
         } ?? playerSettings.fallbackMode?.rawValue
             ?? lastUsedQuality
             ?? normalizedQualityPreference(playerSettings.preferredQuality)
+        // A carried override repeats the cap its playback ran with; only a
+        // fresh in-player choice derives its cap from the chosen tier.
         let bandwidthCapKbps = AppleQualityAxes.resolvedBitrateCap(
             qualityOverride: preferredQualityOverride,
+            carriedCap: carriedBandwidthCap,
             fallbackBitrateKbps: playerSettings.maxBitrateKbps
         )
         let normalizedResumePosition: Double? = {
@@ -1312,6 +1322,7 @@ actor PlaybackSessionBridge {
                 requestedQualityId: staged.clientQualityId,
                 availableQualities: staged.plan.availableQualities
             ),
+            bandwidthCap: .inEffect(staged.bandwidthCapKbps),
             protocolV3: preparedV3
         )
     }
@@ -1807,6 +1818,7 @@ actor PlaybackSessionBridge {
                     requestedQualityId: requestedClientQualityId,
                     availableQualities: nextPlan.availableQualities
                 ),
+                bandwidthCap: .inEffect(requestedBandwidthCapKbps),
                 protocolV3: preparedV3
             )
         }

@@ -293,6 +293,7 @@ extension PlayerViewModel {
                     selectedVersion: selectedVersion,
                     session: session,
                     activeQualityId: self.activeQualityId,
+                    bandwidthCap: self.activeBandwidthCap,
                     protocolV3: protocolV3
                 )
                 guard let streamRequest = await self.makeStreamRequest(
@@ -612,6 +613,7 @@ extension PlayerViewModel {
             let priorDuration = self.duration
             let priorCurrentTime = self.currentTime
             let priorActiveQualityId = self.activeQualityId
+            let priorActiveBandwidthCap = self.activeBandwidthCap
             let priorQualityOptions = self.qualityOptions
             let priorResolvedServerUrl = self.resolvedServerUrl
             let priorPrefsForCurrentItem = self.prefsForCurrentItem
@@ -706,6 +708,7 @@ extension PlayerViewModel {
                 self.duration = prepared.session.durationSeconds ?? prepared.selectedVersion.duration ?? self.duration
                 self.currentTime = self.movieTime(for: prepared.session)
                 self.activeQualityId = prepared.activeQualityId
+                self.activeBandwidthCap = prepared.bandwidthCap
                 self.qualityOptions = prepared.nativeQualityOptions ?? ApplePlaybackQuality.playbackOptions(
                     serverQualities: prepared.protocolV3?.plan.availableQualities ?? [],
                     fallbackVersion: prepared.selectedVersion
@@ -740,6 +743,7 @@ extension PlayerViewModel {
                 uncommittedPrepared = nil
                 if completesQualitySwitch {
                     self.lastLoadRequest?.preferredQualityOverride = prepared.activeQualityId
+                    self.lastLoadRequest?.carriedBandwidthCap = prepared.bandwidthCap
                 }
                 if previousSessionId != prepared.session.sessionId {
                     await self.realtimeClient.unbind()
@@ -771,6 +775,7 @@ extension PlayerViewModel {
                     self.duration = priorDuration
                     self.currentTime = priorCurrentTime
                     self.activeQualityId = priorActiveQualityId
+                    self.activeBandwidthCap = priorActiveBandwidthCap
                     self.qualityOptions = priorQualityOptions
                     self.resolvedServerUrl = priorResolvedServerUrl
                     self.prefsForCurrentItem = priorPrefsForCurrentItem
@@ -812,6 +817,7 @@ extension PlayerViewModel {
                     self.duration = priorDuration
                     self.currentTime = priorCurrentTime
                     self.activeQualityId = priorActiveQualityId
+                    self.activeBandwidthCap = priorActiveBandwidthCap
                     self.qualityOptions = priorQualityOptions
                     self.resolvedServerUrl = priorResolvedServerUrl
                     self.prefsForCurrentItem = priorPrefsForCurrentItem

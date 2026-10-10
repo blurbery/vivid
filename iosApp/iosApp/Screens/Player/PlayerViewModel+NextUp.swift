@@ -468,6 +468,9 @@ extension PlayerViewModel {
             startFromBeginning: false
         )
         request.preferredQualityOverride = nextEpisodeQualityOverride
+        // The carried quality is often a bare resolution; keep the cap this
+        // episode actually ran with instead of reading one from the tier table.
+        request.carriedBandwidthCap = activeBandwidthCap
         beginFreshLoad(
             request: request,
             progressPosition: completionProgressPositionForCurrentItem(),
