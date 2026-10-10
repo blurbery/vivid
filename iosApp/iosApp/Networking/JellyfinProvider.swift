@@ -568,8 +568,48 @@ struct JellyfinAdapter {
         return try JellyfinConnection.id(id)
     }
 
-    func seasonRows(_ rows: [[String:Any]]) throws -> [[String:Any]] {
-        try convert(rows.filter { $0["Type"] as? String == "Season" })
+    func seasonRows(_ rows: [[String:Any]], episodes: [[String:Any]]? = nil) throws -> [[String:Any]] {
+        let seasons = rows.filter { $0["Type"] as? String == "Season" }
+        let converted = try convert(seasons)
+        guard let episodes else { return converted }
+        return zip(seasons, converted).map { Self.countingGroupedVersions($1, seasonNumber: $0["IndexNumber"] as? Int, episodes: episodes) }
+    }
+
+    /// Jellyfin 12.2 can count every version of an episode in a season's RecursiveItemCount
+    /// and UnplayedItemCount, so 8 episodes with two versions each report 16.
+    /// The episode list groups versions into one row, so these rows give matching counts.
+    /// Returns nil when the list can't be read, leaving the server's counts in place.
+    func groupedEpisodeRows(seriesID: String, seasonNumber: Int? = nil) async -> [[String:Any]]? {
+        var query = ["UserId":userID, "EnableUserData":"true", "EnableImages":"false", "Fields":"MediaSourceCount",
+                     "Recursive":"false", "IncludeItemTypes":"Episode"]
+        if let seasonNumber { query["Season"] = String(seasonNumber) }
+        guard let id = try? JellyfinConnection.id(seriesID),
+              let page = try? await connection.object("GET", "/Shows/\(id)/Episodes", query: query) else { return nil }
+        return page["Items"] as? [[String:Any]]
+    }
+
+    /// Jellyfin groups versions in a season's ChildCount only when RecursiveItemCount isn't
+    /// requested with it, so a lower ChildCount there means a season is counting versions.
+    nonisolated static func countsVersions(_ seasons: [[String:Any]], grouped: [[String:Any]]) -> Bool {
+        let childCounts = Dictionary(grouped.compactMap { row in (row["Id"] as? String).map { ($0, row["ChildCount"] as? Int) } }) { first,_ in first }
+        return seasons.contains { season in
+            guard let id = season["Id"] as? String, let total = season["RecursiveItemCount"] as? Int, let child = childCounts[id] ?? nil else { return false }
+            return child < total
+        }
+    }
+
+    /// Recounts a season from its grouped episode rows when any of them has more than one
+    /// version. Seasons without versions keep the server's counts. Rows are matched by
+    /// season number because a season merged across libraries has a different ID per library.
+    nonisolated static func countingGroupedVersions(_ season: [String:Any], seasonNumber: Int?, episodes: [[String:Any]]) -> [String:Any] {
+        guard let seasonNumber else { return season }
+        let rows = episodes.filter { $0["ParentIndexNumber"] as? Int == seasonNumber && $0["LocationType"] as? String != "Virtual" }
+        guard rows.contains(where: { $0["MediaSourceCount"] as? Int ?? 1 > 1 }) else { return season }
+        let watched = rows.filter { ($0["UserData"] as? [String:Any])?["Played"] as? Bool == true }.count
+        var value = season
+        value["episodeCount"] = rows.count
+        value["userData"] = ["played": watched == rows.count, "watchedCount": watched, "unplayedCount": rows.count - watched]
+        return value
     }
 
     nonisolated static func excludesHomeRow(id: String, type: String, title: String) -> Bool {
@@ -775,7 +815,13 @@ struct JellyfinAdapter {
         if ["/api/v1/favorites", "/api/v1/history", "/api/v1/watchlist"].contains(path) {
             return try await catalog(query.merging(["source":p[2]]) { _,new in new })
         }
-        if p.count == 5, p[2] == "catalog", p[3] == "items" { return try item(await rawItem(p[4])) }
+        if p.count == 5, p[2] == "catalog", p[3] == "items" {
+            let raw = try await rawItem(p[4])
+            let value = try item(raw)
+            guard raw["Type"] as? String == "Season", let series = raw["SeriesId"] as? String, let number = raw["IndexNumber"] as? Int,
+                  let episodes = await groupedEpisodeRows(seriesID: series, seasonNumber: number) else { return value }
+            return Self.countingGroupedVersions(value, seasonNumber: number, episodes: episodes)
+        }
         if p.count == 4, p[2] == "people", method == "GET" {
             let raw = try await rawItem(nativePersonID(p[3]))
             var person: [String:Any] = ["id":Self.numberID(p[3]), "name":raw["Name"] as? String ?? ""]
@@ -798,9 +844,14 @@ struct JellyfinAdapter {
             return payload
         }
         if p.count == 6, p[2] == "catalog", p[3] == "series", p[5] == "seasons" {
-            let result = try await connection.object("GET", "/Shows/\(JellyfinConnection.id(p[4]))/Seasons",
-                query:["UserId":userID,"Fields":Self.fields,"EnableUserData":"true","Recursive":"false","IncludeItemTypes":"Season","SortBy":"SortName","SortOrder":"Ascending"])
-            return ["seasons":try seasonRows(result["Items"] as? [[String:Any]] ?? [])]
+            let series = try JellyfinConnection.id(p[4])
+            let query = ["UserId":userID,"Fields":Self.fields,"EnableUserData":"true","Recursive":"false","IncludeItemTypes":"Season","SortBy":"SortName","SortOrder":"Ascending"]
+            async let result = connection.object("GET", "/Shows/\(series)/Seasons", query: query)
+            async let grouped = try? connection.object("GET", "/Shows/\(series)/Seasons", query: query.merging(["Fields":"ChildCount","EnableImages":"false"]) { _,new in new })
+            let rows = try await result["Items"] as? [[String:Any]] ?? []
+            // Only a series whose seasons count versions pays for listing every episode.
+            let versioned = Self.countsVersions(rows, grouped: await grouped?["Items"] as? [[String:Any]] ?? [])
+            return ["seasons":try await seasonRows(rows, episodes: versioned ? groupedEpisodeRows(seriesID: series) : nil)]
         }
         if p.count == 8, p[2] == "catalog", p[3] == "series", p[7] == "episodes" {
             return try await episodes(seriesID: p[4], seasonNumber: p[6], resumeEpisodeID: query["resume_episode_id"])

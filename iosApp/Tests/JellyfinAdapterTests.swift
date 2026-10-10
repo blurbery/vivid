@@ -173,8 +173,15 @@ final class JellyfinAdapterTests: XCTestCase {
             XCTAssertEqual(query.first { $0.name == "UserId" }?.value, self.user)
             XCTAssertEqual(query.first { $0.name == "EnableUserData" }?.value, "true")
             if request.url!.path.hasSuffix("/Seasons") {
+                if query.first(where: { $0.name == "Fields" })?.value == "ChildCount" {
+                    return (200, ["Items": [["Id": "season3", "Name": "Season 3", "Type": "Season", "IndexNumber": 3, "ChildCount": 50]]])
+                }
                 return (200, ["Items": [["Id": "season3", "Name": "Season 3", "Type": "Season", "IndexNumber": 3,
                     "RecursiveItemCount": 50, "UserData": ["Played": false, "UnplayedItemCount": 24]]]])
+            }
+            guard query.contains(where: { $0.name == "Season" }) else {
+                XCTFail("A season without versions must not list the whole series")
+                return (200, ["Items": []])
             }
             XCTAssertEqual(query.first { $0.name == "Season" }?.value, "3")
             return (200, ["Items": [
@@ -199,6 +206,86 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(response.episodes[1].userData?.positionSeconds), 298.1729964, accuracy: 0.0001)
         XCTAssertEqual(response.episodes[1].seasonNumber, 3)
         XCTAssertEqual(response.episodes[1].episodeNumber, 39)
+    }
+
+    /// Jellyfin 12.2 counts each version of an episode in a season's totals, so seasons
+    /// whose episodes have several versions are recounted from the grouped episode rows.
+    private func versionedSeasons(episodeStatus: Int = 200) -> JellyfinAdapter {
+        func episode(_ season: Int, _ number: Int, versions: Int?, played: Bool = false, seasonID: String? = nil, virtual: Bool = false) -> [String: Any] {
+            var row: [String: Any] = ["Id": "s\(season)e\(number)", "Name": "Episode \(number)", "Type": "Episode",
+                "ParentIndexNumber": season, "IndexNumber": number, "LocationType": virtual ? "Virtual" : "FileSystem",
+                "UserData": ["Played": played]]
+            row["MediaSourceCount"] = versions
+            row["SeasonId"] = seasonID
+            return row
+        }
+        return adapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            if request.url!.path.hasSuffix("/Seasons") {
+                // Without RecursiveItemCount, Jellyfin reports ChildCount with versions grouped.
+                if query.first(where: { $0.name == "Fields" })?.value == "ChildCount" {
+                    return (200, ["Items": [("season1", 8), ("library-a-season2", 4), ("season3", 5)].map {
+                        ["Id": $0.0, "Name": "Season", "Type": "Season", "ChildCount": $0.1] }])
+                }
+                return (200, ["Items": [
+                    // 8 episodes with two versions each, 2 watched: every count is doubled.
+                    ["Id": "season1", "Name": "Season 1", "Type": "Season", "IndexNumber": 1, "RecursiveItemCount": 16,
+                     "ChildCount": 16, "UserData": ["Played": false, "UnplayedItemCount": 12]],
+                    // Merged across libraries, and one episode has only one version: not a doubling.
+                    ["Id": "library-a-season2", "Name": "Season 2", "Type": "Season", "IndexNumber": 2, "RecursiveItemCount": 7,
+                     "ChildCount": 7, "UserData": ["Played": false, "UnplayedItemCount": 5]],
+                    // No versions: the server's counts stay as they are.
+                    ["Id": "season3", "Name": "Season 3", "Type": "Season", "IndexNumber": 3, "RecursiveItemCount": 5,
+                     "ChildCount": 5, "UserData": ["Played": false, "UnplayedItemCount": 3]]
+                ]])
+            }
+            XCTAssertNil(query.first { $0.name == "Season" }, "One request covers every season")
+            XCTAssertEqual(query.first { $0.name == "EnableImages" }?.value, "false")
+            guard episodeStatus == 200 else { return (episodeStatus, [:]) }
+            return (200, ["Items":
+                (1...8).map { episode(1, $0, versions: 2, played: $0 <= 2) } + [episode(1, 9, versions: nil, virtual: true)]
+                + [2, 2, 2, 1].enumerated().map { episode(2, $0 + 1, versions: $1, played: $0 == 0, seasonID: "library-b-season2") }
+                + (1...5).map { episode(3, $0, versions: nil, played: $0 == 1) }])
+        }
+    }
+
+    func testSeasonCountsGroupVersionsOfEachEpisode() async throws {
+        let raw = try await versionedSeasons().route(method: "GET", path: "/api/v1/catalog/series/show/seasons", query: [:], body: nil)
+        let seasons = try JellyfinAdapter.decode(raw, as: SeasonsResponse.self).seasons
+        XCTAssertEqual(seasons.map(\.episodeCount), [8, 4, 5])
+        XCTAssertEqual(seasons.map { $0.userData?.watchedCount }, [2, 1, 2])
+        XCTAssertEqual(seasons.map { $0.userData?.unplayedCount }, [6, 3, 3])
+        XCTAssertEqual(seasons.map { $0.userData?.played }, [false, false, false])
+    }
+
+    func testSeasonCountsKeepServerValuesWhenEpisodeListFails() async throws {
+        let raw = try await versionedSeasons(episodeStatus: 500).route(method: "GET", path: "/api/v1/catalog/series/show/seasons", query: [:], body: nil)
+        let seasons = try JellyfinAdapter.decode(raw, as: SeasonsResponse.self).seasons
+        XCTAssertEqual(seasons.map(\.episodeCount), [16, 7, 5])
+        XCTAssertEqual(seasons.map { $0.userData?.watchedCount }, [4, 2, 2])
+    }
+
+    func testOnlySeasonsCountingVersionsListTheWholeSeries() {
+        let seasons: [[String: Any]] = [["Id": "a", "RecursiveItemCount": 16], ["Id": "b", "RecursiveItemCount": 5]]
+        XCTAssertTrue(JellyfinAdapter.countsVersions(seasons, grouped: [["Id": "a", "ChildCount": 8], ["Id": "b", "ChildCount": 5]]))
+        XCTAssertFalse(JellyfinAdapter.countsVersions(seasons, grouped: [["Id": "a", "ChildCount": 16], ["Id": "b", "ChildCount": 5]]))
+        XCTAssertFalse(JellyfinAdapter.countsVersions(seasons, grouped: []), "A failed check keeps the server's counts")
+    }
+
+    func testSeasonDetailCountsGroupVersionsOfEachEpisode() async throws {
+        let adapter = adapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            if request.url!.path.hasSuffix("/Episodes") {
+                XCTAssertEqual(query.first { $0.name == "Season" }?.value, "2")
+                return (200, ["Items": (1...8).map { ["Id": "e\($0)", "Name": "Episode \($0)", "Type": "Episode", "ParentIndexNumber": 2,
+                    "IndexNumber": $0, "MediaSourceCount": 2, "UserData": ["Played": true]] }])
+            }
+            return (200, ["Id": "season2", "Name": "Season 2", "Type": "Season", "SeriesId": "show", "IndexNumber": 2,
+                "RecursiveItemCount": 16, "UserData": ["Played": true, "UnplayedItemCount": 0]])
+        }
+        let detail = try await adapter.route(method: "GET", path: "/api/v1/catalog/items/season2", query: [:], body: nil) as? [String: Any]
+        XCTAssertEqual(detail?["episodeCount"] as? Int, 8)
+        XCTAssertEqual((detail?["userData"] as? [String: Any])?["watchedCount"] as? Int, 8)
     }
 
     func testResumeEpisodeUsesExactVersionInsteadOfSeasonRepresentative() async throws {
