@@ -80,6 +80,20 @@ On Apple TV the field is called **Personal API key**. The 32-character API Key i
   </tbody>
 </table>
 
+On Apple TV, the TMDb rating sits after the quality badges and Studios & Networks runs across Home under the Spotlight.
+
+<table width="100%">
+  <thead>
+    <tr><th align="center">TMDb rating on Apple TV</th><th align="center">Studios &amp; Networks on Apple TV</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center" valign="middle"><img src="images/plugins/tv-tmdb-rating.jpg" width="420" alt="A movie page on Apple TV with the TMDb rating after the quality badges"></td>
+      <td align="center" valign="middle"><img src="images/plugins/tv-studios-networks-home.jpg" width="420" alt="The Studios and Networks row on Home on Apple TV"></td>
+    </tr>
+  </tbody>
+</table>
+
 Studios & Networks turns on by itself once TMDb is connected. The first time, Vivid reads your library and matches it with TMDb, which can take a few minutes on a large library, so keep Vivid open until it finishes. After that it loads straight away and refreshes daily. It picks from Netflix, HBO, Apple TV, Disney+, Prime Video, Hulu, Peacock, Paramount+, Stan, Pixar, Marvel Studios, A24, Lucasfilm, DreamWorks, Studio Ghibli, Sony Pictures, Warner Bros. and Universal. A studio or network only shows once at least six titles in your library match it.
 
 To choose your own, open **Settings → General → Home Screen → Studios & Networks**. From there you can:
@@ -192,6 +206,6 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 
 ## More detail
 
-Screenshots are from iPhone. iPad looks much the same, and Apple TV uses the labels noted in each section.
+Screenshots are from iPhone unless they're marked Apple TV. iPad looks much the same, and Apple TV uses the labels noted in each section.
 
 [Server Connections](server-connections.md#plugins-on-iphone-ipad-and-apple-tv) covers how plugin keys sync, what's stored on each device and current verification limits. The in-app Privacy Policy under **Settings → About** explains what MDBList and OpenSubtitles receive.
