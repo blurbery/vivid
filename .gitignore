@@ -76,6 +76,7 @@ docs/*
 !docs/app-design.md
 !docs/apple-tv-browsing.md
 !docs/diagnostics-relay.md
+!docs/plugins.md
 !docs/cores/
 !docs/cores/*.md
 !docs/playback/
