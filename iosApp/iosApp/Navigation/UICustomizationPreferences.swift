@@ -390,7 +390,12 @@ final class VividUICustomizationTransport: UICustomizationTransport {
     func contractCapabilities(
         requestIdentity: HTTPRequestIdentity
     ) async -> SettingsCapabilitiesResult {
-        await api.getContractCapabilities(requestIdentity: requestIdentity)
+        // Silo's interface settings stay on the device, so the Silo server's
+        // version or reachability no longer decides whether they work.
+        if SiloLocalInterfaceSettings.applies(toServerID: requestIdentity.serverId) {
+            return .available(SiloLocalInterfaceSettings.capabilities)
+        }
+        return await api.getContractCapabilities(requestIdentity: requestIdentity)
     }
 
     func effectiveValues(

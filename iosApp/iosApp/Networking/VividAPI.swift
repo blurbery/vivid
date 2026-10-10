@@ -21,10 +21,17 @@ actor VividAPI {
     /// downloads API) can reuse the same injected transport.
     let http: HTTPClient
     private let tokenStore: TokenStore
+    /// Vivid's own `ui.*` and `nav.*` settings on Silo servers.
+    let localInterfaceSettings: SiloLocalInterfaceSettings
 
-    init(http: HTTPClient = .shared, tokenStore: TokenStore = .shared) {
+    init(
+        http: HTTPClient = .shared,
+        tokenStore: TokenStore = .shared,
+        localInterfaceSettings: SiloLocalInterfaceSettings = .shared
+    ) {
         self.http = http
         self.tokenStore = tokenStore
+        self.localInterfaceSettings = localInterfaceSettings
     }
 
     // MARK: - Session state accessors
@@ -40,6 +47,11 @@ actor VividAPI {
     /// The profile the session is acting as, or nil before one is selected.
     func currentProfileId() async -> String? {
         await tokenStore.getProfileId()
+    }
+
+    /// The server the session is signed in to, or empty before one is chosen.
+    func currentServerId() async -> String {
+        await tokenStore.getActiveServerId()
     }
 
     // MARK: - Image size selection

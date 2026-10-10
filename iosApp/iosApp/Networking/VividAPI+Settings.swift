@@ -79,6 +79,53 @@ extension VividAPI {
         profileId: String? = nil,
         requestIdentity: HTTPRequestIdentity? = nil
     ) async throws -> EffectiveSettingValuesResponse {
+        let serverId = await settingsServerId(requestIdentity)
+        guard SiloLocalInterfaceSettings.applies(toServerID: serverId) else {
+            return try await serverEffectiveValues(
+                keys: keys,
+                libraryIds: libraryIds,
+                seriesIds: seriesIds,
+                profileId: profileId,
+                requestIdentity: requestIdentity
+            )
+        }
+
+        // On Silo, interface keys are answered on the device and only the
+        // rest are asked of the server. A call for interface keys alone never
+        // reaches it.
+        let localKeys = keys.isEmpty
+            ? SettingKey.allCases.filter { SiloLocalInterfaceSettings.owns($0) }
+            : keys.filter { SiloLocalInterfaceSettings.owns($0) }
+        let serverKeys = keys.filter { !SiloLocalInterfaceSettings.owns($0) }
+        var serverRows: [EffectiveSettingValue] = []
+        var revision = SettingKey.revision
+        if keys.isEmpty || !serverKeys.isEmpty {
+            let response = try await serverEffectiveValues(
+                keys: serverKeys,
+                libraryIds: libraryIds,
+                seriesIds: seriesIds,
+                profileId: profileId,
+                requestIdentity: requestIdentity
+            )
+            serverRows = response.settings.filter { !SiloLocalInterfaceSettings.owns($0.key) }
+            revision = response.revision
+        }
+        let profile = try await settingsProfileId(explicit: profileId, requestIdentity: requestIdentity)
+        let localRows = await localInterfaceSettings.effectiveValues(
+            keys: localKeys,
+            serverId: serverId,
+            profileId: profile
+        )
+        return EffectiveSettingValuesResponse(settings: serverRows + localRows, revision: revision)
+    }
+
+    private func serverEffectiveValues(
+        keys: [SettingKey],
+        libraryIds: [Int],
+        seriesIds: [String],
+        profileId: String?,
+        requestIdentity: HTTPRequestIdentity?
+    ) async throws -> EffectiveSettingValuesResponse {
         let headers = try await profileHeaders(explicit: profileId)
 
         var query: [String: String] = [:]
@@ -141,6 +188,20 @@ extension VividAPI {
         guard !trimmedMutationId.isEmpty else {
             throw SettingsAPIError.invalidValue(message: "Mutation ID must not be blank.")
         }
+        if SiloLocalInterfaceSettings.owns(key) {
+            let serverId = await settingsServerId(requestIdentity)
+            if SiloLocalInterfaceSettings.applies(toServerID: serverId) {
+                let profile = try await settingsProfileId(explicit: profileId, requestIdentity: requestIdentity)
+                let stored = try await localInterfaceSettings.put(
+                    key: key,
+                    scope: scope,
+                    value: value,
+                    serverId: serverId,
+                    profileId: profile
+                )
+                return SettingValueWriteReceipt(value: stored, isIdempotentReplay: false)
+            }
+        }
         var headers = try await profileHeaders(explicit: profileId)
         headers["X-Silo-Mutation-Id"] = trimmedMutationId
 
@@ -176,6 +237,19 @@ extension VividAPI {
         profileId: String? = nil,
         requestIdentity: HTTPRequestIdentity? = nil
     ) async throws {
+        if SiloLocalInterfaceSettings.owns(key) {
+            let serverId = await settingsServerId(requestIdentity)
+            if SiloLocalInterfaceSettings.applies(toServerID: serverId) {
+                let profile = try await settingsProfileId(explicit: profileId, requestIdentity: requestIdentity)
+                try await localInterfaceSettings.delete(
+                    key: key,
+                    scope: scope,
+                    serverId: serverId,
+                    profileId: profile
+                )
+                return
+            }
+        }
         let headers = try await profileHeaders(explicit: profileId)
         do {
             _ = try await http.requestData(
@@ -192,6 +266,32 @@ extension VividAPI {
     }
 
     // MARK: Headers
+
+    /// The server a settings call is for: the captured identity's when the
+    /// caller has one, otherwise the session's.
+    private func settingsServerId(_ requestIdentity: HTTPRequestIdentity?) async -> String {
+        if let serverId = requestIdentity?.serverId, !serverId.isEmpty {
+            return serverId
+        }
+        let active = await currentServerId()
+        return active.isEmpty ? ServerRegistry.activeServerIDSnapshot ?? "" : active
+    }
+
+    /// The profile whose on-device interface settings a call reads or writes.
+    private func settingsProfileId(
+        explicit profileId: String?,
+        requestIdentity: HTTPRequestIdentity?
+    ) async throws -> String {
+        for candidate in [profileId, requestIdentity?.profileId] {
+            if let trimmed = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        guard let current = await currentProfileId(), !current.isEmpty else {
+            throw SettingsAPIError.profileRequired
+        }
+        return current
+    }
 
     /// The `X-Profile-Id` header every `/settings/values/*` route needs.
     ///
