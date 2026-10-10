@@ -10,7 +10,8 @@ name: Claude Code Review
 # Markdown-only changes. Uses the ANTHROPIC_API_KEY secret, so reviews come out
 # of API credits, or CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription token from
 # `claude setup-token`) when that isn't set. Without either, the job does
-# nothing.
+# nothing. A personal API key that covers several workspaces also needs the
+# ANTHROPIC_WORKSPACE_ID secret.
 
 on:
   pull_request:
@@ -113,6 +114,10 @@ jobs:
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         id: claude
         if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
+        env:
+          # A personal API key that covers several workspaces must name one on
+          # every request. Set ANTHROPIC_WORKSPACE_ID (a wrkspc_ ID) for those.
+          ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_API_KEY != '' && secrets.ANTHROPIC_WORKSPACE_ID != '' && format('anthropic-workspace-id: {0}', secrets.ANTHROPIC_WORKSPACE_ID) || '' }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
