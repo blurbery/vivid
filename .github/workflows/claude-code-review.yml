@@ -124,16 +124,26 @@ jobs:
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then exit 0; fi
           if [ -z "$WORKSPACE_ID" ]; then
-            WORKSPACE_ID=$(curl -sS --fail "https://api.anthropic.com/v1/organizations/workspaces?include_default=true&limit=100" \
-              -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" 2>/dev/null \
-              | jq -r '[.data[] | select(.name == "Default")][0].id // empty' 2>/dev/null) || WORKSPACE_ID=""
+            body="$RUNNER_TEMP/workspaces.json"
+            status=$(curl -sS -o "$body" -w '%{http_code}' \
+              "https://api.anthropic.com/v1/organizations/workspaces?include_default=true&limit=100" \
+              -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01") || status=000
+            if [ "$status" = 200 ]; then
+              WORKSPACE_ID=$(jq -r '[.data[] | select(.name == "Default")][0].id // empty' "$body")
+              if [ -z "$WORKSPACE_ID" ]; then
+                echo "Listed $(jq '.data | length' "$body") workspaces, but none is called Default."
+              fi
+            else
+              echo "Couldn't list workspaces (HTTP $status): $(jq -r '(.error.message // "") | .[0:300]' "$body" 2>/dev/null || true)"
+            fi
+            rm -f "$body"
           fi
           if [ -n "$WORKSPACE_ID" ]; then
             echo "::add-mask::$WORKSPACE_ID"
             echo "ANTHROPIC_CUSTOM_HEADERS=anthropic-workspace-id: $WORKSPACE_ID" >> "$GITHUB_ENV"
             echo "Sending the workspace header with each request."
           else
-            echo "The key is tied to one workspace, so no header is needed."
+            echo "No workspace header sent."
           fi
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         id: claude
