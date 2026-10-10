@@ -280,6 +280,40 @@ final class VividPlaybackBoundaryTests: XCTestCase {
         XCTAssertNil(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: [], preferredLanguage: "ja"))
     }
 
+    func testRememberedAudioWinsOverLanguageButNotOverAPickForThisLoad() {
+        let tracks = [makeAudioTrack(language: "eng", isDefault: true), makeAudioTrack(language: "jpn", isDefault: false)]
+        // Up Next and Resume pass no pick, so the series' remembered track wins.
+        XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: nil, remembered: 1, tracks: tracks, preferredLanguage: "en"), 1)
+        XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: 0, remembered: 1, tracks: tracks, preferredLanguage: "en"), 0)
+        // A remembered track this file doesn't have falls back to the language.
+        XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: nil, remembered: 5, tracks: tracks, preferredLanguage: "ja"), 1)
+    }
+
+    func testRememberedSubtitleChoiceWinsOnlyWhenOneWasPicked() throws {
+        let signature = SubtitleTrackSignature(source: "embedded", language: "en", codec: "subrip")
+        let picked = try XCTUnwrap(PlayerViewModel.rememberedSubtitlePrefs(
+            language: "en", mode: "always", showForced: nil, signature: signature, defaultShowForced: true
+        ))
+        XCTAssertEqual(picked.mode, .always)
+        XCTAssertEqual(picked.preferredLanguage, "en")
+        XCTAssertEqual(picked.trackSignature, signature)
+        XCTAssertTrue(picked.showForced)
+
+        let off = try XCTUnwrap(PlayerViewModel.rememberedSubtitlePrefs(
+            language: "", mode: "off", showForced: false, signature: nil, defaultShowForced: true
+        ))
+        XCTAssertEqual(off.mode, .off)
+
+        // Emby and Jellyfin always send mode `auto`; on its own that isn't a
+        // remembered choice, so Vivid's subtitle settings still decide.
+        XCTAssertNil(PlayerViewModel.rememberedSubtitlePrefs(
+            language: nil, mode: "auto", showForced: true, signature: nil, defaultShowForced: true
+        ))
+        XCTAssertNil(PlayerViewModel.rememberedSubtitlePrefs(
+            language: nil, mode: nil, showForced: nil, signature: nil, defaultShowForced: true
+        ))
+    }
+
     func testMissingPreferredAudioUsesEnglishBeforeNonEnglishDefault() {
         let tracks = [makeAudioTrack(language: "jpn", isDefault: true), makeAudioTrack(language: "eng", isDefault: false)]
         XCTAssertEqual(VividInitialAudioPreference.selectedOrdinal(manual: nil, tracks: tracks, preferredLanguage: "fr"), 1)
