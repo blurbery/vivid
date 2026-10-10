@@ -31,6 +31,8 @@ To find the plugins:
 - **iPhone and iPad:** tap your profile picture in the tab bar to open Settings, then choose **Plugins**.
 - **Apple TV:** select your profile picture in the top bar to open Settings, then choose **Plugins**.
 
+<p align="center"><img src="images/plugins/plugins-list.jpg" width="300" alt="The Plugins page on iPhone, listing TMDb, OpenSubtitles and MDBList"></p>
+
 > [!TIP]
 > Keys are saved in Keychain and sync through Vivid's encrypted iCloud vault to your other iPhone, iPad and Apple TV for the same server account and profile. Set a plugin up on your iPhone or iPad and it comes through to Apple TV once it syncs, so you don't need to type a long key with the remote.
 
@@ -49,6 +51,8 @@ TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collect
 
 On Apple TV the field is called **Personal API key**. The 32-character API Key is much quicker to type with the remote than the longer read access token.
 
+<p align="center"><img src="images/plugins/tmdb-settings.jpg" width="300" alt="The TMDb plugin page on iPhone, connected"></p>
+
 ### What you get
 
 <table width="100%">
@@ -60,6 +64,19 @@ On Apple TV the field is called **Personal API key**. The 32-character API Key i
     <tr><td><strong>TMDb rating</strong></td><td>TMDb's user score on movie and series pages, next to the other badges. It only appears when TMDb has votes for the title.</td></tr>
     <tr><td><strong>Studios &amp; Networks</strong></td><td>A row of studio and network logos pinned under the Spotlight on Home. Each one opens a page with Popular Series, Popular Movies and All in Your Library for that studio or network.</td></tr>
     <tr><td><strong>Collections</strong></td><td>On a movie that's part of a collection, a row such as "Scream Collection" with the films from it that are in your library, in release order. It appears when you have at least two of them.</td></tr>
+  </tbody>
+</table>
+
+<table width="100%">
+  <thead>
+    <tr><th align="center">TMDb rating</th><th align="center">Trailers</th><th align="center">Studios &amp; Networks</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center" valign="top"><img src="images/plugins/tmdb-rating.jpg" width="260" alt="A series page on iPhone with the TMDb rating next to the age rating"></td>
+      <td align="center" valign="top"><img src="images/plugins/trailers.jpg" width="260" alt="The Trailers row on a series page on iPhone, above Cast and Crew"></td>
+      <td align="center" valign="top"><img src="images/plugins/studios-networks-home.jpg" width="260" alt="The Studios and Networks row under the Spotlight on Home on iPhone"></td>
+    </tr>
   </tbody>
 </table>
 
@@ -95,6 +112,8 @@ MDBList keeps your watched history and a watchlist in one place that other apps 
 3. In Vivid, open **Settings → Plugins → MDBList**. On iPhone and iPad, **Get your free API key** opens the same page.
 4. Paste it into **MDBList API key** (on Apple TV, **Personal API key**) and choose **Connect**.
 5. Status shows **Connected** with a green dot, and the first sync starts straight away.
+
+<p align="center"><img src="images/plugins/mdblist-settings.jpg" width="300" alt="The MDBList plugin page on iPhone, before connecting"></p>
 
 ### What you get
 
@@ -139,6 +158,8 @@ OpenSubtitles lets you search for and download subtitles when your server doesn'
 
 Vivid only needs the API key. It never asks for your OpenSubtitles username or password.
 
+<p align="center"><img src="images/plugins/opensubtitles-settings.jpg" width="300" alt="The OpenSubtitles plugin page on iPhone, before connecting"></p>
+
 ### What you get
 
 <table width="100%">
@@ -170,5 +191,7 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 - **"No subtitles found. Try another title or language."** Try the original title, or another language.
 
 ## More detail
+
+Screenshots are from iPhone. iPad looks much the same, and Apple TV uses the labels noted in each section.
 
 [Server Connections](server-connections.md#plugins-on-iphone-ipad-and-apple-tv) covers how plugin keys sync, what's stored on each device and current verification limits. The in-app Privacy Policy under **Settings → About** explains what MDBList and OpenSubtitles receive.
