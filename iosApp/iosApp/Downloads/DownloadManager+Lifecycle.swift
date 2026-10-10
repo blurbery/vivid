@@ -69,6 +69,12 @@ extension DownloadManager {
             scopeLoadToken = nil
             scopeLoadServerId = ""
             scopeLoadProfileId = ""
+        } else if scopeLoadToken != nil {
+            // A newer load for this scope replaced ours (an A to B to A
+            // switch) and hasn't installed its snapshot yet. Releasing held
+            // transfer events now would replay them against the wrong
+            // registry, so wait for that load instead.
+            return await activateScopeIfNeeded()
         }
         releaseHeldSessionEvents()
         refreshStorageUsage()

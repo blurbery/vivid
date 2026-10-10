@@ -84,7 +84,20 @@ extension DownloadManager {
     func pullProgressDeltas() async {
         guard !progressBootstrapInFlight else { return }
         progressBootstrapInFlight = true
-        defer { progressBootstrapInFlight = false }
+        let startGeneration = registrationScopeGeneration
+        defer {
+            progressBootstrapInFlight = false
+            // A pull for a newly active scope returns early while this one
+            // holds the flag, so run it now rather than at the next foreground.
+            if startGeneration != registrationScopeGeneration, !scopeServerId.isEmpty {
+                Task {
+                    // Let the new scope's registry finish loading first, so
+                    // the pull reads and saves that account's file.
+                    guard await self.activateScopeIfNeeded() else { return }
+                    await self.pullProgressDeltas()
+                }
+            }
+        }
         do {
             if let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
                MediaServerProvider.forServerID(auth.account.serverId) == .silo,
@@ -94,7 +107,11 @@ extension DownloadManager {
                 return
             }
 
+            // A server or profile switch while this request is out must not
+            // merge the old account's progress into the new scope's file.
+            let scopeGeneration = registrationScopeGeneration
             let response = try await VividAPI.shared.pullProgressDeltas(since: file.progressCursor)
+            guard scopeGeneration == registrationScopeGeneration else { return }
             for item in response.progress {
                 let serverTime = item.updatedAt ?? Date()
                 var entry = file.localProgress[item.mediaItemId]

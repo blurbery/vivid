@@ -179,6 +179,12 @@ extension DownloadManager {
                let taskId = record.taskIdentifier, active.contains(taskId) {
                 continue
             }
+            // A foreground reconcile can find a preparation still running in
+            // this process. It owns the record, and re-queuing it would make
+            // `processQueue()` cancel and restart that work.
+            if record.localStatus == .fetchingAssets, pipelineTasks[id] != nil {
+                continue
+            }
             setLocalStatus(.queued, id: id)
         }
     }
