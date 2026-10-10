@@ -126,6 +126,9 @@ actor SiloLocalInterfaceSettings {
         serverId: String,
         profileId: String
     ) throws {
+        guard Self.resolutionOrder.contains(scope.scope) else {
+            throw SettingsAPIError.scopeNotAllowed(key: key.rawValue, scope: scope.scope)
+        }
         var rows = load(serverId: serverId, profileId: profileId)
         guard rows.removeValue(forKey: Self.rowId(key, scope.scope)) != nil else { return }
         try save(rows, serverId: serverId, profileId: profileId)

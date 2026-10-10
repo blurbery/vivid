@@ -1284,7 +1284,12 @@ final class UICustomizationPreferences {
     }
 
     private static func cacheKey(for identity: HTTPRequestIdentity) -> String {
-        "vivid.uiCustomization.\(identity.serverId).\(identity.profileId).\(identity.clientFamily)"
+        // Silo's cache used to hold values read from the server. Its own
+        // namespace keeps those from painting before the first refresh.
+        let namespace = SiloLocalInterfaceSettings.applies(toServerID: identity.serverId)
+            ? "vivid.uiCustomization.local"
+            : "vivid.uiCustomization"
+        return "\(namespace).\(identity.serverId).\(identity.profileId).\(identity.clientFamily)"
     }
 
     private static func deleteIdentity(key: SettingKey, scope: SettingScope) -> String {

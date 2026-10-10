@@ -96,10 +96,11 @@ extension VividAPI {
         let localKeys = keys.isEmpty
             ? SettingKey.allCases.filter { SiloLocalInterfaceSettings.owns($0) }
             : keys.filter { SiloLocalInterfaceSettings.owns($0) }
-        let serverKeys = keys.filter { !SiloLocalInterfaceSettings.owns($0) }
+        let serverKeys = (keys.isEmpty ? SettingKey.remote : keys)
+            .filter { !SiloLocalInterfaceSettings.owns($0) }
         var serverRows: [EffectiveSettingValue] = []
         var revision = SettingKey.revision
-        if keys.isEmpty || !serverKeys.isEmpty {
+        if !serverKeys.isEmpty {
             let response = try await serverEffectiveValues(
                 keys: serverKeys,
                 libraryIds: libraryIds,
@@ -269,7 +270,7 @@ extension VividAPI {
 
     /// The server a settings call is for: the captured identity's when the
     /// caller has one, otherwise the session's.
-    private func settingsServerId(_ requestIdentity: HTTPRequestIdentity?) async -> String {
+    func settingsServerId(_ requestIdentity: HTTPRequestIdentity?) async -> String {
         if let serverId = requestIdentity?.serverId, !serverId.isEmpty {
             return serverId
         }
