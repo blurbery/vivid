@@ -23,19 +23,15 @@ actor VividAPI {
     private let tokenStore: TokenStore
     /// Vivid's own `ui.*` and `nav.*` settings on Silo servers.
     let localInterfaceSettings: SiloLocalInterfaceSettings
-    /// Vivid's own per-series audio and subtitle memory on Silo servers.
-    let localTrackPreferences: SiloLocalTrackPreferences
 
     init(
         http: HTTPClient = .shared,
         tokenStore: TokenStore = .shared,
-        localInterfaceSettings: SiloLocalInterfaceSettings = .shared,
-        localTrackPreferences: SiloLocalTrackPreferences = .shared
+        localInterfaceSettings: SiloLocalInterfaceSettings = .shared
     ) {
         self.http = http
         self.tokenStore = tokenStore
         self.localInterfaceSettings = localInterfaceSettings
-        self.localTrackPreferences = localTrackPreferences
     }
 
     // MARK: - Session state accessors
@@ -496,12 +492,7 @@ actor VividAPI {
     }
 
     func itemDetail(contentId: String) async throws -> ItemDetail {
-        let path = "/api/v1/catalog/items/\(contentId)"
-        let query = await imageSizeQuery
-        if let data = try await siloTitleDetailData(path, query: query) {
-            return try Self.decodeTitleDetail(ItemDetail.self, from: data)
-        }
-        return try await http.get(path, query: query)
+        try await http.get("/api/v1/catalog/items/\(contentId)", query: await imageSizeQuery)
     }
 
     func catalogFilters(libraryId: Int?, includeTechnical: Bool = true) async throws -> CatalogFilters {
@@ -531,46 +522,7 @@ actor VividAPI {
     }
 
     func watchDetail(contentId: String) async throws -> WatchDetail {
-        let path = "/api/v1/watch/\(contentId)"
-        let query = await imageSizeQuery
-        if let data = try await siloTitleDetailData(path, query: query) {
-            return try Self.decodeTitleDetail(WatchDetail.self, from: data)
-        }
-        return try await http.get(path, query: query)
-    }
-
-    /// On Silo, the audio and subtitle defaults in a title's details come
-    /// from this device's memory rather than Silo's, as on Emby and Jellyfin.
-    /// Nil on other servers, whose providers keep their own.
-    private func siloTitleDetailData(_ path: String, query: [String: String]) async throws -> Data? {
-        guard let scope = try await siloTrackScope() else { return nil }
-        let data = try await http.getData(path, query: query)
-        return try await localTrackPreferences.rewrite(
-            data,
-            serverId: scope.serverId,
-            profileId: scope.profileId
-        )
-    }
-
-    private static func decodeTitleDetail<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
-        do {
-            return try titleDetailDecoder.decode(type, from: data)
-        } catch {
-            throw HTTPError.decodingFailed(type: String(describing: type), underlying: error)
-        }
-    }
-
-    private static let titleDetailDecoder = HTTPClient.makeJSONDecoder()
-
-    /// The server and profile whose track memory a call uses, or nil when
-    /// the active server isn't Silo and its provider keeps its own.
-    private func siloTrackScope() async throws -> (serverId: String, profileId: String)? {
-        let serverId = await settingsServerId(nil)
-        guard SiloLocalInterfaceSettings.applies(toServerID: serverId) else { return nil }
-        guard let profileId = await currentProfileId(), !profileId.isEmpty else {
-            throw SettingsAPIError.profileRequired
-        }
-        return (serverId, profileId)
+        try await http.get("/api/v1/watch/\(contentId)", query: await imageSizeQuery)
     }
 
     func person(id: Int) async throws -> Person {
@@ -688,49 +640,19 @@ actor VividAPI {
         return try await catalog(query: query)
     }
 
-    // On Silo these stay on the device: Silo shares them with its own apps.
-
     func setSubtitlePref(seriesId: String, body: SubtitlePrefRequest) async throws {
-        if let scope = try await siloTrackScope() {
-            try await localTrackPreferences.save(
-                .subtitle, key: seriesId, body: body,
-                serverId: scope.serverId, profileId: scope.profileId
-            )
-            return
-        }
         try await http.putVoid("/api/v1/subtitle-prefs/\(seriesId)", body: body)
     }
 
     func deleteSubtitlePref(seriesId: String) async throws {
-        if let scope = try await siloTrackScope() {
-            await localTrackPreferences.clear(
-                .subtitle, key: seriesId,
-                serverId: scope.serverId, profileId: scope.profileId
-            )
-            return
-        }
         try await http.delete("/api/v1/subtitle-prefs/\(seriesId)")
     }
 
     func setAudioPref(seriesId: String, body: AudioPrefRequest) async throws {
-        if let scope = try await siloTrackScope() {
-            try await localTrackPreferences.save(
-                .audio, key: seriesId, body: body,
-                serverId: scope.serverId, profileId: scope.profileId
-            )
-            return
-        }
         try await http.putVoid("/api/v1/audio-prefs/\(seriesId)", body: body)
     }
 
     func deleteAudioPref(seriesId: String) async throws {
-        if let scope = try await siloTrackScope() {
-            await localTrackPreferences.clear(
-                .audio, key: seriesId,
-                serverId: scope.serverId, profileId: scope.profileId
-            )
-            return
-        }
         try await http.delete("/api/v1/audio-prefs/\(seriesId)")
     }
 

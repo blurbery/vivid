@@ -93,22 +93,6 @@ final class SiloLocalInterfaceSettingsTests: XCTestCase {
         XCTAssertTrue(SettingsStubProtocol.state().requestCounts.isEmpty)
     }
 
-    func testSiloTrackChoicesStayOffTheServer() async throws {
-        SettingsStubProtocol.reset(mode: .normal)
-        let api = try await makeSiloAPI()
-
-        try await api.setAudioPref(
-            seriesId: "series-1",
-            body: AudioPrefRequest(audioTrackIndex: 1, audioLanguage: "jpn", trackSignature: nil)
-        )
-        try await api.deleteSubtitlePref(seriesId: "series-1")
-
-        XCTAssertTrue(
-            SettingsStubProtocol.state().requestCounts.isEmpty,
-            "Silo shares these with its own apps, so they must stay on the device"
-        )
-    }
-
     func testOnlySiloInterfaceKeysAreTakenOver() {
         XCTAssertTrue(SiloLocalInterfaceSettings.applies(toServerID: Self.siloServerId))
         XCTAssertFalse(SiloLocalInterfaceSettings.applies(toServerID: "emby:server"))
@@ -152,8 +136,7 @@ final class SiloLocalInterfaceSettingsTests: XCTestCase {
         return VividAPI(
             http: http,
             tokenStore: tokenStore,
-            localInterfaceSettings: SiloLocalInterfaceSettings(defaults: suite),
-            localTrackPreferences: SiloLocalTrackPreferences(defaults: suite)
+            localInterfaceSettings: SiloLocalInterfaceSettings(defaults: suite)
         )
     }
 }

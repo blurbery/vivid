@@ -270,7 +270,7 @@ extension VividAPI {
 
     /// The server a settings call is for: the captured identity's when the
     /// caller has one, otherwise the session's.
-    func settingsServerId(_ requestIdentity: HTTPRequestIdentity?) async -> String {
+    private func settingsServerId(_ requestIdentity: HTTPRequestIdentity?) async -> String {
         if let serverId = requestIdentity?.serverId, !serverId.isEmpty {
             return serverId
         }
