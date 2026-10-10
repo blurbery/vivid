@@ -868,7 +868,6 @@ actor PlaybackSessionBridge {
         let selectedVersion = initiallySelectedVersion
         let resolvedAudioTrackIndex = VividInitialAudioPreference.selectedOrdinal(
             manual: preferredAudioTrackIndex,
-            remembered: selectedVersion.effectiveAudioTrackIndex,
             tracks: selectedVersion.audioTracks ?? [],
             preferredLanguage: playerSettings.audioLanguage
         )

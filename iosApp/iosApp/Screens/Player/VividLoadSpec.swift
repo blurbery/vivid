@@ -2,17 +2,9 @@
 import Foundation
 
 enum VividInitialAudioPreference {
-    /// A track picked for this load wins, then the one Vivid remembered for
-    /// the series (or movie), then Vivid's audio language. The remembered
-    /// track is Vivid's own memory on every server, never another client's.
-    static func selectedOrdinal(
-        manual: Int?,
-        remembered: Int? = nil,
-        tracks: [AudioTrack],
-        preferredLanguage: String
-    ) -> Int? {
+    /// Local language preference wins over another client's saved server choice.
+    static func selectedOrdinal(manual: Int?, tracks: [AudioTrack], preferredLanguage: String) -> Int? {
         if let manual { return manual }
-        if let remembered, tracks.indices.contains(remembered) { return remembered }
         guard !tracks.isEmpty else { return nil }
         let language = preferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         var matching = tracks.indices.filter { index in

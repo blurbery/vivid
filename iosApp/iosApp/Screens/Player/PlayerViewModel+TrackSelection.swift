@@ -232,9 +232,7 @@ extension PlayerViewModel {
     }
 
     /// Best-effort write of an explicit subtitle pick (or explicit
-    /// "Off" when `track` is nil). It becomes Vivid's subtitle setting and
-    /// is remembered for this series (or movie), as a pick on the detail
-    /// page is, so the next episode and a later resume use the same track.
+    /// "Off" when `track` is nil).
     private func persistSubtitleSelection(_ track: PlayerTrack?) {
         if let track {
             if let language = track.lang, !language.isEmpty { settings.preferredSubtitleLanguage = language }
@@ -242,25 +240,6 @@ extension PlayerViewModel {
         } else {
             settings.preferredSubtitleMode = "off"
         }
-        guard let key = trackPrefPersistKey else { return }
-        let showForced = settings.showForcedSubtitles
-        let request: SubtitlePrefRequest
-        if let track {
-            if let ffIndex = track.ffIndex,
-               let version = currentSelectedVersion,
-               let fromDetail = TrackSelectionPersistence.subtitleRequest(
-                   version: version,
-                   ffIndex: ffIndex,
-                   showForced: showForced
-               ) {
-                request = fromDetail
-            } else {
-                request = TrackSelectionPersistence.subtitleRequest(track: track, showForced: showForced)
-            }
-        } else {
-            request = TrackSelectionPersistence.subtitleOffRequest(showForced: showForced)
-        }
-        TrackSelectionPersistence.saveSubtitle(prefKey: key, request: request)
     }
 
     func selectSecondarySubtitle(_ track: PlayerTrack) {
@@ -685,60 +664,13 @@ extension PlayerViewModel {
     }
 
     func localSubtitlePrefsSnapshot(_ watchDetail: WatchDetail) -> PrefsSnapshot {
-        if let remembered = Self.rememberedSubtitlePrefs(
-            language: watchDetail.effectiveSubtitleLanguage,
-            mode: watchDetail.effectiveSubtitleMode,
-            showForced: watchDetail.effectiveShowForcedSubtitles,
-            signature: watchDetail.effectiveSubtitleTrackSignature,
-            defaultShowForced: settings.showForcedSubtitles
-        ) {
-            return remembered
-        }
-        return PrefsSnapshot(
+        PrefsSnapshot(
             preferredLanguage: settings.preferredSubtitleLanguage == PlaybackPrefSentinel.none ? nil : settings.preferredSubtitleLanguage,
             additionalPreferredLanguages: [],
             mode: SubtitleMode(rawValue: settings.preferredSubtitleMode),
             showForced: settings.showForcedSubtitles,
             forcedOnly: false, preferAccessibilityTracks: false,
             disableWhenNoLanguageMatch: true, trackSignature: nil
-        )
-    }
-
-    /// The subtitle choice remembered for this series (or movie). The
-    /// title's `effective_subtitle_*` fields are Vivid's own memory on every
-    /// server, so a track or Off picked there wins over the general subtitle
-    /// settings. Nil when nothing is remembered: Emby and Jellyfin fill in
-    /// mode `auto` by default, so a mode alone isn't a remembered choice.
-    static func rememberedSubtitlePrefs(
-        language: String?,
-        mode: String?,
-        showForced: Bool?,
-        signature: SubtitleTrackSignature?,
-        defaultShowForced: Bool
-    ) -> PrefsSnapshot? {
-        if let signature {
-            let rememberedLanguage = language?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return PrefsSnapshot(
-                preferredLanguage: rememberedLanguage?.isEmpty == false ? rememberedLanguage : signature.language,
-                additionalPreferredLanguages: [],
-                mode: .always,
-                showForced: showForced ?? defaultShowForced,
-                forcedOnly: false,
-                preferAccessibilityTracks: false,
-                disableWhenNoLanguageMatch: true,
-                trackSignature: signature
-            )
-        }
-        guard mode == SubtitleMode.off.rawValue else { return nil }
-        return PrefsSnapshot(
-            preferredLanguage: nil,
-            additionalPreferredLanguages: [],
-            mode: .off,
-            showForced: showForced ?? defaultShowForced,
-            forcedOnly: false,
-            preferAccessibilityTracks: false,
-            disableWhenNoLanguageMatch: true,
-            trackSignature: nil
         )
     }
 
