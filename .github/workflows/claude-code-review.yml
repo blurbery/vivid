@@ -150,6 +150,16 @@ jobs:
             --model ${{ env.REVIEW_MODEL }}
             --max-turns 60
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*)"
+      # The action hides Claude's output, so an API error such as "Credit
+      # balance is too low" would otherwise only show as a failed step.
+      - name: Show why the review failed
+        if: failure() && steps.claude.outcome == 'failure'
+        run: |
+          file="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$file" ]; then
+            reason=$(jq -r '[.[] | select(.type == "result")] | last | (.result // "") | .[0:500]' "$file")
+          fi
+          echo "::error::Claude review failed: ${reason:-no result message}"
       - name: Post the summary
         if: steps.claude.outcome == 'success'
         env:
