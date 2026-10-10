@@ -10,8 +10,8 @@ name: Claude Code Review
 # Markdown-only changes. Uses the ANTHROPIC_API_KEY secret, so reviews come out
 # of API credits, or CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription token from
 # `claude setup-token`) when that isn't set. Without either, the job does
-# nothing. A personal API key that covers several workspaces also needs the
-# ANTHROPIC_WORKSPACE_ID secret.
+# nothing. A personal API key that covers several workspaces gets the workspace
+# header it needs automatically (see "Pick the API workspace").
 
 on:
   pull_request:
@@ -111,13 +111,33 @@ jobs:
             echo "from=$from"
             echo "comment_id=$comment_id"
           } >> "$GITHUB_OUTPUT"
+      # A personal API key that covers several workspaces is rejected unless
+      # each request names a workspace. Such a key can list the organisation's
+      # workspaces, so use the ANTHROPIC_WORKSPACE_ID secret if it's set, or
+      # else the Default workspace. Keys tied to one workspace can't list them
+      # and need no header. The ID is masked so it never shows in the log.
+      - name: Pick the API workspace
+        if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then exit 0; fi
+          if [ -z "$WORKSPACE_ID" ]; then
+            WORKSPACE_ID=$(curl -sS --fail "https://api.anthropic.com/v1/organizations/workspaces?include_default=true&limit=100" \
+              -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" 2>/dev/null \
+              | jq -r '[.data[] | select(.name == "Default")][0].id // empty' 2>/dev/null) || WORKSPACE_ID=""
+          fi
+          if [ -n "$WORKSPACE_ID" ]; then
+            echo "::add-mask::$WORKSPACE_ID"
+            echo "ANTHROPIC_CUSTOM_HEADERS=anthropic-workspace-id: $WORKSPACE_ID" >> "$GITHUB_ENV"
+            echo "Sending the workspace header with each request."
+          else
+            echo "The key is tied to one workspace, so no header is needed."
+          fi
       - uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         id: claude
         if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
-        env:
-          # A personal API key that covers several workspaces must name one on
-          # every request. Set ANTHROPIC_WORKSPACE_ID (a wrkspc_ ID) for those.
-          ANTHROPIC_CUSTOM_HEADERS: "${{ secrets.ANTHROPIC_API_KEY != '' && secrets.ANTHROPIC_WORKSPACE_ID != '' && format('anthropic-workspace-id: {0}', secrets.ANTHROPIC_WORKSPACE_ID) || '' }}"
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
