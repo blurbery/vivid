@@ -509,6 +509,15 @@ actor VividAPI {
         )
     }
 
+    /// Every original file of one episode. Emby lists one source per
+    /// episode, so download menus ask for the rest; Silo and Jellyfin list
+    /// them all.
+    func episodeFiles(contentId: String) async throws -> [EpisodeFile] {
+        guard MediaServerProvider.active == .emby else { return [] }
+        let response: EpisodeFilesResponse = try await http.get("/api/v1/catalog/items/\(contentId)/files")
+        return response.files
+    }
+
     func watchDetail(contentId: String) async throws -> WatchDetail {
         try await http.get("/api/v1/watch/\(contentId)", query: await imageSizeQuery)
     }

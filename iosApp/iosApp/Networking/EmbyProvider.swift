@@ -790,6 +790,12 @@ struct EmbyAdapter {
             return try await catalog(query.merging(["source":p[2]]) { _,new in new })
         }
         if p.count == 5, p[2] == "catalog", p[3] == "items" { return try item(await rawItem(p[4])) }
+        // Episode lists carry one source per episode; the item itself lists
+        // every version, which season and series download menus need.
+        if p.count == 6, p[2] == "catalog", p[3] == "items", p[5] == "files", method == "GET" {
+            let raw = try await connection.object("GET", "/Users/\(userID)/Items/\(EmbyConnection.id(p[4]))", query: ["Fields": "MediaSources,MediaStreams"])
+            return ["files": try (raw["MediaSources"] as? [[String: Any]] ?? []).map { try version($0) }]
+        }
         if p.count == 4, p[2] == "people", method == "GET" {
             let raw = try await rawItem(p[3])
             var person: [String:Any] = ["id":Self.numberID(p[3]), "name":raw["Name"] as? String ?? ""]
