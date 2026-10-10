@@ -281,6 +281,14 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertTrue(versions[1].detail.hasPrefix("2 of 3 episodes · about "))
         XCTAssertEqual(SeriesDownloadVersion.rowDetail(versions, chosen: nil), "Auto · 2160p · HEVC · HDR, 1080p")
         XCTAssertTrue(SeriesDownloadVersion.rowDetail(versions, chosen: versions[1].version).hasPrefix("1080p · 2 of 3 episodes"))
+
+        // A file that doesn't say its codec keeps the codec off the name.
+        let unknownCodec = EpisodeFile(fileId: 9, resolution: "2160p", codecVideo: nil, hdr: true, audioChannels: nil, container: nil, fileSize: nil)
+        let partly = SeriesDownloadVersion.versions(in: [
+            episode(1, [file(1, "2160p", "hevc", hdr: true, size: gb)]),
+            episode(2, [unknownCodec]),
+        ])
+        XCTAssertEqual(partly.map(\.title), ["2160p · HDR"])
     }
 
     /// Each episode gets the file with the same class and HDR, then the same

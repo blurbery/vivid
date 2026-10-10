@@ -59,6 +59,12 @@ struct DownloadOptionsSheet: View {
         return choices.effectiveVersion.flatMap { DownloadVersionPreference.heightClass(of: $0.resolution) }
     }
 
+    /// The chosen version has a smaller copy to offer.
+    private var showsQuality: Bool { DownloadQualityPicker.offersSmaller(versionHeight: versionHeight) }
+
+    /// The quality the download uses, for the chosen version.
+    private var chosenQuality: String { DownloadQualityPicker.resolved(quality, versionHeight: versionHeight) }
+
     private var choices: DownloadVersionChoices {
         DownloadVersionChoices(versions: versions, fileId: fileId, lastVersionFileId: lastVersionFileId)
     }
@@ -92,7 +98,7 @@ struct DownloadOptionsSheet: View {
     }
 
     private func start() {
-        onStart(DownloadRequestOptions(fileId: isEmbyConversion ? nil : fileId, quality: quality))
+        onStart(DownloadRequestOptions(fileId: isEmbyConversion ? nil : fileId, quality: chosenQuality))
         dismiss()
     }
 
@@ -118,12 +124,14 @@ struct DownloadOptionsSheet: View {
                         }
                         .disabled(isEmbyConversion)
                     }
-                    if formats.count > 1 {
+                    if showsQuality {
                         DownloadQualityPicker(quality: $quality, versionHeight: versionHeight)
                     }
                 } footer: {
-                    if formats.count > 1 {
-                        Text(DownloadQualityPicker.footer(quality: quality, versionHeight: versionHeight))
+                    if showsQuality {
+                        Text(DownloadQualityPicker.footer(quality: chosenQuality, versionHeight: versionHeight))
+                    } else if formats.count > 1 {
+                        Text(DownloadQualityPicker.noSmallerNote)
                     }
                 }
             }
@@ -143,8 +151,8 @@ struct DownloadOptionsSheet: View {
     }
 
     private var downloadDetail: String {
-        var parts = [manager.qualityLabel(rawValue: quality), choices.versionLabel]
-        if let estimate = choices.estimate(quality: quality) {
+        var parts = [manager.qualityLabel(rawValue: chosenQuality), choices.versionLabel]
+        if let estimate = choices.estimate(quality: chosenQuality) {
             parts.append(estimate.isRange ? "\(estimate.sizeLabel) depending on server choice" : estimate.sizeLabel)
         }
         return parts.joined(separator: " · ")

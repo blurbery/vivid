@@ -21,16 +21,17 @@ struct SeriesDownloadVersion: Hashable {
     }
 
     /// One entry per version among the episodes' files, highest first. The
-    /// codec shows when every matching file shares it. Episode lists don't
-    /// say which HDR format a file uses, so it reads "HDR".
+    /// codec shows when every matching file says it and they all share it.
+    /// Episode lists don't say which HDR format a file uses, so it reads "HDR".
     static func versions(in episodes: [EpisodeListItem]) -> [SeriesDownloadVersion] {
         let fileLists = episodes.compactMap(\.files).filter { !$0.isEmpty }
         return DownloadVersionPreference.options(for: fileLists.flatMap { $0 }).map { version in
             let matched = fileLists.compactMap { version.file(in: $0) }
-            let codecs = Set(matched.compactMap { DetailPlaybackFormatting.normalizedVideoCodec($0.codecVideo) })
+            let codecs = matched.map { DetailPlaybackFormatting.normalizedVideoCodec($0.codecVideo) }
+            let codec = codecs.first.flatMap { first in codecs.allSatisfy { $0 == first } ? first : nil }
             let title = [
                 version.height == 480 ? "SD" : "\(version.height)p",
-                codecs.count == 1 ? codecs.first : nil,
+                codec,
                 version.hdr == true ? "HDR" : nil,
             ].compactMap { $0 }.joined(separator: " · ")
             return SeriesDownloadVersion(

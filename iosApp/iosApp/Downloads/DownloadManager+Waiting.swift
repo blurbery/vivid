@@ -73,10 +73,10 @@ extension DownloadManager {
         }
     }
 
-    /// Registers waiting episodes in order until the server refuses again.
-    /// An episode is only asked for at the quality it was chosen at: if the
-    /// server no longer offers that, it's dropped rather than downloaded at
-    /// another size.
+    /// Registers waiting episodes in order until the server refuses again or
+    /// can't be reached. An episode is only asked for at the quality it was
+    /// chosen at: if the server no longer offers that, it's dropped rather
+    /// than downloaded at another size.
     func startWaitingDownloads() async {
         guard !isStartingWaiting, !waitingDownloads.isEmpty else { return }
         isStartingWaiting = true
@@ -85,6 +85,8 @@ extension DownloadManager {
         let scope = await DownloadScope.current()
         for item in waitingDownloads {
             guard !Task.isCancelled, await DownloadScope.current() == scope else { return }
+            // Cancelled while an earlier episode was being asked for.
+            guard isWaiting(contentId: item.id) else { continue }
             let existing = record(forContentId: item.id)
             guard existing == nil || existing?.localStatus == .failed,
                   capability?.qualityPresets.contains(item.quality) == true else {
@@ -104,7 +106,12 @@ extension DownloadManager {
                     quality: item.quality,
                     scope: scope
                 )
-                cancelWaiting(id: item.id)
+                if isWaiting(contentId: item.id) {
+                    cancelWaiting(id: item.id)
+                } else {
+                    // Cancelled while its request was in flight.
+                    deleteDownload(forContentId: item.id)
+                }
             } catch DownloadError.registrationAlreadyInFlight {
                 continue
             } catch DownloadError.scopeChangedDuringRegistration {
@@ -112,6 +119,10 @@ extension DownloadManager {
             } catch where DownloadError.isAccountLimit(error) {
                 return
             } catch {
+                // The list now belongs to whichever account is active.
+                guard await DownloadScope.current() == scope else { return }
+                // Offline, a timeout or a server error: try again later.
+                if DownloadFailureReport.isRetryable(error) { return }
                 // Registration reports its own failures.
                 cancelWaiting(id: item.id)
             }
