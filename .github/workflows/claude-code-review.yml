@@ -10,7 +10,9 @@ name: Claude Code Review
 # drafts, bots, fork PRs (GitHub withholds secrets from them) and
 # Markdown-only changes. Needs the ANTHROPIC_API_KEY secret (reviews come out
 # of API credits), plus ANTHROPIC_WORKSPACE_ID for a key that covers several
-# workspaces. Without a key, the job does nothing.
+# workspaces. Without a key, the job does nothing. Comments are posted by the
+# review GitHub App when the REVIEW_APP_CLIENT_ID variable and
+# REVIEW_APP_PRIVATE_KEY secret are set, and by github-actions[bot] otherwise.
 
 on:
   pull_request:
@@ -48,11 +50,20 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+      - name: Use the review app's identity
+        id: app
+        if: env.HAS_CREDENTIALS == 'true' && vars.REVIEW_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.REVIEW_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REVIEW_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
       - name: Prepare the review
         id: prep
         if: env.HAS_CREDENTIALS == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          BOT_LOGIN: ${{ steps.app.outputs.app-slug && format('{0}[bot]', steps.app.outputs.app-slug) || 'github-actions[bot]' }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -63,15 +74,17 @@ jobs:
           mkdir -p "$dir"
 
           # The latest summary comment and the commit it reviewed ("-" for the
-          # older marker, which didn't record one).
+          # older marker, which didn't record one). Summaries from either bot
+          # count, but only one posted by this identity is edited in place.
           gh api --paginate "repos/$REPO/issues/$PR/comments" \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- claude-review"))) | "\(.id) \((.body | capture("sha=(?<s>[0-9a-f]{40})") | .s) // "-")"' \
+            | jq -r --arg bot "$BOT_LOGIN" '.[] | select((.user.login == $bot or .user.login == "github-actions[bot]") and (.body | contains("<!-- claude-review"))) | "\(.user.login) \(.id) \((.body | capture("sha=(?<s>[0-9a-f]{40})") | .s) // "-")"' \
             > "$RUNNER_TEMP/summaries.txt"
           comment_id=""
           last_sha=""
           if [ -s "$RUNNER_TEMP/summaries.txt" ]; then
-            read -r comment_id last_sha < <(tail -n 1 "$RUNNER_TEMP/summaries.txt")
+            read -r login comment_id last_sha < <(tail -n 1 "$RUNNER_TEMP/summaries.txt")
             if [ "$last_sha" = "-" ]; then last_sha=""; fi
+            if [ "$login" != "$BOT_LOGIN" ]; then comment_id=""; fi
           fi
           if [ "$last_sha" = "$HEAD_SHA" ]; then
             echo "::notice::This commit has already been reviewed."
@@ -135,7 +148,7 @@ jobs:
       - name: Post the review
         if: steps.claude.outcome == 'success'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
