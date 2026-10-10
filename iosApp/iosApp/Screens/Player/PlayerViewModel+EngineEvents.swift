@@ -151,6 +151,9 @@ extension PlayerViewModel {
             // (replan / stale-session renewal) instead of straight to the
             // terminal wall. `handlePlaybackError` still finalizes the cases
             // that genuinely have nowhere left to go.
+            // A refused audio session was already published as a typed
+            // failure and stopped at Retry; replanning here would step down.
+            if vividPlaybackController.engine.errorInfo?.kind == .audioSessionUnavailable { return }
             handlePlaybackError(message)
         }
     }
@@ -326,6 +329,14 @@ extension PlayerViewModel {
                fallbackMessage: failure.message,
                transientFailureCode: code
            ) {
+            return
+        }
+        if failure.kind == .audioSessionUnavailable {
+            // Activation was still refused after the engine's brief retries.
+            // Every route needs the same audio session, so asking the server
+            // for a lower rung would only transcode for nothing; stop at Retry.
+            guard !hasReachedEndOfFile else { return }
+            finalizeTerminalPlaybackError(failure.message)
             return
         }
         let serverCanAdapt: Set<PlaybackErrorKind> = [

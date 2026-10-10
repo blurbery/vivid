@@ -134,7 +134,7 @@ struct SeekSpec { var timeline = Timeline() }
 ''' + seek_method + '\n}\n'
 swift = r'''
 import Foundation
-enum PlaybackErrorKind: String { case audioTrackSwitchFailed, sourceRefused, vodSourceFailed, nativeItemFailed, noPlayableTrackWithinBudget, masterPlaylistRejected, softwarePipelineFailed, audioBridgeProducedNoOutput, dolbyVisionRequiresHardware, demuxedAudioLiveUnsupported, sourceRateLimited }
+enum PlaybackErrorKind: String { case audioTrackSwitchFailed, sourceRefused, vodSourceFailed, nativeItemFailed, noPlayableTrackWithinBudget, masterPlaylistRejected, softwarePipelineFailed, audioBridgeProducedNoOutput, dolbyVisionRequiresHardware, demuxedAudioLiveUnsupported, sourceRateLimited, audioSessionUnavailable }
 struct PlaybackErrorInfo { var kind: PlaybackErrorKind; var message: String; var transientSourceCode: Int? = nil }
 enum MediaLogRedactor { static func sanitize(_ s: String) -> String { s } }
 @MainActor final class PlaybackSessionRecorder { static let shared = PlaybackSessionRecorder(); func end(reason: String) {}; func setPlaying(_ playing: Bool) {} }
@@ -174,7 +174,7 @@ struct Version { var credits: TimeRange? }
     var freshLoadOwnsFailureHandling = false, isVividLoadEstablished = true
     var authenticationReloadGeneration: Int?, streamLoadGeneration = 1
     var replanAccepted = true
-    func protocolV3FailureClassification(_ message: String) -> String { "playback_error" }
+    static func protocolV3FailureClassification(_ message: String) -> String { "playback_error" }
     func attemptProtocolV3Replan(position: Double, classification: String, message: String) -> Bool {
         recoveries += 1; return replanAccepted
     }
@@ -220,6 +220,7 @@ struct Version { var credits: TimeRange? }
     func fail() { handlePlaybackError("Connection interrupted") }
     func settleLoad() { freshLoadOwnsFailureHandling = false; protocolV3ReplanTask = nil; committedProtocolV3LoadEpoch = 1; recoverPendingUnexpectedEnd() }
     func typedFail() { handleVividFailure(PlaybackErrorInfo(kind: .softwarePipelineFailed, message: "Failure")) }
+    func audioSessionFail() { handleVividFailure(PlaybackErrorInfo(kind: .audioSessionUnavailable, message: "Audio output isn't available right now.")) }
     func skipCredits(to time: Double) { performCreditsSkip(to: time) }
 }
 ''' + engine_harness + seek_harness + r'''
@@ -252,6 +253,12 @@ struct Version { var credits: TimeRange? }
             let h = Harness(); h.currentTime = position; h.fail()
             check(h.recoveries == 1 && !h.hasReachedEndOfFile && h.postrolls == 0 && h.watchedWrites == 0, "An error is not successful completion, even near EOF")
             check(h.countdown == 0 && !h.showNextUpScreen, "Error cancels already-visible Next Up")
+        }
+        for silo in [true, false] {
+            let h = Harness()
+            if !silo { h.activePreparedProtocolV3 = nil; h.committedProtocolV3LoadEpoch = nil }
+            h.audioSessionFail()
+            check(h.recoveries == 0 && h.errors == 1, "A refused audio session stops at Retry instead of stepping down a route")
         }
         for buffering in [true, false] {
             let h = Harness(); h.currentTime = 3590; h.showNextUpScreen = false; h.countdown = 0

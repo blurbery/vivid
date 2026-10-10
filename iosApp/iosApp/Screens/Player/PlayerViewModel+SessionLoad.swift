@@ -556,7 +556,7 @@ extension PlayerViewModel {
                 }
                 return
             } catch let error {
-                let loadFailure = self.protocolV3LoadFailureRecovery(error)
+                let loadFailure = Self.protocolV3LoadFailureRecovery(error)
                 if let uncommittedPrepared {
                     // `errorInfo` may already have been published for this
                     // epoch, but the committed-load gate prevents that event

@@ -63,6 +63,9 @@ struct PlaybackErrorInfo: Error, Equatable, LocalizedError {
         case sourceRefused, vodSourceFailed, nativeItemFailed, noPlayableTrackWithinBudget
         case masterPlaylistRejected, softwarePipelineFailed, audioBridgeProducedNoOutput
         case dolbyVisionRequiresHardware, demuxedAudioLiveUnsupported, audioTrackSwitchFailed, sourceRateLimited
+        /// The shared audio session refused activation. It says nothing about
+        /// the stream, so recovery must never step down to another route.
+        case audioSessionUnavailable
     }
     let kind: Kind
     let message: String
