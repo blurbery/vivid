@@ -93,6 +93,36 @@ final class SiloLocalInterfaceSettingsTests: XCTestCase {
         XCTAssertTrue(SettingsStubProtocol.state().requestCounts.isEmpty)
     }
 
+    @MainActor
+    func testOldSiloMenuCopiesAreDeletedOnceAndOthersKept() throws {
+        let suiteName = "silo-menu-cache-\(UUID().uuidString)"
+        let standardName = "silo-menu-cache-standard-\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let standard = try XCTUnwrap(UserDefaults(suiteName: standardName))
+        addTeardownBlock {
+            UserDefaults().removePersistentDomain(forName: suiteName)
+            UserDefaults().removePersistentDomain(forName: standardName)
+        }
+        let silo = "vivid.uiCustomization.silo-server.profile.mobile"
+        let emby = "vivid.uiCustomization.emby:server.profile.mobile"
+        for store in [suite, standard] {
+            store.set(Data("{}".utf8), forKey: silo)
+            store.set(Data("{}".utf8), forKey: emby)
+        }
+
+        UICustomizationPreferences.forgetSiloMenuCaches(suite: suite, standard: standard)
+
+        for store in [suite, standard] {
+            XCTAssertNil(store.data(forKey: silo), "Silo's old menu must never paint")
+            XCTAssertNotNil(store.data(forKey: emby))
+        }
+
+        // It runs once: a value Vivid saves afterwards is kept.
+        suite.set(Data("{}".utf8), forKey: silo)
+        UICustomizationPreferences.forgetSiloMenuCaches(suite: suite, standard: standard)
+        XCTAssertNotNil(suite.data(forKey: silo))
+    }
+
     func testOnlySiloInterfaceKeysAreTakenOver() {
         XCTAssertTrue(SiloLocalInterfaceSettings.applies(toServerID: Self.siloServerId))
         XCTAssertFalse(SiloLocalInterfaceSettings.applies(toServerID: "emby:server"))

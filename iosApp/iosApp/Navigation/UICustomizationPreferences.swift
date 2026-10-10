@@ -484,7 +484,32 @@ enum UICustomizationSupportProjection: String, Codable, Equatable, Sendable {
 @MainActor
 @Observable
 final class UICustomizationPreferences {
-    static let shared = UICustomizationPreferences()
+    static let shared: UICustomizationPreferences = {
+        forgetSiloMenuCaches()
+        return UICustomizationPreferences()
+    }()
+
+    /// Builds before this one saved Silo's own menu and card values here. On
+    /// Silo those belong to Vivid now, so the old copies are deleted once,
+    /// before anything paints, rather than showing Silo's menu until the
+    /// first refresh. Emby and Jellyfin copies are kept.
+    static func forgetSiloMenuCaches(
+        suite: UserDefaults = SharedStorage.suite,
+        standard: UserDefaults = .standard
+    ) {
+        let marker = "vivid.siloMenuCacheCleared.v1"
+        guard !suite.bool(forKey: marker), !standard.bool(forKey: marker) else { return }
+        let prefix = "vivid.uiCustomization."
+        for store in [suite, standard] {
+            for key in store.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+                let serverId = key.dropFirst(prefix.count).split(separator: ".").first.map(String.init)
+                if MediaServerProvider.forServerID(serverId) == .silo {
+                    store.removeObject(forKey: key)
+                }
+            }
+            store.set(true, forKey: marker)
+        }
+    }
 
     private var storedPrimaryMenu: PrimaryMenuPreference?
     private var storedCardPresentation: CardPresentationPreference = .standard
