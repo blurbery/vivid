@@ -76,6 +76,10 @@ actor EmbyDownloads {
             guard let source, let sourceID = source["Id"] as? String else { throw EmbyError.playbackUnavailable }
             let id = "emby-" + UUID().uuidString
             var (entry, row) = try Self.record(id:id,raw:raw,itemID:itemID,source:source,sourceID:sourceID,format:format,adapter:adapter)
+            // Episode rows name their series, as batch rows and Silo's do. The manifest's
+            // SeriesId can be another series item for the same show, so this keeps the
+            // download tied to the series it was asked for.
+            if row["episodeId"] != nil, let seriesID = body["content_id"] as? String { row["contentId"] = seriesID }
             var createdJobID: String?
             if let conversionOptions {
                 let request = try EmbyDownloadConversion.request(itemID: itemID, userID: user, format: format, options: conversionOptions)
