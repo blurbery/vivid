@@ -94,7 +94,11 @@ extension DownloadManager {
                 return
             }
 
+            // A server or profile switch while this request is out must not
+            // merge the old account's progress into the new scope's file.
+            let scopeGeneration = registrationScopeGeneration
             let response = try await VividAPI.shared.pullProgressDeltas(since: file.progressCursor)
+            guard scopeGeneration == registrationScopeGeneration else { return }
             for item in response.progress {
                 let serverTime = item.updatedAt ?? Date()
                 var entry = file.localProgress[item.mediaItemId]
