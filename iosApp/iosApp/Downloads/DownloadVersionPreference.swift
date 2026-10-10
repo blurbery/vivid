@@ -1,9 +1,8 @@
 import Foundation
 
 /// An original-file version chosen for season, series and multi-episode
-/// downloads, or as the default in Settings. Every episode is a different
-/// file, so the choice is a rule matched per episode: its resolution class
-/// and, where set, HDR.
+/// downloads. Every episode is a different file, so the choice is a rule
+/// matched per episode: its resolution class and, where set, HDR.
 struct DownloadVersionPreference: Hashable, Sendable {
     /// Resolution class: 2160, 1080, 720, or 480 for anything smaller.
     let height: Int
@@ -28,36 +27,17 @@ struct DownloadVersionPreference: Hashable, Sendable {
         return hdr == true ? "\(base) HDR" : base
     }
 
-    // MARK: - Menu tags
+    // MARK: - Qualities
 
-    /// Quality menus select one string: a quality preset ("original",
-    /// "10mbps") or a version of the original file, tagged "original@1080",
-    /// "original@2160-hdr" or "original@2160-sdr".
-    static let tagPrefix = "original@"
-
-    var tag: String {
-        let range = hdr == true ? "-hdr" : hdr == false ? "-sdr" : ""
-        return "\(Self.tagPrefix)\(height)\(range)"
-    }
-
-    init?(tag: String) {
-        guard tag.hasPrefix(Self.tagPrefix) else { return nil }
-        let parts = tag.dropFirst(Self.tagPrefix.count).split(separator: "-", maxSplits: 1)
-        guard let first = parts.first, let height = Int(first), Self.classes.contains(height) else { return nil }
-        switch parts.count > 1 ? String(parts[1]) : nil {
-        case nil: self.init(height: height, hdr: nil)
-        case "hdr": self.init(height: height, hdr: true)
-        case "sdr": self.init(height: height, hdr: false)
-        default: return nil
+    /// The qualities a download of this resolution class may use. A 4K
+    /// version only makes 4K transcodes; a smaller one may go down the whole
+    /// ladder. nil (Auto, or a file that doesn't say) offers everything.
+    static func formats(_ formats: [DownloadFormat], versionHeight: Int?, maxHeight: (DownloadFormat) -> Int?) -> [DownloadFormat] {
+        guard let versionHeight else { return formats }
+        return formats.filter { format in
+            guard format != .original, let height = maxHeight(format) else { return true }
+            return versionHeight >= 2160 ? height >= 2160 : height <= versionHeight
         }
-    }
-
-    /// The server quality and version a menu tag stands for.
-    static func split(_ tag: String) -> (quality: String, version: DownloadVersionPreference?) {
-        if let version = DownloadVersionPreference(tag: tag) {
-            return (DownloadFormat.original.rawValue, version)
-        }
-        return (tag, nil)
     }
 
     // MARK: - Matching
@@ -110,17 +90,5 @@ struct DownloadVersionPreference: Hashable, Sendable {
 
     func file(in files: [EpisodeFile]) -> EpisodeFile? {
         match(files, resolution: \.resolution, hdr: \.hdr)
-    }
-
-    func version(in versions: [FileVersion]) -> FileVersion? {
-        match(versions, resolution: \.resolution, hdr: \.hdr)
-    }
-
-    /// The menu option a default (such as Settings' "Original · 1080p")
-    /// lands on: the same class, preferring the matching HDR range.
-    func option(in options: [DownloadVersionPreference]) -> DownloadVersionPreference? {
-        let sameClass = options.filter { $0.height == height }
-        if let hdr, let exact = sameClass.first(where: { ($0.hdr == true) == hdr }) { return exact }
-        return sameClass.first { $0.hdr != true } ?? sameClass.first
     }
 }

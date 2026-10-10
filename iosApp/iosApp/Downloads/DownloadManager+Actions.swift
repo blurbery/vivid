@@ -118,10 +118,10 @@ extension DownloadManager {
     }
 
     /// Registers episodes one request each: hand-picked episodes, or every
-    /// episode of a season or series at a chosen original version, which
-    /// Silo's season and series requests can't express. Each episode gets
-    /// the file matching `version` (nil, or no match, leaves the pick to the
-    /// server). Episodes already downloaded or on their way, and episodes
+    /// episode of a season or series at a chosen version or at a smaller
+    /// quality the server's season and series requests don't take. Each
+    /// episode gets the file matching `version` (nil, or no match, leaves the
+    /// pick to the server), at `quality`. Episodes already downloaded or on their way, and episodes
     /// with no file, are skipped; a failure doesn't stop the rest. Stops if
     /// the server or profile changes part way through.
     func downloadEpisodes(
@@ -178,7 +178,7 @@ extension DownloadManager {
                     posterThumbhash: posterThumbhash,
                     preferredPosterPath: preferredPosterPath,
                     fileId: version?.file(in: files)?.fileId,
-                    quality: version == nil ? quality : DownloadFormat.original.rawValue,
+                    quality: quality,
                     scope: scope
                 )
                 result.added += 1
@@ -329,7 +329,7 @@ extension DownloadManager {
         if let requestedQuality, allowed.contains(requestedQuality) {
             return requestedQuality
         }
-        return DownloadSettings.shared.resolvedFormat(allowedFormats: allowed)
+        return DownloadFormat.original.rawValue
     }
 
     func deleteDownload(id: String) {

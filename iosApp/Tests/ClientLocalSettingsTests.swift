@@ -8,27 +8,15 @@ final class ClientLocalSettingsTests: XCTestCase {
         defer { UserDefaults().removePersistentDomain(forName: suiteName) }
 
         let settings = DownloadSettings(defaults: defaults)
-        XCTAssertEqual(settings.preferredFormat, DownloadFormat.original.rawValue)
         XCTAssertTrue(settings.wifiOnly)
         XCTAssertFalse(settings.keepWatchedDownloads)
 
-        settings.preferredFormat = DownloadFormat.fiveMbps.rawValue
         settings.wifiOnly = false
         settings.keepWatchedDownloads = true
 
         let restored = DownloadSettings(defaults: defaults)
-        XCTAssertEqual(restored.preferredFormat, DownloadFormat.fiveMbps.rawValue)
         XCTAssertFalse(restored.wifiOnly)
         XCTAssertTrue(restored.keepWatchedDownloads)
-        XCTAssertEqual(
-            restored.resolvedFormat(allowedFormats: [DownloadFormat.fiveMbps.rawValue]),
-            DownloadFormat.fiveMbps.rawValue
-        )
-        XCTAssertEqual(
-            restored.resolvedFormat(allowedFormats: [DownloadFormat.original.rawValue]),
-            DownloadFormat.original.rawValue,
-            "an unavailable saved quality must fall back to a request the server offers"
-        )
     }
 
     @MainActor

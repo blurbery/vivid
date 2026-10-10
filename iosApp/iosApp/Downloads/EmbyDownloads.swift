@@ -39,7 +39,8 @@ actor EmbyDownloads {
             return ["enabled":true,"downloadAllowed":policy["EnableContentDownloading"] as? Bool ?? false,
                     "qualityPresets":formats.map(\.rawValue),"transcodeEnabled":formats.count > 1,
                     "transcodeUserAllowed":formats.count > 1,
-                    "seasonDownload":true,"seriesMonitoring":false,"bulkQuality":formats.count > 1]
+                    "seasonDownload":true,"seriesMonitoring":false,"bulkQuality":formats.count > 1,
+                    "versionTranscodes":StreamedTranscodeDownload.isAllowed(policy: policy)]
         }
         if path.count == 3, method == "POST" {
             let rawUser = try await connection.object("GET", "/Users/\(user)")

@@ -20,6 +20,10 @@ struct DownloadCapability: Codable, Hashable, Sendable {
     /// What each preset produces, when the server says (Silo does, and
     /// caps it by its 4K setting and the account's playback limit).
     let qualityOptions: [DownloadQualityOption]
+    /// A smaller download can be made from a chosen version. Emby's
+    /// conversion service, the fallback for accounts that can't transcode
+    /// playback, always picks its own source.
+    let versionTranscodes: Bool
 
     /// Downloads are usable at all only when the feature is on AND this
     /// user is allowed to download.
@@ -48,6 +52,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         case monitoringModes
         case bulkQuality
         case qualityOptions
+        case versionTranscodes
     }
 
     init(
@@ -60,7 +65,8 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         seriesMonitoring: Bool,
         monitoringModes: [String],
         bulkQuality: Bool = false,
-        qualityOptions: [DownloadQualityOption] = []
+        qualityOptions: [DownloadQualityOption] = [],
+        versionTranscodes: Bool = true
     ) {
         self.enabled = enabled
         self.downloadAllowed = downloadAllowed
@@ -72,6 +78,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         self.monitoringModes = monitoringModes
         self.bulkQuality = bulkQuality
         self.qualityOptions = qualityOptions
+        self.versionTranscodes = versionTranscodes
     }
 
     init(from decoder: Decoder) throws {
@@ -88,6 +95,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         monitoringModes = try container.decodeIfPresent([String].self, forKey: .monitoringModes) ?? []
         bulkQuality = try container.decodeIfPresent(Bool.self, forKey: .bulkQuality) ?? false
         qualityOptions = (try? container.decodeIfPresent([DownloadQualityOption].self, forKey: .qualityOptions)) ?? []
+        versionTranscodes = try container.decodeIfPresent(Bool.self, forKey: .versionTranscodes) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
@@ -102,6 +110,7 @@ struct DownloadCapability: Codable, Hashable, Sendable {
         try container.encode(monitoringModes, forKey: .monitoringModes)
         try container.encode(bulkQuality, forKey: .bulkQuality)
         try container.encode(qualityOptions, forKey: .qualityOptions)
+        try container.encode(versionTranscodes, forKey: .versionTranscodes)
     }
 }
 
