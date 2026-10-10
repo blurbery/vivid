@@ -76,7 +76,10 @@ enum DownloadBackgroundRefresh {
             // activate scope → refresh capability → reconcile →
             // monitoring/progress sync (which also kicks the pipeline).
             await DownloadManager.shared.onAppActive()
-            if DownloadManager.shared.downloadsEnabled, DownloadManager.shared.hasServerPreparingDownloads { schedule(soon: true) }
+            if DownloadManager.shared.downloadsEnabled,
+               DownloadManager.shared.hasServerPreparingDownloads || !DownloadManager.shared.waitingDownloads.isEmpty {
+                schedule(soon: true)
+            }
             task.setTaskCompleted(success: !Task.isCancelled)
         }
         task.expirationHandler = {

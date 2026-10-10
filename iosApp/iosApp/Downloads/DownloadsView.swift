@@ -39,7 +39,7 @@ struct DownloadsView: View {
                 } else {
                     checkingState
                 }
-            } else if manager.records.isEmpty && manager.subscriptions.isEmpty {
+            } else if manager.records.isEmpty && manager.waitingDownloads.isEmpty && manager.subscriptions.isEmpty {
                 noDownloadsState
             } else {
                 content
@@ -168,7 +168,7 @@ struct DownloadsView: View {
                 DownloadsStorageHeader(
                     used: manager.totalBytesUsed,
                     breakdown: manager.storageBreakdown,
-                    activeCount: manager.activeRecords.count
+                    activeCount: manager.activeRecords.count + manager.waitingDownloads.count
                 )
                 .padding(.top, 6)
 
@@ -179,9 +179,10 @@ struct DownloadsView: View {
                     ) { showReclaim = true }
                 }
 
-                if !manager.activeRecords.isEmpty {
-                    inProgressLabel(count: manager.activeRecords.count)
-                    ForEach(manager.activeRecords) { record in
+                let inProgress = manager.activeRecords + manager.waitingRecords
+                if !inProgress.isEmpty {
+                    inProgressLabel(count: inProgress.count)
+                    ForEach(inProgress) { record in
                         DownloadActiveRow(
                             record: record,
                             bytesPerSecond: manager.transferRate(id: record.id),
@@ -189,7 +190,13 @@ struct DownloadsView: View {
                                 if record.localStatus == .paused { manager.resumeDownload(id: record.id) }
                                 else { manager.pauseDownload(id: record.id) }
                             },
-                            onCancel: { manager.deleteDownload(id: record.id) }
+                            onCancel: {
+                                if record.localStatus == .waiting, let episodeId = record.episodeId {
+                                    manager.cancelWaiting(id: episodeId)
+                                } else {
+                                    manager.deleteDownload(id: record.id)
+                                }
+                            }
                         )
                     }
                 }

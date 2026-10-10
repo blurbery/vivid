@@ -249,7 +249,7 @@ struct DownloadActionButton: View {
                 .accessibilityLabel("Download paused")
                 .accessibilityValue(progressAccessibilityValue)
 
-            case .registering, .preparing, .queued, .fetchingAssets:
+            case .registering, .preparing, .queued, .fetchingAssets, .waiting:
                 Menu {
                     Button(role: .destructive) { confirmingCancel = true } label: {
                         Label("Cancel Download", systemImage: "xmark.circle")
@@ -517,7 +517,7 @@ struct DownloadActionButton: View {
         case .none: return manager.downloadsDisallowed ? "Unavailable" : "Download"
         case .downloading: return "Downloading"
         case .paused: return "Paused"
-        case .registering, .preparing, .queued, .fetchingAssets: return "Preparing"
+        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return "Preparing"
         case .completed, .revoked: return "Downloaded"
         case .failed: return "Failed"
         }

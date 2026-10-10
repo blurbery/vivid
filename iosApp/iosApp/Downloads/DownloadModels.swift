@@ -755,6 +755,10 @@ enum LocalDownloadStatus: String, Codable, Sendable {
     /// Server revoked future serves (409). An already-downloaded file
     /// stays playable.
     case revoked
+    /// Not on the server yet: Silo was at this account's download limit, so
+    /// it waits its turn. Only on rows built from a `WaitingDownload`; never
+    /// stored in `records`.
+    case waiting
 
     var isTerminalSuccess: Bool { self == .completed }
     /// `paused` counts as active so it stays in the in-progress UI, but the
@@ -762,7 +766,7 @@ enum LocalDownloadStatus: String, Codable, Sendable {
     /// the row and blocks any automatic restart.
     var isActive: Bool {
         switch self {
-        case .registering, .preparing, .queued, .downloading, .paused, .fetchingAssets:
+        case .registering, .preparing, .queued, .downloading, .paused, .fetchingAssets, .waiting:
             return true
         case .completed, .failed, .revoked:
             return false
@@ -903,6 +907,37 @@ struct LocalProgressEntry: Codable, Sendable {
     var updatedAt: Date
 }
 
+/// An episode waiting for room under Silo's per-account download limit,
+/// with everything needed to ask for it again exactly as chosen.
+struct WaitingDownload: Codable, Hashable, Sendable, Identifiable {
+    /// The episode's content id.
+    let id: String
+    let seriesId: String
+    let title: String?
+    let subtitle: String?
+    let seriesTitle: String?
+    let seasonNumber: Int?
+    let episodeNumber: Int?
+    let posterThumbhash: String?
+    let preferredPosterPath: String?
+    let fileId: Int?
+    let quality: String
+    let queuedAt: Date
+
+    /// A row for the Downloads list, which shows it with the others in
+    /// progress.
+    var displayRecord: DownloadRecord {
+        DownloadRecord(
+            id: "waiting-\(id)", contentId: seriesId, episodeId: id, batchId: nil, mediaFileId: fileId ?? 0,
+            format: quality, serverStatus: "waiting", localStatus: .waiting, fileSize: 0, bytesDownloaded: 0,
+            subtitleFilenames: [:], title: title, subtitle: subtitle, type: "episode", seriesId: seriesId,
+            seriesTitle: seriesTitle, seasonNumber: seasonNumber, episodeNumber: episodeNumber,
+            posterThumbhash: posterThumbhash, preferredPosterPath: preferredPosterPath, container: nil,
+            registeredAt: queuedAt, retryCount: 0
+        )
+    }
+}
+
 /// The entire on-disk store blob for one `(server, profile)` scope.
 struct DownloadStoreFile: Codable, Sendable {
     var version: Int
@@ -918,6 +953,9 @@ struct DownloadStoreFile: Codable, Sendable {
     /// deleted with this account's sign-in. Kept until the server confirms,
     /// so a removed download can't come back as an out-of-band row.
     var pendingServerDeletes: [String]? = nil
+    /// Episodes Silo refused because this account was at its download
+    /// limit, in the order they were asked for.
+    var waitingDownloads: [WaitingDownload]? = nil
 
     static let currentVersion = 1
 

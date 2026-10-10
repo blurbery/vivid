@@ -302,6 +302,53 @@ final class DownloadQualityTransferTests: XCTestCase {
         XCTAssertEqual(DownloadVersionPreference.options(for: [file(1, "2160p", hdr: true), unknown]).map(\.label), ["4K HDR"])
     }
 
+    /// Only Silo's limit on downloads in progress sends the rest to wait;
+    /// its quota for a period and other errors still fail, and episodes left
+    /// waiting aren't reported as a problem.
+    func testOnlySilosAccountLimitWaits() {
+        XCTAssertTrue(DownloadError.isAccountLimit(HTTPError.http(
+            statusCode: 429, body: #"{"error":"download_limit_exceeded","message":"Maximum concurrent downloads reached"}"#)))
+        XCTAssertTrue(DownloadError.isAccountLimit(HTTPError.http(
+            statusCode: 429, body: #"{"type":"rate_limited","detail":"concurrent download limit reached"}"#)))
+        XCTAssertFalse(DownloadError.isAccountLimit(HTTPError.http(
+            statusCode: 429, body: #"{"error":"download_quota_exceeded","message":"Download quota exceeded for this period"}"#)))
+        XCTAssertFalse(DownloadError.isAccountLimit(HTTPError.http(statusCode: 500, body: "concurrent download limit reached")))
+        XCTAssertFalse(DownloadError.isAccountLimit(DownloadError.unavailable))
+
+        var result = DownloadManager.EpisodeRegistrationResult()
+        result.added = 1
+        result.waiting = 3
+        XCTAssertNil(result.problem)
+        var waitingOnly = DownloadManager.EpisodeRegistrationResult()
+        waitingOnly.skipped = 2
+        waitingOnly.waiting = 4
+        XCTAssertNil(waitingOnly.problem, "Waiting episodes aren't 'nothing new to add'")
+    }
+
+    /// Stores written before waiting downloads existed still load, a waiting
+    /// episode survives a save, and it shows as waiting in progress.
+    func testWaitingDownloadsSurviveTheStore() throws {
+        let old = try JSONDecoder().decode(DownloadStoreFile.self, from: JSONEncoder().encode(DownloadStoreFile.empty))
+        XCTAssertNil(old.waitingDownloads)
+
+        let item = WaitingDownload(
+            id: "episode-2", seriesId: "series-1", title: "The Target", subtitle: "S1 · E2", seriesTitle: "Fallout",
+            seasonNumber: 1, episodeNumber: 2, posterThumbhash: nil, preferredPosterPath: nil, fileId: 42,
+            quality: "2mbps", queuedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        var store = DownloadStoreFile.empty
+        store.waitingDownloads = [item]
+        let restored = try JSONDecoder().decode(DownloadStoreFile.self, from: JSONEncoder().encode(store))
+        XCTAssertEqual(restored.waitingDownloads, [item])
+
+        let row = item.displayRecord
+        XCTAssertEqual(row.localStatus, .waiting)
+        XCTAssertTrue(row.localStatus.isActive)
+        XCTAssertEqual(row.episodeId, "episode-2")
+        XCTAssertEqual(row.seriesId, "series-1")
+        XCTAssertEqual(row.format, "2mbps")
+    }
+
     /// A list of episodes reports what wasn't added rather than failing whole.
     @MainActor
     func testEpisodeListReportsWhatWasNotAdded() {

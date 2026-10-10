@@ -46,10 +46,11 @@ struct SeriesDownloadMenuButton: View {
     private var isMonitored: Bool { manager.subscription(forSeriesId: seriesId) != nil }
     private var isDownloading: Bool {
         manager.isRegistering(contentId: seriesId)
+            || manager.waitingDownloads.contains { $0.seriesId == seriesId }
             || manager.records.contains { record in
                 guard record.seriesId == seriesId || record.contentId == seriesId else { return false }
                 switch record.localStatus {
-                case .registering, .preparing, .queued, .downloading, .fetchingAssets:
+                case .registering, .preparing, .queued, .downloading, .fetchingAssets, .waiting:
                     return true
                 case .paused, .completed, .failed, .revoked:
                     return false
@@ -414,7 +415,9 @@ private struct SeriesDownloadOptionsSheet: View {
         return [manager.qualityLabel(rawValue: quality), versionLabel, episodes].compactMap { $0 }.joined(separator: " · ")
     }
 
-    private var activeDownloadCount: Int { manager.activeRecords(seriesId: seriesId).count }
+    private var activeDownloadCount: Int {
+        manager.activeRecords(seriesId: seriesId).count + manager.waitingDownloads.filter { $0.seriesId == seriesId }.count
+    }
 
     var body: some View {
         NavigationStack {
@@ -609,23 +612,29 @@ private struct SeriesDownloadOptionsSheet: View {
                 try await downloadEpisodes(seasons: seasons, quality: quality, version: version)
                 return
             }
-            if wholeSeries {
-                try await manager.downloadSeries(
-                    seriesId: seriesId,
-                    seriesTitle: seriesTitle,
-                    posterThumbhash: posterThumbhash,
-                    preferredPosterPath: preferredPosterPath,
-                    quality: quality
-                )
-            } else if let season = seasons.first {
-                try await manager.downloadSeason(
-                    seriesId: seriesId,
-                    seasonNumber: season.seasonNumber,
-                    seriesTitle: seriesTitle,
-                    posterThumbhash: posterThumbhash,
-                    preferredPosterPath: preferredPosterPath,
-                    quality: quality
-                )
+            do {
+                if wholeSeries {
+                    try await manager.downloadSeries(
+                        seriesId: seriesId,
+                        seriesTitle: seriesTitle,
+                        posterThumbhash: posterThumbhash,
+                        preferredPosterPath: preferredPosterPath,
+                        quality: quality
+                    )
+                } else if let season = seasons.first {
+                    try await manager.downloadSeason(
+                        seriesId: seriesId,
+                        seasonNumber: season.seasonNumber,
+                        seriesTitle: seriesTitle,
+                        posterThumbhash: posterThumbhash,
+                        preferredPosterPath: preferredPosterPath,
+                        quality: quality
+                    )
+                }
+            } catch where DownloadError.isAccountLimit(error) {
+                // Silo refuses a whole batch past the account's limit; one
+                // episode at a time, the rest wait their turn.
+                try await downloadEpisodes(seasons: seasons, quality: quality, version: nil)
             }
         }
     }
@@ -1081,6 +1090,11 @@ private struct SeriesEpisodeDownloadPicker: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(statusTint(for: episode))
                 .frame(width: 24, height: 24)
+        } else if manager.isWaiting(contentId: episode.contentId) {
+            Image(systemName: statusIcon(for: .waiting))
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(statusTint(for: episode))
+                .frame(width: 24, height: 24)
         } else {
             DownloadSelectionCircle(selected: selectedEpisodeIds.contains(episode.contentId))
         }
@@ -1110,9 +1124,10 @@ private struct SeriesEpisodeDownloadPicker: View {
 
     private func statusText(for episode: EpisodeListItem) -> String? {
         if manager.isRegistering(contentId: episode.contentId) { return "Preparing" }
+        if manager.isWaiting(contentId: episode.contentId) { return "Waiting" }
         guard let record = manager.record(forContentId: episode.contentId) else { return nil }
         switch record.localStatus {
-        case .registering, .preparing, .queued, .fetchingAssets: return "Preparing"
+        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return "Preparing"
         case .downloading: return "\(Int((record.progressFraction * 100).rounded()))%"
         case .paused: return "Paused"
         case .completed, .revoked: return "Downloaded"
@@ -1122,7 +1137,7 @@ private struct SeriesEpisodeDownloadPicker: View {
 
     private func statusIcon(for status: LocalDownloadStatus) -> String {
         switch status {
-        case .registering, .preparing, .queued, .fetchingAssets: return "arrow.down.circle"
+        case .registering, .preparing, .queued, .fetchingAssets, .waiting: return "arrow.down.circle"
         case .downloading: return "arrow.down.circle.fill"
         case .paused: return "pause.circle.fill"
         case .completed, .revoked: return "checkmark.circle.fill"
@@ -1144,6 +1159,7 @@ private struct SeriesEpisodeDownloadPicker: View {
     private func isSelectable(_ episode: EpisodeListItem) -> Bool {
         manager.record(forContentId: episode.contentId) == nil
             && !manager.isRegistering(contentId: episode.contentId)
+            && !manager.isWaiting(contentId: episode.contentId)
     }
 
     private func toggle(_ contentId: String) {

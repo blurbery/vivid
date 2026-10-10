@@ -137,7 +137,7 @@ extension DownloadManager {
         guard isSilo, bytesDownloaded == 0 else { return nil }
         switch localStatus {
         case .registering, .preparing, .queued: return size
-        case .fetchingAssets, .downloading, .paused, .completed, .failed, .revoked: return nil
+        case .fetchingAssets, .downloading, .paused, .completed, .failed, .revoked, .waiting: return nil
         }
     }
 
