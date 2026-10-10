@@ -62,7 +62,7 @@ On Apple TV the field is called **Personal API key**. The 32-character API Key i
   <tbody>
     <tr><td><strong>Trailers</strong></td><td>A Trailers row on movie and series pages, just before Cast &amp; Crew. It shows up to three trailers with the official ones first, and series show trailers for their latest season. Episode pages show their series' trailers. On iPhone and iPad, trailers open in the YouTube app, or on youtube.com if the app isn't installed. On Apple TV they play in the YouTube app, so it needs to be installed.</td></tr>
     <tr><td><strong>TMDb rating</strong></td><td>TMDb's user score on movie and series pages, next to the other badges. It only appears when TMDb has votes for the title.</td></tr>
-    <tr><td><strong>Studios &amp; Networks</strong></td><td>A row of studio and network logos pinned under the Spotlight on Home. Each one opens a page with Popular Series, Popular Movies and All in Your Library for that studio or network.</td></tr>
+    <tr><td><strong>Studios &amp; Networks</strong></td><td>A row of studio and network logos pinned under the Spotlight on Home. Each one opens a page for that studio or network with Popular Series and Popular Movies (each shows once at least six of your titles match), plus All in Your Library.</td></tr>
     <tr><td><strong>Collections</strong></td><td>On a movie that's part of a collection, a row such as "Scream Collection" with the films from it that are in your library, in release order. It appears when you have at least two of them.</td></tr>
   </tbody>
 </table>
