@@ -413,13 +413,18 @@ private struct SeriesDownloadOptionsSheet: View {
     @State private var loadedEpisodesBySeason: [Int: [EpisodeListItem]] = [:]
     /// Settings' default version is applied once, when versions first appear.
     @State private var appliedDefaultVersion = false
+    /// Every file of episodes Emby listed with one source, by content id.
+    @State private var sourceFiles: [String: [EpisodeFile]] = [:]
 
     private var episodesBySeason: [Int: [EpisodeListItem]] {
         var merged = loadedEpisodesBySeason
         for (season, episodes) in cachedEpisodesBySeason where !episodes.isEmpty {
             merged[season] = episodes
         }
-        return merged
+        guard !sourceFiles.isEmpty else { return merged }
+        return merged.mapValues { episodes in
+            episodes.map { episode in sourceFiles[episode.contentId].map(episode.withEveryFile) ?? episode }
+        }
     }
 
     /// Original-file versions among the series' episodes.
@@ -616,7 +621,13 @@ private struct SeriesDownloadOptionsSheet: View {
                     versions: versionOptions.count > 1 ? versionOptions : []
                 )
                 appliedDefaultVersion = versionOptions.count > 1
+            }
+            .task {
+                // Versions don't wait on the permission check above, which can
+                // be slow; the default version applies when they appear.
+                await loadSourceFiles()
                 await loadRemainingSeasons()
+                await loadSourceFiles()
             }
             .onChange(of: versionOptions) { _, _ in applyDefaultVersionIfNeeded() }
             .confirmationDialog(
@@ -676,6 +687,27 @@ private struct SeriesDownloadOptionsSheet: View {
             if let response = try? await VividAPI.shared.episodes(seriesId: seriesId, seasonNumber: season.seasonNumber) {
                 loadedEpisodesBySeason[season.seasonNumber] = response.episodes
             }
+        }
+    }
+
+    /// Emby lists one source per episode. Fetches every file of the first
+    /// episode in each season, then the rest of the selected season, so the
+    /// menu lists the series' versions. A version download fetches any other
+    /// episode's files when it registers it.
+    private func loadSourceFiles() async {
+        guard !EpisodeSourceFiles.listsEveryFile else { return }
+        let scope = await DownloadScope.current()
+        let selected = selectedSeason?.seasonNumber ?? availableSeasons.first?.seasonNumber
+        let withFile = episodesBySeason.mapValues { $0.filter { $0.files?.isEmpty == false } }
+        let firsts = withFile.sorted { ($0.key == selected ? 0 : 1, $0.key) < ($1.key == selected ? 0 : 1, $1.key) }
+            .compactMap(\.value.first?.contentId)
+        let rest = selected.flatMap { withFile[$0] }?.map(\.contentId) ?? []
+        for ids in [firsts, rest] {
+            let missing = ids.filter { sourceFiles[$0] == nil }
+            guard !missing.isEmpty else { continue }
+            let found = await EpisodeSourceFiles.fetch(missing)
+            guard !Task.isCancelled, await DownloadScope.current() == scope else { return }
+            sourceFiles.merge(found) { _, new in new }
         }
     }
 
@@ -951,7 +983,10 @@ private struct SeriesEpisodeDownloadPicker: View {
             // qualities may still be loading.
             _ = await manager.prepareForDownload()
         }
-        .task { await loadEpisodesIfNeeded() }
+        .task {
+            await loadEpisodesIfNeeded()
+            await loadSourceFiles()
+        }
         .onChange(of: versionOptions) { _, _ in applyDefaultVersionIfNeeded() }
         .alert(
             "Couldn't Continue",
@@ -1132,6 +1167,18 @@ private struct SeriesEpisodeDownloadPicker: View {
         } else {
             selectedEpisodeIds.formUnion(selectableEpisodeIds)
         }
+    }
+
+    /// Emby lists one source per episode; fetches every file of the
+    /// season's episodes so the menu lists their versions.
+    private func loadSourceFiles() async {
+        guard !EpisodeSourceFiles.listsEveryFile else { return }
+        let scope = await DownloadScope.current()
+        let ids = episodes.filter { !$0.hasEveryFile && $0.files?.isEmpty == false }.map(\.contentId)
+        guard !ids.isEmpty else { return }
+        let found = await EpisodeSourceFiles.fetch(ids)
+        guard !Task.isCancelled, await DownloadScope.current() == scope else { return }
+        episodes = episodes.map { episode in found[episode.contentId].map(episode.withEveryFile) ?? episode }
     }
 
     private func loadEpisodesIfNeeded() async {
