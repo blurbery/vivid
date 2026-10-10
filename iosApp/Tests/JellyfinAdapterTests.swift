@@ -273,19 +273,26 @@ final class JellyfinAdapterTests: XCTestCase {
     }
 
     func testSeasonDetailCountsGroupVersionsOfEachEpisode() async throws {
-        let adapter = adapter { request in
-            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
-            if request.url!.path.hasSuffix("/Episodes") {
-                XCTAssertEqual(query.first { $0.name == "Season" }?.value, "2")
-                return (200, ["Items": (1...8).map { ["Id": "e\($0)", "Name": "Episode \($0)", "Type": "Episode", "ParentIndexNumber": 2,
-                    "IndexNumber": $0, "MediaSourceCount": 2, "UserData": ["Played": true]] }])
+        // A grouped ChildCount of 16 means no versions, so the season detail skips the episode list.
+        for (groupedCount, expected) in [(8, 8), (16, 16)] {
+            let adapter = adapter { request in
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+                if request.url!.path.hasSuffix("/Episodes") {
+                    XCTAssertEqual(groupedCount, 8, "A season without versions must not list its episodes")
+                    XCTAssertEqual(query.first { $0.name == "Season" }?.value, "2")
+                    return (200, ["Items": (1...8).map { ["Id": "e\($0)", "Name": "Episode \($0)", "Type": "Episode", "ParentIndexNumber": 2,
+                        "IndexNumber": $0, "MediaSourceCount": 2, "UserData": ["Played": true]] }])
+                }
+                if query.first(where: { $0.name == "Fields" })?.value == "ChildCount" {
+                    return (200, ["Id": "season2", "Name": "Season 2", "Type": "Season", "ChildCount": groupedCount])
+                }
+                return (200, ["Id": "season2", "Name": "Season 2", "Type": "Season", "SeriesId": "show", "IndexNumber": 2,
+                    "RecursiveItemCount": 16, "UserData": ["Played": true, "UnplayedItemCount": 0]])
             }
-            return (200, ["Id": "season2", "Name": "Season 2", "Type": "Season", "SeriesId": "show", "IndexNumber": 2,
-                "RecursiveItemCount": 16, "UserData": ["Played": true, "UnplayedItemCount": 0]])
+            let detail = try await adapter.route(method: "GET", path: "/api/v1/catalog/items/season2", query: [:], body: nil) as? [String: Any]
+            XCTAssertEqual(detail?["episodeCount"] as? Int, expected)
+            XCTAssertEqual((detail?["userData"] as? [String: Any])?["watchedCount"] as? Int, expected)
         }
-        let detail = try await adapter.route(method: "GET", path: "/api/v1/catalog/items/season2", query: [:], body: nil) as? [String: Any]
-        XCTAssertEqual(detail?["episodeCount"] as? Int, 8)
-        XCTAssertEqual((detail?["userData"] as? [String: Any])?["watchedCount"] as? Int, 8)
     }
 
     func testResumeEpisodeUsesExactVersionInsteadOfSeasonRepresentative() async throws {

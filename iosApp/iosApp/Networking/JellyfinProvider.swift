@@ -818,7 +818,11 @@ struct JellyfinAdapter {
         if p.count == 5, p[2] == "catalog", p[3] == "items" {
             let raw = try await rawItem(p[4])
             let value = try item(raw)
-            guard raw["Type"] as? String == "Season", let series = raw["SeriesId"] as? String, let number = raw["IndexNumber"] as? Int,
+            // Like the seasons route, only a season counting versions lists its episodes.
+            guard raw["Type"] as? String == "Season", raw["RecursiveItemCount"] is Int,
+                  let series = raw["SeriesId"] as? String, let number = raw["IndexNumber"] as? Int,
+                  let grouped = try? await connection.object("GET", "/Items/\(JellyfinConnection.id(p[4]))", query: ["Fields":"ChildCount","EnableUserData":"true","EnableImages":"false"]),
+                  Self.countsVersions([raw], grouped: [grouped]),
                   let episodes = await groupedEpisodeRows(seriesID: series, seasonNumber: number) else { return value }
             return Self.countingGroupedVersions(value, seasonNumber: number, episodes: episodes)
         }
