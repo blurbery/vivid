@@ -152,7 +152,6 @@ extension DownloadManager {
             }
             // An empty list means the episode has no file (missing or not
             // aired yet); nil only means the server didn't say.
-            let files = episode.files ?? []
             let existing = record(forContentId: episode.contentId)
             guard episode.files?.isEmpty != true, existing == nil || existing?.localStatus == .failed,
                   !isRegistering(contentId: episode.contentId) else {
@@ -160,6 +159,16 @@ extension DownloadManager {
                 continue
             }
             do {
+                // Emby's lists carry one source per episode, so a version is
+                // matched against every file the episode has.
+                var files = episode.files ?? []
+                if version != nil, !episode.hasEveryFile, !EpisodeSourceFiles.listsEveryFile {
+                    files = try await VividAPI.shared.episodeFiles(contentId: episode.contentId)
+                    guard await DownloadScope.current() == scope else {
+                        result.stoppedBySwitch = true
+                        break
+                    }
+                }
                 try await downloadEpisode(
                     seriesId: seriesId,
                     episodeId: episode.contentId,

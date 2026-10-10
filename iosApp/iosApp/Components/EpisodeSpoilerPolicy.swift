@@ -127,7 +127,8 @@ extension EpisodeListItem {
             stillThumbhash: stillThumbhash,
             userData: userData,
             files: files,
-            hidesSpoilers: true
+            hidesSpoilers: true,
+            hasEveryFile: hasEveryFile
         )
     }
 }

@@ -79,6 +79,29 @@ final class EmbyAdapterTests: XCTestCase {
         }
     }
 
+    func testEpisodeFilesRouteReadsEverySourceFromTheItem() async throws {
+        let paths = LoadedRows()
+        let adapter = stubbedAdapter { request in
+            paths.append(request.url!.path)
+            func source(_ id: String, width: Int, height: Int, range: String) -> [String: Any] {
+                ["Id": id, "Container": "mkv", "Size": 1_000,
+                 "MediaStreams": [["Type": "Video", "Codec": "hevc", "Width": width, "Height": height, "VideoRange": range]]]
+            }
+            return (200, ["Id": "12345", "MediaSources": [
+                source("mediasource_1", width: 3840, height: 2160, range: "DolbyVision"),
+                source("mediasource_2", width: 3840, height: 2160, range: "DolbyVision"),
+                source("mediasource_3", width: 1920, height: 1080, range: "SDR")
+            ]])
+        }
+        let raw = try await adapter.route(method: "GET", path: "/api/v1/catalog/items/12345/files", query: [:], body: nil)
+        let files = try EmbyAdapter.decode(raw, as: EpisodeFilesResponse.self).files
+        XCTAssertEqual(paths.take(sorted: false), ["/emby/Users/user-1/Items/12345"])
+        XCTAssertEqual(files.map(\.resolution), ["2160p", "2160p", "1080p"])
+        XCTAssertEqual(files.map(\.hdr), [true, true, false])
+        XCTAssertEqual(files.map(\.fileId), ["mediasource_1", "mediasource_2", "mediasource_3"].map(EmbyAdapter.numberID))
+        XCTAssertEqual(DownloadVersionPreference.options(for: files).map(\.label), ["4K HDR", "1080p"])
+    }
+
     func testBrowseAndHomeRequestLeanerFieldsThanDetail() async throws {
         let fields = LoadedRows()
         let adapter = stubbedAdapter { request in

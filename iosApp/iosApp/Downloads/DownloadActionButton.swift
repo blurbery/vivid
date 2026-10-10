@@ -402,10 +402,17 @@ struct DownloadActionButton: View {
     private func startDownload(_ options: DownloadRequestOptions) {
         // An episode card's sheet has no versions to choose from, so Settings'
         // default version picks the file for an original download.
-        let fileId = options.fileId ?? (options.quality == DownloadFormat.original.rawValue
-            ? DownloadSettings.shared.preferredVersion?.file(in: episodeFiles)?.fileId
-            : nil)
+        let defaultVersion = options.fileId == nil && options.quality == DownloadFormat.original.rawValue
+            ? DownloadSettings.shared.preferredVersion
+            : nil
         Task {
+            var fileId = options.fileId ?? defaultVersion?.file(in: episodeFiles)?.fileId
+            // Emby's cards list one source, so the episode's own files are
+            // checked for the default version.
+            if fileId == nil, let defaultVersion, !episodeFiles.isEmpty, !EpisodeSourceFiles.listsEveryFile,
+               let files = try? await VividAPI.shared.episodeFiles(contentId: contentId) {
+                fileId = defaultVersion.file(in: files)?.fileId
+            }
             do {
                 if isEpisode {
                     try await manager.downloadEpisode(

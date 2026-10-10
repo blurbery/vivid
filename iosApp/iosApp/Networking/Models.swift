@@ -670,6 +670,9 @@ struct EpisodeListItem: Codable, Identifiable, Hashable {
     /// episode the viewer hasn't reached: cards blur the still. Never
     /// decoded or encoded.
     var hidesSpoilers = false
+    /// Set when `files` came from the episode itself. Emby's episode lists
+    /// carry only one source per episode. Never decoded or encoded.
+    var hasEveryFile = false
     var id: String { contentId }
 
     enum CodingKeys: String, CodingKey {
@@ -1361,6 +1364,10 @@ struct EpisodesResponse: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         episodes = try c.decodeIfPresent([EpisodeListItem].self, forKey: .episodes) ?? []
     }
+}
+
+struct EpisodeFilesResponse: Codable {
+    let files: [EpisodeFile]
 }
 
 // MARK: - Progress Report (sent to server)
