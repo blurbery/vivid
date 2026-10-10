@@ -117,7 +117,7 @@ jobs:
         env:
           # A personal API key that covers several workspaces must name one on
           # every request. Set ANTHROPIC_WORKSPACE_ID (a wrkspc_ ID) for those.
-          ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_API_KEY != '' && secrets.ANTHROPIC_WORKSPACE_ID != '' && format('anthropic-workspace-id: {0}', secrets.ANTHROPIC_WORKSPACE_ID) || '' }}
+          ANTHROPIC_CUSTOM_HEADERS: "${{ secrets.ANTHROPIC_API_KEY != '' && secrets.ANTHROPIC_WORKSPACE_ID != '' && format('anthropic-workspace-id: {0}', secrets.ANTHROPIC_WORKSPACE_ID) || '' }}"
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
