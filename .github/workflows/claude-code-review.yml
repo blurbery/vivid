@@ -179,7 +179,7 @@ jobs:
             refusal) note="Claude declined to continue part-way, so not everything was checked." ;;
             *) note="" ;;
           esac
-          footer=$(jq -r '"\(.model), \(.effort) effort, \(.turns) turns, about US$\(.cost_usd * 100 | round / 100) of API credit"' "$review")
+          footer=$(jq -r '"\(.model), \(.effort) effort, \(.turns) turn\(if .turns == 1 then "" else "s" end), about US$\(.cost_usd * 100 | round / 100) of API credit"' "$review")
 
           {
             echo "<!-- claude-review sha=$HEAD_SHA -->"
