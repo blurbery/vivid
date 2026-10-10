@@ -11,6 +11,7 @@
   <a href="https://github.com/blurbery/vivid/releases/latest"><img src="https://img.shields.io/github/v/release/blurbery/vivid?style=flat-square&amp;label=release&amp;color=3B82F6&amp;display_name=release" alt="Latest GitHub release"></a>
   <img src="https://img.shields.io/badge/status-in%20development-D29922?style=flat-square" alt="In development">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-GPLv3-3B82F6?style=flat-square" alt="Licence: GPLv3 with Apple distribution permission"></a>
+  <a href="https://discord.gg/3jcxk3vJ4X"><img src="https://img.shields.io/badge/discord-join%20chat-8B5CF6?style=flat-square&amp;logo=discord&amp;logoColor=white" alt="Join the Vivid Discord"></a>
   <a href="https://github.com/sponsors/blurbery"><img src="https://img.shields.io/badge/sponsor-%E2%9D%A4-EA4AAA?style=flat-square&amp;logo=githubsponsors&amp;logoColor=white" alt="Sponsor blurbery on GitHub"></a>
 </p>
 <p align="center">
@@ -18,7 +19,7 @@
   <a href="docs/README.md">Documentation</a> ·
   <a href="https://github.com/blurbery/vivid/releases">Releases</a> ·
   <a href="docs/branding/README.md">Branding</a> ·
-  <a href="https://discord.gg/G45pWmtEEm">Discord</a> ·
+  <a href="https://discord.gg/3jcxk3vJ4X">Discord</a> ·
   <a href="https://github.com/sponsors/blurbery">Sponsor</a> ·
   <a href="#support">Support Vivid</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -69,7 +70,7 @@ App changes released from `main` get a semantic version. Documentation-only and 
 
 ## Support
 
-Join the [Vivid Discord](https://discord.gg/G45pWmtEEm) to get help, share feedback and follow the project. Feel free to invite anyone who might enjoy Vivid.
+Join the [Vivid Discord](https://discord.gg/3jcxk3vJ4X) to get help, share feedback and follow the project. Feel free to invite anyone who might enjoy Vivid.
 
 If you'd like to support Vivid's development, you can sponsor me on [GitHub Sponsors](https://github.com/sponsors/blurbery). Testing the app, reporting issues and spreading the word helps a lot too.
 
