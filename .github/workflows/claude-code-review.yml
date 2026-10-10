@@ -7,9 +7,10 @@ name: Claude Code Review
 # (marked <!-- claude-review sha=... -->) records the reviewed commit and is
 # updated in place. A newer push cancels a review that's still running. Skips
 # drafts, bots, fork PRs (GitHub withholds secrets from them) and
-# Markdown-only changes. Uses the CLAUDE_CODE_OAUTH_TOKEN secret (a Claude
-# subscription token from `claude setup-token`), or ANTHROPIC_API_KEY when that
-# isn't set. Without either, the job does nothing.
+# Markdown-only changes. Uses the ANTHROPIC_API_KEY secret, so reviews come out
+# of API credits, or CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription token from
+# `claude setup-token`) when that isn't set. Without either, the job does
+# nothing.
 
 on:
   pull_request:
@@ -33,12 +34,12 @@ jobs:
       contents: read
       pull-requests: write
     env:
-      HAS_CREDENTIALS: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+      HAS_CREDENTIALS: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
       REVIEW_MODEL: claude-sonnet-5-5
     steps:
       - name: Skip without credentials
         if: env.HAS_CREDENTIALS != 'true'
-        run: echo "::notice::Add a CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) repository secret to turn on Claude reviews."
+        run: echo "::notice::Add an ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) repository secret to turn on Claude reviews."
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: env.HAS_CREDENTIALS == 'true'
         with:
@@ -113,8 +114,8 @@ jobs:
         id: claude
         if: env.HAS_CREDENTIALS == 'true' && steps.prep.outputs.skip != 'true'
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             You're reviewing pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}. Its head commit is checked out in the working directory, with full git history.
@@ -160,6 +161,7 @@ jobs:
           FROM: ${{ steps.prep.outputs.from }}
           COMMENT_ID: ${{ steps.prep.outputs.comment_id }}
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          COST_NOTE: ${{ secrets.ANTHROPIC_API_KEY != '' && 'of API credit' || 'at API rates, on the subscription' }}
         run: |
           set -euo pipefail
           result=$(jq -c '[.[] | select(.type == "result")] | last // {}' "$EXECUTION_FILE")
@@ -175,8 +177,8 @@ jobs:
           else
             scope="whole PR at ${HEAD_SHA:0:7}"
           fi
-          body=$(printf '<!-- claude-review sha=%s -->\n**Claude review** of the %s\n\n%s\n\n<sub>%s, %s turns, about US$%s at API rates</sub>\n' \
-            "$HEAD_SHA" "$scope" "$summary" "$REVIEW_MODEL" "$turns" "$cost")
+          body=$(printf '<!-- claude-review sha=%s -->\n**Claude review** of the %s\n\n%s\n\n<sub>%s, %s turns, about US$%s %s</sub>\n' \
+            "$HEAD_SHA" "$scope" "$summary" "$REVIEW_MODEL" "$turns" "$cost" "$COST_NOTE")
           if [ -n "$COMMENT_ID" ]; then
             gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" -f body="$body" > /dev/null
           else
