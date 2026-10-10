@@ -542,10 +542,10 @@ private struct LibraryPickerSheet: View {
             .padding(.horizontal, VividTheme.padding)
             .padding(.vertical, VividTheme.padding)
         }
-        #if os(tvOS)
-        .background(VividAppBackdrop())
-        #else
+        #if os(iOS)
         .background(Color.clear)
+        #else
+        .background(VividAppBackdrop())
         #endif
         .navigationTitle("Libraries")
     }
