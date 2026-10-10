@@ -122,6 +122,25 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertTrue(EmbyAdapter.homeFields.contains("MediaSources"), "Home rows keep format badges")
     }
 
+    func testSearchAllScopeIncludesMoviesAndSeries() async throws {
+        let types = LoadedRows()
+        let adapter = stubbedAdapter { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            types.append(query.first { $0.name == "IncludeItemTypes" }?.value ?? "")
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        let cases: [(String?, String)] = [("video", "Movie,Series"), (nil, "Movie,Series"), ("unknown", "Movie,Series"),
+                                          ("movie", "Movie"), ("series", "Series"), ("episode", "Episode")]
+        for (type, expected) in cases {
+            var input = ["source": "query", "q": "night"]
+            input["type"] = type
+            _ = try await adapter.catalog(input)
+            XCTAssertEqual(types.take(), [expected], "type=\(type ?? "none")")
+        }
+        _ = try await adapter.catalog(["source": "history", "type": "video"])
+        XCTAssertEqual(types.take(), ["Movie,Episode"], "History keeps its own item types")
+    }
+
     func testCombinedHomeFetchRetainsHiddenNextUpOnlyWhenConsumed() {
         let definitions = [
             adapter.homeSection(["Id": "resume", "SectionType": "Resume"], catalog: [:]),

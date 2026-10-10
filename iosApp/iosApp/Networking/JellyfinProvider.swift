@@ -726,7 +726,8 @@ struct JellyfinAdapter {
             return try await items(query:Self.collectionQuery(id:JellyfinConnection.id(collection),offset:input["offset"] ?? "0",limit:input["limit"] ?? "60").merging(["Fields": Self.browseFields]) { _, new in new })
         }
         var q = ["Fields": Self.browseFields, "StartIndex": input["offset"] ?? "0", "Limit": input["limit"] ?? "60", "IncludeItemTypes": "Movie,Series", "SortBy":"SortName", "SortOrder":input["order"] == "desc" ? "Descending" : "Ascending"]
-        if let type = input["type"] { q["IncludeItemTypes"] = type == "series" ? "Series" : type == "episode" ? "Episode" : "Movie" }
+        // Search's "video" scope, like any other unmapped type, keeps both movies and series.
+        if let type = input["type"], let mapped = ["movie":"Movie", "series":"Series", "episode":"Episode"][type] { q["IncludeItemTypes"] = mapped }
         for (source,target) in ["search":"SearchTerm", "q":"SearchTerm", "genre":"Genres", "genres":"Genres", "year":"Years", "years":"Years", "content_rating":"OfficialRatings", "studio":"StudioIds"] { if let v = input[source], !v.isEmpty { q[target] = v } }
         let sorts = ["title":"SortName", "year":"ProductionYear", "release_date":"PremiereDate", "added":"DateCreated", "added_at":"DateCreated", "rating":"CommunityRating", "random":"Random", "runtime":"Runtime"]
         if let sort = input["sort"], let mapped = sorts[sort] { q["SortBy"] = mapped }
