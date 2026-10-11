@@ -36,17 +36,13 @@ NUDGE = (
     "Nobody can answer questions during this review. Carry on, and call "
     "finish_review when you're done."
 )
-UNREAD = (
-    "Not finished yet: you haven't read these changed files: {}. Read each one "
-    "in context, check the callers of what changed, report anything you "
-    "confirm, then call finish_review again."
-)
+SEND_BACKS = 2  # times finish_review is refused while work is left
 
-SYSTEM = """You review pull requests for Vivid, an Apple media app written in Swift and SwiftUI. You work on your own: nobody reads your messages until the review is posted, so never stop to ask a question. Use the tools to read code, report each problem with report_finding as soon as you've confirmed it, and end with finish_review.
+SYSTEM = """You review pull requests for Vivid, an Apple media app written in Swift and SwiftUI. You work on your own: nobody reads your messages until the review is posted, so never stop to ask a question. Use the tools to read code, note every suspicion with note_candidate, resolve each one with report_finding or dismiss_candidate, and end with finish_review.
 
 How to review:
 1. Read the PR description and the diff in the first message. Read AGENTS.md for the project's rules when a change might break one.
-2. For each changed file, read the changed parts in context with read_file, and use search_code to find the callers of every changed function, type or property and read those call sites. Follow the code far enough to know what actually happens at runtime.
+2. For each changed file, read the changed parts in context with read_file, and use search_code to find the callers of every changed function, type or property and read those call sites. Follow the code far enough to know what actually happens at runtime. As you read each changed function, test it against every kind of bug in step 3, and record each plausible suspicion with note_candidate as soon as you have it, before trying to confirm it. Note more rather than fewer: a suspicion costs nothing to dismiss, and one you never write down never gets checked.
 3. Look hard for these kinds of bug:
    - Async races: state read before an `await` and used after it (a copied list being looped over, a flag, a selection) when something else can change it in between.
    - Cancellation: an item cancelled or removed while its request is in flight still completes and acts afterwards, or a retry outlives its cancellation.
@@ -55,9 +51,9 @@ How to review:
    - UI states that miss a case: a button, menu item or message offered or worded wrongly for an item that's waiting, registering, failed, skipped or already downloaded.
    - Data assumptions: missing metadata dropped or defaulted so a label claims something not every item has, unknown values treated as a known value, or a filter applied in one place but not another.
    - Partial data: choices built from what's loaded so far (cached pages, the first season) while the rest is still loading.
-   - Documentation that says something the code doesn't do.
+   - Documentation that says something the code doesn't do. Check each claim a changed doc or comment makes against the code.
    - Also ordinary bugs, crashes, regressions, security problems, private details (keys, tokens, personal names or emails, server addresses, home-folder paths) and clear breaks of the AGENTS.md rules.
-4. Before reporting anything, check it again against the code. Trace the real path, confirm the trigger can happen (find a caller that reaches it), and drop the finding if you can't show how it goes wrong. Skip style nitpicks, requests for more tests and anything the compiler would catch.
+4. Resolve every candidate before you finish. Trace the real path from a caller that reaches the code. Report it with report_finding when you can name a trigger a real caller can reach and what goes wrong. Dismiss it with dismiss_candidate only when the code shows it can't happen or does no harm, and say why: "it's unlikely" or "the author probably meant it" isn't enough. Skip style nitpicks, requests for more tests and anything the compiler would catch.
 5. Existing review comments are in the first message. Don't repeat a finding that's already there, even in different words, and accept a reply explaining why something isn't a problem unless the code clearly shows otherwise. When reviewing new commits, check that each earlier finding the author says is fixed really is fixed, and report a fix that's wrong or incomplete.
 6. Report each finding on a line the PR changed, with a priority: P1 for a crash, data loss, a security problem or a core feature broken; P2 for wrong behaviour a user can run into; P3 for minor issues and documentation. In the body, say what goes wrong, the situation that triggers it and how to fix it, in two to four sentences.
 7. Call finish_review with a short summary: one line on what you reviewed, then the findings by priority with file names, or one line saying nothing needs fixing. Mention anything you couldn't check.
@@ -105,19 +101,49 @@ TOOLS = [
         },
     },
     {
+        "name": "note_candidate",
+        "description": "Write down a suspected problem before checking it. Returns the candidate's number.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File the suspected problem is in, relative to the repository root."},
+                "line": {"type": "integer", "description": "Line it shows on."},
+                "suspicion": {"type": "string", "description": "One sentence on what might go wrong."},
+            },
+            "required": ["path", "line", "suspicion"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "dismiss_candidate",
+        "description": "Close a candidate the code shows can't happen or does no harm.",
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "candidate": {"type": "integer", "description": "The number note_candidate returned."},
+                "reason": {"type": "string", "description": "What in the code rules it out."},
+            },
+            "required": ["candidate", "reason"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "report_finding",
         "description": "Record one confirmed problem. Call it once per finding, as soon as you've checked it.",
         "strict": True,
         "input_schema": {
             "type": "object",
             "properties": {
+                "candidate": {"type": "integer", "description": "The number note_candidate returned for this problem, or 0 if you didn't note it first."},
                 "path": {"type": "string", "description": "File the problem is in, relative to the repository root."},
                 "line": {"type": "integer", "description": "A line the PR changed where the problem shows."},
                 "priority": {"type": "string", "enum": ["P1", "P2", "P3"]},
                 "title": {"type": "string", "description": "One short sentence naming the problem."},
                 "body": {"type": "string", "description": "What goes wrong, what triggers it and how to fix it, in two to four sentences."},
             },
-            "required": ["path", "line", "priority", "title", "body"],
+            "required": ["candidate", "path", "line", "priority", "title", "body"],
             "additionalProperties": False,
         },
     },
@@ -213,6 +239,20 @@ def changed_files(diff):
     return sorted({row[6:] for row in diff.splitlines() if row.startswith("+++ b/")})
 
 
+def unfinished_work(unread, open_candidates):
+    """The message sent back when finish_review comes too early."""
+    parts = []
+    if unread:
+        parts.append(f"you haven't read these changed files: {', '.join(unread)}")
+    if open_candidates:
+        listed = ", ".join(f"{c['id']} ({c['path']}:{c['line']})" for c in open_candidates)
+        parts.append(f"these candidates are still open: {listed}")
+    return (
+        f"Not finished yet: {'; '.join(parts)}. Read the files in context, resolve each "
+        "candidate with report_finding or dismiss_candidate, then call finish_review again."
+    )
+
+
 def cost_of(usage, prices):
     def count(name):
         return getattr(usage, name, None) or 0
@@ -269,10 +309,10 @@ def main():
 
     review_dir = Path(args.review_dir)
     messages = [{"role": "user", "content": first_message(args, review_dir)}]
-    # Changed files Claude must open before finish_review is accepted. It's
-    # sent back once, so a review can't end on the diff alone.
+    # finish_review is refused while changed files are unread or candidates
+    # are open, up to SEND_BACKS times, so a review can't end on the diff alone.
     to_read = changed_files((review_dir / "diff.patch").read_text(errors="replace"))
-    files_read, sent_back = set(), False
+    files_read, candidates, send_backs = set(), [], 0
     findings, summary, stopped = [], None, None
     cost, turns, nudges, tool_calls = 0.0, 0, 0, 0
 
@@ -326,14 +366,26 @@ def main():
                     output = search_code(data["pattern"], data.get("path"))
                 elif call.name == "list_files":
                     output = list_files(data["glob"])
+                elif call.name == "note_candidate":
+                    candidates.append({"id": len(candidates) + 1, "status": "open", **{key: data[key] for key in ("path", "line", "suspicion")}})
+                    output = f"Noted as candidate {len(candidates)}."
+                elif call.name == "dismiss_candidate":
+                    candidate = candidates[int(data["candidate"]) - 1] if 0 < int(data["candidate"]) <= len(candidates) else None
+                    if candidate is None:
+                        raise ValueError(f"there's no candidate {data['candidate']}")
+                    candidate.update(status="dismissed", reason=data["reason"])
+                    output = "Dismissed."
                 elif call.name == "report_finding":
                     findings.append({key: data[key] for key in ("path", "line", "priority", "title", "body")})
+                    if 0 < int(data.get("candidate", 0)) <= len(candidates):
+                        candidates[int(data["candidate"]) - 1]["status"] = "reported"
                     output = "Recorded."
                 elif call.name == "finish_review":
                     unread = [path for path in to_read if path not in files_read]
-                    if unread and not sent_back:
-                        sent_back = True
-                        results.append({"type": "tool_result", "tool_use_id": call.id, "content": UNREAD.format(", ".join(unread)), "is_error": True})
+                    still_open = [c for c in candidates if c["status"] == "open"]
+                    if (unread or still_open) and send_backs < SEND_BACKS:
+                        send_backs += 1
+                        results.append({"type": "tool_result", "tool_use_id": call.id, "content": unfinished_work(unread, still_open), "is_error": True})
                         continue
                     summary = data["summary"]
                     output = "Review finished."
@@ -356,6 +408,7 @@ def main():
         "tool_calls": tool_calls,
         "files_read": sorted(files_read),
         "changed_files_unread": [path for path in to_read if path not in files_read],
+        "candidates": candidates,
         "cost_usd": round(cost, 4),
         "model": model,
         "effort": effort,
@@ -363,7 +416,7 @@ def main():
     Path(args.out).write_text(json.dumps(result, indent=2))
     read_count = len(to_read) - len(result["changed_files_unread"])
     print(
-        f"{len(findings)} findings, {turns} turns, {tool_calls} tool calls, read {read_count} of {len(to_read)} "
+        f"{len(findings)} findings from {len(candidates)} candidates, {turns} turns, {tool_calls} tool calls, read {read_count} of {len(to_read)} "
         f"changed files, about US${cost:.2f}, stopped: {stopped or 'finished'}"
     )
 
