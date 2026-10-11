@@ -36,12 +36,17 @@ NUDGE = (
     "Nobody can answer questions during this review. Carry on, and call "
     "finish_review when you're done."
 )
+UNREAD = (
+    "Not finished yet: you haven't read these changed files: {}. Read each one "
+    "in context, check the callers of what changed, report anything you "
+    "confirm, then call finish_review again."
+)
 
 SYSTEM = """You review pull requests for Vivid, an Apple media app written in Swift and SwiftUI. You work on your own: nobody reads your messages until the review is posted, so never stop to ask a question. Use the tools to read code, report each problem with report_finding as soon as you've confirmed it, and end with finish_review.
 
 How to review:
 1. Read the PR description and the diff in the first message. Read AGENTS.md for the project's rules when a change might break one.
-2. For each changed source file, read the changed parts in context with read_file, and use search_code to find the callers of every changed function, type or property and read those call sites. Follow the code far enough to know what actually happens at runtime.
+2. For each changed file, read the changed parts in context with read_file, and use search_code to find the callers of every changed function, type or property and read those call sites. Follow the code far enough to know what actually happens at runtime.
 3. Look hard for these kinds of bug:
    - Async races: state read before an `await` and used after it (a copied list being looped over, a flag, a selection) when something else can change it in between.
    - Cancellation: an item cancelled or removed while its request is in flight still completes and acts afterwards, or a retry outlives its cancellation.
@@ -57,7 +62,7 @@ How to review:
 6. Report each finding on a line the PR changed, with a priority: P1 for a crash, data loss, a security problem or a core feature broken; P2 for wrong behaviour a user can run into; P3 for minor issues and documentation. In the body, say what goes wrong, the situation that triggers it and how to fix it, in two to four sentences.
 7. Call finish_review with a short summary: one line on what you reviewed, then the findings by priority with file names, or one line saying nothing needs fixing. Mention anything you couldn't check.
 
-Be economical: read the parts of files you need rather than whole large files, and stop once the changes are covered. Write in Australian English without em dashes."""
+Be thorough. Read every changed file, tests and docs included, before you finish, and keep going after your first finding: a review that ends after a couple of tool calls has almost always missed something. To keep it quick, make independent reads and searches together in one turn rather than one per turn, and read the parts of large files you need rather than whole files. Write in Australian English without em dashes."""
 
 TOOLS = [
     {
@@ -203,6 +208,11 @@ def commentable_lines(merge_base, head):
     return lines
 
 
+def changed_files(diff):
+    """Files a diff adds or modifies, leaving out deleted and binary files."""
+    return sorted({row[6:] for row in diff.splitlines() if row.startswith("+++ b/")})
+
+
 def cost_of(usage, prices):
     def count(name):
         return getattr(usage, name, None) or 0
@@ -252,14 +262,19 @@ def main():
     model = os.environ.get("REVIEW_MODEL", "claude-sonnet-5-5")
     effort = os.environ.get("REVIEW_EFFORT", "low")
     max_cost = float(os.environ.get("REVIEW_MAX_COST_USD", "1.50"))
-    max_turns = int(os.environ.get("REVIEW_MAX_TURNS", "60"))
+    max_turns = int(os.environ.get("REVIEW_MAX_TURNS", "100"))
     prices = PRICES[model]
     workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
     client = anthropic.Anthropic(default_headers={"anthropic-workspace-id": workspace} if workspace else None)
 
-    messages = [{"role": "user", "content": first_message(args, Path(args.review_dir))}]
+    review_dir = Path(args.review_dir)
+    messages = [{"role": "user", "content": first_message(args, review_dir)}]
+    # Changed files Claude must open before finish_review is accepted. It's
+    # sent back once, so a review can't end on the diff alone.
+    to_read = changed_files((review_dir / "diff.patch").read_text(errors="replace"))
+    files_read, sent_back = set(), False
     findings, summary, stopped = [], None, None
-    cost, turns, nudges = 0.0, 0, 0
+    cost, turns, nudges, tool_calls = 0.0, 0, 0, 0
 
     while summary is None:
         if cost >= max_cost:
@@ -281,6 +296,8 @@ def main():
         )
         turns += 1
         cost += cost_of(response.usage, prices)
+        if response.stop_reason == "max_tokens":
+            print(f"::warning::Turn {turns} hit the output token limit.")
         if response.stop_reason == "refusal":
             stopped = "refusal"
             break
@@ -297,12 +314,14 @@ def main():
             stopped = "no_summary"
             break
 
+        tool_calls += len(calls)
         results = []
         for call in calls:
             data = call.input or {}
             try:
                 if call.name == "read_file":
                     output = read_file(data["path"], data.get("start_line", 1), data.get("end_line"))
+                    files_read.add(os.path.normpath(data["path"]))
                 elif call.name == "search_code":
                     output = search_code(data["pattern"], data.get("path"))
                 elif call.name == "list_files":
@@ -311,6 +330,11 @@ def main():
                     findings.append({key: data[key] for key in ("path", "line", "priority", "title", "body")})
                     output = "Recorded."
                 elif call.name == "finish_review":
+                    unread = [path for path in to_read if path not in files_read]
+                    if unread and not sent_back:
+                        sent_back = True
+                        results.append({"type": "tool_result", "tool_use_id": call.id, "content": UNREAD.format(", ".join(unread)), "is_error": True})
+                        continue
                     summary = data["summary"]
                     output = "Review finished."
                 else:
@@ -329,12 +353,19 @@ def main():
         "findings": findings,
         "stopped": stopped,
         "turns": turns,
+        "tool_calls": tool_calls,
+        "files_read": sorted(files_read),
+        "changed_files_unread": [path for path in to_read if path not in files_read],
         "cost_usd": round(cost, 4),
         "model": model,
         "effort": effort,
     }
     Path(args.out).write_text(json.dumps(result, indent=2))
-    print(f"{len(findings)} findings, {turns} turns, about US${cost:.2f}, stopped: {stopped or 'finished'}")
+    read_count = len(to_read) - len(result["changed_files_unread"])
+    print(
+        f"{len(findings)} findings, {turns} turns, {tool_calls} tool calls, read {read_count} of {len(to_read)} "
+        f"changed files, about US${cost:.2f}, stopped: {stopped or 'finished'}"
+    )
 
 
 if __name__ == "__main__":
