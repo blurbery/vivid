@@ -144,6 +144,7 @@ struct PhoneStudiosNetworksSettingsView: View {
     @State private var movingID: String?
     @State private var dragStartFrame: CGRect = .zero
     @State private var dragOffset: CGSize = .zero
+    @State private var previewWidth: CGFloat = 0
     @GestureState private var reorderGestureActive = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -236,42 +237,44 @@ struct PhoneStudiosNetworksSettingsView: View {
 
     // MARK: Preview with wiggle mode
 
+    /// Six tiles a row, wrapping onto new rows as more are picked, so every
+    /// tile stays on screen and can be dragged to any slot.
     private var preview: some View {
-        GeometryReader { proxy in
-            let spacing: CGFloat = 8
-            let width = (proxy.size.width - spacing * CGFloat(StudiosNetworksStore.maxPicks - 1))
-                / CGFloat(StudiosNetworksStore.maxPicks)
-            HStack(spacing: spacing) {
-                // Keyed by brand so a tile keeps its gesture while the draft
-                // order moves it between slots.
-                ForEach(displayedPicks, id: \.self) { id in
-                    slot(id, width: width)
-                }
-                ForEach(displayedPicks.count..<StudiosNetworksStore.maxPicks, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .frame(width: width, height: width * 9 / 16)
-                        .overlay(Image(systemName: "plus").font(.caption.weight(.semibold)).opacity(0.45))
-                        .accessibilityLabel("Empty slot")
-                }
+        let spacing: CGFloat = 8
+        let visible = StudiosNetworksStore.visibleTiles
+        let width = max(0, (previewWidth - spacing * CGFloat(visible - 1)) / CGFloat(visible))
+        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(width), spacing: spacing), count: visible),
+                         alignment: .leading, spacing: spacing) {
+            // One grid keyed by brand, so a tile keeps its gesture while the
+            // draft order moves it between slots, including onto another row.
+            ForEach(displayedPicks, id: \.self) { id in
+                slot(id, width: width)
             }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.picks)
-            .coordinateSpace(name: Self.previewSpace)
-            .onPreferenceChange(StudioNetworkTileFrames.self) { tileFrames = $0 }
-            .overlay(alignment: .topLeading) {
-                if let movingID {
-                    PhoneStudioNetworkTile(id: movingID, width: dragStartFrame.width)
-                        .scaleEffect(reduceMotion ? 1 : 1.08)
-                        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
-                        .position(x: dragStartFrame.midX + dragOffset.width,
-                                  y: dragStartFrame.midY + dragOffset.height)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
+            // Only shows what's still needed to reach six.
+            ForEach(displayedPicks.count..<max(displayedPicks.count, StudiosNetworksStore.minimumPicks), id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .frame(width: width, height: width * 9 / 16)
+                    .overlay(Image(systemName: "plus").font(.caption.weight(.semibold)).opacity(0.45))
+                    .accessibilityLabel("Empty slot")
             }
         }
-        // Five 16:9 tiles plus their gaps.
-        .aspectRatio(CGFloat(StudiosNetworksStore.maxPicks) * 16 / 9 * 0.93, contentMode: .fit)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { previewWidth = $0 }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.picks)
+        .coordinateSpace(name: Self.previewSpace)
+        .onPreferenceChange(StudioNetworkTileFrames.self) { tileFrames = $0 }
+        .overlay(alignment: .topLeading) {
+            if let movingID {
+                PhoneStudioNetworkTile(id: movingID, width: dragStartFrame.width)
+                    .scaleEffect(reduceMotion ? 1 : 1.08)
+                    .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                    .position(x: dragStartFrame.midX + dragOffset.width,
+                              y: dragStartFrame.midY + dragOffset.height)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .onChange(of: reorderGestureActive) { _, active in
             if !active { resetDrag() }
         }

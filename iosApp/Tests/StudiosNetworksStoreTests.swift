@@ -101,7 +101,15 @@ final class StudiosNetworksStoreTests: XCTestCase {
         let picks = StudiosNetworksStore.automaticPicks(counts: [
             "netflix": 163, "hbo": 165, "disneyplus": 164, "marvel": 115, "appletv": 150, "pixar": 68, "ghibli": 20,
         ])
-        XCTAssertEqual(picks, ["hbo", "disneyplus", "netflix", "appletv", "marvel", "pixar"])
+        XCTAssertEqual(picks, ["hbo", "disneyplus", "netflix", "appletv", "marvel", "pixar", "ghibli"])
+    }
+
+    func testAutomaticPicksStopAtTwenty() {
+        let counts = Dictionary(uniqueKeysWithValues: StudiosNetworksStore.catalogue.enumerated().map { ($1.id, 100 + $0) })
+        XCTAssertGreaterThan(StudiosNetworksStore.catalogue.count, StudiosNetworksStore.maxPicks)
+        let picks = StudiosNetworksStore.automaticPicks(counts: counts)
+        XCTAssertEqual(picks.count, 20)
+        XCTAssertEqual(picks.first, StudiosNetworksStore.catalogue.last?.id, "Most matches first")
     }
 
     func testAutomaticPicksKeepCatalogueOrderForTiesAndSkipSmallBrands() {
@@ -116,6 +124,15 @@ final class StudiosNetworksStoreTests: XCTestCase {
         // Ineligible brands drop out before topping up.
         XCTAssertEqual(StudiosNetworksStore.filled(["hulu", "pixar"], counts: counts),
                        ["pixar", "hbo", "disneyplus", "netflix", "appletv", "marvel"])
+    }
+
+    func testFilledKeepsSixToTwentyChoicesExactly() {
+        let ids = StudiosNetworksStore.catalogue.map(\.id)
+        let counts = Dictionary(uniqueKeysWithValues: ids.map { ($0, 50) })
+        let eight = Array(ids.suffix(8).reversed())
+        XCTAssertEqual(StudiosNetworksStore.filled(eight, counts: counts), eight, "No top-up past six")
+        XCTAssertEqual(StudiosNetworksStore.filled(Array(ids.prefix(6)), counts: counts), Array(ids.prefix(6)))
+        XCTAssertEqual(StudiosNetworksStore.filled(ids, counts: counts), Array(ids.prefix(20)), "At most 20")
     }
 
     func testResultCountIsTheUncappedMatchCount() {
