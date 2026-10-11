@@ -197,4 +197,21 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertTrue(StudiosNetworksStore.catalogue.filter { $0.kind == .network }.allSatisfy { !$0.watchProviderIds.isEmpty })
         XCTAssertEqual(StudiosNetworksStore.catalogue.first { $0.id == "stan" }?.watchRegion, "AU")
     }
+
+    func testBritBoxReadsItsSeriesFromItsStreamingList() throws {
+        let britbox = try XCTUnwrap(StudiosNetworksStore.catalogue.first { $0.id == "britbox" })
+        let (series, movies) = StudiosNetworksStore.discoverQueries(for: britbox)
+        XCTAssertNil(series["with_networks"], "TMDb credits BritBox with only a handful of its own series")
+        XCTAssertEqual(series["with_watch_providers"], "151|197|1852")
+        XCTAssertEqual(series["watch_region"], "US")
+        XCTAssertEqual(movies, series)
+
+        let netflix = try XCTUnwrap(StudiosNetworksStore.catalogue.first { $0.id == "netflix" })
+        XCTAssertEqual(StudiosNetworksStore.discoverQueries(for: netflix).series, ["with_networks": "213"])
+
+        let fox = try XCTUnwrap(StudiosNetworksStore.catalogue.first { $0.id == "20thcentury" })
+        let studio = StudiosNetworksStore.discoverQueries(for: fox)
+        XCTAssertEqual(studio.series, ["with_companies": "127928|25"], "20th Century Fox's films count too")
+        XCTAssertEqual(studio.movies, studio.series)
+    }
 }

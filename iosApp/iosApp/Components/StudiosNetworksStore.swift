@@ -20,6 +20,10 @@ struct StudioNetworkBrand: Identifiable, Equatable {
     /// never limits what can be watched.
     var watchProviderIds: [Int] = []
     var watchRegion = "US"
+    /// Reads a network's series from its streaming list as well as its films.
+    /// BritBox mostly streams BBC and ITV series, and TMDb credits it with
+    /// only a handful of its own, so matching by network would leave it empty.
+    var listsSeriesByWatchProvider = false
     /// Logos printed on a solid block (Marvel's box, the Warner Bros. shield)
     /// would render as a plain white shape, so their lettering is knocked out
     /// of the block instead.
@@ -194,6 +198,10 @@ final class StudiosNetworksStore {
         .init(id: "peacock", name: "Peacock", kind: .network, tmdbId: 3353, watchProviderIds: [386, 387]),
         .init(id: "paramountplus", name: "Paramount+", kind: .network, tmdbId: 4330, watchProviderIds: [2303, 2616]),
         .init(id: "stan", name: "Stan", kind: .network, tmdbId: 1255, watchProviderIds: [21], watchRegion: "AU"),
+        .init(id: "britbox", name: "BritBox", kind: .network, tmdbId: 4025, watchProviderIds: [151, 197, 1852],
+              listsSeriesByWatchProvider: true),
+        .init(id: "amc", name: "AMC", kind: .network, tmdbId: 174, watchProviderIds: [80, 526, 528, 635, 1854]),
+        .init(id: "fx", name: "FX", kind: .network, tmdbId: 88, watchProviderIds: [123]),
         .init(id: "pixar", name: "Pixar", kind: .studio, tmdbId: 3),
         .init(id: "marvel", name: "Marvel Studios", kind: .studio, tmdbId: 420, knocksOutLogoText: true),
         .init(id: "a24", name: "A24", kind: .studio, tmdbId: 41077),
@@ -203,6 +211,9 @@ final class StudiosNetworksStore {
         .init(id: "sony", name: "Sony Pictures", kind: .studio, tmdbId: 34, labelIds: [5, 2251, 559], stacksLogoWords: true),
         .init(id: "warnerbros", name: "Warner Bros.", kind: .studio, tmdbId: 174, knocksOutLogoText: true, logoHeightScale: 1.35),
         .init(id: "universal", name: "Universal", kind: .studio, tmdbId: 33),
+        .init(id: "disney", name: "Walt Disney Pictures", kind: .studio, tmdbId: 2, labelIds: [6125]),
+        .init(id: "dc", name: "DC", kind: .studio, tmdbId: 429, labelIds: [128064, 9993], knocksOutLogoText: true, logoHeightScale: 1.35),
+        .init(id: "20thcentury", name: "20th Century Studios", kind: .studio, tmdbId: 127928, labelIds: [25], logoHeightScale: 1.35),
     ]
 
     static let firstLoadNotice = "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly."
@@ -686,23 +697,29 @@ final class StudiosNetworksStore {
 
     /// Off the main actor, like the library index, so matching never
     /// competes with drawing.
-    private nonisolated static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async throws -> StudioNetworkResult {
-        let id = String(brand.tmdbId)
-        let today = Date()
-        let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
-        let to = dayFormatter.string(from: today)
-
+    /// TMDb discover filters for a brand's series and films. Series come from
+    /// the network or company, studio films from the company, and network
+    /// films from the streaming list, as do a few networks' series.
+    nonisolated static func discoverQueries(for brand: StudioNetworkBrand) -> (series: [String: String], movies: [String: String]?) {
         let companies = ([brand.tmdbId] + brand.labelIds).map(String.init).joined(separator: "|")
-        let seriesQuery = brand.kind == .network ? ["with_networks": id] : ["with_companies": companies]
-        let movieQuery: [String: String]? = switch brand.kind {
-        case .studio: ["with_companies": companies]
-        case .network: brand.watchProviderIds.isEmpty ? nil : [
+        let network = ["with_networks": String(brand.tmdbId)]
+        let streaming: [String: String]? = brand.watchProviderIds.isEmpty ? nil : [
             "with_watch_providers": brand.watchProviderIds.map(String.init).joined(separator: "|"),
             "watch_region": brand.watchRegion,
             "with_watch_monetization_types": "flatrate",
         ]
+        return switch brand.kind {
+        case .studio: (["with_companies": companies], ["with_companies": companies])
+        case .network: (brand.listsSeriesByWatchProvider ? streaming ?? network : network, streaming)
         }
+    }
 
+    private nonisolated static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async throws -> StudioNetworkResult {
+        let today = Date()
+        let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
+        let to = dayFormatter.string(from: today)
+
+        let (seriesQuery, movieQuery) = discoverQueries(for: brand)
         let recentSeriesQuery = seriesQuery.merging(["air_date.gte": from, "air_date.lte": to]) { $1 }
         let recentMovieQuery = movieQuery?.merging(["primary_release_date.gte": from, "primary_release_date.lte": to]) { $1 }
 
