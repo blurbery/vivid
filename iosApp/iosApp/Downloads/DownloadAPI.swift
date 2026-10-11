@@ -275,6 +275,19 @@ extension VividAPI {
         if let cursor, !cursor.isEmpty { query["since"] = cursor }
         return try await http.get("/api/v1/progress", query: query)
     }
+
+    /// Current watch state of the named items, for Emby and Jellyfin, which
+    /// have no change feed. Batched so each request URL stays short.
+    func currentProgress(mediaItemIds: [String]) async throws -> [ProgressPullItem] {
+        let auth = await TokenStore.shared.captureOrdinaryRequestAuth()
+        var progress: [ProgressPullItem] = []
+        for start in stride(from: 0, to: mediaItemIds.count, by: 100) {
+            let ids = mediaItemIds[start..<min(start + 100, mediaItemIds.count)].joined(separator: ",")
+            let response: ProgressPullResponse = try await http.get("/api/v1/progress", query: ["ids": ids], expectedAuth: auth)
+            progress.append(contentsOf: response.progress)
+        }
+        return progress
+    }
 }
 
 // MARK: - Request/response helpers

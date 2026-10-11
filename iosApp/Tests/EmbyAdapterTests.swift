@@ -102,6 +102,45 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(DownloadVersionPreference.options(for: files).map(\.label), ["4K HDR", "1080p"])
     }
 
+    func testProgressRouteReadsTheCurrentStateOfTheNamedItems() async throws {
+        let paths = LoadedRows()
+        let ids = LoadedRows()
+        let adapter = stubbedAdapter { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            paths.append(components.path)
+            ids.append(components.queryItems?.first { $0.name == "Ids" }?.value ?? "")
+            return (200, ["Items": [
+                // Emby clears the position when it marks an item played.
+                ["Id": "episode-1", "SeriesId": "series-1", "RunTimeTicks": 26_000_000_000,
+                 "UserData": ["Played": true, "PlaybackPositionTicks": 0, "LastPlayedDate": "2026-10-11T22:14:03.0000000Z"]],
+                ["Id": "episode-2", "SeriesId": "series-1", "RunTimeTicks": 26_000_000_000,
+                 "UserData": ["Played": false, "PlaybackPositionTicks": 6_000_000_000]],
+                ["Id": "../episode-3", "UserData": ["Played": true]]
+            ], "TotalRecordCount": 3])
+        }
+        let raw = try await adapter.route(method: "GET", path: "/api/v1/progress", query: ["ids": "episode-1,episode-2"], body: nil)
+        let data = try JSONSerialization.data(withJSONObject: raw)
+        let progress = try HTTPClient.makeJSONDecoder().decode(ProgressPullResponse.self, from: data).progress
+        XCTAssertEqual(paths.take(sorted: false), ["/emby/Users/user-1/Items"])
+        XCTAssertEqual(ids.take(sorted: false), ["episode-1,episode-2"])
+        XCTAssertEqual(progress.map(\.mediaItemId), ["episode-1", "episode-2"], "Unsafe IDs are dropped")
+        XCTAssertEqual(progress.map(\.completed), [true, false])
+        XCTAssertEqual(progress.map(\.positionSeconds), [0, 600])
+        XCTAssertEqual(progress.map(\.durationSeconds), [2_600, 2_600])
+    }
+
+    func testProgressRouteNeedsSafeItemIDsAndStillHasNoChangeFeed() async throws {
+        let adapter = stubbedAdapter { _ in (200, ["Items": []]) }
+        do {
+            _ = try await adapter.route(method: "GET", path: "/api/v1/progress", query: ["ids": "episode-1,../users"], body: nil)
+            XCTFail("An unsafe ID must not reach Emby")
+        } catch EmbyError.invalidResponse {}
+        do {
+            _ = try await adapter.route(method: "GET", path: "/api/v1/progress", query: ["since": "cursor"], body: nil)
+            XCTFail("Emby has no progress change feed")
+        } catch EmbyError.unsupportedFeature {}
+    }
+
     func testBrowseAndHomeRequestLeanerFieldsThanDetail() async throws {
         let fields = LoadedRows()
         let adapter = stubbedAdapter { request in

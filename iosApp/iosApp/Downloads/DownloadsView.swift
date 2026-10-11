@@ -50,6 +50,7 @@ struct DownloadsView: View {
             // Opening the tab answers "can I download here?" for the active
             // server now, rather than after the next foreground.
             if !manager.downloadsEnabled { await manager.onAppActive() }
+            else { await manager.refreshDownloadedProgress() }
         }
         .navigationTitle(isSelecting ? "\(selection.count) Selected" : "Downloads")
         #if os(iOS)

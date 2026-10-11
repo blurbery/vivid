@@ -94,6 +94,39 @@ final class JellyfinAdapterTests: XCTestCase {
             identity: nil, sessionOverride: session))
     }
 
+    func testProgressRouteReadsTheCurrentStateOfTheNamedItems() async throws {
+        let unwatched = "44444444444444444444444444444444"
+        var requests: [(path: String, query: [String: String])] = []
+        let adapter = adapter { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            requests.append((components.path, Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })))
+            return (200, ["Items": [
+                // Jellyfin clears the position when it marks an item played.
+                ["Id": self.item, "SeriesId": self.source, "RunTimeTicks": 26_000_000_000,
+                 "UserData": ["Played": true, "PlaybackPositionTicks": 0, "LastPlayedDate": "2026-10-11T22:14:03.1234567Z"]],
+                ["Id": unwatched, "SeriesId": self.source, "RunTimeTicks": 26_000_000_000,
+                 "UserData": ["Played": false, "PlaybackPositionTicks": 6_000_000_000]]
+            ], "TotalRecordCount": 2])
+        }
+        let raw = try await adapter.route(method: "GET", path: "/api/v1/progress", query: ["ids": "\(item),\(unwatched)"], body: nil)
+        let data = try JSONSerialization.data(withJSONObject: raw)
+        let progress = try HTTPClient.makeJSONDecoder().decode(ProgressPullResponse.self, from: data).progress
+        XCTAssertEqual(requests.map(\.path), ["/jellyfin/Items"])
+        XCTAssertEqual(requests.first?.query["UserId"], user)
+        XCTAssertEqual(requests.first?.query["Ids"], "\(item),\(unwatched)")
+        XCTAssertEqual(requests.first?.query["EnableUserData"], "true")
+        XCTAssertEqual(progress.map(\.mediaItemId), [item, unwatched])
+        XCTAssertEqual(progress.map(\.completed), [true, false])
+        XCTAssertEqual(progress.map(\.positionSeconds), [0, 600])
+        XCTAssertEqual(progress.map(\.durationSeconds), [2_600, 2_600])
+
+        do {
+            _ = try await adapter.route(method: "GET", path: "/api/v1/progress", query: ["since": "cursor"], body: nil)
+            XCTFail("Jellyfin has no progress change feed")
+        } catch JellyfinError.unsupportedFeature {}
+        XCTAssertEqual(requests.count, 1)
+    }
+
     func testPeopleNavigationRoundTripsNativeIDsAndKeepsAccountsSeparate() async throws {
         let nativeID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let adapter = adapter { request in

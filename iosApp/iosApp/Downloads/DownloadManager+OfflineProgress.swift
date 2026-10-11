@@ -106,6 +106,11 @@ extension DownloadManager {
                 try await replaceSiloProgress(auth: auth)
                 return
             }
+            if let auth = await TokenStore.shared.captureOrdinaryRequestAuth(),
+               Self.readsCurrentProgress(MediaServerProvider.forServerID(auth.account.serverId)) {
+                try await pullDownloadedItemProgress()
+                return
+            }
 
             // A server or profile switch while this request is out must not
             // merge the old account's progress into the new scope's file.
@@ -136,6 +141,53 @@ extension DownloadManager {
         } catch {
             // Non-fatal; retry next foreground.
         }
+    }
+
+    /// Emby and Jellyfin have no progress change feed, so their downloads
+    /// read each item's current state instead.
+    nonisolated static func readsCurrentProgress(_ provider: MediaServerProvider) -> Bool {
+        provider == .emby || provider == .jellyfin
+    }
+
+    /// Picks up items watched on an Emby or Jellyfin server since the last
+    /// foreground, so the Downloads tab is current when it opens.
+    func refreshDownloadedProgress() async {
+        guard downloadsEnabled, Self.readsCurrentProgress(MediaServerProvider.forServerID(scopeServerId)) else { return }
+        await pullProgressDeltas()
+    }
+
+    /// Reads the server's watch state for every downloaded item, so watching
+    /// online (in Vivid or another app) marks the download watched too.
+    private func pullDownloadedItemProgress() async throws {
+        let ids = Set(file.records.values.map(\.leafMediaItemId)).sorted()
+        guard !ids.isEmpty else { return }
+        let scopeGeneration = registrationScopeGeneration
+        let progress = try await VividAPI.shared.currentProgress(mediaItemIds: ids)
+        guard scopeGeneration == registrationScopeGeneration else { return }
+        let updates = Self.currentProgressUpdates(progress, local: file.localProgress,
+                                                  pending: Set(file.progressQueue.map(\.mediaItemId)), now: Date())
+        guard !updates.isEmpty else { return }
+        file.localProgress.merge(updates) { _, server in server }
+        persist()
+    }
+
+    /// The server's state replaces each returned item's entry, including
+    /// marking it unwatched, unless a local event for it is still waiting to
+    /// be sent. Items the server didn't return keep their entry, and items
+    /// never started anywhere get none.
+    nonisolated static func currentProgressUpdates(_ progress: [ProgressPullItem], local: [String: LocalProgressEntry],
+                                                   pending: Set<String>, now: Date) -> [String: LocalProgressEntry] {
+        var updates: [String: LocalProgressEntry] = [:]
+        for item in progress where !pending.contains(item.mediaItemId) {
+            let existing = local[item.mediaItemId]
+            guard existing != nil || item.completed || item.positionSeconds > 0 else { continue }
+            let duration = item.durationSeconds > 0 ? item.durationSeconds : existing?.duration ?? 0
+            guard existing?.position != item.positionSeconds || existing?.duration != duration
+                    || existing?.completed != item.completed else { continue }
+            updates[item.mediaItemId] = LocalProgressEntry(position: item.positionSeconds, duration: duration,
+                                                           completed: item.completed, updatedAt: now)
+        }
+        return updates
     }
 
     private func persistBootstrap(_ stagedFile: DownloadStoreFile? = nil) async throws {

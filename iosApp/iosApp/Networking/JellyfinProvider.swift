@@ -348,6 +348,15 @@ struct JellyfinAdapter {
         return SHA256.hash(data: Data(raw.utf8)).prefix(7).reduce(0) { ($0 << 8) | Int($1) }
     }
 
+    /// One item's watch state as a `ProgressPullItem` row. Jellyfin clears
+    /// the position when it marks an item played, so played rows report 0.
+    static func progress(_ raw: [String: Any]) -> [String: Any]? {
+        guard let id = raw["Id"] as? String, (try? JellyfinConnection.id(id)) != nil else { return nil }
+        let user = raw["UserData"] as? [String: Any] ?? [:]
+        return ["mediaItemId": id, "positionSeconds": seconds(user["PlaybackPositionTicks"]),
+                "durationSeconds": seconds(raw["RunTimeTicks"]), "completed": user["Played"] as? Bool ?? false]
+    }
+
     static func decode<T: Decodable>(_ value: Any, as type: T.Type = T.self) throws -> T {
         try JSONDecoder().decode(type, from: JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
     }
@@ -911,6 +920,16 @@ struct JellyfinAdapter {
                 results.append(["mediaItemId":id,"status":"ok"])
             }
             return ["results":results]
+        }
+        // Jellyfin has no progress change feed, so this answers with the
+        // current watch state of the items named in `ids` (the device's downloads).
+        if path == "/api/v1/progress", method == "GET", let list = query["ids"] {
+            let ids = try list.split(separator: ",").map { try JellyfinConnection.id(String($0)) }
+            guard !ids.isEmpty else { return ["progress": []] }
+            let raw = try await connection.object("GET", "/Items", query: [
+                "UserId": userID, "Ids": ids.joined(separator: ","), "Recursive": "true", "EnableUserData": "true", "EnableImages": "false"
+            ])
+            return ["progress": (raw["Items"] as? [[String: Any]] ?? []).compactMap(Self.progress)]
         }
         if path.hasPrefix("/api/v1/settings/values/") || path == "/api/v1/settings/contract/capabilities" {
             return try await JellyfinLocalPreferences.shared.route(connection:connection,method:method,path:p,query:query,body:payload)

@@ -257,4 +257,53 @@ final class DownloadGroupingTests: XCTestCase {
             ["arrival", "Dune", "Zodiac"]
         )
     }
+
+    // MARK: - Emby and Jellyfin watch state
+
+    func testServerWatchStateReachesDownloadsUnlessALocalEventIsWaiting() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let earlier = Date(timeIntervalSince1970: 10)
+        func server(_ id: String, position: Double, duration: Double = 2_600, completed: Bool) -> ProgressPullItem {
+            ProgressPullItem(mediaItemId: id, positionSeconds: position, durationSeconds: duration,
+                             completed: completed, updatedAt: nil)
+        }
+        func local(position: Double, completed: Bool) -> LocalProgressEntry {
+            LocalProgressEntry(position: position, duration: 2_600, completed: completed, updatedAt: earlier)
+        }
+        let updates = DownloadManager.currentProgressUpdates([
+            server("streamed", position: 0, completed: true),
+            server("resumed", position: 1_200, completed: false),
+            server("unmarked", position: 0, completed: false),
+            server("queued", position: 0, completed: false),
+            server("unchanged", position: 600, duration: 0, completed: false),
+            server("untouched", position: 0, completed: false),
+        ], local: [
+            "resumed": local(position: 300, completed: false),
+            "unmarked": local(position: 0, completed: true),
+            "queued": local(position: 2_500, completed: true),
+            "unchanged": local(position: 600, completed: false),
+            "missing": local(position: 900, completed: false),
+        ], pending: ["queued"], now: now)
+
+        // Watched online without playing the download, watched further
+        // elsewhere, and marked unwatched on the server all reach the device.
+        XCTAssertEqual(Set(updates.keys), ["streamed", "resumed", "unmarked"])
+        XCTAssertEqual(updates["streamed"]?.completed, true)
+        XCTAssertEqual(updates["streamed"]?.duration, 2_600)
+        XCTAssertEqual(updates["resumed"]?.position, 1_200)
+        XCTAssertEqual(updates["resumed"]?.updatedAt, now)
+        XCTAssertEqual(updates["unmarked"]?.completed, false)
+        // An unsent offline event, an unchanged item, an item the server
+        // didn't return and one never started anywhere are left alone.
+        XCTAssertNil(updates["queued"])
+        XCTAssertNil(updates["unchanged"])
+        XCTAssertNil(updates["missing"])
+        XCTAssertNil(updates["untouched"])
+    }
+
+    func testOnlyEmbyAndJellyfinReadCurrentProgress() {
+        XCTAssertTrue(DownloadManager.readsCurrentProgress(.emby))
+        XCTAssertTrue(DownloadManager.readsCurrentProgress(.jellyfin))
+        XCTAssertFalse(DownloadManager.readsCurrentProgress(.silo), "Silo keeps its change feed")
+    }
 }
