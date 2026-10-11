@@ -19,7 +19,7 @@ private struct TVStudioNetworkTile: View {
 // MARK: - Home row
 
 /// Pinned under the Spotlight with no header. Six tiles span the hero's
-/// width, so the row never scrolls.
+/// width, and the row scrolls sideways to the rest, up to 20.
 struct TVStudiosNetworksRow: View {
     /// Increments when the Spotlight hands focus down to this row.
     let enterRequest: Int
@@ -41,28 +41,35 @@ struct TVStudiosNetworksRow: View {
 
     static func tileWidth(screenWidth: CGFloat) -> CGFloat {
         let rowWidth = screenWidth - heroInset * 2
-        return (rowWidth - spacing * CGFloat(StudiosNetworksStore.maxPicks - 1)) / CGFloat(StudiosNetworksStore.maxPicks)
+        let visible = CGFloat(StudiosNetworksStore.visibleTiles)
+        return (rowWidth - spacing * (visible - 1)) / visible
     }
 
     var body: some View {
         if store.showsRow {
             GeometryReader { proxy in
                 let tileWidth = Self.tileWidth(screenWidth: proxy.size.width)
-                HStack(spacing: Self.spacing) {
-                    ForEach(store.picks, id: \.self) { id in
-                        Button {
-                            lastTile = id
-                            onOpen()
-                            router.navigate(to: .studioNetwork(brandId: id))
-                        } label: {
-                            TVStudioNetworkTile(id: id, width: tileWidth)
+                // Every tile is built up front, so focus can return to one
+                // scrolled out of view and the focus engine scrolls to it.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Self.spacing) {
+                        ForEach(store.picks, id: \.self) { id in
+                            Button {
+                                lastTile = id
+                                onOpen()
+                                router.navigate(to: .studioNetwork(brandId: id))
+                            } label: {
+                                TVStudioNetworkTile(id: id, width: tileWidth)
+                            }
+                            .buttonStyle(.card)
+                            .focused($focusedTile, equals: id)
+                            .accessibilityLabel(store.brand(id)?.name ?? id)
                         }
-                        .buttonStyle(.card)
-                        .focused($focusedTile, equals: id)
-                        .accessibilityLabel(store.brand(id)?.name ?? id)
                     }
                 }
-                .padding(.horizontal, Self.heroInset)
+                .contentMargins(.horizontal, Self.heroInset, for: .scrollContent)
+                // Keeps the focused tile's lift from being cut off.
+                .scrollClipDisabled()
                 // Up and Down are native, like moving between other Home
                 // rows. A manual claim here raced the focus engine on swipes
                 // and pulled focus to the remembered Continue Watching card.
@@ -267,9 +274,11 @@ struct TVStudiosNetworksSettingsView: View {
     private enum Target: Hashable { case done, slot(String), pick(String), reset }
 
     private let previewSpacing: CGFloat = 24
+    /// Room around the clipped preview strip for a focused tile's lift.
+    private let previewGutter: CGFloat = 24
     private var previewTileWidth: CGFloat {
-        (TVSettingsLayout.contentWidth - previewSpacing * CGFloat(StudiosNetworksStore.maxPicks - 1))
-            / CGFloat(StudiosNetworksStore.maxPicks)
+        let visible = CGFloat(StudiosNetworksStore.visibleTiles)
+        return (TVSettingsLayout.contentWidth - previewSpacing * (visible - 1)) / visible
     }
 
     private var subtitle: String {
@@ -355,19 +364,35 @@ struct TVStudiosNetworksSettingsView: View {
 
     // MARK: Preview with arrange mode
 
+    /// Six tiles across, scrolling sideways to the rest. It stays clipped,
+    /// so tiles scrolled to the left never cover the settings categories,
+    /// with a gutter that keeps the strip where six fixed slots sat.
     private var preview: some View {
-        HStack(spacing: previewSpacing) {
-            // Keyed by brand so the picked-up tile keeps its identity, and
-            // its focus, as it moves between slots.
-            ForEach(store.picks, id: \.self) { id in
-                slot(id)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: previewSpacing) {
+                    // Keyed by brand so the picked-up tile keeps its identity,
+                    // and its focus, as it moves between slots.
+                    ForEach(store.picks, id: \.self) { id in
+                        slot(id).id(id)
+                    }
+                    // Only shows what's still needed to reach six.
+                    ForEach(store.picks.count..<max(store.picks.count, StudiosNetworksStore.minimumPicks), id: \.self) { _ in
+                        emptySlot
+                    }
+                }
             }
-            ForEach(store.picks.count..<StudiosNetworksStore.maxPicks, id: \.self) { _ in
-                emptySlot
+            .contentMargins(previewGutter, for: .scrollContent)
+            .padding(-previewGutter)
+            .focusSection()
+            .animation(.easeInOut(duration: 0.2), value: store.picks)
+            // Moving a picked-up tile doesn't move focus, so the focus
+            // engine won't scroll; keep the tile in view as it travels.
+            .onChange(of: store.picks) { _, _ in
+                guard let movingID else { return }
+                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(movingID) }
             }
         }
-        .focusSection()
-        .animation(.easeInOut(duration: 0.2), value: store.picks)
     }
 
     private func tileFace(_ id: String) -> some View {

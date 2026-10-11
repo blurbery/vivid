@@ -171,7 +171,13 @@ struct LibraryMovieLookup: Codable, Sendable {
 final class StudiosNetworksStore {
     static let shared = StudiosNetworksStore()
 
-    static let maxPicks = 6
+    /// The most brands the row can hold, and how many automatic shows.
+    static let maxPicks = 20
+    /// The fewest a chosen set can have while the row shows on Home.
+    static let minimumPicks = 6
+    /// Tiles across the screen or settings preview at once. The row
+    /// scrolls past these; it's layout only, not a pick limit.
+    static let visibleTiles = 6
     /// Below this a tile or page row would look empty, so it's hidden.
     static let minimumCount = 6
     static let rowLimit = 20
@@ -228,7 +234,7 @@ final class StudiosNetworksStore {
     /// nil means automatic: the top brands by library matches.
     private(set) var customPicks: [String]?
     /// While a settings editor is open, picks can drop below the required
-    /// six so a brand can be swapped. Elsewhere they're always filled.
+    /// six so a brand can be swapped. Elsewhere they're topped up to six.
     private(set) var isEditing = false
 
     private var loadedScope: Scope?
@@ -269,12 +275,14 @@ final class StudiosNetworksStore {
             .map(\.element.id))
     }
 
-    /// Fills `chosen` up to six with the most-matched brands not already
-    /// chosen, so Home always shows a full row.
+    /// Keeps up to 20 chosen brands, topping a set below six up with the
+    /// most-matched brands not already chosen, so Home never shows a
+    /// sparse row. Six or more are kept exactly as chosen.
     static func filled(_ chosen: [String], counts: [String: Int]) -> [String] {
-        let eligible = chosen.filter { (counts[$0] ?? 0) >= minimumCount }
+        let eligible = Array(chosen.filter { (counts[$0] ?? 0) >= minimumCount }.prefix(maxPicks))
+        guard eligible.count < minimumPicks else { return eligible }
         let extra = automaticPicks(counts: counts).filter { !eligible.contains($0) }
-        return Array((eligible + extra).prefix(maxPicks))
+        return Array((eligible + extra).prefix(minimumPicks))
     }
 
     var picks: [String] {
@@ -284,7 +292,7 @@ final class StudiosNetworksStore {
 
     /// Six, or every eligible brand when a small library has fewer.
     var requiredPicks: Int {
-        min(Self.maxPicks, Self.catalogue.filter { isEligible($0.id) }.count)
+        min(Self.minimumPicks, Self.catalogue.filter { isEligible($0.id) }.count)
     }
 
     /// The editor can't be closed until this is false, unless the row is
@@ -293,7 +301,7 @@ final class StudiosNetworksStore {
 
     var missingPicks: Int { max(0, requiredPicks - picks.count) }
 
-    /// Starts editing with a full set, saving any top-up of older choices
+    /// Starts editing with at least six, saving any top-up of older choices
     /// made before six were required.
     func beginEditing() {
         isEditing = true
