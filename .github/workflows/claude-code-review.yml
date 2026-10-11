@@ -269,14 +269,14 @@ jobs:
           set -euo pipefail
           dir=.claude-review
           if ! [[ "$PR" =~ ^[0-9]+$ ]]; then echo "::error::The PR must be a number."; exit 1; fi
-          read -r cross base head < <(gh pr view "$PR" --repo "$REPO" --json isCrossRepository,baseRefOid,headRefOid --jq '"\(.isCrossRepository) \(.baseRefOid) \(.headRefOid)"')
+          read -r cross base pr_head < <(gh pr view "$PR" --repo "$REPO" --json isCrossRepository,baseRefOid,headRefOid --jq '"\(.isCrossRepository) \(.baseRefOid) \(.headRefOid)"')
           if [ "$cross" != false ]; then echo "::error::Only PRs from this repository can be reviewed."; exit 1; fi
 
           # The script comes from the branch this run started on, because older
           # commits may not have it or may have an older version.
           git show "$GITHUB_SHA:scripts/ci/claude-review.py" > "$RUNNER_TEMP/claude-review.py"
           git fetch --quiet origin "refs/pull/$PR/head"
-          head=$(git rev-parse --verify "${SHA:-$head}^{commit}")
+          head=$(git rev-parse --verify "${SHA:-$pr_head}^{commit}")
           git checkout --quiet --detach "$head"
           merge_base=$(git merge-base "$base" "$head")
 
@@ -287,7 +287,13 @@ jobs:
           if [ "${#files[@]}" -gt 0 ]; then
             git diff "$merge_base" "$head" -- "${files[@]}" > "$dir/diff.patch"
           fi
-          gh pr view "$PR" --repo "$REPO" --json title,body --jq '"# \(.title)\n\n\(.body)"' > "$dir/pr.md"
+          # The PR description describes its final state, so an earlier commit
+          # is described by its own commit messages instead.
+          if [ "$head" = "$pr_head" ]; then
+            gh pr view "$PR" --repo "$REPO" --json title,body --jq '"# \(.title)\n\n\(.body)"' > "$dir/pr.md"
+          else
+            git log --reverse --format='%B' "$merge_base..$head" > "$dir/pr.md"
+          fi
           # Leave out the PR's review comments so the review can't repeat them.
           echo "No review comments yet." > "$dir/comments.md"
           {
