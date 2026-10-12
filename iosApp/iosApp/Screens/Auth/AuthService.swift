@@ -141,7 +141,10 @@ final class AuthService: @unchecked Sendable {
 
     // MARK: - Authentication
 
-    func login(username: String, password: String) async throws {
+    /// - Parameter defersSiloSignInRecord: the sign-in form records a Silo
+    ///   sign-in once the chosen viewing profile is saved, for that saved
+    ///   profile's own identity, instead of here.
+    func login(username: String, password: String, defersSiloSignInRecord: Bool = false) async throws {
         guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
             throw HTTPError.serverUrlNotConfigured
         }
@@ -176,9 +179,11 @@ final class AuthService: @unchecked Sendable {
             cacheAccountID: String(response.user.id)
         )
         #if os(tvOS) || os(iOS)
-        await VividCloudAccountSync.shared.noteExplicitAuthentication(
-            serverID: expectedAccount.serverId, userID: String(response.user.id)
-        )
+        if !defersSiloSignInRecord {
+            await VividCloudAccountSync.shared.noteExplicitAuthentication(
+                serverID: expectedAccount.serverId, userID: String(response.user.id)
+            )
+        }
         #endif
     }
 
