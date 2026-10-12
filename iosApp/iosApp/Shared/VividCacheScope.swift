@@ -16,6 +16,11 @@ enum VividCacheScope {
         else { SharedDefaults.shared.removeObject(forKey: key) }
     }
 
+    /// The server user the live session on `serverID` belongs to.
+    static func accountID(for serverID: String) -> String? {
+        SharedDefaults.shared.string(forKey: "vivid.cache.account." + serverID)
+    }
+
     static var current: String? {
         let defaults = SharedDefaults.shared
         guard let server = defaults.string(forKey: SharedStorage.activeServerIdKey),

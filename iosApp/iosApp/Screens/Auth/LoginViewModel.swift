@@ -28,7 +28,7 @@ class LoginViewModel {
             try await auth.login(username: username, password: password)
             #if os(tvOS) || os(iOS)
             password = ""
-            await TVLoginPreparation.shared.begin(router: router)
+            await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
             #else
             await StartupContentPrefetcher.prefetchProfiles()
             router.showProfileSelection()

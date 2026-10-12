@@ -210,7 +210,7 @@ struct PhoneSavedAccountCards: View {
                         .frame(minWidth: geometry.size.width, alignment: .center)
                     }
                 }
-                .frame(height: 150)
+                .frame(height: 170)
             } else {
                 VStack(spacing: 24) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top),
@@ -271,7 +271,7 @@ struct PhoneSavedAccountCards: View {
                 }
                 .vividScrollContentBackgroundHidden()
                 .background(Color.clear)
-                .navigationTitle(account.username)
+                .navigationTitle(store.displayName(for: account))
                 .toolbar { VividSheetCloseItem { selectedForPIN = nil; pin = "" } }
             }.vividGlassSheet()
         }
@@ -419,20 +419,18 @@ struct PhoneSavedAccountCards: View {
     }
     private func tile(_ account: TVSavedAccount) -> some View {
         VStack(spacing: isSettings ? 8 : 12) {
-            ProfileAvatarView(avatar: account.profile?.avatarEmoji, imageUrl: savedAvatarURL(account), name: account.username, size: avatarSize,
+            ProfileAvatarView(avatar: account.profile?.avatarEmoji, imageUrl: savedAvatarURL(account), name: store.displayName(for: account), size: avatarSize,
                               cacheScope: account.profile.map {
                                   VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: $0.id)
                               })
                 .overlay {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
-                .accessibilityLabel(isSettings && isCurrentAccount(account) ? "Current account" : account.username)
+                .accessibilityLabel(isSettings && isCurrentAccount(account) ? "Current account" : store.displayName(for: account))
             VStack(spacing: 4) {
-                Text(account.username).font(.subheadline.weight(.medium)).lineLimit(1)
-                if isSettings {
-                    Text(serverLabel(for: account))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                }
+                Text(store.displayName(for: account)).font(.subheadline.weight(.medium)).lineLimit(1)
+                Text(serverLabel(for: account))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 if store.needsLogin(account) { Text("Signed out").font(.caption).foregroundStyle(.secondary) }
             }
         }.frame(width: !isSettings && displayedAccounts.count < 3 ? 112 : nil)
@@ -477,7 +475,7 @@ struct PhoneSavedAccountEditor: View {
     private var active: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
     var body: some View {
         List {
-            SettingsPageHeader(title: account?.username ?? "Add Profile", subtitle: "Account details and access on this device.", systemImage: "person.crop.circle").settingsPageHeaderRow()
+            SettingsPageHeader(title: account.map { store.displayName(for: $0) } ?? "Add Profile", subtitle: "Account details and access on this device.", systemImage: "person.crop.circle").settingsPageHeaderRow()
             if account == nil {
                 Section {
                     Picker("Server Provider", selection: $provider) {
@@ -496,6 +494,9 @@ struct PhoneSavedAccountEditor: View {
             Section {
                 if account == nil { TextField("Server address", text: $serverURL).keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled() }
                 else { LabeledContent("Server", value: registry.entry(with: account!.serverID)?.url ?? serverURL) }
+                if let account, account.siloProfileID != nil, let name = account.profile?.name {
+                    LabeledContent("Profile", value: name)
+                }
                 TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Password", text: $password).textContentType(.password)
                 Button(account == nil ? "Add Profile" : store.needsLogin(account!) ? "Sign In" : "Update Login") {
@@ -554,7 +555,7 @@ struct PhoneSavedAccountEditor: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { account in
-            Text("Remove \(account.username) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+            Text("Remove \(store.displayName(for: account)) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
         }
         .onAppear {
             if let account {
