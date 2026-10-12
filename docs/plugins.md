@@ -82,7 +82,7 @@ On Apple TV the field is called **Personal API key**. The 32-character API Key i
   <tbody>
     <tr><td><strong>Trailers</strong></td><td>A Trailers row on movie and series pages, just before Cast &amp; Crew. It shows up to three trailers with the official ones first, and series show trailers for their latest season. Episode pages show their series' trailers. On iPhone and iPad, trailers open in the YouTube app, or on youtube.com if the app isn't installed. On Apple TV they play in the YouTube app, so it needs to be installed.</td></tr>
     <tr><td><strong>TMDb rating</strong></td><td>TMDb's user score on movie and series pages, next to the other badges. It only appears when TMDb has votes for the title.</td></tr>
-    <tr><td><strong>Studios &amp; Networks</strong></td><td>A row of studio and network logos pinned under the Spotlight on Home. Each one opens a page for that studio or network with Popular Series and Popular Movies (each shows once at least six of your titles match), plus All in Your Library.</td></tr>
+    <tr><td><strong>Studios &amp; Networks</strong></td><td>A row of up to 20 studio and network logos pinned under the Spotlight on Home. Each one opens a page for that studio or network with Popular Series and Popular Movies (each shows once at least six of your titles match), plus All in Your Library.</td></tr>
     <tr><td><strong>Collections</strong></td><td>On a movie that's part of a collection, a row such as "Scream Collection" with the films from it that are in your library, in release order. It appears when you have at least two of them.</td></tr>
   </tbody>
 </table>
@@ -100,7 +100,7 @@ On Apple TV the field is called **Personal API key**. The 32-character API Key i
   </tbody>
 </table>
 
-On Apple TV, the TMDb rating sits after the quality badges, trailers sit just above Cast & Crew, and Studios & Networks runs across Home under the Spotlight.
+On Apple TV, the TMDb rating sits after the quality badges, trailers sit just above Cast & Crew, and Studios & Networks runs across Home under the Spotlight, six tiles at a time, scrolling sideways to the rest.
 
 <table width="100%">
   <thead>
@@ -116,17 +116,17 @@ On Apple TV, the TMDb rating sits after the quality badges, trailers sit just ab
 
 <p align="center"><img src="images/plugins/tv-studios-networks-home.jpg" width="760" alt="The Studios and Networks row on Home on Apple TV"></p>
 
-Studios & Networks turns on by itself once TMDb is connected. The first time, Vivid reads your library and matches it with TMDb, which can take a few minutes on a large library, so keep Vivid open until it finishes. After that it loads straight away and refreshes daily. It picks from Netflix, HBO, Apple TV, Disney+, Prime Video, Hulu, Peacock, Paramount+, Stan, Pixar, Marvel Studios, A24, Lucasfilm, DreamWorks, Studio Ghibli, Sony Pictures, Warner Bros. and Universal. A studio or network only shows once at least six titles in your library match it.
+Studios & Networks turns on by itself once TMDb is connected. The first time, Vivid reads your library and matches it with TMDb, which can take a few minutes on a large library, so keep Vivid open until it finishes. After that it loads straight away and refreshes daily. It chooses from Netflix, HBO, Apple TV, Disney+, Prime Video, Hulu, Peacock, Paramount+, Stan, BritBox, AMC, FX, Pixar, Marvel Studios, A24, Lucasfilm, DreamWorks, Studio Ghibli, Sony Pictures, Warner Bros., Universal, Walt Disney Pictures, DC and 20th Century Studios, and uses the 20 with the most matching titles in your library unless you pick your own. A studio or network only shows once at least six titles in your library match it.
 
-To choose your own, open **Settings → General → Home Screen → Studios & Networks**. From there you can:
+To choose your own, open **Settings → General** and choose **Studios & Networks** under the Home Screen heading. From there you can:
 
 - turn **Show on Home** on or off
-- pick up to six from **Networks** and **Studios**
+- pick six to 20 from **Networks** and **Studios** (fewer only when fewer than six brands match your library)
 - use **Reset to Automatic** to go back to Vivid's picks
 
 ### Good to know
 
-- TMDb features need your server to have identified the title. Silo needs a TMDb ID. Emby and Jellyfin can also use an IMDb ID, which Vivid looks up on TMDb.
+- Trailers, ratings and collection rows need your server to have identified the title. Silo needs a TMDb ID. Emby and Jellyfin can also use an IMDb ID, which Vivid looks up on TMDb. Studios & Networks, and the other films in a collection row, are matched with your library by TMDb ID where your server lists one, and otherwise by exact title and year.
 - More Like This comes from your server and works without TMDb.
 - **Disconnect** hides trailers, ratings, Studios & Networks and collection rows again. Nothing else changes.
 - This product uses the TMDB API but is not endorsed or certified by TMDB.
@@ -250,4 +250,4 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 
 Screenshots are from iPhone and Apple TV. iPad looks much the same as iPhone.
 
-[Server Connections](server-connections.md#plugins-on-iphone-ipad-and-apple-tv) covers how plugin keys sync, what's stored on each device and current verification limits. The in-app Privacy Policy under **Settings → About** explains what MDBList and OpenSubtitles receive.
+[Server Connections](server-connections.md#plugins-on-iphone-ipad-and-apple-tv) covers how plugin keys sync, what's stored on each device and current verification limits. Seerr requests aren't a plugin: they have their own **Settings → Seerr** page, covered in [Server Connections](server-connections.md#optional-seerr-requests-on-apple-tv-iphone-and-ipad). The in-app Privacy Policy under **Settings → About** explains what TMDb, MDBList and OpenSubtitles receive.

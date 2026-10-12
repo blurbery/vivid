@@ -19,6 +19,7 @@ Vivid uses `semantic-release` to publish a GitHub source release after updates r
   <tbody>
     <tr><td><code>feat:</code></td><td>Minor</td></tr>
     <tr><td><code>fix:</code>, <code>perf:</code></td><td>Patch</td></tr>
+    <tr><td>Any other commit without <code>[skip release]</code>, such as <code>docs:</code>, <code>style:</code>, <code>chore:</code>, <code>ci:</code> or a message with no type</td><td>Patch</td></tr>
     <tr><td><code>!</code> after the type/scope, or a <code>BREAKING CHANGE:</code> footer</td><td>Major</td></tr>
     <tr><td>Documentation-only and housekeeping updates with <code>[skip release]</code></td><td>No release</td></tr>
     <tr><td>No new commits</td><td>No release</td></tr>
@@ -29,7 +30,7 @@ The largest change since the previous version determines the increment. Tags use
 
 Shipped logo, branding, artwork and small visual polish updates are **patch changes**: increment the last number by one, for example `0.0.1` → `0.0.2`. Use `fix:` or `style:` as appropriate, not `feat:`. Documentation-only changes use `docs:` with `[skip release]` and must not increment the version. Reserve `feat:` for new functionality. Keep existing published versions; this policy applies to future releases.
 
-Vivid’s source releases in this repository begin at `v0.6.0`.
+GitHub lists Vivid’s source releases from `v0.1.0`. Tags `v0.1.0` to `v0.12.10` all point at the repository’s initial commit, so they do not identify separate source revisions; `v0.13.0` is the first release tagged on its own commit.
 
 ## Version shown in the app
 
@@ -41,7 +42,7 @@ Apple requires TestFlight App Review for the first build of a version; later bui
 
 Check the uploaded history before each release, including builds still processing. Local development and device-test builds do not reserve TestFlight numbers, and GitHub release versions do not control them. A single-platform update leaves the other platform's uploaded build unchanged. Every embedded extension must match its containing app. If the latest uploaded number cannot be verified or the next number is unavailable, stop and report the conflict rather than guessing, reusing or silently skipping a number. Do not assume the committed baseline has been uploaded.
 
-`iosApp/project-common.yml` is the committed source for the Apple marketing-version and build-number baseline shared by all shippable targets. TestFlight archives must retain that approved marketing version. The tag resolver in `scripts/ci/resolve-marketing-version.sh` remains available for source-tagged unsigned builds; it must not automatically select the marketing version for TestFlight. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives and their extensions before upload.
+`iosApp/project-common.yml` is the committed source for the Apple marketing-version and build-number baseline shared by all shippable targets. TestFlight archives must retain that approved marketing version. Its committed build numbers are an older baseline that archive-time overrides replace, so they do not show the latest upload. The tag resolver in `scripts/ci/resolve-marketing-version.sh` remains available for source-tagged unsigned builds; it must not automatically select the marketing version for TestFlight. Unsigned lanes accept `BUILD_NUMBER` as `CURRENT_PROJECT_VERSION`. Check both finished archives and their extensions before upload.
 
 The app does not query GitHub APIs at runtime. A local or simulator build is not an uploaded TestFlight binary, even when its version and counter match. Identify distribution by the actual uploaded archive and source revision.
 
@@ -71,14 +72,14 @@ This format applies to TestFlight notes only. GitHub release notes and App Store
 
 ### GitHub release note format
 
-Documentation-only and housekeeping commits must include `[skip release]`. Preserve the marker in the final squash message. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release. Ordinary commits retain the normal versioning rules.
+Documentation-only and housekeeping commits must include `[skip release]`. Preserve the marker in the final squash message. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release: the release job does not run when the pushed head commit (the squash commit) contains the marker, and the release tooling drops every commit containing it, in any letter case. A skipped app change appears in release notes only if a later releasing commit lists it in its `Release-Notes:` block. Ordinary commits retain the normal versioning rules.
 
 Keep this format for every app release. Do not publish a release for documentation-only work. Release bullets describe user-visible changes in plain language; implementation details and testing evidence belong in the contribution report.
 
 > [!IMPORTANT]
 > Release titles contain only the version number. Bodies contain only flat update bullets, with no headings, dates, author names, commit hashes, comparison links or automated footer.
 
-The default bullet is the commit subject with its Conventional Commit prefix removed.
+The default bullet is the commit subject with its Conventional Commit prefix removed. A squash-merge subject keeps its `(#123)` pull request suffix in that bullet, so app releases normally use curated bullets.
 
 For an update with several user-visible changes, add curated bullets to the commit message:
 
@@ -90,7 +91,7 @@ Release-Notes:
 - Improve keyboard navigation in the picker.
 ```
 
-Keep each bullet on one line, directly after `Release-Notes:`. A blank line ends the list. Write specific changes in plain language; do not describe planned integrations as delivered. Internal commit bodies and AI attribution trailers are not copied into release notes.
+Put `Release-Notes:` on its own line. Directly after it, start each bullet with `- ` at the beginning of the line and keep it to one line. A blank line or any other line ends the list. Write specific changes in plain language; do not describe planned integrations as delivered. Internal commit bodies and AI attribution trailers are not copied into release notes.
 
 ## Validation
 
@@ -99,11 +100,11 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run test:release
 ```
 
-The tests cover major/minor/patch rules, ordinary commit messages, empty ranges, curated bullets, duplicate notes, markup escaping and the version-only title. They validate release tooling, not the Apple app. For app changes, report relevant builds, tests, device checks and gaps under the contribution policy; blurbery controls publishing and merge decisions.
+The tests cover major/minor/patch rules, ordinary commit messages, empty ranges, `[skip release]` exclusions, curated bullets, duplicate notes, markup escaping and the version-only title. They validate release tooling, not the Apple app. For app changes, report relevant builds, tests, device checks and gaps under the contribution policy; blurbery controls publishing and merge decisions.
 
-Dependencies are pinned in `package-lock.json`; the Node tools do not become app dependencies. The `VIVID_GIT_NOREPLY_EMAIL` repository variable must hold `blurbery`'s GitHub noreply address. The workflow uses its scoped `GITHUB_TOKEN` and does not publish an npm package or comment on issues/PRs.
+Dependencies are pinned in `package-lock.json` and need Node.js 24.10 or later (the workflow uses 24.15.0); the Node tools do not become app dependencies. The `VIVID_GIT_NOREPLY_EMAIL` repository variable must hold `blurbery`'s GitHub noreply address. The workflow uses its scoped `GITHUB_TOKEN` and does not publish an npm package or comment on issues/PRs.
 
-GitHub currently lists the source-release, player-regression and sideload workflows as active. The source-release workflow runs on main updates; player regression runs on pull requests, after merges to main and on manual request. Pull requests run the complete iOS suite as a normal Debug build, plus the `VividTVTests` suite on a tvOS simulator, skipping that job only when a pull request changes nothing but iOS-only files. After a merge to main, player regression runs only the complete iOS suite compiled with the Release optimiser (`-O`, whole-module), because some faults only appear in optimised TestFlight and App Store builds. Manual runs can add the optimised build with the `optimised` input. Before a TestFlight upload, confirm an optimised run passed for the uploaded source: the main run after merge, or a manual run with `optimised` for a branch build. Sideload publishing remains a separate, explicitly requested action and its legacy publishing format needs review before use. Do not enable paid capacity or change distribution settings as part of an ordinary source release. See [App Distribution](distribution.md).
+Each workflow in `.github/workflows/` on main has its own triggers. The source-release workflow runs on pushes to main and on manual request. Player regression runs on manual request and on pull requests and pushes to main that change app code, tests, project specs, resolved packages or its check scripts. Pull requests run the complete iOS suite as a normal Debug build, plus the `VividTVTests` suite on a tvOS simulator, skipping that job only when a pull request changes nothing but iOS-only files. After a merge to main, player regression runs only the complete iOS suite compiled with the Release optimiser (`-O`, whole-module), because some faults only appear in optimised TestFlight and App Store builds. Manual runs can add the optimised build with the `optimised` input. Before a TestFlight upload, confirm an optimised run passed for the uploaded source: the main run after merge, or a manual run with `optimised` for a branch build. Claude Code Review (`claude-code-review.yml`) comments on pull requests from branches in this repository, skipping drafts, bot pull requests and Markdown-only changes, and does nothing without its API key; a manual run is a dry-run benchmark that posts nothing. Lucid playback (`mpv-experiment.yml`) and Lucid native audio driver (`mpv-audio-driver.yml`) run on manual request or on pushes to the `experiment-2.0` branch (the audio-driver workflow only when `patches/mpv/` changes); the [Lucid Engine guide](../cores/player-engine.md#builds-and-native-audio-patch) explains their use. Sideload IPA Build (`sideload-ipa.yml`) is described in [App Distribution](distribution.md#github-and-unsigned-sideload-builds). Sideload publishing remains a separate, explicitly requested action and its legacy publishing format needs review before use. Do not enable paid capacity or change distribution settings as part of an ordinary source release. See [App Distribution](distribution.md).
 
 The repository and its source releases are public. Apple beta distribution remains separate and available through TestFlight invitations or the public beta link, subject to places, eligibility and review.
 
@@ -112,6 +113,8 @@ Each newly published source release also posts its version and update bullets to
 ## Recorded Apple builds
 
 These dated records preserve earlier source mappings and validation. Build availability and group membership describe the time of each entry, not current TestFlight status. Use App Store Connect and its beta description for newer builds; do not add bookkeeping commits merely to record uploads. Local diagnostic build numbers in other guides are independent of TestFlight counters.
+
+Some earlier records mention source links in testing notes. Current builds keep What to Test to change bullets and carry the source mapping in the beta description, as described in [App Distribution](distribution.md#licence-and-source-delivery).
 
 On 13 September 2026, iPhone/iPad `0.14.3 (21)` and tvOS `0.14.3 (20)` were archived from merged main commit `a8d6d8099b49a905edf720715a08af1622d0aaf3` using Xcode 26.6 and explicit build-number overrides. Live App Store Connect history was checked at iOS 20 and tvOS 19 before advancing each platform by one. These builds include PR #13: removal of retired iOS navigation and unnecessary requests, the iPhone detail poster/shading swipe fix, and cached tvOS Spotlight artwork preparation with first-card startup, timer preservation and reverse wrapping. The [regression run](https://github.com/blurbery/vivid/actions/runs/34731051388) passed iOS tests and the tvOS build for the identical application tree before squash merge. Both archives passed app/extension version, signature and existing Keychain identity checks; distribution exports used Production CloudKit, and bundled licences and privacy manifests were checked against the previous uploads. Apple accepted both uploads. Both builds completed processing and have Localised testing notes with immutable source and dependency links. Both are Testing in the existing internal and external groups, with automatic tester notifications enabled. No new physical-device playback test was performed on these distribution archives. Release archives and symbols are retained. The subsequent build-counter and distribution-record commit uses `[skip release]` and does not create a GitHub source release or contribute TestFlight housekeeping to later release notes.
 
@@ -131,7 +134,7 @@ On 11 September 2026, iOS/iPadOS and tvOS `0.14.3 (15)` were archived from main 
 
 After the build 14 upload, [PR #8](https://github.com/blurbery/vivid/pull/8) added MDBList and OpenSubtitles features to main. Its local development builds also used `0.14.3 (14)`; no new TestFlight upload was made for that work. Build `15` uploaded those changes with the same marketing version; see its record above.
 
-These are historical records, not a live App Store Connect status feed. Pending checks refer to the stated revision and are not automatically satisfied by a later build. The latest recorded uploads are iPhone/iPad build 21 and tvOS build 20, as recorded above.
+These are historical records, not a live App Store Connect status feed. Pending checks refer to the stated revision and are not automatically satisfied by a later build. The newest uploads recorded on this page are iPhone/iPad build 21 and tvOS build 20 from 13 September 2026; App Store Connect holds every later upload.
 
 Both iOS/iPadOS and tvOS `0.14.3 (14)` were archived and uploaded from `24f992e24346b17f123c7a80d4360cb91e486869` on `fix/episode-card-resume-labels`. This includes the episode/resume labels, unused-controller audio-session ownership fix, larger tvOS Next Up picture and removal of tvOS seek thumbnails. Temporary transport diagnostics were removed before archiving. Both Release archives and exported apps/extensions passed signature, version, existing keychain and Production CloudKit entitlement checks. Apple accepted both uploads on 11 September 2026; bundled media-library dSYM warnings limit symbolication without blocking upload. Processing completed for both platforms, testing notes were saved, and both builds are attached to the existing internal tester group. blurbery subsequently confirmed completing external distribution. The [regression run](https://github.com/blurbery/vivid/actions/runs/34566248396) passed both the tvOS build and iOS test suite for the uploaded source revision. The latest pause fix and thumbnail removal still need sustained device verification.
 

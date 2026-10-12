@@ -10,7 +10,7 @@ Preserve the working browsing, focus and playback behaviour. Validate changes wi
 
 ## Local setup
 
-Use an Apple Silicon Mac, Xcode 26.3 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen). CI uses Xcode 26.3; recent signed releases use Xcode 27.0. The pinned media packages provide arm64 simulator slices. Generate the project for the platform you are building:
+Use an Apple Silicon Mac, Xcode 26.3 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen). CI uses Xcode 26.3 with XcodeGen 2.43.0; recent signed releases use Xcode 27.0. The pinned media packages provide arm64 simulator slices. Generate the project for the platform you are building:
 
 ```sh
 cd iosApp
@@ -33,6 +33,8 @@ xcodebuild build -project Vivid.xcodeproj -scheme VividTV \
 
 For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample). Keep credentials and personal signing details out of Git. Use `blurbery` and its GitHub noreply address for maintainer commits. Public reports should identify the relevant hardware, OS and revision without personal names, private device labels, server addresses, account identifiers or local upload times. Preserve third-party licence and copyright notices. Current-file edits do not remove disclosures from Git history; history changes need separate owner approval. Use a running server for the provider being checked: Silo, Emby or Jellyfin. Keep each provider's integration checks separate and consult its core guide for supported features and device-verification gaps. Generated media fixtures cover focused engine checks without a server.
 
+The release tooling in `package.json` needs Node.js 24.10 or later; its checks are listed under [release validation](docs/release/versioning.md#validation). The unsigned sideload lanes use the root `Gemfile` with Ruby 3.2 (pinned in `.ruby-version`) and are described in [App Distribution](docs/release/distribution.md#github-and-unsigned-sideload-builds).
+
 ## Pull requests and repository control
 
 Contributors are welcome to open pull requests from branches in their own forks.
@@ -42,7 +44,7 @@ Contributors are welcome to open pull requests from branches in their own forks.
 
 ## Commits and reviews
 
-Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). The workflow treats ordinary commits as release candidates, so documentation-only and housekeeping commits must include `[skip release]`, including the final squash message. They must not create a version bump or source release. This marker does not skip required validation. Keep app release bullets factual and user-facing.
+Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). The workflow treats every commit without the marker, including `docs:` and `chore:`, as at least a patch release, so documentation-only and housekeeping commits must include `[skip release]`, including the final squash message. They must not create a version bump or source release. This marker does not skip required validation. Keep app release bullets factual and user-facing.
 
 For blurbery’s own Vivid work, write concise, natural Australian English in the owner’s voice. Use short change bullets for GitHub, App Store and TestFlight release notes. Avoid em dashes and unnecessary formal sections. Include only relevant evidence and limitations, and keep the required AI disclosure brief.
 
@@ -55,6 +57,8 @@ Give reviewers enough detail to reproduce the problem and assess the change with
 - Keep the explanation focused, but do not leave out information needed to review the work. Update it when follow-up changes alter the scope.
 
 Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md). Credit AI assistance accurately and distinguish your direction, review and physical testing from generated work or someone else’s checks.
+
+Pull requests from branches in `blurbery/vivid` also get an automated Claude review from `.github/workflows/claude-code-review.yml`, except drafts and Markdown-only changes. Pull requests from forks do not, because GitHub withholds the review key from them. Check its comments against the source like any other review; they are not an approval.
 
 ## Testing status
 
@@ -73,7 +77,7 @@ Documentation-only changes may state “Not applicable, documentation-only chang
 
 This covers layout, navigation and interaction design, focus behaviour, colours, typography, spacing, icons, artwork, branding, animations and transitions across every Apple platform. Documentation branding and the README’s visual layout are also controlled by blurbery.
 
-- Discuss the proposed change and obtain approval from blurbery before implementing it. Approval for one change does not authorize a broader redesign.
+- Discuss the proposed change and obtain approval from blurbery before implementing it. Approval for one change does not authorise a broader redesign.
 - Include a link or reference to that approval in the PR and keep the implementation within the approved scope.
 - Bug fixes and refactors must preserve the approved design. If a fix would alter it, request approval first; do not introduce a redesign under the label of cleanup, accessibility, performance or consistency work.
 - PRs containing unapproved design changes are not ready for review and must not be merged, even if tests pass or another reviewer approves.
@@ -99,7 +103,7 @@ AI tools are welcome. You remain responsible for understanding, reviewing and va
 - Describe the contributor’s direction, review and validation. Do not present AI-generated work or unperformed testing as manual work.
 - If no AI was used, explicitly state **“No AI assistance was used for this pull request.”** Leaving the section blank is not a disclosure.
 - If a model label is unavailable, say so; do not guess. Update the disclosure when further AI-assisted changes are added to the PR.
-- Disclose substantial AI assistance in issues and review reports as well. Authorized direct commits without a PR must include the disclosure in the commit body. Generated documentation can be disclosed in its accompanying contribution rather than repeating a notice on every page.
+- Disclose substantial AI assistance in issues and review reports as well. Authorised direct commits without a PR must include the disclosure in the commit body. Generated documentation can be disclosed in its accompanying contribution rather than repeating a notice on every page.
 
 Review the changes you submit and explain what you tested. Keep credentials and private data out of prompts, commits and reports. AI output needs the same code review and validation as any other contribution.
 

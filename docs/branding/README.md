@@ -54,7 +54,7 @@ Apple TV uses the approved landscape composition with a full-width dark backgrou
 <table width="100%">
   <thead><tr><th align="left">Use</th><th align="left" width="10000">Source assets</th><th align="left">Pixels</th></tr></thead>
   <tbody>
-    <tr><td>iOS and iPadOS app icon</td><td><a href="../../iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png">AppIcon.png</a> · <a href="../../iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/Contents.json">Catalog entry</a></td><td>20–180 px catalogue exports and 1024 × 1024 marketing icon</td></tr>
+    <tr><td>iOS and iPadOS app icon</td><td><a href="../../iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png">AppIcon.png</a> · <a href="../../iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/Contents.json">Catalogue entry</a></td><td>20–180 px catalogue exports and 1024 × 1024 marketing icon</td></tr>
     <tr><td>Apple TV Home screen</td><td><a href="../../iosApp/iosApp/Assets.xcassets/TVAppIcon.brandassets/App%20Icon.imagestack">App Icon layer stack</a></td><td>400 × 240 (1×), 800 × 480 (2×)</td></tr>
     <tr><td>Apple TV App Store</td><td><a href="../../iosApp/iosApp/Assets.xcassets/TVAppIcon.brandassets/App%20Icon%20-%20App%20Store.imagestack">App Store layer stack</a></td><td>1280 × 768</td></tr>
     <tr><td>Apple TV Top Shelf</td><td><a href="../../iosApp/iosApp/Assets.xcassets/TVAppIcon.brandassets/Top%20Shelf%20Image.imageset">Standard images</a> · <a href="../../iosApp/iosApp/Assets.xcassets/TVAppIcon.brandassets/Top%20Shelf%20Image%20Wide.imageset">Wide images</a></td><td>1920 × 720 or 2320 × 720, plus 2× versions</td></tr>
@@ -63,7 +63,7 @@ Apple TV uses the approved landscape composition with a full-width dark backgrou
 
 The tvOS foreground uses the approved landscape placement over the same charcoal-to-near-black treatment. Both Home Screen resolutions and the App Store layer use the same vector placement. Top Shelf exports centre the same proportional mark on their wider canvases.
 
-These source catalogs supply app icons in new builds. Installing a new build is required to see them; updating these assets does not publish an App Store build. Website favicons and the Safari touch icon reuse the approved iOS artwork; documentation marks retain the transparent silver logo.
+These source catalogues supply app icons in new builds. Installing a new build is required to see them; updating these assets does not publish an App Store build. Website favicons and the Safari touch icon reuse the approved iOS artwork; documentation marks retain the transparent silver logo.
 
 iOS and Apple TV setup and login use the preserved-vector `VividMarkSilver` PDF through `VividLogoView`. Startup and full-screen loading use `VividGlideLogo`: two vector pieces glide into place over 1.2 seconds with a 0.144-second stagger, then remain assembled. Reduce Motion, unavailable pieces and interrupted entrances settle on the static logo. `VividStartupView` still waits for both the logo and content readiness. The [shared startup handoff](../app-design.md#settings-and-startup) fades the completed logo out before revealing the destination. Profile interaction and accessibility remain gated until both fades finish. The static fallback uses the same available canvas size as the animated logo. Top Shelf uses the same two-piece mark and charcoal background. Home and other root tab pages intentionally omit a separate top-left logo.
 
