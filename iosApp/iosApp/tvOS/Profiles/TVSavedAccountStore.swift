@@ -620,7 +620,8 @@ final class TVSavedAccountStore {
                 pendingProfileChoice = PendingSiloProfileChoice(serverID: serverID)
                 activeID = nil
                 persist()
-                VividCloudAccountSync.shared.noteExplicitAuthentication(serverID: serverID, userID: userID)
+                // The explicit sign-in is recorded when the chosen profile is
+                // saved, for that saved profile's own identity.
                 await finishLogin(router: router, prepareHome: true)
                 return true
             }
