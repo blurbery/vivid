@@ -172,10 +172,7 @@ struct SiloProfileChoiceView: View {
     private func isSaved(_ profile: UserProfile) -> Bool {
         guard let server = ServerRegistry.shared.activeServerId,
               let account = VividCacheScope.accountID(for: server) else { return false }
-        let binding = SiloProfileBinding.binding(for: profile, profileCount: profiles.count, serverID: server)
-        return store.accounts.contains {
-            $0.serverID == server && $0.userID == account && $0.siloProfileID == binding
-        }
+        return store.hasSavedProfile(profile, serverID: server, userID: account, profileCount: profiles.count)
     }
 }
 #endif

@@ -641,6 +641,32 @@ final class AuthService: @unchecked Sendable {
         )
     }
 
+    /// A new login session for the signed-in Silo account, approved by the
+    /// active session through device sign-in. A household member's saved
+    /// profile gets its own session this way, without the password, so
+    /// signing one saved profile out never signs out another.
+    func approvedSiloSession() async throws -> (accessToken: String, refreshToken: String) {
+        let device = AppleDeviceIdentity.current
+        let start = try await startDeviceLogin(deviceName: device.name, devicePlatform: device.platform)
+        try await HTTPClient.shared.postVoid(
+            "/api/v1/auth/device/approve",
+            body: DeviceLoginDecisionRequest(code: start.userCode)
+        )
+        for _ in 0..<5 {
+            let poll = try await pollDeviceLogin(deviceCode: start.deviceCode)
+            switch DeviceLoginStatus(raw: poll.status) {
+            case .approved:
+                guard let access = poll.accessToken, let refresh = poll.refreshToken else { throw HTTPError.invalidResponse }
+                return (access, refresh)
+            case .pending:
+                try await Task.sleep(for: .seconds(max(1, poll.pollAfter ?? 1)))
+            default:
+                throw HTTPError.invalidResponse
+            }
+        }
+        throw HTTPError.invalidResponse
+    }
+
     // MARK: - Sign Out
 
     /// Sign out of the active server. Keeps the registry entry (URL +

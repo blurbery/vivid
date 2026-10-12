@@ -21,6 +21,11 @@ struct DeviceLoginStartResponse: Codable, Equatable {
     let devicePlatform: String
 }
 
+/// Approves a pending device sign-in for the signed-in account.
+struct DeviceLoginDecisionRequest: Codable {
+    let code: String
+}
+
 struct DeviceLoginPollRequest: Codable {
     let deviceCode: String
 }

@@ -315,6 +315,7 @@ struct TVSavedAccountEditor: View {
     @State private var message: String?
     @State private var showsDeleteConfirm = false
     @State private var pinIsSet = false
+    @State private var household = SiloHouseholdSearch()
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -426,6 +427,9 @@ struct TVSavedAccountEditor: View {
                     TVSettingsFooter("Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile.")
                 }
                 }
+                if isActive, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
+                    householdSection(account)
+                }
                 if isActive, let account {
                     TVSettingsSectionHeader("ACCOUNT PIN")
                     TVSettingsGroup {
@@ -495,6 +499,64 @@ struct TVSavedAccountEditor: View {
         }
         .onDisappear { password = ""; pin = ""; confirmation = "" }
         .onExitCommand { if !store.busy { dismiss() } }
+        .fullScreenCover(item: $household.pinProfile) { profile in
+            PINEntryView(profile: profile, onCancel: {
+                if let account { household.cancelPIN(for: account) }
+            }) { pin in
+                if let account { Task { await household.add(profile, pin: pin, for: account) } }
+            }
+        }
+    }
+
+    /// Finds the other profiles on this Silo login and adds them here.
+    @ViewBuilder
+    private func householdSection(_ account: TVSavedAccount) -> some View {
+        TVSettingsSectionHeader("HOUSEHOLD")
+        TVSettingsGroup {
+            switch household.phase {
+            case .idle, .failed:
+                Button { Task { await household.search(for: account) } } label: {
+                    TVSettingsRowLabel(title: household.phase == .failed ? "Try Again" : "Search for Accounts",
+                                       detail: "Find the other profiles on this Silo account and add them to this Apple TV.")
+                }
+                .buttonStyle(TVSettingsPaneRowStyle())
+            case .searching:
+                HStack(spacing: 18) {
+                    VividLoadingDots()
+                    Text("Searching for accounts")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 96)
+            case .results:
+                if !household.profiles.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 32) {
+                            ForEach(household.profiles) { profile in
+                                Button { Task { await household.choose(profile, for: account) } } label: {
+                                    SiloHouseholdTile(profile: profile, account: account,
+                                                      isAdding: household.addingID == profile.id,
+                                                      isAdded: household.addedIDs.contains(profile.id),
+                                                      avatarSize: 108)
+                                }
+                                .buttonStyle(TVAccountCircleStyle())
+                                .disabled(household.addingID != nil || household.addedIDs.contains(profile.id))
+                            }
+                        }
+                        .padding(24)
+                    }
+                    .scrollClipDisabled()
+                    .focusSection()
+                }
+                Button { Task { await household.search(for: account) } } label: {
+                    TVSettingsRowLabel(title: "Search Again", detail: nil)
+                }
+                .buttonStyle(TVSettingsPaneRowStyle())
+            }
+        }
+        if let message = household.message {
+            TVSettingsFooter(message)
+        }
     }
 }
 

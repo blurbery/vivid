@@ -539,6 +539,39 @@ final class TVSavedAccountStore {
         return true
     }
 
+    /// Whether this household member already has a saved profile for the
+    /// login on this device.
+    func hasSavedProfile(_ profile: UserProfile, serverID: String, userID: String, profileCount: Int) -> Bool {
+        let binding = SiloProfileBinding.binding(for: profile, profileCount: profileCount, serverID: serverID)
+        return accounts.contains {
+            $0.serverID == serverID && $0.userID == userID
+                && ($0.siloProfileID == binding || ($0.siloProfileID == nil && $0.profile?.id == profile.id))
+        }
+    }
+
+    /// Saves another household member of `account`'s Silo login as its own
+    /// saved profile, with the session approved for it. The live session and
+    /// active saved profile are unchanged.
+    func addHouseholdProfile(_ profile: UserProfile, profileCount: Int, session: TVSavedAccountSession,
+                             alongside account: TVSavedAccount) -> Bool {
+        guard !busy, canAddAccount,
+              !hasSavedProfile(profile, serverID: account.serverID, userID: account.userID, profileCount: profileCount) else {
+            return false
+        }
+        let added = TVSavedAccount(
+            id: UUID().uuidString, serverID: account.serverID, userID: account.userID,
+            username: account.username, profile: profile, requiresLogin: false,
+            siloProfileID: SiloProfileBinding.binding(for: profile, profileCount: profileCount, serverID: account.serverID)
+        )
+        guard (try? saveSession(session, id: added.id)) != nil else { return false }
+        accounts.append(added)
+        markAccountChanged(added.id)
+        persist()
+        VividCloudAccountSync.shared.noteExplicitAuthentication(added)
+        Task { await VividCloudAccountSync.shared.synchronize() }
+        return true
+    }
+
     /// The sign-in was cancelled before a profile was saved. The caller signs
     /// out of the live session, then syncs.
     @discardableResult

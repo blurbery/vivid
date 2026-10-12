@@ -469,6 +469,7 @@ struct PhoneSavedAccountEditor: View {
     @State private var confirmPIN = ""
     @State private var message: String?
     @State private var showsDeleteConfirm = false
+    @State private var household = SiloHouseholdSearch()
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -508,6 +509,9 @@ struct PhoneSavedAccountEditor: View {
                 }.disabled((accountID == nil && !store.canAddAccount) || store.busy || (password.isEmpty && provider == "Silo") || username.isEmpty || serverURL.isEmpty)
             } header: { PhoneSettingsSectionHeader("Account") }
             .textInputAutocapitalization(.never).autocorrectionDisabled()
+            if active, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
+                householdSection(account)
+            }
             if active, let accountID {
                 Section {
                     SecureField("New PIN", text: $pin).keyboardType(.numberPad)
@@ -546,6 +550,14 @@ struct PhoneSavedAccountEditor: View {
             if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
             VividCopyrightFooter().frame(maxWidth: .infinity).listRowBackground(Color.clear)
         }.settingsListChrome().navigationTitle("")
+        .sheet(item: $household.pinProfile) { profile in
+            PINEntryView(profile: profile, onCancel: {
+                if let account { household.cancelPIN(for: account) }
+            }) { pin in
+                if let account { Task { await household.add(profile, pin: pin, for: account) } }
+            }
+            .presentationDetents([.medium, .large])
+        }
         .confirmationDialog("Delete Profile?", isPresented: $showsDeleteConfirm,
                             titleVisibility: .visible, presenting: account) { account in
             Button("Delete Profile", role: .destructive) {
@@ -563,6 +575,52 @@ struct PhoneSavedAccountEditor: View {
                 username = account.username
                 serverURL = registry.entry(with: account.serverID)?.url ?? ""
             } else { serverURL = registry.activeServer?.url ?? "" }
+        }
+    }
+
+    /// Finds the other profiles on this Silo login and adds them here.
+    @ViewBuilder
+    private func householdSection(_ account: TVSavedAccount) -> some View {
+        Section {
+            switch household.phase {
+            case .idle:
+                Button("Search for Accounts") { Task { await household.search(for: account) } }
+            case .searching:
+                HStack(spacing: 12) {
+                    VividLoadingDots(compact: true)
+                    Text("Searching for accounts").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            case .results:
+                if !household.profiles.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 14) {
+                            ForEach(household.profiles) { profile in
+                                Button { Task { await household.choose(profile, for: account) } } label: {
+                                    SiloHouseholdTile(profile: profile, account: account,
+                                                      isAdding: household.addingID == profile.id,
+                                                      isAdded: household.addedIDs.contains(profile.id))
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.white)
+                                .disabled(household.addingID != nil || household.addedIDs.contains(profile.id))
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+                Button("Search Again") { Task { await household.search(for: account) } }
+            case .failed:
+                Button("Try Again") { Task { await household.search(for: account) } }
+            }
+            if let message = household.message {
+                Text(message).font(.footnote).foregroundStyle(.secondary)
+            }
+        } header: {
+            PhoneSettingsSectionHeader("Household")
+        } footer: {
+            Text("Find the other profiles on this Silo account and add them to this device. Each one gets its own Vivid profile.")
         }
     }
 }
