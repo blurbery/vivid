@@ -78,8 +78,8 @@ How to check:
 
 Make independent reads and searches together in one turn rather than one per turn. Write in Australian English without em dashes."""
 
-# An added Swift comment line in a diff.
-COMMENT_LINE = re.compile(r"^\+\s*(//|/\*|\*)", re.MULTILINE)
+# An added comment line in a diff: Swift (//, /*, *) or Python, YAML and shell (#).
+COMMENT_LINE = re.compile(r"^\+[ \t]*(//|/\*|\*|#[ \t])", re.MULTILINE)
 
 TOOLS = [
     {
@@ -207,13 +207,21 @@ def list_files(glob):
     return "\n".join(paths[:LIST_LIMIT]) + extra
 
 
+def diff_path(row):
+    """The new-side path on a diff's +++ line, or None for any other line.
+
+    Git ends the line with a tab when the path contains a space.
+    """
+    return row[6:].rstrip("\t") if row.startswith("+++ b/") else None
+
+
 def commentable_lines(merge_base, head):
     """Right-side line numbers GitHub accepts review comments on, per file."""
     diff = git("diff", "--unified=3", "--no-color", "--no-ext-diff", merge_base, head).stdout
     lines, path, new_line = {}, None, 0
     for row in diff.splitlines():
         if row.startswith("+++ "):
-            path = row[6:] if row.startswith("+++ b/") else None
+            path = diff_path(row)
             if path:
                 lines.setdefault(path, set())
         elif row.startswith("@@"):
@@ -227,7 +235,7 @@ def commentable_lines(merge_base, head):
 
 def changed_files(diff):
     """Files a diff adds or modifies, leaving out deleted and binary files."""
-    return sorted({row[6:] for row in diff.splitlines() if row.startswith("+++ b/")})
+    return sorted({path for path in map(diff_path, diff.splitlines()) if path})
 
 
 def cost_of(usage, prices):
@@ -270,8 +278,8 @@ def run_pass(client, settings, system, opening, to_read, budget):
     """Run one review conversation until finish_review, the budget or the turn limit."""
     model, effort, prices, max_turns = settings
     messages = [{"role": "user", "content": opening}]
-    # finish_review is refused once while files in to_read are unread, so a
-    # pass can't end on the diff alone.
+    # The first finish_review is refused while files in to_read are unread,
+    # which sends the pass back to read them. A second one is accepted.
     run = {"findings": [], "summary": None, "stopped": None, "turns": 0, "tool_calls": 0, "cost": 0.0, "files_read": set()}
     sent_back, nudges = False, 0
 
