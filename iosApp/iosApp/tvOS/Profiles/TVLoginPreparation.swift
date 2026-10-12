@@ -355,6 +355,13 @@ final class TVLoginPreparation {
 
 struct TVLoginPreparationView: View {
     @State private var preparation = TVLoginPreparation.shared
+    // An iPhone's shorter screen puts the status line close to the bottom, so
+    // the indicator sits lower to keep clear of it.
+    #if os(tvOS)
+    private let progressBottomInset: CGFloat = 80
+    #else
+    private let progressBottomInset: CGFloat = 36
+    #endif
     var body: some View {
         if let failure = preparation.failure {
             LoginPreparationFailureView(
@@ -383,7 +390,7 @@ struct TVLoginPreparationView: View {
             }
             .overlay(alignment: .bottom) {
                 if !preparation.ready {
-                    ProgressView().padding(.bottom, 80)
+                    ProgressView().padding(.bottom, progressBottomInset)
                 }
             }
         }
