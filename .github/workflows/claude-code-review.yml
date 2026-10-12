@@ -13,22 +13,51 @@ name: Claude Code Review
 # workspaces. Without a key, the job does nothing. Comments are posted by the
 # review GitHub App when the REVIEW_APP_CLIENT_ID variable and
 # REVIEW_APP_PRIVATE_KEY secret are set, and by github-actions[bot] otherwise.
+#
+# Running the workflow by hand starts a dry run instead (the benchmark job):
+# it reviews one commit of an existing PR in full, without that PR's review
+# comments, and prints the result rather than posting it. Use it to compare
+# models, effort levels and prompt changes against commits other reviewers
+# have already checked.
 
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
     paths-ignore:
       - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to review
+        required: true
+      sha:
+        description: Commit to review (defaults to the PR's head)
+        required: false
+      model:
+        description: Model
+        type: choice
+        options: [claude-sonnet-5-5, claude-opus-5-5]
+        default: claude-sonnet-5-5
+      effort:
+        description: Effort
+        type: choice
+        options: [low, medium, high, xhigh, max]
+        default: high
+      max_cost:
+        description: Cost limit in US$
+        default: "3.00"
 
 # A newer push waits for the running review rather than cancelling it, so the
-# credit already spent isn't wasted. Reviews still queued are replaced.
+# credit already spent isn't wasted. Reviews still queued are replaced. Dry
+# runs each get their own group.
 concurrency:
-  group: claude-code-review-${{ github.event.pull_request.number }}
+  group: claude-code-review-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   review:
     if: >-
+      github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft &&
       github.event.pull_request.user.type != 'Bot'
@@ -40,7 +69,7 @@ jobs:
     env:
       HAS_CREDENTIALS: ${{ secrets.ANTHROPIC_API_KEY != '' }}
       REVIEW_MODEL: claude-sonnet-5-5
-      REVIEW_EFFORT: low
+      REVIEW_EFFORT: high
     steps:
       - name: Skip without credentials
         if: env.HAS_CREDENTIALS != 'true'
@@ -134,7 +163,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           # Cost limits per run in US$: a whole PR, or only the new commits.
-          REVIEW_MAX_COST_USD: ${{ steps.prep.outputs.mode == 'incremental' && '0.75' || '1.50' }}
+          REVIEW_MAX_COST_USD: ${{ steps.prep.outputs.mode == 'incremental' && '1.00' || '2.00' }}
         run: |
           if [ -n "$ANTHROPIC_WORKSPACE_ID" ]; then echo "::add-mask::$ANTHROPIC_WORKSPACE_ID"; fi
           pip install --quiet --disable-pip-version-check "anthropic==1.11.0"
@@ -217,3 +246,84 @@ jobs:
           else
             gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/summary.md"
           fi
+
+  benchmark:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Prepare the review
+        id: prep
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          dir=.claude-review
+          if ! [[ "$PR" =~ ^[0-9]+$ ]]; then echo "::error::The PR must be a number."; exit 1; fi
+          read -r cross base pr_head < <(gh pr view "$PR" --repo "$REPO" --json isCrossRepository,baseRefOid,headRefOid --jq '"\(.isCrossRepository) \(.baseRefOid) \(.headRefOid)"')
+          if [ "$cross" != false ]; then echo "::error::Only PRs from this repository can be reviewed."; exit 1; fi
+
+          # The script comes from the branch this run started on, because older
+          # commits may not have it or may have an older version.
+          git show "$GITHUB_SHA:scripts/ci/claude-review.py" > "$RUNNER_TEMP/claude-review.py"
+          git fetch --quiet origin "refs/pull/$PR/head"
+          head=$(git rev-parse --verify "${SHA:-$pr_head}^{commit}")
+          git checkout --quiet --detach "$head"
+          merge_base=$(git merge-base "$base" "$head")
+
+          mkdir -p "$dir"
+          git diff --name-only "$merge_base" "$head" > "$dir/files.txt"
+          mapfile -t files < <(grep -vE '\.xcodeproj/|\.xcworkspace/' "$dir/files.txt" || true)
+          : > "$dir/diff.patch"
+          if [ "${#files[@]}" -gt 0 ]; then
+            git diff "$merge_base" "$head" -- "${files[@]}" > "$dir/diff.patch"
+          fi
+          # The PR description describes its final state, so an earlier commit
+          # is described by its own commit messages instead.
+          if [ "$head" = "$pr_head" ]; then
+            gh pr view "$PR" --repo "$REPO" --json title,body --jq '"# \(.title)\n\n\(.body)"' > "$dir/pr.md"
+          else
+            git log --reverse --format='%B' "$merge_base..$head" > "$dir/pr.md"
+          fi
+          # Leave out the PR's review comments so the review can't repeat them.
+          echo "No review comments yet." > "$dir/comments.md"
+          {
+            echo "head=$head"
+            echo "merge_base=$merge_base"
+          } >> "$GITHUB_OUTPUT"
+      - name: Review with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          REVIEW_MODEL: ${{ inputs.model }}
+          REVIEW_EFFORT: ${{ inputs.effort }}
+          REVIEW_MAX_COST_USD: ${{ inputs.max_cost }}
+          PR: ${{ inputs.pr }}
+          HEAD: ${{ steps.prep.outputs.head }}
+          MERGE_BASE: ${{ steps.prep.outputs.merge_base }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "::error::Add an ANTHROPIC_API_KEY repository secret first."; exit 1; fi
+          if [ -n "$ANTHROPIC_WORKSPACE_ID" ]; then echo "::add-mask::$ANTHROPIC_WORKSPACE_ID"; fi
+          pip install --quiet --disable-pip-version-check "anthropic==1.11.0"
+          python3 "$RUNNER_TEMP/claude-review.py" --pr "$PR" --mode full --from "$MERGE_BASE" \
+            --head "$HEAD" --merge-base "$MERGE_BASE" --out "$RUNNER_TEMP/review.json"
+          cat "$RUNNER_TEMP/review.json"
+          {
+            echo "**Dry run** of PR #$PR at ${HEAD:0:7}"
+            echo
+            jq -r '.summary' "$RUNNER_TEMP/review.json"
+            echo
+            jq -r '.findings[] | "- **\(.priority)** `\(.path):\(.line)`: \(.title) \(.body)"' "$RUNNER_TEMP/review.json"
+            echo
+            jq -r '"\(.model), \(.effort) effort, \(.turns) turns, \(.tool_calls) tool calls, about US$\(.cost_usd * 100 | round / 100), stopped: \(.stopped // "finished")"' "$RUNNER_TEMP/review.json"
+          } >> "$GITHUB_STEP_SUMMARY"
