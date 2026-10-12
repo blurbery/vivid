@@ -552,10 +552,15 @@ struct PhoneSavedAccountEditor: View {
             Section {
                 if account == nil { TextField("Server address", text: $serverURL).keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled() }
                 else { LabeledContent("Server", value: registry.entry(with: account!.serverID)?.url ?? serverURL) }
-                if let account, account.siloProfileID != nil, let name = account.profile?.name {
+                if let name = account?.siloProfileName {
                     LabeledContent("Profile", value: name)
+                    LabeledContent("Username") {
+                        TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                    }
+                } else {
+                    TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
-                TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Password", text: $password).textContentType(.password)
                 Button(account == nil ? "Add Profile" : store.needsLogin(account!) ? "Sign In" : "Update Login") {
                     Task {

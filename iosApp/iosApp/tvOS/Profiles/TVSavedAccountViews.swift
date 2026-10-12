@@ -399,7 +399,7 @@ struct TVSavedAccountEditor: View {
                         }
                     } else {
                         TVSettingsInfoRow(title: "Server", value: ServerRegistry.shared.entry(with: account!.serverID)?.displayName ?? serverURL)
-                        if account!.siloProfileID != nil, let name = account!.profile?.name {
+                        if let name = account!.siloProfileName {
                             TVSettingsInfoRow(title: "Profile", value: name)
                         }
                     }

@@ -11,9 +11,9 @@ final class SiloHouseholdProfileTests: XCTestCase {
     private let server = "silo-server-1"
     private let user = "7"
 
-    private func account(_ id: String, binding: String? = nil, profileName: String? = nil) -> TVSavedAccount {
+    private func account(_ id: String, binding: String? = nil, profileName: String? = nil, isPrimary: Bool = false) -> TVSavedAccount {
         TVSavedAccount(id: id, serverID: server, userID: user, username: "family",
-                       profile: profileName.map { UserProfile(id: binding ?? "p-main", name: $0, avatarEmoji: nil, hasPin: false, isChild: false) },
+                       profile: profileName.map { UserProfile(id: binding ?? "p-main", name: $0, avatarEmoji: nil, hasPin: false, isChild: false, isPrimary: isPrimary) },
                        requiresLogin: false, siloProfileID: binding)
     }
 
@@ -61,9 +61,25 @@ final class SiloHouseholdProfileTests: XCTestCase {
         XCTAssertNil(object["siloProfileID"])
     }
 
-    func testOnlyHouseholdMembersAreLabelledWithTheirProfileName() {
-        XCTAssertEqual(account("a", profileName: "Dad").displayName, "family")
+    func testSiloSavedProfilesAreLabelledWithTheirProfileName() {
+        XCTAssertEqual(account("a", profileName: "Dad", isPrimary: true).displayName, "Dad")
         XCTAssertEqual(account("b", binding: "p-kid", profileName: "Emma").displayName, "Emma")
+    }
+
+    func testSavedProfileWithoutItsOwnProfileNameKeepsTheUsername() {
+        // An unbound card holding another member's profile, a blank name or
+        // no profile yet keeps the sign-in username.
+        XCTAssertEqual(account("a", profileName: "Emma").displayName, "family")
+        XCTAssertEqual(account("a", profileName: "  ", isPrimary: true).displayName, "family")
+        XCTAssertEqual(account("a").displayName, "family")
+        // Emby and Jellyfin keep their usernames.
+        let primary = UserProfile(id: "u", name: "Dad", avatarEmoji: nil, hasPin: false, isChild: false, isPrimary: true)
+        for serverID in ["emby:1", "jellyfin:1"] {
+            let other = TVSavedAccount(id: "e", serverID: serverID, userID: user, username: "family",
+                                       profile: primary, requiresLogin: false)
+            XCTAssertEqual(other.displayName, "family")
+            XCTAssertNil(other.siloProfileName)
+        }
     }
 
     // MARK: Binding
