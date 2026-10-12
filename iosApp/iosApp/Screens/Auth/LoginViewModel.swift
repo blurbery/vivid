@@ -25,11 +25,16 @@ class LoginViewModel {
         defer { isLoading = false }
 
         do {
-            try await auth.login(username: username, password: password)
             #if os(tvOS) || os(iOS)
+            let isSilo = MediaServerProvider.active == .silo
+            try await auth.login(username: username, password: password, defersSiloSignInRecord: isSilo)
             password = ""
-            await TVLoginPreparation.shared.begin(router: router)
+            // A Silo sign-in becomes a saved profile, and records the sign-in,
+            // once its viewing profile is entered.
+            if isSilo { await TVSavedAccountStore.shared.beginProfileChoice() }
+            await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
             #else
+            try await auth.login(username: username, password: password)
             await StartupContentPrefetcher.prefetchProfiles()
             router.showProfileSelection()
             #endif

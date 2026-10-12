@@ -41,8 +41,8 @@ final class Requests: @unchecked Sendable {
         assert(policyResults.allSatisfy { $0 })
         assert(!TopShelfProfilePolicy.allowsSavedAccountContent(accountsData:nil,activeAccountID:"saved",serverID:"server",hasStoredPIN:{_ in false}))
         assert(!TopShelfProfilePolicy.allowsSavedAccountContent(accountsData:Data("invalid".utf8),activeAccountID:"saved",serverID:"server",hasStoredPIN:{_ in false}))
-        for count in 0...5 { assert(AccountLimitCheck(accounts:Array(repeating:0,count:count)).canAddAccount == (count < 4)) }
-        print("PASS saved-account isolation, single/multiple profiles, PINs, corrupt data and four-profile capacity")
+        for count in 0...9 { assert(AccountLimitCheck(accounts:Array(repeating:0,count:count)).canAddAccount == (count < 8)) }
+        print("PASS saved-account isolation, single/multiple profiles, PINs, corrupt data and eight-profile capacity")
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [Stub.self]
         let session = URLSession(configuration: config)
@@ -124,7 +124,9 @@ with tempfile.TemporaryDirectory(prefix='vivid-topshelf-') as tmp:
     capacity = tmp / 'Capacity.swift'
     account_source = (root/'iosApp/iosApp/tvOS/Profiles/TVSavedAccountStore.swift').read_text()
     capacity_method = account_source.split('    var canAddAccount: Bool {',1)[1].split('    }',1)[0]
-    capacity.write_text('struct AccountLimitCheck { let accounts: [Int]\n var canAddAccount: Bool {' + capacity_method + '}\n}')
+    capacity_limit = account_source.split('    static let maximumAccounts = ',1)[1].split('\n',1)[0]
+    capacity.write_text('struct AccountLimitCheck { let accounts: [Int]\n static let maximumAccounts = ' + capacity_limit
+                        + '\n var canAddAccount: Bool {' + capacity_method + '}\n}')
     binary = tmp / 'check'
     subprocess.run(['swiftc', '-parse-as-library', str(root/'iosApp/TopShelf/TopShelfModels.swift'),
                     str(root/'iosApp/TopShelf/TopShelfNativeClient.swift'), str(policy), str(capacity), str(test), '-o',str(binary)], check=True)

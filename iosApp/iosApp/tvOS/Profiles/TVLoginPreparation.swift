@@ -14,6 +14,8 @@ enum LoginPreparationFailure: Equatable {
     case serverError
     case unexpectedResponse
     case noPrimaryProfile
+    /// A household member's saved profile whose Silo profile is gone.
+    case profileUnavailable
     case unknown
 
     static func classify(_ error: Error, enteredPIN: Bool) -> LoginPreparationFailure {
@@ -73,6 +75,7 @@ enum LoginPreparationFailure: Equatable {
         case .serverError: "Your server ran into a problem"
         case .unexpectedResponse: "Unexpected server response"
         case .noPrimaryProfile: "No primary profile"
+        case .profileUnavailable: "This profile isn’t available"
         case .unknown: "Couldn’t open your profile"
         }
     }
@@ -95,6 +98,8 @@ enum LoginPreparationFailure: Equatable {
             "Check the server address and any reverse proxy in front of it, then try again."
         case .noPrimaryProfile:
             "Set a primary profile for this account on your server, then try again."
+        case .profileUnavailable:
+            "It may have been removed from your server. Try again, or go back and remove this profile from Vivid."
         case .unknown:
             "Something went wrong while preparing your profile. Try again, or go back and sign in to a different server."
         }
@@ -108,6 +113,7 @@ enum LoginPreparationFailure: Equatable {
         case .signInExpired: "person.crop.circle.badge.exclamationmark"
         case .serverError, .unexpectedResponse: "exclamationmark.triangle"
         case .noPrimaryProfile: "person.crop.circle.badge.questionmark"
+        case .profileUnavailable: "person.crop.circle.badge.xmark"
         case .unknown: "exclamationmark.circle"
         }
     }
@@ -144,15 +150,24 @@ final class TVLoginPreparation {
     /// server it is stuck on.
     private(set) var failedServerName: String?
     var pinProfile: UserProfile?
+    /// Household members to choose from when a new saved profile signs in to
+    /// a Silo account with more than one viewing profile.
+    private(set) var profileChoices: [UserProfile]?
+    private var chosenProfile: UserProfile?
+    /// Signing in from the sign-in form adds a saved profile, so a Silo
+    /// account with several viewing profiles chooses one.
+    private var isNewSignIn = false
     private(set) var isSigningOut = false
     private(set) var showsWelcome = false
     private var router: AppRouter?
     private let completionKey = "vivid.didCompleteFirstLoginPreparation"
 
-    func begin(router: AppRouter) async {
+    func begin(router: AppRouter, newSignIn: Bool = false) async {
         guard !isPresented else { return }
         self.router = router
         showsWelcome = !UserDefaults.standard.bool(forKey: completionKey)
+        chosenProfile = nil
+        isNewSignIn = newSignIn
         isPresented = true
         await prepare()
     }
@@ -163,23 +178,63 @@ final class TVLoginPreparation {
         failure = nil
         status = "Getting ready"
         pinProfile = nil
+        profileChoices = nil
         // Only the PIN check itself can mean a wrong PIN. A 401 from the
         // profile list is an expired sign-in even when a PIN was typed.
         var checkedPIN = false
         do {
             let account = await TokenStore.shared.refreshAccountIdentity()
+            let store = TVSavedAccountStore.shared
             if !AuthService.shared.hasProfile {
                 let profiles = try await retryTemporaryFailure { try await StartupContentPrefetcher.fetchProfiles() }
-                guard let primary = profiles.first(where: \.isPrimary) ?? (profiles.count == 1 ? profiles.first : nil) else {
-                    fail(.noPrimaryProfile)
-                    return
+                let target: UserProfile
+                switch store.profileTarget(newSignIn: isNewSignIn) {
+                case .bound(let profileID):
+                    // A household member's saved profile never falls back to
+                    // the primary profile.
+                    guard let bound = profiles.first(where: { $0.id == profileID }) else {
+                        fail(.profileUnavailable)
+                        return
+                    }
+                    target = bound
+                case .choose where profiles.count > 1:
+                    store.beginProfileChoice()
+                    guard let chosen = chosenProfile.flatMap({ chosen in profiles.first { $0.id == chosen.id } }) else {
+                        chosenProfile = nil
+                        profileChoices = profiles.filter(\.isPrimary) + profiles.filter { !$0.isPrimary }
+                        return
+                    }
+                    target = chosen
+                case .choose, .primary:
+                    guard let primary = profiles.first(where: \.isPrimary) ?? (profiles.count == 1 ? profiles.first : nil) else {
+                        fail(.noPrimaryProfile)
+                        return
+                    }
+                    target = primary
                 }
-                if primary.hasPin, pin == nil {
-                    pinProfile = primary
+                if target.hasPin, pin == nil {
+                    pinProfile = target
                     return
                 }
                 checkedPIN = pin != nil
-                try await AuthService.shared.selectProfile(profileId: primary.id, pin: pin, requiresPIN: primary.hasPin)
+                try await AuthService.shared.selectProfile(profileId: target.id, pin: pin, requiresPIN: target.hasPin)
+                store.noteChosenProfile(target, profileCount: profiles.count)
+            }
+            // A new saved profile is saved once its viewing profile is entered.
+            if let pending = store.pendingProfileChoice {
+                if pending.profile == nil {
+                    // Entered before preparation began, such as the only profile.
+                    let profiles = try await retryTemporaryFailure { try await StartupContentPrefetcher.fetchProfiles() }
+                    guard let live = profiles.first(where: { $0.id == AuthService.shared.profileId }) else {
+                        fail(.unknown)
+                        return
+                    }
+                    store.noteChosenProfile(live, profileCount: profiles.count)
+                }
+                guard await store.commitProfileChoice() else {
+                    fail(.unknown)
+                    return
+                }
             }
             // Home hydrates its profile-scoped disk snapshot before its first
             // render. Fresh sections and libraries must not gate the handoff.
@@ -211,6 +266,24 @@ final class TVLoginPreparation {
         }
     }
 
+    /// Enters the household member chosen for the new saved profile.
+    func choose(_ profile: UserProfile) async {
+        guard profileChoices != nil, !isSigningOut else { return }
+        chosenProfile = profile
+        await prepare()
+    }
+
+    /// Cancelling a chosen member's PIN returns to the choice; otherwise it
+    /// leaves the account being prepared.
+    func cancelPIN() async {
+        if chosenProfile != nil, TVSavedAccountStore.shared.pendingProfileChoice != nil {
+            chosenProfile = nil
+            await prepare()
+        } else {
+            await signOutToLogin()
+        }
+    }
+
     /// Runs the failure page's primary action.
     func performPrimaryAction() async {
         if failure?.primaryActionSignsOut == true {
@@ -225,6 +298,7 @@ final class TVLoginPreparation {
         UserDefaults.standard.set(true, forKey: completionKey)
         router?.resetToHome()
         isPresented = false
+        isNewSignIn = false
         router = nil
     }
 
@@ -237,8 +311,11 @@ final class TVLoginPreparation {
         guard isPresented, !isSigningOut, let router else { return }
         isSigningOut = true
         pinProfile = nil
+        profileChoices = nil
         defer { isSigningOut = false }
         let store = TVSavedAccountStore.shared
+        // A new saved profile that was never saved has nothing to mark.
+        let abandonedChoice = store.abandonProfileChoice()
         if let account = store.activeAccount, account.serverID == ServerRegistry.shared.activeServerId {
             // Marks the saved account as needing sign-in, so iCloud sync can't
             // restore its session on this or another device.
@@ -257,6 +334,9 @@ final class TVLoginPreparation {
             } else {
                 router.resetToServerSetup()
             }
+            if abandonedChoice {
+                Task { await VividCloudAccountSync.shared.synchronize(router: router) }
+            }
         }
         cancel()
     }
@@ -264,6 +344,9 @@ final class TVLoginPreparation {
     func cancel() {
         isPresented = false
         pinProfile = nil
+        profileChoices = nil
+        chosenProfile = nil
+        isNewSignIn = false
         failure = nil
         failedServerName = nil
         router = nil
@@ -272,6 +355,13 @@ final class TVLoginPreparation {
 
 struct TVLoginPreparationView: View {
     @State private var preparation = TVLoginPreparation.shared
+    // An iPhone's shorter screen puts the status line close to the bottom, so
+    // the indicator sits lower to keep clear of it.
+    #if os(tvOS)
+    private let progressBottomInset: CGFloat = 80
+    #else
+    private let progressBottomInset: CGFloat = 36
+    #endif
     var body: some View {
         if let failure = preparation.failure {
             LoginPreparationFailureView(
@@ -284,9 +374,15 @@ struct TVLoginPreparationView: View {
         } else if preparation.isSigningOut {
             LoginPreparationSigningOutView()
         } else if let profile = preparation.pinProfile {
-            PINEntryView(profile: profile, onCancel: { Task { await preparation.signOutToLogin() } }) { pin in
+            PINEntryView(profile: profile, onCancel: { Task { await preparation.cancelPIN() } }) { pin in
                 Task { await preparation.prepare(pin: pin) }
             }
+        } else if let profiles = preparation.profileChoices {
+            SiloProfileChoiceView(
+                profiles: profiles,
+                onChoose: { profile in Task { await preparation.choose(profile) } },
+                onCancel: { Task { await preparation.signOutToLogin() } }
+            )
         } else {
             VividStartupView(isContentReady: preparation.ready,
                              statusText: preparation.showsWelcome ? preparation.status : "Loading your Home") {
@@ -294,7 +390,7 @@ struct TVLoginPreparationView: View {
             }
             .overlay(alignment: .bottom) {
                 if !preparation.ready {
-                    ProgressView().padding(.bottom, 80)
+                    ProgressView().padding(.bottom, progressBottomInset)
                 }
             }
         }

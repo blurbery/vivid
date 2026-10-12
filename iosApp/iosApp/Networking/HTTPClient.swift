@@ -291,6 +291,30 @@ actor HTTPClient {
         try ensureSuccess(data, response, method: "POST")
         return try decoder.decode(LoginResponse.self, from: data)
     }
+
+    /// Verifies a viewing profile's PIN for a session other than the active
+    /// one. Silo binds the returned proof to that session. Nil means the PIN
+    /// didn't match.
+    func verifyProfilePIN(serverURL: String, accessToken: String, profileID: String, pin: String) async throws -> String? {
+        let revision = try captureRequestDispatchRevision()
+        var request = try buildRequest(serverUrl: ServerRegistry.normalize(url: serverURL), method: "POST",
+                                       path: "/api/v1/profiles/\(profileID)/verify-pin", query: [:],
+                                       body: VerifyPinRequest(pin: pin))
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await perform(request: request, dispatchRevision: revision, reportReachability: false)
+        try ensureSuccess(data, response, method: "POST")
+        let result = try decoder.decode(VerifyPinResponse.self, from: data)
+        return result.valid ? result.profileToken : nil
+    }
+
+    /// Ends a session other than the active one, best effort.
+    func logoutSession(serverURL: String, accessToken: String) async {
+        guard let revision = try? captureRequestDispatchRevision(),
+              var request = try? buildRequest(serverUrl: ServerRegistry.normalize(url: serverURL), method: "POST",
+                                              path: "/api/v1/auth/logout", query: [:], body: nil) else { return }
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        _ = try? await perform(request: request, dispatchRevision: revision, reportReachability: false)
+    }
     #endif
 
     func post<T: Decodable>(

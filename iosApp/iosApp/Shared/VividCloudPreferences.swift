@@ -335,12 +335,20 @@ final class VividCloudPreferences {
         return try PropertyListSerialization.data(fromPropertyList: ["value": value], format: .binary, options: 0)
     }
     /// Explicit moves must beat the bootstrap order, even before first capture.
-    func setAccountOrder(_ identities: [String]) throws {
+    func setAccountOrder(legacy: [String], full: [String]?) throws {
         try load()
         let previous = entries
-        entries["accountOrder"] = VividCloudPreference(
-            value: try Self.encoder.encode(identities), modifiedAt: Date(), writer: writer
+        let now = Date()
+        entries[VividCloudAccountOrder.legacyKey] = VividCloudPreference(
+            value: try Self.encoder.encode(legacy), modifiedAt: now, writer: writer
         )
+        if let full {
+            entries[VividCloudAccountOrder.fullKey] = VividCloudPreference(
+                value: try Self.encoder.encode(full), modifiedAt: now, writer: writer
+            )
+        } else if entries[VividCloudAccountOrder.fullKey]?.value != nil {
+            entries[VividCloudAccountOrder.fullKey] = VividCloudPreference(value: nil, modifiedAt: now, writer: writer)
+        }
         do { try persist() }
         catch { entries = previous; throw error }
     }
@@ -379,8 +387,13 @@ final class VividCloudPreferences {
         let credentials = credentialKeys(accounts: accounts)
         for key in keys { values["defaults|" + key] = try encodedDefault(key) }
         for key in credentials { values["keychain|" + key] = keychain.get(key).map { Data($0.utf8) } }
-        if !accounts.isEmpty { values["accountOrder"] = try Self.encoder.encode(accounts.map { VividCloudAccountIdentity.key(for: $0) }) }
-        let eligible = Set(keys.map { "defaults|" + $0 } + credentials.map { "keychain|" + $0 } + ["accountOrder"])
+        if !accounts.isEmpty {
+            let order = VividCloudAccountOrder.values(for: accounts)
+            values[VividCloudAccountOrder.legacyKey] = try Self.encoder.encode(order.legacy)
+            values[VividCloudAccountOrder.fullKey] = try order.full.map { try Self.encoder.encode($0) }
+        }
+        let eligible = Set(keys.map { "defaults|" + $0 } + credentials.map { "keychain|" + $0 }
+            + [VividCloudAccountOrder.legacyKey, VividCloudAccountOrder.fullKey])
         var changed = false
         for key in eligible {
             let value = values[key]

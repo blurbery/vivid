@@ -141,7 +141,10 @@ final class AuthService: @unchecked Sendable {
 
     // MARK: - Authentication
 
-    func login(username: String, password: String) async throws {
+    /// - Parameter defersSiloSignInRecord: the sign-in form records a Silo
+    ///   sign-in once the chosen viewing profile is saved, for that saved
+    ///   profile's own identity, instead of here.
+    func login(username: String, password: String, defersSiloSignInRecord: Bool = false) async throws {
         guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
             throw HTTPError.serverUrlNotConfigured
         }
@@ -176,9 +179,11 @@ final class AuthService: @unchecked Sendable {
             cacheAccountID: String(response.user.id)
         )
         #if os(tvOS) || os(iOS)
-        await VividCloudAccountSync.shared.noteExplicitAuthentication(
-            serverID: expectedAccount.serverId, userID: String(response.user.id)
-        )
+        if !defersSiloSignInRecord {
+            await VividCloudAccountSync.shared.noteExplicitAuthentication(
+                serverID: expectedAccount.serverId, userID: String(response.user.id)
+            )
+        }
         #endif
     }
 
@@ -634,6 +639,32 @@ final class AuthService: @unchecked Sendable {
             "/api/v1/auth/device/poll",
             body: DeviceLoginPollRequest(deviceCode: deviceCode)
         )
+    }
+
+    /// A new login session for the signed-in Silo account, approved by the
+    /// active session through device sign-in. A household member's saved
+    /// profile gets its own session this way, without the password, so
+    /// signing one saved profile out never signs out another.
+    func approvedSiloSession() async throws -> (accessToken: String, refreshToken: String) {
+        let device = AppleDeviceIdentity.current
+        let start = try await startDeviceLogin(deviceName: device.name, devicePlatform: device.platform)
+        try await HTTPClient.shared.postVoid(
+            "/api/v1/auth/device/approve",
+            body: DeviceLoginDecisionRequest(code: start.userCode)
+        )
+        for _ in 0..<5 {
+            let poll = try await pollDeviceLogin(deviceCode: start.deviceCode)
+            switch DeviceLoginStatus(raw: poll.status) {
+            case .approved:
+                guard let access = poll.accessToken, let refresh = poll.refreshToken else { throw HTTPError.invalidResponse }
+                return (access, refresh)
+            case .pending:
+                try await Task.sleep(for: .seconds(max(1, poll.pollAfter ?? 1)))
+            default:
+                throw HTTPError.invalidResponse
+            }
+        }
+        throw HTTPError.invalidResponse
     }
 
     // MARK: - Sign Out

@@ -661,15 +661,19 @@ struct ContentView: View {
             #endif
 
         case .needsProfile:
-            // Login preparation enters the primary (or only) profile and asks
-            // for its PIN when needed. Choosing between several profiles is
-            // handled by the saved-profiles screen, not a server profile picker.
+            // Login preparation enters the saved profile's household member, or
+            // the primary (or only) profile, and asks for its PIN when needed.
+            // Only a new Silo sign-in chooses between several profiles.
+            //
+            // Preparation replaces this view as soon as it starts, so it runs
+            // in its own task: a `.task` here would be cancelled by that
+            // replacement and restart preparation in a loop.
             #if os(tvOS)
             Color.clear.ignoresSafeArea()
                 .onAppear { Task { await TVLoginPreparation.shared.begin(router: router) } }
             #elseif os(iOS)
             VividAppBackdrop()
-                .task { await TVLoginPreparation.shared.begin(router: router) }
+                .onAppear { Task { await TVLoginPreparation.shared.begin(router: router) } }
             #else
             Color.clear
             #endif
