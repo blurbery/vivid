@@ -163,7 +163,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           # Cost limits per run in US$: a whole PR, or only the new commits.
-          REVIEW_MAX_COST_USD: ${{ steps.prep.outputs.mode == 'incremental' && '1.50' || '3.00' }}
+          REVIEW_MAX_COST_USD: ${{ steps.prep.outputs.mode == 'incremental' && '1.00' || '2.00' }}
         run: |
           if [ -n "$ANTHROPIC_WORKSPACE_ID" ]; then echo "::add-mask::$ANTHROPIC_WORKSPACE_ID"; fi
           pip install --quiet --disable-pip-version-check "anthropic==1.11.0"
