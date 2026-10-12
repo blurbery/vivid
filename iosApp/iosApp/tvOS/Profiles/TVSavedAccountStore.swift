@@ -21,12 +21,19 @@ struct TVSavedAccount: Codable, Identifiable, Hashable {
     /// identity, so existing saved profiles are unchanged.
     var siloProfileID: String? = nil
 
-    /// A household member's saved profile is labelled with their own name in
-    /// Silo, since they share the account's sign-in username. Every other
-    /// saved profile keeps its username.
-    var displayName: String {
-        guard siloProfileID != nil, let name = profile?.name, !name.isEmpty else { return username }
-        return name
+    /// A Silo saved profile is labelled with its viewing profile's name in
+    /// Silo, the primary profile included, since that name is chosen there
+    /// and isn't the sign-in username. An unbound card uses the name only
+    /// when it holds the primary profile. Emby and Jellyfin, or a Silo
+    /// profile not loaded yet, keep the username.
+    var displayName: String { siloProfileName ?? username }
+
+    /// The Silo viewing profile's name this saved profile shows, if any.
+    var siloProfileName: String? {
+        guard MediaServerProvider.forServerID(serverID) == .silo, let profile,
+              siloProfileID == nil ? profile.isPrimary : profile.id == siloProfileID else { return nil }
+        let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 }
 
