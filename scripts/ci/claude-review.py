@@ -34,6 +34,7 @@ READ_LIMIT = 400  # lines per read_file call
 SEARCH_LIMIT = 80  # matches per search_code call
 LIST_LIMIT = 200  # paths per list_files call
 DIFF_LIMIT = 250_000  # characters of diff sent up front
+CODE_SHARE = 0.7  # of the cost limit the code pass may use, leaving the rest for the claims pass
 NUDGE = (
     "Nobody can answer questions during this review. Carry on, and call "
     "finish_review when you're done."
@@ -366,12 +367,13 @@ def main():
     review_dir = Path(args.review_dir)
     diff = (review_dir / "diff.patch").read_text(errors="replace")
     to_read = changed_files(diff)
-    code = run_pass(client, settings, SYSTEM, first_message(args, review_dir), to_read, max_cost)
+    code = run_pass(client, settings, SYSTEM, first_message(args, review_dir), to_read, max_cost * CODE_SHARE)
     passes = [("code", code)]
-    # The claims pass checks what the PR says against the code. New commits
-    # that touch no docs or comments add no claims to check.
+    # The claims pass checks what the PR says against the code, with whatever
+    # the code pass left of the limit. New commits that touch no docs or
+    # comments add no claims to check.
     docs = [path for path in to_read if path.endswith(".md")]
-    if code["stopped"] in (None, "no_summary") and (args.mode == "full" or docs or COMMENT_LINE.search(diff)):
+    if code["stopped"] != "refusal" and (args.mode == "full" or docs or COMMENT_LINE.search(diff)):
         earlier = "\n".join(f"- Code review finding on {f['path']}:{f['line']}: {f['title']}" for f in code["findings"])
         opening = first_message(args, review_dir, earlier)
         passes.append(("claims", run_pass(client, settings, CLAIMS_SYSTEM, opening, docs, max_cost - code["cost"])))
