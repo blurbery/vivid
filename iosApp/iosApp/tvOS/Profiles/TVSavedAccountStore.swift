@@ -21,8 +21,9 @@ struct TVSavedAccount: Codable, Identifiable, Hashable {
     /// identity, so existing saved profiles are unchanged.
     var siloProfileID: String? = nil
 
-    /// A household member's saved profile is labelled with their Silo profile
-    /// name, since every member shares the account's username.
+    /// A household member's saved profile is labelled with their own name in
+    /// Silo, since they share the account's sign-in username. Every other
+    /// saved profile keeps its username.
     var displayName: String {
         guard siloProfileID != nil, let name = profile?.name, !name.isEmpty else { return username }
         return name
@@ -217,8 +218,10 @@ final class TVSavedAccountStore {
     private(set) var pendingProfileChoice: PendingSiloProfileChoice?
     private(set) var contentRevision = UUID()
     private var capturedUser: (identity: RefreshAccountIdentity, user: UserInfo)?
+    /// Saved profiles per device, or per native Apple TV user.
+    static let maximumAccounts = 8
     var canAddAccount: Bool {
-        accounts.count < 4
+        accounts.count < Self.maximumAccounts
     }
     var error: String?
     private var unlockedID: String?
@@ -249,17 +252,6 @@ final class TVSavedAccountStore {
 
     var activeAccount: TVSavedAccount? { accounts.first { $0.id == activeID } }
 
-    /// Saved profiles that share a Silo login are all labelled by viewing
-    /// profile name, so a household reads as one family. A saved profile on
-    /// its own keeps its username, as before.
-    func displayName(for account: TVSavedAccount) -> String {
-        if account.siloProfileID == nil,
-           accounts.contains(where: { $0.id != account.id && $0.serverID == account.serverID && $0.userID == account.userID }),
-           let name = account.profile?.name, !name.isEmpty {
-            return name
-        }
-        return account.displayName
-    }
     private func sessionKey(_ id: String) -> String { "vivid.account.\(id).session.v1" }
 
     private func saveSession(_ session: TVSavedAccountSession, id: String) throws {
@@ -605,7 +597,7 @@ final class TVSavedAccountStore {
 
     func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter, provider requestedProvider: MediaServerProvider? = nil) async -> Bool {
         guard !busy else { return false }
-        guard id != nil || canAddAccount else { error = "You can save up to four profiles. Delete a saved profile to add another."; return false }
+        guard id != nil || canAddAccount else { error = "You can save up to eight profiles. Delete a saved profile to add another."; return false }
         await captureCurrent(refreshMetadata: false)
         guard !busy else { return false }
         busy = true; error = nil
@@ -640,7 +632,7 @@ final class TVSavedAccountStore {
             // that is already saved, so its saved profile is chosen once the
             // viewing profile is known.
             if id == nil, provider == .silo {
-                guard sameLogin != nil || canAddAccount else { error = "You can save up to four profiles."; return false }
+                guard sameLogin != nil || canAddAccount else { error = "You can save up to eight profiles."; return false }
                 let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
                                                  profile: nil, profileToken: nil, nativeUserID: nativeUserID)
                 let entry = ServerEntry(id: serverID, url: normalized,
@@ -662,7 +654,7 @@ final class TVSavedAccountStore {
             if let existing, existing.userID != userID || existing.serverID != serverID {
                 error = "These credentials belong to a different account. Use Add Profile instead."; return false
             }
-            guard existing != nil || canAddAccount else { error = "You can save up to four profiles."; return false }
+            guard existing != nil || canAddAccount else { error = "You can save up to eight profiles."; return false }
             let accountID = existing?.id ?? UUID().uuidString
             let account = TVSavedAccount(id: accountID, serverID: serverID, userID: userID,
                                          username: login.user.username, profile: existing?.profile, requiresLogin: false,

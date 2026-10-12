@@ -156,20 +156,51 @@ struct PhoneVividPrivacyView: View {
 #if os(iOS)
 struct PhoneSavedProfilesScreen: View {
     @State private var profileEditorRoute: PhoneProfileEditorRoute?
+    @State private var store = TVSavedAccountStore.shared
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 28) {
-                Spacer()
-                VividLogoView(size: 140)
-                Text("Who’s watching?").font(.system(size: 30, weight: .bold, design: .rounded))
-                PhoneSavedAccountCards(isSettings: false, editorRoute: $profileEditorRoute)
-                Spacer()
-                VividCopyrightFooter().padding(.bottom, 24)
-            }.background(VividAppBackdrop())
-                .navigationDestination(item: $profileEditorRoute) { route in
-                    PhoneSavedAccountEditor(accountID: route.accountID)
+            Group {
+                if store.accounts.count > 4 {
+                    // Five to eight profiles scroll on a screen too short
+                    // for them all, and stay centred otherwise.
+                    GeometryReader { container in
+                        ScrollView {
+                            content.frame(minHeight: container.size.height)
+                        }
+                        .scrollBounceBehavior(.basedOnSize)
+                    }
+                } else {
+                    content
                 }
+            }
+            .background(VividAppBackdrop())
+            .navigationDestination(item: $profileEditorRoute) { route in
+                PhoneSavedAccountEditor(accountID: route.accountID)
+            }
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 28) {
+            Spacer()
+            VividLogoView(size: store.accounts.count > 4 ? 100 : 140)
+            Text("Who’s watching?").font(.system(size: 30, weight: .bold, design: .rounded))
+            PhoneSavedAccountCards(isSettings: false, editorRoute: $profileEditorRoute)
+            Spacer()
+            VividCopyrightFooter().padding(.bottom, 24)
+        }
+    }
+}
+
+/// One position in the Who's watching grid.
+private enum PhoneProfileGridEntry: Identifiable {
+    case account(TVSavedAccount)
+    case add
+    var id: String {
+        switch self {
+        case .account(let account): account.id
+        case .add: "add-profile"
         }
     }
 }
@@ -211,6 +242,24 @@ struct PhoneSavedAccountCards: View {
                     }
                 }
                 .frame(height: 170)
+            } else if displayedAccounts.count >= 5 {
+                // Five to eight: rows of three with the last row centred, and
+                // Add Profile taking the next place in the grid.
+                VStack(spacing: 24) {
+                    ForEach(Array(gridEntries.profileRows(of: 3).enumerated()), id: \.offset) { _, row in
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(row) { entry in
+                                switch entry {
+                                case .account(let account): cardButton(account).frame(width: 118)
+                                case .add: addProfileButton.frame(width: 118)
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: 380)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity)
             } else {
                 VStack(spacing: 24) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top),
@@ -271,7 +320,7 @@ struct PhoneSavedAccountCards: View {
                 }
                 .vividScrollContentBackgroundHidden()
                 .background(Color.clear)
-                .navigationTitle(store.displayName(for: account))
+                .navigationTitle(account.displayName)
                 .toolbar { VividSheetCloseItem { selectedForPIN = nil; pin = "" } }
             }.vividGlassSheet()
         }
@@ -287,24 +336,32 @@ struct PhoneSavedAccountCards: View {
     @ViewBuilder
     private var accountCards: some View {
         ForEach(displayedAccounts) { account in
-            Button { activateProfile(account) } label: {
-                tile(account)
-            }
-            .buttonStyle(.plain)
-            .opacity(movingID == account.id ? 0 : 1)
-            .contentShape(Rectangle())
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(key: ProfileCardFrames.self,
-                        value: [account.id: geometry.frame(in: .named("savedProfileCards"))])
-                }
-            }
-            .simultaneousGesture(reorderGesture(for: account))
-            .accessibilityElement(children: .combine)
-            .accessibilityHint("Hold and drag onto another profile to reorder. Release to save.")
-            .accessibilityAction(named: "Move earlier") { moveProfile(account.id, by: -1) }
-            .accessibilityAction(named: "Move later") { moveProfile(account.id, by: 1) }
+            cardButton(account)
         }
+    }
+
+    private var gridEntries: [PhoneProfileGridEntry] {
+        displayedAccounts.map(PhoneProfileGridEntry.account) + (store.canAddAccount ? [.add] : [])
+    }
+
+    private func cardButton(_ account: TVSavedAccount) -> some View {
+        Button { activateProfile(account) } label: {
+            tile(account)
+        }
+        .buttonStyle(.plain)
+        .opacity(movingID == account.id ? 0 : 1)
+        .contentShape(Rectangle())
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: ProfileCardFrames.self,
+                    value: [account.id: geometry.frame(in: .named("savedProfileCards"))])
+            }
+        }
+        .simultaneousGesture(reorderGesture(for: account))
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Hold and drag onto another profile to reorder. Release to save.")
+        .accessibilityAction(named: "Move earlier") { moveProfile(account.id, by: -1) }
+        .accessibilityAction(named: "Move later") { moveProfile(account.id, by: 1) }
     }
 
     private var addProfileButton: some View {
@@ -419,16 +476,16 @@ struct PhoneSavedAccountCards: View {
     }
     private func tile(_ account: TVSavedAccount) -> some View {
         VStack(spacing: isSettings ? 8 : 12) {
-            ProfileAvatarView(avatar: account.profile?.avatarEmoji, imageUrl: savedAvatarURL(account), name: store.displayName(for: account), size: avatarSize,
+            ProfileAvatarView(avatar: account.profile?.avatarEmoji, imageUrl: savedAvatarURL(account), name: account.displayName, size: avatarSize,
                               cacheScope: account.profile.map {
                                   VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: $0.id)
                               })
                 .overlay {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
-                .accessibilityLabel(isSettings && isCurrentAccount(account) ? "Current account" : store.displayName(for: account))
+                .accessibilityLabel(isSettings && isCurrentAccount(account) ? "Current account" : account.displayName)
             VStack(spacing: 4) {
-                Text(store.displayName(for: account)).font(.subheadline.weight(.medium)).lineLimit(1)
+                Text(account.displayName).font(.subheadline.weight(.medium)).lineLimit(1)
                 Text(serverLabel(for: account))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 if store.needsLogin(account) { Text("Signed out").font(.caption).foregroundStyle(.secondary) }
@@ -476,7 +533,7 @@ struct PhoneSavedAccountEditor: View {
     private var active: Bool { accountID != nil && accountID == store.activeID && !store.showsSelector && AuthService.shared.isLoggedIn }
     var body: some View {
         List {
-            SettingsPageHeader(title: account.map { store.displayName(for: $0) } ?? "Add Profile", subtitle: "Account details and access on this device.", systemImage: "person.crop.circle").settingsPageHeaderRow()
+            SettingsPageHeader(title: account?.displayName ?? "Add Profile", subtitle: "Account details and access on this device.", systemImage: "person.crop.circle").settingsPageHeaderRow()
             if account == nil {
                 Section {
                     Picker("Server Provider", selection: $provider) {
@@ -557,6 +614,9 @@ struct PhoneSavedAccountEditor: View {
                 if let account { Task { await household.add(profile, pin: pin, for: account) } }
             }
             .presentationDetents([.medium, .large])
+            // Cancel signs out the session approved for this profile; a
+            // swipe would leave it signed in with no saved profile.
+            .interactiveDismissDisabled()
         }
         .confirmationDialog("Delete Profile?", isPresented: $showsDeleteConfirm,
                             titleVisibility: .visible, presenting: account) { account in
@@ -567,7 +627,7 @@ struct PhoneSavedAccountEditor: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { account in
-            Text("Remove \(store.displayName(for: account)) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+            Text("Remove \(account.displayName) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
         }
         .onAppear {
             if let account {
@@ -599,12 +659,11 @@ struct PhoneSavedAccountEditor: View {
                             ForEach(household.profiles) { profile in
                                 Button { Task { await household.choose(profile, for: account) } } label: {
                                     SiloHouseholdTile(profile: profile, account: account,
-                                                      isAdding: household.addingID == profile.id,
-                                                      isAdded: household.addedIDs.contains(profile.id))
+                                                      isAdding: household.addingID == profile.id)
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.white)
-                                .disabled(household.addingID != nil || household.addedIDs.contains(profile.id))
+                                .disabled(household.addingID != nil)
                             }
                         }
                         .padding(.vertical, 6)

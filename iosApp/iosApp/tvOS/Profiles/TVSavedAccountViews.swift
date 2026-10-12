@@ -18,7 +18,7 @@ struct TVSavedProfilesScreen: View {
                         .font(.system(size: 40, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                     TVSavedAccountCards(isSettings: false)
-                        .frame(maxWidth: 1200)
+                        .frame(maxWidth: 1720)
                     if let error = store.error {
                         Text(error).font(.system(size: 22))
                             .foregroundStyle(.white.opacity(0.7))
@@ -108,7 +108,7 @@ struct TVSavedAccountCards: View {
                                 }
                             }
                             .onExitCommand { cancelArrangement() }
-                            .accessibilityLabel("Move \(store.displayName(for: account)). Move left or right, then press centre to drop and save.")
+                            .accessibilityLabel("Move \(account.displayName). Move left or right, then press centre to drop and save.")
                         } else {
                             tile(account).modifier(ProfileArrangeWobble(active: true))
                         }
@@ -245,7 +245,7 @@ struct TVSavedAccountCards: View {
     private func tile(_ account: TVSavedAccount) -> some View {
         VStack(spacing: 14) {
             ProfileAvatarView(avatar: displayedProfile(account)?.avatarEmoji,
-                              imageUrl: avatarURL(account), name: store.displayName(for: account), size: 108,
+                              imageUrl: avatarURL(account), name: account.displayName, size: 108,
                               cacheScope: displayedProfile(account).map {
                                   VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: String($0.id))
                               })
@@ -253,14 +253,14 @@ struct TVSavedAccountCards: View {
                     Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
                 }
             VStack(spacing: 5) {
-                Text(store.displayName(for: account)).font(.system(size: 20, weight: .medium)).lineLimit(1)
+                Text(account.displayName).font(.system(size: 20, weight: .medium)).lineLimit(1)
                 Text(serverLabel(for: account))
                     .font(.system(size: 17)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 if account.requiresLogin { Text("Signed out").font(.system(size: 15)).opacity(0.6) }
             }
         }
         .frame(width: 142)
-        .accessibilityLabel(store.displayName(for: account) + (account.requiresLogin ? ", signed out" : "")
+        .accessibilityLabel(account.displayName + (account.requiresLogin ? ", signed out" : "")
             + ", " + serverLabel(for: account)
             + (isSettings && isCurrentAccount(account) ? ", current account" : ""))
     }
@@ -339,7 +339,7 @@ struct TVSavedAccountEditor: View {
                             in: RoundedRectangle(cornerRadius: 15.5, style: .continuous)
                         )
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(account == nil ? (addingServer ? "Add Server" : "Add Profile") : store.displayName(for: account!))
+                        Text(account == nil ? (addingServer ? "Add Server" : "Add Profile") : account!.displayName)
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("Account details and access on this Apple TV.")
@@ -489,7 +489,7 @@ struct TVSavedAccountEditor: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { account in
-            Text("Remove \(store.displayName(for: account)) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
+            Text("Remove \(account.displayName) and its saved connection from Vivid on your iCloud devices? Other profiles and the actual server account and library won’t be deleted.")
         }
         .onAppear {
             username = account?.username ?? ""
@@ -536,11 +536,10 @@ struct TVSavedAccountEditor: View {
                                 Button { Task { await household.choose(profile, for: account) } } label: {
                                     SiloHouseholdTile(profile: profile, account: account,
                                                       isAdding: household.addingID == profile.id,
-                                                      isAdded: household.addedIDs.contains(profile.id),
                                                       avatarSize: 108)
                                 }
                                 .buttonStyle(TVAccountCircleStyle())
-                                .disabled(household.addingID != nil || household.addedIDs.contains(profile.id))
+                                .disabled(household.addingID != nil)
                             }
                         }
                         .padding(24)
@@ -568,7 +567,7 @@ private struct TVSavedAccountPINPrompt: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 28) {
-            Text(store.displayName(for: account)).font(.system(size: 42, weight: .bold))
+            Text(account.displayName).font(.system(size: 42, weight: .bold))
             SecureField("Four-digit PIN", text: $pin).frame(width: 480)
             Button("Unlock") { onPIN(pin); pin = "" }
                 .buttonStyle(TVSettingsPaneRowStyle()).frame(width: 480)

@@ -12,7 +12,6 @@ final class SiloHouseholdSearch {
     /// Members found that aren't saved on this device, primary first.
     private(set) var profiles: [UserProfile] = []
     private(set) var addingID: String?
-    private(set) var addedIDs: Set<String> = []
     private(set) var message: String?
     var pinProfile: UserProfile?
     private var profileCount = 0
@@ -24,7 +23,6 @@ final class SiloHouseholdSearch {
         guard phase != .searching else { return }
         phase = .searching
         message = nil
-        addedIDs = []
         // Keep "Searching for accounts" up long enough to read.
         async let minimumDisplay: Void? = try? Task.sleep(for: .milliseconds(900))
         do {
@@ -45,9 +43,9 @@ final class SiloHouseholdSearch {
     }
 
     func choose(_ profile: UserProfile, for account: TVSavedAccount) async {
-        guard addingID == nil, !addedIDs.contains(profile.id) else { return }
+        guard addingID == nil else { return }
         guard TVSavedAccountStore.shared.canAddAccount else {
-            message = "You can save up to four profiles. Delete one to add another."
+            message = "You can save up to eight profiles. Delete one to add another."
             return
         }
         if profile.hasPin {
@@ -92,7 +90,9 @@ final class SiloHouseholdSearch {
                 return
             }
             approved = nil
-            addedIDs.insert(profile.id)
+            // On this device now, so it leaves the list.
+            profiles.removeAll { $0.id == profile.id }
+            message = profiles.isEmpty ? "Every profile on this account is now on this device." : nil
         } catch {
             if case HTTPError.http(let status, _) = error, status == 429 {
                 message = "Too many attempts. Wait a minute, then try again."
@@ -123,7 +123,6 @@ struct SiloHouseholdTile: View {
     let profile: UserProfile
     let account: TVSavedAccount
     let isAdding: Bool
-    let isAdded: Bool
     var avatarSize: CGFloat = 64
 
     var body: some View {
@@ -150,7 +149,7 @@ struct SiloHouseholdTile: View {
                 #else
                 .font(.subheadline.weight(.medium))
                 #endif
-                Text(isAdded ? "Added" : "Add")
+                Text("Add")
                     #if os(tvOS)
                     .font(.system(size: 15))
                     #else
@@ -161,7 +160,7 @@ struct SiloHouseholdTile: View {
         }
         .frame(width: avatarSize + 40)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(profile.name + (profile.hasPin ? ", PIN required" : "") + (isAdded ? ", added" : ", add"))
+        .accessibilityLabel("Add " + profile.name + (profile.hasPin ? ", PIN required" : ""))
     }
 }
 #endif

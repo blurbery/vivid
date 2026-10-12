@@ -1,6 +1,13 @@
 #if os(tvOS) || os(iOS)
 import SwiftUI
 
+extension Array {
+    /// Splits profiles into rows of `size` for a centred grid.
+    func profileRows(of size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map { Array(self[$0..<Swift.min($0 + size, count)]) }
+    }
+}
+
 /// Chooses which Silo viewing profile a new saved profile enters, when the
 /// account has more than one. It uses the saved-profile selector's layout,
 /// with each member's server profile picture and name.
@@ -8,7 +15,6 @@ struct SiloProfileChoiceView: View {
     let profiles: [UserProfile]
     let onChoose: (UserProfile) -> Void
     let onCancel: () -> Void
-    @State private var store = TVSavedAccountStore.shared
     #if os(tvOS)
     @FocusState private var focusedProfile: String?
     @Environment(\.isEnabled) private var isEnabled
@@ -50,7 +56,7 @@ struct SiloProfileChoiceView: View {
                     }
                     .scrollClipDisabled()
                 }
-                .frame(maxWidth: 1200)
+                .frame(maxWidth: 1720)
                 .frame(height: 190)
                 .focusSection()
                 Button("Cancel", action: onCancel)
@@ -72,9 +78,22 @@ struct SiloProfileChoiceView: View {
         }
         .onExitCommand(perform: onCancel)
         #else
+        // The whole page scrolls, only when a long household can't fit.
+        GeometryReader { container in
+            ScrollView {
+                phoneContent.frame(minHeight: container.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .background(VividAppBackdrop())
+        #endif
+    }
+
+    #if os(iOS)
+    private var phoneContent: some View {
         VStack(spacing: 28) {
             Spacer()
-            VividLogoView(size: 140)
+            VividLogoView(size: profiles.count > 4 ? 100 : 140)
             VStack(spacing: 8) {
                 Text("Who’s watching?").font(.system(size: 30, weight: .bold, design: .rounded))
                 Text(subtitle)
@@ -90,12 +109,9 @@ struct SiloProfileChoiceView: View {
                 .vividTextButton()
             VividCopyrightFooter().padding(.bottom, 24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(VividAppBackdrop())
-        #endif
+        .frame(maxWidth: .infinity)
     }
 
-    #if os(iOS)
     @ViewBuilder
     private var cards: some View {
         if profiles.count < 3 {
@@ -107,18 +123,23 @@ struct SiloProfileChoiceView: View {
             }
             .padding(.vertical, 12)
         } else {
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top),
-                                          count: profiles.count == 3 ? 3 : 2), spacing: 24) {
-                    ForEach(profiles) { profile in
-                        Button { onChoose(profile) } label: { tile(profile, avatarSize: 88).frame(maxWidth: .infinity) }
+            // Two across for four, like Who's watching; otherwise rows of
+            // three with the last row centred.
+            let columns = profiles.count == 4 ? 2 : 3
+            VStack(spacing: 24) {
+                ForEach(Array(profiles.profileRows(of: columns).enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(row) { profile in
+                            Button { onChoose(profile) } label: {
+                                tile(profile, avatarSize: 88).frame(width: columns == 2 ? 184 : 118)
+                            }
                             .buttonStyle(.plain)
+                        }
                     }
                 }
-                .padding(.vertical, 12)
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .frame(maxWidth: 380, maxHeight: 420)
+            .padding(.vertical, 12)
+            .frame(maxWidth: 380)
             .padding(.horizontal, 20)
         }
     }
@@ -142,23 +163,13 @@ struct SiloProfileChoiceView: View {
                 #else
                 .font(.subheadline.weight(.medium))
                 #endif
-                if isSaved(profile) {
-                    Text("Added")
-                        #if os(tvOS)
-                        .font(.system(size: 15))
-                        #else
-                        .font(.caption)
-                        #endif
-                        .opacity(0.6)
-                }
             }
         }
         #if os(tvOS)
         .frame(width: 142)
         #endif
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(profile.name + (profile.hasPin ? ", PIN required" : "")
-            + (isSaved(profile) ? ", already added" : ""))
+        .accessibilityLabel(profile.name + (profile.hasPin ? ", PIN required" : ""))
     }
 
     private func cacheScope(for profile: UserProfile) -> String? {
@@ -167,12 +178,5 @@ struct SiloProfileChoiceView: View {
         return VividCacheScope.key(serverID: server, accountID: account, profileID: profile.id)
     }
 
-    /// Whether this member already has a saved profile on this device, in
-    /// which case choosing it signs that saved profile in again.
-    private func isSaved(_ profile: UserProfile) -> Bool {
-        guard let server = ServerRegistry.shared.activeServerId,
-              let account = VividCacheScope.accountID(for: server) else { return false }
-        return store.hasSavedProfile(profile, serverID: server, userID: account, profileCount: profiles.count)
-    }
 }
 #endif
