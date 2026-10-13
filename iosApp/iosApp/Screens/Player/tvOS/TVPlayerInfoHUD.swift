@@ -585,9 +585,9 @@ private struct InfoPane: View {
                 }
 
                 PaneColumn("Stream") {
-                    if !viewModel.metadata.badges.isEmpty {
+                    if !viewModel.streamBadges.isEmpty {
                         HStack(spacing: 8) {
-                            ForEach(viewModel.metadata.badges, id: \.self) { badge in
+                            ForEach(viewModel.streamBadges, id: \.self) { badge in
                                 Text(badge)
                                     .font(.system(size: 16, weight: .semibold))
                                     .tracking(0.4)
@@ -636,7 +636,7 @@ private struct InfoPane: View {
         var rows: [(String, String)] = [("Route", viewModel.playbackRouteDisplay)]
         if let audio = viewModel.audioTracks.first(where: { $0.trackId == viewModel.selectedAudioId }) {
             var bits: [String] = []
-            if let codec = audio.codec, !codec.isEmpty { bits.append(codec.uppercased()) }
+            if let codec = PlayerStreamBadges.audioCodec(audio) { bits.append(codec) }
             if let channels = audio.channelCountLabel { bits.append(channels) }
             if !bits.isEmpty { rows.append(("Audio", bits.joined(separator: " · "))) }
         }

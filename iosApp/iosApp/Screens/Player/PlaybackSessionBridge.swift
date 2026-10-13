@@ -58,7 +58,7 @@ struct PreparedPlayback {
     /// everything off the already-fetched `WatchDetail` + `FileVersion` so
     /// the overlay doesn't need a second API call — we only transform the
     /// shapes the server already gave us into display strings.
-    func playerMetadata(primaryAudioLayout: String? = nil) -> PlayerMetadata {
+    func playerMetadata() -> PlayerMetadata {
         let isEpisode = watchDetail.type == "episode"
         let episodeTag: String? = {
             guard isEpisode else { return nil }
@@ -68,21 +68,17 @@ struct PreparedPlayback {
             return joined.isEmpty ? nil : joined
         }()
 
-        var badges: [String] = []
+        var videoBadges: [String] = []
         if let resolution = selectedVersion.resolution, !resolution.isEmpty {
-            badges.append(PlayerMetadata.badgeLabel(forResolution: resolution))
+            videoBadges.append(PlayerMetadata.badgeLabel(forResolution: resolution))
         }
-        if selectedVersion.hdr == true {
-            badges.append("HDR")
+        if let dynamicRange = PlayerStreamBadges.dynamicRange(selectedVersion) {
+            videoBadges.append(dynamicRange)
         }
         if let codec = selectedVersion.codecVideo?.uppercased(), !codec.isEmpty {
-            badges.append(codec)
+            videoBadges.append(codec)
         }
-        if let layout = primaryAudioLayout?.uppercased(), !layout.isEmpty {
-            badges.append(layout)
-        } else if let audioCodec = selectedVersion.codecAudio?.uppercased(), !audioCodec.isEmpty {
-            badges.append(audioCodec)
-        }
+        let fileAudioCodec = selectedVersion.codecAudio?.uppercased()
 
         return PlayerMetadata(
             seriesTitle: isEpisode ? watchDetail.seriesTitle : nil,
@@ -90,7 +86,8 @@ struct PreparedPlayback {
             primaryTitle: watchDetail.title,
             year: isEpisode ? nil : watchDetail.year,
             overview: watchDetail.overview,
-            badges: badges
+            videoBadges: videoBadges,
+            fileAudioCodec: fileAudioCodec?.isEmpty == false ? fileAudioCodec : nil
         )
     }
 }
@@ -122,9 +119,8 @@ struct PlaybackV3TerminalFailure: LocalizedError, Equatable {
 
 /// Secondary metadata shown in the tvOS player overlay's hero strip.
 /// Populated from the playback session at load time via
-/// `PreparedPlayback.playerMetadata(primaryAudioLayout:)` — everything here
-/// is already fetched as part of `/api/v1/watch/{id}`, so no extra API
-/// calls are needed.
+/// `PreparedPlayback.playerMetadata()`. Everything here is already fetched
+/// as part of `/api/v1/watch/{id}`, so no extra API calls are needed.
 struct PlayerMetadata: Equatable {
     /// For episodes: series title, e.g. "Foundation".
     var seriesTitle: String?
@@ -137,9 +133,12 @@ struct PlayerMetadata: Equatable {
     var year: Int?
     /// Short plot description. Surfaced as secondary text below the title.
     var overview: String?
-    /// Tagged media attributes rendered as pills in the hero strip:
-    /// "4K" / "HDR" / "DV" / "HEVC" / "5.1" etc.
-    var badges: [String]
+    /// The selected file's video pills, in display order: resolution,
+    /// dynamic range and video codec ("4K", "DV P8.1", "HEVC").
+    var videoBadges: [String]
+    /// The file's main audio codec as the server lists it ("TRUEHD"). Only
+    /// shown until the engine reports which audio track is playing.
+    var fileAudioCodec: String?
 
     static let empty = PlayerMetadata(
         seriesTitle: nil,
@@ -147,8 +146,20 @@ struct PlayerMetadata: Equatable {
         primaryTitle: "",
         year: nil,
         overview: nil,
-        badges: []
+        videoBadges: [],
+        fileAudioCodec: nil
     )
+
+    /// Every Stream pill: the video pills, then the codec of the audio track
+    /// that's playing, so it follows an audio switch and matches the Audio
+    /// row. Before the engine reports a selected track, the file's main audio
+    /// codec stands in, as it always did. A selected track without a codec
+    /// shows no audio pill, like the Audio row.
+    func streamBadges(playingAudio: PlayerTrack?) -> [String] {
+        let audio = playingAudio == nil ? fileAudioCodec : PlayerStreamBadges.audioCodec(playingAudio)
+        guard let audio else { return videoBadges }
+        return videoBadges + [audio]
+    }
 
     /// Map raw resolution strings ("1920x1080", "1080p", "2160p") to the
     /// short marketing label shown in the overlay ("4K" / "FHD" / "HD" / "SD").
