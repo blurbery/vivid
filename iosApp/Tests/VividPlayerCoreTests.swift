@@ -336,35 +336,46 @@ final class VividPlayerCoreTests: XCTestCase {
         XCTAssertEqual(results, [nil, nil])
     }
 
-    func testCompletionsCalledOffMainArriveLaterOnMain() async {
+    func testCompletionsCalledOffMainArriveLaterOnMain() {
         let core = VividPlayerCoreBase()
         core.beginDisposal()
         let arrived = expectation(description: "completions")
         arrived.expectedFulfillmentCount = 3
-        let submitted = expectation(description: "submitted off main")
+        let submitted = DispatchSemaphore(value: 0)
         let lock = NSLock()
         var returned = false
+        var order: [String] = []
         var inline: [Bool] = []
         var onMain: [Bool] = []
-        func finish() {
+        func finish(_ name: String) {
             lock.lock()
+            order.append(name)
             inline.append(!returned)
             onMain.append(Thread.isMainThread)
             lock.unlock()
             arrived.fulfill()
         }
-        // `sync` from main would run on the main thread, so submit asynchronously.
+        // `sync` from main would run on the main thread, so submit asynchronously
+        // and hold main until every call has returned. A completion queued on
+        // main cannot run before then; one run inside its call on the calling
+        // thread is recorded at once.
         DispatchQueue.global(qos: .userInitiated).async {
             XCTAssertFalse(Thread.isMainThread)
-            core.getPropertyAsync("volume") { _ in finish() }
-            core.setPropertyAsync("volume", value: "1") { _ in finish() }
-            core.commandAsync([]) { _ in finish() }
+            core.getPropertyAsync("volume") { _ in finish("get") }
+            core.setPropertyAsync("volume", value: "1") { _ in finish("set") }
+            core.commandAsync([]) { _ in finish("command") }
             lock.lock()
             returned = true
             lock.unlock()
-            submitted.fulfill()
+            submitted.signal()
         }
-        await fulfillment(of: [submitted, arrived], timeout: 5)
+        XCTAssertEqual(submitted.wait(timeout: .now() + 5), .success, "the calls returned while main was held")
+        lock.lock()
+        let completedDuringCalls = order.count
+        lock.unlock()
+        XCTAssertEqual(completedDuringCalls, 0, "no completion ran inside its call")
+        wait(for: [arrived], timeout: 5)
+        XCTAssertEqual(order, ["get", "set", "command"])
         XCTAssertEqual(inline, [false, false, false])
         XCTAssertEqual(onMain, [true, true, true])
     }
