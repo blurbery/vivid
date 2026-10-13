@@ -3,5 +3,5 @@
 0b91fb693cc9827da9e614c5b7a00bcf7d1dce15f0bb17c5035dca8719e97693  0001-securetransport-without-private-identity-api.patch
 ebeda15eda816dac191ecaf80d7ceb16756117f8c0a5594a45fee5fe0cf67308  0002-videotoolbox-request-metal-compatible-pixel-buffers.patch
 da77870b9c266b67d7b9591638f8bbee35727948f084a5832be5306b6da5ba09  0010-videotoolbox-give-every-sample-an-explicit-size.patch
-229bb8c4c347a3a7728b8b4a76717d64ee3f76f0b08be5d2b09c5797583f3e6b  0011-videotoolbox-decode-dolby-vision-profiles-5-7-and-8-natively.patch
+7c0d937fd894e81a4024fb9b7e367a21d0bb624f9e08eee043cc2dfc4a385969  0011-videotoolbox-decode-dolby-vision-profiles-5-7-and-8-natively.patch
 b4576178358b48b9e68e9c22322e1d764d12b20a8e80f053fd93b57643cafaec  0012-hevcdec-log-repeated-dolby-vision-rpus-and-skipped-nal-units-at-verbose.patch

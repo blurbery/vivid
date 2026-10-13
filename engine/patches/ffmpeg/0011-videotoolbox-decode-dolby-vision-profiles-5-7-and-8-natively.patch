@@ -39,8 +39,10 @@ signalling, and VideoToolbox's own attachments that it does not touch
 (DolbyVisionRPUData among them) stay as they are.
 
 If the Dolby Vision configuration cannot be added to the decoder
-specification, the specification fails and the session start reports
-the existing "decoder specification creation failed" error.
+specification, the patch logs its own error line ("Could not add the
+Dolby Vision configuration to the decoder specification"), the
+specification fails, and the existing "decoder specification creation
+failed" error follows, so two error lines are logged.
 
 Every other stream and codec is decoded as before. The Dolby Vision logic
 lives in its own file, videotoolbox_dovi.c. libavcodec now references
