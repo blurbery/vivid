@@ -5,9 +5,14 @@ name: Lucid Engine build
 # against the recorded build facts and packages static xcframeworks.
 # See docs/cores/lucid-engine-build.md.
 
+# Runs on the pipeline branch and on every engine implementer's branch
+# (experiment/lucid-engine-*). Each branch has its own concurrency group, so
+# a newer push cancels only that branch's running build.
 on:
   push:
-    branches: [experiment/lucid-engine-build]
+    branches:
+      - 'experiment/lucid-engine-build'
+      - 'experiment/lucid-engine-*'
     paths:
       - 'engine/**'
       - '.github/workflows/lucid-engine.yml'
