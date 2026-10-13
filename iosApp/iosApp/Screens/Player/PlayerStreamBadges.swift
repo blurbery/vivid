@@ -3,8 +3,12 @@ import Foundation
 /// Text for the player's Stream pills: the selected file's dynamic range and
 /// the codec of the audio track that's playing.
 ///
-/// The detail screens keep their own labels (`DetailPlaybackFormatting`,
-/// `TVDetailHero`, `TVFocusMarquee`), so nothing here changes what they show.
+/// The dynamic-range label names the file as it is, and every screen that has
+/// the file's video tracks shows the same one: the detail pages and version
+/// pickers (`DetailPlaybackFormatting`, `TVHeroMetadata`, `PhoneHeroMetadata`),
+/// the phone's Video range fact and Continue Watching in the Home focus info
+/// (`TVFocusMarquee`). Card overlays, catalogue summaries and downloads have
+/// no video tracks, so they keep their own DV and HDR marks.
 ///
 /// Where each provider's dynamic-range facts come from:
 ///
@@ -31,8 +35,10 @@ import Foundation
 ///   ("DV P8.1", "DV P8.2", "DV P8.4"), taken from the compatibility ID, a
 ///   "Profile 8.1" style label, or the `DOVIWith…` range type. Other profiles
 ///   show the profile number only ("DV P5", "DV P7"), even though Emby and
-///   Jellyfin name profile 7 as 7.6. Jellyfin's `DOVIInvalid` (Dolby Vision
-///   signalling outside the spec, played as its base layer) isn't shown as DV.
+///   Jellyfin name profile 7 as 7.6. Profile 7 stays "DV P7" although Lucid
+///   Engine plays it as 8.1; the player's stats show that output. Jellyfin's
+///   `DOVIInvalid` (Dolby Vision signalling outside the spec, played as its
+///   base layer) isn't shown as DV.
 /// - Otherwise "HDR10+", "HDR10" or "HLG" from the range type, the video
 ///   range, the HDR10+ flag or the colour transfer (PQ is "HDR10", ARIB
 ///   STD-B67 is "HLG").
@@ -40,14 +46,18 @@ import Foundation
 ///   badge for SDR.
 enum PlayerStreamBadges {
     static func dynamicRange(_ version: FileVersion) -> String? {
-        let tracks = version.videoTracks ?? []
+        dynamicRange(tracks: version.videoTracks ?? [], hdr: version.hdr)
+    }
+
+    /// The same label for chosen video tracks of a file whose HDR flag is `hdr`.
+    static func dynamicRange(tracks: [VideoTrack], hdr: Bool?) -> String? {
         if let dolbyVision = tracks.first(where: isDolbyVision) {
             return dolbyVisionProfile(dolbyVision).map { "DV P\($0)" } ?? "DV"
         }
         if let type = tracks.lazy.compactMap(hdrType).first {
             return type
         }
-        return version.hdr == true ? "HDR" : nil
+        return hdr == true ? "HDR" : nil
     }
 
     /// The codec the Info panel's Audio row shows for this track ("AC3",
@@ -118,8 +128,8 @@ enum PlayerStreamBadges {
             if value == "hlg" { return "HLG" }
         }
         let transfer = token(track.colorTransfer)
-        if transfer.contains("smpte2084") { return "HDR10" }
-        if transfer.contains("aribstdb67") { return "HLG" }
+        if transfer == "pq" || transfer.contains("2084") { return "HDR10" }
+        if transfer.contains("hlg") || transfer.contains("aribstdb67") { return "HLG" }
         return nil
     }
 

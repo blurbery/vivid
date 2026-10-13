@@ -210,7 +210,8 @@ struct DetailMediaSection: View {
         if let rate = clean(video?.frameRate) { add("Frame rate", "\(rate) fps") }
         add("Video bitrate", bitrate(video?.bitrate, useMbps: true))
         add("Overall bitrate", bitrate(file.bitrate, useMbps: true))
-        add("Video range", video?.videoRange ?? file.hdr.map { $0 ? "HDR" : "SDR" })
+        add("Video range", PlayerStreamBadges.dynamicRange(tracks: video.map { [$0] } ?? [], hdr: file.hdr)
+            ?? video?.videoRange ?? file.hdr.map { $0 ? "HDR" : "SDR" })
         add("Dolby Vision", video?.dolbyVision)
         if let depth = video?.bitDepth, depth > 0 { add("Bit depth", "\(depth) bit") }
         add("Color range", video?.colorRange)

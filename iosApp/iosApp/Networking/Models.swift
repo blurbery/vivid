@@ -833,8 +833,8 @@ struct VideoTrack: Codable, Identifiable, Hashable {
     let colorTransfer: String?
     let videoRange: String?
     let dolbyVision: String?
-    /// Dynamic-range details read only by the player's Stream pills
-    /// (`PlayerStreamBadges`). Silo sends `video_range_type`, `dv_profile`,
+    /// Dynamic-range details for the label the player and detail screens
+    /// show (`PlayerStreamBadges`). Silo sends `video_range_type`, `dv_profile`,
     /// `dv_bl_compat_id` and `hdr10_plus`; the Emby and Jellyfin adapters fill
     /// them from their own stream fields and leave `videoRange` and
     /// `dolbyVision` empty, as before.

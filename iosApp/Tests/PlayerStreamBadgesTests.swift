@@ -44,6 +44,8 @@ final class PlayerStreamBadgesTests: XCTestCase {
         // Files probed before `video_range_type` existed.
         XCTAssertEqual(siloRange(#""video_range": "HDR", "color_transfer": "smpte2084""#), "HDR10")
         XCTAssertEqual(siloRange(#""video_range": "HDR", "color_transfer": "arib-std-b67""#), "HLG")
+        XCTAssertEqual(siloRange(#""color_transfer": "pq""#), "HDR10")
+        XCTAssertEqual(siloRange(#""color_transfer": "hlg""#), "HLG")
     }
 
     func testHDRFallbackAndSDR() {
@@ -101,14 +103,24 @@ final class PlayerStreamBadgesTests: XCTestCase {
         XCTAssertNil(try embyRange(["VideoRange": "SDR", "ExtendedVideoType": "None", "ExtendedVideoSubtype": "None"]))
     }
 
-    func testProviderDolbyVisionLeavesTheDetailScreenLabelsAlone() throws {
+    func testDetailScreensShowTheSameLabelAsThePlayer() throws {
         let emby: FileVersion = try EmbyAdapter.decode(embyAdapter.version(source(["VideoRange": "Dolby Vision", "ExtendedVideoType": "DolbyVision", "ExtendedVideoSubtype": "DoviProfile81"])))
         let jellyfin: FileVersion = try JellyfinAdapter.decode(jellyfinAdapter.version(source(["VideoRange": "HDR", "VideoRangeType": "DOVIWithHDR10", "DvProfile": 8, "DvBlSignalCompatibilityId": 1])))
+        let silo = siloVersion(hdr: true, tracks: #"[{ "dolby_vision": "Profile 8", "dv_profile": 8, "dv_bl_compat_id": 1, "video_range": "DolbyVision" }]"#)
+        for version in [emby, jellyfin, silo] {
+            XCTAssertEqual(PlayerStreamBadges.dynamicRange(version), "DV P8.1")
+            XCTAssertEqual(DetailPlaybackFormatting.dynamicRangeLabel(version), "DV P8.1")
+            #if os(tvOS)
+            // One badge, not "DV" and "P8.1", and no separate HDR10 badge.
+            let badges = TVHeroMetadata.sourceBadges(version)
+            XCTAssertTrue(badges.contains("DV P8.1"), "\(badges)")
+            XCTAssertFalse(badges.contains { ["DV", "P8.1", "HDR10"].contains($0) }, "\(badges)")
+            #endif
+        }
+        // Emby and Jellyfin still leave these empty for the card overlays.
         for version in [emby, jellyfin] {
             XCTAssertNil(version.videoTracks?.first?.dolbyVision)
             XCTAssertNil(version.videoTracks?.first?.videoRange)
-            XCTAssertEqual(DetailPlaybackFormatting.dynamicRangeLabel(version), "HDR")
-            XCTAssertEqual(PlayerStreamBadges.dynamicRange(version), "DV P8.1")
         }
     }
 

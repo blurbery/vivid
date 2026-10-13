@@ -504,7 +504,7 @@ struct JellyfinAdapter {
         return value
     }
 
-    /// A video stream's dynamic range for the player's Stream pill (see
+    /// A video stream's dynamic range for the player and detail labels (see
     /// `PlayerStreamBadges`). Jellyfin's `VideoRangeType` is the vocabulary
     /// Silo shares (SDR, HDR10, HDR10Plus, HLG, DOVI, DOVIWithHDR10,
     /// DOVIWithHDR10Plus, DOVIWithSDR, DOVIWithHLG, DOVIWithEL,
@@ -512,8 +512,8 @@ struct JellyfinAdapter {
     /// Vision profile and `DvBlSignalCompatibilityId` its base-layer
     /// compatibility ID (1 for HDR10, 2 for SDR, 4 for HLG, 6 for Blu-ray).
     /// Values of the wrong type are skipped so they can't break decoding.
-    /// `videoRange` and `dolbyVision` stay empty because the detail screens
-    /// read them.
+    /// `videoRange` and `dolbyVision` stay empty so the card overlays and the
+    /// phone's Dolby Vision fact, which read them, show what they did before.
     static func dynamicRange(_ raw: [String: Any]) -> [String: Any] {
         var value: [String: Any] = [:]
         value["videoRangeType"] = raw["VideoRangeType"] as? String

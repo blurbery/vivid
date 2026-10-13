@@ -357,16 +357,18 @@ struct EmbyAdapter {
         return value
     }
 
-    /// A video stream's dynamic range for the player's Stream pill, in the
+    /// A video stream's dynamic range for the player and detail labels, in the
     /// words Silo and Jellyfin use (see `PlayerStreamBadges`).
     /// `ExtendedVideoType` is DolbyVision, Hdr10, Hdr10Plus, HyperLogGamma or
     /// None; servers that don't send it only have the display text in
     /// `VideoRange` ("Dolby Vision", "HDR 10", "SDR"). `ExtendedVideoSubtype`
     /// (spelt `ExtendedVideoSubType` in Emby's API reference) names Dolby
     /// Vision as `DoviProfile` plus the profile and the base-layer
-    /// compatibility ID, so "DoviProfile81" is profile 8 with ID 1 and
+    /// compatibility ID, always two digits ("DoviProfile02" to
+    /// "DoviProfile92"), so "DoviProfile81" is profile 8 with ID 1 and
     /// "DoviProfile76" is profile 7 with ID 6. `videoRange` and `dolbyVision`
-    /// stay empty because the detail screens read them.
+    /// stay empty so the card overlays and the phone's Dolby Vision fact,
+    /// which read them, show what they did before.
     static func dynamicRange(_ raw: [String: Any]) -> [String: Any] {
         var value: [String: Any] = [:]
         let rangeType: String?

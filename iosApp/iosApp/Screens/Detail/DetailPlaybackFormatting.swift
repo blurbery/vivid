@@ -621,11 +621,10 @@ enum DetailPlaybackFormatting {
         return codec.uppercased()
     }
 
+    /// "DV P8.1", "HDR10+", "HDR10", "HLG", "HDR" or nil for SDR, the same
+    /// label as the player's Stream pill (`PlayerStreamBadges`).
     static func dynamicRangeLabel(_ version: FileVersion) -> String? {
-        if (version.videoTracks ?? []).contains(where: { nonEmpty($0.dolbyVision) != nil }) {
-            return "DV"
-        }
-        return version.hdr == true ? "HDR" : nil
+        PlayerStreamBadges.dynamicRange(version)
     }
 
     static func normalizedAudioCodec(_ codec: String?) -> String? {
