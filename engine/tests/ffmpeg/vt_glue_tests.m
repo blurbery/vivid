@@ -58,9 +58,21 @@
  * decodes with hwdec-threads 4. Checks are counted; the run fails on any
  * failed check or when none ran.
  *
+ * Patch spec 13.2: the only way FFmpeg 0011 can fail to add the Dolby
+ * Vision configuration to the decoder specification is a failed allocation
+ * of the 24-byte configuration record (CFDataCreate in videotoolbox_dovi.c).
+ * This file also defines CFDataCreate and CMVideoFormatDescriptionCreate,
+ * which libavcodec binds to as it binds to the fake VideoToolbox, and both
+ * forward to the system's own functions. CFDataCreate counts every creation
+ * of the scenario's configuration record and fails the ones the scenario
+ * asks for, at hwaccel initialisation or at a forced restart;
+ * CMVideoFormatDescriptionCreate records every format description
+ * libavcodec makes.
+ *
  * argv[1]: main10-64x64.hevc; argv[2]: the assets/tests folder of libdovi.
  */
 
+#include <dlfcn.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -92,6 +104,8 @@
 /* ------------------------------------------------------------ counting */
 
 static int checks, failures;
+/* Checks made in the patch spec 13.2 scenarios, and their runs. */
+static int record_checks, record_runs;
 static const char *current = "";
 
 #define CHECK(cond, ...) check(!!(cond), __LINE__, __VA_ARGS__)
@@ -127,6 +141,16 @@ static void fourcc(CMVideoCodecType t, char out[5])
 #define MAX_SAMPLES 64
 #define MAX_PROPS   16
 #define MAX_BUFFERS 64
+#define MAX_EVENTS  32
+#define RECORD_SIZE 24
+
+/* The order of what a session start does, for the 13.2 scenarios. */
+enum {
+    EV_RECORD = 'R',            /* the configuration record was created */
+    EV_RECORD_FAILED = 'X',     /* its creation was failed on purpose */
+    EV_FORMAT = 'F',            /* a format description was made */
+    EV_CREATE = 'C',            /* VTDecompressionSessionCreate was called */
+};
 
 typedef struct FakeCreate {
     CMVideoCodecType codec;          /* of the format description */
@@ -177,6 +201,17 @@ static struct {
     FakeBuffer buffers[MAX_BUFFERS];
     int nb_buffers;
     int overflow, bad_session;
+    /* configuration record allocations (13.2) */
+    uint8_t record[RECORD_SIZE];        /* the record the scenario expects */
+    int fail_record_from;               /* fail the n-th creation and later, 0 never */
+    int nb_records, nb_record_failures;
+    /* format descriptions */
+    CMVideoCodecType formats[MAX_CREATES];
+    int nb_formats;
+    /* get_format() calls, and how many chose VideoToolbox */
+    int nb_get_format, nb_get_format_hw;
+    char events[MAX_EVENTS];
+    int nb_events;
 } vt;
 
 static CFStringRef const kSerialKey = CFSTR("LucidFakeBufferSerial");
@@ -204,6 +239,15 @@ static void fake_reset(void)
         CFRelease(vt.buffers[i].propagate);
     memset(&vt, 0, sizeof(vt));
     vt.null_image_at = -1;
+}
+
+/* Called with vt_lock held. */
+static void add_event(char event)
+{
+    if (vt.nb_events < MAX_EVENTS)
+        vt.events[vt.nb_events++] = event;
+    else
+        vt.overflow = 1;
 }
 
 static int session_id(CFTypeRef session)
@@ -234,6 +278,7 @@ OSStatus VTDecompressionSessionCreate(CFAllocatorRef allocator,
         pthread_mutex_unlock(&vt_lock);
         return kVTVideoDecoderMalfunctionErr;
     }
+    add_event(EV_CREATE);
     status = vt.nb_creates < vt.nb_create_script ? vt.create_script[vt.nb_creates] : noErr;
     c = &vt.creates[vt.nb_creates++];
     c->codec      = CMFormatDescriptionGetMediaSubType(format);
@@ -429,6 +474,65 @@ OSStatus VTDecompressionSessionDecodeFrame(VTDecompressionSessionRef session,
     return noErr;
 }
 
+/* ------------------------------- configuration record and format descriptions */
+
+typedef CFDataRef (*DataCreateFn)(CFAllocatorRef, const UInt8 *, CFIndex);
+typedef OSStatus (*FormatCreateFn)(CFAllocatorRef, CMVideoCodecType, int32_t, int32_t,
+                                   CFDictionaryRef, CMVideoFormatDescriptionRef *);
+
+/* The system's own function of that name: the next definition after this
+ * executable's, which is CoreFoundation's or CoreMedia's. */
+static void *system_function(const char *name)
+{
+    void *fn = dlsym(RTLD_NEXT, name);
+
+    if (!fn) {
+        fprintf(stderr, "cannot find the system's %s\n", name);
+        abort();
+    }
+    return fn;
+}
+
+CFDataRef CFDataCreate(CFAllocatorRef allocator, const UInt8 *bytes, CFIndex length)
+{
+    static DataCreateFn system_create;
+    int fail = 0;
+
+    pthread_mutex_lock(&vt_lock);
+    if (!system_create)
+        system_create = (DataCreateFn)system_function("CFDataCreate");
+    /* Only the scenario's own record: 24 bytes equal to the record the
+     * scenario expects. Nothing else libavcodec or this file creates is
+     * that. */
+    if (vt.fail_record_from && length == RECORD_SIZE && bytes &&
+        !memcmp(bytes, vt.record, RECORD_SIZE)) {
+        vt.nb_records++;
+        fail = vt.nb_records >= vt.fail_record_from;
+        vt.nb_record_failures += fail;
+        add_event(fail ? EV_RECORD_FAILED : EV_RECORD);
+    }
+    pthread_mutex_unlock(&vt_lock);
+    return fail ? NULL : system_create(allocator, bytes, length);
+}
+
+OSStatus CMVideoFormatDescriptionCreate(CFAllocatorRef allocator, CMVideoCodecType codec,
+                                        int32_t width, int32_t height, CFDictionaryRef extensions,
+                                        CMVideoFormatDescriptionRef *out)
+{
+    static FormatCreateFn system_create;
+
+    pthread_mutex_lock(&vt_lock);
+    if (!system_create)
+        system_create = (FormatCreateFn)system_function("CMVideoFormatDescriptionCreate");
+    if (vt.nb_formats < MAX_CREATES)
+        vt.formats[vt.nb_formats++] = codec;
+    else
+        vt.overflow = 1;
+    add_event(EV_FORMAT);
+    pthread_mutex_unlock(&vt_lock);
+    return system_create(allocator, codec, width, height, extensions, out);
+}
+
 /* --------------------------------------------------------------- av_log */
 
 #define MAX_LOG 512
@@ -468,6 +572,15 @@ static int count_logs(int level, const char *needle)
     for (int i = 0; i < nb_logs && i < MAX_LOG; i++)
         n += logs[i].level == level && strstr(logs[i].text, needle) != NULL;
     return n;
+}
+
+/* The index of the n-th (0-based) line at that level containing needle, or -1. */
+static int find_log(int level, const char *needle, int n)
+{
+    for (int i = 0; i < nb_logs && i < MAX_LOG; i++)
+        if (logs[i].level == level && strstr(logs[i].text, needle) && n-- == 0)
+            return i;
+    return -1;
 }
 
 /* ------------------------------------------------------------- inputs */
@@ -591,6 +704,10 @@ typedef struct Scenario {
     int nb_create_script;
     OSStatus prop_status;
     int null_image_at;
+    /* 13.2: fail the n-th creation of the configuration record and every
+     * later one (1: at hwaccel initialisation; 2: at the restart that
+     * null_image_at forces); 0 never */
+    int fail_record_at;
     /* expectations */
     int dv;                             /* the first attempt is a 'dvh1' session */
     int final_dvh1;                     /* the session that decodes is 'dvh1' */
@@ -644,15 +761,21 @@ static AVPacket *inject(const Scenario *sc, int au, const Nal *first, const Nal 
 
 static enum AVPixelFormat get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmts)
 {
+    enum AVPixelFormat chosen = AV_PIX_FMT_NONE;
+
     (void)avctx;
-    for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++)
+    for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE && chosen == AV_PIX_FMT_NONE; p++)
         if (*p == AV_PIX_FMT_VIDEOTOOLBOX)
-            return *p;
+            chosen = *p;
     /* VideoToolbox could not be set up: decode in software, as mpv does. */
-    for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++)
+    for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE && chosen == AV_PIX_FMT_NONE; p++)
         if (!(av_pix_fmt_desc_get(*p)->flags & AV_PIX_FMT_FLAG_HWACCEL))
-            return *p;
-    return AV_PIX_FMT_NONE;
+            chosen = *p;
+    pthread_mutex_lock(&vt_lock);
+    vt.nb_get_format++;
+    vt.nb_get_format_hw += chosen == AV_PIX_FMT_VIDEOTOOLBOX;
+    pthread_mutex_unlock(&vt_lock);
+    return chosen;
 }
 
 /* ------------------------------------------------- attachment comparison */
@@ -899,110 +1022,10 @@ static void check_create(const FakeCreate *c, const Scenario *sc, int dv)
     }
 }
 
-static void run(const Scenario *sc, int threads, const char *assets)
+/* The checks of every scenario that does not fail the configuration
+ * record. */
+static void check_outcome(const Scenario *sc, int frames, int hw_frames, int errors)
 {
-    char name[128];
-    AVCodecContext *avctx;
-    AVBufferRef *device = NULL;
-    AVFrame *frame = av_frame_alloc();
-    Nal first = { 0 }, second = { 0 }, converted_first = { 0 }, converted_second = { 0 };
-    int frames = 0, hw_frames = 0, errors = 0, ret;
-    int converted = sc->record && sc->profile == 7;
-
-    snprintf(name, sizeof(name), "%s, %d thread%s", sc->name, threads, threads == 1 ? "" : "s");
-    current = name;
-    fake_reset();
-    nb_logs = 0;
-    for (int i = 0; i < sc->nb_create_script; i++)
-        vt.create_script[i] = sc->create_script[i];
-    vt.nb_create_script = sc->nb_create_script;
-    vt.prop_status      = sc->prop_status;
-    vt.null_image_at    = sc->null_image_at;
-
-    /* What VideoToolbox must receive after each access unit's slices. */
-    if (sc->rpu)
-        first = rpu_asset(assets, sc->rpu);
-    if (sc->second_rpu)
-        second = rpu_asset(assets, sc->second_rpu);
-    if (converted) {
-        converted_first = libdovi_convert(&first);
-        CHECK(converted_first.size > 2, "libdovi converts %s", sc->rpu);
-    }
-    if (converted && sc->second_rpu)
-        converted_second = libdovi_convert(&second);
-    for (int au = 0; au < nb_aus; au++) {
-        expected_rpus[au] = 0;
-        if (!sc->rpu || au == sc->guard_at)
-            ;
-        else
-            expected_rpu[au][expected_rpus[au]++] = converted ? converted_first : first;
-        if (sc->second_rpu && au == 2)
-            expected_rpu[au][expected_rpus[au]++] = converted ? converted_second : second;
-    }
-
-    avctx = avcodec_alloc_context3(avcodec_find_decoder(AV_CODEC_ID_HEVC));
-    if (sc->record) {
-        AVPacketSideData *sd = av_packet_side_data_new(&avctx->coded_side_data,
-                                                       &avctx->nb_coded_side_data,
-                                                       AV_PKT_DATA_DOVI_CONF,
-                                                       sizeof(AVDOVIDecoderConfigurationRecord), 0);
-        AVDOVIDecoderConfigurationRecord *rec = (AVDOVIDecoderConfigurationRecord *)sd->data;
-        memset(rec, 0, sizeof(*rec));
-        rec->dv_version_major              = 1;
-        rec->dv_version_minor              = 0;
-        rec->dv_profile                    = sc->profile;
-        rec->dv_level                      = sc->level;
-        rec->rpu_present_flag              = 1;
-        rec->el_present_flag               = sc->el_flag;
-        rec->bl_present_flag               = 1;
-        rec->dv_bl_signal_compatibility_id = sc->compat;
-        rec->dv_md_compression             = sc->compression;
-    }
-    if (av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, NULL, NULL, 0) < 0)
-        abort();
-    avctx->hw_device_ctx = av_buffer_ref(device);
-    avctx->get_format    = get_format;
-    avctx->thread_count  = threads;
-    avctx->thread_type   = FF_THREAD_FRAME;
-    if (avcodec_open2(avctx, NULL, NULL) < 0)
-        abort();
-
-    /* Every access unit, then a flush; frames are taken whenever the
-     * decoder has them, and always before a packet is sent again. */
-    for (int au = 0, eof = 0; au <= nb_aus && !eof; au++) {
-        AVPacket *pkt = au < nb_aus ? inject(sc, au, &first, &second) : NULL;
-        int sent = 0;
-
-        while (!sent && !eof) {
-            ret = avcodec_send_packet(avctx, pkt);
-            sent = ret != AVERROR(EAGAIN);
-            if (ret < 0 && sent)
-                errors++;
-            while ((ret = avcodec_receive_frame(avctx, frame)) != AVERROR(EAGAIN)) {
-                if (ret == AVERROR_EOF) {
-                    eof = 1;
-                    break;
-                }
-                if (ret < 0) {
-                    errors++;
-                    continue;
-                }
-                frames++;
-                if (frame->format == AV_PIX_FMT_VIDEOTOOLBOX) {
-                    hw_frames++;
-                    @autoreleasepool {
-                        check_frame_attachments(frame, sc->final_dvh1);
-                    }
-                }
-                av_frame_unref(frame);
-            }
-        }
-        av_packet_free(&pkt);
-    }
-    avcodec_free_context(&avctx);
-    av_buffer_unref(&device);
-    av_frame_free(&frame);
-
     /* Sessions. */
     CHECK(!vt.overflow && !vt.bad_session, "fake records complete, every sample on a live session");
     if (sc->refused) {
@@ -1106,6 +1129,287 @@ static void run(const Scenario *sc, int threads, const char *assets)
         for (size_t k = 0; k < sizeof(fault_substrings) / sizeof(*fault_substrings); k++)
             CHECK(!strstr(logs[i].text, fault_substrings[k]), "line has a fault substring: %s", logs[i].text);
     }
+}
+
+/* Every line a 13.2 scenario may log, at its level, with how often. */
+typedef struct ExpectedLine {
+    int level;
+    const char *text;                   /* a substring of the line */
+    int min, max;
+    int seen;
+} ExpectedLine;
+
+#define LINE_PATH        "opening a Dolby Vision HEVC session"
+#define LINE_RECORD      "Could not add the Dolby Vision configuration to the decoder specification"
+#define LINE_SPEC        "decoder specification creation failed"
+#define LINE_SETUP       "Failed setup for format videotoolbox_vld: hwaccel initialisation returned error."
+#define LINE_NO_IMAGE    "vt decoder cb: output image buffer is null: -12909, reconfig 1"
+#define LINE_RESTART     "VideoToolbox decoder needs reconfig, restarting.."
+#define LINE_HW_FAILED   "hardware accelerator failed to decode picture"
+#define LINE_NO_FRAME    "No frame decoded?"
+#define LINE_SKIP_EL     "Skipping NAL unit 63"
+
+/* Patch spec 13.2: a Dolby Vision session start whose configuration record
+ * cannot be created, so the configuration cannot be added to the decoder
+ * specification. At hwaccel initialisation (fail_record_at 1) the hwaccel
+ * fails to open and the stream decodes in software; at the restart that an
+ * image-less callback forces (fail_record_at 2) that frame and every later
+ * one fail, with no further start. */
+static void check_record_failure(const Scenario *sc, int threads, int frames, int hw_frames,
+                                 int errors)
+{
+    int at_init = sc->fail_record_at == 1;
+    int starts = at_init ? 1 : 2;                       /* Dolby Vision session starts */
+    int failing = at_init ? 0 : nb_aus - sc->null_image_at;
+    const char *events = at_init ? "X" : "RFCX";
+    ExpectedLine expected[] = {
+        { AV_LOG_VERBOSE, LINE_PATH,      starts, starts },
+        { AV_LOG_ERROR,   LINE_RECORD,    1, 1 },
+        { AV_LOG_ERROR,   LINE_SPEC,      1, 1 },
+        { AV_LOG_ERROR,   LINE_SETUP,     at_init, at_init },
+        { AV_LOG_WARNING, LINE_NO_IMAGE,  !at_init, !at_init },
+        { AV_LOG_VERBOSE, LINE_RESTART,   !at_init, !at_init },
+        /* Every frame from the image-less one on fails at its end. */
+        { AV_LOG_ERROR,   LINE_HW_FAILED, failing, failing },
+        /* A failed frame that is still output fails again there. With one
+         * thread every one is; with frame threading pristine FFmpeg drops
+         * some failed frames before output (3 of the 6 at 4 threads). */
+        { AV_LOG_ERROR,   LINE_NO_FRAME,  threads == 1 ? failing : !at_init, failing },
+        /* hevcdec's own line for profile 7's enhancement layer, once per
+         * access unit whatever decodes it (FFmpeg 0012 logs it at verbose). */
+        { AV_LOG_VERBOSE, LINE_SKIP_EL,   sc->el_nal ? nb_aus : 0, sc->el_nal ? nb_aus : 0 },
+    };
+    const size_t nb_expected = sizeof(expected) / sizeof(*expected);
+    int path, record, spec;
+
+    CHECK(sc->record && sc->dv && (at_init || (sc->fail_record_at == 2 && sc->null_image_at >= 0)),
+          "13.2 scenario set up");
+    CHECK(!vt.overflow && !vt.bad_session, "fake records complete, every sample on a live session");
+
+    /* What each session start did, in order: the record, then the format
+     * description, then the session. A failed record ends the start. */
+    CHECK(vt.nb_records == starts, "%d configuration records attempted, one per start (%d)",
+          starts, vt.nb_records);
+    CHECK(vt.nb_record_failures == 1, "exactly one record creation failed (%d)", vt.nb_record_failures);
+    CHECK(vt.nb_events == (int)strlen(events) && !memcmp(vt.events, events, strlen(events)),
+          "start sequence %s (got %.*s)", events, vt.nb_events, vt.events);
+    CHECK(vt.nb_formats == starts - 1, "%d format descriptions (%d)", starts - 1, vt.nb_formats);
+    CHECK(vt.nb_creates == starts - 1, "%d session creations (%d)", starts - 1, vt.nb_creates);
+    for (int i = 0; i < vt.nb_formats && i < MAX_CREATES; i++)
+        CHECK(vt.formats[i] == CODEC_DVH1, "format description %d is 'dvh1', no plain HEVC", i);
+    if (vt.nb_creates == 1) {
+        check_create(&vt.creates[0], sc, 1);
+        CHECK(vt.creates[0].status == noErr, "the first session was created");
+    }
+    CHECK(count_logs(AV_LOG_WARNING, "refused the Dolby Vision HEVC session") == 0,
+          "no plain HEVC retry warning");
+
+    /* Session properties and invalidation: only the session that existed. */
+    if (at_init) {
+        CHECK(vt.nb_props == 0, "no session properties (%d)", vt.nb_props);
+        CHECK(vt.nb_invalidated == 0, "no session to invalidate (%d)", vt.nb_invalidated);
+    } else {
+        int per_session = 1;
+        if (@available(macOS 14.0, *))
+            per_session = 2;
+        CHECK(vt.nb_props == per_session, "%d properties on the first session (%d)", per_session,
+              vt.nb_props);
+        for (int i = 0; i < vt.nb_props; i++)
+            CHECK(vt.props[i].session == 1, "property %d on session 1 (%d)", i, vt.props[i].session);
+        CHECK(vt.nb_invalidated == 1 && vt.invalidated[0] == 1,
+              "the first session invalidated once, by the restart (%d)", vt.nb_invalidated);
+    }
+
+    /* Decoding: software after a failed initialisation; after a failed
+     * restart, no further sample and every later frame failed. */
+    if (at_init) {
+        CHECK(vt.nb_get_format == 2 && vt.nb_get_format_hw == 1,
+              "VideoToolbox chosen, then software once its set-up failed (%d calls, %d VideoToolbox)",
+              vt.nb_get_format, vt.nb_get_format_hw);
+        CHECK(vt.nb_samples == 0, "no sample reaches VideoToolbox (%d)", vt.nb_samples);
+        CHECK(frames == nb_aus && hw_frames == 0, "%d software frames (%d from VideoToolbox)",
+              frames, hw_frames);
+        CHECK(errors == 0, "no decoding errors (%d)", errors);
+    } else {
+        CHECK(vt.nb_get_format == 1 && vt.nb_get_format_hw == 1,
+              "VideoToolbox chosen once (%d calls, %d VideoToolbox)", vt.nb_get_format,
+              vt.nb_get_format_hw);
+        CHECK(vt.nb_samples == sc->null_image_at + 1, "%d samples, none after the failed restart (%d)",
+              sc->null_image_at + 1, vt.nb_samples);
+        for (int i = 0; i < vt.nb_samples && i < nb_aus; i++) {
+            const FakeSample *s = &vt.samples[i];
+            CHECK(s->codec == CODEC_DVH1 && s->session == 1, "sample %d on the first 'dvh1' session", i);
+            check_sample(s, i, 1);
+        }
+        CHECK(hw_frames == frames && frames == sc->null_image_at,
+              "%d VideoToolbox frames before the image-less one (%d of %d)", sc->null_image_at,
+              hw_frames, frames);
+        /* Each failed frame fails once at its end and once more for each
+         * output of it, which logs "No frame decoded?". */
+        CHECK(errors == failing + count_logs(AV_LOG_ERROR, LINE_NO_FRAME),
+              "%d decoding errors: one per failed frame, one per failed output (%d)",
+              failing + count_logs(AV_LOG_ERROR, LINE_NO_FRAME), errors);
+    }
+
+    /* The log: exactly the expected lines, no other at any level up to
+     * verbose, and none with a fault substring. */
+    for (int i = 0; i < nb_logs && i < MAX_LOG; i++) {
+        size_t k;
+        for (k = 0; k < nb_expected; k++)
+            if (expected[k].level == logs[i].level && strstr(logs[i].text, expected[k].text))
+                break;
+        if (k < nb_expected)
+            expected[k].seen++;
+        else
+            CHECK(0, "unexpected line (level %d): %s", logs[i].level, logs[i].text);
+        for (size_t f = 0; f < sizeof(fault_substrings) / sizeof(*fault_substrings); f++)
+            CHECK(!strstr(logs[i].text, fault_substrings[f]), "line has a fault substring: %s",
+                  logs[i].text);
+    }
+    CHECK(nb_logs <= MAX_LOG, "every line kept (%d)", nb_logs);
+    for (size_t k = 0; k < nb_expected; k++)
+        CHECK(expected[k].seen >= expected[k].min && expected[k].seen <= expected[k].max,
+              "\"%s\" logged %d to %d times at level %d (%d)", expected[k].text, expected[k].min,
+              expected[k].max, expected[k].level, expected[k].seen);
+
+    /* The failed start's own order: its path line, the new line, then
+     * pristine's specification error; then, at initialisation, the set-up
+     * error. At a restart, the image-less frame comes first. */
+    path   = find_log(AV_LOG_VERBOSE, LINE_PATH, starts - 1);
+    record = find_log(AV_LOG_ERROR, LINE_RECORD, 0);
+    spec   = find_log(AV_LOG_ERROR, LINE_SPEC, 0);
+    CHECK(path >= 0 && record > path && spec > record,
+          "path line, then the new line, then the specification error (%d, %d, %d)", path, record, spec);
+    if (at_init) {
+        CHECK(find_log(AV_LOG_ERROR, LINE_SETUP, 0) > spec, "then the hwaccel set-up error");
+    } else {
+        int no_image = find_log(AV_LOG_WARNING, LINE_NO_IMAGE, 0);
+        int restart = find_log(AV_LOG_VERBOSE, LINE_RESTART, 0);
+        CHECK(no_image >= 0 && restart > no_image && path > restart,
+              "the image-less frame, then the restart, then the failed start (%d, %d, %d)",
+              no_image, restart, path);
+    }
+}
+
+static void run(const Scenario *sc, int threads, const char *assets)
+{
+    char name[128];
+    AVCodecContext *avctx;
+    AVBufferRef *device = NULL;
+    AVFrame *frame = av_frame_alloc();
+    Nal first = { 0 }, second = { 0 }, converted_first = { 0 }, converted_second = { 0 };
+    int frames = 0, hw_frames = 0, errors = 0, ret;
+    int converted = sc->record && sc->profile == 7;
+
+    int checks_before = checks;
+
+    snprintf(name, sizeof(name), "%s, %d thread%s", sc->name, threads, threads == 1 ? "" : "s");
+    current = name;
+    fake_reset();
+    nb_logs = 0;
+    for (int i = 0; i < sc->nb_create_script; i++)
+        vt.create_script[i] = sc->create_script[i];
+    vt.nb_create_script = sc->nb_create_script;
+    vt.prop_status      = sc->prop_status;
+    vt.null_image_at    = sc->null_image_at;
+    if (sc->fail_record_at) {
+        /* The 24-byte record FFmpeg writes for this stream (13.2). */
+        memcpy(vt.record, sc->record_bytes, sizeof(sc->record_bytes));
+        vt.fail_record_from = sc->fail_record_at;
+    }
+
+    /* What VideoToolbox must receive after each access unit's slices. */
+    if (sc->rpu)
+        first = rpu_asset(assets, sc->rpu);
+    if (sc->second_rpu)
+        second = rpu_asset(assets, sc->second_rpu);
+    if (converted) {
+        converted_first = libdovi_convert(&first);
+        CHECK(converted_first.size > 2, "libdovi converts %s", sc->rpu);
+    }
+    if (converted && sc->second_rpu)
+        converted_second = libdovi_convert(&second);
+    for (int au = 0; au < nb_aus; au++) {
+        expected_rpus[au] = 0;
+        if (!sc->rpu || au == sc->guard_at)
+            ;
+        else
+            expected_rpu[au][expected_rpus[au]++] = converted ? converted_first : first;
+        if (sc->second_rpu && au == 2)
+            expected_rpu[au][expected_rpus[au]++] = converted ? converted_second : second;
+    }
+
+    avctx = avcodec_alloc_context3(avcodec_find_decoder(AV_CODEC_ID_HEVC));
+    if (sc->record) {
+        AVPacketSideData *sd = av_packet_side_data_new(&avctx->coded_side_data,
+                                                       &avctx->nb_coded_side_data,
+                                                       AV_PKT_DATA_DOVI_CONF,
+                                                       sizeof(AVDOVIDecoderConfigurationRecord), 0);
+        AVDOVIDecoderConfigurationRecord *rec = (AVDOVIDecoderConfigurationRecord *)sd->data;
+        memset(rec, 0, sizeof(*rec));
+        rec->dv_version_major              = 1;
+        rec->dv_version_minor              = 0;
+        rec->dv_profile                    = sc->profile;
+        rec->dv_level                      = sc->level;
+        rec->rpu_present_flag              = 1;
+        rec->el_present_flag               = sc->el_flag;
+        rec->bl_present_flag               = 1;
+        rec->dv_bl_signal_compatibility_id = sc->compat;
+        rec->dv_md_compression             = sc->compression;
+    }
+    if (av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, NULL, NULL, 0) < 0)
+        abort();
+    avctx->hw_device_ctx = av_buffer_ref(device);
+    avctx->get_format    = get_format;
+    avctx->thread_count  = threads;
+    avctx->thread_type   = FF_THREAD_FRAME;
+    if (avcodec_open2(avctx, NULL, NULL) < 0)
+        abort();
+
+    /* Every access unit, then a flush; frames are taken whenever the
+     * decoder has them, and always before a packet is sent again. */
+    for (int au = 0, eof = 0; au <= nb_aus && !eof; au++) {
+        AVPacket *pkt = au < nb_aus ? inject(sc, au, &first, &second) : NULL;
+        int sent = 0;
+
+        while (!sent && !eof) {
+            ret = avcodec_send_packet(avctx, pkt);
+            sent = ret != AVERROR(EAGAIN);
+            if (ret < 0 && sent)
+                errors++;
+            while ((ret = avcodec_receive_frame(avctx, frame)) != AVERROR(EAGAIN)) {
+                if (ret == AVERROR_EOF) {
+                    eof = 1;
+                    break;
+                }
+                if (ret < 0) {
+                    errors++;
+                    continue;
+                }
+                frames++;
+                if (frame->format == AV_PIX_FMT_VIDEOTOOLBOX) {
+                    hw_frames++;
+                    @autoreleasepool {
+                        check_frame_attachments(frame, sc->final_dvh1);
+                    }
+                }
+                av_frame_unref(frame);
+            }
+        }
+        av_packet_free(&pkt);
+    }
+    avcodec_free_context(&avctx);
+    av_buffer_unref(&device);
+    av_frame_free(&frame);
+
+    if (sc->fail_record_at)
+        check_record_failure(sc, threads, frames, hw_frames, errors);
+    else
+        check_outcome(sc, frames, hw_frames, errors);
+    if (sc->fail_record_at) {
+        record_checks += checks - checks_before;
+        record_runs++;
+    }
 
     free(first.data);
     free(second.data);
@@ -1154,6 +1458,30 @@ int main(int argc, char **argv)
               .rpu = "profile5.bin", .guard_at = -1, .null_image_at = -1,
               .create_script = { STATUS_UNSUPPORTED_FORMAT }, .nb_create_script = 1,
               .dv = 1, .refused = 1, .record_bytes = { 1, 0, 0x0a, 0x35, 0x00 }, .atom = "dvcC" },
+            /* Patch spec 13.2: the configuration record cannot be created. */
+            { .name = "profile 5, no configuration record at hwaccel initialisation", .record = 1,
+              .profile = 5, .level = 6, .rpu = "profile5.bin", .guard_at = -1, .null_image_at = -1,
+              .fail_record_at = 1, .dv = 1, .record_bytes = { 1, 0, 0x0a, 0x35, 0x00 }, .atom = "dvcC" },
+            { .name = "profile 5, no configuration record at a forced restart", .record = 1,
+              .profile = 5, .level = 6, .rpu = "profile5.bin", .guard_at = -1, .null_image_at = 2,
+              .fail_record_at = 2, .dv = 1, .final_dvh1 = 1, .record_bytes = { 1, 0, 0x0a, 0x35, 0x00 },
+              .atom = "dvcC" },
+            { .name = "profile 7 FEL, no configuration record at hwaccel initialisation", .record = 1,
+              .profile = 7, .level = 6, .compat = 6, .el_flag = 1, .rpu = "fel_orig.bin", .el_nal = 1,
+              .guard_at = -1, .null_image_at = -1, .fail_record_at = 1, .dv = 1,
+              .record_bytes = { 1, 0, 0x10, 0x35, 0x10 }, .atom = "dvvC", .colour = 1 },
+            { .name = "profile 7 FEL, no configuration record at a forced restart", .record = 1,
+              .profile = 7, .level = 6, .compat = 6, .el_flag = 1, .rpu = "fel_orig.bin", .el_nal = 1,
+              .guard_at = -1, .null_image_at = 2, .fail_record_at = 2, .dv = 1, .final_dvh1 = 1,
+              .record_bytes = { 1, 0, 0x10, 0x35, 0x10 }, .atom = "dvvC", .colour = 1 },
+            { .name = "profile 8.1, no configuration record at hwaccel initialisation", .record = 1,
+              .profile = 8, .level = 6, .compat = 1, .rpu = "profile8.bin", .guard_at = -1,
+              .null_image_at = -1, .fail_record_at = 1, .dv = 1,
+              .record_bytes = { 1, 0, 0x10, 0x35, 0x10 }, .atom = "dvvC", .colour = 1 },
+            { .name = "profile 8.1, no configuration record at a forced restart", .record = 1,
+              .profile = 8, .level = 6, .compat = 1, .rpu = "profile8.bin", .guard_at = -1,
+              .null_image_at = 2, .fail_record_at = 2, .dv = 1, .final_dvh1 = 1,
+              .record_bytes = { 1, 0, 0x10, 0x35, 0x10 }, .atom = "dvvC", .colour = 1 },
         };
         static const int thread_counts[] = { 1, 4 };
 
@@ -1171,8 +1499,9 @@ int main(int argc, char **argv)
         for (int i = 0; i < nb_aus; i++)
             av_packet_free(&aus[i]);
     }
-    printf("VideoToolbox glue tests (host libavcodec, fake VideoToolbox): %d checks, %d failed\n",
-           checks, failures);
+    printf("VideoToolbox glue tests (host libavcodec, fake VideoToolbox): %d checks, %d failed "
+           "(patch spec 13.2 scenarios: %d of them, in %d runs)\n",
+           checks, failures, record_checks, record_runs);
     if (!checks) {
         fprintf(stderr, "no checks ran\n");
         return 1;
