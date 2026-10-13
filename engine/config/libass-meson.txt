@@ -1,4 +1,4 @@
-# libass 0.17.5 meson options (facts 2.3), upstream and unpatched (facts 3.5).
+# libass 0.17.5 meson options (facts 2.3), built with the series in engine/patches/libass.
 # -Dasm=enabled is the arm64 value; an x86_64 slice would need -Dasm=disabled.
 
 -Dasm=enabled

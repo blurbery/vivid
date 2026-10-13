@@ -1,0 +1,307 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] render: keep unresolved glyphs per event and refresh them
+ after new fallback faces
+
+Applies to libass 0.17.5 after patches 0001 and 0002, and changes only
+the event render cache that 0002 adds and the counters it needs.
+
+- Output with glyphs that no font face could provide is never shared
+  between events. A glyph counts as unresolved when ass_font_get_index()
+  ends without a glyph for a printable character, after its fallback
+  search. The shared cache entry for such output only records that, and
+  each event keeps its own entry, under an owner id held in its
+  ASS_RenderPriv and the number of fallback faces added to any font when
+  its render started. Another event with the same text therefore renders
+  its own text once, with the faces that exist then, instead of
+  inheriting missing glyphs.
+- Once any font gains a fallback face, each such event is rendered once
+  more on its next frame (on the same frame if it is rendered after the
+  face was added), so glyphs the new face covers appear when unpatched
+  libass shows them. That costs at most one extra render, and one change
+  report, per added face, and nothing while no faces are added. An event
+  whose glyphs cannot be resolved is not searched for again on later
+  frames. Entries without unresolved glyphs are shared and kept as
+  before: a new face is appended, so glyphs that were found keep their
+  face.
+- The cache key includes the event's Effect field. Without it an event
+  with a Banner or Scroll effect could reuse the static output of an
+  earlier event with the same text, and stand still.
+- The cache is emptied whenever the state generation changes, because
+  entries of an older generation can never match again. 0002 already
+  empties it when the renderer is reconfigured; this also releases it
+  after changes that only change the generation, such as the shaper, line
+  spacing, margin use or the track's styles. The 32 MiB budget of 0002
+  still bounds it in between.
+- Image clones copy the type of the image they clone, which 0002 leaves
+  unset.
+
+Everything else behaves as with 0002: static output that has not changed
+is reported unchanged, and every real change is reported with the same
+value as before.
+
+Licence: ISC, like libass.
+
+Copyright (c) 2026 blurbery
+
+Permission to use, copy, modify, and distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+---
+diff --git a/libass/ass_cache.c b/libass/ass_cache.c
+--- a/libass/ass_cache.c
++++ b/libass/ass_cache.c
+@@ -335,7 +335,12 @@
+ 
+     *d = *s;
+     d->text.str = ass_copy_string(s->text);
+-    return d->text.str;
++    d->effect.str = ass_copy_string(s->effect);
++    if (d->text.str && d->effect.str)
++        return true;
++    free((char *) d->text.str);
++    free((char *) d->effect.str);
++    return false;
+ }
+ 
+ static void event_render_destruct(void *key, void *value)
+@@ -344,6 +349,7 @@
+     EventRenderHashValue *v = value;
+     ass_frame_unref(v->imgs);
+     free((char *) k->text.str);
++    free((char *) k->effect.str);
+ }
+ 
+ size_t ass_event_render_construct(void *key, void *value, void *priv);
+diff --git a/libass/ass_cache.h b/libass/ass_cache.h
+--- a/libass/ass_cache.h
++++ b/libass/ass_cache.h
+@@ -45,7 +45,8 @@
+ typedef struct {
+     bool valid;             // false: the event renders to nothing
+     bool time_dependent;    // never cached, always rendered fresh
+-    ASS_Image *imgs;        // ref-held rendered image list (pre-collision)
++    bool unresolved;        // has glyphs that no font face could provide
++    ASS_Image *imgs;      // ref-held rendered image list (pre-collision)
+     int top, height, left, width;
+     int detect_collisions;
+     int shift_direction;
+diff --git a/libass/ass_cache_template.h b/libass/ass_cache_template.h
+--- a/libass/ass_cache_template.h
++++ b/libass/ass_cache_template.h
+@@ -136,13 +136,22 @@
+ // its content is duplicated when inserted; the copy is freed when dropped
+ // state_generation identifies an exact snapshot of all renderer settings
+ // and track/style state that the rendered output depends on
++// effect is the event's Effect field, a view like text: a Banner or Scroll
++// effect makes the same text time-dependent
++// owner is 0 for an entry any event may use; output with glyphs that no
++// font face could provide is kept only in entries owned by the event that
++// rendered it, valid while font_epoch equals the number of fallback faces
++// added to fonts so far
+ START(event_render, event_render_hash_key)
+     STRING(text)
++    STRING(effect)
+     GENERIC(uint32_t, state_generation)
+     GENERIC(int, style)
+     GENERIC(int, margin_l)
+     GENERIC(int, margin_r)
+     GENERIC(int, margin_v)
++    GENERIC(uint64_t, owner)
++    GENERIC(uint64_t, font_epoch)
+ END(EventRenderHashKey)
+ 
+ #undef START
+diff --git a/libass/ass_render.c b/libass/ass_render.c
+--- a/libass/ass_render.c
++++ b/libass/ass_render.c
+@@ -3023,12 +3023,18 @@
+     return true;
+ }
+ 
++static ASS_RenderPriv *get_render_priv(ASS_Renderer *render_priv,
++                                       ASS_Event *event);
++
+ struct event_render_construct_ctx {
+     RenderContext *state;
+     ASS_Event *event;
+     EventImages ei;
+     bool rendered;
+     bool ok;
++    bool time_dependent;
++    bool unresolved;            // the render had glyphs no face could provide
++    bool taken;                 // a cache entry holds ei.imgs
+ };
+ 
+ size_t ass_event_render_construct(void *key, void *value, void *priv)
+@@ -3037,17 +3043,30 @@
+     EventRenderHashValue *v = value;
+     struct event_render_construct_ctx *ctx = priv;
+ 
+-    ctx->ok = render_event_real(ctx->state, ctx->event, &ctx->ei);
+-    ctx->rendered = true;
++    // An owned entry is made from the render this frame already did of
++    // its event, if any, so the event is not rendered (and its fonts are
++    // not searched) twice.
++    if (!ctx->rendered) {
++        ASS_Renderer *render_priv = ctx->state->renderer;
++        uint64_t unresolved = render_priv->unresolved_glyphs;
++        ctx->ok = render_event_real(ctx->state, ctx->event, &ctx->ei);
++        ctx->rendered = true;
++        ctx->time_dependent = ctx->state->time_dependent;
++        ctx->unresolved = render_priv->unresolved_glyphs != unresolved;
++    }
+ 
+     v->valid = ctx->ok;
+-    v->time_dependent = ctx->state->time_dependent;
++    v->time_dependent = ctx->time_dependent;
++    v->unresolved = ctx->ok && !ctx->time_dependent && ctx->unresolved;
+     v->imgs = NULL;
+ 
+-    size_t size = sizeof(EventRenderHashValue) + k->text.len;
+-    if (ctx->ok && !v->time_dependent) {
++    size_t size = sizeof(EventRenderHashValue) + k->text.len + k->effect.len;
++    // Output with unresolved glyphs goes only into an owned entry; the
++    // shared entry for its key just records that.
++    if (ctx->ok && !v->time_dependent && (!v->unresolved || k->owner)) {
+         v->imgs = ctx->ei.imgs;
+         ass_frame_ref(v->imgs);
++        ctx->taken = true;
+         v->top = ctx->ei.top;
+         v->height = ctx->ei.height;
+         v->left = ctx->ei.left;
+@@ -3069,8 +3088,12 @@
+     if (!event->Text)
+         return render_event_real(state, event, event_images);
+ 
++    // Fallback faces added so far, read before this event can add any.
++    uint64_t font_epoch = render_priv->fallback_faces;
++    const char *effect = event->Effect ? event->Effect : "";
+     EventRenderHashKey key = {
+         .text = {event->Text, strlen(event->Text)},
++        .effect = {effect, strlen(effect)},
+         .state_generation = render_priv->state_generation,
+         .style = event->Style,
+         .margin_l = event->MarginL,
+@@ -3080,8 +3103,37 @@
+     struct event_render_construct_ctx ctx = { state, event };
+     EventRenderHashValue *v =
+         ass_cache_get(render_priv->cache.event_render_cache, &key, &ctx);
+-    if (!v)
+-        return render_event_real(state, event, event_images);
++
++    // Output with glyphs that no font face could provide is never shared:
++    // another event with the same text renders its own. Each event keeps
++    // it under its own owner id and the number of fallback faces added
++    // when its render started, so once any font gains a face the event is
++    // rendered once more and shows whatever glyphs the new face covers.
++    if (v && v->valid && !v->time_dependent && v->unresolved) {
++        RenderPriv *priv = get_render_priv(render_priv, event);
++        v = NULL;
++        if (priv) {
++            if (!priv->owner)
++                priv->owner = ++render_priv->last_owner;
++            key.owner = priv->owner;
++            key.font_epoch = font_epoch;
++            v = ass_cache_get(render_priv->cache.event_render_cache, &key, &ctx);
++        }
++    }
++    if (!v) {
++        if (!ctx.rendered)
++            return render_event_real(state, event, event_images);
++        if (!ctx.ok)
++            return false;
++        *event_images = ctx.ei;
++        return true;
++    }
++    // An owned entry from an earlier frame matched after the shared entry
++    // had to be rendered again: release this frame's render.
++    if (ctx.rendered && ctx.ok && !ctx.taken && !v->time_dependent) {
++        ass_frame_ref(ctx.ei.imgs);
++        ass_frame_unref(ctx.ei.imgs);
++    }
+     if (v->time_dependent) {
+         if (!ctx.rendered)
+             return render_event_real(state, event, event_images);
+@@ -3111,6 +3163,7 @@
+             }
+             return false;
+         }
++        clone->type = img->type;
+         *tail = clone;
+         tail = &clone->next;
+     }
+@@ -3199,6 +3252,7 @@
+ {
+     ASS_Track *track = priv->track;
+     ASS_Settings *s = &priv->settings;
++    uint32_t generation = priv->state_generation;
+ 
+     priv->state_scratch_len = 0;
+     priv->state_scratch_ok = true;
+@@ -3242,6 +3296,12 @@
+         priv->state_scratch_cap = len;
+         priv->state_generation++;
+     }
++
++    // Entries of an earlier generation can never match again, whatever
++    // changed (including settings that do not reconfigure the renderer,
++    // such as the shaper, line spacing or margin use), so release them.
++    if (priv->state_generation != generation)
++        ass_cache_empty(priv->cache.event_render_cache);
+ }
+ 
+ /**
+diff --git a/libass/ass_render.h b/libass/ass_render.h
+--- a/libass/ass_render.h
++++ b/libass/ass_render.h
+@@ -330,6 +330,13 @@
+     size_t state_scratch_cap;
+     bool state_scratch_ok;
+ 
++    // fallback faces added to any font, glyph lookups that no face could
++    // satisfy, and the last owner id handed to an event for its own event
++    // render cache entries
++    uint64_t fallback_faces;
++    uint64_t unresolved_glyphs;
++    uint64_t last_owner;
++
+     ASS_Image *images_root;     // rendering result is stored here
+     ASS_Image *prev_images_root;
+ 
+@@ -357,6 +364,7 @@
+ typedef struct render_priv {
+     int top, height, left, width;
+     int render_id;
++    uint64_t owner;             // owner id of its event render cache entries
+ } RenderPriv;
+ 
+ typedef struct {
+diff --git a/libass/ass_shaper.c b/libass/ass_shaper.c
+--- a/libass/ass_shaper.c
++++ b/libass/ass_shaper.c
+@@ -866,8 +866,15 @@
+         GlyphInfo *info = glyphs + i;
+         if (!info->drawing_text.str && !info->skip) {
+             // get font face and glyph index
++            int n_faces = info->font->n_faces;
+             ass_font_get_index(render_priv->fontselect, info->font,
+                     info->symbol, &info->face_index, &info->glyph_index);
++            // count fallback faces and glyphs that no face could provide,
++            // for the event render cache
++            if (info->font->n_faces > n_faces)
++                render_priv->fallback_faces += info->font->n_faces - n_faces;
++            if (!info->glyph_index && info->symbol >= 0x20)
++                render_priv->unresolved_glyphs++;
+         }
+         if (i > 0) {
+             GlyphInfo *last = glyphs + i - 1;
