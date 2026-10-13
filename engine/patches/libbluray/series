@@ -1,0 +1,4 @@
+# libbluray 1.4.0 (release tarball) patch series, applied in order to the
+# pristine source. Format: <SHA-256>  <patch file>. lucid.py refuses a patch
+# whose hash differs.
+78049a0fe7dd85c9bd41ffeab41a85a9962ca9a3395a6a545baabf6bc8e05736  0001-darwin-build-for-ios-and-tvos.patch

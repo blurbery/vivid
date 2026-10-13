@@ -1,0 +1,478 @@
+# libbluray 1.4.0: what today's interim build ships, recorded by automated
+# comparison of its xcframework and archives (nm -m -g -U and nm -u on the arm64
+# archive of each slice, the slice's file list and the pkg-config files), for
+# `lucid.py check`. Docs: docs/cores/lucid-engine-build.md.
+
+[framework]
+Libbluray
+
+# Files under the framework's Headers/ folder.
+[headers]
+bluray-version.h
+bluray.h
+clpi_data.h
+filesystem.h
+keys.h
+log_control.h
+meta_data.h
+overlay.h
+player_settings.h
+
+# Defined global symbols (identical on all four slices), by visibility.
+
+[default]
+_bd_chapter_pos
+_bd_close
+_bd_event_name
+_bd_free_bdjo
+_bd_free_clpi
+_bd_free_mobj
+_bd_free_mpls
+_bd_free_title_info
+_bd_get_clpi
+_bd_get_current_angle
+_bd_get_current_chapter
+_bd_get_current_title
+_bd_get_debug_mask
+_bd_get_disc_info
+_bd_get_event
+_bd_get_main_title
+_bd_get_meta
+_bd_get_meta_file
+_bd_get_playlist_info
+_bd_get_sound_effect
+_bd_get_title_info
+_bd_get_title_size
+_bd_get_titles
+_bd_get_version
+_bd_gpr_read
+_bd_gpr_write
+_bd_init
+_bd_menu_call
+_bd_mouse_select
+_bd_open
+_bd_open_dir
+_bd_open_disc
+_bd_open_file_dec
+_bd_open_files
+_bd_open_stream
+_bd_play
+_bd_play_title
+_bd_psr_read
+_bd_psr_register_cb
+_bd_psr_unregister_cb
+_bd_psr_write
+_bd_read
+_bd_read_bdjo
+_bd_read_clpi
+_bd_read_ext
+_bd_read_file
+_bd_read_mobj
+_bd_read_mpls
+_bd_read_skip_still
+_bd_refcnt_dec
+_bd_refcnt_inc
+_bd_register_argb_overlay_proc
+_bd_register_dir
+_bd_register_file
+_bd_register_overlay_proc
+_bd_seamless_angle_change
+_bd_seek
+_bd_seek_chapter
+_bd_seek_mark
+_bd_seek_playitem
+_bd_seek_time
+_bd_select_angle
+_bd_select_playlist
+_bd_select_stream
+_bd_select_title
+_bd_set_debug_handler
+_bd_set_debug_mask
+_bd_set_player_setting
+_bd_set_player_setting_str
+_bd_set_rate
+_bd_set_scr
+_bd_start_bdj
+_bd_stop_bdj
+_bd_tell
+_bd_tell_time
+_bd_user_input
+
+[hidden]
+_Java_java_awt_BDFontMetrics_methods
+_Java_java_awt_BDFontMetrics_methods_count
+_Java_java_awt_BDGraphics_methods
+_Java_java_awt_BDGraphics_methods_count
+_Java_org_videolan_Libbluray_methods
+_Java_org_videolan_Libbluray_methods_count
+_Java_org_videolan_Logger_methods
+_Java_org_videolan_Logger_methods_count
+_array_alloc
+_array_free
+_bb_init
+_bb_read
+_bb_skip
+_bd_bdj_osd_cb
+_bd_bdj_seek
+_bd_bdj_sound_effect
+_bd_debug
+_bd_get_disc
+_bd_get_scr
+_bd_get_uo_mask
+_bd_lock_osd_buffer
+_bd_mutex_destroy
+_bd_mutex_init
+_bd_mutex_lock
+_bd_mutex_unlock
+_bd_play_playlist_at
+_bd_play_title_internal
+_bd_psr_lock
+_bd_psr_reset_backup_registers
+_bd_psr_restore_state
+_bd_psr_save_state
+_bd_psr_setting_write
+_bd_psr_unlock
+_bd_psr_write_bits
+_bd_reg_read
+_bd_reg_write
+_bd_registers_free
+_bd_registers_init
+_bd_select_rate
+_bd_set_bdj_kit
+_bd_set_bdj_uo_mask
+_bd_set_virtual_package
+_bd_unlock_osd_buffer
+_bdid_free
+_bdid_get
+_bdj_close
+_bdj_config_cleanup
+_bdj_jvm_available
+_bdj_make_array
+_bdj_make_object
+_bdj_open
+_bdj_process_event
+_bdj_register_native_methods
+_bdj_unregister_native_methods
+_bdjo_free
+_bdjo_get
+_bdjo_make_jobj
+_bdjo_parse
+_bdmv_parse_extension_data
+_bdmv_parse_header
+_block_input_new
+_bs_init
+_bs_read
+_bs_seek_byte
+_bs_skip
+_clpi_access_point
+_clpi_copy
+_clpi_find_stc_spn
+_clpi_free
+_clpi_get
+_clpi_lookup_spn
+_clpi_parse
+_clpi_unref
+_debug_mask
+_dec_application
+_dec_close
+_dec_data
+_dec_disc_id
+_dec_init
+_dec_open_stream
+_dec_start
+_dec_title
+_decode_allocation_extent
+_decode_avdp
+_decode_descriptor_tag
+_decode_entity_id
+_decode_ext_file_entry
+_decode_file_entry
+_decode_file_identifier
+_decode_file_set_descriptor
+_decode_logical_volume
+_decode_long_ad
+_decode_partition
+_decode_primary_volume
+_decode_vdp
+_dir_open
+_dir_open_default
+_disc_cache_bdrom_file
+_disc_cache_clean
+_disc_cache_get
+_disc_cache_put
+_disc_close
+_disc_event
+_disc_get_data
+_disc_open
+_disc_open_bdrom_dir
+_disc_open_dir
+_disc_open_file
+_disc_open_path
+_disc_open_path_dec
+_disc_open_stream
+_disc_property_get
+_disc_property_put
+_disc_pseudo_id
+_disc_read_file
+_disc_root
+_disc_update
+_disc_volume_id
+_dl_dlclose
+_dl_dlopen
+_dl_dlsym
+_dl_get_path
+_event_queue_destroy
+_event_queue_get
+_event_queue_new
+_event_queue_put
+_file_get_cache_home
+_file_get_config_home
+_file_get_config_system
+_file_get_data_home
+_file_mkdir
+_file_mkdirs
+_file_open
+_file_open_default
+_file_path_exists
+_file_size
+_file_unlink
+_free_file_entry
+_gc_add_font
+_gc_decode_ts
+_gc_free
+_gc_init
+_gc_run
+_graphics_processor_decode_ts
+_graphics_processor_free
+_graphics_processor_init
+_hdmv_event_str
+_hdmv_vm_free
+_hdmv_vm_get_event
+_hdmv_vm_get_uo_mask
+_hdmv_vm_init
+_hdmv_vm_restore_state
+_hdmv_vm_resume
+_hdmv_vm_run
+_hdmv_vm_running
+_hdmv_vm_save_state
+_hdmv_vm_select_object
+_hdmv_vm_set_object
+_hdmv_vm_suspend_pl
+_ig_decode_interactive
+_ig_free_interactive
+_indx_free
+_indx_get
+_libaacs_decrypt_bus
+_libaacs_decrypt_unit
+_libaacs_get_aacs_data
+_libaacs_get_bec_enabled
+_libaacs_get_mkbv
+_libaacs_load
+_libaacs_open
+_libaacs_required
+_libaacs_select_title
+_libaacs_unload
+_libbdplus_event
+_libbdplus_fixup
+_libbdplus_get_data
+_libbdplus_get_date
+_libbdplus_get_gen
+_libbdplus_init
+_libbdplus_is_mmbd
+_libbdplus_load
+_libbdplus_m2ts
+_libbdplus_m2ts_close
+_libbdplus_mmap
+_libbdplus_psr
+_libbdplus_required
+_libbdplus_seek
+_libbdplus_start
+_libbdplus_unload
+_m2ts_demux
+_m2ts_demux_free
+_m2ts_demux_init
+_m2ts_demux_reset
+_m2ts_filter
+_m2ts_filter_close
+_m2ts_filter_init
+_m2ts_filter_seek
+_meta_free
+_meta_get
+_meta_get_tn
+_meta_parse
+_mobj_free
+_mobj_get
+_mobj_parse
+_mobj_parse_cmd
+_mobj_sprint_cmd
+_mount_get_mountpoint
+_mpls_free
+_mpls_get
+_mpls_parse
+_nav_chapter_get_current
+_nav_chapter_search
+_nav_clip_angle_change_search
+_nav_clip_lookup_aspect
+_nav_clip_packet_search
+_nav_clip_textst_font
+_nav_clip_time_search
+_nav_free_title_list
+_nav_get_title_list
+_nav_mark_search
+_nav_next_clip
+_nav_packet_search
+_nav_set_angle
+_nav_time_search
+_nav_title_close
+_nav_title_open
+_pes_buffer_alloc
+_pes_buffer_append
+_pes_buffer_free
+_pes_buffer_next
+_pes_buffer_remove
+_pg_clean_object
+_pg_clean_windows
+_pg_decode_composition
+_pg_decode_composition_descriptor
+_pg_decode_composition_object
+_pg_decode_object
+_pg_decode_palette
+_pg_decode_palette_entry
+_pg_decode_palette_update
+_pg_decode_sequence_descriptor
+_pg_decode_video_descriptor
+_pg_decode_window
+_pg_decode_windows
+_pg_display_set_free
+_pg_free_composition
+_properties_get
+_properties_put
+_psr_init_3D
+_psr_init_UHD
+_refcnt_calloc
+_refcnt_dec
+_refcnt_inc
+_refcnt_realloc
+_registers_restore
+_registers_save
+_rle_add_bite
+_rle_add_eol
+_rle_compress_chunk
+_rle_crop_object
+_sound_free
+_sound_get
+_str_dup
+_str_print_hex
+_str_printf
+_str_strcasestr
+_str_to_uint32
+_str_tolower
+_textst_clean_dialog_presentation
+_textst_decode_dialog_presentation
+_textst_decode_dialog_style
+_textst_free_dialog_style
+_textst_render
+_textst_render_add_font
+_textst_render_free
+_textst_render_init
+_textst_render_set_char_code
+_udf_dir_open
+_udf_file_open
+_udf_image_close
+_udf_image_open
+_udf_volume_id
+_udfread_close
+_udfread_closedir
+_udfread_file_close
+_udfread_file_lba
+_udfread_file_open
+_udfread_file_openat
+_udfread_file_read
+_udfread_file_seek
+_udfread_file_size
+_udfread_file_tell
+_udfread_get_version
+_udfread_get_volume_id
+_udfread_get_volume_set_id
+_udfread_init
+_udfread_open
+_udfread_open_input
+_udfread_opendir
+_udfread_opendir_at
+_udfread_read_blocks
+_udfread_readdir
+_udfread_rewinddir
+_uo_mask_parse
+
+# Weak definitions (inline functions and template instances the compiler
+# chose to emit): count, then the SHA-256 of the sorted names, one per line.
+
+[weak-default]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+[weak-hidden]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+# Symbols each slice's archive needs from outside itself.
+
+[imports-ios-arm64]
+_FT_Done_Face _FT_Done_FreeType _FT_GlyphSlot_Embolden _FT_GlyphSlot_Oblique _FT_Init_FreeType
+_FT_Load_Char _FT_New_Face _FT_New_Memory_Face _FT_Set_Char_Size ___chkstk_darwin ___error
+___sprintf_chk ___stack_chk_fail ___stack_chk_guard ___stderrp ___strcpy_chk ___tolower ___toupper
+_atoi _bzero _calloc _close _closedir _dladdr _dlclose _dlerror _dlopen _dlsym _fopen _fprintf _free
+_fsync _fwrite _getenv _gettimeofday _lseek _malloc _memcpy _memmove _memset _mkdir _open _opendir
+_pipe _pread _pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock
+_pthread_mutexattr_init _pthread_mutexattr_settype _read _readdir_r _realloc _remove _setvbuf
+_snprintf _sprintf _sscanf _stat _strchr _strcmp _strcpy _strdup _strerror_r _strlen _strncasecmp
+_strncmp _strncpy _strrchr _strstr _strtok_r _strtol _time _vsnprintf _write _xmlCleanupParser
+_xmlDocGetRootElement _xmlFree _xmlFreeDoc _xmlGetProp _xmlNodeGetContent _xmlReadMemory
+_xmlStrEqual
+
+[imports-ios-arm64-simulator]
+_FT_Done_Face _FT_Done_FreeType _FT_GlyphSlot_Embolden _FT_GlyphSlot_Oblique _FT_Init_FreeType
+_FT_Load_Char _FT_New_Face _FT_New_Memory_Face _FT_Set_Char_Size ___error ___sprintf_chk
+___stack_chk_fail ___stack_chk_guard ___stderrp ___strcpy_chk ___tolower ___toupper _atoi _bzero
+_calloc _close _closedir _dladdr _dlclose _dlerror _dlopen _dlsym _fopen _fprintf _free _fsync
+_fwrite _getenv _gettimeofday _lseek _malloc _memcpy _memmove _memset _mkdir _open _opendir _pipe
+_pread _pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock
+_pthread_mutexattr_init _pthread_mutexattr_settype _read _readdir_r _realloc _remove _setvbuf
+_snprintf _sprintf _sscanf _stat _strchr _strcmp _strcpy _strdup _strerror_r _strlen _strncasecmp
+_strncmp _strncpy _strrchr _strstr _strtok_r _strtol _time _vsnprintf _write _xmlCleanupParser
+_xmlDocGetRootElement _xmlFree _xmlFreeDoc _xmlGetProp _xmlNodeGetContent _xmlReadMemory
+_xmlStrEqual
+
+[imports-tvos-arm64]
+_FT_Done_Face _FT_Done_FreeType _FT_GlyphSlot_Embolden _FT_GlyphSlot_Oblique _FT_Init_FreeType
+_FT_Load_Char _FT_New_Face _FT_New_Memory_Face _FT_Set_Char_Size ___chkstk_darwin ___error
+___sprintf_chk ___stack_chk_fail ___stack_chk_guard ___stderrp ___strcpy_chk ___tolower ___toupper
+_atoi _bzero _calloc _close _closedir _dladdr _dlclose _dlerror _dlopen _dlsym _fopen _fprintf _free
+_fsync _fwrite _getenv _gettimeofday _lseek _malloc _memcpy _memmove _memset _mkdir _open _opendir
+_pipe _pread _pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock
+_pthread_mutexattr_init _pthread_mutexattr_settype _read _readdir_r _realloc _remove _setvbuf
+_snprintf _sprintf _sscanf _stat _strchr _strcmp _strcpy _strdup _strerror_r _strlen _strncasecmp
+_strncmp _strncpy _strrchr _strstr _strtok_r _strtol _time _vsnprintf _write _xmlCleanupParser
+_xmlDocGetRootElement _xmlFree _xmlFreeDoc _xmlGetProp _xmlNodeGetContent _xmlReadMemory
+_xmlStrEqual
+
+[imports-tvos-arm64-simulator]
+_FT_Done_Face _FT_Done_FreeType _FT_GlyphSlot_Embolden _FT_GlyphSlot_Oblique _FT_Init_FreeType
+_FT_Load_Char _FT_New_Face _FT_New_Memory_Face _FT_Set_Char_Size ___error ___sprintf_chk
+___stack_chk_fail ___stack_chk_guard ___stderrp ___strcpy_chk ___tolower ___toupper _atoi _bzero
+_calloc _close _closedir _dladdr _dlclose _dlerror _dlopen _dlsym _fopen _fprintf _free _fsync
+_fwrite _getenv _gettimeofday _lseek _malloc _memcpy _memmove _memset _mkdir _open _opendir _pipe
+_pread _pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock
+_pthread_mutexattr_init _pthread_mutexattr_settype _read _readdir_r _realloc _remove _setvbuf
+_snprintf _sprintf _sscanf _stat _strchr _strcmp _strcpy _strdup _strerror_r _strlen _strncasecmp
+_strncmp _strncpy _strrchr _strstr _strtok_r _strtol _time _vsnprintf _write _xmlCleanupParser
+_xmlDocGetRootElement _xmlFree _xmlFreeDoc _xmlGetProp _xmlNodeGetContent _xmlReadMemory
+_xmlStrEqual
+
+# LC_BUILD_VERSION minimum OS of each slice's archive.
+[minos-ios-arm64]
+14.0
+[minos-ios-arm64-simulator]
+14.0
+[minos-tvos-arm64]
+14.0
+[minos-tvos-arm64-simulator]
+14.0

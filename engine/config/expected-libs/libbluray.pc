@@ -1,0 +1,10 @@
+prefix=<prefix>
+includedir=${prefix}/include
+libdir=${prefix}/lib
+
+Name: libbluray
+Description: library supporting Blu-ray playback
+Version: 1.4.0
+Requires: freetype2, libxml-2.0 >=  2.6
+Libs: -L${libdir} -lbluray -framework CoreFoundation
+Cflags: -I${includedir}

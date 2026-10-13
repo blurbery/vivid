@@ -1,11 +1,13 @@
 name: Lucid Engine build
 
-# Builds Lucid Engine's libdovi, dav1d, libass, FFmpeg and libmpv from the
-# pinned upstream sources and Vivid's patch series in engine/, checks every
-# slice against the recorded build facts, runs the audio output, video
-# output and decoder tests built on the runner from the patched trees, runs
-# the malformed RPU corpus against the patched and unpatched libdovi, and
-# packages static xcframeworks. See docs/cores/lucid-engine-build.md.
+# Builds every Lucid Engine library (libdovi, FreeType, FriBidi, HarfBuzz,
+# libunibreak, Little CMS, shaderc, MoltenVK, libplacebo, uavs3d, libbluray,
+# uchardet, dav1d, libass, FFmpeg and libmpv) from the pinned upstream
+# sources and Vivid's patch series in engine/, checks every slice against the
+# recorded build facts, runs the audio output, video output and decoder
+# tests built on the runner from the patched trees, runs the malformed RPU
+# corpus against the patched and unpatched libdovi, and packages static
+# xcframeworks. See docs/cores/lucid-engine-build.md.
 
 # Runs on the pipeline branch and on every engine implementer's branch
 # (experiment/lucid-engine-*). Each branch has its own concurrency group, so
@@ -30,7 +32,9 @@ jobs:
   build:
     name: Build ${{ matrix.slice }}
     runs-on: macos-26
-    timeout-minutes: 90
+    # A run that has to build every dependency (no cached builds) takes far
+    # longer than one that reuses them.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -59,12 +63,55 @@ jobs:
         with:
           path: ${{ runner.temp }}/lucid-downloads
           key: lucid-engine-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Dependency build key
+        id: depkey
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: echo "key=$(python3 engine/lucid.py cache-key --slice "$SLICE")" >> "$GITHUB_OUTPUT"
+      # The libraries FFmpeg, libass and libmpv depend on, as built by an
+      # earlier run, keyed on their pins, patches, options and build code.
+      # An older entry is restored too: lucid.py reuses each library whose
+      # own key is unchanged and builds the others.
+      - name: Restore dependency builds
+        id: depcache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-deps-cache
+          key: lucid-engine-deps-${{ matrix.slice }}-${{ steps.depkey.outputs.key }}
+          restore-keys: lucid-engine-deps-${{ matrix.slice }}-
       - name: Build ${{ matrix.slice }}
         env:
           SLICE: ${{ matrix.slice }}
         run: |
           python3 engine/lucid.py build --slice "$SLICE" \
-            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads" \
+            --cache "$RUNNER_TEMP/lucid-deps-cache"
+      # Saved whenever this run built a dependency, even when a later step
+      # failed: under the full key once every dependency is in the cache,
+      # otherwise under a key of its own, which the next run's restore-keys
+      # still finds.
+      - name: Choose the dependency cache key to save
+        id: depsave
+        if: always() && steps.depcache.outputs.cache-hit != 'true'
+        env:
+          SLICE: ${{ matrix.slice }}
+          KEY: ${{ steps.depkey.outputs.key }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          cache="$RUNNER_TEMP/lucid-deps-cache/$SLICE"
+          if [ -s "$cache/new" ]; then
+            if [ "$(cat "$cache/complete" 2>/dev/null)" = "$KEY" ]; then
+              echo "key=lucid-engine-deps-$SLICE-$KEY" >> "$GITHUB_OUTPUT"
+            else
+              echo "key=lucid-engine-deps-$SLICE-partial-$RUN" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Save dependency builds
+        if: always() && steps.depsave.outputs.key != ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-deps-cache
+          key: ${{ steps.depsave.outputs.key }}
       # Built on the runner from the audio output files of the mpv tree this
       # slice just patched; check then requires its result.
       - name: Audio output test vectors
@@ -164,7 +211,7 @@ jobs:
     name: Package xcframeworks
     needs: [build, libdovi-test]
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

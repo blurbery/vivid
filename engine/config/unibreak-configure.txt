@@ -1,0 +1,8 @@
+# libunibreak 6.1 configure options (facts 3.4). lucid.py adds --prefix and
+# --host (arm64-ios-darwin or arm64-tvos-darwin). CFLAGS are the cross flags
+# only, so the library is unoptimised, as today.
+
+--disable-dependency-tracking
+--disable-fast-install
+--disable-shared
+--enable-static

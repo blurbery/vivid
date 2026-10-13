@@ -1,0 +1,6 @@
+# FriBidi 1.0.12 meson options (facts 3.2).
+
+-Dbin=false
+-Ddeprecated=false
+-Ddocs=false
+-Dtests=false
