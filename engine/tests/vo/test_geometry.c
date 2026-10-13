@@ -129,16 +129,16 @@ static void test_blend_rect(void)
 
     CASE("frame-space-blend-rect");
     int checked = 0;
-    for (int i = 0; i < 20000; i++) {
-        int fw = avf_rng_int(&rng, 16, 4096), fh = avf_rng_int(&rng, 16, 2160);
+    for (int i = 0; i < 25000; i++) {
+        int width = avf_rng_int(&rng, 8, 4000), fh = avf_rng_int(&rng, 16, 2160);
         struct avf_canvas c;
-        avf_frame_space_canvas(fw, fh, 1, 1, &c);
-        int x0 = avf_rng_int(&rng, -50, fw + 50), y0 = avf_rng_int(&rng, -50, fh + 50);
+        avf_frame_space_canvas(width, fh, 1, 1, &c);
+        int x0 = avf_rng_int(&rng, -50, width + 50), y0 = avf_rng_int(&rng, -50, fh + 50);
         struct avf_irect box = { x0, y0, x0 + avf_rng_int(&rng, 0, 600),
                                  y0 + avf_rng_int(&rng, 0, 300) };
         struct avf_irect r;
-        bool ok = avf_blend_rect(box, c.src, c.dst, c.w, c.h, fw, fh, &r);
-        struct avf_irect inside = avf_irect_intersect(box, (struct avf_irect){ 0, 0, fw, fh });
+        bool ok = avf_blend_rect(box, c.src, c.dst, c.w, c.h, width, fh, &r);
+        struct avf_irect inside = avf_irect_intersect(box, (struct avf_irect){ 0, 0, width, fh });
         if (avf_irect_empty(inside)) {
             CHECK(!ok, "box beyond the frame yielded a rectangle");
             continue;
@@ -147,7 +147,7 @@ static void test_blend_rect(void)
         if (!ok)
             continue;
         checked++;
-        CHECK(r.x0 >= 0 && r.y0 >= 0 && r.x1 <= fw && r.y1 <= fh, "outside the frame");
+        CHECK(r.x0 >= 0 && r.y0 >= 0 && r.x1 <= width && r.y1 <= fh, "outside the frame");
         CHECK(r.x0 >= inside.x0 - 1 && r.x0 <= inside.x0 && r.y0 >= inside.y0 - 1 &&
               r.y0 <= inside.y0 && r.x1 <= inside.x1 + 1 && r.x1 >= inside.x1 &&
               r.y1 <= inside.y1 + 1 && r.y1 >= inside.y1,
@@ -156,11 +156,11 @@ static void test_blend_rect(void)
     CHECK(checked > 1000, "too few rectangles checked");
 
     CASE("blend-rect-mapping");
-    for (int i = 0; i < 20000; i++) {
-        int fw = avf_rng_int(&rng, 16, 3840), fh = avf_rng_int(&rng, 16, 2160);
+    for (int i = 0; i < 24000; i++) {
+        int frame_w = avf_rng_int(&rng, 12, 4000), fh = avf_rng_int(&rng, 16, 2160);
         int cw = avf_rng_int(&rng, 16, 3000), ch = avf_rng_int(&rng, 16, 2000);
-        struct avf_irect src = { avf_rng_int(&rng, -20, fw / 2), avf_rng_int(&rng, -20, fh / 2), 0, 0 };
-        src.x1 = src.x0 + avf_rng_int(&rng, 0, fw);
+        struct avf_irect src = { avf_rng_int(&rng, -20, frame_w / 2), avf_rng_int(&rng, -20, fh / 2), 0, 0 };
+        src.x1 = src.x0 + avf_rng_int(&rng, 0, frame_w);
         src.y1 = src.y0 + avf_rng_int(&rng, 0, fh);
         struct avf_irect dst = { avf_rng_int(&rng, -20, cw / 2), avf_rng_int(&rng, -20, ch / 2), 0, 0 };
         dst.x1 = dst.x0 + avf_rng_int(&rng, 0, cw);
@@ -169,8 +169,8 @@ static void test_blend_rect(void)
         struct avf_irect box = { bx, by, bx + avf_rng_int(&rng, 0, cw / 2),
                                  by + avf_rng_int(&rng, 0, ch / 2) };
         struct avf_irect a, b;
-        bool ra = avf_blend_rect(box, src, dst, cw, ch, fw, fh, &a);
-        bool rb = ref_rect(box, src, dst, cw, ch, fw, fh, &b);
+        bool ra = avf_blend_rect(box, src, dst, cw, ch, frame_w, fh, &a);
+        bool rb = ref_rect(box, src, dst, cw, ch, frame_w, fh, &b);
         CHECK(ra == rb, "presence differs (%d, reference %d)", ra, rb);
         if (ra && rb) {
             CHECK(a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1,

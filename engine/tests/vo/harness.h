@@ -70,9 +70,14 @@ static inline int avf_rng_int(struct avf_rng *r, int lo, int hi) // [lo, hi]
 
 void avf_test_clock(void);
 void avf_test_pacing(void);
+void avf_test_timebase(void);
 void avf_test_geometry(void);
 void avf_test_pixels(void);
+void avf_test_kernels(void);
 void avf_test_frame(void);
 void avf_test_subtitles(void);
+void avf_test_centre(void);
+void avf_test_centre_tv(void);
+void avf_test_layers(void);
 
 #endif

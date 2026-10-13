@@ -7,7 +7,8 @@ Adds vo=avfoundation for iOS and tvOS. It presents decoded frames,
 VideoToolbox or software, on the AVSampleBufferDisplayLayer whose address
 is passed as --wid, as timed sample buffers. It never scales, tone-maps or
 re-renders the picture apart from the Picture in Picture subtitle
-composite. Creation fails cleanly without --wid, so autoprobing moves on.
+composite. Creation fails cleanly without --wid (logged at verbose while
+mpv probes outputs), so autoprobing moves on.
 
 Formats: VideoToolbox, NV12, yuv420p, P010 and 10-bit and 12-bit planar
 4:2:0; mpv converts anything else. A VideoToolbox device registered as
@@ -21,7 +22,8 @@ media times on a timebase the output anchors and slews to mpv's schedule.
 Frames that cannot be enqueued by 4 ms before their target are dropped and
 counted. A seek keeps the last picture until a new one arrives; the layer
 is recovered after the app becomes active again and when the renderer
-fails.
+fails. A subtitle sample that misses its frame for any reason is rendered
+again with the next one.
 
 Subtitles go to a separate layer laid out in display space, or, with
 --avfoundation-pip-composite-osd=yes, into the pictures in frame space.
@@ -43,7 +45,7 @@ diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
 new file mode 100644
 --- /dev/null
 +++ b/video/out/vo_avfoundation.m
-@@ -0,0 +1,840 @@
+@@ -0,0 +1,863 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -342,7 +344,9 @@ new file mode 100644
 +        return;
 +    struct avf_pacing *pc = &p->pacing;
 +    struct avf_clock *c = &p->clock;
-+    if (pc->waits || pc->drops || pc->recoveries || c->anchors || c->rate_writes) {
++    if (pc->waits || pc->drops || pc->recoveries || c->anchors || c->rate_writes ||
++        c->max_abs_error_ns)
++    {
 +        double nominal = avf_clock_nominal(c);
 +        double applied = c->applied_valid ? c->applied : nominal;
 +        MP_VERBOSE(vo, "Pacing: %u waits (%.2f ms total, %.2f ms longest), %u "
@@ -375,8 +379,10 @@ new file mode 100644
 +        MP_VERBOSE(vo, "Picture in Picture subtitle compositing %s.\n",
 +                   p->composite ? "on" : "off");
 +        avf_subs_clear(p->subs);
-+        if (!p->composite)
++        if (!p->composite) {
++            avf_frame_end_composites(p->frame);
 +            avf_frame_release_core_image(p->frame);
++        }
 +        avf_layers_flush_subtitles(p->layers, true);
 +        sync_subtitle_layer(vo);
 +    }
@@ -389,7 +395,7 @@ new file mode 100644
 +    struct priv *p = vo->priv;
 +    if (p->composite)
 +        return; // composited subtitles travel inside the samples
-+    MP_VERBOSE(vo, "Host layer resized; laying subtitles out again.\n");
++    MP_VERBOSE(vo, "The host layer changed size, so subtitles get a new layout.\n");
 +    avf_subs_clear(p->subs);
 +    avf_layers_flush_subtitles(p->layers, true);
 +    sync_subtitle_layer(vo);
@@ -479,11 +485,14 @@ new file mode 100644
 +        MP_VERBOSE(vo, "Re-anchoring: phase error %.3f ms.\n", res.error_ns / 1e6);
 +    if (res.op == AVF_CLOCK_ANCHOR) {
 +        OSStatus err = avf_timebase_anchor(p->timebase, res.rate, p->media_ns,
-+                                           p->target_ns - now);
++                                           p->target_ns, mp_time_ns);
 +        if (err != noErr)
 +            MP_WARN(vo, "Could not anchor the timebase (%d).\n", (int)err);
 +    } else if (res.op == AVF_CLOCK_SET_RATE) {
-+        avf_timebase_set_rate(p->timebase, res.rate);
++        // A failed rate write is neither logged nor retried: the servo has
++        // already taken the new rate as applied, and its next write or anchor
++        // sets the timebase again.
++        (void)avf_timebase_set_rate(p->timebase, res.rate);
 +    }
 +}
 +
@@ -497,12 +506,22 @@ new file mode 100644
 +    if (!p->canvas_valid)
 +        update_canvas(vo);
 +    render_subtitles(vo);
++    // A subtitle sample due on the separate layer. Whenever it does not reach
++    // the layer, for whatever reason, change tracking is reset so the next
++    // frame renders it again (the pending mark stays).
++    bool sub_due = !p->composite && avf_subs_pending(p->subs);
 +
 +    int64_t build_start = mp_time_ns();
 +    bool hardware;
 +    CVPixelBufferRef buf = frame_buffer(vo, &hardware);
-+    if (!buf)
-+        return; // skipped: nothing enqueued, no drop counted
++    if (!buf) {
++        // Skipped: nothing enqueued, no drop counted.
++        if (sub_due)
++            avf_subs_reset_tracking(p->subs);
++        return;
++    }
++    // A decoder buffer that carries an earlier composite gets its rows back.
++    avf_frame_restore(p->frame, buf);
 +
 +    bool repairable = hardware;
 +    if (p->composite && avf_subs_present(p->subs)) {
@@ -522,16 +541,19 @@ new file mode 100644
 +        }
 +    }
 +    avf_frame_pixel_aspect(buf, vo->params);
++    // Whether the repair fired changes nothing further here.
 +    if (repairable)
-+        avf_frame_dolby_vision_repair(buf, &img->params);
++        (void)avf_frame_dolby_vision_repair(buf, &img->params);
 +
 +    int64_t pts = presentation_time(vo);
 +    CMSampleBufferRef sample = avf_frame_sample(p->frame, buf, pts);
 +    CVPixelBufferRelease(buf);
-+    if (!sample)
++    if (!sample) {
++        if (sub_due)
++            avf_subs_reset_tracking(p->subs);
 +        return;
++    }
 +
-+    bool sub_due = !p->composite && avf_subs_pending(p->subs);
 +    CMSampleBufferRef sub = sub_due ? avf_subs_sample(p->subs, p->canvas.w,
 +                                                      p->canvas.h, pts) : NULL;
 +    perf->video_sample_ns += mp_time_ns() - build_start;
@@ -630,6 +652,7 @@ new file mode 100644
 +    struct priv *p = vo->priv;
 +    @autoreleasepool {
 +        p->flips += 1;
++        avf_pacing_window_open(&p->pacing, mp_time_ns());
 +        if (avf_layers_take_resync(p->layers))
 +            forced_recovery(vo);
 +        if (p->held)
@@ -671,7 +694,7 @@ new file mode 100644
 +        else
 +            t = 0;
 +    }
-+    OSStatus err = avf_timebase_anchor(p->timebase, 0.0, t, 0);
++    OSStatus err = avf_timebase_anchor(p->timebase, 0.0, t, 0, NULL);
 +    if (err != noErr)
 +        MP_WARN(vo, "Could not pause the timebase (%d).\n", (int)err);
 +    avf_clock_pause(&p->clock);
@@ -826,7 +849,9 @@ new file mode 100644
 +static int preinit(struct vo *vo)
 +{
 +    if (vo->opts->WinID == -1) {
-+        MP_ERR(vo, "No layer given: set --wid to an AVSampleBufferDisplayLayer.\n");
++        // While mpv probes outputs this is the expected way to decline.
++        MP_MSG(vo, vo->probing ? MSGL_V : MSGL_ERR,
++               "No layer given: set --wid to an AVSampleBufferDisplayLayer.\n");
 +        return -1;
 +    }
 +    if (@available(iOS 17.0, tvOS 17.0, *)) {

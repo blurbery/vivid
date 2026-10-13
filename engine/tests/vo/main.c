@@ -16,6 +16,7 @@
 
 #include "common/msg.h"
 
+#include "fakes.h"
 #include "harness.h"
 
 int avf_test_cases;
@@ -43,16 +44,17 @@ void avf_test_fail(const char *file, int line, const char *fmt, ...)
     printf("\n");
 }
 
-// mpv's logging, as the modules under test call it.
+// mpv's logging, as the modules under test call it. The last message and
+// its level are kept for the tests.
 void mp_msg(struct mp_log *log, int lev, const char *format, ...)
 {
-    if (!verbose)
-        return;
     va_list va;
     va_start(va, format);
-    printf("    [log %d] ", lev);
-    vprintf(format, va);
+    stubs.last_level = lev;
+    vsnprintf(stubs.last_message, sizeof(stubs.last_message), format, va);
     va_end(va);
+    if (verbose)
+        printf("    [log %d] %s", lev, stubs.last_message);
 }
 
 int mp_msg_level(struct mp_log *log)
@@ -74,10 +76,15 @@ int main(int argc, char **argv)
     verbose = argc > 1 && !strcmp(argv[1], "-v");
     run("clock", avf_test_clock);
     run("pacing", avf_test_pacing);
+    run("timebase", avf_test_timebase);
     run("geometry", avf_test_geometry);
     run("pixels", avf_test_pixels);
+    run("kernels", avf_test_kernels);
     run("frame", avf_test_frame);
     run("subtitles", avf_test_subtitles);
+    run("centre", avf_test_centre);
+    run("centre-tv", avf_test_centre_tv);
+    run("layers", avf_test_layers);
     printf("RESULT %d cases, %d failures\n", avf_test_cases, avf_test_failures);
     if (!avf_test_cases) {
         printf("FAIL no test case ran\n");

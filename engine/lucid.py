@@ -1278,10 +1278,14 @@ VO_REQUIRED_STRINGS = (
     b"enqueueSampleBuffer:\x00", b"setControlTimebase:\x00",
 )
 VO_TEST_DIR = ENGINE / "tests" / "vo"
+# The output's modules, compiled from the patched tree. The centre
+# (video/out/vo_avfoundation.m) is not listed: test_centre.m and
+# test_centre_tv.m include it themselves, with its layer calls renamed to the
+# fake layers module, so the real layers.m can be tested on its own.
 VO_TEST_MODULES = ("clock.c", "pacing.c", "pixels.c", "geometry.c", "pool.c", "timebase.c",
-                   "subtitles.c", "frame.m")
+                   "subtitles.c", "frame.m", "layers.m")
 VO_TEST_FRAMEWORKS = ("Foundation", "CoreFoundation", "CoreVideo", "CoreMedia", "CoreGraphics",
-                      "CoreImage", "Metal", "IOSurface")
+                      "CoreImage", "Metal", "IOSurface", "AVFoundation", "QuartzCore")
 
 
 def vo_driver_list(vo_c: str) -> list[str]:
@@ -1326,7 +1330,9 @@ def run_vo_tests(src: Path, includes: list[Path], out: Path) -> tuple[int, int, 
     flags = ["-arch", "arm64", "-isysroot", str(sdk), "-mmacosx-version-min=11.0", "-O3",
              "-fno-math-errno", "-fno-signed-zeros", "-fno-trapping-math", "-Wall", "-Wno-unused-parameter", "-Wno-sign-compare", "-Wno-pointer-sign",
              "-Wno-missing-field-initializers", "-Werror=implicit-function-declaration",
-             "-D_GNU_SOURCE", f"-I{src}", f"-I{VO_TEST_DIR}"] + [f"-I{p}" for p in includes]
+             "-D_GNU_SOURCE", f"-I{src}", f"-I{VO_TEST_DIR}",
+             # UIKit as far as layers.m needs it, for the macOS build host.
+             f"-I{VO_TEST_DIR / 'shim'}"] + [f"-I{p}" for p in includes]
     sources = [src / "video" / "out" / "avfoundation" / m for m in VO_TEST_MODULES]
     sources += sorted(p for p in VO_TEST_DIR.iterdir() if p.suffix in (".c", ".m"))
     objects = []
@@ -1358,8 +1364,11 @@ def cmd_test_vo(args) -> None:
     cases, failures, output = run_vo_tests(work / "src" / "mpv", includes, work / "vo-tests")
     log(output)
     (out / "vo-tests.txt").write_text(output)
-    summary = (f"## Lucid Engine video output tests: {sl.name}\n\n"
+    summary = (f"## Lucid Engine video output tests (built with {sl.name})\n\n"
                f"{cases} cases, {failures if failures >= 0 else 'unknown'} failures\n\n")
+    timings = [line for line in output.splitlines() if line.startswith("bench ")]
+    if timings:
+        summary += "Kernel timings:\n\n```\n" + "\n".join(timings) + "\n```\n\n"
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
             f.write(summary)

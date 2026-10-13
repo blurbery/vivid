@@ -71,9 +71,11 @@ jobs:
           python3 engine/lucid.py check --slice "$SLICE" --strict \
             --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
       # Host-side tests compiled from the patched mpv tree (patch spec 8.6, 9.4).
-      # They also run when the checks failed, so one run reports both.
+      # They run on the build host, so one slice's job runs them for the whole
+      # workflow run. They also run when the checks failed, so one run reports
+      # both.
       - name: Video output tests
-        if: success() || steps.check.outcome == 'failure'
+        if: matrix.slice == 'ios-arm64-simulator' && (success() || steps.check.outcome == 'failure')
         env:
           SLICE: ${{ matrix.slice }}
         run: |

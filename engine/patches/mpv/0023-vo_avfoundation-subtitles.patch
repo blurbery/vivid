@@ -9,10 +9,12 @@ Every object mpv's osd_render() returns with content (the primary and the
 secondary subtitle, then the OSD) is drawn into one premultiplied BGRA
 canvas in mpv's order, later objects over earlier ones. The engine Vivid
 ships today shows only the last object; this one shows both subtitles. A
-single object still gives exactly the same pixels. Parts drawn at their own
-size use direct integer blends; scaled parts go through CoreGraphics. The
-canvas is rendered again only when the set of objects or one of their
-change ids changes.
+single object still gives exactly the same pixels. Objects whose drawn
+parts are all at their own size use direct integer blends; the others go
+through CoreGraphics, which draws each part at its own size. The canvas is
+rendered again only when the set of objects or one of their change ids
+changes. The bounding box is the union of the drawn parts, with each edge
+clamped to the canvas on its own.
 
 Pool surfaces are cleared with dirty tracking (up to four IOSurfaces, each
 cleared only where it was last drawn). On the separate subtitle layer each
@@ -149,7 +151,7 @@ diff --git a/video/out/avfoundation/subtitles.c b/video/out/avfoundation/subtitl
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/subtitles.c
-@@ -0,0 +1,599 @@
+@@ -0,0 +1,617 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -393,26 +395,41 @@ new file mode 100644
 +    return p->dh > 0 ? p->dh : p->h;
 +}
 +
++// The direct path takes an object whose every drawn part is at its own size.
++// Parts that are skipped anyway (no bitmap, or no width or height) do not
++// count either way.
 +static bool direct_path(const struct sub_bitmaps *imgs)
 +{
 +    if (imgs->format != SUBBITMAP_LIBASS && imgs->format != SUBBITMAP_BGRA)
 +        return false;
 +    for (int n = 0; n < imgs->num_parts; n++) {
 +        const struct sub_bitmap *p = &imgs->parts[n];
++        if (!part_drawable(p))
++            continue;
 +        if (part_dw(p) != p->w || part_dh(p) != p->h)
 +            return false;
 +    }
 +    return true;
 +}
 +
-+static struct avf_irect part_rect(const struct sub_bitmap *p, int cw, int ch)
++// Grows the raw bounding box by one part's destination rectangle (a dw or
++// dh of 0 or below counting as w or h). The caller clamps the edges once.
++static void box_add_part(struct avf_irect *box, const struct sub_bitmap *p)
 +{
-+    struct avf_irect r = { p->x, p->y, p->x + part_dw(p), p->y + part_dh(p) };
-+    return avf_irect_intersect(r, (struct avf_irect){ 0, 0, cw, ch });
++    int x1 = p->x + part_dw(p), y1 = p->y + part_dh(p);
++    if (p->x < box->x0)
++        box->x0 = p->x;
++    if (p->y < box->y0)
++        box->y0 = p->y;
++    if (x1 > box->x1)
++        box->x1 = x1;
++    if (y1 > box->y1)
++        box->y1 = y1;
 +}
 +
 +// Draws one object's parts with CoreGraphics. The context is y-up, so each
-+// part goes to (x, canvas height - y - dh).
++// part goes to (x, canvas height - y - dh). The part's own dw and dh are used
++// as they are: 0 draws nothing, and CoreGraphics normalises negative sizes.
 +static void cg_draw_object(CGContextRef ctx, CGColorSpaceRef rgb,
 +                           const struct sub_bitmaps *imgs, int ch)
 +{
@@ -420,8 +437,7 @@ new file mode 100644
 +        const struct sub_bitmap *p = &imgs->parts[n];
 +        if (!part_drawable(p))
 +            continue;
-+        int dw = part_dw(p), dh = part_dh(p);
-+        CGRect rect = CGRectMake(p->x, ch - p->y - dh, dw, dh);
++        CGRect rect = CGRectMake(p->x, ch - p->y - p->dh, p->dw, p->dh);
 +        bool bgra = imgs->format == SUBBITMAP_BGRA;
 +        size_t bpp = bgra ? 4 : 1;
 +        size_t size = (size_t)(p->h - 1) * p->stride + (size_t)p->w * bpp;
@@ -527,15 +543,19 @@ new file mode 100644
 +        CGColorSpaceRelease(rgb);
 +
 +    int64_t t2 = avf_subs_now();
++    // The union of every drawn part, with each edge then clamped to the
++    // canvas on its own. Starting from the empty form (w, h, 0, 0), no part
++    // leaves it empty.
 +    struct avf_irect box = avf_irect_empty_box(canvas.w, canvas.h);
 +    for (int n = 0; n < list->num_items; n++) {
 +        const struct sub_bitmaps *imgs = list->items[n];
 +        for (int i = 0; i < imgs->num_parts; i++) {
 +            const struct sub_bitmap *p = &imgs->parts[i];
 +            if (part_drawable(p))
-+                box = avf_irect_union(box, part_rect(p, canvas.w, canvas.h));
++                box_add_part(&box, p);
 +        }
 +    }
++    box = avf_irect_clamp_edges(box, canvas.w, canvas.h);
 +    if (entry)
 +        entry->rect = box;
 +    int64_t t3 = avf_subs_now();

@@ -8,10 +8,14 @@ Shared helpers for the AVFoundation video output.
 pixels.c holds the software upload copies (row copies, U and V interleave,
 and the 10-bit and 12-bit shifts into the top bits of each word), the
 direct libass and premultiplied BGRA subtitle blends, and the YUV subtitle
-composite for biplanar 4:2:0 frames. The composite maps the subtitle box
-into frame pixels with one pixel of slack and evaluates its arithmetic in
-double precision with explicit fused multiply-adds in a fixed order, so the
-result does not depend on the compiler's contraction settings.
+composite for biplanar 4:2:0 frames. On arm64 the upload copies and the two
+blends are vectorised with NEON, working in 8-bit and 16-bit lanes through
+exact integer identities, and give the same bytes as their scalar forms,
+which define the results and serve other builds. The composite maps the
+subtitle box into frame pixels with one pixel of slack and evaluates its
+arithmetic in double precision with explicit fused multiply-adds in a fixed
+order, so the result does not depend on the compiler's contraction
+settings.
 
 geometry.c computes the host layer's pixel size (a truncated fused
 multiply-add of size, scale and 0.5, at least 1) and the frame-space
@@ -34,7 +38,7 @@ diff --git a/video/out/avfoundation/pixels.h b/video/out/avfoundation/pixels.h
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/pixels.h
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,170 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -76,6 +80,10 @@ new file mode 100644
 +struct avf_irect avf_irect_union(struct avf_irect a, struct avf_irect b);
 +// The canonical empty box for a canvas: x0 = w, y0 = h, x1 = y1 = 0.
 +struct avf_irect avf_irect_empty_box(int w, int h);
++// Clamps each edge into the canvas on its own: x0 and x1 to 0..w, y0 and y1
++// to 0..h. Unlike an intersection, a rectangle wholly outside the canvas
++// keeps a non-empty extent across it when its edges lie on opposite sides.
++struct avf_irect avf_irect_clamp_edges(struct avf_irect r, int w, int h);
 +
 +// ---- software upload ------------------------------------------------------
 +
@@ -106,6 +114,24 @@ new file mode 100644
 +                         const uint8_t *v, ptrdiff_t v_stride,
 +                         int samples, int rows, int shift);
 +
++// The scalar forms of the three kernels above and of the two direct blends
++// below. They define the results; the kernels the output calls are
++// vectorised on arm64 and match them bit for bit. Kept for the host tests.
++void avf_interleave_uv8_scalar(uint8_t *dst, ptrdiff_t dst_stride,
++                               const uint8_t *u, ptrdiff_t u_stride,
++                               const uint8_t *v, ptrdiff_t v_stride,
++                               int samples, int rows);
++void avf_shift_rows16_scalar(uint8_t *dst, ptrdiff_t dst_stride,
++                             const uint8_t *src, ptrdiff_t src_stride,
++                             int samples, int rows, int shift);
++void avf_interleave_uv16_scalar(uint8_t *dst, ptrdiff_t dst_stride,
++                                const uint8_t *u, ptrdiff_t u_stride,
++                                const uint8_t *v, ptrdiff_t v_stride,
++                                int samples, int rows, int shift);
++
++// Whether this build uses the vectorised kernels.
++bool avf_pixels_vectorised(void);
++
 +// ---- subtitle blends into premultiplied BGRA --------------------------------
 +
 +struct avf_bgra {
@@ -122,6 +148,12 @@ new file mode 100644
 +// Premultiplied BGRA part at (x, y), clipped to the canvas.
 +void avf_blend_bgra(const struct avf_bgra *dst, const uint8_t *src,
 +                    ptrdiff_t src_stride, int x, int y, int w, int h);
++
++void avf_blend_libass_scalar(const struct avf_bgra *dst, const uint8_t *mask,
++                             ptrdiff_t mask_stride, int x, int y, int w, int h,
++                             uint32_t color);
++void avf_blend_bgra_scalar(const struct avf_bgra *dst, const uint8_t *src,
++                           ptrdiff_t src_stride, int x, int y, int w, int h);
 +
 +// Clears a rectangle (clamped to the canvas) to transparent.
 +void avf_clear_bgra(const struct avf_bgra *dst, struct avf_irect r);
@@ -155,6 +187,21 @@ new file mode 100644
 +                    struct avf_irect dst, int canvas_w, int canvas_h,
 +                    int frame_w, int frame_h, struct avf_irect *out);
 +
++// The bytes of each plane that a blend over rect may change: luma rows
++// rect.y0 to rect.y1 - 1 from luma_offset, and chroma rows chroma_row0 on
++// from chroma_offset (whole Cb and Cr pairs).
++struct avf_yuv_extent {
++    int luma_rows;
++    ptrdiff_t luma_offset;
++    size_t luma_bytes;
++    int chroma_row0, chroma_rows;
++    ptrdiff_t chroma_offset;
++    size_t chroma_bytes;
++};
++
++void avf_yuv_rect_extent(const struct avf_yuv *frame, struct avf_irect rect,
++                         struct avf_yuv_extent *out);
++
 +// Blends the premultiplied BGRA canvas into the frame over rect (frame
 +// pixels), sampling the canvas at the nearest position through src and dst.
 +void avf_yuv_blend(const struct avf_yuv *frame, const struct avf_bgra *canvas,
@@ -166,7 +213,7 @@ diff --git a/video/out/avfoundation/pixels.c b/video/out/avfoundation/pixels.c
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/pixels.c
-@@ -0,0 +1,357 @@
+@@ -0,0 +1,700 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -188,6 +235,13 @@ new file mode 100644
 +
 +#include <math.h>
 +#include <string.h>
++
++#if defined(__aarch64__) && defined(__ARM_NEON)
++#include <arm_neon.h>
++#define AVF_NEON 1
++#else
++#define AVF_NEON 0
++#endif
 +
 +#include "pixels.h"
 +
@@ -226,6 +280,18 @@ new file mode 100644
 +    return (struct avf_irect){ w, h, 0, 0 };
 +}
 +
++static int clampi(int v, int lo, int hi)
++{
++    return v < lo ? lo : (v > hi ? hi : v);
++}
++
++struct avf_irect avf_irect_clamp_edges(struct avf_irect r, int w, int h)
++{
++    return (struct avf_irect){
++        clampi(r.x0, 0, w), clampi(r.y0, 0, h), clampi(r.x1, 0, w), clampi(r.y1, 0, h),
++    };
++}
++
 +// ---- software upload --------------------------------------------------------
 +
 +void avf_copy_plane(uint8_t *dst, ptrdiff_t dst_stride,
@@ -256,22 +322,6 @@ new file mode 100644
 +        memcpy(dst + y * dst_stride, src + y * src_stride, width_bytes);
 +}
 +
-+void avf_interleave_uv8(uint8_t *dst, ptrdiff_t dst_stride,
-+                        const uint8_t *u, ptrdiff_t u_stride,
-+                        const uint8_t *v, ptrdiff_t v_stride,
-+                        int samples, int rows)
-+{
-+    for (int y = 0; y < rows; y++) {
-+        uint8_t *d = dst + y * dst_stride;
-+        const uint8_t *su = u + y * u_stride;
-+        const uint8_t *sv = v + y * v_stride;
-+        for (int x = 0; x < samples; x++) {
-+            d[2 * x] = su[x];
-+            d[2 * x + 1] = sv[x];
-+        }
-+    }
-+}
-+
 +static inline uint16_t load16(const uint8_t *p)
 +{
 +    uint16_t v;
@@ -284,9 +334,31 @@ new file mode 100644
 +    memcpy(p, &v, 2);
 +}
 +
-+void avf_shift_rows16(uint8_t *dst, ptrdiff_t dst_stride,
-+                      const uint8_t *src, ptrdiff_t src_stride,
-+                      int samples, int rows, int shift)
++// ---- scalar forms -------------------------------------------------------------
++//
++// Each kernel has a plain scalar form, which defines its result, and on arm64
++// a NEON form that must match it bit for bit. The exported *_scalar functions
++// let the host tests compare the two and time both.
++
++void avf_interleave_uv8_scalar(uint8_t *dst, ptrdiff_t dst_stride,
++                               const uint8_t *u, ptrdiff_t u_stride,
++                               const uint8_t *v, ptrdiff_t v_stride,
++                               int samples, int rows)
++{
++    for (int y = 0; y < rows; y++) {
++        uint8_t *d = dst + y * dst_stride;
++        const uint8_t *su = u + y * u_stride;
++        const uint8_t *sv = v + y * v_stride;
++        for (int x = 0; x < samples; x++) {
++            d[2 * x] = su[x];
++            d[2 * x + 1] = sv[x];
++        }
++    }
++}
++
++void avf_shift_rows16_scalar(uint8_t *dst, ptrdiff_t dst_stride,
++                             const uint8_t *src, ptrdiff_t src_stride,
++                             int samples, int rows, int shift)
 +{
 +    for (int y = 0; y < rows; y++) {
 +        uint8_t *d = dst + y * dst_stride;
@@ -296,10 +368,10 @@ new file mode 100644
 +    }
 +}
 +
-+void avf_interleave_uv16(uint8_t *dst, ptrdiff_t dst_stride,
-+                         const uint8_t *u, ptrdiff_t u_stride,
-+                         const uint8_t *v, ptrdiff_t v_stride,
-+                         int samples, int rows, int shift)
++void avf_interleave_uv16_scalar(uint8_t *dst, ptrdiff_t dst_stride,
++                                const uint8_t *u, ptrdiff_t u_stride,
++                                const uint8_t *v, ptrdiff_t v_stride,
++                                int samples, int rows, int shift)
 +{
 +    for (int y = 0; y < rows; y++) {
 +        uint8_t *d = dst + y * dst_stride;
@@ -312,8 +384,6 @@ new file mode 100644
 +    }
 +}
 +
-+// ---- subtitle blends --------------------------------------------------------
-+
 +static bool clip_part(const struct avf_bgra *dst, int x, int y, int w, int h,
 +                      struct avf_irect *out)
 +{
@@ -321,6 +391,334 @@ new file mode 100644
 +    *out = avf_irect_intersect(r, (struct avf_irect){ 0, 0, dst->w, dst->h });
 +    return !avf_irect_empty(*out);
 +}
++
++// One libass pixel with mask value m, the part's colour channels and its
++// opacity a = 255 - TT.
++static inline void libass_pixel(uint8_t *p, uint32_t m, uint32_t cb, uint32_t cg,
++                                uint32_t cr, uint32_t a)
++{
++    uint32_t A = a * m;
++    uint32_t I = 65025 - A;
++    p[0] = (uint8_t)((m * cb * a + p[0] * I + 32512) / 65025);
++    p[1] = (uint8_t)((m * cg * a + p[1] * I + 32512) / 65025);
++    p[2] = (uint8_t)((m * cr * a + p[2] * I + 32512) / 65025);
++    p[3] = (uint8_t)((A * 255 + p[3] * I + 32512) / 65025);
++}
++
++static void libass_span_scalar(uint8_t *d, const uint8_t *m, int n, uint32_t cb,
++                               uint32_t cg, uint32_t cr, uint32_t a)
++{
++    for (int i = 0; i < n; i++) {
++        if (m[i])
++            libass_pixel(d + 4 * i, m[i], cb, cg, cr, a);
++    }
++}
++
++// One premultiplied BGRA source pixel over a destination pixel.
++static inline void bgra_pixel(uint8_t *dp, const uint8_t *sp)
++{
++    uint32_t sa = sp[3];
++    if (!sa)
++        return;
++    if (sa == 255 || !(dp[0] | dp[1] | dp[2] | dp[3])) {
++        memcpy(dp, sp, 4);
++        return;
++    }
++    for (int c = 0; c < 4; c++) {
++        uint32_t v = sp[c] + (dp[c] * (255 - sa) + 127) / 255;
++        dp[c] = (uint8_t)(v > 255 ? 255 : v);
++    }
++}
++
++static void bgra_span_scalar(uint8_t *d, const uint8_t *s, int n)
++{
++    for (int i = 0; i < n; i++)
++        bgra_pixel(d + 4 * i, s + 4 * i);
++}
++
++void avf_blend_libass_scalar(const struct avf_bgra *dst, const uint8_t *mask,
++                             ptrdiff_t mask_stride, int x, int y, int w, int h,
++                             uint32_t color)
++{
++    uint32_t a = 255 - (color & 0xFF);
++    if (!a)
++        return;
++    uint32_t cr = color >> 24, cg = (color >> 16) & 0xFF, cb = (color >> 8) & 0xFF;
++    struct avf_irect r;
++    if (!clip_part(dst, x, y, w, h, &r))
++        return;
++    for (int py = r.y0; py < r.y1; py++) {
++        const uint8_t *m = mask + (ptrdiff_t)(py - y) * mask_stride + (r.x0 - x);
++        uint8_t *d = dst->data + (ptrdiff_t)py * dst->stride + 4 * (ptrdiff_t)r.x0;
++        libass_span_scalar(d, m, r.x1 - r.x0, cb, cg, cr, a);
++    }
++}
++
++void avf_blend_bgra_scalar(const struct avf_bgra *dst, const uint8_t *src,
++                           ptrdiff_t src_stride, int x, int y, int w, int h)
++{
++    struct avf_irect r;
++    if (!clip_part(dst, x, y, w, h, &r))
++        return;
++    for (int py = r.y0; py < r.y1; py++) {
++        const uint8_t *s = src + (ptrdiff_t)(py - y) * src_stride + 4 * (ptrdiff_t)(r.x0 - x);
++        uint8_t *d = dst->data + (ptrdiff_t)py * dst->stride + 4 * (ptrdiff_t)r.x0;
++        bgra_span_scalar(d, s, r.x1 - r.x0);
++    }
++}
++
++#if AVF_NEON
++
++// ---- NEON forms -----------------------------------------------------------------
++//
++// The blends are done in 8- and 16-bit lanes, using identities that hold for
++// every input the scalar forms take (the host tests check each one over its
++// whole range):
++//
++// - round(t / 255), which is floor((t + 127) / 255), equals
++//   (t + ((t + 128) >> 8) + 128) >> 8 for 0 <= t <= 65025: one rounding shift
++//   and one rounding narrowing add.
++// - libass: with A = a * m, the scalar result (A * c + d * (65025 - A) +
++//   32512) / 65025 is d + s * D, where e = |c - d|, s is the sign of c - d,
++//   and D = round((Q * e + round(R * e / 255)) / 255) with Q = A / 255 and
++//   R = A % 255. For an opaque part (a = 255), Q = m and R = 0, so
++//   D = round(m * e / 255).
++// - BGRA: (d * (255 - sa) + 127) / 255 is round(d * (255 - sa) / 255).
++
++// round(t / 255) for sixteen 16-bit lanes (lo, hi), narrowed to bytes.
++static inline uint8x16_t rdiv255(uint16x8_t lo, uint16x8_t hi)
++{
++    return vraddhn_high_u16(vraddhn_u16(lo, vrshrq_n_u16(lo, 8)),
++                            hi, vrshrq_n_u16(hi, 8));
++}
++
++// round(x * e / 255) for sixteen pixels.
++static inline uint8x16_t rdiv255_mul(uint8x16_t x, uint8x16_t e)
++{
++    return rdiv255(vmull_u8(vget_low_u8(x), vget_low_u8(e)), vmull_high_u8(x, e));
++}
++
++// D for sixteen pixels of one channel at any opacity.
++static inline uint8x16_t libass_step(uint8x16_t q, uint8x16_t r, uint8x16_t e)
++{
++    uint8x16_t rho = rdiv255_mul(r, e);
++    uint16x8_t lo = vmlal_u8(vmovl_u8(vget_low_u8(rho)), vget_low_u8(q), vget_low_u8(e));
++    uint16x8_t hi = vmlal_high_u8(vmovl_high_u8(rho), q, e);
++    return rdiv255(lo, hi);
++}
++
++// d moved towards c by D.
++static inline uint8x16_t towards(uint8x16_t c, uint8x16_t d, uint8x16_t step)
++{
++    return vbslq_u8(vcgeq_u8(c, d), vaddq_u8(d, step), vsubq_u8(d, step));
++}
++
++// A mask value of 0 leaves its pixel exactly as it was, so whole blocks go
++// through the arithmetic without per-pixel tests.
++static void libass_span(uint8_t *d, const uint8_t *m, int n, uint32_t cb,
++                        uint32_t cg, uint32_t cr, uint32_t a)
++{
++    const uint8x16_t vb = vdupq_n_u8((uint8_t)cb), vg = vdupq_n_u8((uint8_t)cg);
++    const uint8x16_t vr = vdupq_n_u8((uint8_t)cr), va = vdupq_n_u8((uint8_t)a);
++    const uint16x8_t one = vdupq_n_u16(1);
++    const bool opaque = a == 255;
++    int i = 0;
++    for (; i + 16 <= n; i += 16) {
++        uint8x16_t mv = vld1q_u8(m + i);
++        if (!vmaxvq_u8(mv))
++            continue;
++        uint8_t *p = d + 4 * i;
++        if (opaque && vminvq_u8(mv) == 255) {
++            // A fully covered block of an opaque colour is exactly the colour.
++            uint8x16x4_t solid = { { vb, vg, vr, vdupq_n_u8(255) } };
++            vst4q_u8(p, solid);
++            continue;
++        }
++        uint8x16x4_t px = vld4q_u8(p);
++        uint8x16_t eb = vabdq_u8(vb, px.val[0]), eg = vabdq_u8(vg, px.val[1]);
++        uint8x16_t er = vabdq_u8(vr, px.val[2]), ea = vmvnq_u8(px.val[3]);
++        uint8x16_t sb, sg, sr, sa;
++        if (opaque) {
++            sb = rdiv255_mul(mv, eb);
++            sg = rdiv255_mul(mv, eg);
++            sr = rdiv255_mul(mv, er);
++            sa = rdiv255_mul(mv, ea);
++        } else {
++            // Q = A / 255 as (A + 1 + (A >> 8)) >> 8, exact for A <= 65025;
++            // R = A - 255 * Q, which in bytes is the low byte of A plus Q.
++            uint16x8_t alo = vmull_u8(vget_low_u8(mv), vget_low_u8(va));
++            uint16x8_t ahi = vmull_high_u8(mv, va);
++            uint8x16_t q = vcombine_u8(
++                vshrn_n_u16(vsraq_n_u16(vaddq_u16(alo, one), alo, 8), 8),
++                vshrn_n_u16(vsraq_n_u16(vaddq_u16(ahi, one), ahi, 8), 8));
++            uint8x16_t r = vaddq_u8(vmulq_u8(mv, va), q);
++            sb = libass_step(q, r, eb);
++            sg = libass_step(q, r, eg);
++            sr = libass_step(q, r, er);
++            sa = libass_step(q, r, ea);
++        }
++        px.val[0] = towards(vb, px.val[0], sb);
++        px.val[1] = towards(vg, px.val[1], sg);
++        px.val[2] = towards(vr, px.val[2], sr);
++        px.val[3] = vaddq_u8(px.val[3], sa); // alpha always moves up, to 255
++        vst4q_u8(p, px);
++    }
++    libass_span_scalar(d + 4 * i, m + i, n - i, cb, cg, cr, a);
++}
++
++// A transparent source pixel changes nothing; an opaque one, or any over an
++// all-zero destination pixel, comes out as exactly the source through the
++// same arithmetic (its quotient is 0).
++static void bgra_span(uint8_t *d, const uint8_t *s, int n)
++{
++    int i = 0;
++    for (; i + 16 <= n; i += 16) {
++        uint8x16x4_t sp = vld4q_u8(s + 4 * i);
++        uint8x16_t sa = sp.val[3];
++        if (!vmaxvq_u8(sa))
++            continue;
++        uint8_t *p = d + 4 * i;
++        if (vminvq_u8(sa) == 255) {
++            vst4q_u8(p, sp);
++            continue;
++        }
++        uint8x16x4_t dp = vld4q_u8(p);
++        uint8x16_t keep = vceqzq_u8(sa);
++        uint8x16_t any = vorrq_u8(vorrq_u8(dp.val[0], dp.val[1]),
++                                  vorrq_u8(dp.val[2], dp.val[3]));
++        uint8x16x4_t out;
++        if (!vmaxvq_u8(any)) {
++            // An empty destination block (a freshly cleared canvas): the
++            // source where it has alpha, nothing elsewhere.
++            for (int c = 0; c < 4; c++)
++                out.val[c] = vbicq_u8(sp.val[c], keep);
++        } else {
++            uint8x16_t inv = vmvnq_u8(sa);
++            for (int c = 0; c < 4; c++) {
++                uint8x16_t q = rdiv255_mul(dp.val[c], inv);
++                out.val[c] = vbslq_u8(keep, dp.val[c], vqaddq_u8(sp.val[c], q));
++            }
++        }
++        vst4q_u8(p, out);
++    }
++    bgra_span_scalar(d + 4 * i, s + 4 * i, n - i);
++}
++
++void avf_interleave_uv8(uint8_t *dst, ptrdiff_t dst_stride,
++                        const uint8_t *u, ptrdiff_t u_stride,
++                        const uint8_t *v, ptrdiff_t v_stride,
++                        int samples, int rows)
++{
++    for (int y = 0; y < rows; y++) {
++        uint8_t *d = dst + y * dst_stride;
++        const uint8_t *su = u + y * u_stride;
++        const uint8_t *sv = v + y * v_stride;
++        int x = 0;
++        for (; x + 16 <= samples; x += 16) {
++            uint8x16x2_t uv = { { vld1q_u8(su + x), vld1q_u8(sv + x) } };
++            vst2q_u8(d + 2 * x, uv);
++        }
++        for (; x < samples; x++) {
++            d[2 * x] = su[x];
++            d[2 * x + 1] = sv[x];
++        }
++    }
++}
++
++// Eight little-endian 16-bit samples, shifted left.
++static inline uint16x8_t load_shifted(const uint8_t *p, int16x8_t shift)
++{
++    return vshlq_u16(vreinterpretq_u16_u8(vld1q_u8(p)), shift);
++}
++
++void avf_shift_rows16(uint8_t *dst, ptrdiff_t dst_stride,
++                      const uint8_t *src, ptrdiff_t src_stride,
++                      int samples, int rows, int shift)
++{
++    const int16x8_t sh = vdupq_n_s16((int16_t)shift);
++    for (int y = 0; y < rows; y++) {
++        uint8_t *d = dst + y * dst_stride;
++        const uint8_t *s = src + y * src_stride;
++        int x = 0;
++        for (; x + 16 <= samples; x += 16) {
++            vst1q_u8(d + 2 * x, vreinterpretq_u8_u16(load_shifted(s + 2 * x, sh)));
++            vst1q_u8(d + 2 * x + 16,
++                     vreinterpretq_u8_u16(load_shifted(s + 2 * x + 16, sh)));
++        }
++        for (; x < samples; x++)
++            store16(d + 2 * x, (uint16_t)(load16(s + 2 * x) << shift));
++    }
++}
++
++void avf_interleave_uv16(uint8_t *dst, ptrdiff_t dst_stride,
++                         const uint8_t *u, ptrdiff_t u_stride,
++                         const uint8_t *v, ptrdiff_t v_stride,
++                         int samples, int rows, int shift)
++{
++    const int16x8_t sh = vdupq_n_s16((int16_t)shift);
++    for (int y = 0; y < rows; y++) {
++        uint8_t *d = dst + y * dst_stride;
++        const uint8_t *su = u + y * u_stride;
++        const uint8_t *sv = v + y * v_stride;
++        int x = 0;
++        for (; x + 8 <= samples; x += 8) {
++            uint16x8_t cu = load_shifted(su + 2 * x, sh);
++            uint16x8_t cv = load_shifted(sv + 2 * x, sh);
++            vst1q_u8(d + 4 * x, vreinterpretq_u8_u16(vzip1q_u16(cu, cv)));
++            vst1q_u8(d + 4 * x + 16, vreinterpretq_u8_u16(vzip2q_u16(cu, cv)));
++        }
++        for (; x < samples; x++) {
++            store16(d + 4 * x, (uint16_t)(load16(su + 2 * x) << shift));
++            store16(d + 4 * x + 2, (uint16_t)(load16(sv + 2 * x) << shift));
++        }
++    }
++}
++
++#else // !AVF_NEON: the scalar forms serve directly
++
++static void libass_span(uint8_t *d, const uint8_t *m, int n, uint32_t cb,
++                        uint32_t cg, uint32_t cr, uint32_t a)
++{
++    libass_span_scalar(d, m, n, cb, cg, cr, a);
++}
++
++static void bgra_span(uint8_t *d, const uint8_t *s, int n)
++{
++    bgra_span_scalar(d, s, n);
++}
++
++void avf_interleave_uv8(uint8_t *dst, ptrdiff_t dst_stride,
++                        const uint8_t *u, ptrdiff_t u_stride,
++                        const uint8_t *v, ptrdiff_t v_stride,
++                        int samples, int rows)
++{
++    avf_interleave_uv8_scalar(dst, dst_stride, u, u_stride, v, v_stride, samples, rows);
++}
++
++void avf_shift_rows16(uint8_t *dst, ptrdiff_t dst_stride,
++                      const uint8_t *src, ptrdiff_t src_stride,
++                      int samples, int rows, int shift)
++{
++    avf_shift_rows16_scalar(dst, dst_stride, src, src_stride, samples, rows, shift);
++}
++
++void avf_interleave_uv16(uint8_t *dst, ptrdiff_t dst_stride,
++                         const uint8_t *u, ptrdiff_t u_stride,
++                         const uint8_t *v, ptrdiff_t v_stride,
++                         int samples, int rows, int shift)
++{
++    avf_interleave_uv16_scalar(dst, dst_stride, u, u_stride, v, v_stride, samples,
++                               rows, shift);
++}
++
++#endif
++
++bool avf_pixels_vectorised(void)
++{
++    return AVF_NEON;
++}
++
++// ---- subtitle blends --------------------------------------------------------
 +
 +void avf_blend_libass(const struct avf_bgra *dst, const uint8_t *mask,
 +                      ptrdiff_t mask_stride, int x, int y, int w, int h,
@@ -334,20 +732,9 @@ new file mode 100644
 +    if (!clip_part(dst, x, y, w, h, &r))
 +        return;
 +    for (int py = r.y0; py < r.y1; py++) {
-+        const uint8_t *m = mask + (ptrdiff_t)(py - y) * mask_stride;
-+        uint8_t *d = dst->data + (ptrdiff_t)py * dst->stride;
-+        for (int px = r.x0; px < r.x1; px++) {
-+            uint32_t mv = m[px - x];
-+            if (!mv)
-+                continue;
-+            uint8_t *p = d + 4 * px;
-+            uint32_t A = a * mv;
-+            uint32_t I = 65025 - A;
-+            p[0] = (uint8_t)((mv * cb * a + p[0] * I + 32512) / 65025);
-+            p[1] = (uint8_t)((mv * cg * a + p[1] * I + 32512) / 65025);
-+            p[2] = (uint8_t)((mv * cr * a + p[2] * I + 32512) / 65025);
-+            p[3] = (uint8_t)((A * 255 + p[3] * I + 32512) / 65025);
-+        }
++        const uint8_t *m = mask + (ptrdiff_t)(py - y) * mask_stride + (r.x0 - x);
++        uint8_t *d = dst->data + (ptrdiff_t)py * dst->stride + 4 * (ptrdiff_t)r.x0;
++        libass_span(d, m, r.x1 - r.x0, cb, cg, cr, a);
 +    }
 +}
 +
@@ -358,23 +745,9 @@ new file mode 100644
 +    if (!clip_part(dst, x, y, w, h, &r))
 +        return;
 +    for (int py = r.y0; py < r.y1; py++) {
-+        const uint8_t *s = src + (ptrdiff_t)(py - y) * src_stride;
-+        uint8_t *d = dst->data + (ptrdiff_t)py * dst->stride;
-+        for (int px = r.x0; px < r.x1; px++) {
-+            const uint8_t *sp = s + 4 * (px - x);
-+            uint8_t *dp = d + 4 * px;
-+            uint32_t sa = sp[3];
-+            if (!sa)
-+                continue;
-+            if (sa == 255 || !(dp[0] | dp[1] | dp[2] | dp[3])) {
-+                memcpy(dp, sp, 4);
-+                continue;
-+            }
-+            for (int c = 0; c < 4; c++) {
-+                uint32_t v = sp[c] + (dp[c] * (255 - sa) + 127) / 255;
-+                dp[c] = (uint8_t)(v > 255 ? 255 : v);
-+            }
-+        }
++        const uint8_t *s = src + (ptrdiff_t)(py - y) * src_stride + 4 * (ptrdiff_t)(r.x0 - x);
++        uint8_t *d = dst->data + (ptrdiff_t)py * dst->stride + 4 * (ptrdiff_t)r.x0;
++        bgra_span(d, s, r.x1 - r.x0);
 +    }
 +}
 +
@@ -421,6 +794,23 @@ new file mode 100644
 +        return false;
 +    *out = r;
 +    return true;
++}
++
++void avf_yuv_rect_extent(const struct avf_yuv *f, struct avf_irect rect,
++                         struct avf_yuv_extent *out)
++{
++    int bps = f->ten_bit ? 2 : 1;
++    // Luma: the rectangle's own samples. Chroma: the interleaved pairs and
++    // rows the blend can write, which are those of the even positions.
++    out->luma_rows = rect.y1 - rect.y0;
++    out->luma_offset = (ptrdiff_t)rect.x0 * bps;
++    out->luma_bytes = (size_t)(rect.x1 - rect.x0) * bps;
++    int cy0 = rect.y0 / 2, cy1 = (rect.y1 + 1) / 2;
++    int cx0 = rect.x0 / 2, cx1 = (rect.x1 + 1) / 2;
++    out->chroma_row0 = cy0;
++    out->chroma_rows = cy1 - cy0;
++    out->chroma_offset = (ptrdiff_t)cx0 * 2 * bps;
++    out->chroma_bytes = (size_t)(cx1 - cx0) * 2 * bps;
 +}
 +
 +struct yuv_levels {

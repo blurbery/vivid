@@ -11,6 +11,7 @@
  * your option) any later version.
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -160,9 +161,9 @@ static int ref_step(struct ref_servo *s, int64_t media, int64_t target, int64_t 
         return REF_ANCHOR;
     }
     double p = ref_clamp(((double)e / 1e9) / 2.0, 0.015);
+    // The integral gains P times the step in nanoseconds, over 8e9 ns.
     if (s->has_eval && now - s->eval_t > 0 && now - s->eval_t <= 500 * MS)
-        s->integral = ref_clamp(s->integral + p * ((double)(now - s->eval_t) / 1e9) / 8.0,
-                                0.015);
+        s->integral = ref_clamp(s->integral + p * (double)(now - s->eval_t) / 8e9, 0.015);
     s->has_eval = true;
     s->eval_t = now;
     double r = nominal * (1.0 + ref_clamp(p + s->integral, 0.015));
@@ -198,6 +199,15 @@ static void test_conversions(void)
     CHECK(!avf_media_seconds_to_ns(INFINITY, &ns), "inf");
     CHECK(!avf_media_seconds_to_ns(-INFINITY, &ns), "-inf");
 
+    // A finite time beyond the int64 range of nanoseconds saturates.
+    CASE("seconds-to-ns-saturates");
+    CHECK(avf_media_seconds_to_ns(9.3e9, &ns) && ns == INT64_MAX, "9.3e9 s");
+    CHECK(avf_media_seconds_to_ns(-9.3e9, &ns) && ns == INT64_MIN, "-9.3e9 s");
+    CHECK(avf_media_seconds_to_ns(1e300, &ns) && ns == INT64_MAX, "1e300 s");
+    CHECK(avf_media_seconds_to_ns(-1e300, &ns) && ns == INT64_MIN, "-1e300 s");
+    CHECK(avf_media_seconds_to_ns(DBL_MAX, &ns) && ns == INT64_MAX, "largest double");
+    CHECK(avf_media_seconds_to_ns(9.2e9, &ns) && ns == 9200000000000000000LL, "9.2e9 s");
+
     CASE("seconds-to-ns-single-rounding");
     // pts * 1e9 +/- 0.5 as one fused multiply-add, truncated.
     struct avf_rng rng = { 0x9E3779B97F4A7C15ULL };
@@ -213,7 +223,13 @@ static void test_conversions(void)
     CASE("frame-duration");
     CHECK_EQ_I(avf_frame_duration_ns(true, 0.04, 1e6), 40000000);
     CHECK_EQ_I(avf_frame_duration_ns(true, 0.0, 41666666.6), 41666667);
-    CHECK_EQ_I(avf_frame_duration_ns(true, 1e-10, 5e6), 5000000);   // 0.1 ns truncates to 0
+    // Below 1 ns the ideal duration truncates to 0, which is unusable: the
+    // estimator does not fall back to vo_frame.duration.
+    CHECK_EQ_I(avf_frame_duration_ns(true, 1e-10, 5e6), 0);
+    CHECK_EQ_I(avf_frame_duration_ns(true, 0.999e-9, 5e6), 0);
+    CHECK_EQ_I(avf_frame_duration_ns(true, 2e-9, 5e6), 2);
+    CHECK_EQ_I(avf_frame_duration_ns(false, 1e-10, 5e6), 5000000);
+    CHECK_EQ_I(avf_frame_duration_ns(true, -0.04, 41666666.6), 41666667);
     CHECK_EQ_I(avf_frame_duration_ns(false, 0.04, 40000000.5), 40000000); // ties to even
     CHECK_EQ_I(avf_frame_duration_ns(false, 0.04, 40000001.5), 40000002);
     CHECK_EQ_I(avf_frame_duration_ns(false, 0, -1), 0);
@@ -852,9 +868,48 @@ static void test_deterministic_trace(void)
     }
 }
 
+// The pacing summary's largest phase error: sampled on every frame that keeps
+// its nominal rate, anchoring or not, and never on a frame whose estimate
+// changed the nominal rate.
+static void test_phase_error_sampling(void)
+{
+    CASE("phase-error-sampling");
+    struct avf_clock c;
+    avf_clock_init(&c);
+    struct avf_clock_result res;
+    // No valid anchor yet: the frame anchors, and its error still counts.
+    struct avf_clock_frame in = { .media_ns = 7 * SEC, .target_ns = 0, .now_ns = 0,
+                                  .timebase_ns = 0 };
+    avf_clock_step(&c, &in, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR, "no anchor");
+    CHECK_EQ_I(c.max_abs_error_ns, 7 * SEC);
+    c.max_abs_error_ns = 0;
+    // An estimate that becomes the nominal rate: the error is not sampled.
+    in = (struct avf_clock_frame){ .media_ns = 9 * SEC, .target_ns = 0, .now_ns = 0,
+                                   .timebase_ns = 0, .has_estimate = true, .estimate = 2.0 };
+    avf_clock_step(&c, &in, &res);
+    CHECK(res.nominal_changed, "estimate not adopted");
+    CHECK_EQ_I(c.max_abs_error_ns, 0);
+    // Paused: the frame anchors at rate 0, and its error counts.
+    avf_clock_pause(&c);
+    in = (struct avf_clock_frame){ .media_ns = 3 * MS, .target_ns = 0, .now_ns = 0,
+                                   .timebase_ns = 0 };
+    avf_clock_step(&c, &in, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR && res.rate == 0, "paused frame did not anchor at 0");
+    CHECK_EQ_I(c.max_abs_error_ns, 3 * MS);
+    // A paused frame with an estimate keeps the nominal rate, so it counts.
+    in.has_estimate = true;
+    in.estimate = 4.0;
+    in.media_ns = 5 * MS;
+    avf_clock_step(&c, &in, &res);
+    CHECK(!res.nominal_changed, "estimate adopted while paused");
+    CHECK_EQ_I(c.max_abs_error_ns, 5 * MS);
+}
+
 void avf_test_clock(void)
 {
     test_conversions();
+    test_phase_error_sampling();
     test_estimator_vectors();
     test_no_needless_anchors();
     test_one_anchor_per_jump();

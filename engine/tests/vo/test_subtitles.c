@@ -82,27 +82,51 @@ static struct sub_bitmap_list make_list(struct sub_bitmaps **items, int n)
                                      .num_items = n };
 }
 
+static int imin(int a, int b) { return a < b ? a : b; }
+static int imax(int a, int b) { return a > b ? a : b; }
+static int iclamp(int v, int hi) { return v < 0 ? 0 : (v > hi ? hi : v); }
+
+// The bounding box of 4.14.5: the union of every drawn part's destination
+// rectangle (a dw or dh of 0 or below counting as w or h), from the empty form
+// (CW, CH, 0, 0), with each edge then clamped to the canvas on its own.
+static void box_add(struct avf_irect *box, const struct sub_bitmap *p)
+{
+    if (!p->bitmap || p->w <= 0 || p->h <= 0)
+        return;
+    box->x0 = imin(box->x0, p->x);
+    box->y0 = imin(box->y0, p->y);
+    box->x1 = imax(box->x1, p->x + (p->dw > 0 ? p->dw : p->w));
+    box->y1 = imax(box->y1, p->y + (p->dh > 0 ? p->dh : p->h));
+}
+
+static struct avf_irect box_clamped(struct avf_irect b)
+{
+    return (struct avf_irect){ iclamp(b.x0, CW), iclamp(b.y0, CH), iclamp(b.x1, CW),
+                               iclamp(b.y1, CH) };
+}
+
 // Reference canvas: every object drawn in order with the direct blends
 // (each blend is checked bit for bit in the pixels suite).
 static uint8_t *reference_direct(struct object **objs, int n, struct avf_irect *box)
 {
     uint8_t *buf = calloc((size_t)CW * CH * 4, 1);
     struct avf_bgra c = { buf, CW * 4, CW, CH };
-    *box = avf_irect_empty_box(CW, CH);
+    struct avf_irect raw = avf_irect_empty_box(CW, CH);
     for (int k = 0; k < n; k++) {
         struct sub_bitmaps *imgs = &objs[k]->imgs;
         for (int i = 0; i < imgs->num_parts; i++) {
             struct sub_bitmap *p = &imgs->parts[i];
+            if (!p->bitmap || p->w <= 0 || p->h <= 0)
+                continue;               // skipped on both paths
             if (imgs->format == SUBBITMAP_LIBASS)
                 avf_blend_libass(&c, p->bitmap, p->stride, p->x, p->y, p->w, p->h,
                                  p->libass.color);
             else
                 avf_blend_bgra(&c, p->bitmap, p->stride, p->x, p->y, p->w, p->h);
-            struct avf_irect r = { p->x, p->y, p->x + (p->dw > 0 ? p->dw : p->w),
-                                   p->y + (p->dh > 0 ? p->dh : p->h) };
-            *box = avf_irect_union(*box, avf_irect_intersect(r, (struct avf_irect){ 0, 0, CW, CH }));
+            box_add(&raw, p);
         }
     }
+    *box = box_clamped(raw);
     return buf;
 }
 
@@ -117,6 +141,8 @@ static uint8_t *reference_cg(struct object **objs, int n)
         struct sub_bitmaps *imgs = &objs[k]->imgs;
         for (int i = 0; i < imgs->num_parts; i++) {
             struct sub_bitmap *p = &imgs->parts[i];
+            if (!p->bitmap || p->w <= 0 || p->h <= 0)
+                continue;
             CGRect rect = CGRectMake(p->x, CH - p->y - p->dh, p->dw, p->dh);
             size_t bpp = imgs->format == SUBBITMAP_BGRA ? 4 : 1;
             CGDataProviderRef prov = CGDataProviderCreateWithData(NULL, p->bitmap,
@@ -456,10 +482,115 @@ static void test_samples_and_clearing(void)
     avf_subs_destroy(s);
 }
 
+static bool same_box(struct avf_irect a, struct avf_irect b)
+{
+    return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1;
+}
+
+static void test_bounding_box(void)
+{
+    // Each edge is clamped on its own, so parts that lie wholly off the
+    // canvas on opposite sides still span it: the composite then runs over
+    // transparent pixels and leaves the frame as it was, instead of falling
+    // back to Core Image.
+    CASE("bounding-box-edges-clamped-separately");
+    struct avf_rng rng = { 5005 };
+    struct avf_subs *s = avf_subs_create(NULL);
+    struct object a;
+    make_object(&a, &rng, 0, SUBBITMAP_LIBASS, 2, false, 3);
+    a.parts[0].x = -a.parts[0].w - 10;  // wholly left of the canvas
+    a.parts[0].y = 40;
+    a.parts[1].x = CW + 5;              // wholly right of it
+    a.parts[1].y = 70;
+    struct sub_bitmaps *items[1] = { &a.imgs };
+    struct sub_bitmap_list list = make_list(items, 1);
+    avf_subs_render(s, &list, CW, CH, false);
+    struct avf_irect box = avf_subs_bbox(s);
+    int y1 = imax(40 + a.parts[0].h, 70 + a.parts[1].h);
+    CHECK(same_box(box, (struct avf_irect){ 0, 40, CW, iclamp(y1, CH) }),
+          "box %d,%d-%d,%d", box.x0, box.y0, box.x1, box.y1);
+    uint8_t *zero = calloc((size_t)CW * CH * 4, 1);
+    CHECK(canvas_equals(cached_buffer(s), zero), "off-canvas parts drew something");
+    free(zero);
+
+    // Wholly above with another part on the canvas: the box reaches the top.
+    CASE("bounding-box-part-above");
+    avf_subs_clear(s);
+    a.parts[0].x = 30;
+    a.parts[0].y = -200;
+    a.parts[1].x = 50;
+    a.parts[1].y = 90;
+    a.imgs.change_id = 4;
+    avf_subs_render(s, &list, CW, CH, false);
+    box = avf_subs_bbox(s);
+    struct object *objs[1] = { &a };
+    struct avf_irect want;
+    free(reference_direct(objs, 1, &want));
+    CHECK(box.y0 == 0 && same_box(box, want), "box %d,%d-%d,%d", box.x0, box.y0, box.x1,
+          box.y1);
+
+    // All parts off one side: empty.
+    CASE("bounding-box-all-off-one-side");
+    avf_subs_clear(s);
+    a.parts[0].x = -500;
+    a.parts[1].x = -300;
+    a.imgs.change_id = 5;
+    avf_subs_render(s, &list, CW, CH, false);
+    CHECK(avf_irect_empty(avf_subs_bbox(s)), "box not empty");
+    free_object(&a);
+    avf_subs_destroy(s);
+}
+
+static void test_part_rules(void)
+{
+    // The choice of path ignores parts that are skipped anyway: a scaled part
+    // without a bitmap leaves the object on the direct path.
+    CASE("path-choice-ignores-skipped-parts");
+    struct avf_rng rng = { 6006 };
+    struct avf_subs *s = avf_subs_create(NULL);
+    struct object a;
+    make_object(&a, &rng, 0, SUBBITMAP_LIBASS, 3, false, 8);
+    a.parts[2].bitmap = NULL;           // skipped...
+    a.parts[2].dw = a.parts[2].w * 3;   // ...and scaled
+    struct sub_bitmaps *items[1] = { &a.imgs };
+    struct sub_bitmap_list list = make_list(items, 1);
+    avf_subs_render(s, &list, CW, CH, false);
+    struct object *objs[1] = { &a };
+    struct avf_irect box;
+    uint8_t *want = reference_direct(objs, 1, &box);
+    CHECK(canvas_equals(cached_buffer(s), want), "not drawn on the direct path");
+    free(want);
+    a.parts[2].bitmap = a.data[2];
+    a.parts[2].w = 0;                   // skipped for its size instead
+    a.imgs.change_id = 9;
+    avf_subs_render(s, &list, CW, CH, false);
+    want = reference_direct(objs, 1, &box);
+    CHECK(canvas_equals(cached_buffer(s), want), "a zero-width part forced CoreGraphics");
+    free(want);
+    free_object(&a);
+
+    // On the CoreGraphics path each part is drawn at its own dw and dh as
+    // they are: 0 draws nothing (the box still counts it at w x h).
+    CASE("coregraphics-raw-size");
+    make_object(&a, &rng, 0, SUBBITMAP_LIBASS, 3, true, 10);
+    a.parts[1].dw = 0;
+    a.parts[1].dh = 0;
+    avf_subs_render(s, &list, CW, CH, false);
+    want = reference_cg(objs, 1);       // CoreGraphics with the raw sizes
+    CHECK(canvas_equals(cached_buffer(s), want), "a zero-size part drew something");
+    free(want);
+    free(reference_direct(objs, 1, &box));
+    CHECK(same_box(avf_subs_bbox(s), box), "box ignores the defaulting rule");
+    free_object(&a);
+    avf_subs_destroy(s);
+}
+
 void avf_test_subtitles(void)
 {
     test_several_objects();
     test_cg_path();
     test_dirty_tracking();
     test_samples_and_clearing();
+    test_bounding_box();
+    test_part_rules();
 }

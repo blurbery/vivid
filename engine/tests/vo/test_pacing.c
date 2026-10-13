@@ -30,6 +30,8 @@ struct fake {
     const char *reason;
     int drops;
     enum avf_drop_kind kind;
+    int sleeps;
+    int ready_calls;
 };
 
 static int64_t f_now(void *ctx) { return ((struct fake *)ctx)->now; }
@@ -37,6 +39,7 @@ static int64_t f_now(void *ctx) { return ((struct fake *)ctx)->now; }
 static void f_sleep(void *ctx, int64_t ns)
 {
     struct fake *f = ctx;
+    f->sleeps++;
     f->now += ns;
     if (f->break_at && f->now >= f->break_at) {
         f->broken = true;
@@ -47,6 +50,7 @@ static void f_sleep(void *ctx, int64_t ns)
 static bool f_ready(void *ctx)
 {
     struct fake *f = ctx;
+    f->ready_calls++;
     return !f->broken && f->now >= f->ready_at;
 }
 
@@ -337,9 +341,68 @@ static void test_run(void)
     CHECK(!p.have_last_drop && !p.have_last_enqueue, "times kept");
 }
 
+static void test_wait_order(void)
+{
+    struct fake f;
+    struct avf_pacing p;
+    struct avf_pacing_ops ops;
+
+    // Readiness is checked before anything sleeps, and a frame that is ready
+    // at once records no wait.
+    CASE("ready-checked-before-any-poll");
+    setup(&f, &p);
+    ops = make_ops(&f);
+    f.ready_at = 0;
+    CHECK(avf_pacing_wait(&p, &ops, f.now + 50 * MS) == AVF_WAIT_PROCEED, "dropped");
+    CHECK_EQ_I(f.sleeps, 0);
+    CHECK_EQ_I(f.ready_calls, 1);
+    CHECK_EQ_I(p.waits, 0);
+
+    // A layer that needs recovery mid-wait is recovered and, once it no
+    // longer needs it, looked at again at once: no poll goes by in between.
+    CASE("recovered-layer-checked-at-once");
+    setup(&f, &p);
+    ops = make_ops(&f);
+    f.break_at = f.now + 2 * MS;
+    f.ready_at = f.now + 2 * MS;        // ready as soon as it is recovered
+    CHECK(avf_pacing_wait(&p, &ops, f.now + 40 * MS) == AVF_WAIT_PROCEED, "dropped");
+    CHECK_EQ_I(f.recoveries, 1);
+    CHECK_EQ_I(f.now, 1002 * MS);
+    CHECK_EQ_I(f.sleeps, 2);
+    CHECK_EQ_I(p.waits, 1);
+
+    // Each pass: readiness, the deadline, recovery, then the poll. A deadline
+    // reached after a poll is a drop while waiting.
+    CASE("deadline-after-readiness");
+    setup(&f, &p);
+    ops = make_ops(&f);
+    f.ready_at = f.now + 6 * MS;        // ready exactly at the give-up moment
+    CHECK(avf_pacing_wait(&p, &ops, f.now + 10 * MS) == AVF_WAIT_PROCEED,
+          "readiness not checked before the deadline");
+    CHECK_EQ_I(f.drops, 0);
+
+    // The summary window opens at the start of the first flip, so that
+    // flip's drops count in it.
+    CASE("window-opens-at-first-flip");
+    setup(&f, &p);
+    ops = make_ops(&f);
+    avf_pacing_window_open(&p, f.now);
+    avf_pacing_wait(&p, &ops, f.now);   // a drop in the first flip
+    f.now += 1 * MS;
+    CHECK(!avf_pacing_window_due(&p, f.now), "due at once");
+    CHECK_EQ_I(p.drops, 1);
+    avf_pacing_window_open(&p, f.now);  // later flips change nothing
+    CHECK_EQ_I(p.window_start_ns, 1000 * MS);
+    f.now = 1000 * MS + AVF_PACING_WINDOW_NS - 1;
+    CHECK(!avf_pacing_window_due(&p, f.now), "due early");
+    f.now += 1;
+    CHECK(avf_pacing_window_due(&p, f.now), "not due after 5 s");
+}
+
 void avf_test_pacing(void)
 {
     test_boundary();
     test_recovery();
     test_run();
+    test_wait_order();
 }

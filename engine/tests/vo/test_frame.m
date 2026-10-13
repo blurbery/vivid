@@ -13,6 +13,7 @@
  * your option) any later version.
  */
 
+#import <CoreImage/CoreImage.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -102,26 +103,6 @@ static CVPixelBufferRef clone_pixels(CVPixelBufferRef src)
     CVPixelBufferUnlockBaseAddress(dst, 0);
     CVPixelBufferUnlockBaseAddress(src, kCVPixelBufferLock_ReadOnly);
     return dst;
-}
-
-static bool same_attachments(CVBufferRef a, CVBufferRef b)
-{
-    bool same = true;
-    const CVAttachmentMode modes[] = { kCVAttachmentMode_ShouldPropagate,
-                                       kCVAttachmentMode_ShouldNotPropagate };
-    for (int i = 0; i < 2; i++) {
-        CFDictionaryRef da = avf_copy_attachments(a, modes[i]);
-        CFDictionaryRef db = avf_copy_attachments(b, modes[i]);
-        bool ea = !da || CFDictionaryGetCount(da) == 0;
-        bool eb = !db || CFDictionaryGetCount(db) == 0;
-        if (ea != eb || (!ea && !CFEqual(da, db)))
-            same = false;
-        if (da)
-            CFRelease(da);
-        if (db)
-            CFRelease(db);
-    }
-    return same;
 }
 
 static CFTypeRef attachment(CVBufferRef b, CFStringRef key, CVAttachmentMode *mode)
@@ -502,107 +483,189 @@ static void set_decoder_attachments(CVPixelBufferRef b)
                           kCVAttachmentMode_ShouldNotPropagate);
 }
 
-// Composites and then applies 4.5 and 4.4, as the output does before a frame
-// is enqueued.
-static CVPixelBufferRef composite(struct avf_frame *f, CVPixelBufferRef video,
-                                  CVPixelBufferRef cue, struct avf_irect bbox,
-                                  const struct mp_image_params *vp,
-                                  const struct mp_image_params *ip,
-                                  enum avf_composite_kind *kind)
+// Both attachment dictionaries of a buffer, to compare later.
+struct attachments { CFDictionaryRef prop, noprop; };
+
+static struct attachments snapshot(CVBufferRef b)
 {
-    int w = (int)CVPixelBufferGetWidth(video), h = (int)CVPixelBufferGetHeight(video);
-    struct avf_overlay ov = {
-        .bgra = cue, .bbox = bbox, .image = NULL, .canvas_w = w, .canvas_h = h,
+    return (struct attachments){
+        avf_copy_attachments(b, kCVAttachmentMode_ShouldPropagate),
+        avf_copy_attachments(b, kCVAttachmentMode_ShouldNotPropagate),
+    };
+}
+
+static bool dict_same(CFDictionaryRef a, CFDictionaryRef b)
+{
+    bool ea = !a || CFDictionaryGetCount(a) == 0, eb = !b || CFDictionaryGetCount(b) == 0;
+    return ea == eb && (ea || CFEqual(a, b));
+}
+
+static bool unchanged(CVBufferRef b, const struct attachments *before)
+{
+    struct attachments now = snapshot(b);
+    bool same = dict_same(now.prop, before->prop) && dict_same(now.noprop, before->noprop);
+    if (now.prop) CFRelease(now.prop);
+    if (now.noprop) CFRelease(now.noprop);
+    return same;
+}
+
+static void release_snapshot(struct attachments *a)
+{
+    if (a->prop) CFRelease(a->prop);
+    if (a->noprop) CFRelease(a->noprop);
+}
+
+static struct avf_overlay frame_overlay(CVPixelBufferRef cue, struct avf_irect box, int w, int h)
+{
+    return (struct avf_overlay){
+        .bgra = cue, .bbox = box, .image = NULL, .canvas_w = w, .canvas_h = h,
         .src = { 0, 0, w, h }, .dst = { 0, 0, w, h },
     };
-    CVPixelBufferRef out = avf_frame_composite(f, video, false, &ov, kind);
-    if (out) {
-        avf_frame_pixel_aspect(out, vp);
-        if (*kind != AVF_COMPOSITE_CORE_IMAGE)
-            avf_frame_dolby_vision_repair(out, ip);
-    }
-    return out;
+}
+
+// What the output does with a hardware frame before it is enqueued while
+// compositing is on: earlier rows back, then the composite.
+static CVPixelBufferRef present_composite(struct avf_frame *f, CVPixelBufferRef decoder,
+                                          CVPixelBufferRef cue, struct avf_irect box,
+                                          enum avf_composite_kind *kind)
+{
+    int w = (int)CVPixelBufferGetWidth(decoder), h = (int)CVPixelBufferGetHeight(decoder);
+    avf_frame_restore(f, decoder);
+    struct avf_overlay ov = frame_overlay(cue, box, w, h);
+    return avf_frame_composite(f, decoder, false, &ov, kind);
+}
+
+// The original picture with one cue blended once, through a writable copy.
+static CVPixelBufferRef blended_once(CVPixelBufferRef original, CVPixelBufferRef cue,
+                                     struct avf_irect box)
+{
+    int w = (int)CVPixelBufferGetWidth(original), h = (int)CVPixelBufferGetHeight(original);
+    CVPixelBufferRef fresh = clone_pixels(original);
+    set_decoder_attachments(fresh); // the same matrix as the decoder buffer
+    struct avf_frame *g = avf_frame_create(NULL);
+    struct avf_overlay ov = frame_overlay(cue, box, w, h);
+    enum avf_composite_kind kind;
+    CVPixelBufferRef out = avf_frame_composite(g, fresh, true, &ov, &kind);
+    CHECK(out == fresh && kind == AVF_COMPOSITE_IN_PLACE, "writable buffer not blended in place");
+    if (out)
+        CVPixelBufferRelease(out);
+    avf_frame_destroy(g);
+    return fresh;
 }
 
 static void test_blend_once(void)
 {
-    const OSType formats[] = { kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-                               kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
-                               kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-                               kCVPixelFormatType_420YpCbCr10BiPlanarFullRange };
+    const struct { OSType fmt; const char *name; } formats[] = {
+        { kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, "420v" },
+        { kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, "420f" },
+        { kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, "x420" },
+        { kCVPixelFormatType_420YpCbCr10BiPlanarFullRange, "xf20" },
+    };
     struct avf_rng rng = { 8086 };
     for (int fi = 0; fi < 4; fi++) {
         CASE("blend-once");
-        OSType fmt = formats[fi];
+        OSType fmt = formats[fi].fmt;
+        const char *name = formats[fi].name;
         bool ten = fmt == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
                    fmt == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
-        int w = 320, h = 180;
+        int w = 322, h = 182;
         struct avf_frame *f = avf_frame_create(NULL);
         CVPixelBufferRef decoder = make_buffer(w, h, fmt);
         fill_random(decoder, &rng, ten);
         set_decoder_attachments(decoder);
         CVPixelBufferRef original = clone_pixels(decoder);
+        CFIndex base_retains = CFGetRetainCount(decoder);
+        struct attachments before = snapshot(decoder);
+
+        // Odd edges, so the kept rows include partial chroma pairs.
+        struct avf_irect box_a, box_b;
+        CVPixelBufferRef cue_a = make_cue(w, h, 41, 131, 201, 31, 30, &box_a);
+        CVPixelBufferRef cue_b = make_cue(w, h, 61, 21, 151, 25, 220, &box_b);
+        CVPixelBufferRef want_a = blended_once(original, cue_a, box_a);
+        CVPixelBufferRef want_b = blended_once(original, cue_b, box_b);
+        enum avf_composite_kind k1, k2, k3;
+
+        // First presentation: blended into the decoder buffer itself, with
+        // nothing frame-sized made.
+        CVPixelBufferRef s1 = present_composite(f, decoder, cue_a, box_a, &k1);
+        CHECK(s1 == decoder && k1 == AVF_COMPOSITE_DECODER,
+              "%s: not blended into the decoder buffer (kind %d)", name, k1);
+        CHECK(same_pixels(decoder, want_a), "%s: first composite is not the cue blended once", name);
+        CHECK(unchanged(decoder, &before), "%s: composite changed the decoder's attachments", name);
+        size_t kept_bytes = 0;
+        CHECK(avf_frame_kept_buffer(f, &kept_bytes) == decoder, "%s: no rows kept", name);
+        size_t frame_bytes = (size_t)w * h * (ten ? 2 : 1) * 3 / 2;
+        CHECK(kept_bytes > 0 && kept_bytes < frame_bytes / 2,
+              "%s: %zu bytes kept for a %zu-byte frame", name, kept_bytes, frame_bytes);
+        if (s1)
+            CVPixelBufferRelease(s1);
+
+        // A redraw of the same image with the same cue: blended once, not
+        // twice.
+        CVPixelBufferRef s2 = present_composite(f, decoder, cue_a, box_a, &k2);
+        CHECK(s2 == decoder && k2 == AVF_COMPOSITE_DECODER, "%s: redraw kind %d", name, k2);
+        CHECK(same_pixels(decoder, want_a), "%s: the redraw blended the cue twice", name);
+        if (s2)
+            CVPixelBufferRelease(s2);
+
+        // A redraw with another cue: only the new one, no trace of the old.
+        CVPixelBufferRef s3 = present_composite(f, decoder, cue_b, box_b, &k3);
+        CHECK(s3 == decoder && k3 == AVF_COMPOSITE_DECODER, "%s: new cue kind %d", name, k3);
+        CHECK(same_pixels(decoder, want_b), "%s: a stale cue under the new one", name);
+        if (s3)
+            CVPixelBufferRelease(s3);
+
+        // A redraw after the cue ended, compositing still on: the picture
+        // alone, and nothing kept any more.
+        avf_frame_restore(f, decoder);
+        CHECK(same_pixels(decoder, original), "%s: the ended cue stayed in the picture", name);
+        CHECK(!avf_frame_kept_buffer(f, NULL), "%s: rows kept after the restore", name);
+        CHECK(CFGetRetainCount(decoder) == base_retains, "%s: decoder buffer still retained", name);
+
+        // Compositing switched off: the rows go back and nothing stays held.
+        CVPixelBufferRef s4 = present_composite(f, decoder, cue_a, box_a, &k1);
+        if (s4)
+            CVPixelBufferRelease(s4);
+        avf_frame_end_composites(f);
+        CHECK(same_pixels(decoder, original), "%s: burned-in cue after compositing off", name);
+        CHECK(!avf_frame_kept_buffer(f, &kept_bytes) && kept_bytes == 0,
+              "%s: %zu bytes still held with compositing off", name, kept_bytes);
+        CHECK(CFGetRetainCount(decoder) == base_retains,
+              "%s: decoder buffer retained with compositing off", name);
+
+        // The next frame is another buffer: the composited one is let go
+        // untouched (mpv never presents it again).
+        CVPixelBufferRef s5 = present_composite(f, decoder, cue_b, box_b, &k1);
+        if (s5)
+            CVPixelBufferRelease(s5);
+        CVPixelBufferRef next = make_buffer(w, h, fmt);
+        avf_frame_restore(f, next);
+        CHECK(!avf_frame_kept_buffer(f, NULL), "%s: rows of an old frame kept", name);
+        CHECK(same_pixels(decoder, want_b), "%s: an old frame was rewritten", name);
+        CHECK(CFGetRetainCount(decoder) == base_retains, "%s: old frame still retained", name);
+        CVPixelBufferRelease(next);
+
+        // The decoder's attachments are still exactly its own; the pixel
+        // aspect and the Dolby Vision repair act on the same buffer.
+        CHECK(unchanged(decoder, &before), "%s: attachments changed", name);
         struct mp_image_params vp = { .w = w, .h = h, .p_w = 4, .p_h = 3 };
         struct mp_image_params ip = {0};
         ip.repr.sys = PL_COLOR_SYSTEM_DOLBYVISION;
         ip.color.transfer = PL_COLOR_TRC_PQ;
-
-        struct avf_irect box_a, box_b;
-        CVPixelBufferRef cue_a = make_cue(w, h, 40, 130, 200, 30, 30, &box_a);
-        CVPixelBufferRef cue_b = make_cue(w, h, 60, 20, 150, 25, 220, &box_b);
-        enum avf_composite_kind k1, k2, k3;
-        CVPixelBufferRef s1 = composite(f, decoder, cue_a, box_a, &vp, &ip, &k1);
-        CVPixelBufferRef s2 = composite(f, decoder, cue_a, box_a, &vp, &ip, &k2);
-        CVPixelBufferRef s3 = composite(f, decoder, cue_b, box_b, &vp, &ip, &k3);
-        CHECK(s1 && s2 && s3, "no composite");
-        if (!(s1 && s2 && s3))
-            goto done;
-        CHECK(k1 == AVF_COMPOSITE_COPY && k2 == AVF_COMPOSITE_COPY && k3 == AVF_COMPOSITE_COPY,
-              "decoder buffer not composited through a copy");
-        CHECK(s1 != decoder && s2 != decoder && s3 != decoder, "decoder buffer written");
-        CHECK(same_pixels(decoder, original), "decoder pixels changed");
-        CHECK(same_pixels(s1, s2), "second composite of the same cue differs");
-        CHECK(!same_pixels(s1, original), "first composite shows no cue");
-
-        // The third shows only cue B: equal to cue B blended once into the
-        // original picture.
-        CVPixelBufferRef fresh = clone_pixels(original);
-        set_decoder_attachments(fresh); // same matrix as the decoder buffer
-        struct avf_frame *g = avf_frame_create(NULL);
-        struct avf_overlay ov = { .bgra = cue_b, .bbox = box_b, .canvas_w = w, .canvas_h = h,
-                                  .src = { 0, 0, w, h }, .dst = { 0, 0, w, h } };
-        enum avf_composite_kind kk;
-        CVPixelBufferRef want = avf_frame_composite(g, fresh, true, &ov, &kk);
-        CHECK(want && kk == AVF_COMPOSITE_IN_PLACE, "writable buffer not blended in place");
-        CHECK(want == fresh, "in-place composite returned another buffer");
-        CHECK(want && same_pixels(s3, want), "a stale cue under the new one");
-        if (want)
-            CVPixelBufferRelease(want);
-        CVPixelBufferRelease(fresh);
-        avf_frame_destroy(g);
-
-        // Compositing off: the decoder's own buffer, untouched.
-        CHECK(same_pixels(decoder, original), "burned-in cue after compositing off");
-
-        // Attachments equal the decoder buffer's after 4.5 and 4.4.
         avf_frame_pixel_aspect(decoder, &vp);
-        avf_frame_dolby_vision_repair(decoder, &ip);
-        CHECK(attachment(decoder, kCVImageBufferTransferFunctionKey, NULL) != NULL,
-              "repair did not fire on the decoder buffer");
-        CHECK(same_attachments(s1, decoder) && same_attachments(s3, decoder),
-              "composite attachments differ from the decoder buffer's");
-        CHECK(CVPixelBufferGetWidth(s1) == (size_t)w && CVPixelBufferGetHeight(s1) == (size_t)h,
-              "composite changed the size");
+        CHECK(avf_frame_dolby_vision_repair(decoder, &ip), "%s: repair did not fire", name);
+        CHECK(CVPixelBufferGetWidth(decoder) == (size_t)w &&
+              CVPixelBufferGetHeight(decoder) == (size_t)h, "%s: size changed", name);
 
-    done:
-        if (s1) CVPixelBufferRelease(s1);
-        if (s2) CVPixelBufferRelease(s2);
-        if (s3) CVPixelBufferRelease(s3);
+        release_snapshot(&before);
         CVPixelBufferRelease(cue_a);
         CVPixelBufferRelease(cue_b);
+        CVPixelBufferRelease(want_a);
+        CVPixelBufferRelease(want_b);
         CVPixelBufferRelease(original);
-        CVPixelBufferRelease(decoder);
         avf_frame_destroy(f);
+        CHECK(CFGetRetainCount(decoder) == 1, "%s: destroy left a retain", name);
+        CVPixelBufferRelease(decoder);
     }
 }
 
@@ -624,9 +687,7 @@ static void test_composite_size(void)
             struct avf_irect box;
             CVPixelBufferRef cue = make_cue(w, h, w / 6, y, w * 2 / 3, h / 12, 90, &box);
             enum avf_composite_kind k;
-            struct avf_overlay ov = { .bgra = cue, .bbox = box, .canvas_w = w, .canvas_h = h,
-                                      .src = { 0, 0, w, h }, .dst = { 0, 0, w, h } };
-            CVPixelBufferRef out = avf_frame_composite(f, video, false, &ov, &k);
+            CVPixelBufferRef out = present_composite(f, video, cue, box, &k);
             CVPixelBufferRef shown = out ? out : video;
             CHECK(CVPixelBufferGetWidth(shown) == (size_t)w &&
                   CVPixelBufferGetHeight(shown) == (size_t)h, "sub-pos %d%%: size changed", pos);
@@ -639,11 +700,60 @@ static void test_composite_size(void)
     }
 }
 
+static void test_transparent_span(void)
+{
+    // Parts wholly off the frame on opposite sides give a bounding box across
+    // it (4.14.5). The blend then meets only transparent pixels, so the frame
+    // passes through untouched instead of going to Core Image.
+    const OSType formats[] = { kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                               kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+                               kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
+                               kCVPixelFormatType_420YpCbCr10BiPlanarFullRange };
+    struct avf_rng rng = { 2024 };
+    for (int fi = 0; fi < 4; fi++) {
+        CASE("transparent-box-leaves-frame");
+        int w = 200, h = 120;
+        struct avf_frame *f = avf_frame_create(NULL);
+        CVPixelBufferRef video = make_buffer(w, h, formats[fi]);
+        fill_random(video, &rng, fi >= 2);
+        CVPixelBufferRef original = clone_pixels(video);
+        CVPixelBufferRef cue = make_buffer(w, h, kCVPixelFormatType_32BGRA);
+        CVPixelBufferLockBaseAddress(cue, 0);
+        memset(CVPixelBufferGetBaseAddress(cue), 0, CVPixelBufferGetBytesPerRow(cue) * h);
+        CVPixelBufferUnlockBaseAddress(cue, 0);
+        enum avf_composite_kind k;
+        CVPixelBufferRef out = present_composite(f, video, cue,
+                                                 (struct avf_irect){ 0, 30, w, 90 }, &k);
+        CHECK(out == video && k == AVF_COMPOSITE_DECODER, "not blended in place (kind %d)", k);
+        CHECK(same_pixels(video, original), "transparent pixels changed the frame");
+        if (out)
+            CVPixelBufferRelease(out);
+        avf_frame_destroy(f);
+        CVPixelBufferRelease(cue);
+        CVPixelBufferRelease(original);
+        CVPixelBufferRelease(video);
+    }
+}
+
+// A frame-sized subtitle image with one filled box.
+static CGImageRef make_cue_image(int w, int h)
+{
+    CGColorSpaceRef rgb = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, 8, w * 4, rgb,
+                                             kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGContextSetRGBFillColor(ctx, 1, 1, 0, 1);
+    CGContextFillRect(ctx, CGRectMake(10, 10, w / 2, 20));
+    CGImageRef img = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    CGColorSpaceRelease(rgb);
+    return img;
+}
+
 static void test_core_image(void)
 {
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     if (!dev) {
-        printf("  (no Metal device on this host: Core Image composite not run)\n");
+        printf("  (no Metal device on this host: Core Image composites not run)\n");
         return;
     }
     [dev release];
@@ -657,12 +767,7 @@ static void test_core_image(void)
                           kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
     CVBufferSetAttachment(video, kCVImageBufferColorPrimariesKey,
                           kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
-    CGColorSpaceRef rgb = CGColorSpaceCreateDeviceRGB();
-    CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, 8, w * 4, rgb,
-                                             kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-    CGContextSetRGBFillColor(ctx, 1, 1, 0, 1);
-    CGContextFillRect(ctx, CGRectMake(10, 10, 100, 20));
-    CGImageRef img = CGBitmapContextCreateImage(ctx);
+    CGImageRef img = make_cue_image(w, h);
     struct avf_overlay ov = { .bgra = NULL, .bbox = {0}, .image = img, .canvas_w = w,
                               .canvas_h = h, .src = { 0, 0, w, h }, .dst = { 0, 0, w, h } };
     enum avf_composite_kind k;
@@ -685,11 +790,69 @@ static void test_core_image(void)
     CHECK(!out && k == AVF_COMPOSITE_NONE, "a resized composite was kept");
     if (out)
         CVPixelBufferRelease(out);
-
     CGImageRelease(img);
-    CGContextRelease(ctx);
-    CGColorSpaceRelease(rgb);
     CVPixelBufferRelease(video);
+
+    // Output format by source: half float only for 10-bit 4:2:0, 8-bit BGRA
+    // for everything else.
+    CASE("core-image-output-format");
+    const struct { OSType in; OSType out; const char *name; } formats[] = {
+        { kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, kCVPixelFormatType_64RGBAHalf, "x420" },
+        { kCVPixelFormatType_420YpCbCr10BiPlanarFullRange, kCVPixelFormatType_64RGBAHalf, "xf20" },
+        { kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_32BGRA, "420v" },
+        { kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange, kCVPixelFormatType_32BGRA, "x422" },
+        { kCVPixelFormatType_422YpCbCr10BiPlanarFullRange, kCVPixelFormatType_32BGRA, "xf22" },
+        { kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange, kCVPixelFormatType_32BGRA, "x444" },
+        { kCVPixelFormatType_444YpCbCr10BiPlanarFullRange, kCVPixelFormatType_32BGRA, "xf44" },
+        { kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_32BGRA, "422v" },
+        { kCVPixelFormatType_422YpCbCr16BiPlanarVideoRange, kCVPixelFormatType_32BGRA, "sv22" },
+        { kCVPixelFormatType_64RGBALE, kCVPixelFormatType_32BGRA, "l64r" },
+    };
+    w = 128;
+    h = 72;
+    img = make_cue_image(w, h);
+    int checked = 0;
+    for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+        video = make_buffer(w, h, formats[i].in);
+        if (!video)
+            continue;
+        // Without a BGRA canvas the YUV blend produces nothing, so 4:2:0
+        // sources reach Core Image too.
+        ov = (struct avf_overlay){ .image = img, .canvas_w = w, .canvas_h = h,
+                                   .src = { 0, 0, w, h }, .dst = { 0, 0, w, h } };
+        out = avf_frame_composite(f, video, false, &ov, &k);
+        if (out) {
+            checked++;
+            CHECK(k == AVF_COMPOSITE_CORE_IMAGE, "%s: kind %d", formats[i].name, k);
+            CHECK(CVPixelBufferGetPixelFormatType(out) == formats[i].out,
+                  "%s: Core Image output format", formats[i].name);
+            CVPixelBufferRelease(out);
+        }
+        CVPixelBufferRelease(video);
+    }
+    CHECK(checked >= 8, "only %d source formats composited", checked);
+
+    // A source Core Image cannot read gets no composite at all: the frame
+    // goes out without the subtitle, never as the subtitle over an empty
+    // picture.
+    CASE("core-image-unreadable-source");
+    video = make_buffer(w, h, kCVPixelFormatType_4444AYpCbCr16);
+    CHECK(video != NULL, "no y416 buffer");
+    if (video) {
+        CIImage *probe = [CIImage imageWithCVPixelBuffer:video];
+        if (probe) {
+            printf("  (Core Image reads y416 on this host: unreadable source not run)\n");
+        } else {
+            ov = (struct avf_overlay){ .image = img, .canvas_w = w, .canvas_h = h,
+                                       .src = { 0, 0, w, h }, .dst = { 0, 0, w, h } };
+            out = avf_frame_composite(f, video, false, &ov, &k);
+            CHECK(!out && k == AVF_COMPOSITE_NONE, "a composite of an unreadable source");
+            if (out)
+                CVPixelBufferRelease(out);
+        }
+        CVPixelBufferRelease(video);
+    }
+    CGImageRelease(img);
     avf_frame_destroy(f);
 }
 
@@ -702,6 +865,7 @@ void avf_test_frame(void)
         test_samples();
         test_blend_once();
         test_composite_size();
+        test_transparent_span();
         test_core_image();
     }
 }

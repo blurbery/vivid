@@ -9,11 +9,13 @@ The output keeps a strong reference to the AVSampleBufferDisplayLayer it is
 given through --wid, makes its timebase the layer's controlTimebase, and
 adds a transparent subtitle layer above it in the same superlayer (or
 inside it, with a warning, when it has none). Renderer calls go through
-the layers' sampleBufferRenderer. Work that UIKit needs on the main thread
-(geometry reads, layer creation, observers, recovery flushes and timebase
-attachment) is done with synchronous hops that never wait for the player
-core; the subtitle layer's frame copy and its queued flushes are
-asynchronous.
+the layers' sampleBufferRenderer, in functions marked as needing iOS and
+tvOS 17. Work that UIKit needs on the main thread (geometry reads, layer
+creation, observers, recovery flushes and timebase attachment) is done
+with synchronous hops that never wait for the player core; the subtitle
+layer's frame copy and its queued flushes are asynchronous. At teardown
+both layers get their last release on the main thread, queued so that
+nothing waits for it, and are never deallocated on mpv's VO thread.
 
 Key-value observers on the host layer's bounds and contentsScale, and
 observers of the app resigning and regaining active state, only raise a
@@ -32,7 +34,7 @@ diff --git a/video/out/avfoundation/layers.h b/video/out/avfoundation/layers.h
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/layers.h
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,112 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -77,7 +79,9 @@ new file mode 100644
 +// Takes a strong reference to the host layer (an AVSampleBufferDisplayLayer
 +// at the given address, unvalidated).
 +struct avf_layers *avf_layers_create(struct mp_log *log, void *host_layer);
-+// Releases what is left; call after the teardown steps below.
++// Releases what is left; call after the teardown steps below. The host and
++// subtitle layers get their last release on main, queued asynchronously, so
++// they are never deallocated on the VO thread.
 +void avf_layers_destroy(struct avf_layers *l);
 +
 +// ---- creation (synchronous main-thread hops) -----------------------------------
@@ -147,7 +151,7 @@ diff --git a/video/out/avfoundation/layers.m b/video/out/avfoundation/layers.m
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/layers.m
-@@ -0,0 +1,451 @@
+@@ -0,0 +1,469 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -168,11 +172,6 @@ new file mode 100644
 + */
 +
 +// Manual reference counting, like the rest of mpv's Objective-C.
-+//
-+// The renderer API used here (AVSampleBufferDisplayLayer.sampleBufferRenderer)
-+// exists from iOS and tvOS 17. The output refuses to start below that (see
-+// preinit), so none of this runs on older systems.
-+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
 +
 +#import <AVFoundation/AVFoundation.h>
 +#import <Foundation/Foundation.h>
@@ -189,10 +188,16 @@ new file mode 100644
 +#include "geometry.h"
 +#include "layers.h"
 +
++// The renderer API (AVSampleBufferDisplayLayer.sampleBufferRenderer and
++// AVSampleBufferVideoRenderer) exists from iOS and tvOS 17. The output refuses
++// to start below that (see preinit in vo_avfoundation.m), so the functions
++// marked with this only run where it exists.
++#define AVF_NEEDS_OS17 API_AVAILABLE(ios(17.0), tvos(17.0), macos(14.0))
++
 +// Shared between the VO and the observers. The observers' blocks and the
 +// key-value observer keep it alive, so a notification that arrives after
 +// teardown finds no VO and does nothing.
-+@interface AVFOutputLink : NSObject {
++@interface LucidOutputLink : NSObject {
 +@public
 +    os_unfair_lock lock;
 +    struct vo *vo;          // NULL once detached
@@ -205,7 +210,7 @@ new file mode 100644
 +- (void)detach;
 +@end
 +
-+@implementation AVFOutputLink
++@implementation LucidOutputLink
 +- (instancetype)init
 +{
 +    if ((self = [super init]))
@@ -250,16 +255,16 @@ new file mode 100644
 +}
 +@end
 +
-+static void *const kAVFGeometryContext = (void *)&kAVFGeometryContext;
++static void *const kLucidGeometryContext = (void *)&kLucidGeometryContext;
 +
-+@interface AVFGeometryObserver : NSObject {
-+    AVFOutputLink *link;
++@interface LucidGeometryObserver : NSObject {
++    LucidOutputLink *link;
 +}
-+- (instancetype)initWithLink:(AVFOutputLink *)l;
++- (instancetype)initWithLink:(LucidOutputLink *)l;
 +@end
 +
-+@implementation AVFGeometryObserver
-+- (instancetype)initWithLink:(AVFOutputLink *)l
++@implementation LucidGeometryObserver
++- (instancetype)initWithLink:(LucidOutputLink *)l
 +{
 +    if ((self = [super init]))
 +        link = [l retain];
@@ -275,7 +280,7 @@ new file mode 100644
 +- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
 +                        change:(NSDictionary *)change context:(void *)context
 +{
-+    if (context != kAVFGeometryContext) {
++    if (context != kLucidGeometryContext) {
 +        [super observeValueForKeyPath:keyPath ofObject:object change:change
 +                              context:context];
 +        return;
@@ -296,10 +301,10 @@ new file mode 100644
 +    AVSampleBufferDisplayLayer *host;   // retained
 +    AVSampleBufferDisplayLayer *sub;    // retained
 +    bool nested;                        // subtitle layer inside the host
-+    AVFOutputLink *link;
++    LucidOutputLink *link;
 +    id resign_token;
 +    id active_token;
-+    AVFGeometryObserver *geometry;
++    LucidGeometryObserver *geometry;
 +    bool observing_geometry;
 +};
 +
@@ -324,7 +329,7 @@ new file mode 100644
 +        return NULL;
 +    l->log = log;
 +    l->host = [(AVSampleBufferDisplayLayer *)host_layer retain];
-+    l->link = [[AVFOutputLink alloc] init];
++    l->link = [[LucidOutputLink alloc] init];
 +    return l;
 +}
 +
@@ -337,8 +342,15 @@ new file mode 100644
 +    [l->active_token release];
 +    [l->geometry release];
 +    [l->link release];
-+    [l->sub release];
-+    [l->host release];
++    // The layers' last release, and so their dealloc, happens on main and not
++    // on mpv's VO thread. Nothing waits for it.
++    void *host = (void *)l->host, *sub = (void *)l->sub;
++    if (host || sub) {
++        dispatch_async(dispatch_get_main_queue(), ^{
++            [(id)sub release];
++            [(id)host release];
++        });
++    }
 +    free(l);
 +}
 +
@@ -398,7 +410,7 @@ new file mode 100644
 +
 +void avf_layers_observe_app_state(struct avf_layers *l, struct vo *vo)
 +{
-+    AVFOutputLink *link = l->link;
++    LucidOutputLink *link = l->link;
 +    os_unfair_lock_lock(&link->lock);
 +    link->vo = vo;
 +    os_unfair_lock_unlock(&link->lock);
@@ -425,18 +437,18 @@ new file mode 100644
 +
 +void avf_layers_observe_geometry(struct avf_layers *l, struct vo *vo)
 +{
-+    AVFOutputLink *link = l->link;
++    LucidOutputLink *link = l->link;
 +    os_unfair_lock_lock(&link->lock);
 +    link->vo = vo;
 +    os_unfair_lock_unlock(&link->lock);
-+    l->geometry = [[AVFGeometryObserver alloc] initWithLink:link];
++    l->geometry = [[LucidGeometryObserver alloc] initWithLink:link];
 +    run_on_main(^{
 +        NSKeyValueObservingOptions opts = NSKeyValueObservingOptionOld |
 +                                          NSKeyValueObservingOptionNew;
 +        [l->host addObserver:l->geometry forKeyPath:@"bounds" options:opts
-+                     context:kAVFGeometryContext];
++                     context:kLucidGeometryContext];
 +        [l->host addObserver:l->geometry forKeyPath:@"contentsScale" options:opts
-+                     context:kAVFGeometryContext];
++                     context:kLucidGeometryContext];
 +        l->observing_geometry = true;
 +    });
 +}
@@ -478,6 +490,7 @@ new file mode 100644
 +    });
 +}
 +
++AVF_NEEDS_OS17
 +void avf_layers_flush_subtitles_async(struct avf_layers *l)
 +{
 +    AVSampleBufferDisplayLayer *sub = l->sub;
@@ -489,6 +502,7 @@ new file mode 100644
 +    });
 +}
 +
++AVF_NEEDS_OS17
 +void avf_layers_flush_subtitles(struct avf_layers *l, bool remove_image)
 +{
 +    if (!l->sub)
@@ -501,16 +515,19 @@ new file mode 100644
 +    }
 +}
 +
++AVF_NEEDS_OS17
 +bool avf_layers_subtitles_ready(struct avf_layers *l)
 +{
 +    return l->sub && l->sub.sampleBufferRenderer.isReadyForMoreMediaData;
 +}
 +
++AVF_NEEDS_OS17
 +void avf_layers_enqueue_subtitles(struct avf_layers *l, CMSampleBufferRef s)
 +{
 +    [l->sub.sampleBufferRenderer enqueueSampleBuffer:s];
 +}
 +
++AVF_NEEDS_OS17
 +void avf_layers_flush_host(struct avf_layers *l, bool remove_image)
 +{
 +    AVSampleBufferVideoRenderer *r = l->host.sampleBufferRenderer;
@@ -521,11 +538,13 @@ new file mode 100644
 +    }
 +}
 +
++AVF_NEEDS_OS17
 +bool avf_layers_host_ready(struct avf_layers *l)
 +{
 +    return l->host.sampleBufferRenderer.isReadyForMoreMediaData;
 +}
 +
++AVF_NEEDS_OS17
 +bool avf_layers_host_needs_recovery(struct avf_layers *l)
 +{
 +    AVSampleBufferVideoRenderer *r = l->host.sampleBufferRenderer;
@@ -533,11 +552,13 @@ new file mode 100644
 +           r.requiresFlushToResumeDecoding;
 +}
 +
++AVF_NEEDS_OS17
 +void avf_layers_enqueue_host(struct avf_layers *l, CMSampleBufferRef s)
 +{
 +    [l->host.sampleBufferRenderer enqueueSampleBuffer:s];
 +}
 +
++AVF_NEEDS_OS17
 +void avf_layers_recover(struct avf_layers *l, CMTimebaseRef tb,
 +                        struct avf_recovery_state *out)
 +{
@@ -567,15 +588,16 @@ new file mode 100644
 +            [nc removeObserver:l->active_token];
 +        if (l->observing_geometry) {
 +            [l->host removeObserver:l->geometry forKeyPath:@"bounds"
-+                            context:kAVFGeometryContext];
++                            context:kLucidGeometryContext];
 +            [l->host removeObserver:l->geometry forKeyPath:@"contentsScale"
-+                            context:kAVFGeometryContext];
++                            context:kLucidGeometryContext];
 +            l->observing_geometry = false;
 +        }
 +    });
 +    [l->link detach];
 +}
 +
++AVF_NEEDS_OS17
 +void avf_layers_flush_for_teardown(struct avf_layers *l)
 +{
 +    avf_layers_flush_host(l, true);
