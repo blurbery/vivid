@@ -59,8 +59,10 @@ FETCH_ALLOWED = (
     "https://github.com/ninja-build/",
     "https://github.com/mpvkit/",  # interim prebuilt release assets only
 )
-# Hosts that may appear in references (upstream homes, patch descriptions).
-REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org"}
+# Hosts that may appear in references (upstream homes, patch descriptions,
+# and the GNU licence address in the licence header of new source files).
+REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org",
+                   "www.gnu.org"}
 # Projects nothing here may reference. Split so this file does not match itself.
 DENIED = ("edde" "746",)
 FETCH_WORDS = re.compile(r"\b(curl|wget|urlopen|urlretrieve|git clone|git fetch)\b")
@@ -1196,6 +1198,9 @@ def cmd_check(args) -> None:
     # Linkability: symbol closure and a dead-stripped test link.
     report["link"] = check_link(c, sl, pins, work, fws, sdk_path(sl.sdk))
 
+    # The AVFoundation video output (patch spec 2.1, 2.3, 8.6).
+    check_video_output(c, fws, work)
+
     report["ffmpeg"] = {"configuration": binary_conf, "licences": sorted(licences),
                         "components": {k: len(v) for k, v in sorted(components.items())}}
     report["mpv"] = {"configuration": configuration, "features": features}
@@ -1239,6 +1244,128 @@ def summarise(report: dict) -> str:
     if failed:
         lines += ["### Failed checks", ""] + [f"- {r['check']}: {r['detail']}" for r in failed] + [""]
     return "\n".join(lines) + "\n"
+
+
+# ------------------------------------------------------------- video output
+
+# Option names the video output registers. The option table stores each
+# short name; the group prefix is stored once (patch spec 2.3, 7.2).
+VO_OPTION_NAMES = (b"composite-osd", b"pip-composite-osd", b"queue-lead-ms", b"presentation")
+VO_ABSENT_OPTIONS = (b"osd-max-height", b"osd-video-res")
+# What the output must reference to do its job (patch spec 4).
+VO_REQUIRED_UNDEFINED = (
+    "_CMTimebaseCreateWithSourceClock", "_CMTimebaseSetRateAndAnchorTime",
+    "_CMTimebaseCopySource", "_CMClockGetHostTimeClock",
+    "_CMSampleBufferCreateReadyWithImageBuffer",
+    "_CMVideoFormatDescriptionCreateForImageBuffer",
+    "_CMVideoFormatDescriptionMatchesImageBuffer",
+    "_CVPixelBufferPoolCreate", "_kCVPixelBufferMetalCompatibilityKey",
+    "_kCVPixelBufferIOSurfacePropertiesKey", "_kCVImageBufferPixelAspectRatioKey",
+    "_kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ",
+    "_CVImageBufferCreateColorSpaceFromAttachments", "_CVBufferPropagateAttachments",
+    "_OBJC_CLASS_$_AVSampleBufferDisplayLayer", "_OBJC_CLASS_$_CIContext",
+    "_OBJC_CLASS_$_CIImage", "_OBJC_CLASS_$_CATransaction", "_MTLCreateSystemDefaultDevice",
+    "_UIApplicationDidBecomeActiveNotification", "_UIApplicationWillResignActiveNotification",
+    "_av_hwdevice_ctx_alloc", "_av_hwdevice_ctx_init",
+)
+VO_REQUIRED_STRINGS = (
+    b"DolbyVisionRPUData\x00", b"sampleBufferRenderer\x00",
+    b"flushWithRemovalOfDisplayedImage:completionHandler:\x00",
+    b"requiresFlushToResumeDecoding\x00", b"isReadyForMoreMediaData\x00",
+    b"enqueueSampleBuffer:\x00", b"setControlTimebase:\x00",
+)
+VO_TEST_DIR = ENGINE / "tests" / "vo"
+VO_TEST_MODULES = ("clock.c", "pacing.c", "pixels.c", "geometry.c", "pool.c", "timebase.c",
+                   "subtitles.c", "frame.m")
+VO_TEST_FRAMEWORKS = ("Foundation", "CoreFoundation", "CoreVideo", "CoreMedia", "CoreGraphics",
+                      "CoreImage", "Metal", "IOSurface")
+
+
+def vo_driver_list(vo_c: str) -> list[str]:
+    """The entries of video_out_drivers[] in vo.c, in order."""
+    m = re.search(r"video_out_drivers\[\]\s*=\s*\{(.*?)\};", vo_c, re.S)
+    return re.findall(r"&(video_out_\w+)", m.group(1)) if m else []
+
+
+def check_video_output(c: Checks, fws: Path, work: Path) -> None:
+    libmpv = fws / "Libmpv.framework" / "Libmpv"
+    data = libmpv.read_bytes()
+    defined, undefined = nm_symbols(libmpv, False), nm_symbols(libmpv, True)
+    c.expect("Libmpv defines the avfoundation video output", "_video_out_avfoundation" in defined)
+    drivers = vo_driver_list((work / "src" / "mpv" / "video" / "out" / "vo.c").read_text())
+    c.equal("avfoundation video output registered first, before gpu-next", drivers[:2],
+            ["video_out_avfoundation", "video_out_gpu_next"])
+    config_h = work / "build" / "mpv" / "config.h"
+    c.equal("HAVE_VO_AVFOUNDATION", define(config_h, "HAVE_VO_AVFOUNDATION"), "1")
+    c.expect("Libmpv has the avfoundation driver, option prefix and device name",
+             b"\x00avfoundation\x00" in data)
+    for name in VO_OPTION_NAMES:
+        c.expect(f"Libmpv has the video output option {name.decode()}",
+                 b"\x00" + name + b"\x00" in data)
+    for name in VO_ABSENT_OPTIONS:
+        c.expect(f"Libmpv has no option {name.decode()}", name not in data)
+    missing = [s for s in VO_REQUIRED_UNDEFINED if s not in undefined]
+    c.expect("Libmpv's video output references what it needs", not missing, str(missing))
+    absent = [s.decode().rstrip("\x00") for s in VO_REQUIRED_STRINGS if s not in data]
+    c.expect("Libmpv's video output carries its selectors and the Dolby Vision key",
+             not absent, str(absent))
+
+
+def run_vo_tests(src: Path, includes: list[Path], out: Path) -> tuple[int, int, str]:
+    """Builds the video output tests for the build host from the patched mpv
+    tree and runs them. Returns (cases, failures, output)."""
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    sdk = sdk_path("macosx")
+    # mpv's own floating-point flags and optimisation level, so the pixel and
+    # timing arithmetic is tested as it ships.
+    flags = ["-arch", "arm64", "-isysroot", str(sdk), "-mmacosx-version-min=11.0", "-O3",
+             "-fno-math-errno", "-fno-signed-zeros", "-fno-trapping-math", "-Wall", "-Wno-unused-parameter", "-Wno-sign-compare", "-Wno-pointer-sign",
+             "-Wno-missing-field-initializers", "-Werror=implicit-function-declaration",
+             "-D_GNU_SOURCE", f"-I{src}", f"-I{VO_TEST_DIR}"] + [f"-I{p}" for p in includes]
+    sources = [src / "video" / "out" / "avfoundation" / m for m in VO_TEST_MODULES]
+    sources += sorted(p for p in VO_TEST_DIR.iterdir() if p.suffix in (".c", ".m"))
+    objects = []
+    for source in sources:
+        obj = out / (source.parent.name + "-" + source.stem + ".o")
+        lang = ["-std=c11"] if source.suffix == ".c" else []
+        run(["xcrun", "--sdk", "macosx", "clang", *flags, *lang, "-c", source, "-o", obj])
+        objects.append(obj)
+    binary = out / "vo-tests"
+    link = [f for name in VO_TEST_FRAMEWORKS for f in ("-framework", name)]
+    run(["xcrun", "--sdk", "macosx", "clang", "-arch", "arm64", "-isysroot", str(sdk),
+         "-mmacosx-version-min=11.0", *objects, "-o", binary, *link])
+    res = subprocess.run([str(binary)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, errors="replace")
+    output = res.stdout
+    m = re.search(r"^RESULT (\d+) cases, (\d+) failures$", output, re.M)
+    cases, failures = (int(m.group(1)), int(m.group(2))) if m else (0, -1)
+    if res.returncode != 0 and failures == 0:
+        failures = -1  # crashed or failed outside a case
+    return cases, failures, output
+
+
+def cmd_test_vo(args) -> None:
+    sl = SLICES[args.slice]
+    work = args.work.resolve() / sl.name
+    out = args.work.resolve() / "out" / sl.name
+    includes = [work / "build" / "mpv", work / "install" / PREFIX.lstrip("/") / "include"]
+    includes += sorted(p for p in (work / "deps").glob("*/include") if p.is_dir())
+    cases, failures, output = run_vo_tests(work / "src" / "mpv", includes, work / "vo-tests")
+    log(output)
+    (out / "vo-tests.txt").write_text(output)
+    summary = (f"## Lucid Engine video output tests: {sl.name}\n\n"
+               f"{cases} cases, {failures if failures >= 0 else 'unknown'} failures\n\n")
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write(summary)
+    if cases == 0:
+        raise Failure("video output tests: no case ran")
+    if failures != 0:
+        raise Failure(f"video output tests: {failures if failures > 0 else 'a crash or'} "
+                      f"failure(s) in {cases} cases")
+    log(f"All {cases} video output test cases passed for {sl.name}.")
 
 
 # ------------------------------------------------------------------ package
@@ -1340,12 +1467,15 @@ def main(argv=None) -> int:
     common(p)
     p.add_argument("--slice", required=True, choices=sorted(SLICES))
     p.add_argument("--strict", action="store_true", help="also require the pinned Xcode")
+    p = sub.add_parser("test-vo", help="build and run the video output tests for one slice")
+    common(p)
+    p.add_argument("--slice", required=True, choices=sorted(SLICES))
     p = sub.add_parser("package", help="assemble xcframeworks from built slices")
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     handlers = {"check-allowlist": cmd_check_allowlist, "fetch": cmd_fetch, "build": cmd_build,
-                "check": cmd_check, "package": cmd_package}
+                "check": cmd_check, "test-vo": cmd_test_vo, "package": cmd_package}
     try:
         handlers[args.command](args)
     except Failure as e:

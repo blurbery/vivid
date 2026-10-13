@@ -1,0 +1,601 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] vo_avfoundation: layers, main-thread hops and observers
+
+The layer side of the AVFoundation video output.
+
+The output keeps a strong reference to the AVSampleBufferDisplayLayer it is
+given through --wid, makes its timebase the layer's controlTimebase, and
+adds a transparent subtitle layer above it in the same superlayer (or
+inside it, with a warning, when it has none). Renderer calls go through
+the layers' sampleBufferRenderer. Work that UIKit needs on the main thread
+(geometry reads, layer creation, observers, recovery flushes and timebase
+attachment) is done with synchronous hops that never wait for the player
+core; the subtitle layer's frame copy and its queued flushes are
+asynchronous.
+
+Key-value observers on the host layer's bounds and contentsScale, and
+observers of the app resigning and regaining active state, only raise a
+flag and wake the video output. They are removed on the main thread before
+any state they touch is freed.
+
+Applies to mpv v0.41.0 with Vivid's earlier patches.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the files it modifies, it is free software; you can redistribute it
+and/or modify it under the terms of the GNU Lesser General Public License
+as published by the Free Software Foundation; either version 2.1 of the
+License, or (at your option) any later version (LGPL-2.1-or-later).
+---
+diff --git a/video/out/avfoundation/layers.h b/video/out/avfoundation/layers.h
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/layers.h
+@@ -0,0 +1,110 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// The layers of the AVFoundation video output: the host layer Vivid passes
++// through wid, the separate subtitle layer, their renderers and timebase, and
++// the observers that follow the host's size and the app's active state.
++//
++// Every function is called on mpv's VO thread. Work that must run on the main
++// thread is done there with a synchronous hop (run inline if already on main)
++// or, where the function says so, queued asynchronously. Nothing here waits
++// for the player core, so the hops cannot deadlock with a main thread that
++// never waits on mpv.
++
++#ifndef MP_AVFOUNDATION_LAYERS_H
++#define MP_AVFOUNDATION_LAYERS_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#include <CoreMedia/CoreMedia.h>
++
++struct mp_log;
++struct vo;
++struct avf_layers;
++
++// Takes a strong reference to the host layer (an AVSampleBufferDisplayLayer
++// at the given address, unvalidated).
++struct avf_layers *avf_layers_create(struct mp_log *log, void *host_layer);
++// Releases what is left; call after the teardown steps below.
++void avf_layers_destroy(struct avf_layers *l);
++
++// ---- creation (synchronous main-thread hops) -----------------------------------
++
++void avf_layers_attach_timebase(struct avf_layers *l, CMTimebaseRef tb);
++// The host layer's pixel size (2.5): bounds (or frame) times contentsScale
++// (or the main screen's scale), rounded as specified.
++void avf_layers_read_geometry(struct avf_layers *l, int *w, int *h);
++void avf_layers_create_subtitle_layer(struct avf_layers *l, CMTimebaseRef tb);
++void avf_layers_observe_app_state(struct avf_layers *l, struct vo *vo);
++void avf_layers_observe_geometry(struct avf_layers *l, struct vo *vo);
++
++// ---- events set by the observers ------------------------------------------------
++
++// Consumes the app-active resync flag.
++bool avf_layers_take_resync(struct avf_layers *l);
++// Consumes the host resize flag.
++bool avf_layers_take_resize(struct avf_layers *l);
++
++// ---- subtitle layer -----------------------------------------------------------------
++
++bool avf_layers_has_subtitle_layer(struct avf_layers *l);
++// Queues the subtitle layer's frame, scale and gravity copy on main.
++void avf_layers_copy_frame_async(struct avf_layers *l);
++// Queues a flush with removal of the subtitle layer on main.
++void avf_layers_flush_subtitles_async(struct avf_layers *l);
++// Flushes the subtitle layer's renderer on this thread.
++void avf_layers_flush_subtitles(struct avf_layers *l, bool remove_image);
++bool avf_layers_subtitles_ready(struct avf_layers *l);
++void avf_layers_enqueue_subtitles(struct avf_layers *l, CMSampleBufferRef s);
++
++// ---- host layer renderer ------------------------------------------------------------
++
++void avf_layers_flush_host(struct avf_layers *l, bool remove_image);
++bool avf_layers_host_ready(struct avf_layers *l);
++// status failed, or requiresFlushToResumeDecoding.
++bool avf_layers_host_needs_recovery(struct avf_layers *l);
++void avf_layers_enqueue_host(struct avf_layers *l, CMSampleBufferRef s);
++
++struct avf_recovery_state {
++    long status;
++    bool requires_flush;
++    bool ready;
++    double timebase_s;
++    double timebase_rate;
++};
++
++// Display layer recovery, on main: reads the host renderer's state and the
++// timebase, then flushes both renderers without removing their images.
++void avf_layers_recover(struct avf_layers *l, CMTimebaseRef tb,
++                        struct avf_recovery_state *out);
++
++// ---- teardown (in this order) ---------------------------------------------------------
++
++// Removes both kinds of observer on main; the observers can no longer reach
++// the VO afterwards.
++void avf_layers_remove_observers(struct avf_layers *l);
++// Flushes both renderers with removal of their images, on this thread.
++void avf_layers_flush_for_teardown(struct avf_layers *l);
++// Clears controlTimebase on both layers, on main.
++void avf_layers_detach_timebase(struct avf_layers *l);
++// Removes the subtitle layer from its superlayer, on main.
++void avf_layers_remove_subtitle_layer(struct avf_layers *l);
++
++#endif
+diff --git a/video/out/avfoundation/layers.m b/video/out/avfoundation/layers.m
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/layers.m
+@@ -0,0 +1,451 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// Manual reference counting, like the rest of mpv's Objective-C.
++//
++// The renderer API used here (AVSampleBufferDisplayLayer.sampleBufferRenderer)
++// exists from iOS and tvOS 17. The output refuses to start below that (see
++// preinit), so none of this runs on older systems.
++#pragma clang diagnostic ignored "-Wunguarded-availability-new"
++
++#import <AVFoundation/AVFoundation.h>
++#import <Foundation/Foundation.h>
++#import <QuartzCore/QuartzCore.h>
++#import <UIKit/UIKit.h>
++
++#include <math.h>
++#include <os/lock.h>
++#include <stdlib.h>
++
++#include "common/msg.h"
++#include "video/out/vo.h"
++
++#include "geometry.h"
++#include "layers.h"
++
++// Shared between the VO and the observers. The observers' blocks and the
++// key-value observer keep it alive, so a notification that arrives after
++// teardown finds no VO and does nothing.
++@interface AVFOutputLink : NSObject {
++@public
++    os_unfair_lock lock;
++    struct vo *vo;          // NULL once detached
++    bool resync;
++    bool resize;
++    bool suspended;         // main thread only
++}
++- (void)raiseResync;
++- (void)raiseResize;
++- (void)detach;
++@end
++
++@implementation AVFOutputLink
++- (instancetype)init
++{
++    if ((self = [super init]))
++        lock = OS_UNFAIR_LOCK_INIT;
++    return self;
++}
++
++- (void)raise:(bool *)flag
++{
++    os_unfair_lock_lock(&lock);
++    if (vo) {
++        *flag = true;
++        vo_wakeup(vo);
++    }
++    os_unfair_lock_unlock(&lock);
++}
++
++- (void)raiseResync
++{
++    [self raise:&resync];
++}
++
++- (void)raiseResize
++{
++    [self raise:&resize];
++}
++
++- (void)detach
++{
++    os_unfair_lock_lock(&lock);
++    vo = NULL;
++    os_unfair_lock_unlock(&lock);
++}
++
++- (bool)take:(bool *)flag
++{
++    os_unfair_lock_lock(&lock);
++    bool v = *flag;
++    *flag = false;
++    os_unfair_lock_unlock(&lock);
++    return v;
++}
++@end
++
++static void *const kAVFGeometryContext = (void *)&kAVFGeometryContext;
++
++@interface AVFGeometryObserver : NSObject {
++    AVFOutputLink *link;
++}
++- (instancetype)initWithLink:(AVFOutputLink *)l;
++@end
++
++@implementation AVFGeometryObserver
++- (instancetype)initWithLink:(AVFOutputLink *)l
++{
++    if ((self = [super init]))
++        link = [l retain];
++    return self;
++}
++
++- (void)dealloc
++{
++    [link release];
++    [super dealloc];
++}
++
++- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
++                        change:(NSDictionary *)change context:(void *)context
++{
++    if (context != kAVFGeometryContext) {
++        [super observeValueForKeyPath:keyPath ofObject:object change:change
++                              context:context];
++        return;
++    }
++    id old = change[NSKeyValueChangeOldKey];
++    id new = change[NSKeyValueChangeNewKey];
++    // Writing an identical value is not a change; a missing value counts as
++    // one.
++    if (old && new && old != [NSNull null] && new != [NSNull null] &&
++        [old isEqual:new])
++        return;
++    [link raiseResize];
++}
++@end
++
++struct avf_layers {
++    struct mp_log *log;
++    AVSampleBufferDisplayLayer *host;   // retained
++    AVSampleBufferDisplayLayer *sub;    // retained
++    bool nested;                        // subtitle layer inside the host
++    AVFOutputLink *link;
++    id resign_token;
++    id active_token;
++    AVFGeometryObserver *geometry;
++    bool observing_geometry;
++};
++
++static void run_on_main(void (^block)(void))
++{
++    if ([NSThread isMainThread]) {
++        block();
++    } else {
++        dispatch_sync(dispatch_get_main_queue(), block);
++    }
++}
++
++static CGFloat main_screen_scale(void)
++{
++    return [UIScreen mainScreen].scale;
++}
++
++struct avf_layers *avf_layers_create(struct mp_log *log, void *host_layer)
++{
++    struct avf_layers *l = calloc(1, sizeof(*l));
++    if (!l)
++        return NULL;
++    l->log = log;
++    l->host = [(AVSampleBufferDisplayLayer *)host_layer retain];
++    l->link = [[AVFOutputLink alloc] init];
++    return l;
++}
++
++void avf_layers_destroy(struct avf_layers *l)
++{
++    if (!l)
++        return;
++    [l->link detach];
++    [l->resign_token release];
++    [l->active_token release];
++    [l->geometry release];
++    [l->link release];
++    [l->sub release];
++    [l->host release];
++    free(l);
++}
++
++void avf_layers_attach_timebase(struct avf_layers *l, CMTimebaseRef tb)
++{
++    run_on_main(^{
++        l->host.controlTimebase = tb;
++    });
++}
++
++void avf_layers_read_geometry(struct avf_layers *l, int *w, int *h)
++{
++    __block CGSize size = CGSizeZero;
++    __block double scale = 1;
++    run_on_main(^{
++        AVSampleBufferDisplayLayer *host = l->host;
++        size = host.bounds.size;
++        if (size.width <= 0 || size.height <= 0)
++            size = host.frame.size;
++        scale = avf_layer_scale(host.contentsScale, main_screen_scale());
++    });
++    *w = avf_pixel_extent(size.width, scale);
++    *h = avf_pixel_extent(size.height, scale);
++}
++
++void avf_layers_create_subtitle_layer(struct avf_layers *l, CMTimebaseRef tb)
++{
++    __block bool nested = false;
++    run_on_main(^{
++        AVSampleBufferDisplayLayer *host = l->host;
++        AVSampleBufferDisplayLayer *sub = [[AVSampleBufferDisplayLayer alloc] init];
++        sub.backgroundColor = NULL;
++        sub.opaque = NO;
++        sub.videoGravity = AVLayerVideoGravityResize;
++        sub.anchorPoint = CGPointMake(0.5, 0.5);
++        sub.controlTimebase = tb;
++        CGFloat scale = host.contentsScale;
++        sub.contentsScale = scale > 0 ? scale : main_screen_scale();
++        sub.frame = host.frame;
++        CALayer *parent = host.superlayer;
++        if (parent) {
++            [parent addSublayer:sub];
++            sub.zPosition = host.zPosition + 1;
++        } else {
++            [host addSublayer:sub];
++            sub.frame = host.bounds;
++            nested = true;
++        }
++        l->sub = sub;
++        l->nested = nested;
++    });
++    if (nested) {
++        mp_warn(l->log, "The video layer has no superlayer; subtitles are drawn "
++                "inside it, so the system cannot present the video directly.\n");
++    }
++}
++
++void avf_layers_observe_app_state(struct avf_layers *l, struct vo *vo)
++{
++    AVFOutputLink *link = l->link;
++    os_unfair_lock_lock(&link->lock);
++    link->vo = vo;
++    os_unfair_lock_unlock(&link->lock);
++    run_on_main(^{
++        NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
++        NSOperationQueue *queue = [NSOperationQueue mainQueue];
++        l->resign_token = [[nc addObserverForName:UIApplicationWillResignActiveNotification
++                                           object:nil
++                                            queue:queue
++                                       usingBlock:^(NSNotification *note) {
++            link->suspended = true;
++        }] retain];
++        l->active_token = [[nc addObserverForName:UIApplicationDidBecomeActiveNotification
++                                           object:nil
++                                            queue:queue
++                                       usingBlock:^(NSNotification *note) {
++            if (link->suspended) {
++                link->suspended = false;
++                [link raiseResync];
++            }
++        }] retain];
++    });
++}
++
++void avf_layers_observe_geometry(struct avf_layers *l, struct vo *vo)
++{
++    AVFOutputLink *link = l->link;
++    os_unfair_lock_lock(&link->lock);
++    link->vo = vo;
++    os_unfair_lock_unlock(&link->lock);
++    l->geometry = [[AVFGeometryObserver alloc] initWithLink:link];
++    run_on_main(^{
++        NSKeyValueObservingOptions opts = NSKeyValueObservingOptionOld |
++                                          NSKeyValueObservingOptionNew;
++        [l->host addObserver:l->geometry forKeyPath:@"bounds" options:opts
++                     context:kAVFGeometryContext];
++        [l->host addObserver:l->geometry forKeyPath:@"contentsScale" options:opts
++                     context:kAVFGeometryContext];
++        l->observing_geometry = true;
++    });
++}
++
++bool avf_layers_take_resync(struct avf_layers *l)
++{
++    return [l->link take:&l->link->resync];
++}
++
++bool avf_layers_take_resize(struct avf_layers *l)
++{
++    return [l->link take:&l->link->resize];
++}
++
++bool avf_layers_has_subtitle_layer(struct avf_layers *l)
++{
++    return !!l->sub;
++}
++
++void avf_layers_copy_frame_async(struct avf_layers *l)
++{
++    AVSampleBufferDisplayLayer *host = l->host, *sub = l->sub;
++    bool nested = l->nested;
++    if (!sub)
++        return;
++    dispatch_async(dispatch_get_main_queue(), ^{
++        [CATransaction begin];
++        [CATransaction setDisableActions:YES];
++        if (nested) {
++            sub.frame = host.bounds;
++        } else {
++            sub.frame = host.frame;
++            sub.zPosition = host.zPosition + 1;
++        }
++        CGFloat scale = host.contentsScale;
++        sub.contentsScale = scale > 0 ? scale : main_screen_scale();
++        sub.videoGravity = AVLayerVideoGravityResize;
++        [CATransaction commit];
++    });
++}
++
++void avf_layers_flush_subtitles_async(struct avf_layers *l)
++{
++    AVSampleBufferDisplayLayer *sub = l->sub;
++    if (!sub)
++        return;
++    dispatch_async(dispatch_get_main_queue(), ^{
++        [sub.sampleBufferRenderer flushWithRemovalOfDisplayedImage:YES
++                                                 completionHandler:nil];
++    });
++}
++
++void avf_layers_flush_subtitles(struct avf_layers *l, bool remove_image)
++{
++    if (!l->sub)
++        return;
++    AVSampleBufferVideoRenderer *r = l->sub.sampleBufferRenderer;
++    if (remove_image) {
++        [r flushWithRemovalOfDisplayedImage:YES completionHandler:nil];
++    } else {
++        [r flush];
++    }
++}
++
++bool avf_layers_subtitles_ready(struct avf_layers *l)
++{
++    return l->sub && l->sub.sampleBufferRenderer.isReadyForMoreMediaData;
++}
++
++void avf_layers_enqueue_subtitles(struct avf_layers *l, CMSampleBufferRef s)
++{
++    [l->sub.sampleBufferRenderer enqueueSampleBuffer:s];
++}
++
++void avf_layers_flush_host(struct avf_layers *l, bool remove_image)
++{
++    AVSampleBufferVideoRenderer *r = l->host.sampleBufferRenderer;
++    if (remove_image) {
++        [r flushWithRemovalOfDisplayedImage:YES completionHandler:nil];
++    } else {
++        [r flush];
++    }
++}
++
++bool avf_layers_host_ready(struct avf_layers *l)
++{
++    return l->host.sampleBufferRenderer.isReadyForMoreMediaData;
++}
++
++bool avf_layers_host_needs_recovery(struct avf_layers *l)
++{
++    AVSampleBufferVideoRenderer *r = l->host.sampleBufferRenderer;
++    return r.status == AVQueuedSampleBufferRenderingStatusFailed ||
++           r.requiresFlushToResumeDecoding;
++}
++
++void avf_layers_enqueue_host(struct avf_layers *l, CMSampleBufferRef s)
++{
++    [l->host.sampleBufferRenderer enqueueSampleBuffer:s];
++}
++
++void avf_layers_recover(struct avf_layers *l, CMTimebaseRef tb,
++                        struct avf_recovery_state *out)
++{
++    __block struct avf_recovery_state st = {0};
++    run_on_main(^{
++        AVSampleBufferVideoRenderer *r = l->host.sampleBufferRenderer;
++        st.status = (long)r.status;
++        st.requires_flush = r.requiresFlushToResumeDecoding;
++        st.ready = r.isReadyForMoreMediaData;
++        CMTime t = CMTimebaseGetTime(tb);
++        st.timebase_s = CMTIME_IS_NUMERIC(t) ? CMTimeGetSeconds(t) : NAN;
++        st.timebase_rate = CMTimebaseGetRate(tb);
++        [r flush];
++        if (l->sub)
++            [l->sub.sampleBufferRenderer flush];
++    });
++    *out = st;
++}
++
++void avf_layers_remove_observers(struct avf_layers *l)
++{
++    run_on_main(^{
++        NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
++        if (l->resign_token)
++            [nc removeObserver:l->resign_token];
++        if (l->active_token)
++            [nc removeObserver:l->active_token];
++        if (l->observing_geometry) {
++            [l->host removeObserver:l->geometry forKeyPath:@"bounds"
++                            context:kAVFGeometryContext];
++            [l->host removeObserver:l->geometry forKeyPath:@"contentsScale"
++                            context:kAVFGeometryContext];
++            l->observing_geometry = false;
++        }
++    });
++    [l->link detach];
++}
++
++void avf_layers_flush_for_teardown(struct avf_layers *l)
++{
++    avf_layers_flush_host(l, true);
++    avf_layers_flush_subtitles(l, true);
++}
++
++void avf_layers_detach_timebase(struct avf_layers *l)
++{
++    run_on_main(^{
++        l->host.controlTimebase = NULL;
++        if (l->sub)
++            l->sub.controlTimebase = NULL;
++    });
++}
++
++void avf_layers_remove_subtitle_layer(struct avf_layers *l)
++{
++    if (!l->sub)
++        return;
++    run_on_main(^{
++        [l->sub removeFromSuperlayer];
++    });
++}

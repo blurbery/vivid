@@ -1,0 +1,798 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] vo_avfoundation: frame path, colour tags and composites
+
+The frame path of the AVFoundation video output.
+
+Software frames (NV12, yuv420p, P010 and 10-bit and 12-bit planar 4:2:0)
+are copied into 420v or x420 buffers and tagged from the image's own
+parameters: primaries, transfer function, matrix and a colour space made
+from them. VideoToolbox buffers keep the decoder's tags. Every buffer gets
+the pixel aspect from the configured parameters, or loses a stale one.
+Dolby Vision passthrough frames (those carrying VideoToolbox's
+DolbyVisionRPUData attachment) that lack a transfer function get it from
+the image's parameters, so profile 5 is presented as PQ. Samples use a
+cached format description and nanosecond presentation times.
+
+For Picture in Picture the subtitles are composited into the picture:
+biplanar 4:2:0 frames with the integer YUV blend, anything else through
+Core Image. Unlike the engine Vivid ships today, a decoder buffer is never
+written to: the blend goes into a pool copy that carries exactly the
+decoder buffer's attachments and modes, so every presented image carries
+its current subtitle exactly once, with no stale cue under a new one and no
+burned-in cue after compositing ends. A composite that would change the
+frame's size is discarded.
+
+Applies to mpv v0.41.0 with Vivid's earlier patches.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the files it modifies, it is free software; you can redistribute it
+and/or modify it under the terms of the GNU Lesser General Public License
+as published by the Free Software Foundation; either version 2.1 of the
+License, or (at your option) any later version (LGPL-2.1-or-later).
+---
+diff --git a/video/out/avfoundation/frame.h b/video/out/avfoundation/frame.h
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/frame.h
+@@ -0,0 +1,120 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// The frame path of the AVFoundation video output: software uploads and
++// their colour tags, the pixel aspect attachment, the Dolby Vision transfer
++// repair, Picture in Picture subtitle composites, format descriptions and
++// video samples. Nothing here touches a layer.
++
++#ifndef MP_AVFOUNDATION_FRAME_H
++#define MP_AVFOUNDATION_FRAME_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#include <CoreGraphics/CoreGraphics.h>
++#include <CoreMedia/CoreMedia.h>
++#include <CoreVideo/CoreVideo.h>
++
++#include "pixels.h"
++
++struct mp_log;
++struct mp_image;
++struct mp_image_params;
++struct avf_frame;
++
++// Software formats the output accepts besides VideoToolbox frames.
++enum avf_sw_format {
++    AVF_SW_NONE = 0,
++    AVF_SW_NV12,
++    AVF_SW_420P,
++    AVF_SW_P010,
++    AVF_SW_420P10,  // mpv's format for AV_PIX_FMT_YUV420P10
++    AVF_SW_420P12,  // mpv's format for AV_PIX_FMT_YUV420P12
++};
++
++// The Dolby Vision key VideoToolbox attaches to frames of native Dolby
++// Vision sessions.
++#define AVF_DOLBY_VISION_RPU_KEY CFSTR("DolbyVisionRPUData")
++
++struct avf_frame *avf_frame_create(struct mp_log *log);
++void avf_frame_destroy(struct avf_frame *f);
++
++// Copies a software image into a biplanar upload buffer (+1). Logs an error
++// and returns NULL on failure.
++CVPixelBufferRef avf_frame_upload(struct avf_frame *f, enum avf_sw_format fmt,
++                                  const struct mp_image *img);
++
++// Colour tags for an uploaded software frame, from the image's own params.
++void avf_frame_tag_software(CVPixelBufferRef buf,
++                            const struct mp_image_params *params);
++
++// Attaches or removes the pixel aspect ratio, from the configured params
++// (NULL leaves the buffer as it is).
++void avf_frame_pixel_aspect(CVPixelBufferRef buf,
++                            const struct mp_image_params *vo_params);
++
++// Fills a missing transfer function on a Dolby Vision passthrough frame from
++// the image's own params. Returns whether it changed the buffer.
++bool avf_frame_dolby_vision_repair(CVPixelBufferRef buf,
++                                   const struct mp_image_params *params);
++
++// A video sample (+1) at pts_ns, with the cached format description. Logs an
++// error and returns NULL on failure.
++CMSampleBufferRef avf_frame_sample(struct avf_frame *f, CVPixelBufferRef buf,
++                                   int64_t pts_ns);
++
++// The rendered subtitles a composite needs.
++struct avf_overlay {
++    CVPixelBufferRef bgra;      // premultiplied BGRA canvas, or NULL
++    struct avf_irect bbox;      // drawn area in canvas pixels
++    CGImageRef image;           // CoreGraphics snapshot, or NULL
++    int canvas_w, canvas_h;
++    struct avf_irect src, dst;  // frame and canvas rectangles
++};
++
++enum avf_composite_kind {
++    AVF_COMPOSITE_NONE,         // nothing composited
++    AVF_COMPOSITE_IN_PLACE,     // blended into the given (writable) buffer
++    AVF_COMPOSITE_COPY,         // blended into a pool copy of the buffer
++    AVF_COMPOSITE_CORE_IMAGE,   // Core Image render into a new buffer
++};
++
++// Composites the subtitles into the picture. A writable buffer (one the
++// output uploaded itself) is blended in place; a decoder buffer is never
++// written to, so a presented image always carries its current subtitle
++// exactly once. Returns the buffer to enqueue (+1), or NULL when the frame
++// goes out without the subtitle.
++CVPixelBufferRef avf_frame_composite(struct avf_frame *f, CVPixelBufferRef video,
++                                     bool writable, const struct avf_overlay *ov,
++                                     enum avf_composite_kind *kind);
++
++// The 60-flip maintenance: flushes excess buffers in the frame pools.
++void avf_frame_maintain(struct avf_frame *f);
++
++// Releases the Core Image context and the Metal device.
++void avf_frame_release_core_image(struct avf_frame *f);
++
++// Copies propagatable attachments of buf in mode (NULL if none). +1.
++CFDictionaryRef avf_copy_attachments(CVBufferRef buf, CVAttachmentMode mode);
++// Copies one attachment (+1) and its mode, or NULL.
++CFTypeRef avf_copy_attachment(CVBufferRef buf, CFStringRef key,
++                              CVAttachmentMode *mode);
++
++#endif
+diff --git a/video/out/avfoundation/frame.m b/video/out/avfoundation/frame.m
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/frame.m
+@@ -0,0 +1,634 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// Manual reference counting, like the rest of mpv's Objective-C.
++
++#import <CoreImage/CoreImage.h>
++#import <Foundation/Foundation.h>
++#import <Metal/Metal.h>
++
++#include <stdlib.h>
++
++#include "common/msg.h"
++#include "video/mp_image.h"
++
++#include "frame.h"
++#include "pool.h"
++
++struct avf_frame {
++    struct mp_log *log;
++    struct avf_pool upload;
++    struct avf_pool yuv_copy;
++    struct avf_pool ci_output;
++    CMVideoFormatDescriptionRef format;
++    id<MTLDevice> device;
++    CIContext *ci;
++    bool size_warned;
++};
++
++struct avf_frame *avf_frame_create(struct mp_log *log)
++{
++    struct avf_frame *f = calloc(1, sizeof(*f));
++    if (!f)
++        return NULL;
++    f->log = log;
++    f->upload.name = "upload";
++    f->yuv_copy.name = "YUV composite";
++    f->ci_output.name = "Core Image composite";
++    return f;
++}
++
++void avf_frame_release_core_image(struct avf_frame *f)
++{
++    [f->ci release];
++    f->ci = nil;
++    [f->device release];
++    f->device = nil;
++}
++
++void avf_frame_destroy(struct avf_frame *f)
++{
++    if (!f)
++        return;
++    avf_pool_release(&f->upload);
++    avf_pool_release(&f->yuv_copy);
++    avf_pool_release(&f->ci_output);
++    if (f->format)
++        CFRelease(f->format);
++    avf_frame_release_core_image(f);
++    free(f);
++}
++
++void avf_frame_maintain(struct avf_frame *f)
++{
++    avf_pool_flush_excess(&f->upload);
++    avf_pool_flush_excess(&f->yuv_copy);
++    avf_pool_flush_excess(&f->ci_output);
++}
++
++// ---- attachments --------------------------------------------------------------
++
++CFDictionaryRef avf_copy_attachments(CVBufferRef buf, CVAttachmentMode mode)
++{
++    if (@available(iOS 15.0, tvOS 15.0, macOS 12.0, *))
++        return CVBufferCopyAttachments(buf, mode);
++    CFDictionaryRef d = CVBufferGetAttachments(buf, mode);
++    return d ? CFDictionaryCreateCopy(NULL, d) : NULL;
++}
++
++CFTypeRef avf_copy_attachment(CVBufferRef buf, CFStringRef key,
++                              CVAttachmentMode *mode)
++{
++    CVAttachmentMode m = kCVAttachmentMode_ShouldNotPropagate;
++    CFTypeRef v;
++    if (@available(iOS 15.0, tvOS 15.0, macOS 12.0, *)) {
++        v = CVBufferCopyAttachment(buf, key, &m);
++    } else {
++        v = CVBufferGetAttachment(buf, key, &m);
++        if (v)
++            CFRetain(v);
++    }
++    if (mode)
++        *mode = m;
++    return v;
++}
++
++static bool has_attachment(CVBufferRef buf, CFStringRef key)
++{
++    CFTypeRef v = avf_copy_attachment(buf, key, NULL);
++    if (v)
++        CFRelease(v);
++    return !!v;
++}
++
++static void attach_colour_space(CVBufferRef buf)
++{
++    CFDictionaryRef atts = avf_copy_attachments(buf, kCVAttachmentMode_ShouldPropagate);
++    if (!atts)
++        return;
++    CGColorSpaceRef cs = CVImageBufferCreateColorSpaceFromAttachments(atts);
++    CFRelease(atts);
++    if (cs) {
++        CVBufferSetAttachment(buf, kCVImageBufferCGColorSpaceKey, cs,
++                              kCVAttachmentMode_ShouldPropagate);
++        CGColorSpaceRelease(cs);
++    }
++}
++
++// ---- colour tags ------------------------------------------------------------------
++
++static CFStringRef primaries_tag(enum pl_color_primaries prim)
++{
++    switch (prim) {
++    case PL_COLOR_PRIM_BT_709:  return kCVImageBufferColorPrimaries_ITU_R_709_2;
++    case PL_COLOR_PRIM_BT_2020: return kCVImageBufferColorPrimaries_ITU_R_2020;
++    default:                    return NULL;
++    }
++}
++
++static CFStringRef transfer_tag(enum pl_color_transfer trc)
++{
++    switch (trc) {
++    case PL_COLOR_TRC_SRGB:    return kCVImageBufferTransferFunction_sRGB;
++    case PL_COLOR_TRC_BT_1886: return kCVImageBufferTransferFunction_ITU_R_709_2;
++    case PL_COLOR_TRC_PQ:      return kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ;
++    case PL_COLOR_TRC_HLG:     return kCVImageBufferTransferFunction_ITU_R_2100_HLG;
++    default:                   return NULL;
++    }
++}
++
++static CFStringRef matrix_tag(enum pl_color_system sys)
++{
++    switch (sys) {
++    case PL_COLOR_SYSTEM_BT_601:      return kCVImageBufferYCbCrMatrix_ITU_R_601_4;
++    case PL_COLOR_SYSTEM_BT_709:      return kCVImageBufferYCbCrMatrix_ITU_R_709_2;
++    case PL_COLOR_SYSTEM_BT_2020_NC:
++    case PL_COLOR_SYSTEM_BT_2020_C:
++    case PL_COLOR_SYSTEM_BT_2100_PQ:
++    case PL_COLOR_SYSTEM_BT_2100_HLG: return kCVImageBufferYCbCrMatrix_ITU_R_2020;
++    default:                          return NULL;
++    }
++}
++
++void avf_frame_tag_software(CVPixelBufferRef buf,
++                            const struct mp_image_params *params)
++{
++    CFStringRef prim = primaries_tag(params->color.primaries);
++    CFStringRef trc = transfer_tag(params->color.transfer);
++    CFStringRef mat = matrix_tag(params->repr.sys);
++    CVAttachmentMode m = kCVAttachmentMode_ShouldPropagate;
++    if (prim)
++        CVBufferSetAttachment(buf, kCVImageBufferColorPrimariesKey, prim, m);
++    if (trc)
++        CVBufferSetAttachment(buf, kCVImageBufferTransferFunctionKey, trc, m);
++    if (mat)
++        CVBufferSetAttachment(buf, kCVImageBufferYCbCrMatrixKey, mat, m);
++    if (prim || trc || mat)
++        attach_colour_space(buf);
++}
++
++void avf_frame_pixel_aspect(CVPixelBufferRef buf,
++                            const struct mp_image_params *vo_params)
++{
++    if (!vo_params)
++        return;
++    int p_w = vo_params->p_w, p_h = vo_params->p_h;
++    if ((int)CVPixelBufferGetWidth(buf) == vo_params->w &&
++        (int)CVPixelBufferGetHeight(buf) == vo_params->h &&
++        p_w > 0 && p_h > 0 && p_w != p_h)
++    {
++        CFNumberRef h = CFNumberCreate(NULL, kCFNumberIntType, &p_w);
++        CFNumberRef v = CFNumberCreate(NULL, kCFNumberIntType, &p_h);
++        if (h && v) {
++            const void *keys[] = {
++                kCVImageBufferPixelAspectRatioHorizontalSpacingKey,
++                kCVImageBufferPixelAspectRatioVerticalSpacingKey,
++            };
++            const void *values[] = { h, v };
++            CFDictionaryRef d = CFDictionaryCreate(NULL, keys, values, 2,
++                &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
++            if (d) {
++                CVBufferSetAttachment(buf, kCVImageBufferPixelAspectRatioKey, d,
++                                      kCVAttachmentMode_ShouldPropagate);
++                CFRelease(d);
++            }
++        }
++        if (h)
++            CFRelease(h);
++        if (v)
++            CFRelease(v);
++    } else {
++        CVBufferRemoveAttachment(buf, kCVImageBufferPixelAspectRatioKey);
++    }
++}
++
++bool avf_frame_dolby_vision_repair(CVPixelBufferRef buf,
++                                   const struct mp_image_params *params)
++{
++    if (params->repr.sys != PL_COLOR_SYSTEM_DOLBYVISION)
++        return false;
++    if (!has_attachment(buf, AVF_DOLBY_VISION_RPU_KEY))
++        return false;
++    if (has_attachment(buf, kCVImageBufferTransferFunctionKey))
++        return false;
++    CFStringRef trc = transfer_tag(params->color.transfer);
++    if (!trc)
++        return false;
++    CVBufferSetAttachment(buf, kCVImageBufferTransferFunctionKey, trc,
++                          kCVAttachmentMode_ShouldPropagate);
++    return true;
++}
++
++// ---- upload -----------------------------------------------------------------------
++
++CVPixelBufferRef avf_frame_upload(struct avf_frame *f, enum avf_sw_format fmt,
++                                  const struct mp_image *img)
++{
++    OSType cv;
++    switch (fmt) {
++    case AVF_SW_NV12:
++    case AVF_SW_420P:
++        cv = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
++        break;
++    case AVF_SW_P010:
++    case AVF_SW_420P10:
++    case AVF_SW_420P12:
++        cv = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
++        break;
++    default:
++        mp_err(f->log, "Unsupported software format %s.\n",
++               img->params.imgfmt_name ? img->params.imgfmt_name : "(unknown)");
++        return NULL;
++    }
++    if (img->w <= 0 || img->h <= 0) {
++        mp_err(f->log, "Cannot upload a %dx%d image.\n", img->w, img->h);
++        return NULL;
++    }
++
++    CVPixelBufferRef buf = avf_pool_get(&f->upload, f->log, img->w, img->h, cv, NULL);
++    if (!buf)
++        return NULL;
++    if (CVPixelBufferLockBaseAddress(buf, 0) != kCVReturnSuccess) {
++        mp_err(f->log, "Could not upload the frame: the buffer would not lock.\n");
++        CVPixelBufferRelease(buf);
++        return NULL;
++    }
++
++    uint8_t *d0 = CVPixelBufferGetBaseAddressOfPlane(buf, 0);
++    uint8_t *d1 = CVPixelBufferGetBaseAddressOfPlane(buf, 1);
++    ptrdiff_t s0 = CVPixelBufferGetBytesPerRowOfPlane(buf, 0);
++    ptrdiff_t s1 = CVPixelBufferGetBytesPerRowOfPlane(buf, 1);
++    int w = img->w, h = img->h;
++    int cw = (w + 1) / 2, ch = (h + 1) / 2;
++
++    switch (fmt) {
++    case AVF_SW_420P:
++        avf_copy_rows(d0, s0, img->planes[0], img->stride[0], w, h);
++        avf_interleave_uv8(d1, s1, img->planes[1], img->stride[1],
++                           img->planes[2], img->stride[2], cw, ch);
++        break;
++    case AVF_SW_420P10:
++    case AVF_SW_420P12: {
++        int shift = fmt == AVF_SW_420P10 ? 6 : 4;
++        avf_shift_rows16(d0, s0, img->planes[0], img->stride[0], w, h, shift);
++        avf_interleave_uv16(d1, s1, img->planes[1], img->stride[1],
++                            img->planes[2], img->stride[2], cw, ch, shift);
++        break;
++    }
++    default: // NV12 and P010: plane by plane
++        for (int n = 0; n < 2; n++) {
++            if (!img->planes[n])
++                continue;
++            avf_copy_plane(n ? d1 : d0, n ? s1 : s0, img->planes[n],
++                           img->stride[n], (int)CVPixelBufferGetHeightOfPlane(buf, n));
++        }
++        break;
++    }
++
++    CVPixelBufferUnlockBaseAddress(buf, 0);
++    return buf;
++}
++
++// ---- samples ------------------------------------------------------------------------
++
++CMSampleBufferRef avf_frame_sample(struct avf_frame *f, CVPixelBufferRef buf,
++                                   int64_t pts_ns)
++{
++    if (!f->format || !CMVideoFormatDescriptionMatchesImageBuffer(f->format, buf)) {
++        if (f->format)
++            CFRelease(f->format);
++        f->format = NULL;
++        OSStatus err = CMVideoFormatDescriptionCreateForImageBuffer(NULL, buf, &f->format);
++        if (err != noErr || !f->format) {
++            mp_err(f->log, "Could not create the video format description (%d).\n",
++                   (int)err);
++            f->format = NULL;
++            return NULL;
++        }
++    }
++    CMSampleTimingInfo timing = {
++        .duration = kCMTimeInvalid,
++        .presentationTimeStamp = CMTimeMake(pts_ns, 1000000000),
++        .decodeTimeStamp = kCMTimeInvalid,
++    };
++    CMSampleBufferRef sample = NULL;
++    OSStatus err = CMSampleBufferCreateReadyWithImageBuffer(NULL, buf, f->format,
++                                                            &timing, &sample);
++    if (err != noErr || !sample) {
++        mp_err(f->log, "Could not create the video sample buffer (%d).\n", (int)err);
++        return NULL;
++    }
++    return sample;
++}
++
++// ---- composites -------------------------------------------------------------------
++
++static bool is_biplanar_420(OSType f)
++{
++    return f == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
++           f == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
++           f == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
++           f == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
++}
++
++static bool is_ten_bit_biplanar(OSType f)
++{
++    return f == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
++           f == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange ||
++           f == kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange ||
++           f == kCVPixelFormatType_422YpCbCr10BiPlanarFullRange ||
++           f == kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange ||
++           f == kCVPixelFormatType_444YpCbCr10BiPlanarFullRange;
++}
++
++static enum avf_matrix buffer_matrix(CVPixelBufferRef buf)
++{
++    enum avf_matrix m = AVF_MATRIX_BT709;
++    CFTypeRef v = avf_copy_attachment(buf, kCVImageBufferYCbCrMatrixKey, NULL);
++    if (v) {
++        if (CFEqual(v, kCVImageBufferYCbCrMatrix_ITU_R_2020))
++            m = AVF_MATRIX_BT2020;
++        else if (CFEqual(v, kCVImageBufferYCbCrMatrix_ITU_R_601_4))
++            m = AVF_MATRIX_BT601;
++        CFRelease(v);
++    }
++    return m;
++}
++
++// A pool copy of a decoder buffer with exactly its pixels and attachments.
++static CVPixelBufferRef copy_buffer(struct avf_frame *f, CVPixelBufferRef src)
++{
++    int w = (int)CVPixelBufferGetWidth(src), h = (int)CVPixelBufferGetHeight(src);
++    OSType fmt = CVPixelBufferGetPixelFormatType(src);
++    CVPixelBufferRef dst = avf_pool_get(&f->yuv_copy, f->log, w, h, fmt, NULL);
++    if (!dst)
++        return NULL;
++    if (CVPixelBufferLockBaseAddress(src, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
++        CVPixelBufferRelease(dst);
++        return NULL;
++    }
++    if (CVPixelBufferLockBaseAddress(dst, 0) != kCVReturnSuccess) {
++        CVPixelBufferUnlockBaseAddress(src, kCVPixelBufferLock_ReadOnly);
++        CVPixelBufferRelease(dst);
++        return NULL;
++    }
++    size_t planes = CVPixelBufferGetPlaneCount(dst);
++    for (size_t n = 0; n < planes; n++) {
++        avf_copy_plane(CVPixelBufferGetBaseAddressOfPlane(dst, n),
++                       CVPixelBufferGetBytesPerRowOfPlane(dst, n),
++                       CVPixelBufferGetBaseAddressOfPlane(src, n),
++                       CVPixelBufferGetBytesPerRowOfPlane(src, n),
++                       (int)CVPixelBufferGetHeightOfPlane(dst, n));
++    }
++    CVPixelBufferUnlockBaseAddress(dst, 0);
++    CVPixelBufferUnlockBaseAddress(src, kCVPixelBufferLock_ReadOnly);
++
++    // Exactly the decoder buffer's attachments, with their modes.
++    CVBufferRemoveAllAttachments(dst);
++    const CVAttachmentMode modes[] = {
++        kCVAttachmentMode_ShouldNotPropagate, kCVAttachmentMode_ShouldPropagate,
++    };
++    for (int n = 0; n < 2; n++) {
++        CFDictionaryRef atts = avf_copy_attachments(src, modes[n]);
++        if (atts) {
++            CVBufferSetAttachments(dst, atts, modes[n]);
++            CFRelease(atts);
++        }
++    }
++    return dst;
++}
++
++static CVPixelBufferRef yuv_composite(struct avf_frame *f, CVPixelBufferRef video,
++                                      bool writable, const struct avf_overlay *ov)
++{
++    if (!ov->bgra || avf_irect_empty(ov->bbox))
++        return NULL;
++    int fw = (int)CVPixelBufferGetWidth(video), fh = (int)CVPixelBufferGetHeight(video);
++    int cw = (int)CVPixelBufferGetWidth(ov->bgra), ch = (int)CVPixelBufferGetHeight(ov->bgra);
++    if (fw <= 0 || fh <= 0 || cw <= 0 || ch <= 0)
++        return NULL;
++    struct avf_irect rect;
++    if (!avf_blend_rect(ov->bbox, ov->src, ov->dst, ov->canvas_w, ov->canvas_h,
++                        fw, fh, &rect))
++        return NULL;
++
++    CVPixelBufferRef target = writable ? CVPixelBufferRetain(video)
++                                       : copy_buffer(f, video);
++    if (!target)
++        return NULL;
++    if (CVPixelBufferLockBaseAddress(target, 0) != kCVReturnSuccess) {
++        CVPixelBufferRelease(target);
++        return NULL;
++    }
++    if (CVPixelBufferLockBaseAddress(ov->bgra, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
++        CVPixelBufferUnlockBaseAddress(target, 0);
++        CVPixelBufferRelease(target);
++        return NULL;
++    }
++
++    OSType pf = CVPixelBufferGetPixelFormatType(target);
++    struct avf_yuv yuv = {
++        .luma = CVPixelBufferGetBaseAddressOfPlane(target, 0),
++        .luma_stride = CVPixelBufferGetBytesPerRowOfPlane(target, 0),
++        .chroma = CVPixelBufferGetBaseAddressOfPlane(target, 1),
++        .chroma_stride = CVPixelBufferGetBytesPerRowOfPlane(target, 1),
++        .w = fw,
++        .h = fh,
++        .ten_bit = pf == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
++                   pf == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange,
++        .full_range = pf == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
++                      pf == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange,
++        .matrix = buffer_matrix(target),
++    };
++    struct avf_bgra canvas = {
++        .data = CVPixelBufferGetBaseAddress(ov->bgra),
++        .stride = CVPixelBufferGetBytesPerRow(ov->bgra),
++        .w = cw,
++        .h = ch,
++    };
++    avf_yuv_blend(&yuv, &canvas, rect, ov->src, ov->dst);
++
++    CVPixelBufferUnlockBaseAddress(ov->bgra, kCVPixelBufferLock_ReadOnly);
++    CVPixelBufferUnlockBaseAddress(target, 0);
++    return target;
++}
++
++static bool ensure_core_image(struct avf_frame *f)
++{
++    if (f->ci)
++        return true;
++    if (!f->device) {
++        f->device = MTLCreateSystemDefaultDevice(); // returns +1
++        if (!f->device) {
++            mp_err(f->log, "Could not create the Metal device for subtitle compositing.\n");
++            return false;
++        }
++    }
++    NSDictionary *opts = @{
++        kCIContextHighQualityDownsample: @NO,
++        kCIContextUseSoftwareRenderer: @NO,
++    };
++    f->ci = [[CIContext contextWithMTLDevice:f->device options:opts] retain];
++    if (!f->ci) {
++        mp_err(f->log, "Could not create the Core Image context for subtitle compositing.\n");
++        return false;
++    }
++    return true;
++}
++
++static const CFStringRef *copied_keys(size_t *count)
++{
++    static CFStringRef keys[14];
++    keys[0] = kCVImageBufferCGColorSpaceKey;
++    keys[1] = kCVImageBufferICCProfileKey;
++    keys[2] = kCVImageBufferGammaLevelKey;
++    keys[3] = kCVImageBufferColorPrimariesKey;
++    keys[4] = kCVImageBufferTransferFunctionKey;
++    keys[5] = kCVImageBufferYCbCrMatrixKey;
++    keys[6] = kCVImageBufferMasteringDisplayColorVolumeKey;
++    keys[7] = kCVImageBufferContentLightLevelInfoKey;
++    keys[8] = kCVImageBufferChromaLocationTopFieldKey;
++    keys[9] = kCVImageBufferChromaLocationBottomFieldKey;
++    keys[10] = kCVImageBufferChromaSubsamplingKey;
++    keys[11] = kCVImageBufferCleanApertureKey;
++    keys[12] = kCVImageBufferPreferredCleanApertureKey;
++    keys[13] = kCVImageBufferPixelAspectRatioKey;
++    *count = 14;
++    return keys;
++}
++
++// Metadata copy for the Core Image output (always a non-biplanar buffer).
++static void copy_metadata(CVPixelBufferRef src, CVPixelBufferRef dst)
++{
++    CVBufferPropagateAttachments(src, dst);
++    size_t count;
++    const CFStringRef *keys = copied_keys(&count);
++    for (size_t n = 0; n < count; n++) {
++        CVAttachmentMode mode;
++        CFTypeRef v = avf_copy_attachment(src, keys[n], &mode);
++        if (v) {
++            CVBufferSetAttachment(dst, keys[n], v, mode);
++            CFRelease(v);
++        } else {
++            CVBufferRemoveAttachment(dst, keys[n]);
++        }
++    }
++    CVBufferRemoveAttachment(dst, kCVImageBufferYCbCrMatrixKey);
++    if (!has_attachment(dst, kCVImageBufferCGColorSpaceKey))
++        attach_colour_space(dst);
++}
++
++static CVPixelBufferRef core_image_composite(struct avf_frame *f,
++                                             CVPixelBufferRef video,
++                                             const struct avf_overlay *ov)
++{
++    if (!ov->image || ov->canvas_w <= 0 || ov->canvas_h <= 0)
++        return NULL;
++    if (avf_irect_empty(ov->src) || avf_irect_empty(ov->dst))
++        return NULL;
++    if (!ensure_core_image(f))
++        return NULL;
++
++    OSType pf = CVPixelBufferGetPixelFormatType(video);
++    OSType out_fmt = is_ten_bit_biplanar(pf) ? kCVPixelFormatType_64RGBAHalf
++                                             : kCVPixelFormatType_32BGRA;
++    int ow = ov->canvas_w, oh = ov->canvas_h;
++    CVPixelBufferRef out = avf_pool_get(&f->ci_output, f->log, ow, oh, out_fmt, NULL);
++    if (!out)
++        return NULL;
++
++    @autoreleasepool {
++        CGColorSpaceRef video_cs = CVImageBufferGetColorSpace(video);
++        CGColorSpaceRef srgb = NULL;
++        if (!video_cs)
++            srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
++        CGColorSpaceRef in_cs = video_cs ? video_cs : srgb;
++        NSDictionary *in_opts = in_cs ? @{ kCIImageColorSpace: (id)in_cs } : nil;
++        CIImage *img = [CIImage imageWithCVPixelBuffer:video options:in_opts];
++
++        double fh = (double)CVPixelBufferGetHeight(video);
++        double sw = ov->src.x1 - ov->src.x0, sh = ov->src.y1 - ov->src.y0;
++        double dw = ov->dst.x1 - ov->dst.x0, dh = ov->dst.y1 - ov->dst.y0;
++        CGRect crop = CGRectMake(ov->src.x0, fh - ov->src.y1, sw, sh);
++        img = [img imageByCroppingToRect:crop];
++        img = [img imageByApplyingTransform:
++               CGAffineTransformMakeTranslation(-crop.origin.x, -crop.origin.y)];
++        img = [img imageByApplyingTransform:CGAffineTransformMakeScale(dw / sw, dh / sh)];
++        img = [img imageByApplyingTransform:
++               CGAffineTransformMakeTranslation(ov->dst.x0, oh - ov->dst.y1)];
++
++        CGRect out_rect = CGRectMake(0, 0, ow, oh);
++        CIImage *black = [[CIImage imageWithColor:
++                           [CIColor colorWithRed:0 green:0 blue:0 alpha:1]]
++                          imageByCroppingToRect:out_rect];
++        img = [img imageByCompositingOverImage:black];
++
++        CIImage *subs = [CIImage imageWithCGImage:ov->image];
++        CGSize ss = subs.extent.size;
++        if (ss.width > 0 && ss.height > 0 && (ss.width != ow || ss.height != oh)) {
++            subs = [subs imageByApplyingTransform:
++                    CGAffineTransformMakeScale(ow / ss.width, oh / ss.height)];
++        }
++        img = [subs imageByCompositingOverImage:img];
++
++        [f->ci render:img toCVPixelBuffer:out bounds:out_rect colorSpace:video_cs];
++        if (srgb)
++            CGColorSpaceRelease(srgb);
++    }
++
++    copy_metadata(video, out);
++    return out;
++}
++
++CVPixelBufferRef avf_frame_composite(struct avf_frame *f, CVPixelBufferRef video,
++                                     bool writable, const struct avf_overlay *ov,
++                                     enum avf_composite_kind *kind)
++{
++    *kind = AVF_COMPOSITE_NONE;
++    CVPixelBufferRef out = NULL;
++    if (is_biplanar_420(CVPixelBufferGetPixelFormatType(video))) {
++        out = yuv_composite(f, video, writable, ov);
++        if (out)
++            *kind = writable ? AVF_COMPOSITE_IN_PLACE : AVF_COMPOSITE_COPY;
++    }
++    if (!out) {
++        out = core_image_composite(f, video, ov);
++        if (out)
++            *kind = AVF_COMPOSITE_CORE_IMAGE;
++    }
++    if (!out)
++        return NULL;
++
++    // Frame-space size guard: a composite must keep the frame's size.
++    if (CVPixelBufferGetWidth(out) != CVPixelBufferGetWidth(video) ||
++        CVPixelBufferGetHeight(out) != CVPixelBufferGetHeight(video))
++    {
++        if (!f->size_warned) {
++            mp_warn(f->log, "Discarding a subtitle composite that would change "
++                    "the frame size (%zux%zu instead of %zux%zu).\n",
++                    CVPixelBufferGetWidth(out), CVPixelBufferGetHeight(out),
++                    CVPixelBufferGetWidth(video), CVPixelBufferGetHeight(video));
++            f->size_warned = true;
++        }
++        CVPixelBufferRelease(out);
++        *kind = AVF_COMPOSITE_NONE;
++        return NULL;
++    }
++    return out;
++}

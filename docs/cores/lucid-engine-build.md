@@ -8,7 +8,7 @@
 Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv, FFmpeg, libass and dav1d from their upstream sources with Vivid's patch series, and checks every result against the recorded configuration of today's binaries. Nothing comes from a third-party build repository: the scripts, pins and patches all live in [`engine/`](../../engine).
 
 > [!IMPORTANT]
-> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on the `experiment/lucid-engine-build` branch. Upstream mpv has no `avfoundation` video output, so these builds cannot replace today's engine until Vivid's own engine patches land: video output, audio output and Dolby Vision.
+> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on the `experiment/lucid-engine-build` branch. Upstream mpv has no `avfoundation` video output. Vivid's own video output is in the mpv series (patches `0020` to `0025`) on its implementer branch; these builds still cannot replace today's engine until the audio output and Dolby Vision patches land too, and the video output has been checked on devices.
 
 ## What it builds
 
@@ -45,7 +45,8 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
 2. restores or downloads the pinned inputs and verifies each SHA-256;
 3. builds dav1d, libass, FFmpeg and libmpv for the slice;
 4. runs the provenance, licence, TLS and link checks below;
-5. uploads the slice's frameworks, provenance report and logs.
+5. builds and runs the video output tests for the build host, from the patched mpv tree;
+6. uploads the slice's frameworks, provenance report and logs.
 
 A final job turns the slices into xcframeworks. Artefacts are kept for three days. A newer push cancels a running build.
 
@@ -94,6 +95,13 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | mpv | `0001-ad_spdif-recreate-spdif-muxer-on-reset.patch` | Upstream mpv commit `1388a453`, unchanged, with its upstream attribution: recreates the S/PDIF muxer after a seek and waits for a TrueHD major sync. |
 | mpv | `0002-ao_avfoundation-build-for-ios-and-tvos.patch` | Lets upstream's AVFoundation audio output (`-Davfoundation=enabled`) compile for iOS and tvOS by keeping the macOS-only CoreAudio device code out of those builds, and builds the CoreFoundation string helpers it calls (`osdep/utils-mac.c`), which upstream builds only with the macOS `cocoa` feature. The output's `notification name:` log line is unchanged. macOS builds with `cocoa` are unchanged. LGPL-2.1-or-later. |
 
+| mpv | `0020-vo_avfoundation-presentation-timing-and-pacing.patch` | Video output, part 1: the playback rate estimator, the media-mode timebase servo, the CoreMedia timebase and frame pacing (readiness wait, deadline drops, recovery throttle). LGPL-2.1-or-later. |
+| mpv | `0021-vo_avfoundation-pixel-kernels-geometry-and-pools.patch` | Video output, part 2: upload copies, the direct subtitle blends and the YUV subtitle composite in a fixed evaluation order, host layer pixel size and frame-space geometry, and the CoreVideo pools. LGPL-2.1-or-later. |
+| mpv | `0022-vo_avfoundation-frame-path.patch` | Video output, part 3: software uploads and colour tags, pixel aspect, the Dolby Vision transfer repair, samples, and Picture in Picture composites that never write to a decoder buffer. LGPL-2.1-or-later. |
+| mpv | `0023-vo_avfoundation-subtitles.patch` | Video output, part 4: every subtitle object drawn into one canvas (primary and secondary together), change tracking, dirty tracking and timed subtitle samples. LGPL-2.1-or-later. |
+| mpv | `0024-vo_avfoundation-layers-and-observers.patch` | Video output, part 5: the host and subtitle layers, their renderers and timebase, the main-thread hops, and the resize and app-state observers. LGPL-2.1-or-later. |
+| mpv | `0025-vo_avfoundation-add-the-video-output.patch` | Adds `vo=avfoundation` (meson feature `vo-avfoundation`, first in the video output list) with its `avfoundation-*` options and the VideoToolbox device it registers. LGPL-2.1-or-later. |
+
 Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019, video output mpv 0020 to 0039, decoder work mpv 0040 to 0049 and FFmpeg 0010 to 0029.
 
 To add a patch, write it against the pristine source (or the previous patch in the series), add its SHA-256 and file name to the end of the `series` file, and push. The build fails if the files a series changes differ from the files its patches name.
@@ -120,8 +128,8 @@ Compilers come from the selected Xcode (`/usr/bin/clang`). Every library gets th
 | --- | --- | --- | --- |
 | Slices | arm64 plus arm64e (tvOS device) and x86_64 (simulators); also Catalyst, macOS and visionOS | arm64 only, iOS and tvOS | Vivid links only arm64 on iPhone, iPad and Apple TV |
 | mpv licence | `-Dgpl=true` | `-Dgpl=false` | Decided: LGPL-2.1-or-later libmpv |
-| mpv options | `-Dmoltenvk=enabled -Dvo-avfoundation=enabled` | left out | Both exist only with third-party mpv patches, and upstream meson rejects them |
-| mpv features | include `gpl`, `moltenvk` and `vo-avfoundation` | without those three | Follows from the two rows above |
+| mpv options | `-Dmoltenvk=enabled -Dvo-avfoundation=enabled` | `-Dvo-avfoundation=enabled` only | `moltenvk` exists only with a third-party mpv patch, and upstream meson rejects it; `vo-avfoundation` comes from Vivid's own patch `0025` |
+| mpv features | include `gpl`, `moltenvk` and `vo-avfoundation` | without `gpl` and `moltenvk` | Follows from the two rows above |
 | FFmpeg licence | `--enable-gpl --enable-version3` (GPL version 3 or later) | neither (LGPL version 2.1 or later) | Decided |
 | FFmpeg TLS | OpenSSL 3.3.5 | Secure Transport, with the patch above | Decided |
 | FFmpeg components | as listed in the facts | without the `delogo` filter, the `whip` muxer and the `dtls`, `ffrtmpcrypt`, `rtmpe` and `rtmpte` protocols | GPL-only filter; the others need OpenSSL |
@@ -180,12 +188,14 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
   - Symbol closure: every undefined symbol in every built and pinned archive is defined by another archive in the link set, by the compiler runtime, or by a public `.tbd` stub in the SDK. Only `___dso_handle` and the Objective-C selector stubs (`_objc_msgSend$<selector>`), which the linker synthesises, are exempt. Every SDK symbol must come from a framework or library in `app-link.txt`, following re-exports, or from libSystem or libobjc.
   - Test link: a small C program that calls `mpv_create`, `mpv_initialize`, `mpv_terminate_destroy` and `avformat_configuration` links, dead-stripped and without forced whole-archive loading, against the ten new frameworks, the twelve pinned prebuilt archives and `app-link.txt`, at Vivid's own deployment targets (iOS 18.0, tvOS 26.0).
   - `Libmpv` keeps the AVFoundation output's `notification name:` log line, which Vivid's adapter reads.
+- **Video output:** `Libmpv` defines the `avfoundation` video output and registers it first in `vo.c`, ahead of `gpu-next`; `HAVE_VO_AVFOUNDATION` is 1; the option names `composite-osd`, `pip-composite-osd`, `queue-lead-ms` and `presentation` are present and `osd-max-height` and `osd-video-res` are not; and the binary references the CoreMedia, CoreVideo, AVFoundation, Core Image, Metal and UIKit symbols and selectors the output needs, and carries the `DolbyVisionRPUData` key.
+- **Video output tests** (`lucid.py test-vo`): the output's timing, pacing, geometry, pixel, frame and subtitle modules are compiled from the patched tree for the build host and run against the patch specification's acceptance properties and vectors (sections 4 and 9.4): estimator vectors, servo properties checked by simulation and against an independent reference model, readiness and recovery with a fake renderer, frame-space geometry, uploads and colour tags, bit-exact blends and composites, Picture in Picture composites that blend each image once, and several subtitle objects drawn together. The step fails if any case fails or none runs.
 
 The summary of each slice also appears on the workflow run page.
 
 ## Still to do
 
-- Vivid's own engine patches: an `avfoundation` video output, the native audio output changes Vivid relies on today, and Dolby Vision conversion. Until they exist, these builds cannot be linked into a shipping app.
+- Vivid's own engine patches: the native audio output changes Vivid relies on today and Dolby Vision conversion. Until they exist, these builds cannot be linked into a shipping app. The video output (`0020` to `0025`) still needs the device checks of the patch specification (9.5).
 - Building the remaining dependencies from source, starting with the ones that carry the most code (libplacebo, shaderc and MoltenVK).
 - A Swift package that serves these xcframeworks, updating `use-patched-libmpv.sh` for the new slice identifiers, and deciding the bundle identifiers.
 - Licence files and notices for the LGPL FFmpeg and libmpv and the removal of OpenSSL (`THIRD_PARTY_NOTICES.md` and the in-app licences) once the app links these builds.

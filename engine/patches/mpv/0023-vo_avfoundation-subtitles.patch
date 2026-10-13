@@ -1,0 +1,751 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] vo_avfoundation: subtitles and OSD
+
+Subtitle rendering for the AVFoundation video output.
+
+Every object mpv's osd_render() returns with content (the primary and the
+secondary subtitle, then the OSD) is drawn into one premultiplied BGRA
+canvas in mpv's order, later objects over earlier ones. The engine Vivid
+ships today shows only the last object; this one shows both subtitles. A
+single object still gives exactly the same pixels. Parts drawn at their own
+size use direct integer blends; scaled parts go through CoreGraphics. The
+canvas is rendered again only when the set of objects or one of their
+change ids changes.
+
+Pool surfaces are cleared with dirty tracking (up to four IOSurfaces, each
+cleared only where it was last drawn). On the separate subtitle layer each
+change becomes one timed sample at the video frame's presentation time;
+when a cue ends, a cleared canvas replaces it. Compositing also keeps a
+CoreGraphics snapshot for the Core Image path. Render counters feed a
+verbose performance summary.
+
+Applies to mpv v0.41.0 with Vivid's earlier patches.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the files it modifies, it is free software; you can redistribute it
+and/or modify it under the terms of the GNU Lesser General Public License
+as published by the Free Software Foundation; either version 2.1 of the
+License, or (at your option) any later version (LGPL-2.1-or-later).
+---
+diff --git a/video/out/avfoundation/subtitles.h b/video/out/avfoundation/subtitles.h
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/subtitles.h
+@@ -0,0 +1,111 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// Subtitles and OSD for the AVFoundation video output: change tracking over
++// the objects mpv's osd_render() returns, rasterising every object into one
++// premultiplied BGRA canvas (and a CoreGraphics snapshot for compositing),
++// dirty tracking of pool surfaces and the timed subtitle samples of the
++// separate layer.
++
++#ifndef MP_AVFOUNDATION_SUBTITLES_H
++#define MP_AVFOUNDATION_SUBTITLES_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#include <CoreMedia/CoreMedia.h>
++
++#include "frame.h"
++#include "pixels.h"
++
++struct mp_log;
++struct sub_bitmap_list;
++struct sub_bitmaps;
++struct avf_subs;
++
++#define AVF_DIRTY_SURFACES 4
++#define AVF_DIRTY_IDLE_NS 2000000000LL
++
++// Performance counters behind the subtitle performance summary. The output
++// adds its own timings (enqueues, samples, waits, margins) directly.
++struct avf_subs_perf {
++    unsigned renders, skipped, empty, frames;
++    int64_t render_ns, render_max_ns;
++    int64_t clear_ns, blend_ns, cg_ns, bbox_ns;
++    unsigned sub_enqueues;
++    int64_t sub_enqueue_ns;
++    int64_t video_sample_ns;
++    int64_t wait_ns;
++    unsigned margins;
++    int64_t margin_total_ns, margin_min_ns;
++    unsigned sample_drops;
++};
++
++struct avf_subs *avf_subs_create(struct mp_log *log);
++void avf_subs_destroy(struct avf_subs *s);
++
++// Draws the frame's objects (the list osd_render() returned, in mpv's order)
++// unless they are unchanged since the last render. composite selects the
++// Picture in Picture mode, which also needs the CoreGraphics snapshot.
++void avf_subs_render(struct avf_subs *s, const struct sub_bitmap_list *list,
++                     int canvas_w, int canvas_h, bool composite);
++
++// Clearing the subtitle cache: drops the cached image and buffer, forgets the
++// recorded objects, clears the pending mark and empties the bounding box.
++// Never flushes a layer.
++void avf_subs_clear(struct avf_subs *s);
++
++// Forgets the recorded objects, so the next frame renders again.
++void avf_subs_reset_tracking(struct avf_subs *s);
++
++// After a display layer recovery: tracking and the pending mark are reset.
++void avf_subs_reset_after_recovery(struct avf_subs *s);
++
++bool avf_subs_present(const struct avf_subs *s);
++bool avf_subs_pending(const struct avf_subs *s);
++struct avf_irect avf_subs_bbox(const struct avf_subs *s);
++
++// Fills the composite inputs from the cached rendering.
++void avf_subs_overlay(const struct avf_subs *s, struct avf_overlay *ov);
++
++// The subtitle sample due on the separate layer (+1), or NULL when none is
++// pending or it could not be made: the cached canvas if a subtitle is
++// present, otherwise a freshly cleared buffer.
++CMSampleBufferRef avf_subs_sample(struct avf_subs *s, int canvas_w, int canvas_h,
++                                  int64_t pts_ns);
++
++// The pending sample reached the layer.
++void avf_subs_sample_enqueued(struct avf_subs *s);
++
++// The 60-flip maintenance: flushes excess pool buffers and forgets surfaces
++// idle for more than 2 s.
++void avf_subs_maintain(struct avf_subs *s);
++
++struct avf_subs_perf *avf_subs_perf(struct avf_subs *s);
++
++// The subtitle performance summary: due after 32 renders, or after at least
++// one render and 300 frames. Logged at verbose (built only when verbose
++// logging is on); the counters then start again.
++bool avf_subs_perf_due(const struct avf_subs *s);
++void avf_subs_perf_emit(struct avf_subs *s, int canvas_w, int canvas_h);
++
++// Monotonic nanoseconds used for the timings and the dirty-tracking ages.
++int64_t avf_subs_now(void);
++
++#endif
+diff --git a/video/out/avfoundation/subtitles.c b/video/out/avfoundation/subtitles.c
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/subtitles.c
+@@ -0,0 +1,599 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <stdlib.h>
++#include <string.h>
++#include <time.h>
++
++#include <CoreGraphics/CoreGraphics.h>
++#include <CoreVideo/CoreVideo.h>
++#include <IOSurface/IOSurfaceRef.h>
++
++#include "common/msg.h"
++#include "sub/osd.h"
++
++#include "pool.h"
++#include "subtitles.h"
++
++#define SLOW_RENDER_NS 8000000LL
++#define SLOW_LOG_GAP_NS 1000000000LL
++#define PERF_RENDERS 32
++#define PERF_FRAMES 300
++
++struct dirty_entry {
++    IOSurfaceRef surface;       // retained
++    struct avf_irect rect;      // last drawn into, canvas pixels
++    int64_t last_used_ns;
++    uint64_t use_seq;
++};
++
++struct tracked_object {
++    int render_index;
++    int change_id;
++};
++
++struct avf_subs {
++    struct mp_log *log;
++    struct avf_pool pool;
++
++    CVPixelBufferRef bgra;      // cached canvas
++    CGImageRef image;           // cached CoreGraphics snapshot (compositing)
++    struct avf_irect bbox;
++    bool present;
++    bool pending;
++
++    struct tracked_object objects[MAX_OSD_PARTS];
++    int num_objects;
++
++    struct dirty_entry dirty[AVF_DIRTY_SURFACES];
++    uint64_t use_seq;
++
++    int64_t last_slow_log_ns;
++    bool have_slow_log;
++    struct avf_subs_perf perf;
++};
++
++int64_t avf_subs_now(void)
++{
++    return (int64_t)clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
++}
++
++struct avf_subs *avf_subs_create(struct mp_log *log)
++{
++    struct avf_subs *s = calloc(1, sizeof(*s));
++    if (!s)
++        return NULL;
++    s->log = log;
++    s->pool.name = "subtitle";
++    s->perf.margin_min_ns = INT64_MAX;
++    return s;
++}
++
++static void drop_dirty(struct avf_subs *s)
++{
++    for (int n = 0; n < AVF_DIRTY_SURFACES; n++) {
++        if (s->dirty[n].surface)
++            CFRelease(s->dirty[n].surface);
++        s->dirty[n] = (struct dirty_entry){0};
++    }
++}
++
++static void release_cached(struct avf_subs *s)
++{
++    if (s->bgra)
++        CVPixelBufferRelease(s->bgra);
++    s->bgra = NULL;
++    if (s->image)
++        CGImageRelease(s->image);
++    s->image = NULL;
++}
++
++void avf_subs_destroy(struct avf_subs *s)
++{
++    if (!s)
++        return;
++    release_cached(s);
++    drop_dirty(s);
++    avf_pool_release(&s->pool);
++    free(s);
++}
++
++void avf_subs_reset_tracking(struct avf_subs *s)
++{
++    s->num_objects = 0;
++}
++
++void avf_subs_clear(struct avf_subs *s)
++{
++    release_cached(s);
++    s->present = false;
++    s->num_objects = 0;
++    s->pending = false;
++    s->bbox = (struct avf_irect){0};
++}
++
++void avf_subs_reset_after_recovery(struct avf_subs *s)
++{
++    s->num_objects = 0;
++    s->pending = false;
++}
++
++bool avf_subs_present(const struct avf_subs *s)
++{
++    return s->present;
++}
++
++bool avf_subs_pending(const struct avf_subs *s)
++{
++    return s->pending;
++}
++
++struct avf_irect avf_subs_bbox(const struct avf_subs *s)
++{
++    return s->bbox;
++}
++
++struct avf_subs_perf *avf_subs_perf(struct avf_subs *s)
++{
++    return &s->perf;
++}
++
++// ---- dirty tracking -----------------------------------------------------------
++
++static struct dirty_entry *dirty_lookup(struct avf_subs *s, IOSurfaceRef surface,
++                                        bool *known)
++{
++    *known = false;
++    struct dirty_entry *free_slot = NULL, *oldest = NULL;
++    for (int n = 0; n < AVF_DIRTY_SURFACES; n++) {
++        struct dirty_entry *e = &s->dirty[n];
++        if (e->surface == surface) {
++            *known = true;
++            return e;
++        }
++        if (!e->surface) {
++            if (!free_slot)
++                free_slot = e;
++        } else if (!oldest || e->use_seq < oldest->use_seq) {
++            oldest = e;
++        }
++    }
++    struct dirty_entry *e = free_slot ? free_slot : oldest;
++    if (e->surface)
++        CFRelease(e->surface);
++    *e = (struct dirty_entry){ .surface = (IOSurfaceRef)CFRetain(surface) };
++    return e;
++}
++
++// Clears what the buffer may still hold. Returns the buffer's dirty entry, or
++// NULL when it has no IOSurface (it is then cleared entirely).
++static struct dirty_entry *clear_canvas(struct avf_subs *s, CVPixelBufferRef buf,
++                                        const struct avf_bgra *canvas)
++{
++    struct avf_irect all = { 0, 0, canvas->w, canvas->h };
++    IOSurfaceRef surface = CVPixelBufferGetIOSurface(buf);
++    if (!surface) {
++        avf_clear_bgra(canvas, all);
++        return NULL;
++    }
++    bool known;
++    struct dirty_entry *e = dirty_lookup(s, surface, &known);
++    avf_clear_bgra(canvas, known ? e->rect : all);
++    e->rect = (struct avf_irect){0};
++    e->last_used_ns = avf_subs_now();
++    e->use_seq = ++s->use_seq;
++    return e;
++}
++
++static CVPixelBufferRef pool_buffer(struct avf_subs *s, int w, int h)
++{
++    bool recreated = false;
++    CVPixelBufferRef buf = avf_pool_get(&s->pool, s->log, w, h,
++                                        kCVPixelFormatType_32BGRA, &recreated);
++    if (recreated)
++        drop_dirty(s);
++    return buf;
++}
++
++void avf_subs_maintain(struct avf_subs *s)
++{
++    avf_pool_flush_excess(&s->pool);
++    int64_t now = avf_subs_now();
++    for (int n = 0; n < AVF_DIRTY_SURFACES; n++) {
++        struct dirty_entry *e = &s->dirty[n];
++        if (e->surface && now - e->last_used_ns > AVF_DIRTY_IDLE_NS) {
++            CFRelease(e->surface);
++            *e = (struct dirty_entry){0};
++        }
++    }
++}
++
++// ---- drawing -------------------------------------------------------------------
++
++static bool part_drawable(const struct sub_bitmap *p)
++{
++    return p->bitmap && p->w > 0 && p->h > 0;
++}
++
++static int part_dw(const struct sub_bitmap *p)
++{
++    return p->dw > 0 ? p->dw : p->w;
++}
++
++static int part_dh(const struct sub_bitmap *p)
++{
++    return p->dh > 0 ? p->dh : p->h;
++}
++
++static bool direct_path(const struct sub_bitmaps *imgs)
++{
++    if (imgs->format != SUBBITMAP_LIBASS && imgs->format != SUBBITMAP_BGRA)
++        return false;
++    for (int n = 0; n < imgs->num_parts; n++) {
++        const struct sub_bitmap *p = &imgs->parts[n];
++        if (part_dw(p) != p->w || part_dh(p) != p->h)
++            return false;
++    }
++    return true;
++}
++
++static struct avf_irect part_rect(const struct sub_bitmap *p, int cw, int ch)
++{
++    struct avf_irect r = { p->x, p->y, p->x + part_dw(p), p->y + part_dh(p) };
++    return avf_irect_intersect(r, (struct avf_irect){ 0, 0, cw, ch });
++}
++
++// Draws one object's parts with CoreGraphics. The context is y-up, so each
++// part goes to (x, canvas height - y - dh).
++static void cg_draw_object(CGContextRef ctx, CGColorSpaceRef rgb,
++                           const struct sub_bitmaps *imgs, int ch)
++{
++    for (int n = 0; n < imgs->num_parts; n++) {
++        const struct sub_bitmap *p = &imgs->parts[n];
++        if (!part_drawable(p))
++            continue;
++        int dw = part_dw(p), dh = part_dh(p);
++        CGRect rect = CGRectMake(p->x, ch - p->y - dh, dw, dh);
++        bool bgra = imgs->format == SUBBITMAP_BGRA;
++        size_t bpp = bgra ? 4 : 1;
++        size_t size = (size_t)(p->h - 1) * p->stride + (size_t)p->w * bpp;
++        CGDataProviderRef prov = CGDataProviderCreateWithData(NULL, p->bitmap,
++                                                              size, NULL);
++        if (!prov)
++            continue;
++        if (bgra) {
++            CGImageRef img = CGImageCreate(p->w, p->h, 8, 32, p->stride, rgb,
++                kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little,
++                prov, NULL, false, kCGRenderingIntentDefault);
++            if (img) {
++                CGContextDrawImage(ctx, rect, img);
++                CGImageRelease(img);
++            }
++        } else if (imgs->format == SUBBITMAP_LIBASS) {
++            const CGFloat decode[] = { 1, 0 };
++            CGImageRef mask = CGImageMaskCreate(p->w, p->h, 8, 8, p->stride,
++                                                prov, decode, false);
++            if (mask) {
++                uint32_t c = p->libass.color;
++                CGContextSaveGState(ctx);
++                CGContextClipToMask(ctx, rect, mask);
++                CGContextSetRGBFillColor(ctx, (c >> 24) / 255.0,
++                                         ((c >> 16) & 0xFF) / 255.0,
++                                         ((c >> 8) & 0xFF) / 255.0,
++                                         1.0 - (c & 0xFF) / 255.0);
++                CGContextFillRect(ctx, rect);
++                CGContextRestoreGState(ctx);
++                CGImageRelease(mask);
++            }
++        }
++        CGDataProviderRelease(prov);
++    }
++}
++
++static void direct_draw_object(const struct avf_bgra *canvas,
++                               const struct sub_bitmaps *imgs)
++{
++    for (int n = 0; n < imgs->num_parts; n++) {
++        const struct sub_bitmap *p = &imgs->parts[n];
++        if (!part_drawable(p))
++            continue;
++        if (imgs->format == SUBBITMAP_LIBASS) {
++            avf_blend_libass(canvas, p->bitmap, p->stride, p->x, p->y, p->w,
++                             p->h, p->libass.color);
++        } else {
++            avf_blend_bgra(canvas, p->bitmap, p->stride, p->x, p->y, p->w, p->h);
++        }
++    }
++}
++
++// Renders every object into a fresh pool canvas. Returns the buffer (+1) and
++// its bounding box, or NULL.
++static CVPixelBufferRef render_bgra(struct avf_subs *s,
++                                    const struct sub_bitmap_list *list,
++                                    int cw, int ch, struct avf_irect *bbox)
++{
++    CVPixelBufferRef buf = pool_buffer(s, cw, ch);
++    if (!buf)
++        return NULL;
++    if (CVPixelBufferLockBaseAddress(buf, 0) != kCVReturnSuccess) {
++        CVPixelBufferRelease(buf);
++        return NULL;
++    }
++    struct avf_bgra canvas = {
++        .data = CVPixelBufferGetBaseAddress(buf),
++        .stride = CVPixelBufferGetBytesPerRow(buf),
++        .w = (int)CVPixelBufferGetWidth(buf),
++        .h = (int)CVPixelBufferGetHeight(buf),
++    };
++
++    int64_t t0 = avf_subs_now();
++    struct dirty_entry *entry = clear_canvas(s, buf, &canvas);
++    int64_t t1 = avf_subs_now();
++
++    CGContextRef ctx = NULL;
++    CGColorSpaceRef rgb = NULL;
++    int64_t blend_ns = 0, cg_ns = 0;
++    for (int n = 0; n < list->num_items; n++) {
++        const struct sub_bitmaps *imgs = list->items[n];
++        int64_t a = avf_subs_now();
++        if (direct_path(imgs)) {
++            direct_draw_object(&canvas, imgs);
++            blend_ns += avf_subs_now() - a;
++            continue;
++        }
++        if (!ctx) {
++            rgb = CGColorSpaceCreateDeviceRGB();
++            ctx = rgb ? CGBitmapContextCreate(canvas.data, canvas.w, canvas.h, 8,
++                                              canvas.stride, rgb,
++                                              kCGImageAlphaPremultipliedFirst |
++                                              kCGBitmapByteOrder32Little)
++                      : NULL;
++        }
++        if (ctx)
++            cg_draw_object(ctx, rgb, imgs, canvas.h);
++        cg_ns += avf_subs_now() - a;
++    }
++    if (ctx)
++        CGContextRelease(ctx);
++    if (rgb)
++        CGColorSpaceRelease(rgb);
++
++    int64_t t2 = avf_subs_now();
++    struct avf_irect box = avf_irect_empty_box(canvas.w, canvas.h);
++    for (int n = 0; n < list->num_items; n++) {
++        const struct sub_bitmaps *imgs = list->items[n];
++        for (int i = 0; i < imgs->num_parts; i++) {
++            const struct sub_bitmap *p = &imgs->parts[i];
++            if (part_drawable(p))
++                box = avf_irect_union(box, part_rect(p, canvas.w, canvas.h));
++        }
++    }
++    if (entry)
++        entry->rect = box;
++    int64_t t3 = avf_subs_now();
++
++    CVPixelBufferUnlockBaseAddress(buf, 0);
++    s->perf.clear_ns += t1 - t0;
++    s->perf.blend_ns += blend_ns;
++    s->perf.cg_ns += cg_ns;
++    s->perf.bbox_ns += t3 - t2;
++    *bbox = box;
++    return buf;
++}
++
++// The CoreGraphics snapshot for compositing: every object through the
++// CoreGraphics path into an RGBA bitmap.
++static CGImageRef render_image(struct avf_subs *s,
++                               const struct sub_bitmap_list *list, int cw, int ch)
++{
++    CGColorSpaceRef rgb = CGColorSpaceCreateDeviceRGB();
++    if (!rgb)
++        return NULL;
++    CGContextRef ctx = CGBitmapContextCreate(NULL, cw, ch, 8, (size_t)cw * 4, rgb,
++                                             kCGImageAlphaPremultipliedLast |
++                                             kCGBitmapByteOrder32Big);
++    CGImageRef img = NULL;
++    if (ctx) {
++        int64_t a = avf_subs_now();
++        CGContextClearRect(ctx, CGRectMake(0, 0, cw, ch));
++        for (int n = 0; n < list->num_items; n++)
++            cg_draw_object(ctx, rgb, list->items[n], ch);
++        img = CGBitmapContextCreateImage(ctx);
++        CGContextRelease(ctx);
++        s->perf.cg_ns += avf_subs_now() - a;
++    }
++    CGColorSpaceRelease(rgb);
++    return img;
++}
++
++static bool same_objects(const struct avf_subs *s, const struct sub_bitmap_list *list)
++{
++    if (list->num_items != s->num_objects)
++        return false;
++    for (int n = 0; n < list->num_items; n++) {
++        const struct sub_bitmaps *imgs = list->items[n];
++        if (imgs->render_index != s->objects[n].render_index ||
++            imgs->change_id != s->objects[n].change_id || !imgs->change_id)
++            return false;
++    }
++    return true;
++}
++
++void avf_subs_render(struct avf_subs *s, const struct sub_bitmap_list *list,
++                     int canvas_w, int canvas_h, bool composite)
++{
++    if (!list->num_items) {
++        if (s->present || s->bgra || s->image) {
++            release_cached(s);
++            s->present = false;
++            s->num_objects = 0;
++            s->bbox = (struct avf_irect){0};
++            if (!composite)
++                s->pending = true;
++        }
++        s->perf.empty += 1;
++        return;
++    }
++
++    if (s->present && same_objects(s, list) && s->bgra && (!composite || s->image)) {
++        s->perf.skipped += 1;
++        return;
++    }
++
++    int64_t start = avf_subs_now();
++    struct avf_irect box;
++    CVPixelBufferRef buf = render_bgra(s, list, canvas_w, canvas_h, &box);
++    CGImageRef img = composite ? render_image(s, list, canvas_w, canvas_h) : NULL;
++    if (!buf && !img)
++        return;
++
++    if (buf) {
++        if (s->bgra)
++            CVPixelBufferRelease(s->bgra);
++        s->bgra = buf;
++        s->bbox = box;
++    }
++    if (img) {
++        if (s->image)
++            CGImageRelease(s->image);
++        s->image = img;
++    }
++    s->num_objects = list->num_items > MAX_OSD_PARTS ? MAX_OSD_PARTS : list->num_items;
++    for (int n = 0; n < s->num_objects; n++) {
++        s->objects[n] = (struct tracked_object){
++            .render_index = list->items[n]->render_index,
++            .change_id = list->items[n]->change_id,
++        };
++    }
++    if (list->num_items > MAX_OSD_PARTS)
++        s->num_objects = 0; // cannot be tracked; render again next time
++    s->present = true;
++    if (!composite)
++        s->pending = true;
++
++    int64_t took = avf_subs_now() - start;
++    s->perf.renders += 1;
++    s->perf.render_ns += took;
++    if (took > s->perf.render_max_ns)
++        s->perf.render_max_ns = took;
++    if (took > SLOW_RENDER_NS && mp_msg_test(s->log, MSGL_V)) {
++        int64_t now = avf_subs_now();
++        if (!s->have_slow_log || now - s->last_slow_log_ns >= SLOW_LOG_GAP_NS) {
++            s->have_slow_log = true;
++            s->last_slow_log_ns = now;
++            mp_verbose(s->log, "Slow subtitle render: %.2f ms for %d object(s) "
++                       "on a %dx%d canvas.\n", took / 1e6, list->num_items,
++                       canvas_w, canvas_h);
++        }
++    }
++}
++
++void avf_subs_overlay(const struct avf_subs *s, struct avf_overlay *ov)
++{
++    ov->bgra = s->bgra;
++    ov->bbox = s->bbox;
++    ov->image = s->image;
++}
++
++CMSampleBufferRef avf_subs_sample(struct avf_subs *s, int canvas_w, int canvas_h,
++                                  int64_t pts_ns)
++{
++    if (!s->pending)
++        return NULL;
++    CVPixelBufferRef buf = NULL;
++    if (s->present && s->bgra) {
++        buf = CVPixelBufferRetain(s->bgra);
++    } else {
++        if (canvas_w <= 0 || canvas_h <= 0)
++            return NULL;
++        buf = pool_buffer(s, canvas_w, canvas_h);
++        if (!buf)
++            return NULL;
++        if (CVPixelBufferLockBaseAddress(buf, 0) != kCVReturnSuccess) {
++            CVPixelBufferRelease(buf);
++            return NULL;
++        }
++        struct avf_bgra canvas = {
++            .data = CVPixelBufferGetBaseAddress(buf),
++            .stride = CVPixelBufferGetBytesPerRow(buf),
++            .w = (int)CVPixelBufferGetWidth(buf),
++            .h = (int)CVPixelBufferGetHeight(buf),
++        };
++        clear_canvas(s, buf, &canvas);
++        CVPixelBufferUnlockBaseAddress(buf, 0);
++    }
++
++    CMVideoFormatDescriptionRef fmt = NULL;
++    CMSampleBufferRef sample = NULL;
++    OSStatus err = CMVideoFormatDescriptionCreateForImageBuffer(NULL, buf, &fmt);
++    if (err != noErr || !fmt) {
++        mp_err(s->log, "Could not create the subtitle format description (%d).\n",
++               (int)err);
++        CVPixelBufferRelease(buf);
++        return NULL;
++    }
++    CMSampleTimingInfo timing = {
++        .duration = kCMTimeInvalid,
++        .presentationTimeStamp = CMTimeMake(pts_ns, 1000000000),
++        .decodeTimeStamp = kCMTimeInvalid,
++    };
++    err = CMSampleBufferCreateReadyWithImageBuffer(NULL, buf, fmt, &timing, &sample);
++    if (err != noErr || !sample) {
++        mp_err(s->log, "Could not create the subtitle sample buffer (%d).\n", (int)err);
++        sample = NULL;
++    }
++    CFRelease(fmt);
++    CVPixelBufferRelease(buf);
++    return sample;
++}
++
++void avf_subs_sample_enqueued(struct avf_subs *s)
++{
++    s->pending = false;
++}
++
++bool avf_subs_perf_due(const struct avf_subs *s)
++{
++    return s->perf.renders >= PERF_RENDERS ||
++           (s->perf.renders >= 1 && s->perf.frames >= PERF_FRAMES);
++}
++
++void avf_subs_perf_emit(struct avf_subs *s, int canvas_w, int canvas_h)
++{
++    struct avf_subs_perf *p = &s->perf;
++    if (p->renders && mp_msg_test(s->log, MSGL_V)) {
++        double r = p->renders;
++        double f = p->frames ? p->frames : 1;
++        mp_verbose(s->log,
++            "Subtitle performance: canvas %dx%d, %u renders (average %.2f ms, "
++            "maximum %.2f ms; clear %.2f, blend %.2f, CoreGraphics %.2f, "
++            "bounding box %.2f ms), %u skipped, %u empty; subtitle enqueue "
++            "%.3f ms over %u samples; per frame: video sample %.3f ms, wait "
++            "%.3f ms; enqueue margin average %.1f ms, minimum %.1f ms; %u "
++            "subtitle samples dropped over %u frames.\n",
++            canvas_w, canvas_h, p->renders, p->render_ns / r / 1e6,
++            p->render_max_ns / 1e6, p->clear_ns / r / 1e6, p->blend_ns / r / 1e6,
++            p->cg_ns / r / 1e6, p->bbox_ns / r / 1e6, p->skipped, p->empty,
++            p->sub_enqueues ? p->sub_enqueue_ns / (double)p->sub_enqueues / 1e6 : 0.0,
++            p->sub_enqueues, p->video_sample_ns / f / 1e6, p->wait_ns / f / 1e6,
++            p->margins ? p->margin_total_ns / (double)p->margins / 1e6 : 0.0,
++            p->margins ? p->margin_min_ns / 1e6 : 0.0, p->sample_drops, p->frames);
++    }
++    *p = (struct avf_subs_perf){ .margin_min_ns = INT64_MAX };
++}
