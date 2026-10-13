@@ -579,7 +579,9 @@ MoltenVK stays a hard link dependency without the option [up] [bin]:
 - FFmpeg has no link-time Vulkan symbol references, but `--enable-vulkan` needs the Vulkan headers and `vulkan.pc` (`>= 1.3.277`) at configure time.
 - The features list loses `moltenvk`.
 
-### 3.5 libass from upstream, unpatched
+### 3.5 libass without provider A's patches
+
+The facts below concern dropping provider A's three patches. Vivid's pipeline now builds 0.17.5 with a series of its own instead: upstream commit `057a5334`, upstream pull request #951 and Vivid's patch `0010` (see the [build guide](lucid-engine-build.md#libass)). None of them adds public API or a meson option.
 
 - Pin 0.17.5, commit `4a05d812`. All meson options used today are upstream options, so the option set needs no change (`-Dasm` enabled on arm64 and arm64e, disabled on x86_64).
 - The three provider A patches add public API and a `threads` meson option. The new APIs are `ASS_FEATURE_FAST_BLUR`, `ass_set_threads`, the image pool, `ASS_FEATURE_CACHE_LAYOUT` and `ASS_FEATURE_MOTION_CACHE`. In provider A's mpv series, `0006-sd-ass-fast-blur-and-render-threads.patch` and `0013-sd-ass-isolate-event-prefetch-renderer.patch` use them.

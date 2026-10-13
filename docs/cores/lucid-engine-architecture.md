@@ -197,7 +197,7 @@ libass 0.17.5 renders text subtitles, on one thread, with FreeType, FriBidi, Har
 
 - `0001`: upstream libass commit `057a5334`, unchanged, with its upstream attribution. Symbol fonts given non-Latin text place their glyphs as before.
 - `0002`: upstream libass pull request #951 at `f96a521a`, unchanged, with its upstream attribution. The finished images of events that do not depend on time are cached within 32 MiB, so an unchanged sign or boxed line reports no change and repeats no font search.
-- `0010`: Vivid's own patch (ISC). Unresolved glyphs stay with their event, a new fallback face renders such events once more, the event's Effect joins the cache key, the cache is emptied on every state change, and image clones keep their type.
+- `0010`: Vivid's own patch (ISC). Unresolved glyphs stay with their event, which finds its own cache entry first, so a static event searches for them once per appearance however full the cache is; a new fallback face renders such events once more, the event's Effect joins the cache key, the cache is emptied on every state change, and image clones keep their type.
 
 ### The libraries
 
@@ -441,9 +441,9 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
     <tr><td><code>check --strict</code></td><td><code>build</code></td><td>Provenance and patched trees, licences, TLS, Dolby Vision references, decoder log levels, the audio output's log formats and markers, the video output's registration, options and symbols, the eleven libraries against their recorded facts, reproducibility, symbol closure and the test link.</td><td>683 of 683 checks per slice</td></tr>
     <tr><td><code>test-audio</code></td><td><code>build</code></td><td>The audio output's decisions: the vectors of engine 9.3, built from the slice's patched tree with address and undefined-behaviour sanitisers (<code>engine/tests/ao_avfoundation_vectors.c</code>). <code>check</code> fails unless they ran and passed.</td><td>140 vectors per slice, none failed</td></tr>
     <tr><td><code>test-vo</code></td><td><code>build</code> (<code>ios-arm64-simulator</code> only)</td><td>The video output's modules built for the host from the patched tree: estimator, servo, readiness and recovery, timebase, geometry, uploads, blends and composites, kernels against their scalar forms, subtitles, the centre with and without the tvOS conditionals against fake layers, and the layers module behind a UIKit shim (<code>engine/tests/vo/</code>; engine 9.4).</td><td>1,920 cases passed</td></tr>
-    <tr><td><code>test</code></td><td><code>build</code></td><td>The decoder suites from the patched FFmpeg and libdovi trees: a scripted libdovi, the real libdovi, and FFmpeg's VideoToolbox glue against a fake VideoToolbox under AddressSanitizer (<code>engine/tests/ffmpeg/</code>).</td><td>534, 199,060 and 3,921 checks, none failed</td></tr>
+    <tr><td><code>test</code></td><td><code>build</code></td><td>The decoder suites from the patched FFmpeg and libdovi trees: a scripted libdovi, the real libdovi, and FFmpeg's VideoToolbox glue against a fake VideoToolbox under AddressSanitizer, including engine 13.2's failed configuration record at initialisation and at a restart (<code>engine/tests/ffmpeg/</code>).</td><td>534, 199,060 and 3,921 checks, none failed</td></tr>
     <tr><td><code>test-libdovi</code></td><td><code>libdovi-test</code></td><td>The malformed RPU corpus through unpatched and patched libdovi built for the host (<code>engine/tests/libdovi/</code>).</td><td>19,381 cases; 14 of 14 checks</td></tr>
-    <tr><td><code>test-libass</code></td><td><code>libass-test</code></td><td>The scenario corpus through five libass builds: upstream, each prefix of the series, and the whole series with and without AddressSanitizer (<code>engine/tests/libass/</code>).</td><td>72 scenarios; 9,532 checks</td></tr>
+    <tr><td><code>test-libass</code></td><td><code>libass-test</code></td><td>The scenario corpus through five libass builds: upstream, each prefix of the series, and the whole series with and without AddressSanitizer, cache pressure included (<code>engine/tests/libass/</code>).</td><td>72 scenarios; 9,532 checks</td></tr>
     <tr><td><code>package</code></td><td><code>package</code></td><td>Each slice's form, and identical zips when packaged twice.</td><td>22 zips, identical</td></tr>
   </tbody>
 </table>
@@ -468,7 +468,7 @@ engine/patches/<library>/series  -> patch -p1 -F0 on the pristine source
 lucid.py build, once per slice   -> static frameworks and a provenance report
 lucid.py check and test-*        -> the run fails on any failed check or test
 package job                      -> <Name>.xcframework.zip and SHA256SUMS (artefact, 3 days)
-published separately             -> blurbery/lucid-engine release assets and Package.swift
+publish_package.py, by hand      -> blurbery/lucid-engine release assets and Package.swift
 app pin                          -> iosApp/project-ios.yml, iosApp/project.yml, Package.resolved
 ```
 
@@ -488,7 +488,7 @@ The four slices are `ios-arm64`, `ios-arm64-simulator`, `tvos-arm64` and `tvos-a
 
 The `package` job turns the four slices into `<Name>.xcframework.zip` for each of the 21 frameworks and for `libMoltenVK.a`, with fixed timestamps and ordering, packages them twice and fails unless both sets are identical, and uploads them with `SHA256SUMS` and the provenance reports as the artefact `lucid-engine-xcframeworks` (kept for three days).
 
-The Lucid Engine build workflow does not publish anything, and the package repository has no workflow of its own. Release `v0.1.0-interim.1` of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine/tree/11d60dc20a28e946677eb15ff832e7135603e92b) was published separately from run 38400124717 at `10faa2a`: its assets are the eleven xcframework zips that run built, `SHA256SUMS`, and a JSON and a Markdown provenance report for each slice.
+The Lucid Engine build workflow does not publish anything, and the package repository has no workflow of its own. [`engine/publish_package.py`](../../engine/publish_package.py) prepares each package release from one green run: it checks the run and its artefact, writes `Package.swift`, `README.md`, `NOTICE`, `LICENSE` and `LICENSES/` in a checkout of the package, stages the assets and prints the release command ([build guide](lucid-engine-build.md#publishing-the-package)). Release `v0.1.0-interim.1` of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine/tree/11d60dc20a28e946677eb15ff832e7135603e92b) was published separately from run 38400124717 at `10faa2a`: its assets are the eleven xcframework zips that run built, `SHA256SUMS`, and a JSON and a Markdown provenance report for each slice.
 
 ### The package and the app's pin
 
@@ -548,8 +548,7 @@ Corresponding source for an engine build is the Vivid commit it was built from: 
 
 - **Device checks.** None of Vivid's engine patches has been checked on a device, and the bridge has not been played on physical devices yet; both checklists above are outstanding.
 - **The next package release.** No release yet serves what the pipeline builds now. The app's `0.1.0-interim.1` carries unpatched libass and eleven interim binaries; engine 8.7 requires the next release to serve all 21 frameworks and `libMoltenVK.a`. The build guide's "Still to do" predates the package: it still asks for a Swift package and for an update to `scripts/release/use-patched-libmpv.sh`, which the app side has since removed.
-- **libass under cache pressure.** Engine 13.4 requires a static event with unresolved glyphs to search for them once per appearance whatever the cache pressure; neither `0010` nor the libass host tests at `6a85f8b` cover that case yet.
-- **Decoder tests still to write.** The host test of engine 13.2 (an injected failure to add the Dolby Vision configuration), and an end-to-end host test of mpv `0040`, which needs host builds of libplacebo and libmpv (engine 12.6).
+- **Decoder test still to write.** An end-to-end host test of mpv `0040`, which needs host builds of libplacebo and libmpv (engine 12.6). The host test of engine 13.2 (a failed creation of the Dolby Vision configuration record) is now part of `vt_glue_tests`.
 - **libass on one thread.** Engine 9.5 check 46 decides whether single-threaded rendering is acceptable for heavy styled subtitles.
 - **External displays.** Whether iOS ever gives Vivid an external-display scene is unverified (bridge 9.2).
 - **FFmpeg `0001`'s header** has no licence paragraph of its own; the notices cover Vivid's engine patches as LGPL-2.1-or-later.
