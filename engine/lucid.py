@@ -873,12 +873,19 @@ class Ctx:
     def build(self, lib: str) -> Path:
         return self.work / "build" / lib
 
-    def dep(self, lib: str) -> Path:
-        """Where a dependency library is installed (DESTDIR)."""
-        return self.work / "deps" / lib
+    def dep_destdir(self, lib: str) -> Path:
+        """Where a dependency library's build installs it (DESTDIR)."""
+        return self.work / "deps-stage" / lib
+
+    def dep_staged(self, lib: str) -> Path:
+        """The installed prefix inside the DESTDIR."""
+        return self.dep_destdir(lib) / PREFIX.lstrip("/")
 
     def dep_prefix(self, lib: str) -> Path:
-        return self.dep(lib) / PREFIX.lstrip("/")
+        """The dependency's installed files (include/, lib/), from which the
+        libraries after it build, as today's builds had them: the same
+        folder layout gives the same paths in compiled-in assertion texts."""
+        return self.work / "deps" / lib
 
     def logfile(self, name: str) -> Path:
         return self.out / "logs" / f"{name}.log"
@@ -1186,8 +1193,8 @@ def build_meson_dep(ctx: Ctx, lib: str) -> dict:
     options = read_list(CONFIG / f"{lib}-meson.txt")
     properties = cross_properties(lib)
     return {"meson_options": options, "cross_properties": list(properties),
-            "meson": build_meson(ctx, lib, options, ndebug=False, dest=ctx.dep(lib), flags=flags,
-                                 properties=properties)}
+            "meson": build_meson(ctx, lib, options, ndebug=False, dest=ctx.dep_destdir(lib),
+                                 flags=flags, properties=properties)}
 
 
 def cmake_cache(path: Path) -> dict[str, str]:
@@ -1214,10 +1221,10 @@ def build_cmake(ctx: Ctx, lib: str, src: Path, options: list[str], targets: tupl
         run(["make", f"-j{os.cpu_count() or 4}", *targets], cwd=build, env=env, logfile=logfile)
         if targets:
             # Installs what the install rules name, without building the rest.
-            run([ctx.cmake, "--install", build], env={**env, "DESTDIR": str(ctx.dep(lib))},
+            run([ctx.cmake, "--install", build], env={**env, "DESTDIR": str(ctx.dep_destdir(lib))},
                 logfile=logfile)
         else:
-            run(["make", "install", f"DESTDIR={ctx.dep(lib)}"], cwd=build, env=env,
+            run(["make", "install", f"DESTDIR={ctx.dep_destdir(lib)}"], cwd=build, env=env,
                 logfile=logfile)
     finally:
         for name in ("CMakeCache.txt", "CMakeFiles/CMakeConfigure.log"):
@@ -1244,7 +1251,7 @@ def build_unibreak(ctx: Ctx) -> dict:
     try:
         run([ctx.src(lib) / "configure"] + args, cwd=build, env=env, logfile=logfile)
         run(["make", f"-j{os.cpu_count() or 4}"], cwd=build, env=env, logfile=logfile)
-        run(["make", "install", f"DESTDIR={ctx.dep(lib)}"], cwd=build, env=env, logfile=logfile)
+        run(["make", "install", f"DESTDIR={ctx.dep_destdir(lib)}"], cwd=build, env=env, logfile=logfile)
     finally:
         if (build / "config.log").exists():
             shutil.copy2(build / "config.log", ctx.out / "logs" / f"{lib}-config.log")
@@ -1260,7 +1267,7 @@ def build_shaderc(ctx: Ctx) -> dict:
     library, so shaderc.pc becomes upstream's shaderc_combined.pc (facts 3.8)."""
     lib = "shaderc"
     record = build_cmake(ctx, lib, ctx.src(lib), read_list(CONFIG / "shaderc-cmake.txt"))
-    pc = ctx.dep_prefix(lib) / "lib" / "pkgconfig"
+    pc = ctx.dep_staged(lib) / "lib" / "pkgconfig"
     shutil.copy2(pc / "shaderc_combined.pc", pc / "shaderc.pc")
     return record
 
@@ -1378,7 +1385,7 @@ def build_moltenvk(ctx: Ctx) -> dict:
     if len(found) != 1:
         raise Failure(f"MoltenVK: no single {platform_id} {variant or 'device'} library in {xcf}")
     built = xcf / found[0]["LibraryIdentifier"] / found[0]["LibraryPath"]
-    prefix = ctx.dep_prefix(lib)
+    prefix = ctx.dep_staged(lib)
     (prefix / "lib").mkdir(parents=True)
     target = prefix / "lib" / DEPS[lib].library
     if "Non-fat" in run(["lipo", "-info", built], capture=True):
@@ -1421,8 +1428,9 @@ DEP_FUNCTIONS = {
 
 def prune_dep(ctx: Ctx, lib: str) -> None:
     """Keep only what consumers and the framework use: the headers, the one
-    static library and the consumers' pkg-config files."""
-    prefix = ctx.dep_prefix(lib)
+    static library and the consumers' pkg-config files; then move them from
+    the DESTDIR to the dependency's own folder."""
+    prefix = ctx.dep_staged(lib)
     keep = {f"lib/{DEPS[lib].library}"} | {f"lib/pkgconfig/{n}.pc" for n in DEPS[lib].pkgconfig}
     for path in sorted(prefix.rglob("*"), reverse=True):
         rel = path.relative_to(prefix).as_posix()
@@ -1436,9 +1444,11 @@ def prune_dep(ctx: Ctx, lib: str) -> None:
     for rel in keep:
         if not (prefix / rel).is_file():
             raise Failure(f"{lib}: {rel} was not installed")
-    for item in ctx.dep(lib).iterdir():
+    for item in ctx.dep_destdir(lib).iterdir():
         if item.name != PREFIX.lstrip("/"):
             raise Failure(f"{lib}: installed {item.name} outside {PREFIX}")
+    ctx.dep_prefix(lib).parent.mkdir(parents=True, exist_ok=True)
+    prefix.rename(ctx.dep_prefix(lib))
 
 
 def dep_key(pins, sl: Slice, lib: str) -> str:
@@ -1493,7 +1503,7 @@ def build_dep(ctx: Ctx, lib: str, cache: Path | None) -> dict:
         record = json.loads((entry / "record.json").read_text())
         if record.get("key") == key:
             log(f"reusing the cached build of {lib} (key {key[:16]})")
-            shutil.copytree(entry / "install", ctx.dep(lib), symlinks=True)
+            shutil.copytree(entry / "install", ctx.dep_prefix(lib), symlinks=True)
             record["cache"] = "reused"
             record["staged_pkgconfig"] = stage_dep(ctx, lib)
             return record
@@ -1507,7 +1517,7 @@ def build_dep(ctx: Ctx, lib: str, cache: Path | None) -> dict:
     if entry:
         if entry.exists():
             shutil.rmtree(entry)
-        shutil.copytree(ctx.dep(lib), entry / "install", symlinks=True)
+        shutil.copytree(ctx.dep_prefix(lib), entry / "install", symlinks=True)
         write_json(entry / "record.json", record)
         with open(cache / ctx.sl.name / "new", "a") as f:
             f.write(lib + "\n")
@@ -2090,9 +2100,9 @@ def check_deps(c: Checks, sl: Slice, pins, work: Path, out: Path, report: dict) 
         asserts = "___assert_rtn" in set(exp[f"imports-{sl.name}"])
         c.equal(f"{name}: assertions {'on' if asserts else 'off'} as today",
                 "___assert_rtn" in imports, asserts)
-        inc = work / "deps" / lib / PREFIX.lstrip("/") / "include"
+        inc = work / "deps" / lib / "include"
         for pc_name in dep.pkgconfig:
-            ours = work / "deps" / lib / PREFIX.lstrip("/") / "lib" / "pkgconfig" / f"{pc_name}.pc"
+            ours = work / "deps" / lib / "lib" / "pkgconfig" / f"{pc_name}.pc"
             c.equal(f"{pc_name}.pc: contract as today", pc_entries(ours.read_text()),
                     pc_entries(expected_pc(sl, pc_name).read_text()))
             res = subprocess.run(["pkg-config", "--static", "--exists", "--print-errors", pc_name],
@@ -3055,8 +3065,7 @@ def cmd_test_vo(args) -> None:
     work = args.work.resolve() / sl.name
     out = args.work.resolve() / "out" / sl.name
     includes = [work / "build" / "mpv", work / "install" / PREFIX.lstrip("/") / "include"]
-    includes += sorted(p for p in (work / "deps").glob(f"*/{PREFIX.lstrip('/')}/include")
-                       if p.is_dir())
+    includes += sorted(p for p in (work / "deps").glob("*/include") if p.is_dir())
     cases, failures, output = run_vo_tests(work / "src" / "mpv", includes, work / "vo-tests")
     log(output)
     (out / "vo-tests.txt").write_text(output)
