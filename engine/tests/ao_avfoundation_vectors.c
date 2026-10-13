@@ -13,6 +13,7 @@
  */
 
 #include <inttypes.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,6 +84,7 @@ struct fake_host {
     int64_t queued;
     int frame_bytes;
     int reads;
+    int64_t ends[8];           // end times of the first reads
     int64_t last_end_ns;
     int last_frames;
     int read_limit;            // -1: return every frame asked for
@@ -118,6 +120,8 @@ static void host_log(void *ctx, enum avfao_level level, const char *fmt, va_list
 static int host_read(void *ctx, void *data, int frames, int64_t end_ns, bool *eof)
 {
     F.reads++;
+    if (F.reads <= 8)
+        F.ends[F.reads - 1] = end_ns;
     F.last_end_ns = end_ns;
     F.last_frames = frames;
     if (F.on_read)
@@ -247,7 +251,8 @@ struct fake_player {
     int timer_armed;
     int timer_idle;
     bool create_fails;
-    bool eof_at_read;          // the sink's end-of-file state at the last read
+    bool clock_after_rate_set; // rate 1 moves the clock to clock_after_rate
+    int64_t clock_after_rate;
 };
 
 static struct fake_player P;
@@ -271,8 +276,11 @@ static void cx_item_teardown(void *ctx)
 static void cx_set_rate(void *ctx, float rate)
 {
     P.rate_calls++;
-    if (rate == 1)
+    if (rate == 1) {
         P.rate_one++;
+        if (P.clock_after_rate_set)
+            P.timebase_ns = P.current_ns = P.clock_after_rate;
+    }
     if (rate == 0)
         P.rate_zero++;
 }
@@ -385,7 +393,9 @@ static void cx_begin(const struct cx_setup *s)
     bool ok = avfao_cx_init(&CX, &HOST, &cx_ops, NULL, &TRACE, s->codec, s->carrier, &cfg);
     CHECK(ok, "avfao_cx_init failed");
     CX.st.initial_mode = s->initial_mode;
+    F.read_limit = 0;
     avfao_cx_start(&CX);
+    F.read_limit = -1;
     clear_lines();
     P.rate_calls = P.rate_one = P.rate_zero = P.seeks = 0;
     P.serves = 0;
@@ -395,6 +405,23 @@ static void cx_begin(const struct cx_setup *s)
 static void cx_finish(void)
 {
     avfao_cx_uninit(&CX);
+}
+
+static size_t put_burst(uint8_t *buf, int type_byte, int pd, int payload_len, bool sync,
+                        int padding);
+
+// Whole E-AC-3 bursts (one 32 ms period each) as mpv's spdif muxer writes
+// them; the first `unsynced` lack the syncword.
+static uint8_t stream_buf[24576 * 48];
+
+static void use_eac3_stream(int bursts, int unsynced)
+{
+    size_t n = 0;
+    for (int i = 0; i < bursts && i < 48; i++)
+        n += put_burst(stream_buf + n, 0x15, 100, 100, i >= unsynced, 24576 - 8 - 100);
+    F.source = stream_buf;
+    F.source_len = n;
+    F.source_pos = 0;
 }
 
 // One supervision evaluation at host time t with fed duration f.
@@ -443,7 +470,12 @@ static void test_supervision(void)
 
     vector_begin("9.3.1 P3 end of file primes");
     cx_begin(&s);
-    CX.eof = true;
+    // mpv reports end of file on the step's first read.
+    F.now = SEC(3);
+    F.read_eof = true;
+    F.read_limit = 0;
+    avfao_cx_step(&CX);
+    CHECK(CX.eof && F.stop_streaming == 1, "no end of file");
     tick(SEC(3), MS(300));
     CHECK(P.rate_one == 1, "rate requests %d", P.rate_one);
     CHECK(deadline_is(SEC(5)), "deadline %" PRId64, CX.st.deadline_ns);
@@ -802,15 +834,18 @@ static void test_start_anchoring(void)
     struct cx_setup s = default_setup();
     s.anchor_start = true;
     cx_begin(&s);
-    F.now = SEC(30);
-    CX.st.rate_requested = true;
-    CX.st.anchor_pacing_ns = SEC(30) - MS(100);
-    CX.st.deadline_cleared = true;
-    CX.fed_ns = MS(19500);
     F.queued = 100000;
+    // Rate 1 from supervision leaves the pacing time at mpv's clock origin,
+    // so the step at 29.9 s anchors, and so does the one 0.1 s later.
+    tick(SEC(29), MS(19500));
+    CHECK(P.rate_one == 1 && CX.st.anchor_pacing_ns == 0, "rate 1");
+    F.now = SEC(30) - MS(100);
+    avfao_cx_step(&CX);
+    F.reads = 0;
+    F.now = SEC(30);
     avfao_cx_step(&CX);
     CHECK(F.reads == 1, "reads %d", F.reads);
-    CHECK(CX.st.anchors == 1, "anchors %d", CX.st.anchors);
+    CHECK(CX.st.anchors == 2, "anchors %d", CX.st.anchors);
     CHECK(CX.st.anchor_pacing_ns == SEC(30), "pacing %" PRId64, CX.st.anchor_pacing_ns);
     cx_finish();
     vector_end();
@@ -853,29 +888,44 @@ static void run_resume_row(const struct resume_row *r)
     cx_begin(&s);
 
     int64_t now = SEC(100);
-    F.now = now;
+    int64_t unpaused = now - r->since_unpause;
     F.queued = 100000;
-    CX.st.rate_requested = true;
-    CX.st.rate1_ns = SEC(50);
-    // Supervision would act if it ran: the deadline has passed.
-    CX.st.deadline_set = true;
-    CX.st.deadline_ns = SEC(60);
-    CX.st.resume_pending = r->pending;
-    CX.st.resume_ns = now - r->since_unpause;
-    CX.st.resume_clock_ns = r->recorded;
-    CX.st.anchor_pacing_ns = now - r->since_anchor;
-    CX.eof = r->eof;
-    P.timebase_ns = r->clock;
     P.current_valid = true;
-    P.current_ns = r->clock;
-    // Enough fed that filling has nothing to do, unless a read must happen
-    // in filling to request the fallback.
-    CX.fed_ns = r->read_fallback ? r->clock + SEC(4) : r->clock + SEC(20);
+    // The fed duration is an input, as in the ticks of 9.3: enough that
+    // filling has nothing to do, unless a read in filling must request the
+    // fallback.
+    int64_t fed = r->read_fallback ? r->clock + SEC(4) : r->clock + SEC(20);
+    tick(SEC(50), fed);
+    CHECK(P.rate_one == 1, "rate 1 not requested");
+    P.timebase_ns = P.current_ns = r->recorded;
+    if (r->pending) {
+        // A real pause and unpause record the resume; the unpause's own
+        // step makes the first anchor read when the option is on.
+        F.now = unpaused - MS(100);
+        avfao_cx_pause(&CX, true);
+        F.now = unpaused;
+        avfao_cx_pause(&CX, false);
+        if (r->option && r->since_anchor < r->since_unpause) {
+            // The latest anchor read, which reports mpv's end of file in the
+            // end-of-file row.
+            F.read_eof = r->eof;
+            F.now = now - r->since_anchor;
+            avfao_cx_step(&CX);
+            CHECK(CX.eof == r->eof, "end of file %d", CX.eof);
+        }
+    }
+
+    F.now = now;
+    P.timebase_ns = P.current_ns = r->clock;
     if (r->read_fallback) {
         hook_cx = &CX;
         F.on_read = fallback_on_read;
     }
     P.failed = r->failed;
+    clear_lines();
+    F.reads = 0;
+    P.serves = 0;
+    P.seeks = 0;
 
     avfao_cx_step(&CX);
 
@@ -941,15 +991,13 @@ static void test_resume(void)
     struct cx_setup s = default_setup();
     s.anchor_resume = true;
     cx_begin(&s);
-    F.now = SEC(30);
     F.queued = 100000;
-    CX.st.rate_requested = true;
-    CX.st.deadline_cleared = true;
-    CX.st.anchor_pacing_ns = SEC(29);
     P.timebase_ns = SEC(30);
-    CX.fed_ns = SEC(40);
+    tick(SEC(29), SEC(40));
+    F.now = MS(29500);
     avfao_cx_pause(&CX, true);
     F.reads = 0;
+    F.now = SEC(30);
     avfao_cx_pause(&CX, false);
     CHECK(F.reads == 1, "reads %d", F.reads);
     CHECK(CX.st.resume_pending, "no pending resume");
@@ -1124,6 +1172,10 @@ static void *pcm_renderer_new(void *ctx)
 {
     if (R.renderer_fails)
         return NULL;
+    if (nrenderers >= (int)(sizeof(renderers) / sizeof(renderers[0]))) {
+        CHECK(false, "fake renderer pool exhausted");
+        return NULL;
+    }
     struct fake_renderer *r = &renderers[nrenderers];
     *r = (struct fake_renderer){.id = nrenderers, .volume = 1, .ready = true};
     nrenderers++;
@@ -1134,6 +1186,10 @@ static void *pcm_sync_new(void *ctx, void *renderer)
 {
     if (R.sync_fails)
         return NULL;
+    if (nsyncs >= (int)(sizeof(syncs) / sizeof(syncs[0]))) {
+        CHECK(false, "fake synchroniser pool exhausted");
+        return NULL;
+    }
     struct fake_sync *s = &syncs[nsyncs];
     *s = (struct fake_sync){.id = nsyncs};
     nsyncs++;
@@ -1643,7 +1699,7 @@ static void test_session(void)
     CHECK(ok1 && !ok2 && !ok3 && !ok4 && ok5, "outcomes %d %d %d %d %d", ok1, ok2, ok3, ok4, ok5);
     CHECK(SS.category == 0 && SS.activate == 0 && SS.deactivate == 0, "session calls");
     CHECK(SS.discards == 3, "discards %d", SS.discards);
-    CHECK(count_prefix("spdif-ac3 passthrough is disabled") == 1, "block refusal line");
+    CHECK(count_prefix("not opening spdif-ac3: ") == 1, "block refusal line");
     for (int n = 0; n < F.nlines; n++) {
         CHECK(strstr(F.lines[n].text, "falling back to PCM") == NULL, "fault text in '%s'",
               F.lines[n].text);
@@ -1727,15 +1783,24 @@ static void test_eof_restart(void)
     vector_begin("9.3.8 start after end of file keeps the item and reads at once");
     struct cx_setup s = default_setup();
     cx_begin(&s);
+    // 40 real bursts (1.28 s): fed, written and primed, so rate 1 goes in.
+    use_eac3_stream(40, 0);
     F.now = SEC(40);
     F.queued = 1000000;
-    CX.st.rate_requested = true;
-    CX.st.deadline_cleared = true;
-    CX.fed_ns = SEC(5);
-    CX.win.head = 123456;
-    CX.consumed_frames = 960000;
-    CX.eof = true;
-    P.timebase_ns = SEC(4);
+    avfao_cx_step(&CX);
+    CHECK(CX.fed_ns == 40 * INT64_C(32000000) && P.rate_one == 1, "fed %" PRId64, CX.fed_ns);
+    // Then mpv reports end of file.
+    F.read_eof = true;
+    F.read_limit = 0;
+    avfao_cx_step(&CX);
+    CHECK(CX.eof, "no end of file");
+    int64_t head = CX.win.head;
+    int64_t consumed = CX.consumed_frames;
+    F.read_eof = false;
+    F.read_limit = -1;
+    P.rate_one = 0;
+    F.reads = 0;
+    clear_lines();
     hook_cx = &CX;
     F.on_read = record_eof;
     eof_at_read = true;
@@ -1743,7 +1808,7 @@ static void test_eof_restart(void)
     CHECK(has_line(AVFAO_V, "resuming compressed feed after audio EOF"), "line");
     CHECK(F.reads > 0 && !eof_at_read, "reads %d, eof at read %d", F.reads, eof_at_read);
     CHECK(P.item_creates == 1 && P.teardowns == 0, "item replaced");
-    CHECK(CX.win.head == 123456 && CX.consumed_frames > 960000, "stream offsets");
+    CHECK(CX.win.head == head && CX.consumed_frames > consumed, "stream offsets");
     CHECK(P.rate_one == 1, "rate requests %d", P.rate_one);
     int line = find_text("resuming compressed feed after audio EOF");
     int edge = find_prefix("trace edge start: clock ");
@@ -2032,16 +2097,18 @@ static void test_feed_details(void)
     vector_begin("mpv's end time comes from consumed frames minus dropped duration");
     struct cx_setup s = default_setup();
     cx_begin(&s);
+    // The first 100 ms read holds one burst without a syncframe: 32 ms
+    // dropped, nothing fed. The second read's end time counts 100 ms
+    // written minus 32 ms dropped, not the fed duration.
+    use_eac3_stream(1, 1);
     F.now = SEC(5);
     F.queued = 1000000;
-    F.read_limit = 0;
-    CX.consumed_frames = 19200;            // 100 ms at 192 kHz
-    CX.dropped_ns = 32000000;
-    CX.fed_ns = SEC(3);                    // must not be used
-    P.timebase_ns = 0;
     avfao_cx_step(&CX);
-    CHECK(F.reads >= 1, "reads %d", F.reads);
-    CHECK(F.last_end_ns == SEC(5) + MS(68) + MS(100), "end %" PRId64, F.last_end_ns);
+    CHECK(F.reads >= 2, "reads %d", F.reads);
+    CHECK(CX.dropped_ns >= INT64_C(32000000) && CX.fed_ns == 0, "dropped %" PRId64,
+          CX.dropped_ns);
+    CHECK(F.ends[0] == SEC(5) + MS(100), "first end %" PRId64, F.ends[0]);
+    CHECK(F.ends[1] == SEC(5) + MS(68) + MS(100), "second end %" PRId64, F.ends[1]);
     cx_finish();
     vector_end();
 
@@ -2068,16 +2135,18 @@ static void test_feed_details(void)
     vector_begin("feed step: status line from -1, heartbeat every 100, every 5 in detail");
     cx_begin(&s);
     F.read_limit = 0;
-    F.now = SEC(1000);  // outside the start edge's detail window
-    clear_lines();
-    CX.last_status = -1;
-    CX.last_time_control = -1;
-    CX.heartbeat = 0;
     P.time_control = 1;
-    avfao_cx_step(&CX);
+    F.now = SEC(1000);
+    clear_lines();
+    avfao_cx_reset(&CX);
+    avfao_cx_start(&CX);  // a new item: its first step logs from -1
     CHECK(has_line(AVFAO_V, "item status -1 -> 1, time control -1 -> 1, pos 0.000s, "
                             "fed 0.000s"), "status line");
-    for (int i = 0; i < 99; i++)
+    F.now = SEC(1010);    // past the start edge's detail window
+    clear_lines();
+    uint64_t first = CX.heartbeat;
+    int to_hundred = (int)(100 - first % 100);
+    for (int i = 0; i < to_hundred; i++)
         avfao_cx_step(&CX);
     CHECK(count_prefix("heartbeat: ") == 1, "heartbeats %d", count_prefix("heartbeat: "));
     CHECK(has_line(AVFAO_V, "heartbeat: raw pos -1.000s, clamped 0.000s, fed 0.000s, "
@@ -2088,16 +2157,16 @@ static void test_feed_details(void)
         avfao_cx_step(&CX);
     CHECK(count_prefix("heartbeat: ") == 2, "detail heartbeats %d",
           count_prefix("heartbeat: "));
-    CHECK(CX.heartbeat == 110, "counter %" PRIu64, CX.heartbeat);
+    CHECK(CX.heartbeat == first + to_hundred + 10, "counter %" PRIu64, CX.heartbeat);
     avfao_cx_fallback(&CX);
     avfao_cx_step(&CX);
-    CHECK(CX.heartbeat == 110, "a step that does nothing counted");
+    CHECK(CX.heartbeat == first + to_hundred + 10, "a step that does nothing counted");
     if (checks_failed_in_vector)
         dump_lines();
     cx_finish();
     vector_end();
 
-    vector_begin("filling: up to 64 reads, start-up target is twice the lead");
+    vector_begin("filling: at most 64 reads in one step");
     cx_begin(&s);
     F.now = SEC(1);
     F.queued = 100000000;
@@ -2163,16 +2232,152 @@ static void test_feed_details(void)
 
     vector_begin("pause and reset: timer idled, rate 0, item torn down from byte 0");
     cx_begin(&s);
-    CX.fed_ns = SEC(3);
-    CX.win.head = 777;
-    CX.st.resume_pending = true;
+    use_eac3_stream(40, 0);
+    F.queued = 1000000;
+    F.now = SEC(1);
+    avfao_cx_step(&CX);
+    CHECK(CX.fed_ns > 0 && CX.win.head > 0 && P.rate_one == 1, "fed %" PRId64, CX.fed_ns);
+    F.now = SEC(2);
+    avfao_cx_pause(&CX, true);
+    F.now = SEC(3);
+    avfao_cx_pause(&CX, false);
+    CHECK(CX.st.resume_pending, "no pending resume");
     P.timer_idle = 0;
+    P.rate_zero = 0;
+    F.now = SEC(4);
     avfao_cx_pause(&CX, true);
     CHECK(P.timer_idle == 1 && P.rate_zero == 1 && !CX.st.resume_pending, "pause");
     avfao_cx_reset(&CX);
     CHECK(P.teardowns == 1 && !CX.item && CX.fed_ns == 0 && CX.win.head == 0, "reset");
     avfao_cx_start(&CX);
     CHECK(P.item_creates == 2 && CX.last_status == AVFAO_ITEM_READY, "new item");
+    cx_finish();
+    vector_end();
+}
+
+// ------------------------------------------------- review vectors
+
+static void test_review(void)
+{
+    struct cx_setup s = default_setup();
+    struct target_row {
+        const char *name;
+        int64_t timebase;
+        int64_t current;
+        int64_t fed;
+        int64_t queued;
+        bool read;
+    } rows[] = {
+        {"start-up target at position 0 is twice the lead: fed 16 s - 1 ns reads",
+         0, 0, SEC(16) - 1, 1000000, true},
+        {"start-up target at position 0 is twice the lead: fed 16 s does not",
+         0, 0, SEC(16), 1000000, false},
+        {"start-up target at position 0 is twice the lead: fed 9 s reads",
+         0, 0, SEC(9), 1000000, true},
+        {"steady target above position 0 is the lead: 1 s and fed 9 s - 1 ns reads",
+         SEC(1), SEC(1), SEC(9) - 1, 1000000, true},
+        {"steady target above position 0 is the lead: 1 s and fed 9 s does not",
+         SEC(1), SEC(1), SEC(9), 1000000, false},
+        {"fill pacing uses the later currentTime: timebase 2 s, current 5 s, fed 12 s",
+         SEC(2), SEC(5), SEC(12), 1000000, true},
+        {"prefetch reserve uses the feed position: timebase 1 s, current 2.5 s, fed 3 s",
+         SEC(1), MS(2500), SEC(3), 0, true},
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        vector_begin(rows[i].name);
+        cx_begin(&s);
+        F.now = SEC(10);
+        F.queued = rows[i].queued;
+        F.read_limit = 0;
+        P.timebase_ns = rows[i].timebase;
+        P.current_valid = true;
+        P.current_ns = rows[i].current;
+        CX.fed_ns = rows[i].fed;
+        avfao_cx_step(&CX);
+        CHECK((F.reads > 0) == rows[i].read, "reads %d", F.reads);
+        cx_finish();
+        vector_end();
+    }
+
+    vector_begin("unbounded restart: warning, then the name, then one restart");
+    pcm_begin(0, 0.2, true);
+    F.now = SEC(5);
+    avfao_pcm_start(&PCM);
+    clear_lines();
+    avfao_pcm_notification(&PCM, "AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification",
+                           true, 2.0, cur_renderer());
+    CHECK(R.restarts == 1, "restarts %d", R.restarts);
+    CHECK(F.nlines == 3, "lines %d", F.nlines);
+    CHECK(F.nlines >= 3 && F.lines[0].level == AVFAO_WARN &&
+          strcmp(F.lines[0].text, "restarting due to system notification; this will "
+                 "cause desync") == 0, "warning first");
+    CHECK(F.nlines >= 3 && strcmp(F.lines[1].text, "notification name: "
+          "AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification") == 0, "name second");
+    CHECK(F.nlines >= 3 && strncmp(F.lines[2].text, "trace edge reset: clock ", 24) == 0,
+          "reset third");
+    CHECK(count_prefix("notification flush time") == 0, "flush line outside the bound");
+    if (checks_failed_in_vector)
+        dump_lines();
+    vector_end();
+
+    vector_begin("flush times: infinite prints inf or -inf, invalid prints nan");
+    pcm_begin(4, 0.2, true);
+    avfao_pcm_start(&PCM);
+    clear_lines();
+    // From a renderer that is not the current one, so nothing restarts.
+    avfao_pcm_notification(&PCM, "n", true, INFINITY, NULL);
+    avfao_pcm_notification(&PCM, "n", true, -INFINITY, NULL);
+    avfao_pcm_notification(&PCM, "n", true, NAN, NULL);
+    CHECK(count_text("notification flush time inf, current 0") == 1, "inf");
+    CHECK(count_text("notification flush time -inf, current 0") == 1, "-inf");
+    CHECK(count_text("notification flush time nan, current 0") == 1, "nan");
+    CHECK(R.restarts == 0, "restarts %d", R.restarts);
+    if (checks_failed_in_vector)
+        dump_lines();
+    vector_end();
+
+    vector_begin("after a fallback: unpause and start still request rate 1, start makes an item");
+    cx_begin(&s);
+    tick(SEC(0), SEC(1));
+    CHECK(P.rate_one == 1, "rate 1");
+    avfao_cx_fallback(&CX);
+    P.rate_one = 0;
+    F.reads = 0;
+    uint64_t heartbeat = CX.heartbeat;
+    int armed = P.timer_armed;
+    F.now = SEC(1);
+    avfao_cx_pause(&CX, true);
+    F.now = SEC(2);
+    avfao_cx_pause(&CX, false);
+    CHECK(P.rate_one == 1, "unpause rate requests %d", P.rate_one);
+    CHECK(deadline_is(SEC(4)), "deadline %" PRId64, CX.st.deadline_ns);
+    CHECK(CX.st.resume_pending && CX.st.resume_ns == SEC(2) &&
+          CX.st.anchor_pacing_ns == 0, "resume");
+    CHECK(P.timer_armed == armed + 1, "timer not armed");
+    avfao_cx_start(&CX);
+    CHECK(P.rate_one == 2, "start rate requests %d", P.rate_one);
+    avfao_cx_reset(&CX);
+    avfao_cx_start(&CX);
+    CHECK(CX.item && P.item_creates == 2, "items %d", P.item_creates);
+    CHECK(P.rate_one == 2, "rate requested on the new item");
+    CHECK(F.reads == 0 && CX.heartbeat == heartbeat && P.serves == 0, "a step acted");
+    CHECK(F.reloads == 1, "reloads %d", F.reloads);
+    cx_finish();
+    vector_end();
+
+    vector_begin("unpause records the clock read after its rate-1 request");
+    cx_begin(&s);
+    tick(SEC(0), SEC(10));
+    P.timebase_ns = SEC(5);
+    F.now = SEC(1);
+    avfao_cx_pause(&CX, true);
+    P.clock_after_rate_set = true;
+    P.clock_after_rate = SEC(7);
+    clear_lines();
+    F.now = SEC(2);
+    avfao_cx_pause(&CX, false);
+    CHECK(CX.st.resume_clock_ns == SEC(7), "recorded %" PRId64, CX.st.resume_clock_ns);
+    CHECK(find_prefix("trace edge resume: clock 5.000, ") == 0, "edge before the request");
     cx_finish();
     vector_end();
 }
@@ -2222,6 +2427,7 @@ int main(void)
     test_eof_restart();
     test_unwrapping();
     test_feed_details();
+    test_review();
     test_rounding();
 
     printf("audio output vectors: %d run, %d failed\n", vectors_run, vectors_failed);

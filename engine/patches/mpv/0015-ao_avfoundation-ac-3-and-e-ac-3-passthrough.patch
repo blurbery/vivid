@@ -1,31 +1,28 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: blurbery <271863866+blurbery@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 00:00:00 +0000
-Subject: [PATCH] ao_avfoundation: pass AC-3 and E-AC-3 through AVPlayer
+Subject: [PATCH] ao_avfoundation: AC-3 and E-AC-3 passthrough
 
-Adds the compressed passthrough sink. On tvOS only AVPlayer renders the
-Atmos objects carried in E-AC-3, so spdif-ac3 and spdif-eac3 go to an
-AVPlayer that reads the bitstream through an AVAssetResourceLoader
-delegate; every other spdif format is still refused, so mpv decodes it.
+Adds the decisions of the compressed passthrough sink. On tvOS only
+AVPlayer renders the Atmos objects carried in E-AC-3, so spdif-ac3 and
+spdif-eac3 go to an AVPlayer that reads the bitstream through a resource
+loader (bound in patch 0016); every other spdif format is still refused,
+so mpv decodes it.
 
 - ao_avfoundation_iec61937.h and .c turn mpv's IEC 61937 stream back into
   the plain bitstream: burst scanning (data type, payload length,
   completeness), byte swapping, the syncword check, and the stream window
-  the loader serves from, with 2 MiB of history kept below the oldest
+  the loader serves from, keeping 2 MiB of history below the oldest
   reader. Bursts that fail a check are logged and skipped.
-- ao_avfoundation_compressed.h and .c run the sink on the output's queue:
-  a 50 ms feed timer and a feed step on every loader request, start,
-  unpause and tick; filling to compressed-lead ahead of the playhead (twice
-  that before it moves), behind the prefetch guard and the window's
-  backpressure; the item's clock and the end times mpv takes as its audio
-  clock, built from the carrier frames consumed; diagnostics; and the
-  fallback that blocks the format for the process and asks mpv to reopen
-  audio as PCM.
-- ao_avfoundation_compressed_av.m holds AVPlayer (no automatic stall
-  waiting, no external playback), a new asset and item for every start
-  after a reset, the loader (content type, a 2 GiB content length, no byte
-  ranges) and its serving, volume and mute on the player, and
-  compressed-buffer as the device buffer.
+- ao_avfoundation_compressed.h and .c run the sink: a feed step on every
+  timer tick, loader request, start and unpause; filling to
+  compressed-lead ahead of the later of the item's timebase and
+  currentTime (twice that before playback moves), behind the prefetch
+  guard and the window's backpressure; the item's clock and the end times
+  mpv takes as its audio clock, built from the carrier frames consumed;
+  diagnostics; serving decisions; and the fallback that blocks the format
+  for the process and asks mpv to reopen audio as PCM. After a fallback
+  every feed step does nothing.
 
 A start after mpv's end of file resumes feeding the same item and logs
 "resuming compressed feed after audio EOF". The sink's logs keep the
@@ -43,7 +40,7 @@ new file mode 100644
 index 0000000000..0000000000
 --- /dev/null
 +++ b/audio/out/ao_avfoundation_compressed.c
-@@ -0,0 +1,366 @@
+@@ -0,0 +1,367 @@
 +/*
 + * AVFoundation audio output: AC-3 and E-AC-3 passthrough through AVPlayer.
 + *
@@ -84,10 +81,16 @@ index 0000000000..0000000000
 +    avfao_cx_fallback(ctx);
 +}
 +
++static int64_t startup_clock(void *ctx)
++{
++    return avfao_cx_clock(ctx);
++}
++
 +static const struct avfao_startup_ops startup_ops = {
 +    .request_rate = startup_request_rate,
 +    .seek_to_start = startup_seek_to_start,
 +    .fallback = startup_fallback,
++    .clock = startup_clock,
 +};
 +
 +static int64_t clamp_fed(const struct avfao_cx *cx, int64_t t)
@@ -355,20 +358,19 @@ index 0000000000..0000000000
 +    cx->eof = false;
 +
 +    if (!cx->item) {
-+        if (!cx->fallback) {
-+            // Each item's stream begins at byte 0 and time 0.
-+            reset_item_state(cx);
-+            if (cx->ops->item_create(cx->ctx)) {
-+                cx->item = true;
-+                cx->last_status = -1;
-+                cx->last_time_control = -1;
-+            } else {
-+                avfao_log(cx->host, AVFAO_FATAL,
-+                          "failed to create the passthrough player item\n");
-+                avfao_cx_fallback(cx);
-+            }
++        // Each item's stream begins at byte 0 and time 0. After a fallback
++        // the item is still made, but its feed steps do nothing.
++        reset_item_state(cx);
++        if (cx->ops->item_create(cx->ctx)) {
++            cx->item = true;
++            cx->last_status = -1;
++            cx->last_time_control = -1;
++        } else {
++            avfao_log(cx->host, AVFAO_FATAL,
++                      "failed to create the passthrough player item\n");
++            avfao_cx_fallback(cx);
 +        }
-+    } else if (cx->st.rate_requested && !cx->fallback) {
++    } else if (cx->st.rate_requested) {
 +        cx->ops->set_rate(cx->ctx, 1);
 +    }
 +
@@ -401,12 +403,8 @@ index 0000000000..0000000000
 +    }
 +
 +    cx->playing = true;
-+    int64_t clock = avfao_cx_clock(cx);
-+    avfao_trace_edge(cx->host, cx->trace, "resume", clock, cx->fed_ns);
-+    if (!cx->fallback) {
-+        avfao_startup_unpause(&cx->st, &cx->cfg, avfao_now(cx->host), clock,
-+                              &startup_ops, cx);
-+    }
++    avfao_trace_edge(cx->host, cx->trace, "resume", avfao_cx_clock(cx), cx->fed_ns);
++    avfao_startup_unpause(&cx->st, &cx->cfg, avfao_now(cx->host), &startup_ops, cx);
 +    cx->ops->timer(cx->ctx, true);
 +    avfao_cx_step(cx);
 +}
@@ -549,551 +547,6 @@ index 0000000000..0000000000
 +                                        int64_t end, int64_t *len);
 +
 +#endif
-diff --git a/audio/out/ao_avfoundation_compressed_av.m b/audio/out/ao_avfoundation_compressed_av.m
-new file mode 100644
-index 0000000000..0000000000
---- /dev/null
-+++ b/audio/out/ao_avfoundation_compressed_av.m
-@@ -0,0 +1,539 @@
-+/*
-+ * AVFoundation audio output: AVPlayer, its item and the resource loader for
-+ * AC-3 and E-AC-3 passthrough.
-+ *
-+ * Copyright (C) 2026 blurbery
-+ *
-+ * This file is part of mpv.
-+ *
-+ * mpv is free software; you can redistribute it and/or
-+ * modify it under the terms of the GNU Lesser General Public
-+ * License as published by the Free Software Foundation; either
-+ * version 2.1 of the License, or (at your option) any later version.
-+ *
-+ * mpv is distributed in the hope that it will be useful,
-+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
-+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+ * GNU Lesser General Public License for more details.
-+ *
-+ * You should have received a copy of the GNU Lesser General Public
-+ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
-+ */
-+
-+#include <errno.h>
-+#include <stdio.h>
-+
-+#include "audio/out/ao_avfoundation_av.h"
-+#include "common/msg.h"
-+
-+// Serves the elementary stream to AVFoundation from the stream window. All
-+// callbacks arrive on the AO queue; the lock also guards against anything
-+// arriving after invalidation.
-+@interface MPAVFStreamLoader : NSObject <AVAssetResourceLoaderDelegate> {
-+    struct ao *ao;
-+    NSLock *lock;
-+    NSMutableArray *pending;
-+    NSString *uti;
-+    BOOL invalid;
-+}
-+- (instancetype)initWithAO:(struct ao *)_ao uti:(NSString *)_uti;
-+- (void)invalidate;
-+- (void)cancelAll;
-+- (void)serve;
-+- (int64_t)readerGap:(int64_t)head;
-+@end
-+
-+@implementation MPAVFStreamLoader
-+- (instancetype)initWithAO:(struct ao *)_ao uti:(NSString *)_uti
-+{
-+    self = [super init];
-+    if (self) {
-+        ao = _ao;
-+        lock = [[NSLock alloc] init];
-+        pending = [[NSMutableArray alloc] init];
-+        uti = [_uti copy];
-+    }
-+    return self;
-+}
-+
-+- (void)dealloc
-+{
-+    [lock release];
-+    [pending release];
-+    [uti release];
-+    [super dealloc];
-+}
-+
-+- (BOOL)resourceLoader:(AVAssetResourceLoader *)resourceLoader
-+    shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)request
-+{
-+    [lock lock];
-+    BOOL refused = invalid;
-+    [lock unlock];
-+    if (refused)
-+        return NO;
-+
-+    struct priv *p = ao->priv;
-+    AVAssetResourceLoadingContentInformationRequest *info = request.contentInformationRequest;
-+    if (info) {
-+        info.contentType = uti;
-+        info.contentLength = INT32_MAX;
-+        info.byteRangeAccessSupported = NO;
-+    }
-+    AVAssetResourceLoadingDataRequest *data = request.dataRequest;
-+    MP_VERBOSE(ao, "loader request: content information %d, data %d, offset %lld, "
-+               "length %lld, to end %d\n", info ? 1 : 0, data ? 1 : 0,
-+               data ? (long long)data.requestedOffset : 0LL,
-+               data ? (long long)data.requestedLength : 0LL,
-+               data && data.requestsAllDataToEndOfResource ? 1 : 0);
-+    if (!data) {
-+        [request finishLoading];
-+        return YES;
-+    }
-+
-+    [lock lock];
-+    [pending addObject:request];
-+    [lock unlock];
-+    @autoreleasepool {
-+        avfao_cx_step(&p->cx);
-+    }
-+    return YES;
-+}
-+
-+- (void)resourceLoader:(AVAssetResourceLoader *)resourceLoader
-+    didCancelLoadingRequest:(AVAssetResourceLoadingRequest *)request
-+{
-+    [lock lock];
-+    [pending removeObjectIdenticalTo:request];
-+    BOOL refused = invalid;
-+    [lock unlock];
-+    if (!refused) {
-+        MP_VERBOSE(ao, "loader request cancelled at offset %lld\n",
-+                   (long long)request.dataRequest.currentOffset);
-+    }
-+}
-+
-+- (void)invalidate
-+{
-+    [lock lock];
-+    invalid = YES;
-+    [pending removeAllObjects];
-+    [lock unlock];
-+}
-+
-+- (NSArray *)takePending:(BOOL)clear
-+{
-+    [lock lock];
-+    NSArray *copy = [pending copy];
-+    if (clear)
-+        [pending removeAllObjects];
-+    [lock unlock];
-+    return copy;
-+}
-+
-+- (void)cancelAll
-+{
-+    NSArray *requests = [self takePending:YES];
-+    for (AVAssetResourceLoadingRequest *request in requests) {
-+        if (request.isFinished || request.isCancelled)
-+            continue;
-+        [request finishLoadingWithError:[NSError errorWithDomain:NSURLErrorDomain
-+                                                            code:NSURLErrorCancelled
-+                                                        userInfo:nil]];
-+    }
-+    [requests release];
-+}
-+
-+- (void)serve
-+{
-+    struct priv *p = ao->priv;
-+    NSArray *requests = [self takePending:NO];
-+    NSMutableArray *done = [[NSMutableArray alloc] init];
-+
-+    for (AVAssetResourceLoadingRequest *request in requests) {
-+        if (request.isFinished || request.isCancelled) {
-+            [done addObject:request];
-+            continue;
-+        }
-+        AVAssetResourceLoadingDataRequest *data = request.dataRequest;
-+        int64_t offset = data.currentOffset;
-+        int64_t end = data.requestsAllDataToEndOfResource
-+                      ? -1 : data.requestedOffset + (int64_t)data.requestedLength;
-+        int64_t len = 0;
-+        switch (avfao_cx_serve_request(&p->cx, offset, end, &len)) {
-+        case AVFAO_SERVE_DATA: {
-+            NSData *bytes = [[NSData alloc]
-+                initWithBytes:avfao_window_bytes(&p->cx.win, offset)
-+                       length:(NSUInteger)len];
-+            [data respondWithData:bytes];
-+            [bytes release];
-+            if (end >= 0 && data.currentOffset >= end) {
-+                [request finishLoading];
-+                [done addObject:request];
-+            }
-+            break;
-+        }
-+        case AVFAO_SERVE_FINISH:
-+            [request finishLoading];
-+            [done addObject:request];
-+            break;
-+        case AVFAO_SERVE_BELOW:
-+            [request finishLoadingWithError:[NSError errorWithDomain:NSPOSIXErrorDomain
-+                                                                code:ESPIPE
-+                                                            userInfo:nil]];
-+            [done addObject:request];
-+            break;
-+        case AVFAO_SERVE_BEYOND:
-+            [request finishLoadingWithError:[NSError errorWithDomain:NSPOSIXErrorDomain
-+                                                                code:ENOTSUP
-+                                                            userInfo:nil]];
-+            [done addObject:request];
-+            break;
-+        case AVFAO_SERVE_WAIT:
-+            break;
-+        }
-+    }
-+
-+    int64_t low_water = p->cx.win.head;
-+    [lock lock];
-+    for (AVAssetResourceLoadingRequest *request in done)
-+        [pending removeObjectIdenticalTo:request];
-+    for (AVAssetResourceLoadingRequest *request in pending) {
-+        int64_t offset = request.dataRequest.currentOffset;
-+        if (offset < low_water)
-+            low_water = offset;
-+    }
-+    [lock unlock];
-+    avfao_window_trim(&p->cx.win, low_water);
-+
-+    [done release];
-+    [requests release];
-+}
-+
-+- (int64_t)readerGap:(int64_t)head
-+{
-+    int64_t gap = -1;
-+    [lock lock];
-+    for (AVAssetResourceLoadingRequest *request in pending) {
-+        if (request.isFinished || request.isCancelled)
-+            continue;
-+        int64_t offset = request.dataRequest.currentOffset;
-+        if (offset <= head && (gap < 0 || head - offset < gap))
-+            gap = head - offset;
-+    }
-+    [lock unlock];
-+    return gap;
-+}
-+@end
-+
-+// ---- player and item operations for the C side
-+
-+static struct priv *priv_of(void *ctx)
-+{
-+    return ((struct ao *)ctx)->priv;
-+}
-+
-+static bool op_item_create(void *ctx)
-+{
-+    struct priv *p = priv_of(ctx);
-+    // A custom, non-network scheme, so AVFoundation asks the loader for every
-+    // byte. The extension names the format.
-+    const char *ext = p->cx.codec == AVFAO_CODEC_EAC3 ? "eac3" : "ac3";
-+    NSString *string = [NSString stringWithFormat:@"lucid-ao://stream/%llu.%s",
-+                        ++p->item_count, ext];
-+    NSURL *url = [NSURL URLWithString:string];
-+    AVURLAsset *asset = url ? [[AVURLAsset alloc] initWithURL:url options:nil] : nil;
-+    if (!asset)
-+        return false;
-+    // The delegate must be attached before the item exists, so that the
-+    // first loading request reaches it.
-+    [asset.resourceLoader setDelegate:p->loader queue:p->queue];
-+    AVPlayerItem *item = [[AVPlayerItem alloc] initWithAsset:asset
-+                                automaticallyLoadedAssetKeys:@[]];
-+    if (!item) {
-+        [asset.resourceLoader setDelegate:nil queue:nil];
-+        [asset release];
-+        return false;
-+    }
-+    item.canUseNetworkResourcesForLiveStreamingWhilePaused = YES;
-+    [p->player replaceCurrentItemWithPlayerItem:item];
-+    p->asset = asset;
-+    p->item = item;
-+    return true;
-+}
-+
-+static void op_item_teardown(void *ctx)
-+{
-+    struct priv *p = priv_of(ctx);
-+    [p->player setRate:0];
-+    // Outstanding requests are finished before the delegate goes.
-+    [(MPAVFStreamLoader *)p->loader cancelAll];
-+    [p->asset.resourceLoader setDelegate:nil queue:nil];
-+    [p->player replaceCurrentItemWithPlayerItem:nil];
-+    [p->item release];
-+    [p->asset release];
-+    p->item = nil;
-+    p->asset = nil;
-+}
-+
-+static void op_set_rate(void *ctx, float rate)
-+{
-+    [priv_of(ctx)->player setRate:rate];
-+}
-+
-+static void op_seek_to_start(void *ctx)
-+{
-+    [priv_of(ctx)->item seekToTime:kCMTimeZero completionHandler:nil];
-+}
-+
-+static bool op_timebase_time(void *ctx, int64_t *ns)
-+{
-+    struct priv *p = priv_of(ctx);
-+    CMTimebaseRef timebase = p->item ? p->item.timebase : NULL;
-+    if (!timebase)
-+        return false;
-+    CMTime time = CMTimebaseGetTime(timebase);
-+    if (!CMTIME_IS_NUMERIC(time))
-+        return false;
-+    *ns = avfao_av_cmtime_ns(time);
-+    return true;
-+}
-+
-+static bool op_current_time(void *ctx, int64_t *ns)
-+{
-+    struct priv *p = priv_of(ctx);
-+    if (!p->item)
-+        return false;
-+    CMTime time = p->item.currentTime;
-+    if (!CMTIME_IS_NUMERIC(time))
-+        return false;
-+    *ns = avfao_av_cmtime_ns(time);
-+    return true;
-+}
-+
-+static int op_item_status(void *ctx)
-+{
-+    struct priv *p = priv_of(ctx);
-+    return p->item ? (int)p->item.status : 0;
-+}
-+
-+static int op_time_control(void *ctx)
-+{
-+    return (int)priv_of(ctx)->player.timeControlStatus;
-+}
-+
-+static bool op_failure(void *ctx, char *desc, size_t desc_size, char *domain,
-+                       size_t domain_size, long *code)
-+{
-+    struct priv *p = priv_of(ctx);
-+    bool item_failed = p->item && p->item.status == AVPlayerItemStatusFailed;
-+    NSError *player_error = p->player.error;
-+    if (!item_failed && !player_error)
-+        return false;
-+    NSError *error = p->item.error ? p->item.error : player_error;
-+    snprintf(desc, desc_size, "%s", "unknown");
-+    snprintf(domain, domain_size, "%s", "-");
-+    *code = 0;
-+    if (error) {
-+        const char *text = error.localizedDescription.UTF8String;
-+        const char *name = error.domain.UTF8String;
-+        if (text)
-+            snprintf(desc, desc_size, "%s", text);
-+        if (name)
-+            snprintf(domain, domain_size, "%s", name);
-+        *code = (long)error.code;
-+    }
-+    return true;
-+}
-+
-+static void op_serve(void *ctx)
-+{
-+    [(MPAVFStreamLoader *)priv_of(ctx)->loader serve];
-+}
-+
-+static int64_t op_reader_gap(void *ctx)
-+{
-+    struct priv *p = priv_of(ctx);
-+    return [(MPAVFStreamLoader *)p->loader readerGap:p->cx.win.head];
-+}
-+
-+static void op_timer(void *ctx, bool armed)
-+{
-+    struct priv *p = priv_of(ctx);
-+    if (!p->feed_timer)
-+        return;
-+    if (armed) {
-+        dispatch_source_set_timer(p->feed_timer,
-+                                  dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC),
-+                                  50 * NSEC_PER_MSEC, 25 * NSEC_PER_MSEC);
-+    } else {
-+        dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
-+                                  DISPATCH_TIME_FOREVER, 0);
-+    }
-+}
-+
-+static const struct avfao_cx_ops cx_ops = {
-+    .item_create = op_item_create,
-+    .item_teardown = op_item_teardown,
-+    .set_rate = op_set_rate,
-+    .seek_to_start = op_seek_to_start,
-+    .timebase_time = op_timebase_time,
-+    .current_time = op_current_time,
-+    .item_status = op_item_status,
-+    .time_control = op_time_control,
-+    .failure = op_failure,
-+    .serve = op_serve,
-+    .reader_gap = op_reader_gap,
-+    .timer = op_timer,
-+};
-+
-+// ---- opening and closing
-+
-+bool avfao_cx_av_open(struct ao *ao, enum avfao_codec codec)
-+{
-+    struct priv *p = ao->priv;
-+    p->compressed = true;
-+
-+    p->player = [[AVPlayer alloc] init];
-+    if (!p->player) {
-+        MP_FATAL(ao, "failed to create the passthrough player\n");
-+        return false;
-+    }
-+    // Start-up is decided by the AO's own supervision, and AirPlay audio
-+    // stays on the system route.
-+    p->player.automaticallyWaitsToMinimizeStalling = NO;
-+    p->player.allowsExternalPlayback = NO;
-+
-+    NSString *uti = codec == AVFAO_CODEC_EAC3 ? @"public.enhanced-ac3-audio"
-+                                              : @"public.ac3-audio";
-+    p->loader = [[MPAVFStreamLoader alloc] initWithAO:ao uti:uti];
-+    if (!p->loader) {
-+        MP_FATAL(ao, "failed to create the passthrough resource loader\n");
-+        return false;
-+    }
-+
-+    p->feed_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, p->queue);
-+    if (!p->feed_timer) {
-+        MP_FATAL(ao, "failed to create the passthrough feed timer\n");
-+        return false;
-+    }
-+    dispatch_source_set_event_handler(p->feed_timer, ^{
-+        @autoreleasepool {
-+            avfao_cx_step(&p->cx);
-+        }
-+    });
-+    dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
-+                              DISPATCH_TIME_FOREVER, 0);
-+    dispatch_resume(p->feed_timer);
-+
-+    struct avfao_cx_cfg cfg = {
-+        .lead = p->compressed_lead,
-+        .grace = p->compressed_start_grace,
-+        .first_grace = p->compressed_first_start_grace,
-+        .anchor_start = p->compressed_anchor_start,
-+        .anchor_resume = p->compressed_anchor_resume,
-+    };
-+    if (!avfao_cx_init(&p->cx, &p->host, &cx_ops, ao, &p->trace, codec,
-+                       ao->samplerate, &cfg))
-+        return false;
-+    p->cx_ready = true;
-+
-+    ao->device_buffer = (int)(p->compressed_buffer * ao->samplerate);
-+    return true;
-+}
-+
-+static void release_objects(struct ao *ao)
-+{
-+    struct priv *p = ao->priv;
-+    if (p->feed_timer) {
-+        dispatch_release(p->feed_timer);
-+        p->feed_timer = NULL;
-+    }
-+    [(MPAVFStreamLoader *)p->loader release];
-+    p->loader = nil;
-+    [p->player release];
-+    p->player = nil;
-+    if (p->cx_ready)
-+        avfao_cx_uninit(&p->cx);
-+    p->cx_ready = false;
-+}
-+
-+void avfao_cx_av_discard(struct ao *ao)
-+{
-+    struct priv *p = ao->priv;
-+    // Nothing can be running on the queue yet.
-+    if (p->feed_timer)
-+        dispatch_source_cancel(p->feed_timer);
-+    [(MPAVFStreamLoader *)p->loader invalidate];
-+    release_objects(ao);
-+}
-+
-+void avfao_cx_av_close(struct ao *ao)
-+{
-+    struct priv *p = ao->priv;
-+    dispatch_source_t timer = p->feed_timer;
-+    MPAVFStreamLoader *loader = p->loader;
-+    avfao_av_run(ao, ^{
-+        if (timer)
-+            dispatch_source_cancel(timer);
-+        [loader invalidate];
-+    });
-+    release_objects(ao);
-+    dispatch_release(p->queue);
-+    p->queue = NULL;
-+}
-+
-+// ---- driver calls
-+
-+void avfao_cx_av_reset(struct ao *ao)
-+{
-+    struct priv *p = ao->priv;
-+    avfao_av_run(ao, ^{
-+        @autoreleasepool {
-+            avfao_cx_reset(&p->cx);
-+        }
-+    });
-+}
-+
-+void avfao_cx_av_start(struct ao *ao)
-+{
-+    struct priv *p = ao->priv;
-+    avfao_av_run(ao, ^{
-+        @autoreleasepool {
-+            avfao_cx_start(&p->cx);
-+        }
-+    });
-+}
-+
-+void avfao_cx_av_pause(struct ao *ao, bool paused)
-+{
-+    struct priv *p = ao->priv;
-+    avfao_av_run(ao, ^{
-+        @autoreleasepool {
-+            avfao_cx_pause(&p->cx, paused);
-+        }
-+    });
-+}
-+
-+int avfao_cx_av_control(struct ao *ao, enum aocontrol cmd, void *arg)
-+{
-+    struct priv *p = ao->priv;
-+    // On mpv's thread: mpv's own volume is software gain and does nothing
-+    // to a bitstream, so these act on the player.
-+    switch (cmd) {
-+    case AOCONTROL_GET_MUTE:
-+        *(bool*)arg = p->player.muted;
-+        return CONTROL_OK;
-+    case AOCONTROL_GET_VOLUME:
-+        *(float*)arg = p->player.volume * 100;
-+        return CONTROL_OK;
-+    case AOCONTROL_SET_MUTE:
-+        p->player.muted = *(bool*)arg;
-+        return CONTROL_OK;
-+    case AOCONTROL_SET_VOLUME:
-+        p->player.volume = *(float*)arg / 100;
-+        return CONTROL_OK;
-+    default:
-+        return CONTROL_UNKNOWN;
-+    }
-+}
 diff --git a/audio/out/ao_avfoundation_iec61937.c b/audio/out/ao_avfoundation_iec61937.c
 new file mode 100644
 index 0000000000..0000000000
@@ -1431,3 +884,16 @@ index 0000000000..0000000000
 +                      int64_t *fed_ns, int64_t *dropped_ns);
 +
 +#endif
+diff --git a/meson.build b/meson.build
+index 0000000000..0000000000 100644
+--- a/meson.build
++++ b/meson.build
+@@ -824,6 +824,8 @@
+     sources += files('audio/out/ao_avfoundation_core.c')
+     sources += files('audio/out/ao_avfoundation_pcm.c')
+     sources += files('audio/out/ao_avfoundation_startup.c')
++    sources += files('audio/out/ao_avfoundation_compressed.c',
++                     'audio/out/ao_avfoundation_iec61937.c')
+     # The AVFoundation output uses the CoreFoundation string helpers in
+     # osdep/utils-mac.c, which the cocoa block above only builds on macOS.
+     if not features['cocoa']

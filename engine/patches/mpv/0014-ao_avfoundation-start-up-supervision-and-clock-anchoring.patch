@@ -3,9 +3,9 @@ From: blurbery <271863866+blurbery@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 00:00:00 +0000
 Subject: [PATCH] ao_avfoundation: start-up supervision and clock anchoring
 
-Adds ao_avfoundation_startup.h and .c, the compressed passthrough sink's
-start-up handling. It is kept in its own file so the AirPlay behaviour can
-be tuned without touching the rest of the sink.
+Adds ao_avfoundation_startup.h and .c, the passthrough sink's start-up
+handling. It is kept in its own file so the AirPlay behaviour can be tuned
+without touching the rest of the sink.
 
 - Supervision, at the end of each feed step: rate 1 once the stream holds
   a second of audio (or mpv reached end of file), without waiting for the
@@ -19,7 +19,9 @@ be tuned without touching the rest of the sink.
 - Anchoring, with compressed-anchor-start and compressed-anchor-resume:
   small reads, at most one every 100 ms, that hold mpv's audio clock while
   AVPlayer's playhead has not started moving, at start-up and for 2 s after
-  an unpause, plus the line that reports when the clock resumes.
+  an unpause. An unpause requests rate 1 again and records the clock it
+  reads after that request; the line reporting when the clock resumes does
+  not depend on the option.
 
 The lines it logs ("compressed clock engaged after", "first start recovery
 after", "playback did not engage", "native compressed playback did not
@@ -188,8 +190,8 @@ index 0000000000..0000000000
 +}
 +
 +void avfao_startup_unpause(struct avfao_startup *st, const struct avfao_startup_cfg *cfg,
-+                           int64_t now_ns, int64_t clock_ns,
-+                           const struct avfao_startup_ops *ops, void *ctx)
++                           int64_t now_ns, const struct avfao_startup_ops *ops,
++                           void *ctx)
 +{
 +    if (!st->rate_requested)
 +        return;
@@ -197,7 +199,7 @@ index 0000000000..0000000000
 +    if (!st->deadline_cleared)
 +        set_deadline(st, now_ns + cfg->grace_ns);
 +    st->resume_pending = true;
-+    st->resume_clock_ns = clock_ns;
++    st->resume_clock_ns = ops->clock(ctx);
 +    st->resume_ns = now_ns;
 +    st->anchor_pacing_ns = 0;
 +    st->anchors = 0;
@@ -242,7 +244,7 @@ new file mode 100644
 index 0000000000..0000000000
 --- /dev/null
 +++ b/audio/out/ao_avfoundation_startup.h
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,111 @@
 +/*
 + * AVFoundation audio output: start-up supervision and clock anchoring for
 + * compressed passthrough (the AirPlay start-up handling).
@@ -302,11 +304,12 @@ index 0000000000..0000000000
 +    int64_t resume_ns;
 +};
 +
-+// The only player calls supervision makes.
++// The only player calls supervision makes, plus the compressed clock.
 +struct avfao_startup_ops {
 +    void (*request_rate)(void *ctx);
 +    void (*seek_to_start)(void *ctx);
 +    void (*fallback)(void *ctx);
++    int64_t (*clock)(void *ctx);
 +};
 +
 +struct avfao_startup_view {
@@ -330,12 +333,12 @@ index 0000000000..0000000000
 +                     const struct avfao_host *host,
 +                     const struct avfao_startup_ops *ops, void *ctx);
 +
-+// Pause and unpause. request_rate is called again when rate 1 was already
-+// requested for the item.
++// Pause and unpause. When rate 1 was already requested for the item, an
++// unpause requests it again and then records the clock it reads.
 +void avfao_startup_pause(struct avfao_startup *st);
 +void avfao_startup_unpause(struct avfao_startup *st, const struct avfao_startup_cfg *cfg,
-+                           int64_t now_ns, int64_t clock_ns,
-+                           const struct avfao_startup_ops *ops, void *ctx);
++                           int64_t now_ns, const struct avfao_startup_ops *ops,
++                           void *ctx);
 +
 +// Whether a start or resume anchor read is due. fallback and room (the
 +// window can take a whole carry-over buffer) come from the sink.
@@ -353,3 +356,15 @@ index 0000000000..0000000000
 +                         const struct avfao_host *host);
 +
 +#endif
+diff --git a/meson.build b/meson.build
+index 0000000000..0000000000 100644
+--- a/meson.build
++++ b/meson.build
+@@ -823,6 +823,7 @@
+     sources += files('audio/out/ao_avfoundation.m')
+     sources += files('audio/out/ao_avfoundation_core.c')
+     sources += files('audio/out/ao_avfoundation_pcm.c')
++    sources += files('audio/out/ao_avfoundation_startup.c')
+     # The AVFoundation output uses the CoreFoundation string helpers in
+     # osdep/utils-mac.c, which the cocoa block above only builds on macOS.
+     if not features['cocoa']

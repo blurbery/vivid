@@ -61,7 +61,7 @@ FETCH_ALLOWED = (
     "https://github.com/mpvkit/",  # interim prebuilt release assets only
 )
 # Hosts that may appear in references (upstream homes, patch descriptions,
-# and the licence notice in mpv's LGPL file header).
+# and the GNU licence address in the licence header of new source files).
 REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org",
                    "www.gnu.org"}
 # Projects nothing here may reference. Split so this file does not match itself.
@@ -1120,7 +1120,7 @@ def ao_format_problems(data: bytes) -> list[str]:
 
 
 def check_audio_output(c: Checks, sl: Slice, libmpv: bytes, undefined: set[str],
-                       out: Path) -> None:
+                       out: Path, tree: Path) -> None:
     """The audio output checks of the patch specification (2.10 and 8.6)."""
     missing = ao_format_problems(libmpv)
     c.expect(f"Libmpv has all {len(AO_LOG_FORMATS)} frozen audio output log formats",
@@ -1145,6 +1145,11 @@ def check_audio_output(c: Checks, sl: Slice, libmpv: bytes, undefined: set[str],
     c.expect("audio output test vectors ran from the patched tree and passed",
              tests.get("ok") is True and tests.get("vectors", 0) > 0,
              json.dumps(tests) if tests else f"{results} missing (run lucid.py test-audio)")
+    # The result must belong to the sources this slice was built from.
+    expected = {name: sha256_file(tree / "audio" / "out" / name) for name in AUDIO_TEST_SOURCES}
+    c.equal("audio output test result matches this tree's sources", tests.get("sources"), expected)
+    c.equal("audio output test result matches the test file", tests.get("test"),
+            {AUDIO_TEST.name: sha256_file(AUDIO_TEST)})
 
 
 def cmd_test_audio(args) -> None:
@@ -1310,7 +1315,7 @@ def cmd_check(args) -> None:
     # Vivid's adapter reads the AVFoundation output's restart log line.
     c.expect("Libmpv keeps the AVFoundation 'notification name' log line",
              b"notification name: %s" in libmpv)
-    check_audio_output(c, sl, libmpv, undefined["Libmpv"], out)
+    check_audio_output(c, sl, libmpv, undefined["Libmpv"], out, work / "src" / "mpv")
     client_h = fws / "Libmpv.framework" / "Headers" / "mpv" / "client.h"
     c.equal("MPV_CLIENT_API_VERSION", define(client_h, "MPV_CLIENT_API_VERSION"), "MPV_MAKE_VERSION(2, 5)")
     c.sets("Libmpv headers", {p.name for p in client_h.parent.iterdir()},

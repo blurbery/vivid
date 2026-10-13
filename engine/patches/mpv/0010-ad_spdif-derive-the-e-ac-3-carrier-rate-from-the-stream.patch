@@ -1,20 +1,19 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: blurbery <271863866+blurbery@users.noreply.github.com>
 Date: Tue, 13 Oct 2026 00:00:00 +0000
-Subject: [PATCH] ad_spdif: carry E-AC-3 at four times the codec rate
+Subject: [PATCH] ad_spdif: derive the E-AC-3 carrier rate from the stream
 
-IEC 61937 carries each E-AC-3 frame of 1536 samples in a burst of 6144
-carrier frames, so the carrier rate is four times the codec rate. Upstream
-opens every E-AC-3 stream at 192000 Hz, which is only right for streams
-coded at 48 kHz: with a 44.1 kHz stream, mpv's audio timestamps run about
-9% fast.
+Each E-AC-3 frame of 1536 samples travels in an IEC 61937 burst of 6144
+carrier frames, so the carrier must run at four times the stream's own
+sample rate. Upstream fixes it at 192000 Hz, which only fits streams coded
+at 48 kHz; for a 44.1 kHz stream mpv's audio timestamps then run about 9%
+fast.
 
-When the spdif muxer is built for E-AC-3, use four times the codec rate
-cached for the stream (4 x 48000 when it is unknown) for both the muxer's
-stream rate and the output frame format. AC-3 keeps upstream's behaviour
-(carrier rate = codec rate, 48000 when unknown), the channel count stays 2
-and no log line is added. The AVFoundation audio output divides the carrier
-rate by 4 again to time passthrough, so the two must agree.
+Build the E-AC-3 muxer and output format at four times the codec rate
+probed for the stream, or at 4 x 48000 when the probe found none. AC-3 is
+unchanged (its carrier is the codec rate, 48000 when unknown), the channel
+count stays 2 and nothing new is logged. The AVFoundation audio output
+divides by four again to time passthrough, so both sides must agree.
 
 Applies to mpv v0.41.0 with upstream commit 1388a453 (patch 0001), whose
 cached codec rate it uses.
@@ -34,8 +33,8 @@ index 0000000000..0000000000 100644
          break;
      }
      case AV_CODEC_ID_EAC3:
-+        // IEC 61937 carries E-AC-3 at four times the codec rate, so a
-+        // 44.1 kHz stream needs a 176.4 kHz carrier rather than 192 kHz.
++        // Derived from the stream: the E-AC-3 carrier runs at 4x the
++        // stream's own sample rate (assumed 48 kHz when the probe found none).
          sample_format                   = AF_FORMAT_S_EAC3;
 -        samplerate                      = 192000;
 +        samplerate                      = 4 * (c_rate > 0 ? c_rate : 48000);
