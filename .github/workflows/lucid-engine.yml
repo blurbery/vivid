@@ -11,14 +11,22 @@ name: Lucid Engine build
 # runner, and packages static xcframeworks. See
 # docs/cores/lucid-engine-build.md.
 
-# Runs on the pipeline branch and on every engine implementer's branch
-# (experiment/lucid-engine-*). Each branch has its own concurrency group, so
-# a newer push cancels only that branch's running build.
+# Runs when engine/ or this workflow changes: on pushes to main, to the
+# pipeline branch and to every engine implementer's branch
+# (experiment/lucid-engine-*), and on pull requests. Each ref has its own
+# concurrency group, so a newer push cancels only that ref's running build.
+# Only GitHub's public macOS runners are used. Nothing is published: package
+# releases are made by hand from a green run with engine/publish_package.py.
 on:
   push:
     branches:
+      - 'main'
       - 'experiment/lucid-engine-build'
       - 'experiment/lucid-engine-*'
+    paths:
+      - 'engine/**'
+      - '.github/workflows/lucid-engine.yml'
+  pull_request:
     paths:
       - 'engine/**'
       - '.github/workflows/lucid-engine.yml'
