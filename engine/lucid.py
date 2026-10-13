@@ -291,7 +291,10 @@ class Slice:
     rust_target: str     # Rust target triple for libdovi
     version_min_cmd: str  # older load command naming the platform (device slices)
     cmake_system: str    # CMAKE_SYSTEM_NAME
-    autotools_host: str  # configure --host (facts 1.4)
+    # configure --host: the canonical form (aarch64) of today's arm64-ios-darwin
+    # and arm64-tvos-darwin (facts 1.4), which libunibreak's config.sub of
+    # 2018 does not recognise. It is the same host.
+    autotools_host: str
     mvk_platform: str    # MoltenVK: xcodebuild generic/platform= and make target
     mvk_make: str
 
@@ -299,16 +302,16 @@ class Slice:
 SLICES = {s.name: s for s in (
     Slice("ios-arm64", "iphoneos", "arm64-apple-ios{v}", "-mios-version-min={v}",
           "ios", "iPhoneOS", 2, False, False, "aarch64-apple-ios", "LC_VERSION_MIN_IPHONEOS",
-          "iOS", "arm64-ios-darwin", "iOS", "ios"),
+          "iOS", "aarch64-ios-darwin", "iOS", "ios"),
     Slice("ios-arm64-simulator", "iphonesimulator", "arm64-apple-ios{v}-simulator",
           "-mios-simulator-version-min={v}", "ios-simulator", "iPhoneSimulator", 7, False, True,
-          "aarch64-apple-ios-sim", "", "iOS", "arm64-ios-darwin", "iOS Simulator", "iossim"),
+          "aarch64-apple-ios-sim", "", "iOS", "aarch64-ios-darwin", "iOS Simulator", "iossim"),
     Slice("tvos-arm64", "appletvos", "arm64-apple-tvos{v}", "-mtvos-version-min={v}",
           "tvos", "AppleTVOS", 3, True, False, "aarch64-apple-tvos", "LC_VERSION_MIN_TVOS",
-          "tvOS", "arm64-tvos-darwin", "tvOS", "tvos"),
+          "tvOS", "aarch64-tvos-darwin", "tvOS", "tvos"),
     Slice("tvos-arm64-simulator", "appletvsimulator", "arm64-apple-tvos{v}-simulator",
           "-mtvos-simulator-version-min={v}", "tvos-simulator", "AppleTVSimulator", 8, True, True,
-          "aarch64-apple-tvos-sim", "", "tvOS", "arm64-tvos-darwin", "tvOS Simulator", "tvossim"),
+          "aarch64-apple-tvos-sim", "", "tvOS", "aarch64-tvos-darwin", "tvOS Simulator", "tvossim"),
 )}
 
 
