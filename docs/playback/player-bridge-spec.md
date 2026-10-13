@@ -87,6 +87,7 @@ The engine's Apple patches (its `avfoundation` video and audio outputs and relat
 | `.github/workflows/` except `mpv-audio-driver.yml` | CI definitions. |
 | Other current Vivid source files | They contain no bridge or engine code. |
 | Vivid documentation | `docs/`, `README.md`, `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt`. These describe the engine only in prose. |
+| `docs/playback/lucid-engine-patch-spec.md` (on the engine branch, `experiment/lucid-engine-build`) | The engine side of the same contract, also written by behaviour for a clean-room rewrite. Sections 6.19 and 7 of this document remain the interface both rewrites share: the bridge may rely on nothing about the engine beyond what they state. |
 | mpv's public C headers, and nothing else from the engine package | `mpv/client.h`, `mpv/render.h`, `mpv/render_gl.h` and `mpv/stream_cb.h` under `Headers/` inside `Libmpv.xcframework` in the resolved `edde746/mpv-build` SwiftPM binary artifacts at revision `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` (mpv 0.41.0, FFmpeg 8.0.1). The bridge uses only `client.h` and `stream_cb.h`. |
 | mpv's public manual (upstream mpv documentation) | Options, properties, commands and the libmpv client API, for mpv 0.41. It does not describe the `avfoundation` video output or the `ao-avfoundation-*` options; this document does. |
 | Apple developer documentation | UIKit, AVFoundation, AVKit, Core Media, Core Animation. |
@@ -803,7 +804,7 @@ The bridge sets no audio option, never touches `AVAudioSession`, and must never 
 | `ao-avfoundation-max-lookahead` | `4` (tvOS, AirPlay route only) | Limits PCM read-ahead to four seconds. |
 | `ao-avfoundation-compressed-anchor-start` | `yes` (tvOS, AirPlay route only) | On AirPlay, `AVPlayer`'s clock stays parked at start-up until the output's seek-to-start recovery runs. With this on, video stays anchored to the parked audio clock, so it waits for the audio instead of running ahead. |
 | `ao-avfoundation-compressed-start-grace` | `1` (tvOS, AirPlay route only) | Seconds after the rate is applied before that recovery runs (one instead of two), then before falling back to decoded audio if the clock still has not moved, extended by the same amount each time a slow source delivers more. Seeks and resumes engage sooner than this, so they do not trigger it. |
-| `ao-avfoundation-compressed-first-start-grace` | `0.25` (tvOS, AirPlay route only) | For the first start of each audio output instance (until its clock first moves; every speed change across 1x creates a new instance), run the recovery this soon after the item is ready, capped at `ao-avfoundation-compressed-start-grace`. Later seeks and resumes on the same instance use that grace. |
+| `ao-avfoundation-compressed-first-start-grace` | `0.25` (tvOS, AirPlay route only) | For the first start of each audio output instance (until its clock first moves; on an AC-3 or E-AC-3 track, every speed change across 1x creates a new instance, section 17.11), run the recovery this soon after the item is ready, capped at `ao-avfoundation-compressed-start-grace`. Later seeks and resumes on the same instance use that grace. |
 | `ao-avfoundation-compressed-anchor-resume` | `yes` (tvOS, AirPlay route only) | After a pause, anchor mpv to AirPlay's clock as at start-up, so video waits for the audio instead of running ahead and then stopping to resynchronise. |
 | `ao-avfoundation-compressed-buffer` | `1.25` (tvOS, AirPlay route only) | Seconds of compressed audio queued before starting (instead of two), kept above the output's one-second priming reserve. |
 
@@ -1984,7 +1985,7 @@ The ten internal observations (section 6.7) are registered in this order: `video
 
 Corrections from the engine specification, applied to the section 6.19 table and its closing paragraph:
 
-- `ao-avfoundation-compressed-first-start-grace` applies to the first start of each audio output instance, until that instance's clock first moves, not only to a title's first start. Every speed change across 1x creates a new instance, so the shorter grace applies again after each one. It is capped at `ao-avfoundation-compressed-start-grace`.
+- `ao-avfoundation-compressed-first-start-grace` applies to the first start of each audio output instance, until that instance's clock first moves, not only to a title's first start. On an AC-3 or E-AC-3 track every speed change across 1x creates a new instance, so the shorter grace applies again after each one; on other tracks a crossing keeps the same instance, and the compressed sink is not used at all (section 17.11). It is capped at `ao-avfoundation-compressed-start-grace`.
 - With `ao-avfoundation-manage-audio-session=no`, the output sets no category or mode and never activates or deactivates the session, but it still declares multichannel content (passthrough, or more than two channels) and still sets the preferred output channel count for decoded audio. Vivid's session recorder reads both.
 - `ao-avfoundation-compressed-start-grace` is also the deadline between the recovery and the fallback to decoded audio, extended by the same amount each time a slow source delivers more.
 - `audio-exclusive` has no effect on this audio output.
@@ -2001,3 +2002,11 @@ The engine also waits synchronously for the main thread on the first frame it dr
 ### 17.10 Video output for cover art
 
 An audio-only load also gets a video output whenever `vid=auto` selects embedded cover art (mpv's default `audio-display` is `embedded-first`). The bridge writes `vid=auto` on every return to the foreground and every iOS activation, with no audio-only check (section 14.3), so this can happen at those moments. The layer must be in its parent then too, which the guarantee in section 7.2 already requires; its reason now says so.
+
+### 17.11 Speed changes and the audio output
+
+Correction from the engine specification (its sections 1.7 and 3.1), applied to the `ao-avfoundation-compressed-first-start-grace` row in section 6.19 and its bullet in section 17.7, which said that every speed change across 1x creates a new audio output instance.
+
+A speed change across 1x replaces the audio output only on an AC-3 or E-AC-3 track. There the adapter's `audio-spdif` write swaps passthrough for decoded PCM or back, so mpv closes the audio output and opens a new one, which starts from scratch. On any other track (DTS, TrueHD, AAC and the rest, decoded to PCM at every speed), the crossing still changes `audio-spdif`, so mpv rebuilds its audio decoder and filters, but it keeps the same audio output: no new instance, no reset and no fresh sink. If mpv's queued audio runs out before the rebuilt chain refills it, mpv starts that same output again. Those tracks never use the compressed sink, so the option does not apply to them; the earlier wording would only have led a tester to expect output replacements that never happen.
+
+Nothing changes for the bridge: it sets no audio option, and the adapter's speed and `audio-spdif` writes (section 6.19) are as before.
