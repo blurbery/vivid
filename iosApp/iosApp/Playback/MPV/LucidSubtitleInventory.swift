@@ -143,7 +143,7 @@ private enum LucidSubtitleProbe {
                     var node = mpv_node()
                     guard mpv_get_property(mpv, "track-list", MPV_FORMAT_NODE, &node) >= 0 else { throw OpenSubtitlesError.file }
                     defer { mpv_free_node_contents(&node) }
-                    let raw = MpvPlayerCoreBase().convertNode(node) as? [[String: Any]] ?? []
+                    let raw = VividBridgeCoreBase().convertNode(node) as? [[String: Any]] ?? []
                     return raw.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }
                         .map(VividMPVPlayer.trackInfo)
                 }

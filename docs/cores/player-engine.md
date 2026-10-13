@@ -25,6 +25,12 @@ display routes and extended episode chaining remain unverified.
 
 The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences. Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read. Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available. Apple TV scrubbing does not start thumbnail extraction.
 
+## Vivid-written bridge
+
+Vivid also includes its own Swift bridge between `VividMPVPlayer` and libmpv, written from the [player bridge specification](../playback/player-bridge-spec.md) to behave exactly like the current bridge. Simulator builds and tests pass with it; device parity has not been tested yet. `VividPlayerCoreBase` and `VividPlayerCore` own the mpv context, event loop, requests and ordered delivery. The video surface, Match Content and EDR, external displays and lifecycle observation are separate components beside them in `iosApp/iosApp/Playback/MPV/`.
+
+Both bridges are compiled into every build, and `VividBridgeSelection.swift` picks one with the `VIVID_OWN_BRIDGE` compilation condition. It is off by default, so the shipped app still uses the current bridge. To try the Vivid-written bridge in a local or device build, add `SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) VIVID_OWN_BRIDGE` to the ignored `iosApp/Signing/Local.xcconfig`. Every target xcconfig includes that file, and the tvOS Debug configuration's own conditions (`DEBUG VIVID_P8_TRIAL`) inherit it. For a single command-line build, pass `'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) VIVID_OWN_BRIDGE'` to `xcodebuild` instead. Console lines from the bridge start with `[VividPlayerCore]` rather than `[MpvPlayerCore]`, which shows which bridge a build is running.
+
 ## Audio support
 
 At normal speed, AC-3 and E-AC-3 use compressed output through the Apple AVPlayer resource loader. Other formats use decoded PCM through sample-buffer audio. Lucid owns scheduling; Vivid adds no second audio clock, fixed synchronisation offset or local HLS producer. Non-unit playback speed switches to PCM before applying the tempo change and restores compressed output on return to 1x. On AC-3 and E-AC-3 tracks each switch first seeks in place, so Lucid drops the audio already queued for the old output. Otherwise it plays that queue out, several seconds over AirPlay, with the picture held, then shows the picture without sound until it catches up.

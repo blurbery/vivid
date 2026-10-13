@@ -7,7 +7,7 @@ import XCTest
 
 @MainActor
 final class MpvPropertyCoalescingTests: XCTestCase {
-    private final class Recorder: MpvPlayerDelegate {
+    private final class Recorder: VividBridgeCoreDelegate {
         var deliveries: [String] = []
         func onPropertyChange(name: String, value: Any?, sourceId: Int64?) {
             deliveries.append("\(name)=\(value.map { "\($0)" } ?? "nil")")
@@ -30,7 +30,7 @@ final class MpvPropertyCoalescingTests: XCTestCase {
     }
 
     func testBusyMainReceivesOnlyLatestTimeInMpvOrder() async {
-        let core = MpvPlayerCoreBase()
+        let core = VividBridgeCoreBase()
         let recorder = Recorder()
         core.delegate = recorder
 
@@ -55,7 +55,7 @@ final class MpvPropertyCoalescingTests: XCTestCase {
     }
 
     func testIdleMainStillReceivesEveryTimeUpdate() async {
-        let core = MpvPlayerCoreBase()
+        let core = VividBridgeCoreBase()
         let recorder = Recorder()
         core.delegate = recorder
 
@@ -68,7 +68,7 @@ final class MpvPropertyCoalescingTests: XCTestCase {
     }
 
     func testTerminalCoreDropsPendingValues() async {
-        let core = MpvPlayerCoreBase()
+        let core = VividBridgeCoreBase()
         let recorder = Recorder()
         core.delegate = recorder
 
