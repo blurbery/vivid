@@ -1,7 +1,7 @@
 <p align="center"><img src="../branding/vivid-mark-silver.png" width="96" height="96" alt="Vivid logo"></p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Lucid Engine build</h1>
-<p align="center"><a href="../README.md">Documentation</a> · <a href="player-engine.md">Lucid Engine</a> · <a href="lucid-engine-build-facts.md">Build facts</a> · <a href="lucid-engine-libs-build-facts.md">Library build facts</a> · <a href="../playback/lucid-engine-patch-spec.md">Patch specification</a></p>
+<p align="center"><a href="../README.md">Documentation</a> · <a href="player-engine.md">Lucid Engine</a> · <a href="lucid-engine-architecture.md">Architecture</a> · <a href="lucid-engine-build-facts.md">Build facts</a> · <a href="lucid-engine-libs-build-facts.md">Library build facts</a> · <a href="../playback/lucid-engine-patch-spec.md">Patch specification</a></p>
 
 ---
 
