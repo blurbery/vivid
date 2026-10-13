@@ -1,11 +1,12 @@
 include: project-common.yml
 
 packages:
-  # Lucid Engine 0.1.0-interim.1: the commit of tag v0.1.0-interim.1 of
-  # Vivid's own package. Its README lists what the release contains.
+  # Lucid Engine 0.1.0: the commit of tag v0.1.0 of Vivid's own package,
+  # every library built from upstream source by Vivid's pipeline in engine/.
+  # Its README and NOTICE list what the release contains.
   LucidEngine:
     url: https://github.com/blurbery/lucid-engine
-    revision: 11d60dc20a28e946677eb15ff832e7135603e92b
+    revision: 53ebeac793f251df987a8d80b997e7fe8064d1b7
 
 targets:
   Vivid:
