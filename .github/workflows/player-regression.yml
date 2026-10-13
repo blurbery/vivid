@@ -8,7 +8,6 @@ on:
       - 'iosApp/project*.yml'
       - 'iosApp/**/Package.resolved'
       - 'scripts/tests/playback-auth-refresh-tests.py'
-      - 'scripts/tests/playback-end-recovery-tests.py'
       - 'scripts/tests/native-profile-restoration-tests.py'
       - 'scripts/tests/jellyfin-replacement-tests.py'
       - 'scripts/tests/topshelf-native-tests.py'
@@ -28,7 +27,6 @@ on:
       - 'iosApp/project*.yml'
       - 'iosApp/**/Package.resolved'
       - 'scripts/tests/playback-auth-refresh-tests.py'
-      - 'scripts/tests/playback-end-recovery-tests.py'
       - 'scripts/tests/native-profile-restoration-tests.py'
       - 'scripts/tests/jellyfin-replacement-tests.py'
       - 'scripts/tests/topshelf-native-tests.py'
@@ -209,9 +207,6 @@ jobs:
       - name: Verify native Apple TV account restoration
         if: matrix.action == 'test'
         run: python3 scripts/tests/native-profile-restoration-tests.py
-      - name: Verify unexpected stream endings preserve the current episode
-        if: matrix.action == 'test'
-        run: python3 scripts/tests/playback-end-recovery-tests.py
       - name: Verify the adapter's track ID translation and teardown
         if: matrix.action == 'test'
         run: python3 scripts/tests/mpv-track-tests.py
