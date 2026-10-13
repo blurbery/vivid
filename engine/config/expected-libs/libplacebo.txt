@@ -1011,3 +1011,10 @@ _strlen _strncmp _strnlen _strstr _vkGetInstanceProcAddr _vsnprintf _vsscanf
 14.0
 [minos-tvos-arm64-simulator]
 14.0
+
+# weak-hidden definitions as Xcode 26.6 emits them from the same sources and
+# options, identical on every slice: 6 names more and 4 fewer than today's
+# (inline functions and template instances, including libc++'s, that one compiler
+# emits and the other inlines). Count, then SHA-256 of the sorted names.
+[weak-hidden-toolchain]
+34 f1b0e2d6a97f33584024b2247e876212170529bc58db632fd02d5115a595ae41

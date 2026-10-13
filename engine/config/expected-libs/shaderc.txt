@@ -4394,3 +4394,35 @@ _strtoll _strtoul _strtoull _tan _vsnprintf
 14.0
 [minos-tvos-arm64-simulator]
 14.0
+
+# Imports that differ from today's on every slice because of the pipeline's
+# toolchain (Xcode 26.6) and nothing else: the SDK's libc++ headers now inline std::string's find, rfind, compare and copy constructor and basic_streambuf's constructor and destructor, and use std::locale, setbuf, wcslen and wmemchr from libc++ and libSystem instead.
+# All come from libSystem or libc++, which today's build already links.
+[imports-toolchain-added]
+__ZNSt3__16localeC1Ev
+__ZTVNSt3__115basic_streambufIcNS_11char_traitsIcEEEE
+_setbuf
+_wcslen
+_wmemchr
+[imports-toolchain-removed]
+__ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE4findEcm
+__ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE5rfindEcm
+__ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7compareEPKc
+__ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7compareEmmPKc
+__ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1ERKS5_
+__ZNSt3__115basic_streambufIcNS_11char_traitsIcEEEC2Ev
+__ZNSt3__115basic_streambufIcNS_11char_traitsIcEEED2Ev
+
+# weak-default definitions as Xcode 26.6 emits them from the same sources and
+# options, identical on every slice: 577 names more and 520 fewer than today's
+# (inline functions and template instances, including libc++'s, that one compiler
+# emits and the other inlines). Count, then SHA-256 of the sorted names.
+[weak-default-toolchain]
+2534 ba6b8592e7cd4de54586313717480b8fe7760b8addbb2021ab1dc5db892b08a0
+
+# weak-hidden definitions as Xcode 26.6 emits them from the same sources and
+# options, identical on every slice: 735 names more and 622 fewer than today's
+# (inline functions and template instances, including libc++'s, that one compiler
+# emits and the other inlines). Count, then SHA-256 of the sorted names.
+[weak-hidden-toolchain]
+1176 e1ea601259002beaf88132c9b3d8644f0db2cb995d6ac3c091eb51650bb0ff8c

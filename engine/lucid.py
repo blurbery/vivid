@@ -1275,7 +1275,7 @@ def build_uavs3d(ctx: Ctx) -> dict:
     record = build_cmake(ctx, lib, tree, read_list(CONFIG / "uavs3d-cmake.txt"),
                          targets=("uavs3d",), build=ctx.build(lib) / "build")
     version_h = tree / "version.h"
-    record["version_h"] = {name: define(version_h, name) for name in
+    record["version_h"] = {name: macro(version_h, name) for name in
                            ("VER_MAJOR", "VER_MINOR", "VER_BUILD", "VERSION_TYPE", "VERSION_STR",
                             "VERSION_SHA1")}
     return record
@@ -1413,7 +1413,7 @@ COMMON_BUILD_FUNCTIONS = ("compile_flags", "build_env", "dep_flags_env", "dep_mi
 DEP_FUNCTIONS = {
     "unibreak": ("build_unibreak",), "shaderc": ("build_shaderc",),
     "moltenvk": ("build_moltenvk", "moltenvk_env", "write_vulkan_pc", "vulkan_header_version"),
-    "uavs3d": ("build_uavs3d",), "uchardet": ("build_uchardet",),
+    "uavs3d": ("build_uavs3d", "macro"), "uchardet": ("build_uchardet",),
     "libdovi": ("build_libdovi", "cargo_cinstall", "cargo_env", "vendor_crates",
                 "strip_embedded_bitcode", "install_rust", "install_cargo_c"),
 }
@@ -2071,10 +2071,22 @@ def check_deps(c: Checks, sl: Slice, pins, work: Path, out: Path, report: dict) 
         for kind in ("weak-default", "weak-hidden"):
             names = [s for s, k in defined.items() if k == kind]
             weak[kind] = [len(names), names_digest(names)]
-            c.equal(f"{name}: {kind} definitions as today (count, SHA-256)",
-                    [str(len(names)), names_digest(names)], exp[kind])
+            if f"{kind}-toolchain" in exp:
+                # Which inline functions and template instances the compiler
+                # emits differs between Xcode 15.4 and 26.6 for the same
+                # sources: the set Xcode 26.6 gives is recorded instead.
+                c.equal(f"{name}: {kind} definitions as the pipeline's toolchain gives "
+                        f"(count, SHA-256; today's: {exp[kind][0]})",
+                        [str(len(names)), names_digest(names)], exp[f"{kind}-toolchain"])
+            else:
+                c.equal(f"{name}: {kind} definitions as today (count, SHA-256)",
+                        [str(len(names)), names_digest(names)], exp[kind])
         imports = archive_imports(binary, defined)
-        c.sets(f"{name}: imports as today", imports, set(exp[f"imports-{sl.name}"]))
+        added = set(exp.get("imports-toolchain-added", []))
+        removed = set(exp.get("imports-toolchain-removed", []))
+        c.sets(f"{name}: imports as today" + (" apart from the toolchain's recorded differences"
+                                              if added or removed else ""),
+               imports, (set(exp[f"imports-{sl.name}"]) - removed) | added)
         asserts = "___assert_rtn" in set(exp[f"imports-{sl.name}"])
         c.equal(f"{name}: assertions {'on' if asserts else 'off'} as today",
                 "___assert_rtn" in imports, asserts)

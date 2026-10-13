@@ -328,3 +328,10 @@ _pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_un
 15.0
 [minos-tvos-arm64-simulator]
 15.0
+
+# Imports that differ from today's on every slice because of the pipeline's
+# toolchain (Xcode 26.6) and nothing else: its compiler or SDK headers make the code call strlen, where today's build had none.
+# All come from libSystem or libc++, which today's build already links.
+[imports-toolchain-added]
+_strlen
+[imports-toolchain-removed]

@@ -764,3 +764,17 @@ _strncpy _strrchr _strstr _strtol _strtoul _sysconf _tanf _uselocale _vfprintf _
 13.0
 [minos-tvos-arm64-simulator]
 14.0
+
+# Imports that differ from today's on every slice because of the pipeline's
+# toolchain (Xcode 26.6) and nothing else: its compiler or SDK headers make the code call wcslen, where today's build had none.
+# All come from libSystem or libc++, which today's build already links.
+[imports-toolchain-added]
+_wcslen
+[imports-toolchain-removed]
+
+# weak-hidden definitions as Xcode 26.6 emits them from the same sources and
+# options, identical on every slice: 147 names more and 141 fewer than today's
+# (inline functions and template instances, including libc++'s, that one compiler
+# emits and the other inlines). Count, then SHA-256 of the sorted names.
+[weak-hidden-toolchain]
+967 57b5a45052407e247b87c48366e19d4612e7e244fe67a12f27838e893f43b7c2

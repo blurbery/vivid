@@ -531,3 +531,10 @@ _sscanf _strchr _strcpy _strlen _strncpy _strrchr _strspn _time _vsnprintf
 14.0
 [minos-tvos-arm64-simulator]
 14.0
+
+# Imports that differ from today's on every slice because of the pipeline's
+# toolchain (Xcode 26.6) and nothing else: its compiler makes the code call wcslen (lcms2's own mywcslen is a wide-string length loop), where today's build had none.
+# All come from libSystem or libc++, which today's build already links.
+[imports-toolchain-added]
+_wcslen
+[imports-toolchain-removed]

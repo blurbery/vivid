@@ -476,3 +476,10 @@ _xmlStrEqual
 14.0
 [minos-tvos-arm64-simulator]
 14.0
+
+# Imports that differ from today's on every slice because of the pipeline's
+# toolchain (Xcode 26.6) and nothing else: the SDK's libxml2 headers now define xmlFree(ptr) as free(ptr), so libbluray calls free, as xmlFree did, instead of reading the xmlFree pointer.
+# All come from libSystem or libc++, which today's build already links.
+[imports-toolchain-added]
+[imports-toolchain-removed]
+_xmlFree
