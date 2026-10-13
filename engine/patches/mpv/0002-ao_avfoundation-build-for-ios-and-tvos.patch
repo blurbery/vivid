@@ -17,7 +17,13 @@ the code needs the HAL. The channel-layout helpers AVFoundation uses
 (ca_get_acl, ca_find_standard_layout, ca_log_layout) stay available. On
 iOS and tvOS the AVFoundation output then has no device list or device
 selection and uses the shared AVAudioSession route, as the AudioUnit
-output does. macOS builds are unchanged. Applies to mpv v0.41.0.
+output does.
+
+The output also calls cfstr_get_cstr() from osdep/utils-mac.c, which
+meson only builds with the macOS cocoa feature, so a static libmpv for
+iOS or tvOS could not be linked into an app. Build utils-mac.c with the
+AVFoundation output whenever cocoa is off. macOS builds with cocoa are
+unchanged. Applies to mpv v0.41.0.
 
 Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
 Like the files it modifies, it is free software; you can redistribute it
@@ -189,3 +195,19 @@ index 0000000000..0000000000 100644
  bool ca_stream_supports_compressed(struct ao *ao, AudioStreamID stream);
  OSStatus ca_lock_device(AudioDeviceID device, pid_t *pid);
  OSStatus ca_unlock_device(AudioDeviceID device, pid_t *pid);
+diff --git a/meson.build b/meson.build
+index 0000000000..0000000000 100644
+--- a/meson.build
++++ b/meson.build
+@@ -821,6 +821,11 @@
+ if features['avfoundation']
+     dependencies += avfoundation
+     sources += files('audio/out/ao_avfoundation.m')
++    # The AVFoundation output uses the CoreFoundation string helpers in
++    # osdep/utils-mac.c, which the cocoa block above only builds on macOS.
++    if not features['cocoa']
++        sources += files('osdep/utils-mac.c')
++    endif
+ endif
+ 
+ coreaudio = dependency('appleframeworks', modules: ['CoreFoundation', 'CoreAudio',
