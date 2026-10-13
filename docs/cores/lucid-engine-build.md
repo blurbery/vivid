@@ -147,6 +147,8 @@ The corpus holds about 19,400 cases:
 | Bit flips | every single-bit flip of a profile 7 FEL and a MEL RPU | return error results |
 | Structured fuzz | valid RPUs with random byte changes and a corrected CRC, so parsing reaches the mapping and display management data | not abort |
 
+Results at `11994e3` (run 38368890048, `macos-26`): 19,381 cases; the patched build never aborted and used at most 2.5 MB per case; the unpatched build aborted on 6,157 cases and on every abort class, and peaked at 1.5 GB in one case. All 1,931 valid asset RPUs and the 9 written ones gave byte-identical dumps from both builds. Where the unpatched build did not abort, results matched apart from 1,716 cases whose error text changed because a count check fired first and 15 whose header query rule 4 turned into null (RPUs without display management data, converted with mode 4, which neither FFmpeg nor libplacebo does). Very large counts abort the unpatched build on the runner only where the allocation is refused: counts up to 2^40 and EMDF sizes up to 2^32 are allocated lazily there and did not abort, while 2^48 and above did, apart from one pivot count of 2^64−2, which wraps to no pivots at all.
+
 The test fails on any abort, crash or hang (20 s per case) of the patched build, on more than 64 MiB of memory for one case, on any unexpected result, and on any difference from the unpatched build wherever that build does not abort, other than error texts the patch's own checks change and headers rule 4 above turns into null. It also requires the unpatched build to abort on every abort class, which shows the corpus reaches each abort site. The summary, with the abort counts per class and group, appears on the workflow run page, and the report is uploaded as `lucid-engine-libdovi-test`.
 
 ## Reproducible builds
@@ -156,6 +158,8 @@ The test fails on any abort, crash or hang (20 s per case) of the patched build,
 - Source trees are extracted fresh into the same runner paths, and build paths are stable on GitHub's runners, so unchanged inputs give unchanged binaries.
 - `xcodebuild -create-xcframework` lists the slices in its `Info.plist` in a different order from run to run, so `package` rewrites that file with the slices sorted by identifier.
 - The packaging job packages the same slices twice and fails unless the two sets of zips are identical.
+
+Results: runs 38367673194 and 38368890048 built every framework of all four slices byte for byte the same, and packaging the first run's slices again gave exactly the second run's `SHA256SUMS`, so unchanged libraries give identical zips across runs.
 
 ## Configuration
 
