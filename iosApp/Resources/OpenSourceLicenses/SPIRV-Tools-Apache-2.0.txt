@@ -1,0 +1,14 @@
+Component: SPIRV-Tools (in MoltenVK and in libshaderc_combined)
+Version: commit 262bdab48146c937467f826699a40da0fdfc0f1a (pinned by both MoltenVK 1.4.1 ExternalRevisions and shaderc v2025.5 DEPS)
+Source: https://github.com/KhronosGroup/SPIRV-Tools/tree/262bdab48146c937467f826699a40da0fdfc0f1a
+SPDX: Apache-2.0
+Note: No NOTICE file at this revision.
+================================================================================
+
+--------------------------------------------------------------------------------
+File: LICENSE
+https://github.com/KhronosGroup/SPIRV-Tools/blob/262bdab48146c937467f826699a40da0fdfc0f1a/LICENSE
+--------------------------------------------------------------------------------
+
+
+[Apache License 2.0: full text below]

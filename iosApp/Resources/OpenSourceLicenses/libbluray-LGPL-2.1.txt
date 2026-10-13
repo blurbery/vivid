@@ -1,0 +1,13 @@
+Component: libbluray
+Version: 1.4.0 (tag 1.4.0, commit 9f07fbb2077be7a40b062bcf2463a9941c2a3b13), via mpvkit/libbluray-build 1.4.0
+Source: https://code.videolan.org/videolan/libbluray/-/tree/9f07fbb2077be7a40b062bcf2463a9941c2a3b13
+SPDX: LGPL-2.1-or-later
+Note: Built with -Dembed_udfread=true, so libudfread (contrib/libudfread submodule) is compiled in; see its entry.
+================================================================================
+
+--------------------------------------------------------------------------------
+File: COPYING
+https://code.videolan.org/videolan/libbluray/-/blob/9f07fbb2077be7a40b062bcf2463a9941c2a3b13/COPYING
+--------------------------------------------------------------------------------
+
+[GNU Lesser General Public License 2.1: full text below]

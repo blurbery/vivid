@@ -1,3 +1,15 @@
+Component: ThumbHash decoder (adapted Swift reference decode path)
+Version: revision a652ce6ed691242f459f468f0a8756cda3b90a82
+Source: https://github.com/evanw/thumbhash/tree/a652ce6ed691242f459f468f0a8756cda3b90a82
+SPDX: MIT
+Note: The licence text was checked byte for byte against LICENSE.md at this revision.
+================================================================================
+
+--------------------------------------------------------------------------------
+File: LICENSE.md
+https://github.com/evanw/thumbhash/blob/a652ce6ed691242f459f468f0a8756cda3b90a82/LICENSE.md
+--------------------------------------------------------------------------------
+
 Copyright (c) 2023 Evan Wallace
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

@@ -1,0 +1,13 @@
+Component: DifferenceKit (tvOS, CollectionHStack dependency)
+Version: 1.3.0 (revision 073b9671ce2b9b5b96398611427a1f929927e428)
+Source: https://github.com/ra1028/DifferenceKit/tree/073b9671ce2b9b5b96398611427a1f929927e428
+SPDX: Apache-2.0
+Note: LICENSE is the unfilled Apache-2.0 text (no copyright line). No NOTICE file at this revision.
+================================================================================
+
+--------------------------------------------------------------------------------
+File: LICENSE
+https://github.com/ra1028/DifferenceKit/blob/073b9671ce2b9b5b96398611427a1f929927e428/LICENSE
+--------------------------------------------------------------------------------
+
+[Apache License 2.0: full text below]

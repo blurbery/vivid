@@ -1,0 +1,13 @@
+Component: shaderc (libshaderc_combined)
+Version: 2025.5 (tag v2025.5, commit c4b0af6c3664cd8b33ffddf452514e02a173b4d6), via mpvkit/libshaderc-build 2025.5.0
+Source: https://github.com/google/shaderc/tree/c4b0af6c3664cd8b33ffddf452514e02a173b4d6
+SPDX: Apache-2.0
+Note: libshaderc_combined also contains glslang 7a47e2531cb334982b2a2dd8513dca0a3de4373d and SPIRV-Tools 262bdab48146c937467f826699a40da0fdfc0f1a (see their entries). abseil, re2, effcee and googletest are test-only (SHADERC_SKIP_TESTS=ON). No NOTICE file at this revision.
+================================================================================
+
+--------------------------------------------------------------------------------
+File: LICENSE
+https://github.com/google/shaderc/blob/c4b0af6c3664cd8b33ffddf452514e02a173b4d6/LICENSE
+--------------------------------------------------------------------------------
+
+[Apache License 2.0: full text below]

@@ -174,7 +174,7 @@ MDBList keeps your watched history and a watchlist in one place that other apps 
   </tbody>
 </table>
 
-This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV. The logos on the MDBList page are other apps that also work with MDBList. Vivid itself only connects to MDBList.
+This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV. The Emby and Jellyfin logos on the MDBList page show that MDBList also works with those servers. Vivid itself only connects to MDBList.
 
 ### What it doesn't do
 

@@ -2,9 +2,12 @@ Vivid: Source Licence and Third-Party Libraries
 ===============================================
 
 This overview records source provenance and dependency information for Vivid.
-Bundled licence texts, including retained historical notices, are available
-from Settings > About > Open Source Licences. The pinned package records
-identify the current native dependencies.
+Settings > About > Open Source Licences lists every bundled third-party
+component; each opens on its own page with its notice and full licence text.
+A licence text that several components share word for word (Apache 2.0,
+GPL 3.0 and LGPL 2.1) is stored once and listed under Licence texts; those
+components' notices mark where it applies. THIRD_PARTY_NOTICES.md in the
+source revision for this build lists every component, version and source.
 
 Vivid: GPL-3.0-only with the Apple distribution
 permission, copyright 2026 blurbery and the respective contributors.
@@ -41,27 +44,37 @@ Paths in the attribution terms refer to the corresponding source revision
 provided with this build.
 
 Corresponding source and build instructions:
+The first row of Open Source Licences, "Source for this build", gives
+the exact source commit this build was made from and its GitHub link. That
+revision contains the complete source, project specs, patches, build
+instructions and THIRD_PARTY_NOTICES.md. Vivid's repository is
 https://github.com/blurbery/vivid
-Each binary release must identify its exact public source revision and
-provide matching source and dependency rebuild materials. The Apple
-permission preserves source disclosure; it does not allow closed-source
-covered derivatives. Apple system frameworks retain Apple's terms.
+The Apple permission preserves source disclosure; it does not allow
+closed-source covered derivatives. Apple system frameworks retain Apple's
+terms.
 
-Lucid media dependencies (iOS and tvOS)
+Lucid media engine (iOS and tvOS)
   Package: https://github.com/edde746/mpv-build/tree/c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
-  mpv 0.41.0 and FFmpeg 8.0.1, with the pinned Apple patch series.
-  Package.swift records all binary URLs and checksums; versions.json records
-  native source revisions. The package includes the media, subtitle, font,
-  colour-management and rendering dependencies used by both Apple app targets.
-  Their individual licences remain upstream; the package declares GPLv3 bundles.
-  The older FFmpegBuild and standalone vendored subtitle package are not linked.
-  Historical component licence texts remain preserved; their presence alone
-  does not identify the version or linkage of a currently shipped component.
+  mpv 0.41.0 and FFmpeg 8.0.1, with the pinned Apple patch series, plus the
+  libraries listed in THIRD_PARTY_NOTICES.md. Package.swift records every
+  binary URL and SHA-256 checksum; versions.json records the upstream pins.
+  The package builds mpv with -Dgpl=true and FFmpeg with --enable-gpl and
+  --enable-version3, so the media libraries are distributed under GPLv3.
+  The pinned edde746/mpv-build package applies its own Apple patch series
+  to mpv and FFmpeg. Its LICENSE is the GPL-3.0 text and its README says
+  the packages ship as GPL builds, so the patched libraries are GPL-3.0 as
+  built; most upstream mpv and FFmpeg files remain LGPL-2.1-or-later.
+  They are static libraries linked into the app executable.
 
-  Vivid's device-tested libmpv additionally applies
+  Vivid's device builds additionally apply
   patches/mpv/0001-avfoundation-resume-after-audio-eof.patch. Rebuild using
   .github/workflows/mpv-audio-driver.yml and verify the linked recovery marker.
   A fresh resolution of the package alone does not include that patch.
+
+  This software is based in part on the work of the Independent JPEG Group.
+
+  Portions of this software are copyright (c) 2022 The FreeType Project
+  (www.freetype.org). All rights reserved.
 
 ThumbHash decoder
   Revision: a652ce6ed691242f459f468f0a8756cda3b90a82
@@ -85,31 +98,22 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-
-Source availability
--------------------
-
-The links above identify the exact source and rebuild inputs for this build,
-including each component's rebuild script and patches at the pinned revision.
-They are this build's corresponding-source pointer; keep them matched to the
-revisions each release actually resolves.
-
 CollectionHStack (tvOS Home rows)
   Revision: 15baaaa759a0e252addae08431c79a49a25e4afc
   Source: https://github.com/LePips/CollectionHStack/tree/15baaaa759a0e252addae08431c79a49a25e4afc
-  MIT, bundled in CollectionHStack-DifferenceKit-MIT.txt.
+  MIT, bundled in CollectionHStack-MIT.txt.
 
 DifferenceKit (CollectionHStack dependency)
   Version: 1.3.0, revision 073b9671ce2b9b5b96398611427a1f929927e428
   Source: https://github.com/ra1028/DifferenceKit/tree/073b9671ce2b9b5b96398611427a1f929927e428
-  MIT, bundled in CollectionHStack-DifferenceKit-MIT.txt.
+  Apache 2.0, bundled in DifferenceKit-Apache-2.0.txt.
 
 Apple media bridge provenance
 -----------------------------
 Apple bridge source: edde746/plezy, 8ad17ad38f2ba63576cd7b37b460a4362adb738e.
 Patched Apple binaries and build source: edde746/mpv-build,
 c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6.
-GPLv3; see Plezy-GPL-3.0.txt. The adapted source files are
+GPL-3.0; see Plezy-GPL-3.0.txt. The adapted source files are
 Playback/MPV/MpvPlayerCoreBase.swift, MpvPlayerCore.swift and ExternalDisplayManager.swift.
 Vivid scopes compilation to its Apple targets, mounts video in its existing
 surface, honours Match Content and disables verbose default logging. The
