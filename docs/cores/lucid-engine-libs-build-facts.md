@@ -2,10 +2,10 @@
 
 Facts for the eleven libraries that Vivid's pipeline (`engine/pins.ini`, `[prebuilt:*]`) took as interim prebuilt binaries until 14 October 2026: FreeType, FriBidi, HarfBuzz, libunibreak, libplacebo, Little CMS (lcms2), MoltenVK, shaderc, uavs3d, libbluray and uchardet. It records versions, upstream source URLs with SHA-256 hashes, option values, flags, features, pkg-config contracts, binary observations and the observable effect of every source modification in today's binaries.
 
-Prepared 13 October 2026. It extends `docs/cores/lucid-engine-build-facts.md` (on `experiment/lucid-engine-build`), sections 2.4 to 2.13, and corrects it where section 8 says so.
+Prepared 13 October 2026. It extends [`lucid-engine-build-facts.md`](lucid-engine-build-facts.md), sections 2.4 to 2.13, and corrects it where section 8 says so.
 
 > [!NOTE]
-> **Status, 14 October 2026:** all eleven libraries are now built from these upstream sources by Vivid's own pipeline (`experiment/lucid-engine-libs`), and the interim assets of 1.2 are no longer downloaded. How each is built, and what still differs from today's binaries, is in [Lucid Engine build](lucid-engine-build.md#dependencies). The facts below are unchanged: they describe today's binaries, which `lucid.py check` compares the new builds with.
+> **Status, 14 October 2026:** all eleven libraries are now built from these upstream sources by Vivid's own pipeline (`experiment/lucid-engine-libs`), and the interim assets of 1.2 are no longer downloaded. How each is built, and what still differs from today's binaries, is in [Lucid Engine build](lucid-engine-build.md#dependencies). Release `0.1.0` of `blurbery/lucid-engine` serves those builds, and the app pins it. The facts below are unchanged: they describe the interim binaries ("today's binaries" below), which `lucid.py check` compares the new builds with.
 
 ## 0. Evidence and conventions
 

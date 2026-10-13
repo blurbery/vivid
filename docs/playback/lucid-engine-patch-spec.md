@@ -32,7 +32,7 @@ Contents:
 
 Lucid Engine is libmpv 0.41.0 with FFmpeg n8.0.1 for iPhone, iPad and Apple TV. The engine Vivid ships today comes from the previous third-party package, at the revision Vivid's app pins on `main`. Its engine carries that package's own GPL-3.0 Apple patch series, plus three Vivid patches on top, and it links the previous third-party build of the libraries listed in 8.3.
 
-Vivid now builds the engine itself from pristine upstream sources, with its own patch series, in its engine build pipeline (`engine/` on the branch `experiment/lucid-engine-build`, described in `docs/cores/lucid-engine-build.md`). When this document was first written, that series held four patches (8.2). The patches this document specifies are the rest, written to apply on top of that series, and all of them are now implemented, reviewed and in the series (8.2, 12, 13):
+Vivid now builds the engine itself from pristine upstream sources, with its own patch series, in its engine build pipeline (`engine/`, described in `docs/cores/lucid-engine-build.md`; it was developed on the branch `experiment/lucid-engine-build`). When this document was first written, that series held four patches (8.2). The patches this document specifies are the rest, written to apply on top of that series, and all of them are now implemented, reviewed and in the series (8.2, 12, 13):
 
 - the AVFoundation audio output (section 3);
 - the AVFoundation video output (section 4);
@@ -74,7 +74,7 @@ Upstream behaviour that this document does not mention must stay exactly as upst
 | --- | --- |
 | This document | The only description of the current engine's behaviour. |
 | `docs/playback/player-bridge-spec.md` | The bridge side of the same contract (sections 6.3, 6.18, 6.19, 7.1 to 7.6, 8). Where the two differ, this document wins for engine behaviour; 11.3 and the bridge editor's correction list cover the differences. |
-| Vivid's engine build pipeline | On `experiment/lucid-engine-build`: everything under `engine/` (`lucid.py`, `pins.ini`, `config/`, `patches/` with its series files and patches, `tests/`), `.github/workflows/lucid-engine.yml`, `docs/cores/lucid-engine-build.md` and `docs/cores/lucid-engine-libs-build-facts.md` (the audited facts for the eleven libraries of 8.3). Both guides link to the build facts document, and some pipeline comments (in `engine/pins.ini`, for example) cite its sections: do not follow those links or look up those citations. |
+| Vivid's engine build pipeline | Everything under `engine/` (`lucid.py`, `pins.ini`, `config/`, `patches/` with its series files and patches, `tests/`), `.github/workflows/lucid-engine.yml`, `docs/cores/lucid-engine-build.md` and `docs/cores/lucid-engine-libs-build-facts.md` (the audited facts for the eleven libraries of 8.3). Both guides link to the build facts document, and some pipeline comments (in `engine/pins.ini`, for example) cite its sections: do not follow those links or look up those citations. |
 | Pristine upstream mpv at `v0.41.0`, and upstream mpv history | |
 | Pristine upstream FFmpeg at `n8.0.1`, libass `0.17.5` and dav1d `1.5.3`; upstream libass commit `057a5334` and pull request #951 at `f96a521`; the upstream sources of the eleven libraries of 8.3 at their pinned versions | Any file. |
 | libdovi 3.3.2 source and its public C header | MIT. |
@@ -1790,15 +1790,18 @@ All six are now in place: items 1 to 4 as per-slice checks, and items 5 and 6 as
 
 ### 8.7 Install, package and the old workflows
 
+> [!NOTE]
+> **Status:** the app pins release `0.1.0` of `blurbery/lucid-engine`, which serves all 21 frameworks and MoltenVK's library. The install script and the old audio-driver and experiment workflows have been removed, and `scripts/ci/check-engine-package-pin.py` checks the pin. The requirements below are kept as written.
+
 - The pipeline's packaging job already publishes `<Name>.xcframework.zip` for each of the 21 frameworks and for MoltenVK's library (13.5) with a `SHA256SUMS` file (also the SwiftPM checksums) and each slice's provenance report; artefacts are kept for 3 days.
-- The Swift package that serves these builds is `blurbery/lucid-engine`, and Vivid's app links it on `experiment/vivid-player-bridge` (13.5). It must serve every framework the pipeline builds, all 21 and MoltenVK's library, `Libass` and `Libdav1d` included. If the install script is kept rather than retired, it must be updated for the pipeline's slice names and artefacts, install the same set, and its `verify` must check each installed binary against `SHA256SUMS` and the provenance reports.
+- The Swift package that serves these builds is `blurbery/lucid-engine`, and Vivid's app links its release `0.1.0` (13.5). It must serve every framework the pipeline builds, all 21 and MoltenVK's library, `Libass` and `Libdav1d` included. If the install script is kept rather than retired, it must be updated for the pipeline's slice names and artefacts, install the same set, and its `verify` must check each installed binary against `SHA256SUMS` and the provenance reports.
 - `scripts/release/use-patched-libmpv.sh` today expects the old artefact (`mpv-<platform>-audio-driver`, slices `ios-arm64` and `tvos-arm64_arm64e`) and searches the 30 newest successful runs of the old workflow. On `main` and `experiment/vivid-player-bridge` it replaces Libmpv alone; on `fix/lgpl-media-engine`, Libmpv and the seven FFmpeg frameworks (eight in all). It never replaces Libass or Libdav1d, so an install that followed its pattern would leave the app linking the third-party threaded libass and its dav1d, with no visible error.
 - Wherever the app does not yet link the package (on `main`, for example), simulator builds, the player-regression tests and the experiment tests run the old engine, which rejects `ao-avfoundation-manage-audio-session` on every load (a console line only) and manages the audio session itself. Simulator checks prove nothing about the rewrite there.
 - The old audio-driver workflow and its harness are retired when the new AO lands, and `mpv-experiment.yml`'s checks move to the new package (its SwiftPM pin check then compares against the new package instead of the third-party one).
 
 ### 8.8 Switch-over notes
 
-What changes for Vivid's other code when the app first links the pipeline's builds:
+What changes for Vivid's other code when the app first links the pipeline's builds. The app now links them through release `0.1.0`; the install script was removed rather than updated.
 
 - **Install script.** `scripts/release/use-patched-libmpv.sh` must install every framework the pipeline builds (8.7), not Libmpv alone, and must use the pipeline's slice identifiers, `ios-arm64` (unchanged), `tvos-arm64` (instead of `tvos-arm64_arm64e`), `ios-arm64-simulator` and `tvos-arm64-simulator`, and the new package's artefact path instead of the previous third-party package's folder under `SourcePackages/artifacts/`. Its marker checks (2.10) pass only once the AO patch is in the series, because `first start recovery after` and `trace edge %s` come from the new AO.
 - **Options.** Vivid's `ao-avfoundation-*` options, `audio-spdif` passthrough and the `avfoundation-*` video options work only once the AO and VO patches are in the series; before that, mpv rejects the options (a console line each) and the stock AO refuses spdif formats. Before the VO patch, `vo=avfoundation` is accepted but skipped as an unknown driver, because mpv does not check its video output list for unknown names; mpv then autoprobes its other outputs and plays with no picture. Before the AO patch, upstream's AO sets the session category and mode, activates the shared session, and deactivates it itself on teardown and after a failed `init`.
@@ -1807,7 +1810,7 @@ What changes for Vivid's other code when the app first links the pipeline's buil
 
 ### 8.9 Licence notes to update
 
-Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt` and `docs/cores/player-engine.md` once the app links the pipeline's builds: the engine patches are Vivid-owned LGPL-2.1-or-later (plus the upstream cherry-pick), libdovi is built from source with Vivid's patch under its MIT licence (unless blurbery decides otherwise, 11.2), libass carries two upstream changes and Vivid's ISC patch (13.4), dav1d is built unpatched, the eleven libraries of 8.3 are built from upstream source with their parts and licences, two of them with Vivid's own patches under their libraries' licences (13.5), and OpenSSL is gone.
+Done when the app moved to release `0.1.0`. Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt` and `docs/cores/player-engine.md` once the app links the pipeline's builds: the engine patches are Vivid-owned LGPL-2.1-or-later (plus the upstream cherry-pick), libdovi is built from source with Vivid's patch under its MIT licence (unless blurbery decides otherwise, 11.2), libass carries two upstream changes and Vivid's ISC patch (13.4), dav1d is built unpatched, the eleven libraries of 8.3 are built from upstream source with their parts and licences, two of them with Vivid's own patches under their libraries' licences (13.5), and OpenSSL is gone.
 
 ## 9. Constants, parity hazards, tests and device checklist
 
@@ -2428,17 +2431,17 @@ Both depend on the old driver's names and layout, so they fail against any clean
 
 ### 11.2 Open items for the coordinator
 
-1. **Retiring the old harness.** Removing `scripts/tests/compressed-audio-recovery-tests.py` and `.github/workflows/mpv-audio-driver.yml` needs the dirty side or blurbery (10.4).
-2. **Linking the pipeline's builds.** The Swift package is `blurbery/lucid-engine`, and the app links it on `experiment/vivid-player-bridge` (8.7, 13.5); it must serve every framework the pipeline builds. The install script still needs updating for the pipeline's slices and artefacts, or retiring (8.7, 8.8). Vivid's mpv `0002` already links (`546e11f`), and the pipeline checks linkability on every slice (`ad498b4`, 8.5).
+1. **Retiring the old harness.** Closed: both have been removed. Removing `scripts/tests/compressed-audio-recovery-tests.py` and `.github/workflows/mpv-audio-driver.yml` needs the dirty side or blurbery (10.4).
+2. **Linking the pipeline's builds.** Closed: the app pins release `0.1.0` of `blurbery/lucid-engine`, which serves every framework the pipeline builds (8.7, 13.5), and the install script has been retired (8.7, 8.8). Vivid's mpv `0002` already links (`546e11f`), and the pipeline checks linkability on every slice (`ad498b4`, 8.5).
 3. **libass threading.** The libass series restores today's cost on static events (13.4), but rendering stays on one thread. Device check 46 decides whether that is acceptable, or whether Vivid wants its own threading work later. Device checks 65 and 66 settle the font-fallback and static-subtitle costs on devices.
 4. **Bundle identifiers.** Closed: the pipeline's frameworks use the prefix `com.blurbery.vivid.lucid.` (blurbery's decision, 13.5).
 5. **macOS.** Nothing here supports macOS. If Vivid ever builds a macOS slice, the VO's meson feature and the omitted macOS paths need revisiting.
-6. **Licence of the libdovi patch.** Proposed: MIT, matching libdovi (1.3). blurbery confirms, or chooses LGPL-2.1-or-later like the other patches.
+6. **Licence of the libdovi patch.** Closed: MIT, matching libdovi (1.3), as the package's NOTICE and the app's notices state.
 
 ### 11.3 Documents to update
 
 - `docs/playback/player-bridge-spec.md`: the earlier corrections (the reason given for the `video-zoom` row in 7.2, the main-thread list and the cover-art case in 7.2, and three corrections to 6.19) landed in commit `8e87834`. One more has been written out for the bridge editor: in 6.19 and 17.7, `ao-avfoundation-compressed-first-start-grace` says every speed change across 1x creates a new audio output instance, which holds only on AC-3 and E-AC-3 tracks (1.7). It is now applied there, with the explanation in the bridge spec's 17.11, and the bridge spec's 2.1 now lists this document.
-- `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt` and `docs/cores/player-engine.md`, when the app links the pipeline's builds (8.9).
+- `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt` and `docs/cores/player-engine.md`, when the app links the pipeline's builds (8.9). Done for release `0.1.0`.
 - `docs/cores/lucid-engine-build.md`: its patch table and "Still to do" list, as each new patch lands.
 
 ## 12. Amendments after implementation
@@ -2779,7 +2782,7 @@ Test (host, behavioural): render at 3840x2160 with storage 3840x2160, 120 frames
   - **Assertion paths:** source paths in assertion messages differ, seen only if an assertion fails.
   - Smaller build details with no effect on the libraries: libunibreak is configured from its release tarball with the host name that tarball knows, and shaderc's command-line compiler is not built (it is not part of the combined library).
 - **Bundle identifiers.** Every framework the pipeline builds, all 21, uses the prefix `com.blurbery.vivid.lucid.` instead of the previous package's prefix (blurbery's decision; 11.2 item 4). They are static frameworks, so the identifiers do not reach the app.
-- **Package.** `blurbery/lucid-engine`, a Swift package of binary targets that serves the pipeline's frameworks. Vivid's app links it on `experiment/vivid-player-bridge`.
+- **Package.** `blurbery/lucid-engine`, a Swift package of binary targets that serves the pipeline's frameworks. Vivid's app pins its release `0.1.0`.
 
 ### 13.6 Names
 

@@ -43,6 +43,9 @@ Vivid is the shared player core. Each server has a separate server core that sup
 | [Vivid core](cores/vivid.md) | Shared player, controls and intro/recap/credits skipping |
 | [Player engine core](cores/player-engine.md) | Lucid playback on iOS and tvOS, native dependencies, settings and verification |
 | [Lucid Engine architecture](cores/lucid-engine-architecture.md) | How the player bridge and Lucid Engine fit together: layers, data flows, threading, tests, building and shipping, and safe changes |
+| [Lucid Engine build](cores/lucid-engine-build.md) | Vivid's pipeline in `engine/`, which builds every engine library from upstream source with Vivid's patches, its checks and host tests, and publishing the `blurbery/lucid-engine` package; with the recorded [build facts](cores/lucid-engine-build-facts.md) and [library build facts](cores/lucid-engine-libs-build-facts.md) it checks against |
+| [Player bridge specification](playback/player-bridge-spec.md) | The behaviour Vivid's Swift bridge between the adapter and libmpv must have, and its tests and device checks |
+| [Lucid Engine patch specification](playback/lucid-engine-patch-spec.md) | Vivid's engine patches (audio output, video output, decoder, Dolby Vision, libass and the other libraries), their tests and device checks |
 | [Silo server core](cores/silo.md) | Current Silo connection and its boundary with the player |
 | [Emby server core](cores/emby.md) | Emby implementation, provider boundaries and verification gaps |
 | [Jellyfin server core](cores/jellyfin.md) | Native connection and current verification limits |

@@ -1,29 +1,24 @@
 <p align="center"><img src="../branding/vivid-mark-silver.png" width="96" height="96" alt="Vivid logo"></p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Lucid Engine architecture</h1>
-<p align="center"><a href="../README.md">Documentation</a> · <a href="player-engine.md">Lucid Engine</a> · <a href="lucid-engine-build.md">Build pipeline</a> · <a href="../playback/lucid-engine-patch-spec.md">Patch specification</a> · <a href="https://github.com/blurbery/vivid/blob/8a49188733f01d9567be06a72bd24aebc7289c90/docs/playback/player-bridge-spec.md">Bridge specification</a></p>
+<p align="center"><a href="../README.md">Documentation</a> · <a href="player-engine.md">Lucid Engine</a> · <a href="lucid-engine-build.md">Build pipeline</a> · <a href="../playback/lucid-engine-patch-spec.md">Patch specification</a> · <a href="../playback/player-bridge-spec.md">Bridge specification</a></p>
 
 ---
 
 How Vivid's player fits together, from the player screen down to the libraries inside Lucid Engine: the layers, how audio, video, subtitles, Dolby Vision metadata, TLS and logs move through them, which threads each part runs on, which tests guard each part, how the engine is built and shipped, and where to start when you change a part.
 
-Two specifications remain the contracts: the [player bridge specification](https://github.com/blurbery/vivid/blob/8a49188733f01d9567be06a72bd24aebc7289c90/docs/playback/player-bridge-spec.md) for Vivid's Swift bridge, and the [Lucid Engine patch specification](../playback/lucid-engine-patch-spec.md) for Vivid's engine patches. This guide is a map of them. Where it and a specification differ, the specification wins. "Bridge 5.3" and "engine 4.16.6" below mean those sections of the two specifications.
-
-> [!NOTE]
-> Until the two experiment branches are merged, the work sits in two places:
-> - **App side** (screens, adapter, bridge, app tests, the player regression workflow and its pin checks): `experiment/vivid-player-bridge` at `8a49188`. Links to these files point at that commit, because `experiment/lucid-engine-build` still carries an earlier copy of the bridge and of its specification, without the bridge specification's section 17 amendments.
-> - **Engine side** (`engine/`, its patches and host tests, and the [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml)): `experiment/lucid-engine-build` at `fcb6782`, the branch this guide was written on, which release `0.1.0` of the package was built from.
+Two specifications remain the contracts: the [player bridge specification](../playback/player-bridge-spec.md) for Vivid's Swift bridge, and the [Lucid Engine patch specification](../playback/lucid-engine-patch-spec.md) for Vivid's engine patches. This guide is a map of them. Where it and a specification differ, the specification wins. "Bridge 5.3" and "engine 4.16.6" below mean those sections of the two specifications.
 
 > [!IMPORTANT]
 > The bridge and the engine patches were written clean-room. Before changing either, read the reading rules in bridge section 2 and engine section 1.4 and keep to them. They list sources that must never be opened, including the previous bridge's files in Git history.
 
-## Two engine states
+## The engine the app links
 
-Release `0.1.0` of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) (package commit `53ebeac`) serves exactly what the pipeline built at `fcb6782` in run 38458337996, every library from upstream source. The app still pins the earlier prerelease `0.1.0-interim.1`; moving its pin to `0.1.0` is a separate change that needs blurbery's authorisation. Keep the two apart when you read results, notices or device reports.
+Both app targets pin release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) (package commit `53ebeac`). It serves exactly what the pipeline built at `fcb6782` in run 38458337996, every library from upstream source. Before it, the app pinned the prerelease `0.1.0-interim.1`, which had only some of the libraries built here. Keep the two apart when you read earlier results, notices or device reports.
 
 <table width="100%">
   <thead>
-    <tr><th align="left"></th><th align="left">Pipeline at <code>fcb6782</code> and package release <code>0.1.0</code> (commit <code>53ebeac</code>)</th><th align="left" width="10000">Package the app pins: <code>blurbery/lucid-engine</code> prerelease <code>0.1.0-interim.1</code> (commit <code>11d60dc</code>)</th></tr>
+    <tr><th align="left"></th><th align="left">Release <code>0.1.0</code> (commit <code>53ebeac</code>), which the app pins, built at <code>fcb6782</code></th><th align="left" width="10000">Earlier prerelease <code>0.1.0-interim.1</code> (commit <code>11d60dc</code>), no longer pinned</th></tr>
   </thead>
   <tbody>
     <tr><td>Built from upstream source by Vivid's pipeline</td><td>All 16 libraries: 21 static frameworks and MoltenVK's <code>libMoltenVK.a</code>, built in run 38458337996</td><td>Eleven frameworks (<code>Libmpv</code>, the seven FFmpeg frameworks, <code>Libass</code>, <code>Libdav1d</code>, <code>Libdovi</code>), built at <code>10faa2a</code> in run 38400124717</td></tr>
@@ -98,7 +93,7 @@ The player screen and its view model never call libmpv. They own product state (
 
 ### The adapter
 
-[`VividMPVPlayer`](https://github.com/blurbery/vivid/blob/8a49188733f01d9567be06a72bd24aebc7289c90/iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift) (aliased as `VividEngine`) is a main-actor class that turns Vivid's load options into one engine session per load.
+[`VividMPVPlayer`](../../iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift) (aliased as `VividEngine`) is a main-actor class that turns Vivid's load options into one engine session per load.
 
 - **One core per load.** Each load creates a `VividMPVCore`, a private subclass of the bridge's `VividPlayerCore`, sets its options, calls `initialize(in:hostView:)`, registers 21 property observations and issues `loadfile`. The previous core is disposed with `preserveDisplayCriteria: true`, so consecutive episodes of one format keep the TV's mode; the final stop disposes with `false` (bridge 8.13).
 - **Engine options.** Its options hook, `configurePlatformMpvOptions(mpv:)`, runs inside `initialize`, after the bridge's own options and before `mpv_initialize`: `ao=avfoundation`, `audio-spdif`, `ao-avfoundation-manage-audio-session=no`, the packet cache limits, `cache-secs` on tvOS, the six `ao-avfoundation-*` AirPlay options on tvOS, `http-header-fields` as a typed string list, `tls-verify` through `LucidTLS`, and the `vividstream` protocol when Vivid's managed reader is used (bridge 6.3, 6.19).
@@ -113,7 +108,7 @@ The player screen and its view model never call libmpv. They own product state (
 
 Vivid's own Swift layer between the adapter and libmpv, written from the bridge specification. It owns one mpv client context per load with its options, event loop and teardown; ordered delivery of properties and events to the main thread; asynchronous requests with exactly-once completions; the video surface; Match Content on Apple TV and EDR on iPhone and iPad; reactions to the app entering the background and returning; and video on an external screen on iPhone and iPad (bridge 1.1). It does not render frames, own the audio session, choose tracks (apart from one hook the adapter drives) or talk to any server. Every console line it prints starts with `[VividPlayerCore]`.
 
-It is split into a centre and outer parts (bridge 17.1), all in [`iosApp/iosApp/Playback/MPV/`](https://github.com/blurbery/vivid/tree/8a49188733f01d9567be06a72bd24aebc7289c90/iosApp/iosApp/Playback/MPV):
+It is split into a centre and outer parts (bridge 17.1), all in [`iosApp/iosApp/Playback/MPV/`](../../iosApp/iosApp/Playback/MPV):
 
 <table width="100%">
   <thead>
@@ -313,7 +308,7 @@ flowchart LR
   </tbody>
 </table>
 
-[`LucidTLS`](https://github.com/blurbery/vivid/blob/8a49188733f01d9567be06a72bd24aebc7289c90/iosApp/iosApp/Playback/MPV/LucidTLS.swift) reads FFmpeg's `avformat_configuration()` by symbol name (the `Libavutil` module does not import, so `import Libavformat` cannot be used) and turns on `tls-verify` only when the string contains `--enable-securetransport`: an FFmpeg built with OpenSSL has no trust store on Apple platforms, so checks there would refuse every HTTPS stream. The pipeline guarantees the flag and the exported symbol, and `lucid.py check` also requires that no framework has OpenSSL symbols or references `_SecIdentityCreate` ([build guide](lucid-engine-build.md)).
+[`LucidTLS`](../../iosApp/iosApp/Playback/MPV/LucidTLS.swift) reads FFmpeg's `avformat_configuration()` by symbol name (the `Libavutil` module does not import, so `import Libavformat` cannot be used) and turns on `tls-verify` only when the string contains `--enable-securetransport`: an FFmpeg built with OpenSSL has no trust store on Apple platforms, so checks there would refuse every HTTPS stream. The pipeline guarantees the flag and the exported symbol, and `lucid.py check` also requires that no framework has OpenSSL symbols or references `_SecIdentityCreate` ([build guide](lucid-engine-build.md)).
 
 ### Logs and events
 
@@ -391,7 +386,7 @@ Rules between them:
 
 ### Bridge and app tests
 
-XCTest suites under [`iosApp/Tests/`](https://github.com/blurbery/vivid/tree/8a49188733f01d9567be06a72bd24aebc7289c90/iosApp/Tests). `VividTests` (iOS) compiles every file there; `VividTVTests` (tvOS) compiles the files listed in `iosApp/project.yml`, marked "both" below. The simulator suites link the pinned package's simulator slices, so they exercise the engine's audio and video outputs with software decoding, but not VideoToolbox, HDMI, AirPlay, Match Content or Dolby Vision output.
+XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests). `VividTests` (iOS) compiles every file there; `VividTVTests` (tvOS) compiles the files listed in `iosApp/project.yml`, marked "both" below. The simulator suites link the pinned package's simulator slices, so they exercise the engine's audio and video outputs with software decoding, but not VideoToolbox, HDMI, AirPlay, Match Content or Dolby Vision output.
 
 <table width="100%">
   <thead>
@@ -413,7 +408,7 @@ XCTest suites under [`iosApp/Tests/`](https://github.com/blurbery/vivid/tree/8a4
 
 ### App CI
 
-The [player regression workflow](https://github.com/blurbery/vivid/blob/8a49188733f01d9567be06a72bd24aebc7289c90/.github/workflows/player-regression.yml) runs on pull requests and pushes to `main` that touch the app or its Top Shelf extension, its tests, the project specs, a `Package.resolved`, the listed scripts or the workflow, and on manual runs. It uses `macos-15` with Xcode 26.3.
+The [player regression workflow](../../.github/workflows/player-regression.yml) runs on pull requests and pushes to `main` that touch the app or its Top Shelf extension, its tests, the project specs, a `Package.resolved`, the listed scripts or the workflow, and on manual runs. It uses `macos-15` with Xcode 26.3.
 
 <table width="100%">
   <thead>
@@ -429,9 +424,11 @@ The [player regression workflow](https://github.com/blurbery/vivid/blob/8a491887
   </tbody>
 </table>
 
+The [player code checks workflow](../../.github/workflows/player-code-checks.yml) runs `check-no-previous-player-code.py` and `check-engine-package-pin.py` again on every pull request and every push, on `ubuntu-latest`, whatever the change, because the player regression workflow only runs for the paths above.
+
 ### Engine host tests and checks
 
-The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, on `macos-26` with Xcode 26.6. Its jobs are `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for all of them. The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
+The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `main`, `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, and on pull requests that do, on `macos-26` with Xcode 26.6. Its jobs are `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for all of them. The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
 
 <table width="100%">
   <thead>
@@ -516,12 +513,12 @@ The Lucid Engine build workflow does not publish anything, and the package repos
   </tbody>
 </table>
 
-Corresponding source for an engine build is the Vivid commit it was built from: `engine/` holds the pipeline, the pins, the configuration and every patch, and `pins.ini` names each upstream archive by URL, commit and SHA-256. The package release adds the provenance reports, `NOTICE` and `LICENSES`. In the app, Settings → About → Open Source Licences starts with "Source for this build", the exact source commit, and its Lucid media engine entry links the package commit and the pipeline commit; [`THIRD_PARTY_NOTICES.md`](https://github.com/blurbery/vivid/blob/8a49188733f01d9567be06a72bd24aebc7289c90/THIRD_PARTY_NOTICES.md) lists the same.
+Corresponding source for an engine build is the Vivid commit it was built from: `engine/` holds the pipeline, the pins, the configuration and every patch, and `pins.ini` names each upstream archive by URL, commit and SHA-256. The package release adds the provenance reports, `NOTICE` and `LICENSES`. In the app, Settings → About → Open Source Licences starts with "Source for this build", the exact source commit, and its Lucid media engine entry links the package commit and the pipeline commit; [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) lists the same.
 
 ## Changing a part safely
 
 - **Read the rules first.** Keep to the clean-room reading rules (bridge 2, engine 1.4).
-- **Engine patches** go on an `experiment/lucid-engine-*` branch, where the build workflow runs them. Write each patch against the pristine source plus the series before it, add its SHA-256 and file name to the end of the series, use the header form of the existing patches (author `blurbery` with the account's noreply address, a plain description and a licence paragraph), and keep to the number ranges: audio output mpv `0010` to `0019`, video output `0020` to `0039`, decoder work mpv `0040` to `0049` and FFmpeg `0010` to `0029`, libass upstream changes `0001` to `0009` and Vivid's own from `0010`.
+- **Engine patches** are built and checked by the build workflow on any pull request that changes `engine/`, and on `experiment/lucid-engine-*` branches. Write each patch against the pristine source plus the series before it, add its SHA-256 and file name to the end of the series, use the header form of the existing patches (author `blurbery` with the account's noreply address, a plain description and a licence paragraph), and keep to the number ranges: audio output mpv `0010` to `0019`, video output `0020` to `0039`, decoder work mpv `0040` to `0049` and FFmpeg `0010` to `0029`, libass upstream changes `0001` to `0009` and Vivid's own from `0010`.
 - **The frozen interface** (engine 2, bridge 6.19 and 7) changes only with both specifications updated together and the adapter matched; a changed log line, option or property is a regression even if playback looks the same.
 - **Documents** change in the same change: the build guide's patch table and "Still to do", the [Lucid Engine guide](player-engine.md), `THIRD_PARTY_NOTICES.md` and the in-app licences when what the app links changes, and this guide.
 
@@ -541,14 +538,13 @@ Corresponding source for an engine build is the Vivid commit it was built from: 
     <tr><td>libdovi</td><td>Engine 5.13, 12.5</td><td><code>test-libdovi</code>; <code>check</code> (exports, <code>panic_unwind</code>)</td><td>Lucid Engine build</td><td>Engine 9.5 checks 26 to 29</td></tr>
     <tr><td>libass</td><td>Engine 13.4; <a href="lucid-engine-build.md#libass">build guide, libass</a></td><td><code>test-libass</code></td><td>Lucid Engine build</td><td>Engine 9.5 checks 42 to 46, and 65 to 68</td></tr>
     <tr><td>The other libraries, pins and build</td><td>Engine 8, 13.5; <a href="lucid-engine-build.md">build guide</a></td><td><code>check</code> (against <code>engine/config/expected-libs/</code>), reproducibility</td><td>Lucid Engine build</td><td>Engine 9.5 check 56 (HTTPS through Lucid's reader) and 69</td></tr>
-    <tr><td>Package release and the app's pin</td><td><a href="https://github.com/blurbery/vivid/blob/8a49188733f01d9567be06a72bd24aebc7289c90/docs/cores/player-engine.md">Lucid Engine</a> (its Builds section); engine 8.7</td><td><code>check-engine-package-pin.py</code>, <code>check-no-previous-player-code.py</code></td><td>Player regression, including <code>device-builds</code></td><td>Both checklists, on the release the app will link, including engine 9.5 check 58</td></tr>
+    <tr><td>Package release and the app's pin</td><td><a href="player-engine.md#builds">Lucid Engine</a> (its Builds section); engine 8.7</td><td><code>check-engine-package-pin.py</code>, <code>check-no-previous-player-code.py</code></td><td>Player regression, including <code>device-builds</code></td><td>Both checklists, on the release the app will link, including engine 9.5 check 58</td></tr>
   </tbody>
 </table>
 
 ## Open items
 
 - **Device checks.** None of Vivid's engine patches has been checked on a device, and the bridge has not been played on physical devices yet; both checklists above are outstanding.
-- **The app's pin.** Release `0.1.0` serves all 21 frameworks and `libMoltenVK.a`, every library from upstream source, as engine 8.7 requires. The app still pins `0.1.0-interim.1`, which carries unpatched libass and eleven interim binaries. Moving the pin (both project specs and `Package.resolved`, then the player regression workflow's device builds) is a separate change that needs blurbery's authorisation.
 - **Decoder test still to write.** An end-to-end host test of mpv `0040`, which needs host builds of libplacebo and libmpv (engine 12.6). The host test of engine 13.2 (a failed creation of the Dolby Vision configuration record) is now part of `vt_glue_tests`.
 - **libass on one thread.** Engine 9.5 check 46 decides whether single-threaded rendering is acceptable for heavy styled subtitles.
 - **External displays.** Whether iOS ever gives Vivid an external-display scene is unverified (bridge 9.2).

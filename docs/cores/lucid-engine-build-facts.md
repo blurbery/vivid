@@ -6,6 +6,9 @@ Prepared 13 October 2026 from the pinned engine package of provider A at `c6f7e6
 
 Third-party build providers are named here only as provider A (the previous engine package, which built libmpv, FFmpeg and libass and published dav1d) and provider B (the interim builds of the other libraries). Their repositories and assets are no longer used by the pipeline.
 
+> [!NOTE]
+> **Status, 14 October 2026:** the app now links release `0.1.0` of `blurbery/lucid-engine`, which Vivid's pipeline built from upstream source ([Lucid Engine build](lucid-engine-build.md)); neither provider's package or binaries are used. The facts below are unchanged: they describe the previous binaries ("today" below), which the pipeline's checks compare its builds with.
+
 ## 0. Evidence and conventions
 
 Every fact carries one of these tags:

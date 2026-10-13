@@ -87,7 +87,7 @@ The engine's Apple patches (its `avfoundation` video and audio outputs and relat
 | `.github/workflows/` | CI definitions. |
 | Other current Vivid source files | They contain no bridge or engine code. |
 | Vivid documentation | `docs/`, `README.md`, `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt`. These describe the engine only in prose. |
-| `docs/playback/lucid-engine-patch-spec.md` (on the engine branch, `experiment/lucid-engine-build`) | The engine side of the same contract, also written by behaviour for a clean-room rewrite. Sections 6.19 and 7 of this document remain the interface both rewrites share: the bridge may rely on nothing about the engine beyond what they state. |
+| [`docs/playback/lucid-engine-patch-spec.md`](lucid-engine-patch-spec.md) | The engine side of the same contract, also written by behaviour for a clean-room rewrite. Sections 6.19 and 7 of this document remain the interface both rewrites share: the bridge may rely on nothing about the engine beyond what they state. |
 | mpv's public C headers, and nothing else from the engine package | `mpv/client.h`, `mpv/render.h`, `mpv/render_gl.h` and `mpv/stream_cb.h` under `Headers/` inside `Libmpv.xcframework` in the resolved Lucid Engine package (`blurbery/lucid-engine`; mpv 0.41.0, FFmpeg 8.0.1). The bridge uses only `client.h` and `stream_cb.h`. |
 | mpv's public manual (upstream mpv documentation) | Options, properties, commands and the libmpv client API, for mpv 0.41. It does not describe the `avfoundation` video output or the `ao-avfoundation-*` options; this document does. |
 | Apple developer documentation | UIKit, AVFoundation, AVKit, Core Media, Core Animation. |
