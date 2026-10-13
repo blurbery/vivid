@@ -72,7 +72,7 @@ This format applies to TestFlight notes only. GitHub release notes and App Store
 
 ### GitHub release note format
 
-Documentation-only and housekeeping commits must include `[skip release]`. Preserve the marker in the final squash message. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release: the release job does not run when the pushed head commit (the squash commit) contains the marker, and the release tooling drops every commit containing it, in any letter case. A skipped app change appears in release notes only if a later releasing commit lists it in its `Release-Notes:` block. Ordinary commits retain the normal versioning rules.
+Documentation-only and housekeeping commits must include `[skip release]`. Preserve the marker in the final squash message. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release: the release job does not run when the pushed head commit (the squash commit) contains the marker, and the release tooling drops every commit containing it, in any letter case. A skipped app change appears in release notes only if a later releasing commit lists it in its `Release-Notes:` block. An app change can carry the marker on purpose when it should ship together with a later change; that later commit's `Release-Notes:` block must then list both. Ordinary commits retain the normal versioning rules.
 
 Keep this format for every app release. Do not publish a release for documentation-only work. Release bullets describe user-visible changes in plain language; implementation details and testing evidence belong in the contribution report.
 
@@ -91,7 +91,7 @@ Release-Notes:
 - Improve keyboard navigation in the picker.
 ```
 
-Put `Release-Notes:` on its own line. Directly after it, start each bullet with `- ` at the beginning of the line and keep it to one line. A blank line or any other line ends the list. Write specific changes in plain language; do not describe planned integrations as delivered. Internal commit bodies and AI attribution trailers are not copied into release notes.
+Put `Release-Notes:` on its own line. Directly after it, start each bullet with `- ` at the beginning of the line and keep it to one line. A blank line or any other line ends the list. The last bullet of every app release is “This release will be available on TestFlight soon.” Write specific changes in plain language; do not describe planned integrations as delivered. Internal commit bodies and AI attribution trailers are not copied into release notes.
 
 ## Validation
 

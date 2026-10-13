@@ -9,6 +9,9 @@ const security = Object.freeze({
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
 });
 
+// Pages served at their path without the .html extension.
+const pages = Object.freeze(['/privacy', '/brand', '/support']);
+
 export default {
   fetch(request) {
     const url = new URL(request.url);
@@ -24,16 +27,21 @@ export default {
       headers.set('Content-Type', 'text/plain; charset=utf-8');
       return new Response('Method not allowed', {status:405, headers});
     }
-    if (url.pathname === '/index.html' || url.pathname === '/privacy.html' || url.pathname === '/privacy/' || url.pathname === '/brand.html' || url.pathname === '/brand/') {
-      headers.set('Location', url.pathname === '/index.html' ? '/' : url.pathname.startsWith('/brand') ? '/brand' : '/privacy');
+    if (url.pathname === '/index.html') {
+      headers.set('Location', '/');
       return new Response(null, {status:308, headers});
     }
-    const path = url.pathname === '/' ? '/index.html' : url.pathname === '/privacy' ? '/privacy.html' : url.pathname === '/brand' ? '/brand.html' : url.pathname;
+    const page = url.pathname.replace(/(\.html|\/)$/, '');
+    if (page !== url.pathname && pages.includes(page)) {
+      headers.set('Location', page);
+      return new Response(null, {status:308, headers});
+    }
+    const path = url.pathname === '/' ? '/index.html' : pages.includes(url.pathname) ? `${url.pathname}.html` : url.pathname;
     const asset = Object.hasOwn(assets, path) ? assets[path] : undefined;
     if (!asset) {
       headers.set('Content-Type', 'text/html; charset=utf-8');
       headers.set('Cache-Control', 'no-store');
-      const html = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Page not found — Vivid</title><link rel="stylesheet" href="/styles.css"><main class="prose"><h1>Page not found.</h1><p>This page is not here. <a href="/">Back to Vivid</a>.</p></main></html>';
+      const html = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Page not found · Vivid</title><link rel="stylesheet" href="/styles.css"><main class="prose"><h1>Page not found.</h1><p>This page is not here. <a href="/">Back to Vivid</a>.</p></main></html>';
       return new Response(request.method === 'HEAD' ? null : html, {status:404, headers});
     }
     headers.set('Content-Type', asset.type);

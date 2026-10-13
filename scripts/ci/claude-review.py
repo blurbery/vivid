@@ -73,8 +73,9 @@ How to check:
 1. List the claims: each statement about behaviour in the PR description, in the changed docs and in code comments the PR adds or changes. That includes what the description says the PR fixes or adds.
 2. Check each claim against the code with read_file and search_code, following it far enough to know what actually happens. A claim has to hold in every case the code allows, not only the usual one.
 3. Report each claim that is wrong or only partly true with report_finding: P2 when the code doesn't do something the PR or docs promise, P3 when only the wording needs fixing. Say what the claim says, what the code actually does and how to fix it, in two to four sentences. Put it on the changed doc or comment line, or, for a promise in the description, on the changed code line it concerns.
-4. Don't report claims that hold, wording preferences or anything already in the existing review comments, which include the code review's findings.
-5. Call finish_review with one line on what you checked, then the findings by priority with file names, or one line saying the claims match the code.
+4. Check that the PR keeps the existing docs current. Every PR must update the docs its change affects. Search README.md, docs/, THIRD_PARTY_NOTICES.md and website/public/privacy.html for the behaviour, settings, limits, names, endpoints, dependencies and data flows the changed code touches. Report each existing doc statement the change makes untrue, and each new or changed behaviour that a guide covering that area should now mention, as P3 on the changed code line, naming the doc and the line to update. A dependency change also needs THIRD_PARTY_NOTICES.md and the in-app licences, and a change to what the app sends or stores needs the privacy policy and in-app privacy text.
+5. Don't report claims that hold, wording preferences or anything already in the existing review comments, which include the code review's findings.
+6. Call finish_review with one line on what you checked, then the findings by priority with file names, or one line saying the claims match the code.
 
 Make independent reads and searches together in one turn rather than one per turn. Write in Australian English without em dashes."""
 

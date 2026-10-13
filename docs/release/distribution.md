@@ -123,7 +123,7 @@ Vivid has not been submitted to the App Store yet. TestFlight approval does not 
 | Privacy manifests | Review the archive's privacy report as described in [Check the distribution archive](#check-the-distribution-archive), and read any ITMS-91053 or ITMS-91061 email after upload. |
 | App Privacy answers | Match App Store Connect's answers to the privacy manifest and the privacy policy. Data sent only to the person's own media server, their private iCloud database or a service they connect with their own key does not reach Vivid. |
 | Privacy policy | Use [vividapp.co/privacy](https://vividapp.co/privacy) and paste the same text into the Apple TV Privacy Policy field. Update the website and in-app text together before submitting a build that changes how data is handled. |
-| Support URL | Use a page with real contact details, not only the home page. |
+| Support URL | Use [vividapp.co/support](https://vividapp.co/support), which has real contact details. |
 | Age rating | Answer Apple's current age rating questions for what Vivid shows: TMDb artwork, ratings and trailer links, plus the person's own library. Vivid has no web browser, chat, advertising or user-generated content. |
 | Content rights | Vivid shows TMDb metadata and artwork, YouTube trailer thumbnails, OpenSubtitles subtitles and IntroDB and TheIntroDB timestamps. Keep the terms that allow each one, and permission for any bundled third-party logos. |
 | Export compliance | Both app Info.plists set `ITSAppUsesNonExemptEncryption` to `NO`. Lucid Engine includes OpenSSL for HTTPS streams, so confirm the exemption still applies and record why. |

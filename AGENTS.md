@@ -106,6 +106,9 @@ This covers layout, navigation and interaction design, focus behaviour, colours,
 
 Documentation changes do not require separate approval from blurbery. Keep relevant existing docs accurate when behaviour, setup or release processes change, and describe documentation impact in the PR.
 
+> [!IMPORTANT]
+> **Every pull request must keep the docs up to date.** Update each doc the change affects in the same PR: the README, guides under `docs/`, release docs, `THIRD_PARTY_NOTICES.md` and the in-app licences when dependencies change, and the privacy policy (`website/public/privacy.html`) with the in-app privacy text when what the app sends or stores changes. List the docs you updated under **Documentation impact**, or write “No documentation changes” with the reason. A PR that leaves docs saying something the code no longer does is not ready to merge.
+
 - Review factual claims, validation evidence, links, Australian English and the existing document structure.
 - Keep updates within the task scope and preserve applicable copyright and licence notices.
 - Design and publishing permissions still apply to their respective operations.
