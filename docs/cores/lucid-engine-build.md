@@ -19,7 +19,7 @@ Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv,
 | libass | 0.17.5 (`4a05d812`) | upstream archive | ISC | none |
 | dav1d | 1.5.3 (`b546257f`) | upstream archive | BSD-2-Clause | none |
 
-Each build produces eleven static frameworks: `Libmpv`, `Libass`, `Libdav1d` and the seven FFmpeg frameworks (`Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample` and `Libswscale`).
+Each build produces ten static frameworks: `Libmpv`, `Libass`, `Libdav1d` and the seven FFmpeg frameworks (`Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample` and `Libswscale`).
 
 The remaining dependencies are not built here yet. They come from pinned release assets, at the versions and checksums today's package uses:
 
@@ -147,7 +147,7 @@ Each slice job uploads `lucid-engine-slice-<slice>` with:
 
 The packaging job uploads `lucid-engine-xcframeworks` with:
 
-- `<Name>.xcframework.zip` for each of the eleven frameworks, with `<Name>.xcframework/` as the zip's root. The zips are written with fixed timestamps and ordering, so identical frameworks give identical zips;
+- `<Name>.xcframework.zip` for each of the ten frameworks, with `<Name>.xcframework/` as the zip's root. The zips are written with fixed timestamps and ordering, so identical frameworks give identical zips;
 - `SHA256SUMS`: the SHA-256 of each zip, which is also its SwiftPM checksum;
 - `provenance/`: each slice's report.
 
