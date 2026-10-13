@@ -28,6 +28,7 @@ Contents:
 14. [Known quirks reproduced deliberately](#14-known-quirks-reproduced-deliberately)
 15. [Parity hazards](#15-parity-hazards)
 16. [Test checklist](#16-test-checklist)
+17. [Amendments after implementation](#17-amendments-after-implementation)
 
 ## 1. Purpose and status
 
@@ -390,7 +391,7 @@ Options the bridge sets after `wid` (their order among themselves is not signifi
 | Option | Value | Condition | Note |
 | --- | --- | --- | --- |
 | `vo` | `avfoundation` | always | The engine's sample-buffer video output (section 7.2). |
-| `avfoundation-composite-osd` | `no` | always (every platform and the simulator) | Subtitles stay on the engine's separate overlay layer. Do not change this: it keeps subtitle drawing out of the per-frame video path and leaves HDR pictures untouched. |
+| `avfoundation-composite-osd` | `no` | always (every platform and the simulator) | Set for parity. The engine must accept this value; subtitles stay on its separate layer unless Picture in Picture compositing is on (section 7.2). |
 | `avfoundation-presentation` | `host` | tvOS physical devices only (not the tvOS simulator) | Required for parity; meaning in section 7.2. iOS relies on the engine's default, `media`. |
 | `hwdec` | `no` in any simulator build; `videotoolbox` on every physical device | | |
 | `hwdec-codecs` | `all` | always | |
@@ -828,8 +829,8 @@ What the bridge guarantees:
 | The layer is in its final parent (the container's layer) before any file loads and every time the engine creates its video output, and only the parent ever moves, never the layer on its own. | The engine creates its video output when a file first selects video, and again whenever video is selected after `vid=no` (section 6.18). Each time, it adds its own subtitle layer next to the video layer, in the same parent. |
 | One new layer per core, never shared between two mpv contexts. | The engine takes control of the layer's contents and timing for its context. |
 | After creation, `bounds` and `contentsScale` are written only with their exact final values, with implicit animations disabled, and `bounds` and `position` are always set together (section 7.5). | The engine sizes its output, including subtitle resolution, from `bounds` and `contentsScale` only, and it visibly re-lays out separate-layer subtitles whenever either changes. It does not follow `position` on its own. |
-| The main thread never blocks waiting on mpv, and a stored context is never destroyed from main (section 5.3). | The engine waits synchronously for the main thread while creating, reconfiguring and tearing down the video output (creation happens at load and at every `vid=auto`) and when reading geometry, so a main thread blocked on mpv deadlocks playback. |
-| The bridge never sets `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`. | A non-default value makes the engine re-render pictures itself, which would break Dolby Vision output; for Dolby Vision pictures the engine ignores the setting, so it would not even take effect there. |
+| The main thread never blocks waiting on mpv, and a stored context is never destroyed from main (section 5.3). | The engine waits synchronously for the main thread while creating, reconfiguring and tearing down the video output (creation happens at load and at every `vid=auto`), when reading geometry and when recovering the layer, so a main thread blocked on mpv deadlocks playback. |
+| The bridge never sets `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`. | The engine ignores these options, so setting them would have no effect; the rule keeps parity with the current bridge. |
 | The bridge never sets `panscan` or `video-aspect-override`. | The engine handles these without re-rendering, but fitting the picture belongs to the adapter's `videoGravity` on the layer (section 7.4), and the current bridge never sets them. |
 | The bridge never touches the layer's `controlTimebase`. | The engine creates and drives it. |
 | The bridge may remove the layer from its parent before mpv is destroyed (section 6.17.2). | The engine keeps its own reference to the layer from creating its video output until tearing it down. |
@@ -839,7 +840,7 @@ Engine options the bridge uses, and what they mean:
 | Option | Meaning |
 | --- | --- |
 | `vo=avfoundation` | Use the sample-buffer video output that draws into the `wid` layer. |
-| `avfoundation-composite-osd=no` | Subtitles and OSD are drawn on the engine's separate layer, not into the video pictures. |
+| `avfoundation-composite-osd=no` | Accepted by the engine and otherwise without effect. Subtitles and OSD are on the engine's separate layer except while `avfoundation-pip-composite-osd` is `yes`. |
 | `avfoundation-pip-composite-osd` | `yes`: subtitles are drawn into the video pictures themselves, so Picture in Picture, which shows only the pictures, shows them. `no`: subtitles go back to the separate layer. Switched at run time by `setPipSubtitleCompositing` (section 9.5); the bridge needs no extra geometry handling when it switches. |
 | `avfoundation-presentation` | `host`: pictures are presented on the device clock at the times mpv schedules. `media`: presentation follows the media timeline, which Picture in Picture requires. The bridge sets `host` on tvOS devices; iOS relies on the engine's default, which must be `media`. |
 
@@ -896,7 +897,7 @@ On iOS, EDR is then applied with the cached signal peak (section 8.15), after th
 | `gpu-api`, `gpu-context` | Not used by this video output. |
 | `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x`, `video-scale-y`, `panscan`, `video-aspect-override` | See section 7.2. |
 | `deinterlace`, `vf`, `hwdec-image-format`, `vd-lavc-*` | Engine defaults. |
-| `avfoundation-queue-lead-ms`, `avfoundation-osd-max-height`, `avfoundation-osd-video-res` | Video output defaults. |
+| `avfoundation-queue-lead-ms` | Video output default. |
 | `avfoundation-presentation` on iOS | The default `media` is what Picture in Picture needs. |
 | `force-window` | Not set. |
 
@@ -1943,3 +1944,38 @@ iPhone and iPad:
 - [ ] External display with an HDMI adapter, and with AirPlay Screen Mirroring: record whether video moves to the external screen (with a black device screen) or mirrors, and the latest-playback report's `externalScreen` value. Unplug during playback and record what each bridge shows (section 14.2).
 - [ ] Simulator: software decoding works.
 
+## 17. Amendments after implementation
+
+Recorded after the first implementation and its reviews, as behaviour and decisions. Where this section differs from an earlier one, this section wins.
+
+### 17.1 Extra files for internal components
+
+Coordinator decision: the implementation may add internal top-level types prefixed `VividPlayer`, in extra files, to split the bridge into a centre plus outer components (video surface, display criteria, external display, lifecycle observation). This overrides the top-level rule in section 3 in that respect only. Everything else in that rule still applies: no top-level functions, variables or constants, no extensions on system types, no explicit `@objc(...)` runtime names, and no clash with the current files.
+
+### 17.2 Wakeup callback and guard nesting
+
+The wakeup callback is installed while the liveness guard is held (section 6.2), and mpv may call it synchronously on the calling thread, so the relay guard can be taken while the liveness guard is held. This nesting is allowed (the current bridge does the same), provided nothing ever takes the liveness guard while holding the relay guard. This amends section 5.3 rules 7 and 8.
+
+### 17.3 Last-resort screen on tvOS
+
+When choosing the screen for `contentsScale` (section 7.5), the last resort on tvOS may be the screen of the first connected window scene instead of `UIScreen.main`. On Apple TV they are the same screen.
+
+### 17.4 Answers to the implementer's questions
+
+- The pause state (section 6.12) may use its own leaf lock (one under which no other guard is ever taken) instead of the cache guard.
+- In a map that carries a byte array (section 6.16.3), `width` and `w` count as one axis and the last occurrence of either key wins; `height` and `h` likewise.
+- A non-nil `width` or `height` value that is not a `Double` schedules a cached apply but is not stored; only a `Double` is stored (section 6.9).
+- A property change whose name pointer is null is ignored (section 6.6).
+- A reply whose kind does not match its pending request removes that request, and the request's completion is never called (section 6.13.1; this replaces the corresponding row of section 13).
+- A second `initialize` on an initialised core remembers the newly passed host view and returns `true` with no other effect (this replaces the corresponding row of section 13).
+- The default Dolby Vision compatibility id (1 for profile 8, otherwise 0) is chosen from the full profile value, not the 8-bit truncated one; the `dvvC` or `dvcC` choice still uses the truncated profile (section 8.11).
+- The layer's geometry (`bounds`, `position` and `contentsScale`) may be written only when it changes, because the engine ignores unchanged values (sections 7.2 and 7.5).
+- The deprecated layer calls the bridge uses (such as `requiresFlushToResumeDecoding`, `status` and `flush()` on `AVSampleBufferDisplayLayer`) and `AVPlayer.availableHDRModes` stay for parity, despite deprecation warnings.
+
+### 17.5 Console locations of the start-up checks
+
+The bridge's own start-up checks (the log level request, `wid`, each bridge option and `mpv_hook_add`) must each report a distinct console location in the ` at <file>:<line>` part, so a failure identifies the option. They still pass no option name, so their lines carry no ` option=` detail (section 10.2).
+
+### 17.6 Registration order of the internal observations
+
+The ten internal observations (section 6.7) are registered in this order: `video-params/sig-peak`, `width`, `height`, `current-tracks/video/dolby-vision-profile`, `current-tracks/video/dolby-vision-level`, `container-fps`, `deinterlace-active`, `video-params/gamma`, `video-params/primaries`, `video-params/colormatrix`. This replaces the statement in section 6.7 that the order is not significant.
