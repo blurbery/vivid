@@ -13,7 +13,7 @@ Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-E
 | Component | Version / revision | Licence |
 | --- | --- | --- |
 | Apple media bridge (adapted from `edde746/plezy`) | `8ad17ad38f2ba63576cd7b37b460a4362adb738e` | GPL-3.0; bundled upstream licence. Vivid's Apple distribution permission does not apply |
-| Lucid media engine package (`edde746/mpv-build`, product `MPVKit`) | `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` | GPLv3 as built; component licences [below](#lucid-engine-dependencies-ios-and-tvos) |
+| Lucid media engine package (`blurbery/lucid-engine`, product `LucidEngine`, prerelease `0.1.0-interim.1`) | `11d60dc20a28e946677eb15ff832e7135603e92b` | mpv and FFmpeg LGPL-2.1-or-later as built; every library's licence in the package's [NOTICE](https://github.com/blurbery/lucid-engine/blob/11d60dc20a28e946677eb15ff832e7135603e92b/NOTICE) |
 | CollectionHStack (tvOS Home rows) | `15baaaa759a0e252addae08431c79a49a25e4afc` | MIT |
 | DifferenceKit (CollectionHStack dependency) | 1.3.0, `073b9671ce2b9b5b96398611427a1f929927e428` | Apache-2.0 |
 | ThumbHash decoder (adapted) | `a652ce6ed691242f459f468f0a8756cda3b90a82` | MIT |
@@ -41,9 +41,14 @@ Silo, Emby, Jellyfin, MDBList, OpenSubtitles and TMDB are trademarks of their re
 
 ## Lucid Engine dependencies (iOS and tvOS)
 
-`iosApp/project-ios.yml` and `iosApp/project.yml` pin `edde746/mpv-build` at
-`c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` and link its `MPVKit` product. This
-is not the separate `mpvkit/MPVKit` project. Its `Package.swift` records the URL
+`iosApp/project-ios.yml` and `iosApp/project.yml` pin `blurbery/lucid-engine` at
+`11d60dc20a28e946677eb15ff832e7135603e92b` (prerelease `0.1.0-interim.1`) and link its
+`LucidEngine` product. Its `NOTICE` and `LICENSES` folder list every library it
+contains, with version, upstream commit and licence text. The rest of this
+section and the table below still describe the previous package,
+`edde746/mpv-build` at `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` with its
+`MPVKit` product, until the switch-over updates them. That package is not the
+separate `mpvkit/MPVKit` project. Its `Package.swift` records the URL
 and SHA-256 checksum of every binary, and `versions.json` records the upstream
 pins. The package builds mpv with `-Dgpl=true` and FFmpeg with `--enable-gpl`
 and `--enable-version3`, so the media frameworks are distributed under GPLv3.
