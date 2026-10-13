@@ -11,6 +11,7 @@ engine links comes from the interim prebuilt binaries pinned in pins.ini.
     python3 engine/lucid.py build --slice tvos-arm64
     python3 engine/lucid.py test-audio --slice tvos-arm64
     python3 engine/lucid.py check --slice tvos-arm64
+    python3 engine/lucid.py test --slice tvos-arm64
     python3 engine/lucid.py package --input DIR --out DIR
     python3 engine/lucid.py test-libdovi
 
@@ -164,6 +165,54 @@ AUDIO_TEST = ENGINE / "tests" / "ao_avfoundation_vectors.c"
 AUDIO_TEST_SOURCES = ("ao_avfoundation_core.c", "ao_avfoundation_pcm.c",
                       "ao_avfoundation_iec61937.c", "ao_avfoundation_startup.c",
                       "ao_avfoundation_compressed.c")
+
+# Dolby Vision decoding (ffmpeg 0010 to 0012, mpv 0040; patch spec 5, 6.1,
+# 6.6 and 8.6). libdovi's pkg-config name, the references Libavcodec must
+# have once the Dolby Vision patch is in (pristine FFmpeg has none of them),
+# the two hevcdec messages logged at verbose, and mpv 0040's recovery line.
+LIBDOVI_PC = "dovi"
+DOVI_LIBAVCODEC_REFERENCES = (
+    "_dovi_parse_unspec62_nalu", "_dovi_convert_rpu_with_mode", "_dovi_write_unspec62_nalu",
+    "_kVTDecompressionPropertyKey_PropagatePerFrameHDRDisplayMetadata",
+    "_kVTDecompressionPropertyKey_GeneratePerFrameHDRDisplayMetadata",
+)
+HEVCDEC_VERBOSE_MESSAGES = (
+    r"Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n",
+    r"Skipping NAL unit %d\n",
+)
+MPV_HWDEC_RECOVERY_MARKER = b"Hardware decoder produced a frame again after %d decode failure%s."
+# Substrings Vivid's adapter records as faults (patch spec 2.8); no message
+# the decoder patches add may contain one.
+FAULT_SUBSTRINGS = ("Too many packets", "queue overflow", "EOF", "End of file", "timed out",
+                    "Connection reset", "Error decoding", "Invalid data")
+# Patch numbers that belong to the decoder work, per library.
+DECODER_PATCHES = {"ffmpeg": range(10, 30), "mpv": range(40, 50)}
+# Host-side decoder tests (patch spec 9.4, 8.6 item 5), built from the
+# patched FFmpeg tree by `lucid.py test`.
+DECODER_TESTS = ENGINE / "tests" / "ffmpeg"
+HOST_TEST_TARGET = "arm64-apple-macos12.0"
+# FFmpeg for the build host, from the slice's patched tree, for the
+# VideoToolbox glue test (engine/tests/ffmpeg/vt_glue_tests.m): libavutil,
+# libavcodec and libavformat with only the HEVC decoder and parser, the
+# hevc_videotoolbox hwaccel, the raw HEVC demuxer and the file protocol,
+# under AddressSanitizer. Everything else is off, so nothing on the build
+# host is detected or linked.
+HOST_FFMPEG_CONFIGURE = (
+    "--disable-everything", "--disable-autodetect", "--disable-programs", "--disable-doc",
+    "--disable-network", "--disable-avdevice", "--disable-avfilter", "--disable-swscale",
+    "--disable-swresample", "--disable-asm", "--enable-static", "--disable-shared",
+    "--enable-pthreads", "--enable-videotoolbox", "--enable-decoder=hevc", "--enable-parser=hevc",
+    "--enable-hwaccel=hevc_videotoolbox", "--enable-demuxer=hevc", "--enable-protocol=file",
+    "--toolchain=clang-asan", "--cc=clang",
+)
+HOST_FFMPEG_LIBS = ("avformat", "avcodec", "avutil")
+HOST_FFMPEG_REQUIRED = {
+    "config.h": ("CONFIG_VIDEOTOOLBOX", "HAVE_PTHREADS"),
+    "config_components.h": ("CONFIG_HEVC_DECODER", "CONFIG_HEVC_PARSER",
+                            "CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL", "CONFIG_HEVC_DEMUXER",
+                            "CONFIG_FILE_PROTOCOL"),
+}
+GLUE_TEST_STREAM = DECODER_TESTS / "main10-64x64.hevc"
 
 
 @dataclass(frozen=True)
@@ -914,16 +963,39 @@ def build_meson(ctx: Ctx, lib: str, options: list[str], ndebug: bool) -> None:
     rewrite_installed_pc(ctx)
 
 
-def build_ffmpeg(ctx: Ctx) -> list[str]:
+def libdovi_flags(pkg_config: str, env: dict) -> dict:
+    """libdovi's include path and -ldovi for FFmpeg (patch spec 5.6, 8.4).
+
+    FFmpeg's configure has no libdovi switch, so the Dolby Vision patch
+    (ffmpeg 0011) gets libdovi through the compiler and linker flags. The
+    flags come from the dovi.pc that the slice's libdovi build installed."""
+    def query(*opts):
+        return run([pkg_config, *opts, LIBDOVI_PC], env=env, capture=True).split()
+    cflags = query("--cflags-only-I")
+    ldflags = query("--libs-only-L") + ["-ldovi"]
+    includes = [Path(f[2:]) for f in cflags if f.startswith("-I")]
+    if not any((d / "libdovi" / "rpu_parser.h").is_file() for d in includes):
+        raise Failure(f"libdovi/rpu_parser.h not found through {LIBDOVI_PC}.pc ({cflags})")
+    if any(" " in f for f in cflags + ldflags):
+        raise Failure(f"libdovi flags must not contain spaces: {cflags + ldflags}")
+    return {"cflags": cflags, "ldflags": ldflags}
+
+
+def build_ffmpeg(ctx: Ctx, dovi: dict) -> list[str]:
     args = [f"--prefix={PREFIX}"] + read_list(CONFIG / "ffmpeg-configure.txt")
     build = ctx.build("ffmpeg")
     build.mkdir(parents=True, exist_ok=True)
     logfile = ctx.logfile("ffmpeg")
     jobs = f"-j{os.cpu_count() or 4}"
+    # libdovi reaches FFmpeg only through its compiler and linker flags, so
+    # the configure line, and with it avformat_configuration(), is unchanged.
+    env = dict(ctx.env)
+    env["CFLAGS"] = " ".join([env["CFLAGS"]] + dovi["cflags"])
+    env["LDFLAGS"] = " ".join([env["LDFLAGS"]] + dovi["ldflags"])
     try:
-        run([ctx.src("ffmpeg") / "configure"] + args, cwd=build, env=ctx.env, logfile=logfile)
-        run(["make", jobs], cwd=build, env=ctx.env, logfile=logfile)
-        run(["make", "install", f"DESTDIR={ctx.install}"], cwd=build, env=ctx.env, logfile=logfile)
+        run([ctx.src("ffmpeg") / "configure"] + args, cwd=build, env=env, logfile=logfile)
+        run(["make", jobs], cwd=build, env=env, logfile=logfile)
+        run(["make", "install", f"DESTDIR={ctx.install}"], cwd=build, env=env, logfile=logfile)
     finally:
         config_log = build / "ffbuild" / "config.log"
         if config_log.exists():
@@ -1074,7 +1146,10 @@ def cmd_build(args) -> None:
         elif lib == "libass":
             build_meson(ctx, lib, read_list(CONFIG / "libass-meson.txt"), ndebug=True)
         elif lib == "ffmpeg":
-            report["ffmpeg_configure_args"] = build_ffmpeg(ctx)
+            dovi = libdovi_flags(ctx.pkg_config, ctx.env)
+            report["ffmpeg_libdovi_flags"] = {
+                k: [f.replace(str(ctx.work), "<work>") for f in v] for k, v in dovi.items()}
+            report["ffmpeg_configure_args"] = build_ffmpeg(ctx, dovi)
         elif lib == "mpv":
             options = read_list(CONFIG / "mpv-meson.txt")
             build_meson(ctx, lib, options, ndebug=True)
@@ -1390,6 +1465,50 @@ def check_link(c: Checks, sl: Slice, pins, work: Path, fws: Path, sdk: Path) -> 
             "selector_stub_references": stubs, "linked": linked}
 
 
+def string_literals(lines: list[str]) -> list[str]:
+    """C string literals in source lines, plus each run of adjacent literals
+    joined, as the compiler concatenates them."""
+    found, run_ = [], []
+    for line in lines:
+        literals = re.findall(r'"((?:[^"\\\n]|\\.)*)"', line)
+        found += literals
+        if literals:
+            run_ += literals
+        elif run_:
+            found.append("".join(run_))
+            run_ = []
+    if run_:
+        found.append("".join(run_))
+    return found
+
+
+def decoder_patches(lib: str) -> list[Path]:
+    return [p for _, p in read_series(lib)
+            if re.match(r"\d{4}-", p.name) and int(p.name[:4]) in DECODER_PATCHES[lib]]
+
+
+def check_decoder(c: Checks, report: dict, work: Path, libavcodec_undefined: set) -> None:
+    """Dolby Vision and decoder checks (patch spec 8.6 items 4 and 5, 2.8, 5.9, 6.6)."""
+    flags = report.get("ffmpeg_libdovi_flags", {})
+    c.expect("FFmpeg built with libdovi's include path and -ldovi",
+             any(f.startswith("-I") for f in flags.get("cflags", ()))
+             and "-ldovi" in flags.get("ldflags", ()), json.dumps(flags))
+    for symbol in DOVI_LIBAVCODEC_REFERENCES:
+        c.expect(f"Libavcodec references {symbol}", symbol in libavcodec_undefined)
+    hevcdec = (work / "src" / "ffmpeg" / "libavcodec" / "hevc" / "hevcdec.c").read_text()
+    for message in HEVCDEC_VERBOSE_MESSAGES:
+        levels = re.findall(r"(AV_LOG_\w+),\s*\"" + re.escape(message) + '"', hevcdec)
+        c.equal(f"hevcdec logs \"{message}\" at verbose", levels, ["AV_LOG_VERBOSE"])
+    hits = []
+    for lib in DECODER_PATCHES:
+        for patch in decoder_patches(lib):
+            added = [l[1:] for l in patch.read_text().splitlines()
+                     if l.startswith("+") and not l.startswith("+++")]
+            for text in string_literals(added):
+                hits += [f"{patch.name}: {term!r} in \"{text}\"" for term in FAULT_SUBSTRINGS
+                         if term in text]
+    c.expect("decoder patches add no message with a fault substring", not hits, "; ".join(hits))
+
 def first_difference(a: bytes, b: bytes) -> str:
     la, lb = a.decode(errors="replace").splitlines(), b.decode(errors="replace").splitlines()
     for n, (x, y) in enumerate(zip(la, lb), 1):
@@ -1644,6 +1763,7 @@ def cmd_check(args) -> None:
     for key in ("_kCVPixelBufferOpenGLESCompatibilityKey",
                 "_kCVPixelBufferIOSurfaceOpenGLTextureCompatibilityKey"):
         c.expect(f"{key} not referenced", not any(key in undefined[n] for n in expected_names))
+    check_decoder(c, report, work, undefined["Libavcodec"])
 
     # mpv: configuration, features, licence marker and patch marker.
     mpv_config = work / "build" / "mpv" / "config.h"
@@ -1663,6 +1783,8 @@ def cmd_check(args) -> None:
              b"notification name: %s" in libmpv)
     date = build_date(int(pins["toolchain"]["source_date_epoch"]))
     c.expect(f"Libmpv build date is SOURCE_DATE_EPOCH ({date})", date.encode() in libmpv)
+    c.expect("Libmpv contains mpv patch 0040 (hardware decoding error tolerance)",
+             MPV_HWDEC_RECOVERY_MARKER in libmpv)
     check_audio_output(c, sl, libmpv, undefined["Libmpv"], out, work / "src" / "mpv")
     client_h = fws / "Libmpv.framework" / "Headers" / "mpv" / "client.h"
     c.equal("MPV_CLIENT_API_VERSION", define(client_h, "MPV_CLIENT_API_VERSION"), "MPV_MAKE_VERSION(2, 5)")
@@ -1737,6 +1859,8 @@ def summarise(report: dict) -> str:
               f"FFmpeg calls: {', '.join(f'`{s[1:]}`' for s in dovi.get('ffmpeg_calls', [])) or 'none'}.",
               "", f"FFmpeg `avformat_configuration()`: `{report['ffmpeg']['configuration']}`", "",
               f"FFmpeg licence: {', '.join(report['ffmpeg']['licences'])}", "",
+              "FFmpeg libdovi flags (CFLAGS and LDFLAGS only): `"
+              + " ".join(sum(report.get("ffmpeg_libdovi_flags", {}).values(), [])) + "`", "",
               f"mpv configuration: `{report['mpv']['configuration']}`", "",
               f"mpv features: `{' '.join(report['mpv']['features'])}`", "",
               f"Test link ({report['link']['target']}, dead-stripped): "
@@ -1746,6 +1870,196 @@ def summarise(report: dict) -> str:
     if failed:
         lines += ["### Failed checks", ""] + [f"- {r['check']}: {r['detail']}" for r in failed] + [""]
     return "\n".join(lines) + "\n"
+
+
+# --------------------------------------------------------------------- test
+
+def build_host_libdovi(root: Path, work: Path, pins, logfile: Path) -> dict:
+    """libdovi for the build host, from the slice's own patched libdovi tree,
+    with the same pinned toolchain, cargo-c and vendored crates the slice
+    build used (patch spec 8.6 item 5: the decoder tests use the patched
+    libdovi build)."""
+    pin = pins["source:libdovi"]
+    src = work / "src" / "libdovi"
+    rust, cargo_c, vendor = root / "tools" / "rust", root / "tools" / "cargo-c", work / "vendor"
+    for path in (src / pin["crate"], rust / "lib" / "rustlib" / HOST_RUST_TARGET, cargo_c, vendor):
+        if not path.exists():
+            raise Failure(f"{path} missing: build the slice first")
+    host = work / "decoder-tests" / "libdovi"
+    env = cargo_env(rust, cargo_c, host / "cargo-home", vendor,
+                    {src: "/lucid-engine/src/libdovi", vendor: "/lucid-engine/vendor"})
+    lib = cargo_cinstall(src / pin["crate"], HOST_RUST_TARGET, host / "install", host / "target",
+                         env, rust, logfile)
+    prefix = host / "install" / PREFIX.lstrip("/")
+    return {"library": lib, "include": prefix / "include",
+            "libs": pc_field(prefix / "lib" / "pkgconfig" / "dovi.pc", "Libs.private"),
+            "assets": src / "assets"}
+
+
+def write_decoder_corpus(assets: Path, dest: Path) -> dict:
+    """The RPUs of the libdovi corpus (engine/tests/libdovi) in the form FFmpeg
+    hands to libdovi, an HEVC NAL unit starting 0x7C 0x01, for the decoder
+    test to pass through FFmpeg's conversion. Entries in Annex B form get the
+    NAL header in place of their start code and raw RPUs are escaped behind
+    it, as they would sit in a packet; AV1 payloads are left out. Format:
+    b"VTDC", a count, then per case a 16-bit name length, the name, a flag
+    byte (1: an entry of an abort class, 2: FFmpeg's conversion is expected
+    to succeed), a 32-bit length and the bytes, all big-endian."""
+    t = load_libdovi_test()
+    entries = []
+    for c in t.build_corpus(assets):
+        flags = 1 if c.abort_class else 0
+        if c.data[:2] == b"\x7c\x01":
+            nal, name = c.data, c.name
+            flags |= 2 if c.ffmpeg_expect == "convert" else 0
+        elif c.data[:5] == b"\x00\x00\x00\x01\x19":
+            nal, name = b"\x7c\x01" + c.data[4:], c.name + "/as-nal"
+        elif c.data[:4] == b"\x00\x00\x01\x19":
+            nal, name = b"\x7c\x01" + c.data[3:], c.name + "/as-nal"
+        elif c.data[:1] == b"\x19":
+            nal, name = b"\x7c\x01" + t.escape(c.data), c.name + "/as-nal"
+        else:
+            continue
+        entries.append((name, flags, nal))
+    out = bytearray(b"VTDC" + len(entries).to_bytes(4, "big"))
+    for name, flags, nal in entries:
+        out += len(name.encode()).to_bytes(2, "big") + name.encode() + bytes([flags])
+        out += len(nal).to_bytes(4, "big") + nal
+    dest.write_bytes(bytes(out))
+    return {"cases": len(entries), "abort_class_entries": sum(1 for e in entries if e[1] & 1),
+            "converted_from_other_forms": sum(1 for e in entries if e[0].endswith("/as-nal"))}
+
+
+def build_host_ffmpeg(src: Path, dest: Path, dovi_include: Path, logfile: Path) -> dict:
+    """libavutil, libavcodec and libavformat for the build host, built out of
+    tree from the slice's patched FFmpeg source (HOST_FFMPEG_CONFIGURE). The
+    build folder also holds the host's generated headers (avconfig.h), which
+    every host test uses instead of a slice's."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    env = {k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "TMPDIR", "DEVELOPER_DIR")
+           if k in os.environ}
+    env["PATH"] = os.pathsep.join(["/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+    env["LC_ALL"] = "C"
+    # Keep FFmpeg's version script out of any enclosing repository.
+    env["GIT_CEILING_DIRECTORIES"] = str(src.parent)
+    target = f"-target {HOST_TEST_TARGET}"
+    args = list(HOST_FFMPEG_CONFIGURE) + [f"--extra-cflags={target} -I{dovi_include}",
+                                          f"--extra-ldflags={target}"]
+    try:
+        run([src / "configure"] + args, cwd=dest, env=env, logfile=logfile)
+    finally:
+        config_log = dest / "ffbuild" / "config.log"
+        if config_log.exists():
+            shutil.copy2(config_log, logfile.with_name(logfile.stem + "-config.log"))
+    for header, names in HOST_FFMPEG_REQUIRED.items():
+        text = (dest / header).read_text()
+        missing = [n for n in names if not re.search(rf"^#define {n} 1$", text, re.M)]
+        if missing:
+            raise Failure(f"host FFmpeg: {', '.join(missing)} not enabled in {header}")
+    libs = [dest / f"lib{lib}" / f"lib{lib}.a" for lib in HOST_FFMPEG_LIBS]
+    run(["make", f"-j{os.cpu_count() or 4}"] + [str(l.relative_to(dest)) for l in libs],
+        cwd=dest, env=env, logfile=logfile)
+    config_mak = (dest / "ffbuild" / "config.mak").read_text()
+    extralibs = []
+    for lib in HOST_FFMPEG_LIBS:
+        m = re.search(rf"^EXTRALIBS-{lib}=(.*)$", config_mak, re.M)
+        extralibs += shlex.split(m.group(1)) if m else []
+    return {"build": dest, "libs": [str(l) for l in libs], "extralibs": extralibs,
+            "configure": args}
+
+
+def run_host_test(name: str, sources: list[Path], includes: list[Path], defines: list[str],
+                  libs: list[str], argv: list[str], out: Path, flags: tuple = ()) -> dict:
+    """Compile a host test and run it; it prints '<n> checks, <f> failed'."""
+    exe = out / name
+    cmd = ["xcrun", "--sdk", "macosx", "clang", "-target", HOST_TEST_TARGET, "-std=c17", "-O1",
+           "-g", "-Wall", "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types"]
+    cmd += list(flags) + [f"-I{i}" for i in includes] + defines + [str(s) for s in sources] + libs
+    cmd += ["-framework", "CoreFoundation", "-framework", "CoreMedia", "-framework", "CoreVideo",
+            "-framework", "VideoToolbox", "-framework", "CoreGraphics", "-o", str(exe)]
+    run(cmd)
+    res = subprocess.run([str(exe)] + argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True)
+    log(res.stdout)
+    m = re.search(r"(\d+) checks, (\d+) failed", res.stdout)
+    checks, failed = (int(m.group(1)), int(m.group(2))) if m else (0, -1)
+    ok = res.returncode == 0 and checks > 0 and failed == 0
+    return {"suite": name, "checks": checks, "failed": failed, "exit": res.returncode, "ok": ok}
+
+
+def cmd_test(args) -> None:
+    """Decoder tests from the patched FFmpeg tree (patch spec 9.4, 8.6 item 5)."""
+    sl = SLICES[args.slice]
+    pins = load_pins()
+    root = args.work.resolve()
+    work, out = root / sl.name, root / "out" / sl.name
+    report = json.loads((out / "provenance.json").read_text())
+    src = work / "src" / "ffmpeg"
+    module = src / "libavcodec" / "videotoolbox_dovi.c"
+    if not module.is_file():
+        raise Failure(f"{module} missing: build the slice first")
+    test_dir = work / "decoder-tests"
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
+    test_dir.mkdir()
+    sources = [module, DECODER_TESTS / "vt_dovi_tests.c"]
+    (out / "logs").mkdir(parents=True, exist_ok=True)
+
+    # libdovi and FFmpeg for the build host first: every suite compiles
+    # against the patched source tree plus the host's own generated headers,
+    # never a slice's build folder.
+    host = build_host_libdovi(root, work, pins, out / "logs" / "libdovi-host.log")
+    hostff = build_host_ffmpeg(src, test_dir / "ffmpeg-host", host["include"],
+                               out / "logs" / "ffmpeg-host.log")
+    report["decoder_test_host_ffmpeg"] = {
+        "configure": [a.replace(str(work), "<work>") for a in hostff["configure"]],
+        "extralibs": hostff["extralibs"]}
+    includes = [src, hostff["build"], host["include"]]
+
+    results = [run_host_test("vt_dovi_tests_scripted_libdovi", sources, includes,
+                             ["-DVT_DOVI_TEST_FAKE_LIBDOVI"], [], [], test_dir)]
+
+    corpus = write_decoder_corpus(host["assets"], test_dir / "corpus.bin")
+    report["decoder_test_corpus"] = corpus
+    log(f"libdovi corpus for FFmpeg's conversion: {corpus['cases']} NAL units "
+        f"({corpus['converted_from_other_forms']} from Annex B or raw entries), "
+        f"{corpus['abort_class_entries']} abort class entries")
+    dovi_libs = [str(host["library"])] + host["libs"]
+    results.append(run_host_test("vt_dovi_tests_libdovi", sources, includes, [], dovi_libs,
+                                 [str(host["assets"] / "tests"), str(test_dir / "corpus.bin")],
+                                 test_dir))
+
+    # videotoolbox.c end to end: the host libraries above and a fake
+    # VideoToolbox session in the test itself, under AddressSanitizer.
+    results.append(run_host_test("vt_glue_tests", [DECODER_TESTS / "vt_glue_tests.m"], includes,
+                                 [], hostff["libs"] + dovi_libs + hostff["extralibs"] +
+                                 ["-framework", "Foundation"],
+                                 [str(GLUE_TEST_STREAM), str(host["assets"] / "tests")],
+                                 test_dir, ("-fsanitize=address", "-fno-omit-frame-pointer")))
+
+    report["decoder_tests"] = results
+    for r in results:
+        detail = r.get("detail") or f"{r['checks']} checks, {r['failed']} failed, exit {r['exit']}"
+        report.setdefault("checks", []).append(
+            {"check": f"decoder tests: {r['suite']}", "ok": r["ok"], "detail": detail})
+        log(f"{'PASS' if r['ok'] else 'FAIL'}  decoder tests {r['suite']}: {detail}")
+    write_json(out / "provenance.json", report)
+    lines = ["", "### Decoder tests (patched FFmpeg tree, build host)", "",
+             "| Suite | Checks | Failed | Result |", "| --- | --- | --- | --- |"]
+    lines += [f"| {r['suite']} | {r['checks']} | {r['failed']} | "
+              f"{'passed' if r['ok'] else 'FAILED: ' + (r.get('detail') or '')} |" for r in results]
+    summary = "\n".join(lines) + "\n"
+    with open(out / "provenance.md", "a") as f:
+        f.write(summary)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write(summary)
+    failed = [r for r in results if not r["ok"]]
+    if failed:
+        raise Failure(f"{len(failed)} decoder test suite(s) failed")
+    log(f"All decoder test suites passed for {sl.name}.")
 
 
 # ------------------------------------------------------------------ package
@@ -2042,12 +2356,16 @@ def main(argv=None) -> int:
     common(p)
     p.add_argument("--slice", required=True, choices=sorted(SLICES))
     p.add_argument("--strict", action="store_true", help="also require the pinned Xcode")
+    p = sub.add_parser("test", help="run the decoder tests built from a slice's patched trees")
+    common(p)
+    p.add_argument("--slice", required=True, choices=sorted(SLICES))
     p = sub.add_parser("package", help="assemble xcframeworks from built slices")
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     handlers = {"check-allowlist": cmd_check_allowlist, "fetch": cmd_fetch, "build": cmd_build,
-                "test-audio": cmd_test_audio, "check": cmd_check, "package": cmd_package,
+                "test-audio": cmd_test_audio, "check": cmd_check, "test": cmd_test,
+                "package": cmd_package,
                 "test-libdovi": cmd_test_libdovi}
     try:
         handlers[args.command](args)

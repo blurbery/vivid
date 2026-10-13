@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] videotoolbox: give every sample an explicit size
+
+Create each compressed sample handed to VideoToolbox with a one-entry
+sample size array holding the whole bitstream length, where the hwaccel
+used to pass no size array at all. VideoToolbox's Dolby Vision HEVC
+decoder fails samples without it with kCMBlockBufferBadLengthParameterErr.
+The change applies to every codec the hwaccel decodes (H.264, HEVC, AV1,
+VP9, MPEG and ProRes); each sample still holds exactly one frame.
+
+Part of Lucid Engine's Dolby Vision support. Applies to FFmpeg n8.0.1 on
+top of Vivid's patches 0001 and 0002.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for
+FFmpeg. Like the file it modifies, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser
+General Public License as published by the Free Software Foundation;
+either version 2.1 of the License, or (at your option) any later
+version (LGPL-2.1-or-later).
+---
+diff --git a/libavcodec/videotoolbox.c b/libavcodec/videotoolbox.c
+index 0000000000..0000000000 100644
+--- a/libavcodec/videotoolbox.c
++++ b/libavcodec/videotoolbox.c
+@@ -677,6 +677,9 @@
+     OSStatus status;
+     CMBlockBufferRef  block_buf;
+     CMSampleBufferRef sample_buf;
++    // An explicit size for the one sample: the Dolby Vision HEVC decoder
++    // fails samples without it (kCMBlockBufferBadLengthParameterErr).
++    size_t sample_bytes = size;
+ 
+     block_buf  = NULL;
+     sample_buf = NULL;
+@@ -701,8 +704,8 @@
+                                       1,                    // numSamples
+                                       0,                    // numSampleTimingEntries
+                                       NULL,                 // sampleTimingArray
+-                                      0,                    // numSampleSizeEntries
+-                                      NULL,                 // sampleSizeArray
++                                      1,                    // numSampleSizeEntries
++                                      &sample_bytes,        // sampleSizeArray
+                                       &sample_buf);
+     }
+ 

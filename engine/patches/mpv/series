@@ -9,3 +9,4 @@ e04395babbf75fff99f6ad8fc1a7d8923df79bb9be3285c57008ae427643e5cd  0010-ad_spdif-
 4caee6634b9d9abc6953cbab5a9d38a72d427a2bf5aa94ad2d48a48c78bf360a  0014-ao_avfoundation-start-up-supervision-and-clock-anchoring.patch
 64f008ec95ce6fdec627f46996d4c86df7252d05d59214ebd7d4e80c71f36ec9  0015-ao_avfoundation-ac-3-and-e-ac-3-passthrough.patch
 c0a5cce1c9be707f0dd38b52233005495fd10630707c5a9e21457d432b3a907f  0016-ao_avfoundation-avfoundation-bindings-for-both-sinks.patch
+103a3651057fe7f37ede0daa985994c3dba2f7c80aa630d330005d8d27cefcd5  0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch

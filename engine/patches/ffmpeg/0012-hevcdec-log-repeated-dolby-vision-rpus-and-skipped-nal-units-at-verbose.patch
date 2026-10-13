@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] hevcdec: log repeated Dolby Vision RPUs and skipped NAL units at verbose
+
+"Multiple Dolby Vision RPUs found in one AU. Skipping previous." was a
+warning and "Skipping NAL unit %d" an info message. The second fires for
+every enhancement layer NAL unit of a Dolby Vision profile 7 stream, so at
+least once per frame, and an application listening at warning or info
+level receives a message per frame. Log both at verbose level instead.
+Parsing and decoding are unchanged, and the decoder's other messages keep
+their levels. Applies to FFmpeg n8.0.1 on top of Vivid's patches 0001 to
+0011.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for
+FFmpeg. Like the file it modifies, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser
+General Public License as published by the Free Software Foundation;
+either version 2.1 of the License, or (at your option) any later
+version (LGPL-2.1-or-later).
+---
+diff --git a/libavcodec/hevc/hevcdec.c b/libavcodec/hevc/hevcdec.c
+index 0000000000..0000000000 100644
+--- a/libavcodec/hevc/hevcdec.c
++++ b/libavcodec/hevc/hevcdec.c
+@@ -3666,7 +3666,7 @@
+     case HEVC_NAL_UNSPEC62:
+         break;
+     default:
+-        av_log(s->avctx, AV_LOG_INFO,
++        av_log(s->avctx, AV_LOG_VERBOSE,
+                "Skipping NAL unit %d\n", s->nal_unit_type);
+     }
+ 
+@@ -3743,7 +3743,7 @@
+         H2645NAL *nal = &s->pkt.nals[s->pkt.nb_nals - 1];
+         if (s->rpu_buf) {
+             av_buffer_unref(&s->rpu_buf);
+-            av_log(s->avctx, AV_LOG_WARNING, "Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n");
++            av_log(s->avctx, AV_LOG_VERBOSE, "Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n");
+         }
+ 
+         s->rpu_buf = av_buffer_alloc(nal->raw_size - 2);

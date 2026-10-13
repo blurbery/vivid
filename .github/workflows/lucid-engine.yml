@@ -78,6 +78,13 @@ jobs:
         run: |
           python3 engine/lucid.py check --slice "$SLICE" --strict \
             --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      # Host-side decoder tests compiled from the slice's patched FFmpeg tree.
+      - name: Decoder tests from the patched trees
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py test --slice "$SLICE" \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Upload ${{ matrix.slice }} frameworks and provenance
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

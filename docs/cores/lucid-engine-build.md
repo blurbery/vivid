@@ -45,8 +45,9 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
 2. restores or downloads the pinned inputs and verifies each SHA-256;
 3. builds libdovi, dav1d, libass, FFmpeg and libmpv for the slice;
 4. builds and runs the audio output's test vectors on the runner, from the mpv tree it has just patched;
-5. runs the provenance, licence, TLS, libdovi, audio output, reproducibility and link checks below;
-6. uploads the slice's frameworks, provenance report and logs.
+5. runs the provenance, licence, TLS, libdovi, decoder, audio output, reproducibility and link checks below;
+6. builds and runs the decoder tests from the slice's patched FFmpeg and libdovi trees on the build host, including an end-to-end test of FFmpeg's VideoToolbox glue against a fake VideoToolbox;
+7. uploads the slice's frameworks, provenance report and logs.
 
 Alongside them, the libdovi C API test job builds libdovi for the runner itself, unpatched and patched, and runs the malformed RPU corpus through both (see [libdovi](#libdovi)). A final job, which waits for every slice and the libdovi test, turns the slices into xcframeworks. Artefacts are kept for three days. Each branch has its own concurrency group, so a newer push cancels only that branch's running build.
 
@@ -58,6 +59,7 @@ python3 engine/lucid.py fetch --downloads /path/to/downloads
 python3 engine/lucid.py build --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py test-audio --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py check --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
+python3 engine/lucid.py test --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py package --input /path/to/work/out --out /path/to/release
 python3 engine/lucid.py test-libdovi --work /path/to/libdovi-test --downloads /path/to/downloads
 ```
@@ -108,6 +110,10 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | mpv | `0015-ao_avfoundation-ac-3-and-e-ac-3-passthrough.patch` | The passthrough sink's decisions: IEC 61937 unwrapping, the stream window and serving, filling, clocks, diagnostics, end-of-file resume and the fallback to PCM. LGPL-2.1-or-later. |
 | mpv | `0016-ao_avfoundation-avfoundation-bindings-for-both-sinks.patch` | Replaces upstream's driver with the Objective-C bindings: driver and `ao-avfoundation-*` options (`max-lookahead` on tvOS only), the output's queue, `AVAudioSession`, the renderer and synchroniser, and `AVPlayer` with its resource loader. LGPL-2.1-or-later. |
 | libdovi | `0001-capi-return-an-error-instead-of-aborting-on-any-input.patch` | Makes every C API function return its normal error result instead of aborting the process, for any input (see [libdovi](#libdovi)). Valid input gives the same results. MIT, like libdovi. |
+| FFmpeg | `0010-videotoolbox-give-every-sample-an-explicit-size.patch` | Creates every sample handed to VideoToolbox with an explicit sample size, for every codec. VideoToolbox's Dolby Vision HEVC decoder fails samples without one. LGPL-2.1-or-later. |
+| FFmpeg | `0011-videotoolbox-decode-dolby-vision-profiles-5-7-and-8-natively.patch` | Decodes HEVC with a usable Dolby Vision record of profile 5, 7 or 8 through VideoToolbox's Dolby Vision HEVC (`dvh1`) decoder. Profile 7 is presented as profile 8.1: rewritten record, RPUs converted by libdovi 3.3.2 (mode 2), no enhancement layer, and empty or truncated RPUs skipped before libdovi sees them. Profile 7 and 8 retry once as plain HEVC when VideoToolbox refuses the session. Adds the per-frame HDR metadata session properties. Decoded frames get FFmpeg's usual attachments from the stream's colour signalling, as before, at any thread count. The logic lives in its own file, `libavcodec/videotoolbox_dovi.c`. LGPL-2.1-or-later. |
+| FFmpeg | `0012-hevcdec-log-repeated-dolby-vision-rpus-and-skipped-nal-units-at-verbose.patch` | Logs `Multiple Dolby Vision RPUs found in one AU. Skipping previous.` and `Skipping NAL unit %d` at verbose level instead of warning and info. LGPL-2.1-or-later. |
+| mpv | `0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch` | Once hardware decoding has output a frame, a run of decoding errors ends it only after two keyframes fail to recover it or after 240 errors, instead of at the first error with `hwdec-software-fallback=yes`. Probing still falls back at once. LGPL-2.1-or-later. |
 
 The audio output patches add one module each, with the pure C decisions first and the Objective-C bindings last (`0016`), and each adds its own files to `meson.build`, so every stage of the series builds. Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019 (0010 to 0016 so far, including the E-AC-3 carrier rate and the output-chain wake), video output mpv 0020 to 0039, decoder work mpv 0040 to 0049 and FFmpeg 0010 to 0029.
 
@@ -197,7 +203,7 @@ Compilers come from the selected Xcode (`/usr/bin/clang`). Every library gets th
 | FFmpeg licence | `--enable-gpl --enable-version3` (GPL version 3 or later) | neither (LGPL version 2.1 or later) | Decided |
 | FFmpeg TLS | OpenSSL 3.3.5 | Secure Transport, with the patch above | Decided |
 | FFmpeg components | as listed in the facts | without the `delogo` filter, the `whip` muxer and the `dtls`, `ffrtmpcrypt`, `rtmpe` and `rtmpte` protocols | GPL-only filter; the others need OpenSSL |
-| FFmpeg and libdovi | `-I` and `-L ... -ldovi` for a Dolby Vision patch | not passed | No Dolby Vision patch in the series yet; libplacebo still links libdovi |
+| FFmpeg and libdovi | `-I` and `-L ... -ldovi` for a Dolby Vision patch | the same, from the `dovi.pc` of the libdovi built here, through `CFLAGS` and `LDFLAGS` only | Vivid's Dolby Vision patch (`0011`) calls libdovi; FFmpeg's configure has no libdovi switch, so the configure line is unchanged |
 | libass | three performance patches | upstream, unpatched | Decided |
 | dav1d | third-party prebuilt | built from source, same options | Part of this pipeline |
 | libdovi | third-party prebuilt: a Rust nightly of December 2025 with `-Zbuild-std`, `-Cpanic=abort`, cargo-c unpinned, crates not locked | built from source: Rust 1.98.0 stable with its prebuilt standard library, cargo-c 0.10.25, locked and vendored crates, `-Cpanic=unwind` and Vivid's patch | Pinned and reproducible; a malformed RPU no longer ends the app (specification 5.13) |
@@ -248,6 +254,12 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
   - No framework has OpenSSL symbols, references `_SecIdentityCreate` or defines the `delogo` filter.
   - `Libavformat` defines `_avformat_configuration`.
   - `Libavcodec` references `kCVPixelBufferMetalCompatibilityKey` and neither OpenGL compatibility key.
+- **Dolby Vision and decoding:**
+  - FFmpeg was built with libdovi's include path and `-ldovi`, recorded in the provenance report.
+  - `Libavcodec` references `dovi_parse_unspec62_nalu`, `dovi_convert_rpu_with_mode`, `dovi_write_unspec62_nalu` and both per-frame HDR metadata session properties (`kVTDecompressionPropertyKey_PropagatePerFrameHDRDisplayMetadata` and `kVTDecompressionPropertyKey_GeneratePerFrameHDRDisplayMetadata`). Pristine FFmpeg references none of them.
+  - The patched `hevcdec.c` logs its repeated-RPU and skipped-NAL messages at verbose level.
+  - No message added by the decoder patches (FFmpeg `0010` to `0029`, mpv `0040` to `0049`) contains a substring Vivid's adapter records as a fault.
+  - `Libmpv` contains mpv patch `0040`'s hardware decoding recovery message.
 - **mpv:**
   - The recorded meson options match, with `-Dgpl=false` and no `-Dgpl=true` in the binary.
   - The feature list matches `expected-mpv-features.txt`.
@@ -272,10 +284,27 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
 
 The summary of each slice also appears on the workflow run page.
 
+### Decoder tests
+
+`lucid.py test` runs the decoder tests on the build host, compiled from the slice's patched trees, so the code under test is the code that ships. It first builds two host libraries:
+
+- libdovi, from the slice's own patched libdovi tree, with the same pinned Rust toolchain, cargo-c and vendored crates;
+- `libavutil`, `libavcodec` and `libavformat` from the slice's patched FFmpeg tree, out of tree under `decoder-tests/ffmpeg-host`. Only the HEVC decoder and parser, the `hevc_videotoolbox` hwaccel, the raw HEVC demuxer and the file protocol are enabled, everything else (autodetection included) is off, and the build uses AddressSanitizer. Its configure line and extra libraries are recorded in the provenance report.
+
+Every suite compiles against the patched FFmpeg source and the host build's generated headers, never a slice's build folder. The step runs three suites and adds their results to the provenance report:
+
+| Suite | Linked against | Covers |
+| --- | --- | --- |
+| `vt_dovi_tests_scripted_libdovi` | a scripted stand-in for libdovi's C API | Classification, the 24-byte configuration records and atoms (profiles 5, 8.1, 8.2, 8.4, converted 7, compression 3, masking), colour extensions, the plain HEVC retry rules, the profile 7 NAL filter, RPU selection, the guard vectors, and every outcome of the conversion call sequence with its exact warnings |
+| `vt_dovi_tests_libdovi` | Vivid's patched libdovi 3.3.2, built for the build host | The converted profile 7 FEL and MEL RPUs of libdovi's test assets are byte-identical to libdovi's own mode 2 output; native profile 5, 8.1 and 8.4 RPUs are forwarded unchanged; the guard vectors never reach libdovi; and every HEVC RPU of the libdovi corpus (`engine/tests/libdovi`), in the NAL unit form FFmpeg sees, goes through FFmpeg's conversion without aborting: appended exactly as libdovi converts it, or skipped with the stage and stripped warnings, every entry of the six abort classes skipped |
+| `vt_glue_tests` | the host FFmpeg libraries, the host libdovi and a fake VideoToolbox, under AddressSanitizer | [`vt_glue_tests.m`](../../engine/tests/ffmpeg/vt_glue_tests.m) defines `VTDecompressionSessionCreate`, `VTDecompressionSessionDecodeFrame`, `VTDecompressionSessionWaitForAsynchronousFrames`, `VTSessionSetProperty` and `VTDecompressionSessionInvalidate`, so the linker binds `libavcodec`'s calls to them while VideoToolbox stays linked for its constants. It decodes [`main10-64x64.hevc`](../../engine/tests/ffmpeg/main10-64x64.hevc) (eight 10-bit 64×64 frames made with x265, command in the test) with RPUs from libdovi's test assets and, for profile 7, a type 63 NAL unit added to every access unit, and the record in the codec context's coded side data. For profiles 5, 7 and 8 (8.1 and 8.4), plain HEVC, a refused profile 8 or 7 session (one ordered plain HEVC retry), a refused profile 5 session (software decoding), a restart and refused session properties, at `thread_count` 1 and 4 with frame threading, it checks the codec type, Enable-hardware key, atoms and colour extensions passed to each session, the session properties (only for a final `dvh1` session), each sample's 4-byte length prefixes, slices before RPUs, no type 63 NAL unit, RPU bytes (libdovi's own conversion for profile 7), the sample size against the block length, that a guard-class RPU still submits its frame, and that every decoded frame's attachments equal what libavutil's unpatched `av_vt_pixbuf_set_attachments` makes of the same buffer |
+
+Each suite counts its checks, and the step fails on any failed check or when a suite ran none.
+
 ## Still to do
 
-- Vivid's own engine patches: an `avfoundation` video output and Dolby Vision conversion. Until they exist, these builds cannot be linked into a shipping app. The audio output patches still need the device checks of the patch specification.
+- Vivid's own `avfoundation` video output. Until it exists, these builds cannot be linked into a shipping app. The audio output patches and the Dolby Vision decoder patches are in the series but still need the device checks of the patch specification.
 - Building the remaining dependencies from source, starting with the ones that carry the most code (libplacebo, shaderc and MoltenVK).
-- Passing libdovi's include path and `-ldovi` to FFmpeg again, together with Vivid's Dolby Vision patch, and checking `Libavcodec`'s `dovi_*` imports (specification 8.4 and 8.6).
+- An end-to-end host test of mpv patch `0040`: a host libmpv needs host builds of libplacebo and libass (with FreeType, FriBidi and HarfBuzz), which the pipeline pins only as iOS and tvOS binaries.
 - A Swift package that serves these xcframeworks, updating `use-patched-libmpv.sh` for the new slice identifiers, and deciding the bundle identifiers.
 - Licence files and notices for the LGPL FFmpeg and libmpv and the removal of OpenSSL (`THIRD_PARTY_NOTICES.md` and the in-app licences) once the app links these builds.
