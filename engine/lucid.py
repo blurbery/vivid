@@ -953,6 +953,7 @@ def write_system_pc(sdk: Path, pc_dir: Path) -> None:
     xml = c_string(define(sdk / "usr/include/libxml2/libxml/xmlversion.h", "LIBXML_DOTTED_VERSION"))
     if not zlib or not xml:
         raise Failure(f"could not read the zlib or libxml2 version from {sdk}")
+    pc_dir.mkdir(parents=True, exist_ok=True)
     (pc_dir / "zlib.pc").write_text(
         f"Name: zlib\nDescription: zlib from the SDK\nVersion: {zlib}\nLibs: -lz\nCflags:\n")
     (pc_dir / "libxml-2.0.pc").write_text(
