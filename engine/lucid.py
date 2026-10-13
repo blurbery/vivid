@@ -9,6 +9,7 @@ comes from the interim prebuilt binaries pinned in pins.ini.
     python3 engine/lucid.py check-allowlist
     python3 engine/lucid.py fetch
     python3 engine/lucid.py build --slice tvos-arm64
+    python3 engine/lucid.py test-audio --slice tvos-arm64
     python3 engine/lucid.py check --slice tvos-arm64
     python3 engine/lucid.py package --input DIR --out DIR
 
@@ -59,8 +60,10 @@ FETCH_ALLOWED = (
     "https://github.com/ninja-build/",
     "https://github.com/mpvkit/",  # interim prebuilt release assets only
 )
-# Hosts that may appear in references (upstream homes, patch descriptions).
-REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org"}
+# Hosts that may appear in references (upstream homes, patch descriptions,
+# and the licence notice in mpv's LGPL file header).
+REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org",
+                   "www.gnu.org"}
 # Projects nothing here may reference. Split so this file does not match itself.
 DENIED = ("edde" "746",)
 FETCH_WORDS = re.compile(r"\b(curl|wget|urlopen|urlretrieve|git clone|git fetch)\b")
@@ -95,6 +98,52 @@ BUILD_ORDER = ("dav1d", "libass", "ffmpeg", "mpv")
 OPENSSL_SYMBOL = re.compile(
     r"^_(SSL_|TLS_|DTLS_|OPENSSL_|OpenSSL_|EVP_|X509_|BIO_|ERR_|CRYPTO_|PEM_|RAND_|HMAC_)")
 MPV_PATCH_MARKER = b"Still waiting for TrueHD major sync"  # from mpv patch 0001
+
+# The AVFoundation audio output's frozen log formats (patch specification
+# 2.9). Each must appear in Libmpv with its trailing newline. The standalone
+# "falling back to PCM" also needs a NUL straight before it, because three
+# other formats end with the same text.
+AO_LOG_FORMATS = (
+    "trace edge %s: clock %.3f, fed %.3f, latency %.3f",
+    "first start recovery after %.3f s",
+    "resuming compressed feed after audio EOF",
+    "compressed clock engaged after %.3f s, seeked %d, anchors %d",
+    "compressed clock resumed after %.3f s, anchors %d",
+    "item status %d -> %d, time control %d -> %d, pos %.3fs, fed %.3fs",
+    "heartbeat: raw pos %.3fs, clamped %.3fs, fed %.3fs, status %d, tc %d, reader gap %lld B",
+    "pcm: clock %.3f, fed %.3f, ahead %.3f, rate %.3f, status %d, latency %.3f, sufficient %d",
+    "notification name: %s",
+    "notification flush time %.3f, current %d",
+    "pcm fresh sink after reset",
+    "pcm fresh sink failed; requesting audio reload",
+    "pcm renderer failed; requesting audio reload",
+    "restarting due to system notification; this will cause desync",
+    "elementary stream window overflow; falling back to PCM",
+    "discarding burst with odd payload length",
+    "discarding burst without syncframe",
+    "skipping unexpected IEC 61937 data type 0x%x",
+    "skipping burst with invalid payload length %d",
+    "no IEC 61937 sync found in %d bytes; falling back to PCM",
+    "loader requested offset %lld below the retained window at %lld",
+    "playback did not engage; seeking to the stream start",
+    "native compressed playback did not start; falling back to PCM",
+    "player rejected the compressed stream: %s (%s:%ld)",
+    "falling back to PCM",
+)
+AO_STANDALONE_FALLBACK = b"\0falling back to PCM\n"
+# Option-name and Vivid markers (2.10). The option table stores short names.
+AO_MARKERS = (b"manage-audio-session\0", b"compressed-anchor-start\0", b"compressed-lead",
+              b"first start recovery after", b"trace edge %s")
+AO_TVOS_OPTION = b"max-lookahead"
+# Behaviour that must be compiled in (8.6, item 3).
+AO_SYMBOL = "_AVSampleBufferAudioRendererOutputConfigurationDidChangeNotification"
+AO_SELECTORS = (b"setDelaysRateChangeUntilHasSufficientMediaData:\0",
+                b"setSupportsMultichannelContent:error:\0")
+# The audio output's test vectors (9.3), built against the patched tree.
+AUDIO_TEST = ENGINE / "tests" / "ao_avfoundation_vectors.c"
+AUDIO_TEST_SOURCES = ("ao_avfoundation_core.c", "ao_avfoundation_pcm.c",
+                      "ao_avfoundation_iec61937.c", "ao_avfoundation_startup.c",
+                      "ao_avfoundation_compressed.c")
 
 
 @dataclass(frozen=True)
@@ -1062,6 +1111,89 @@ def check_link(c: Checks, sl: Slice, pins, work: Path, fws: Path, sdk: Path) -> 
             "selector_stub_references": stubs, "linked": linked}
 
 
+def ao_format_problems(data: bytes) -> list[str]:
+    """Frozen audio output log formats missing from a Libmpv binary."""
+    missing = [f for f in AO_LOG_FORMATS if (f + "\n").encode() not in data]
+    if AO_STANDALONE_FALLBACK not in data:
+        missing.append("standalone 'falling back to PCM' (NUL before it)")
+    return missing
+
+
+def check_audio_output(c: Checks, sl: Slice, libmpv: bytes, undefined: set[str],
+                       out: Path) -> None:
+    """The audio output checks of the patch specification (2.10 and 8.6)."""
+    missing = ao_format_problems(libmpv)
+    c.expect(f"Libmpv has all {len(AO_LOG_FORMATS)} frozen audio output log formats",
+             not missing, str(missing))
+    # The standalone check must catch a binary that lost the separate line:
+    # change the byte in front of it and require a failure.
+    doctored = libmpv.replace(AO_STANDALONE_FALLBACK, b"\x01falling back to PCM\n")
+    c.expect("frozen-format check rejects a Libmpv without the standalone 'falling back to PCM'",
+             ao_format_problems(doctored) == ["standalone 'falling back to PCM' (NUL before it)"])
+    for marker in AO_MARKERS:
+        c.expect(f"Libmpv contains {marker!r}", marker in libmpv)
+    if sl.tvos:
+        c.expect("Libmpv has the tvOS-only option max-lookahead",
+                 AO_TVOS_OPTION + b"\0" in libmpv)
+    else:
+        c.expect("Libmpv has no max-lookahead on iOS", AO_TVOS_OPTION not in libmpv)
+    c.expect(f"Libmpv references {AO_SYMBOL}", AO_SYMBOL in undefined)
+    for selector in AO_SELECTORS:
+        c.expect(f"Libmpv contains the selector {selector!r}", selector in libmpv)
+    results = out / "audio-tests.json"
+    tests = json.loads(results.read_text()) if results.exists() else {}
+    c.expect("audio output test vectors ran from the patched tree and passed",
+             tests.get("ok") is True and tests.get("vectors", 0) > 0,
+             json.dumps(tests) if tests else f"{results} missing (run lucid.py test-audio)")
+
+
+def cmd_test_audio(args) -> None:
+    """Builds the audio output's test vectors on the build host against the
+    mpv tree the pipeline patched for this slice, and runs them."""
+    root = args.work.resolve()
+    if args.tree:
+        tree, out = args.tree.resolve(), None
+    else:
+        sl = SLICES[args.slice]
+        tree, out = root / sl.name / "src" / "mpv", root / "out" / sl.name
+    audio_out = tree / "audio" / "out"
+    sources = [audio_out / s for s in AUDIO_TEST_SOURCES]
+    missing = [str(s) for s in sources + [AUDIO_TEST] if not s.exists()]
+    if missing:
+        raise Failure(f"audio test inputs missing: {missing}")
+    build = Path(tempfile.mkdtemp(prefix="lucid-audio-test-"))
+    try:
+        exe = build / "ao_avfoundation_vectors"
+        run(["xcrun", "--sdk", "macosx", "clang", "-std=c11", "-O1", "-g", "-Wall", "-Wextra",
+             "-Wno-unused-parameter", "-Wno-sign-compare", "-Wno-missing-field-initializers",
+             "-fsanitize=address,undefined", "-fno-sanitize-recover=undefined",
+             "-I", audio_out, *sources, AUDIO_TEST, "-framework", "CoreMedia", "-o", exe])
+        log(f"$ {exe}")
+        res = subprocess.run([str(exe)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, errors="replace")
+    finally:
+        shutil.rmtree(build, ignore_errors=True)
+    sys.stdout.write(res.stdout)
+    m = re.search(r"^audio output vectors: (\d+) run, (\d+) failed$", res.stdout, re.M)
+    ran, failed = (int(m.group(1)), int(m.group(2))) if m else (0, -1)
+    ok = res.returncode == 0 and m is not None and ran > 0 and failed == 0
+    result = {"ok": ok, "vectors": ran, "failed": failed, "exit_status": res.returncode,
+              "sources": {s.name: sha256_file(s) for s in sources},
+              "test": {AUDIO_TEST.name: sha256_file(AUDIO_TEST)}}
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+        write_json(out / "audio-tests.json", result)
+    summary = (f"Audio output test vectors from the patched mpv tree: {ran} run, "
+               f"{failed if failed >= 0 else 'unknown'} failed.\n")
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write(f"## Lucid Engine audio output tests\n\n{summary}\n")
+    if not ok:
+        raise Failure(f"audio output test vectors failed (exit {res.returncode}, "
+                      f"{ran} run, {failed} failed)")
+    log(summary.strip())
+
+
 def cmd_check(args) -> None:
     sl = SLICES[args.slice]
     pins = load_pins()
@@ -1178,6 +1310,7 @@ def cmd_check(args) -> None:
     # Vivid's adapter reads the AVFoundation output's restart log line.
     c.expect("Libmpv keeps the AVFoundation 'notification name' log line",
              b"notification name: %s" in libmpv)
+    check_audio_output(c, sl, libmpv, undefined["Libmpv"], out)
     client_h = fws / "Libmpv.framework" / "Headers" / "mpv" / "client.h"
     c.equal("MPV_CLIENT_API_VERSION", define(client_h, "MPV_CLIENT_API_VERSION"), "MPV_MAKE_VERSION(2, 5)")
     c.sets("Libmpv headers", {p.name for p in client_h.parent.iterdir()},
@@ -1336,6 +1469,12 @@ def main(argv=None) -> int:
     p = sub.add_parser("build", help="build one slice")
     common(p)
     p.add_argument("--slice", required=True, choices=sorted(SLICES))
+    p = sub.add_parser("test-audio", help="run the audio output test vectors against the "
+                                          "slice's patched mpv tree")
+    common(p)
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--slice", choices=sorted(SLICES))
+    group.add_argument("--tree", type=Path, help="a patched mpv tree instead of a slice's")
     p = sub.add_parser("check", help="verify one built slice and finish its provenance report")
     common(p)
     p.add_argument("--slice", required=True, choices=sorted(SLICES))
@@ -1345,7 +1484,7 @@ def main(argv=None) -> int:
     p.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     handlers = {"check-allowlist": cmd_check_allowlist, "fetch": cmd_fetch, "build": cmd_build,
-                "check": cmd_check, "package": cmd_package}
+                "test-audio": cmd_test_audio, "check": cmd_check, "package": cmd_package}
     try:
         handlers[args.command](args)
     except Failure as e:

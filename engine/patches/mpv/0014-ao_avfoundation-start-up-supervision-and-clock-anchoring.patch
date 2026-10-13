@@ -1,0 +1,355 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] ao_avfoundation: start-up supervision and clock anchoring
+
+Adds ao_avfoundation_startup.h and .c, the compressed passthrough sink's
+start-up handling. It is kept in its own file so the AirPlay behaviour can
+be tuned without touching the rest of the sink.
+
+- Supervision, at the end of each feed step: rate 1 once the stream holds
+  a second of audio (or mpv reached end of file), without waiting for the
+  item to report ready; engagement as soon as the item's clock moves; one
+  recovery seek to the stream start when it has not moved by
+  compressed-start-grace, or by the shorter compressed-first-start-grace
+  until the output's first engagement (an item that is not ready yet gets
+  up to the ordinary grace); after the seek, a further grace each time a
+  slow source makes progress towards the start-up lead; then fallback to
+  PCM.
+- Anchoring, with compressed-anchor-start and compressed-anchor-resume:
+  small reads, at most one every 100 ms, that hold mpv's audio clock while
+  AVPlayer's playhead has not started moving, at start-up and for 2 s after
+  an unpause, plus the line that reports when the clock resumes.
+
+The lines it logs ("compressed clock engaged after", "first start recovery
+after", "playback did not engage", "native compressed playback did not
+start", "compressed clock resumed after") are the ones Vivid reads.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the mpv files it adds or changes, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser General
+Public License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version
+(LGPL-2.1-or-later).
+---
+diff --git a/audio/out/ao_avfoundation_startup.c b/audio/out/ao_avfoundation_startup.c
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_startup.c
+@@ -0,0 +1,199 @@
++/*
++ * AVFoundation audio output: start-up supervision and clock anchoring for
++ * compressed passthrough (the AirPlay start-up handling).
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "ao_avfoundation_startup.h"
++
++void avfao_startup_init(struct avfao_startup *st)
++{
++    *st = (struct avfao_startup){
++        .initial_mode = true,
++        // mpv's clock origin, not a minimum-value sentinel.
++        .anchor_pacing_ns = 0,
++        .anchors = 0,
++    };
++}
++
++void avfao_startup_new_item(struct avfao_startup *st)
++{
++    st->rate_requested = false;
++    st->rate1_ns = 0;
++    st->seek_attempted = false;
++    st->watermark_ns = 0;
++    st->deadline_set = false;
++    st->deadline_cleared = false;
++    st->deadline_ns = 0;
++    st->resume_pending = false;
++    st->resume_clock_ns = 0;
++    st->resume_ns = 0;
++}
++
++void avfao_startup_cfg_init(struct avfao_startup_cfg *cfg, double lead,
++                            double grace, double first_grace,
++                            bool anchor_start, bool anchor_resume)
++{
++    int64_t grace_ns = avfao_seconds_to_ns(grace);
++    int64_t first_ns = avfao_seconds_to_ns(first_grace);
++    *cfg = (struct avfao_startup_cfg){
++        .grace_ns = grace_ns,
++        .initial_grace_ns = first_ns < grace_ns ? first_ns : grace_ns,
++        .lead_ns = avfao_seconds_to_ns(lead),
++        .anchor_start = anchor_start,
++        .anchor_resume = anchor_resume,
++    };
++}
++
++static void set_deadline(struct avfao_startup *st, int64_t when)
++{
++    st->deadline_set = true;
++    st->deadline_ns = when;
++}
++
++void avfao_supervise(struct avfao_startup *st, const struct avfao_startup_cfg *cfg,
++                     const struct avfao_startup_view *view,
++                     const struct avfao_host *host,
++                     const struct avfao_startup_ops *ops, void *ctx)
++{
++    int64_t now = view->now_ns;
++
++    if (!st->rate_requested) {
++        bool primed = view->fed_ns >= AVFAO_PRIMED_NS || view->eof;
++        if (!primed) {
++            set_deadline(st, now + cfg->grace_ns);
++            return;
++        }
++        // Rate 1 goes in without waiting for the item to report ready.
++        ops->request_rate(ctx);
++        st->rate_requested = true;
++        st->rate1_ns = now;
++        st->anchor_pacing_ns = 0;
++        st->anchors = 0;
++        set_deadline(st, now + (st->initial_mode ? cfg->initial_grace_ns
++                                                 : cfg->grace_ns));
++        return;
++    }
++
++    if (st->deadline_cleared)
++        return;
++
++    if (view->clock_ns > 0) {
++        st->deadline_cleared = true;
++        st->deadline_set = false;
++        st->initial_mode = false;
++        avfao_log(host, AVFAO_V, "compressed clock engaged after %.3f s, seeked %d, "
++                  "anchors %d\n", avfao_ns_to_seconds(now - st->rate1_ns),
++                  st->seek_attempted ? 1 : 0, st->anchors);
++        return;
++    }
++
++    // A slow source keeps extending the deadline after the seek, as long as
++    // the stream keeps growing towards the start-up lead.
++    if (st->seek_attempted && view->fed_ns > st->watermark_ns &&
++        view->fed_ns < 2 * cfg->lead_ns)
++    {
++        st->watermark_ns = view->fed_ns;
++        set_deadline(st, now + cfg->grace_ns);
++        return;
++    }
++
++    if (st->deadline_set && now < st->deadline_ns)
++        return;
++
++    // Before a title's first engagement, give an item that is not ready yet
++    // up to the ordinary grace.
++    if (!st->seek_attempted && st->initial_mode && !view->item_ready &&
++        now - st->rate1_ns < cfg->grace_ns)
++        return;
++
++    if (!st->seek_attempted) {
++        if (st->initial_mode) {
++            avfao_log(host, AVFAO_V, "first start recovery after %.3f s\n",
++                      avfao_ns_to_seconds(now - st->rate1_ns));
++        }
++        avfao_log(host, AVFAO_WARN,
++                  "playback did not engage; seeking to the stream start\n");
++        st->seek_attempted = true;
++        set_deadline(st, now + cfg->grace_ns);
++        ops->seek_to_start(ctx);
++        ops->request_rate(ctx);
++        return;
++    }
++
++    avfao_log(host, AVFAO_ERR,
++              "native compressed playback did not start; falling back to PCM\n");
++    ops->fallback(ctx);
++}
++
++void avfao_startup_pause(struct avfao_startup *st)
++{
++    st->resume_pending = false;
++}
++
++void avfao_startup_unpause(struct avfao_startup *st, const struct avfao_startup_cfg *cfg,
++                           int64_t now_ns, int64_t clock_ns,
++                           const struct avfao_startup_ops *ops, void *ctx)
++{
++    if (!st->rate_requested)
++        return;
++    ops->request_rate(ctx);
++    if (!st->deadline_cleared)
++        set_deadline(st, now_ns + cfg->grace_ns);
++    st->resume_pending = true;
++    st->resume_clock_ns = clock_ns;
++    st->resume_ns = now_ns;
++    st->anchor_pacing_ns = 0;
++    st->anchors = 0;
++}
++
++bool avfao_start_anchor_due(const struct avfao_startup *st,
++                            const struct avfao_startup_cfg *cfg,
++                            const struct avfao_startup_view *view,
++                            bool fallback, bool room)
++{
++    return cfg->anchor_start && st->rate_requested && !view->eof &&
++           view->clock_ns == 0 &&
++           view->fed_ns < 2 * cfg->lead_ns + AVFAO_ANCHOR_START_EXTRA_NS &&
++           view->now_ns - st->anchor_pacing_ns >= AVFAO_ANCHOR_PACING_NS &&
++           !fallback && room;
++}
++
++bool avfao_resume_anchor_due(const struct avfao_startup *st,
++                             const struct avfao_startup_cfg *cfg,
++                             const struct avfao_startup_view *view,
++                             bool fallback, bool room)
++{
++    return st->resume_pending && cfg->anchor_resume && !view->eof &&
++           view->clock_ns <= st->resume_clock_ns &&
++           view->now_ns - st->resume_ns < AVFAO_ANCHOR_RESUME_NS &&
++           view->now_ns - st->anchor_pacing_ns >= AVFAO_ANCHOR_PACING_NS &&
++           !fallback && room;
++}
++
++void avfao_resume_detect(struct avfao_startup *st,
++                         const struct avfao_startup_view *view,
++                         const struct avfao_host *host)
++{
++    if (!st->resume_pending || view->clock_ns <= st->resume_clock_ns)
++        return;
++    avfao_log(host, AVFAO_V, "compressed clock resumed after %.3f s, anchors %d\n",
++              avfao_ns_to_seconds(view->now_ns - st->resume_ns), st->anchors);
++    st->resume_pending = false;
++}
+diff --git a/audio/out/ao_avfoundation_startup.h b/audio/out/ao_avfoundation_startup.h
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_startup.h
+@@ -0,0 +1,110 @@
++/*
++ * AVFoundation audio output: start-up supervision and clock anchoring for
++ * compressed passthrough (the AirPlay start-up handling).
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef MP_AO_AVFOUNDATION_STARTUP_H
++#define MP_AO_AVFOUNDATION_STARTUP_H
++
++#include "ao_avfoundation_core.h"
++
++#define AVFAO_PRIMED_NS AVFAO_NS_PER_S
++#define AVFAO_ANCHOR_PACING_NS (100 * AVFAO_NS_PER_MS)
++#define AVFAO_ANCHOR_START_EXTRA_NS (4 * AVFAO_NS_PER_S)
++#define AVFAO_ANCHOR_RESUME_NS (2 * AVFAO_NS_PER_S)
++
++struct avfao_startup_cfg {
++    int64_t grace_ns;          // compressed-start-grace
++    int64_t initial_grace_ns;  // min(compressed-first-start-grace, grace)
++    int64_t lead_ns;           // compressed-lead (start-up lead is twice it)
++    bool anchor_start;
++    bool anchor_resume;
++};
++
++struct avfao_startup {
++    // For the AO's lifetime.
++    bool initial_mode;          // until the AO's first engagement
++    int64_t anchor_pacing_ns;   // last anchor read, or mpv's clock origin
++    int anchors;
++
++    // For the current item.
++    bool rate_requested;
++    int64_t rate1_ns;
++    bool seek_attempted;
++    int64_t watermark_ns;
++    bool deadline_set;
++    bool deadline_cleared;      // engaged: cleared for good
++    int64_t deadline_ns;
++    bool resume_pending;
++    int64_t resume_clock_ns;
++    int64_t resume_ns;
++};
++
++// The only player calls supervision makes.
++struct avfao_startup_ops {
++    void (*request_rate)(void *ctx);
++    void (*seek_to_start)(void *ctx);
++    void (*fallback)(void *ctx);
++};
++
++struct avfao_startup_view {
++    int64_t now_ns;
++    int64_t fed_ns;
++    int64_t clock_ns;          // compressed clock
++    bool eof;
++    bool item_ready;           // AVPlayerItemStatusReadyToPlay
++};
++
++void avfao_startup_init(struct avfao_startup *st);
++// Item created or torn down.
++void avfao_startup_new_item(struct avfao_startup *st);
++void avfao_startup_cfg_init(struct avfao_startup_cfg *cfg, double lead,
++                            double grace, double first_grace,
++                            bool anchor_start, bool anchor_resume);
++
++// One supervision evaluation (3.4.10's table, first matching row wins).
++void avfao_supervise(struct avfao_startup *st, const struct avfao_startup_cfg *cfg,
++                     const struct avfao_startup_view *view,
++                     const struct avfao_host *host,
++                     const struct avfao_startup_ops *ops, void *ctx);
++
++// Pause and unpause. request_rate is called again when rate 1 was already
++// requested for the item.
++void avfao_startup_pause(struct avfao_startup *st);
++void avfao_startup_unpause(struct avfao_startup *st, const struct avfao_startup_cfg *cfg,
++                           int64_t now_ns, int64_t clock_ns,
++                           const struct avfao_startup_ops *ops, void *ctx);
++
++// Whether a start or resume anchor read is due. fallback and room (the
++// window can take a whole carry-over buffer) come from the sink.
++bool avfao_start_anchor_due(const struct avfao_startup *st,
++                            const struct avfao_startup_cfg *cfg,
++                            const struct avfao_startup_view *view,
++                            bool fallback, bool room);
++bool avfao_resume_anchor_due(const struct avfao_startup *st,
++                             const struct avfao_startup_cfg *cfg,
++                             const struct avfao_startup_view *view,
++                             bool fallback, bool room);
++// Ends a pending resume once the clock has moved past its recorded value.
++void avfao_resume_detect(struct avfao_startup *st,
++                         const struct avfao_startup_view *view,
++                         const struct avfao_host *host);
++
++#endif

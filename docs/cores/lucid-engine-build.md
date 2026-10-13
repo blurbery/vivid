@@ -8,7 +8,7 @@
 Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv, FFmpeg, libass and dav1d from their upstream sources with Vivid's patch series, and checks every result against the recorded configuration of today's binaries. Nothing comes from a third-party build repository: the scripts, pins and patches all live in [`engine/`](../../engine).
 
 > [!IMPORTANT]
-> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on the `experiment/lucid-engine-build` branch. Upstream mpv has no `avfoundation` video output, so these builds cannot replace today's engine until Vivid's own engine patches land: video output, audio output and Dolby Vision.
+> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on the `experiment/lucid-engine-build` branch and the `experiment/lucid-engine-*` implementer branches. Upstream mpv has no `avfoundation` video output, so these builds cannot replace today's engine until the rest of Vivid's own engine patches land: video output and Dolby Vision. The audio output patches (mpv `0010` to `0015`) still need the device checks of the patch specification.
 
 ## What it builds
 
@@ -44,8 +44,9 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
 1. checks that every fetch is pinned and on the allowlist;
 2. restores or downloads the pinned inputs and verifies each SHA-256;
 3. builds dav1d, libass, FFmpeg and libmpv for the slice;
-4. runs the provenance, licence, TLS and link checks below;
-5. uploads the slice's frameworks, provenance report and logs.
+4. builds and runs the audio output's test vectors on the runner, from the mpv tree it has just patched;
+5. runs the provenance, licence, TLS and link checks below;
+6. uploads the slice's frameworks, provenance report and logs.
 
 A final job turns the slices into xcframeworks. Artefacts are kept for three days. A newer push cancels a running build.
 
@@ -55,6 +56,7 @@ The tool is [`engine/lucid.py`](../../engine/lucid.py), which needs Python 3.9 o
 python3 engine/lucid.py check-allowlist
 python3 engine/lucid.py fetch --downloads /path/to/downloads
 python3 engine/lucid.py build --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
+python3 engine/lucid.py test-audio --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py check --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py package --input /path/to/work/out --out /path/to/release
 ```
@@ -93,8 +95,14 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | FFmpeg | `0002-videotoolbox-request-metal-compatible-pixel-buffers.patch` | Asks VideoToolbox for Metal-compatible pixel buffers instead of the OpenGL ES or OpenGL compatibility flags, matching today's binaries. LGPL-2.1-or-later. |
 | mpv | `0001-ad_spdif-recreate-spdif-muxer-on-reset.patch` | Upstream mpv commit `1388a453`, unchanged, with its upstream attribution: recreates the S/PDIF muxer after a seek and waits for a TrueHD major sync. |
 | mpv | `0002-ao_avfoundation-build-for-ios-and-tvos.patch` | Lets upstream's AVFoundation audio output (`-Davfoundation=enabled`) compile for iOS and tvOS by keeping the macOS-only CoreAudio device code out of those builds, and builds the CoreFoundation string helpers it calls (`osdep/utils-mac.c`), which upstream builds only with the macOS `cocoa` feature. The output's `notification name:` log line is unchanged. macOS builds with `cocoa` are unchanged. LGPL-2.1-or-later. |
+| mpv | `0010-ad_spdif-carry-e-ac-3-at-four-times-the-codec-rate.patch` | Opens E-AC-3 passthrough at four times the stream's codec rate (4 x 48000 when unknown) instead of 192000 Hz for every stream, so 44.1 kHz E-AC-3 keeps its timing. AC-3 is unchanged. LGPL-2.1-or-later. |
+| mpv | `0011-f_output_chain-wake-the-chain-after-a-hard-reset.patch` | Wakes the output chain at the end of `mp_output_chain_reset_harder`, so audio does not stall after an output reload or the passthrough fallback. LGPL-2.1-or-later. |
+| mpv | `0012-ao_avfoundation-rebuild-the-output-around-a-shared-centre.patch` | Rewrites the AVFoundation audio output's shared centre: driver and `ao-avfoundation-*` options (`max-lookahead` on tvOS only), the output's queue, the audio session rules with `manage-audio-session`, the process-wide passthrough block, trace edges and the prefetch guard. Decisions are plain C behind operation tables, so the test vectors drive the shipped code. LGPL-2.1-or-later. |
+| mpv | `0013-ao_avfoundation-decoded-pcm-sink-with-a-bounded-tvos-mode.patch` | The decoded PCM sink: upstream's renderer behaviour on iOS and unbounded tvOS, and on tvOS with `max-lookahead` a bounded, timer-fed renderer queue with a fresh renderer after every reset. LGPL-2.1-or-later. |
+| mpv | `0014-ao_avfoundation-start-up-supervision-and-clock-anchoring.patch` | Passthrough start-up: rate 1 once primed, engagement, one recovery seek with the first-start grace, slow-source extensions, fallback, and the start and resume anchoring that keeps video waiting for AirPlay audio. LGPL-2.1-or-later. |
+| mpv | `0015-ao_avfoundation-pass-ac-3-and-e-ac-3-through-avplayer.patch` | AC-3 and E-AC-3 passthrough through `AVPlayer` and a resource loader: IEC 61937 unwrapping, the stream window, filling, clocks, diagnostics, end-of-file resume and the fallback to PCM. LGPL-2.1-or-later. |
 
-Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019, video output mpv 0020 to 0039, decoder work mpv 0040 to 0049 and FFmpeg 0010 to 0029.
+Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019 (0010 to 0015 so far, including the E-AC-3 carrier rate and the output-chain wake), video output mpv 0020 to 0039, decoder work mpv 0040 to 0049 and FFmpeg 0010 to 0029.
 
 To add a patch, write it against the pristine source (or the previous patch in the series), add its SHA-256 and file name to the end of the `series` file, and push. The build fails if the files a series changes differ from the files its patches name.
 
@@ -180,12 +188,17 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
   - Symbol closure: every undefined symbol in every built and pinned archive is defined by another archive in the link set, by the compiler runtime, or by a public `.tbd` stub in the SDK. Only `___dso_handle` and the Objective-C selector stubs (`_objc_msgSend$<selector>`), which the linker synthesises, are exempt. Every SDK symbol must come from a framework or library in `app-link.txt`, following re-exports, or from libSystem or libobjc.
   - Test link: a small C program that calls `mpv_create`, `mpv_initialize`, `mpv_terminate_destroy` and `avformat_configuration` links, dead-stripped and without forced whole-archive loading, against the ten new frameworks, the twelve pinned prebuilt archives and `app-link.txt`, at Vivid's own deployment targets (iOS 18.0, tvOS 26.0).
   - `Libmpv` keeps the AVFoundation output's `notification name:` log line, which Vivid's adapter reads.
+- **Audio output:**
+  - `Libmpv` contains all 25 log formats Vivid reads from the audio output, each with its trailing newline, and the standalone `falling back to PCM` with a NUL straight before it. The check also runs on a copy of `Libmpv` without that NUL and must reject it.
+  - The option names `manage-audio-session` and `compressed-anchor-start` (each followed by a NUL) and `compressed-lead`, and Vivid's markers `first start recovery after` and `trace edge %s`. `max-lookahead` (followed by a NUL) is in both tvOS slices and absent from both iOS slices.
+  - `Libmpv` references `_AVSampleBufferAudioRendererOutputConfigurationDidChangeNotification` and contains the selectors `setDelaysRateChangeUntilHasSufficientMediaData:` and `setSupportsMultichannelContent:error:`.
+  - `lucid.py test-audio` builds [`engine/tests/ao_avfoundation_vectors.c`](../../engine/tests/ao_avfoundation_vectors.c) on the runner against the audio output's C files in the slice's patched mpv tree, with address and undefined-behaviour sanitisers, and runs every vector of the specification's section 9.3 through fakes of mpv, the session, the renderer and `AVPlayer`. It writes `audio-tests.json`, and `check` fails unless the vectors ran and all passed.
 
 The summary of each slice also appears on the workflow run page.
 
 ## Still to do
 
-- Vivid's own engine patches: an `avfoundation` video output, the native audio output changes Vivid relies on today, and Dolby Vision conversion. Until they exist, these builds cannot be linked into a shipping app.
+- Vivid's own engine patches: an `avfoundation` video output and Dolby Vision conversion. Until they exist, these builds cannot be linked into a shipping app. The audio output patches still need the device checks of the patch specification.
 - Building the remaining dependencies from source, starting with the ones that carry the most code (libplacebo, shaderc and MoltenVK).
 - A Swift package that serves these xcframeworks, updating `use-patched-libmpv.sh` for the new slice identifiers, and deciding the bundle identifiers.
 - Licence files and notices for the LGPL FFmpeg and libmpv and the removal of OpenSSL (`THIRD_PARTY_NOTICES.md` and the in-app licences) once the app links these builds.

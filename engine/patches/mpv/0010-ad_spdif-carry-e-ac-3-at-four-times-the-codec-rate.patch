@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] ad_spdif: carry E-AC-3 at four times the codec rate
+
+IEC 61937 carries each E-AC-3 frame of 1536 samples in a burst of 6144
+carrier frames, so the carrier rate is four times the codec rate. Upstream
+opens every E-AC-3 stream at 192000 Hz, which is only right for streams
+coded at 48 kHz: with a 44.1 kHz stream, mpv's audio timestamps run about
+9% fast.
+
+When the spdif muxer is built for E-AC-3, use four times the codec rate
+cached for the stream (4 x 48000 when it is unknown) for both the muxer's
+stream rate and the output frame format. AC-3 keeps upstream's behaviour
+(carrier rate = codec rate, 48000 when unknown), the channel count stays 2
+and no log line is added. The AVFoundation audio output divides the carrier
+rate by 4 again to time passthrough, so the two must agree.
+
+Applies to mpv v0.41.0 with upstream commit 1388a453 (patch 0001), whose
+cached codec rate it uses.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the mpv files it adds or changes, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser General
+Public License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version
+(LGPL-2.1-or-later).
+---
+diff --git a/audio/decode/ad_spdif.c b/audio/decode/ad_spdif.c
+index 0000000000..0000000000 100644
+--- a/audio/decode/ad_spdif.c
++++ b/audio/decode/ad_spdif.c
+@@ -285,8 +285,10 @@
+         break;
+     }
+     case AV_CODEC_ID_EAC3:
++        // IEC 61937 carries E-AC-3 at four times the codec rate, so a
++        // 44.1 kHz stream needs a 176.4 kHz carrier rather than 192 kHz.
+         sample_format                   = AF_FORMAT_S_EAC3;
+-        samplerate                      = 192000;
++        samplerate                      = 4 * (c_rate > 0 ? c_rate : 48000);
+         num_channels                    = 2;
+         break;
+     case AV_CODEC_ID_MP3:

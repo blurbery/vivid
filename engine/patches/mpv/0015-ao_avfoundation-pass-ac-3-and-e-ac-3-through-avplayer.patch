@@ -1,0 +1,1433 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] ao_avfoundation: pass AC-3 and E-AC-3 through AVPlayer
+
+Adds the compressed passthrough sink. On tvOS only AVPlayer renders the
+Atmos objects carried in E-AC-3, so spdif-ac3 and spdif-eac3 go to an
+AVPlayer that reads the bitstream through an AVAssetResourceLoader
+delegate; every other spdif format is still refused, so mpv decodes it.
+
+- ao_avfoundation_iec61937.h and .c turn mpv's IEC 61937 stream back into
+  the plain bitstream: burst scanning (data type, payload length,
+  completeness), byte swapping, the syncword check, and the stream window
+  the loader serves from, with 2 MiB of history kept below the oldest
+  reader. Bursts that fail a check are logged and skipped.
+- ao_avfoundation_compressed.h and .c run the sink on the output's queue:
+  a 50 ms feed timer and a feed step on every loader request, start,
+  unpause and tick; filling to compressed-lead ahead of the playhead (twice
+  that before it moves), behind the prefetch guard and the window's
+  backpressure; the item's clock and the end times mpv takes as its audio
+  clock, built from the carrier frames consumed; diagnostics; and the
+  fallback that blocks the format for the process and asks mpv to reopen
+  audio as PCM.
+- ao_avfoundation_compressed_av.m holds AVPlayer (no automatic stall
+  waiting, no external playback), a new asset and item for every start
+  after a reset, the loader (content type, a 2 GiB content length, no byte
+  ranges) and its serving, volume and mute on the player, and
+  compressed-buffer as the device buffer.
+
+A start after mpv's end of file resumes feeding the same item and logs
+"resuming compressed feed after audio EOF". The sink's logs keep the
+formats and levels Vivid reads.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the mpv files it adds or changes, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser General
+Public License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version
+(LGPL-2.1-or-later).
+---
+diff --git a/audio/out/ao_avfoundation_compressed.c b/audio/out/ao_avfoundation_compressed.c
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_compressed.c
+@@ -0,0 +1,366 @@
++/*
++ * AVFoundation audio output: AC-3 and E-AC-3 passthrough through AVPlayer.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "ao_avfoundation_compressed.h"
++
++static void startup_request_rate(void *ctx)
++{
++    struct avfao_cx *cx = ctx;
++    cx->ops->set_rate(cx->ctx, 1);
++}
++
++static void startup_seek_to_start(void *ctx)
++{
++    struct avfao_cx *cx = ctx;
++    cx->ops->seek_to_start(cx->ctx);
++}
++
++static void startup_fallback(void *ctx)
++{
++    avfao_cx_fallback(ctx);
++}
++
++static const struct avfao_startup_ops startup_ops = {
++    .request_rate = startup_request_rate,
++    .seek_to_start = startup_seek_to_start,
++    .fallback = startup_fallback,
++};
++
++static int64_t clamp_fed(const struct avfao_cx *cx, int64_t t)
++{
++    if (t < 0)
++        return 0;
++    return t > cx->fed_ns ? cx->fed_ns : t;
++}
++
++int64_t avfao_cx_clock(const struct avfao_cx *cx)
++{
++    if (!cx->item)
++        return 0;
++    int64_t t;
++    if (!cx->ops->timebase_time(cx->ctx, &t) && !cx->ops->current_time(cx->ctx, &t))
++        t = 0;
++    return clamp_fed(cx, t);
++}
++
++int64_t avfao_cx_feed_position(const struct avfao_cx *cx)
++{
++    int64_t position = avfao_cx_clock(cx);
++    int64_t current;
++    // Pacing against the later reading keeps enough queued on HDMI routes
++    // whose timebase lags the item's currentTime.
++    if (cx->item && cx->ops->current_time(cx->ctx, &current) && current > position)
++        position = current;
++    return clamp_fed(cx, position);
++}
++
++static void reset_item_state(struct avfao_cx *cx)
++{
++    cx->iec.carry_len = 0;
++    avfao_window_clear(&cx->win);
++    cx->fed_ns = 0;
++    cx->consumed_frames = 0;
++    cx->dropped_ns = 0;
++    cx->eof = false;
++    avfao_startup_new_item(&cx->st);
++}
++
++bool avfao_cx_init(struct avfao_cx *cx, const struct avfao_host *host,
++                   const struct avfao_cx_ops *ops, void *ctx,
++                   struct avfao_trace *trace, enum avfao_codec codec,
++                   int carrier_rate, const struct avfao_cx_cfg *cfg)
++{
++    *cx = (struct avfao_cx){
++        .host = host,
++        .ops = ops,
++        .ctx = ctx,
++        .trace = trace,
++        .codec = codec,
++        .carrier_rate = carrier_rate,
++        .read_frames = carrier_rate / 10,
++        .last_status = -1,
++        .last_time_control = -1,
++    };
++    avfao_startup_cfg_init(&cx->cfg, cfg->lead, cfg->grace, cfg->first_grace,
++                           cfg->anchor_start, cfg->anchor_resume);
++    avfao_startup_init(&cx->st);
++    if (!avfao_iec_alloc(&cx->iec, codec, carrier_rate) ||
++        !avfao_window_alloc(&cx->win, avfao_window_capacity(cfg->lead)))
++    {
++        avfao_log(host, AVFAO_FATAL, "failed to allocate the passthrough buffers\n");
++        avfao_cx_uninit(cx);
++        return false;
++    }
++    return true;
++}
++
++void avfao_cx_uninit(struct avfao_cx *cx)
++{
++    avfao_iec_free(&cx->iec);
++    avfao_window_free(&cx->win);
++}
++
++void avfao_cx_fallback(struct avfao_cx *cx)
++{
++    if (cx->fallback)
++        return;
++    cx->fallback = true;
++    avfao_block_set(cx->codec);
++    cx->ops->set_rate(cx->ctx, 0);
++    cx->ops->timer(cx->ctx, false);
++    cx->host->ops->request_reload(cx->host->ctx);
++}
++
++static bool window_has_room(const struct avfao_cx *cx)
++{
++    return avfao_window_space(&cx->win) >= cx->iec.carry_size;
++}
++
++// One read from mpv into the carry-over buffer, then unwrapping. Returns
++// whether it was successful: frames came back, no end of file, no fallback.
++static bool read_once(struct avfao_cx *cx)
++{
++    const struct avfao_host *host = cx->host;
++    int64_t frames = (cx->iec.carry_size - cx->iec.carry_len) / AVFAO_CARRIER_FRAME_BYTES;
++    if (frames > cx->read_frames)
++        frames = cx->read_frames;
++    if (frames <= 0)
++        return false;
++
++    int64_t reserve = cx->fed_ns - avfao_cx_feed_position(cx);
++    if (avfao_prefetch_skip(reserve, host->ops->queued_frames(host->ctx), frames))
++        return false;
++
++    // mpv takes this end time as its audio clock. It is built from the
++    // carrier frames consumed, never from the fed duration, which moves in
++    // whole burst periods.
++    int64_t clock = avfao_cx_clock(cx);
++    int64_t now = avfao_now(host);
++    int64_t written = avfao_frames_to_ns(cx->consumed_frames, cx->carrier_rate) -
++                      cx->dropped_ns;
++    int64_t end = now + (written - clock) +
++                  avfao_frames_to_ns(frames, cx->carrier_rate);
++
++    bool eof = false;
++    int got = host->ops->read(host->ctx, cx->iec.carry + cx->iec.carry_len,
++                              (int)frames, end, &eof);
++    if (got > 0) {
++        cx->consumed_frames += got;
++        cx->iec.carry_len += (int64_t)got * AVFAO_CARRIER_FRAME_BYTES;
++    }
++    if (eof) {
++        cx->eof = true;
++        host->ops->stop_streaming(host->ctx);
++    }
++    if (got > 0 && !avfao_iec_unwrap(&cx->iec, &cx->win, host, &cx->fed_ns,
++                                     &cx->dropped_ns))
++        avfao_cx_fallback(cx);
++    return got > 0 && !eof && !cx->fallback;
++}
++
++static void anchor_read(struct avfao_cx *cx)
++{
++    cx->st.anchor_pacing_ns = avfao_now(cx->host);
++    if (read_once(cx))
++        cx->st.anchors++;
++}
++
++static struct avfao_startup_view view(const struct avfao_cx *cx, bool with_status)
++{
++    return (struct avfao_startup_view){
++        .now_ns = avfao_now(cx->host),
++        .fed_ns = cx->fed_ns,
++        .clock_ns = avfao_cx_clock(cx),
++        .eof = cx->eof,
++        .item_ready = with_status &&
++                      cx->ops->item_status(cx->ctx) == AVFAO_ITEM_READY,
++    };
++}
++
++static void diagnostics(struct avfao_cx *cx)
++{
++    const struct avfao_cx_ops *ops = cx->ops;
++    int status = ops->item_status(cx->ctx);
++    int time_control = ops->time_control(cx->ctx);
++    int64_t clock = avfao_cx_clock(cx);
++
++    if (status != cx->last_status || time_control != cx->last_time_control) {
++        avfao_log(cx->host, AVFAO_V, "item status %d -> %d, time control %d -> %d, "
++                  "pos %.3fs, fed %.3fs\n", cx->last_status, status,
++                  cx->last_time_control, time_control, avfao_ns_to_seconds(clock),
++                  avfao_ns_to_seconds(cx->fed_ns));
++        cx->last_status = status;
++        cx->last_time_control = time_control;
++    }
++
++    bool detail = avfao_in_detail_window(cx->host, cx->trace);
++    if (cx->heartbeat % AVFAO_HEARTBEAT_EVERY == 0 ||
++        (detail && cx->heartbeat % AVFAO_HEARTBEAT_DETAIL_EVERY == 0))
++    {
++        int64_t raw_ns;
++        double raw = ops->current_time(cx->ctx, &raw_ns) ? avfao_ns_to_seconds(raw_ns)
++                                                         : -1.0;
++        avfao_log(cx->host, AVFAO_V, "heartbeat: raw pos %.3fs, clamped %.3fs, "
++                  "fed %.3fs, status %d, tc %d, reader gap %lld B\n", raw,
++                  avfao_ns_to_seconds(clock), avfao_ns_to_seconds(cx->fed_ns),
++                  status, time_control, (long long)ops->reader_gap(cx->ctx));
++    }
++}
++
++// An item that failed, or a player with an error, ends passthrough. The
++// rejection and the fallback are two separate lines.
++static bool rejected(struct avfao_cx *cx)
++{
++    char desc[512] = "unknown";
++    char domain[256] = "-";
++    long code = 0;
++    if (!cx->ops->failure(cx->ctx, desc, sizeof(desc), domain, sizeof(domain), &code))
++        return false;
++    avfao_log(cx->host, AVFAO_ERR, "player rejected the compressed stream: %s (%s:%ld)\n",
++              desc, domain, code);
++    avfao_log(cx->host, AVFAO_ERR, "falling back to PCM\n");
++    avfao_cx_fallback(cx);
++    return true;
++}
++
++static void fill(struct avfao_cx *cx)
++{
++    for (int n = 0; n < AVFAO_FILL_MAX_READS; n++) {
++        if (cx->eof || cx->fallback || !window_has_room(cx))
++            return;
++        int64_t position = avfao_cx_feed_position(cx);
++        int64_t target = position > 0 ? cx->cfg.lead_ns : 2 * cx->cfg.lead_ns;
++        if (cx->fed_ns - position >= target)
++            return;
++        if (!read_once(cx))
++            return;
++    }
++}
++
++void avfao_cx_supervise(struct avfao_cx *cx)
++{
++    if (!cx->playing || !cx->item || cx->fallback)
++        return;
++    struct avfao_startup_view v = view(cx, true);
++    avfao_supervise(&cx->st, &cx->cfg, &v, cx->host, &startup_ops, cx);
++}
++
++void avfao_cx_step(struct avfao_cx *cx)
++{
++    if (cx->fallback || !cx->item)
++        return;
++    cx->heartbeat++;
++
++    // Diagnostics and failure detection come before any read, so a
++    // rejected item is never fed again.
++    diagnostics(cx);
++    if (rejected(cx))
++        return;
++
++    fill(cx);
++
++    // Anchor reads only after filling has stopped. A fallback raised by a
++    // read skips the rest, apart from resume detection.
++    struct avfao_startup_view v = view(cx, false);
++    if (avfao_start_anchor_due(&cx->st, &cx->cfg, &v, cx->fallback, window_has_room(cx)))
++        anchor_read(cx);
++    v = view(cx, false);
++    avfao_resume_detect(&cx->st, &v, cx->host);
++    if (avfao_resume_anchor_due(&cx->st, &cx->cfg, &v, cx->fallback, window_has_room(cx)))
++        anchor_read(cx);
++    if (cx->fallback)
++        return;
++
++    cx->ops->serve(cx->ctx);
++    avfao_cx_supervise(cx);
++}
++
++enum avfao_serve avfao_cx_serve_request(struct avfao_cx *cx, int64_t offset,
++                                        int64_t end, int64_t *len)
++{
++    return avfao_serve_request(cx->host, &cx->win, offset, end, len);
++}
++
++void avfao_cx_start(struct avfao_cx *cx)
++{
++    cx->playing = true;
++    // mpv starts the AO again, without a reset, when audio arrives after an
++    // end of file: clear it before anything can read from mpv.
++    if (cx->eof)
++        avfao_log(cx->host, AVFAO_V, "resuming compressed feed after audio EOF\n");
++    cx->eof = false;
++
++    if (!cx->item) {
++        if (!cx->fallback) {
++            // Each item's stream begins at byte 0 and time 0.
++            reset_item_state(cx);
++            if (cx->ops->item_create(cx->ctx)) {
++                cx->item = true;
++                cx->last_status = -1;
++                cx->last_time_control = -1;
++            } else {
++                avfao_log(cx->host, AVFAO_FATAL,
++                          "failed to create the passthrough player item\n");
++                avfao_cx_fallback(cx);
++            }
++        }
++    } else if (cx->st.rate_requested && !cx->fallback) {
++        cx->ops->set_rate(cx->ctx, 1);
++    }
++
++    avfao_trace_edge(cx->host, cx->trace, "start", avfao_cx_clock(cx), cx->fed_ns);
++    cx->ops->timer(cx->ctx, true);
++    avfao_cx_step(cx);
++}
++
++void avfao_cx_reset(struct avfao_cx *cx)
++{
++    avfao_trace_edge(cx->host, cx->trace, "reset", avfao_cx_clock(cx), cx->fed_ns);
++    cx->playing = false;
++    cx->ops->timer(cx->ctx, false);
++    if (cx->item) {
++        cx->ops->item_teardown(cx->ctx);
++        cx->item = false;
++    }
++    reset_item_state(cx);
++}
++
++void avfao_cx_pause(struct avfao_cx *cx, bool paused)
++{
++    if (paused) {
++        cx->playing = false;
++        avfao_trace_edge(cx->host, cx->trace, "pause", avfao_cx_clock(cx), cx->fed_ns);
++        cx->ops->timer(cx->ctx, false);
++        cx->ops->set_rate(cx->ctx, 0);
++        avfao_startup_pause(&cx->st);
++        return;
++    }
++
++    cx->playing = true;
++    int64_t clock = avfao_cx_clock(cx);
++    avfao_trace_edge(cx->host, cx->trace, "resume", clock, cx->fed_ns);
++    if (!cx->fallback) {
++        avfao_startup_unpause(&cx->st, &cx->cfg, avfao_now(cx->host), clock,
++                              &startup_ops, cx);
++    }
++    cx->ops->timer(cx->ctx, true);
++    avfao_cx_step(cx);
++}
+diff --git a/audio/out/ao_avfoundation_compressed.h b/audio/out/ao_avfoundation_compressed.h
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_compressed.h
+@@ -0,0 +1,133 @@
++/*
++ * AVFoundation audio output: AC-3 and E-AC-3 passthrough through AVPlayer.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef MP_AO_AVFOUNDATION_COMPRESSED_H
++#define MP_AO_AVFOUNDATION_COMPRESSED_H
++
++#include "ao_avfoundation_core.h"
++#include "ao_avfoundation_iec61937.h"
++#include "ao_avfoundation_startup.h"
++
++#define AVFAO_FILL_MAX_READS 64
++#define AVFAO_HEARTBEAT_EVERY 100
++#define AVFAO_HEARTBEAT_DETAIL_EVERY 5
++
++// AVPlayerItemStatusReadyToPlay.
++#define AVFAO_ITEM_READY 1
++
++// Everything the passthrough sink does to AVPlayer, its item and the
++// resource loader. All of it runs on the AO queue.
++struct avfao_cx_ops {
++    // Asset with the loader attached, item, its one property, then current.
++    bool (*item_create)(void *ctx);
++    // Rate 0, every pending loader request finished as cancelled, loader
++    // detached, current item cleared, item and asset released.
++    void (*item_teardown)(void *ctx);
++    void (*set_rate)(void *ctx, float rate);
++    // seekToTime:kCMTimeZero with no completion handler.
++    void (*seek_to_start)(void *ctx);
++    // The item's timebase time, when there is one and it is numeric.
++    bool (*timebase_time)(void *ctx, int64_t *ns);
++    // The item's currentTime, when numeric.
++    bool (*current_time)(void *ctx, int64_t *ns);
++    int (*item_status)(void *ctx);
++    int (*time_control)(void *ctx);
++    // True when the item failed or the player has an error; fills in the
++    // error's description, domain and code (or "unknown", "-" and 0).
++    bool (*failure)(void *ctx, char *desc, size_t desc_size, char *domain,
++                    size_t domain_size, long *code);
++    // Runs avfao_cx_serve_request() over the pending loader requests in
++    // arrival order, then avfao_window_trim() at their low-water mark.
++    void (*serve)(void *ctx);
++    // Smallest distance from the write head back to a pending data
++    // request at or behind it, or -1.
++    int64_t (*reader_gap)(void *ctx);
++    // Feed timer: armed = first fire in 50 ms, then every 50 ms (25 ms
++    // leeway); idle = fire never.
++    void (*timer)(void *ctx, bool armed);
++};
++
++struct avfao_cx_cfg {
++    double lead;           // compressed-lead
++    double grace;          // compressed-start-grace
++    double first_grace;    // compressed-first-start-grace
++    bool anchor_start;
++    bool anchor_resume;
++};
++
++struct avfao_cx {
++    const struct avfao_host *host;
++    const struct avfao_cx_ops *ops;
++    void *ctx;
++    struct avfao_trace *trace;
++
++    enum avfao_codec codec;
++    int carrier_rate;
++    int read_frames;
++
++    struct avfao_startup_cfg cfg;
++    struct avfao_startup st;
++    struct avfao_iec iec;
++    struct avfao_window win;
++
++    // For the AO's lifetime.
++    bool fallback;
++    uint64_t heartbeat;
++    bool playing;               // desired state
++
++    // For the current item.
++    bool item;
++    int64_t fed_ns;
++    int64_t consumed_frames;
++    int64_t dropped_ns;
++    bool eof;
++    int last_status;
++    int last_time_control;
++};
++
++bool avfao_cx_init(struct avfao_cx *cx, const struct avfao_host *host,
++                   const struct avfao_cx_ops *ops, void *ctx,
++                   struct avfao_trace *trace, enum avfao_codec codec,
++                   int carrier_rate, const struct avfao_cx_cfg *cfg);
++void avfao_cx_uninit(struct avfao_cx *cx);
++
++// Transport, on the AO queue.
++void avfao_cx_start(struct avfao_cx *cx);
++void avfao_cx_reset(struct avfao_cx *cx);
++void avfao_cx_pause(struct avfao_cx *cx, bool paused);
++
++// One feed step (timer ticks, new loader data requests, start, unpause).
++void avfao_cx_step(struct avfao_cx *cx);
++// Supervision alone, as the end of a feed step runs it.
++void avfao_cx_supervise(struct avfao_cx *cx);
++// Gives up on passthrough so mpv reopens audio as PCM. At most once.
++void avfao_cx_fallback(struct avfao_cx *cx);
++
++// The compressed clock and the feed position, both clamped to the fed
++// duration.
++int64_t avfao_cx_clock(const struct avfao_cx *cx);
++int64_t avfao_cx_feed_position(const struct avfao_cx *cx);
++
++// For the glue's serving pass.
++enum avfao_serve avfao_cx_serve_request(struct avfao_cx *cx, int64_t offset,
++                                        int64_t end, int64_t *len);
++
++#endif
+diff --git a/audio/out/ao_avfoundation_compressed_av.m b/audio/out/ao_avfoundation_compressed_av.m
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_compressed_av.m
+@@ -0,0 +1,539 @@
++/*
++ * AVFoundation audio output: AVPlayer, its item and the resource loader for
++ * AC-3 and E-AC-3 passthrough.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <errno.h>
++#include <stdio.h>
++
++#include "audio/out/ao_avfoundation_av.h"
++#include "common/msg.h"
++
++// Serves the elementary stream to AVFoundation from the stream window. All
++// callbacks arrive on the AO queue; the lock also guards against anything
++// arriving after invalidation.
++@interface MPAVFStreamLoader : NSObject <AVAssetResourceLoaderDelegate> {
++    struct ao *ao;
++    NSLock *lock;
++    NSMutableArray *pending;
++    NSString *uti;
++    BOOL invalid;
++}
++- (instancetype)initWithAO:(struct ao *)_ao uti:(NSString *)_uti;
++- (void)invalidate;
++- (void)cancelAll;
++- (void)serve;
++- (int64_t)readerGap:(int64_t)head;
++@end
++
++@implementation MPAVFStreamLoader
++- (instancetype)initWithAO:(struct ao *)_ao uti:(NSString *)_uti
++{
++    self = [super init];
++    if (self) {
++        ao = _ao;
++        lock = [[NSLock alloc] init];
++        pending = [[NSMutableArray alloc] init];
++        uti = [_uti copy];
++    }
++    return self;
++}
++
++- (void)dealloc
++{
++    [lock release];
++    [pending release];
++    [uti release];
++    [super dealloc];
++}
++
++- (BOOL)resourceLoader:(AVAssetResourceLoader *)resourceLoader
++    shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)request
++{
++    [lock lock];
++    BOOL refused = invalid;
++    [lock unlock];
++    if (refused)
++        return NO;
++
++    struct priv *p = ao->priv;
++    AVAssetResourceLoadingContentInformationRequest *info = request.contentInformationRequest;
++    if (info) {
++        info.contentType = uti;
++        info.contentLength = INT32_MAX;
++        info.byteRangeAccessSupported = NO;
++    }
++    AVAssetResourceLoadingDataRequest *data = request.dataRequest;
++    MP_VERBOSE(ao, "loader request: content information %d, data %d, offset %lld, "
++               "length %lld, to end %d\n", info ? 1 : 0, data ? 1 : 0,
++               data ? (long long)data.requestedOffset : 0LL,
++               data ? (long long)data.requestedLength : 0LL,
++               data && data.requestsAllDataToEndOfResource ? 1 : 0);
++    if (!data) {
++        [request finishLoading];
++        return YES;
++    }
++
++    [lock lock];
++    [pending addObject:request];
++    [lock unlock];
++    @autoreleasepool {
++        avfao_cx_step(&p->cx);
++    }
++    return YES;
++}
++
++- (void)resourceLoader:(AVAssetResourceLoader *)resourceLoader
++    didCancelLoadingRequest:(AVAssetResourceLoadingRequest *)request
++{
++    [lock lock];
++    [pending removeObjectIdenticalTo:request];
++    BOOL refused = invalid;
++    [lock unlock];
++    if (!refused) {
++        MP_VERBOSE(ao, "loader request cancelled at offset %lld\n",
++                   (long long)request.dataRequest.currentOffset);
++    }
++}
++
++- (void)invalidate
++{
++    [lock lock];
++    invalid = YES;
++    [pending removeAllObjects];
++    [lock unlock];
++}
++
++- (NSArray *)takePending:(BOOL)clear
++{
++    [lock lock];
++    NSArray *copy = [pending copy];
++    if (clear)
++        [pending removeAllObjects];
++    [lock unlock];
++    return copy;
++}
++
++- (void)cancelAll
++{
++    NSArray *requests = [self takePending:YES];
++    for (AVAssetResourceLoadingRequest *request in requests) {
++        if (request.isFinished || request.isCancelled)
++            continue;
++        [request finishLoadingWithError:[NSError errorWithDomain:NSURLErrorDomain
++                                                            code:NSURLErrorCancelled
++                                                        userInfo:nil]];
++    }
++    [requests release];
++}
++
++- (void)serve
++{
++    struct priv *p = ao->priv;
++    NSArray *requests = [self takePending:NO];
++    NSMutableArray *done = [[NSMutableArray alloc] init];
++
++    for (AVAssetResourceLoadingRequest *request in requests) {
++        if (request.isFinished || request.isCancelled) {
++            [done addObject:request];
++            continue;
++        }
++        AVAssetResourceLoadingDataRequest *data = request.dataRequest;
++        int64_t offset = data.currentOffset;
++        int64_t end = data.requestsAllDataToEndOfResource
++                      ? -1 : data.requestedOffset + (int64_t)data.requestedLength;
++        int64_t len = 0;
++        switch (avfao_cx_serve_request(&p->cx, offset, end, &len)) {
++        case AVFAO_SERVE_DATA: {
++            NSData *bytes = [[NSData alloc]
++                initWithBytes:avfao_window_bytes(&p->cx.win, offset)
++                       length:(NSUInteger)len];
++            [data respondWithData:bytes];
++            [bytes release];
++            if (end >= 0 && data.currentOffset >= end) {
++                [request finishLoading];
++                [done addObject:request];
++            }
++            break;
++        }
++        case AVFAO_SERVE_FINISH:
++            [request finishLoading];
++            [done addObject:request];
++            break;
++        case AVFAO_SERVE_BELOW:
++            [request finishLoadingWithError:[NSError errorWithDomain:NSPOSIXErrorDomain
++                                                                code:ESPIPE
++                                                            userInfo:nil]];
++            [done addObject:request];
++            break;
++        case AVFAO_SERVE_BEYOND:
++            [request finishLoadingWithError:[NSError errorWithDomain:NSPOSIXErrorDomain
++                                                                code:ENOTSUP
++                                                            userInfo:nil]];
++            [done addObject:request];
++            break;
++        case AVFAO_SERVE_WAIT:
++            break;
++        }
++    }
++
++    int64_t low_water = p->cx.win.head;
++    [lock lock];
++    for (AVAssetResourceLoadingRequest *request in done)
++        [pending removeObjectIdenticalTo:request];
++    for (AVAssetResourceLoadingRequest *request in pending) {
++        int64_t offset = request.dataRequest.currentOffset;
++        if (offset < low_water)
++            low_water = offset;
++    }
++    [lock unlock];
++    avfao_window_trim(&p->cx.win, low_water);
++
++    [done release];
++    [requests release];
++}
++
++- (int64_t)readerGap:(int64_t)head
++{
++    int64_t gap = -1;
++    [lock lock];
++    for (AVAssetResourceLoadingRequest *request in pending) {
++        if (request.isFinished || request.isCancelled)
++            continue;
++        int64_t offset = request.dataRequest.currentOffset;
++        if (offset <= head && (gap < 0 || head - offset < gap))
++            gap = head - offset;
++    }
++    [lock unlock];
++    return gap;
++}
++@end
++
++// ---- player and item operations for the C side
++
++static struct priv *priv_of(void *ctx)
++{
++    return ((struct ao *)ctx)->priv;
++}
++
++static bool op_item_create(void *ctx)
++{
++    struct priv *p = priv_of(ctx);
++    // A custom, non-network scheme, so AVFoundation asks the loader for every
++    // byte. The extension names the format.
++    const char *ext = p->cx.codec == AVFAO_CODEC_EAC3 ? "eac3" : "ac3";
++    NSString *string = [NSString stringWithFormat:@"lucid-ao://stream/%llu.%s",
++                        ++p->item_count, ext];
++    NSURL *url = [NSURL URLWithString:string];
++    AVURLAsset *asset = url ? [[AVURLAsset alloc] initWithURL:url options:nil] : nil;
++    if (!asset)
++        return false;
++    // The delegate must be attached before the item exists, so that the
++    // first loading request reaches it.
++    [asset.resourceLoader setDelegate:p->loader queue:p->queue];
++    AVPlayerItem *item = [[AVPlayerItem alloc] initWithAsset:asset
++                                automaticallyLoadedAssetKeys:@[]];
++    if (!item) {
++        [asset.resourceLoader setDelegate:nil queue:nil];
++        [asset release];
++        return false;
++    }
++    item.canUseNetworkResourcesForLiveStreamingWhilePaused = YES;
++    [p->player replaceCurrentItemWithPlayerItem:item];
++    p->asset = asset;
++    p->item = item;
++    return true;
++}
++
++static void op_item_teardown(void *ctx)
++{
++    struct priv *p = priv_of(ctx);
++    [p->player setRate:0];
++    // Outstanding requests are finished before the delegate goes.
++    [(MPAVFStreamLoader *)p->loader cancelAll];
++    [p->asset.resourceLoader setDelegate:nil queue:nil];
++    [p->player replaceCurrentItemWithPlayerItem:nil];
++    [p->item release];
++    [p->asset release];
++    p->item = nil;
++    p->asset = nil;
++}
++
++static void op_set_rate(void *ctx, float rate)
++{
++    [priv_of(ctx)->player setRate:rate];
++}
++
++static void op_seek_to_start(void *ctx)
++{
++    [priv_of(ctx)->item seekToTime:kCMTimeZero completionHandler:nil];
++}
++
++static bool op_timebase_time(void *ctx, int64_t *ns)
++{
++    struct priv *p = priv_of(ctx);
++    CMTimebaseRef timebase = p->item ? p->item.timebase : NULL;
++    if (!timebase)
++        return false;
++    CMTime time = CMTimebaseGetTime(timebase);
++    if (!CMTIME_IS_NUMERIC(time))
++        return false;
++    *ns = avfao_av_cmtime_ns(time);
++    return true;
++}
++
++static bool op_current_time(void *ctx, int64_t *ns)
++{
++    struct priv *p = priv_of(ctx);
++    if (!p->item)
++        return false;
++    CMTime time = p->item.currentTime;
++    if (!CMTIME_IS_NUMERIC(time))
++        return false;
++    *ns = avfao_av_cmtime_ns(time);
++    return true;
++}
++
++static int op_item_status(void *ctx)
++{
++    struct priv *p = priv_of(ctx);
++    return p->item ? (int)p->item.status : 0;
++}
++
++static int op_time_control(void *ctx)
++{
++    return (int)priv_of(ctx)->player.timeControlStatus;
++}
++
++static bool op_failure(void *ctx, char *desc, size_t desc_size, char *domain,
++                       size_t domain_size, long *code)
++{
++    struct priv *p = priv_of(ctx);
++    bool item_failed = p->item && p->item.status == AVPlayerItemStatusFailed;
++    NSError *player_error = p->player.error;
++    if (!item_failed && !player_error)
++        return false;
++    NSError *error = p->item.error ? p->item.error : player_error;
++    snprintf(desc, desc_size, "%s", "unknown");
++    snprintf(domain, domain_size, "%s", "-");
++    *code = 0;
++    if (error) {
++        const char *text = error.localizedDescription.UTF8String;
++        const char *name = error.domain.UTF8String;
++        if (text)
++            snprintf(desc, desc_size, "%s", text);
++        if (name)
++            snprintf(domain, domain_size, "%s", name);
++        *code = (long)error.code;
++    }
++    return true;
++}
++
++static void op_serve(void *ctx)
++{
++    [(MPAVFStreamLoader *)priv_of(ctx)->loader serve];
++}
++
++static int64_t op_reader_gap(void *ctx)
++{
++    struct priv *p = priv_of(ctx);
++    return [(MPAVFStreamLoader *)p->loader readerGap:p->cx.win.head];
++}
++
++static void op_timer(void *ctx, bool armed)
++{
++    struct priv *p = priv_of(ctx);
++    if (!p->feed_timer)
++        return;
++    if (armed) {
++        dispatch_source_set_timer(p->feed_timer,
++                                  dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC),
++                                  50 * NSEC_PER_MSEC, 25 * NSEC_PER_MSEC);
++    } else {
++        dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
++                                  DISPATCH_TIME_FOREVER, 0);
++    }
++}
++
++static const struct avfao_cx_ops cx_ops = {
++    .item_create = op_item_create,
++    .item_teardown = op_item_teardown,
++    .set_rate = op_set_rate,
++    .seek_to_start = op_seek_to_start,
++    .timebase_time = op_timebase_time,
++    .current_time = op_current_time,
++    .item_status = op_item_status,
++    .time_control = op_time_control,
++    .failure = op_failure,
++    .serve = op_serve,
++    .reader_gap = op_reader_gap,
++    .timer = op_timer,
++};
++
++// ---- opening and closing
++
++bool avfao_cx_av_open(struct ao *ao, enum avfao_codec codec)
++{
++    struct priv *p = ao->priv;
++    p->compressed = true;
++
++    p->player = [[AVPlayer alloc] init];
++    if (!p->player) {
++        MP_FATAL(ao, "failed to create the passthrough player\n");
++        return false;
++    }
++    // Start-up is decided by the AO's own supervision, and AirPlay audio
++    // stays on the system route.
++    p->player.automaticallyWaitsToMinimizeStalling = NO;
++    p->player.allowsExternalPlayback = NO;
++
++    NSString *uti = codec == AVFAO_CODEC_EAC3 ? @"public.enhanced-ac3-audio"
++                                              : @"public.ac3-audio";
++    p->loader = [[MPAVFStreamLoader alloc] initWithAO:ao uti:uti];
++    if (!p->loader) {
++        MP_FATAL(ao, "failed to create the passthrough resource loader\n");
++        return false;
++    }
++
++    p->feed_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, p->queue);
++    if (!p->feed_timer) {
++        MP_FATAL(ao, "failed to create the passthrough feed timer\n");
++        return false;
++    }
++    dispatch_source_set_event_handler(p->feed_timer, ^{
++        @autoreleasepool {
++            avfao_cx_step(&p->cx);
++        }
++    });
++    dispatch_source_set_timer(p->feed_timer, DISPATCH_TIME_FOREVER,
++                              DISPATCH_TIME_FOREVER, 0);
++    dispatch_resume(p->feed_timer);
++
++    struct avfao_cx_cfg cfg = {
++        .lead = p->compressed_lead,
++        .grace = p->compressed_start_grace,
++        .first_grace = p->compressed_first_start_grace,
++        .anchor_start = p->compressed_anchor_start,
++        .anchor_resume = p->compressed_anchor_resume,
++    };
++    if (!avfao_cx_init(&p->cx, &p->host, &cx_ops, ao, &p->trace, codec,
++                       ao->samplerate, &cfg))
++        return false;
++    p->cx_ready = true;
++
++    ao->device_buffer = (int)(p->compressed_buffer * ao->samplerate);
++    return true;
++}
++
++static void release_objects(struct ao *ao)
++{
++    struct priv *p = ao->priv;
++    if (p->feed_timer) {
++        dispatch_release(p->feed_timer);
++        p->feed_timer = NULL;
++    }
++    [(MPAVFStreamLoader *)p->loader release];
++    p->loader = nil;
++    [p->player release];
++    p->player = nil;
++    if (p->cx_ready)
++        avfao_cx_uninit(&p->cx);
++    p->cx_ready = false;
++}
++
++void avfao_cx_av_discard(struct ao *ao)
++{
++    struct priv *p = ao->priv;
++    // Nothing can be running on the queue yet.
++    if (p->feed_timer)
++        dispatch_source_cancel(p->feed_timer);
++    [(MPAVFStreamLoader *)p->loader invalidate];
++    release_objects(ao);
++}
++
++void avfao_cx_av_close(struct ao *ao)
++{
++    struct priv *p = ao->priv;
++    dispatch_source_t timer = p->feed_timer;
++    MPAVFStreamLoader *loader = p->loader;
++    avfao_av_run(ao, ^{
++        if (timer)
++            dispatch_source_cancel(timer);
++        [loader invalidate];
++    });
++    release_objects(ao);
++    dispatch_release(p->queue);
++    p->queue = NULL;
++}
++
++// ---- driver calls
++
++void avfao_cx_av_reset(struct ao *ao)
++{
++    struct priv *p = ao->priv;
++    avfao_av_run(ao, ^{
++        @autoreleasepool {
++            avfao_cx_reset(&p->cx);
++        }
++    });
++}
++
++void avfao_cx_av_start(struct ao *ao)
++{
++    struct priv *p = ao->priv;
++    avfao_av_run(ao, ^{
++        @autoreleasepool {
++            avfao_cx_start(&p->cx);
++        }
++    });
++}
++
++void avfao_cx_av_pause(struct ao *ao, bool paused)
++{
++    struct priv *p = ao->priv;
++    avfao_av_run(ao, ^{
++        @autoreleasepool {
++            avfao_cx_pause(&p->cx, paused);
++        }
++    });
++}
++
++int avfao_cx_av_control(struct ao *ao, enum aocontrol cmd, void *arg)
++{
++    struct priv *p = ao->priv;
++    // On mpv's thread: mpv's own volume is software gain and does nothing
++    // to a bitstream, so these act on the player.
++    switch (cmd) {
++    case AOCONTROL_GET_MUTE:
++        *(bool*)arg = p->player.muted;
++        return CONTROL_OK;
++    case AOCONTROL_GET_VOLUME:
++        *(float*)arg = p->player.volume * 100;
++        return CONTROL_OK;
++    case AOCONTROL_SET_MUTE:
++        p->player.muted = *(bool*)arg;
++        return CONTROL_OK;
++    case AOCONTROL_SET_VOLUME:
++        p->player.volume = *(float*)arg / 100;
++        return CONTROL_OK;
++    default:
++        return CONTROL_UNKNOWN;
++    }
++}
+diff --git a/audio/out/ao_avfoundation_iec61937.c b/audio/out/ao_avfoundation_iec61937.c
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_iec61937.c
+@@ -0,0 +1,232 @@
++/*
++ * AVFoundation audio output: IEC 61937 unwrapping and the stream window.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <stdlib.h>
++#include <string.h>
++
++#include "ao_avfoundation_iec61937.h"
++
++bool avfao_window_alloc(struct avfao_window *w, int64_t capacity)
++{
++    *w = (struct avfao_window){0};
++    w->data = malloc((size_t)capacity);
++    if (!w->data)
++        return false;
++    w->capacity = capacity;
++    return true;
++}
++
++void avfao_window_free(struct avfao_window *w)
++{
++    free(w->data);
++    *w = (struct avfao_window){0};
++}
++
++void avfao_window_clear(struct avfao_window *w)
++{
++    w->storage_offset = 0;
++    w->base = 0;
++    w->head = 0;
++}
++
++int64_t avfao_window_space(const struct avfao_window *w)
++{
++    return w->capacity - (w->head - w->base);
++}
++
++const uint8_t *avfao_window_bytes(const struct avfao_window *w, int64_t offset)
++{
++    return w->data + (offset - w->storage_offset);
++}
++
++void avfao_window_trim(struct avfao_window *w, int64_t low_water)
++{
++    int64_t keep_from = low_water - AVFAO_WINDOW_HISTORY;
++    if (keep_from > w->head)
++        keep_from = w->head;
++    if (keep_from > w->base)
++        w->base = keep_from;
++}
++
++int64_t avfao_window_capacity(double lead_seconds)
++{
++    return (int64_t)((double)(AVFAO_WINDOW_HISTORY + AVFAO_WINDOW_SLACK) +
++                     2.0 * lead_seconds * AVFAO_WINDOW_BYTES_PER_SECOND);
++}
++
++// Room for len bytes at the write head. Retained bytes move to the front of
++// the storage only when the tail has run out, so trimming costs nothing.
++static uint8_t *window_tail(struct avfao_window *w, int64_t len)
++{
++    if (w->head - w->storage_offset + len > w->capacity) {
++        memmove(w->data, w->data + (w->base - w->storage_offset),
++                (size_t)(w->head - w->base));
++        w->storage_offset = w->base;
++    }
++    return w->data + (w->head - w->storage_offset);
++}
++
++enum avfao_serve avfao_serve_request(const struct avfao_host *host,
++                                     const struct avfao_window *w,
++                                     int64_t offset, int64_t end, int64_t *len)
++{
++    *len = 0;
++    if (end >= 0 && offset >= end)
++        return AVFAO_SERVE_FINISH;
++    if (offset < w->base) {
++        avfao_log(host, AVFAO_ERR,
++                  "loader requested offset %lld below the retained window at %lld\n",
++                  (long long)offset, (long long)w->base);
++        return AVFAO_SERVE_BELOW;
++    }
++    if (offset < w->head) {
++        int64_t stop = w->head;
++        if (end >= 0 && end < stop)
++            stop = end;
++        *len = stop - offset;
++        avfao_log(host, AVFAO_TRACE, "serving %lld bytes from %lld\n",
++                  (long long)*len, (long long)offset);
++        return AVFAO_SERVE_DATA;
++    }
++    if (offset == w->head)
++        return AVFAO_SERVE_WAIT;
++    // Never answer with data: AVFoundation would later play whatever bytes
++    // it was given for these offsets.
++    avfao_log(host, AVFAO_V, "refusing a loader request at %lld beyond the "
++              "write head at %lld\n", (long long)offset, (long long)w->head);
++    return AVFAO_SERVE_BEYOND;
++}
++
++bool avfao_iec_alloc(struct avfao_iec *iec, enum avfao_codec codec,
++                     int carrier_rate)
++{
++    bool eac3 = codec == AVFAO_CODEC_EAC3;
++    int codec_rate = eac3 ? carrier_rate / 4 : carrier_rate;
++    *iec = (struct avfao_iec){
++        .data_type = eac3 ? 0x15 : 0x01,
++        .burst_bytes = eac3 ? 24576 : 6144,
++        .pd_in_bits = !eac3,
++        .burst_ns = avfao_frames_to_ns(AVFAO_IEC_FRAMES_PER_BURST, codec_rate),
++    };
++    // 100 ms of carrier bytes plus four bursts.
++    iec->carry_size = (int64_t)(carrier_rate / 10) * AVFAO_CARRIER_FRAME_BYTES +
++                      4 * (int64_t)iec->burst_bytes;
++    iec->carry = malloc((size_t)iec->carry_size);
++    return iec->carry != NULL;
++}
++
++void avfao_iec_free(struct avfao_iec *iec)
++{
++    free(iec->carry);
++    iec->carry = NULL;
++    iec->carry_len = 0;
++}
++
++// One payload, in the order that decides which single outcome it gets.
++// Returns false when it must fall back to PCM.
++static bool take_payload(struct avfao_iec *iec, struct avfao_window *w,
++                         const struct avfao_host *host, const uint8_t *src,
++                         int64_t len, int64_t *fed_ns, int64_t *dropped_ns)
++{
++    if (len & 1) {
++        avfao_log(host, AVFAO_WARN, "discarding burst with odd payload length\n");
++        *dropped_ns += iec->burst_ns;
++        return true;
++    }
++    if (len > avfao_window_space(w)) {
++        avfao_log(host, AVFAO_ERR,
++                  "elementary stream window overflow; falling back to PCM\n");
++        return false;
++    }
++    // The muxer writes little-endian 16-bit words; AVFoundation wants the
++    // bitstream's own byte order.
++    uint8_t *dst = window_tail(w, len);
++    for (int64_t n = 0; n < len; n += 2) {
++        dst[n] = src[n + 1];
++        dst[n + 1] = src[n];
++    }
++    if (dst[0] != 0x0B || dst[1] != 0x77) {
++        avfao_log(host, AVFAO_WARN, "discarding burst without syncframe\n");
++        *dropped_ns += iec->burst_ns;
++        return true;
++    }
++    w->head += len;
++    *fed_ns += iec->burst_ns;
++    return true;
++}
++
++bool avfao_iec_unwrap(struct avfao_iec *iec, struct avfao_window *w,
++                      const struct avfao_host *host,
++                      int64_t *fed_ns, int64_t *dropped_ns)
++{
++    uint8_t *buf = iec->carry;
++    int64_t len = iec->carry_len;
++    int64_t pos = 0;
++
++    // Only positions with a whole preamble after them are examined; the
++    // last 7 bytes wait for the next read.
++    while (len - pos >= AVFAO_IEC_HEADER) {
++        const uint8_t *h = buf + pos;
++        if (h[0] != 0x72 || h[1] != 0xF8 || h[2] != 0x1F || h[3] != 0x4E) {
++            pos += 1;
++            continue;
++        }
++        int type = h[4] & 0x7F;
++        if (type != iec->data_type) {
++            avfao_log(host, AVFAO_WARN,
++                      "skipping unexpected IEC 61937 data type 0x%x\n", type);
++            pos += 1;
++            continue;
++        }
++        int pd = h[6] | (h[7] << 8);
++        int payload = iec->pd_in_bits ? pd / 8 : pd;
++        if (payload < AVFAO_IEC_HEADER || payload > iec->burst_bytes - AVFAO_IEC_HEADER) {
++            avfao_log(host, AVFAO_WARN,
++                      "skipping burst with invalid payload length %d\n", payload);
++            pos += 1;
++            continue;
++        }
++        int64_t padded = ((int64_t)payload + 1) & ~(int64_t)1;
++        if (pos + AVFAO_IEC_HEADER + padded > len)
++            break; // incomplete: keep it, from its preamble on
++        if (!take_payload(iec, w, host, h + AVFAO_IEC_HEADER, payload,
++                          fed_ns, dropped_ns))
++        {
++            iec->carry_len = 0;
++            return false;
++        }
++        pos += AVFAO_IEC_HEADER + padded;
++    }
++
++    memmove(buf, buf + pos, (size_t)(len - pos));
++    iec->carry_len = len - pos;
++
++    // With the rules above the buffer never holds this much here; the check
++    // stays as a last resort.
++    if (iec->carry_len > 3 * (int64_t)iec->burst_bytes) {
++        avfao_log(host, AVFAO_ERR,
++                  "no IEC 61937 sync found in %d bytes; falling back to PCM\n",
++                  (int)iec->carry_len);
++        iec->carry_len = 0;
++        return false;
++    }
++    return true;
++}
+diff --git a/audio/out/ao_avfoundation_iec61937.h b/audio/out/ao_avfoundation_iec61937.h
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_iec61937.h
+@@ -0,0 +1,93 @@
++/*
++ * AVFoundation audio output: IEC 61937 unwrapping and the stream window.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef MP_AO_AVFOUNDATION_IEC61937_H
++#define MP_AO_AVFOUNDATION_IEC61937_H
++
++#include "ao_avfoundation_core.h"
++
++#define AVFAO_IEC_HEADER 8
++#define AVFAO_IEC_FRAMES_PER_BURST 1536
++#define AVFAO_CARRIER_FRAME_BYTES 4
++#define AVFAO_WINDOW_HISTORY INT64_C(2097152)
++#define AVFAO_WINDOW_SLACK INT64_C(1048576)
++#define AVFAO_WINDOW_BYTES_PER_SECOND 786432.0
++
++// The plain AC-3 or E-AC-3 bytes handed to AVPlayer, indexed by their offset
++// from the start of the item's stream. Bytes below base are gone; head is
++// just past the newest byte.
++struct avfao_window {
++    uint8_t *data;
++    int64_t capacity;
++    int64_t storage_offset; // stream offset of data[0]
++    int64_t base;
++    int64_t head;
++};
++
++bool avfao_window_alloc(struct avfao_window *w, int64_t capacity);
++void avfao_window_free(struct avfao_window *w);
++void avfao_window_clear(struct avfao_window *w);
++int64_t avfao_window_space(const struct avfao_window *w);
++// Bytes from offset (base <= offset < head) to the head.
++const uint8_t *avfao_window_bytes(const struct avfao_window *w, int64_t offset);
++// Keep at most AVFAO_WINDOW_HISTORY bytes below low_water.
++void avfao_window_trim(struct avfao_window *w, int64_t low_water);
++// Window size for a steady lead: history + slack + 2 x lead x 768 KiB/s.
++int64_t avfao_window_capacity(double lead_seconds);
++
++// What to do with one pending loader request.
++enum avfao_serve {
++    AVFAO_SERVE_WAIT,       // at the write head
++    AVFAO_SERVE_DATA,       // respond with *len bytes from its offset
++    AVFAO_SERVE_FINISH,     // a bounded request at its end
++    AVFAO_SERVE_BELOW,      // below the retained window: fail (ESPIPE)
++    AVFAO_SERVE_BEYOND,     // past the write head: fail (ENOTSUP)
++};
++
++// end is the request's end offset, or -1 for a request to the end of the
++// resource. Logs the two refusals.
++enum avfao_serve avfao_serve_request(const struct avfao_host *host,
++                                     const struct avfao_window *w,
++                                     int64_t offset, int64_t end, int64_t *len);
++
++struct avfao_iec {
++    int data_type;     // low 7 bits of Pc
++    int burst_bytes;   // repetition period in bytes
++    bool pd_in_bits;   // AC-3 counts Pd in bits, E-AC-3 in bytes
++    int64_t burst_ns;  // one burst period at the codec rate
++
++    uint8_t *carry;    // bytes read from mpv but not yet resolved
++    int64_t carry_len;
++    int64_t carry_size;
++};
++
++bool avfao_iec_alloc(struct avfao_iec *iec, enum avfao_codec codec,
++                     int carrier_rate);
++void avfao_iec_free(struct avfao_iec *iec);
++
++// Turns the carry-over buffer into payloads in the window. Adds one burst
++// period to *fed_ns per accepted payload and to *dropped_ns per rejected
++// one. Returns false when the stream must fall back to PCM.
++bool avfao_iec_unwrap(struct avfao_iec *iec, struct avfao_window *w,
++                      const struct avfao_host *host,
++                      int64_t *fed_ns, int64_t *dropped_ns);
++
++#endif

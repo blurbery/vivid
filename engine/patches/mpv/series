@@ -2,3 +2,9 @@
 # Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
 9a8c970f0e900a359936990e90ca6288c572b1ee798d876252ef31d10f5a7a88  0001-ad_spdif-recreate-spdif-muxer-on-reset.patch
 964f2f00526cd41d921e14a0a8a72729a63fcedc125114fd0bf63588ddfb1b7b  0002-ao_avfoundation-build-for-ios-and-tvos.patch
+cbdf12c323b48743429726885750522befa058233b3e2ee5938f58532fcc510c  0010-ad_spdif-carry-e-ac-3-at-four-times-the-codec-rate.patch
+5f9a8762969b9180268a85fa118bd4cbb40e1e5b4764e899b6887dbffad8cd44  0011-f_output_chain-wake-the-chain-after-a-hard-reset.patch
+bf2b408b276d92c8ca672d2d8ebd893314fe90900e5c56709e8c1b34bd7a473f  0012-ao_avfoundation-rebuild-the-output-around-a-shared-centre.patch
+039ead0b99bc0a71a403e6d81a2610e4178f1c43e5f6b80dbde4e32047d2aa17  0013-ao_avfoundation-decoded-pcm-sink-with-a-bounded-tvos-mode.patch
+8cdd4b37df0af8c5891c501335c26b1ef8e0cadf8c5832074290d2f0f1979792  0014-ao_avfoundation-start-up-supervision-and-clock-anchoring.patch
+c76f93a63bf0002f2998b2c33ed0f9467d19a1d68543f2d66854bedca10aa5e1  0015-ao_avfoundation-pass-ac-3-and-e-ac-3-through-avplayer.patch
