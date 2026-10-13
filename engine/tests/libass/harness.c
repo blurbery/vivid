@@ -6,6 +6,7 @@
 //
 //   frame <tag> <index> <time> <change> <composite> <images> <count>
 //         <attempts> <failures> <open-failures> <cache-bytes> <bad-types>
+//         <render-ns> <faces-added> <unresolved>
 //
 // <composite> is a SHA-256 (first 128 bits) of the frame composited onto a
 // black canvas with integer blending, canonicalised to its tight bounding
@@ -17,7 +18,12 @@
 // messages during that frame: searches, searches that found no font with
 // the glyph, and fonts that could not be opened. <cache-bytes> is the size of the event render
 // cache, read through libass's private headers when built with VIVID_PROBE
-// (builds that have the cache), or -1.
+// (builds that have the cache), or -1. <render-ns> is the time
+// ass_render_frame() took, in nanoseconds. <faces-added> and <unresolved>
+// count the fallback faces added to fonts and the glyph lookups that no face
+// could satisfy during that frame, read from the counters patch 0010 adds
+// when built with VIVID_COUNTERS, or -1. Every render of an event with
+// unresolved glyphs adds to <unresolved>, so it also counts those renders.
 //
 // Commands (paths and names are %-encoded, so "%20" is a space):
 //   log <path>                         copy every libass message to a file
@@ -45,6 +51,7 @@
 
 #include <CommonCrypto/CommonDigest.h>
 #include <malloc/malloc.h>
+#include <time.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -55,8 +62,10 @@
 #include "ass.h"
 #include "ass_fontselect.h"
 
-#ifdef VIVID_PROBE
+#if defined(VIVID_PROBE) || defined(VIVID_COUNTERS)
 #include "ass_render.h"
+#endif
+#ifdef VIVID_PROBE
 // ass_cache.c keeps its cache structure private; this is its layout in
 // libass 0.17.5. The bucket count (always 0xFFFF there) checks the layout.
 struct probe_cache {
@@ -214,6 +223,26 @@ static long long cache_bytes(void)
 #endif
 }
 
+// Fallback faces added and glyph lookups that no face could satisfy so far,
+// from patch 0010's counters, or -1 for builds without them.
+static long long faces_added(void)
+{
+#ifdef VIVID_COUNTERS
+    return (long long) renderer->fallback_faces;
+#else
+    return -1;
+#endif
+}
+
+static long long unresolved_lookups(void)
+{
+#ifdef VIVID_COUNTERS
+    return (long long) renderer->unresolved_glyphs;
+#else
+    return -1;
+#endif
+}
+
 static void hex(const unsigned char *d, int n, char *out)
 {
     for (int i = 0; i < n; i++)
@@ -294,6 +323,11 @@ static void hash_composite(ASS_Image *list, char *out)
         memset(canvas + ((size_t) y * canvas_w + x0) * 3, 0, (size_t) (x1 - x0) * 3);
 }
 
+// The composite depends only on the image list, which <images> hashes, and
+// on the canvas, so a frame whose images hash like the previous frame's on
+// the same canvas takes its composite without blending it again.
+static char last_images[33], last_composite[33];
+
 static void set_canvas(int w, int h)
 {
     free(canvas);
@@ -302,6 +336,7 @@ static void set_canvas(int w, int h)
         die("no memory for a %dx%d canvas", w, h);
     canvas_w = w;
     canvas_h = h;
+    last_images[0] = 0;
 }
 
 static void render(const char *tag, long long t0, long long step, int count)
@@ -312,19 +347,32 @@ static void render(const char *tag, long long t0, long long step, int count)
         long long t = t0 + i * step;
         attempts = failures = open_failures = 0;
         int change = -1;
+        long long faces = faces_added(), unresolved = unresolved_lookups();
+        uint64_t start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
         ASS_Image *img = ass_render_frame(renderer, track, t, &change);
+        uint64_t ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - start;
+        if (faces >= 0) {
+            faces = faces_added() - faces;
+            unresolved = unresolved_lookups() - unresolved;
+        }
         char composite[33], images[33];
-        hash_composite(img, composite);
         hash_images(img, images);
+        if (last_images[0] && !strcmp(images, last_images)) {
+            memcpy(composite, last_composite, sizeof(composite));
+        } else {
+            hash_composite(img, composite);
+            memcpy(last_images, images, sizeof(last_images));
+            memcpy(last_composite, composite, sizeof(last_composite));
+        }
         int n = 0, bad_types = 0;
         for (ASS_Image *p = img; p; p = p->next) {
             n++;
             if ((unsigned) p->type > IMAGE_TYPE_SHADOW)
                 bad_types++;
         }
-        printf("frame %s %d %lld %d %s %s %d %lu %lu %lu %lld %d\n", tag, i, t, change,
-               composite, images, n, attempts, failures, open_failures, cache_bytes(),
-               bad_types);
+        printf("frame %s %d %lld %d %s %s %d %lu %lu %lu %lld %d %llu %lld %lld\n", tag, i, t,
+               change, composite, images, n, attempts, failures, open_failures, cache_bytes(),
+               bad_types, (unsigned long long) ns, faces, unresolved);
     }
 }
 

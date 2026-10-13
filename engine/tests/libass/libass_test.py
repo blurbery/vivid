@@ -51,6 +51,7 @@ FAMILIES = {
 SERIES_PREFIXES = ("0001-", "0002-", "0010-")
 VARIANTS = {"upstream": 0, "symbol-font": 1, "event-cache": 2, "patched": 3, "patched-asan": 3}
 PROBED = ("event-cache", "patched", "patched-asan")   # builds that have the cache
+COUNTED = ("patched", "patched-asan")   # builds with patch 0010's font counters
 # Where patch 0010 changes what the upstream event cache does: any scenario
 # with a glyph that a fallback search could not provide (see unresolved()),
 # the memory probes, and this one, the same text with different effects.
@@ -121,6 +122,7 @@ class Scenario:
     note: str = ""
     allowed_window: tuple | None = None   # (from, to) ms where missing glyphs may lag
     cleanup: list = field(default_factory=list)    # files to remove before a run
+    baseline: str = ""    # pressure: the same scenario without the line under test
 
 
 def frames(t0: int, count: int, step: int = FRAME) -> str:
@@ -436,12 +438,59 @@ def memory_scenarios() -> list[Scenario]:
             Scenario("reset-and-settings", "memory", script(sty, reset_evs), commands=reset)]
 
 
+PRESSURE_FRAMES = 120              # five seconds at 24 frames a second
+
+
+def pressure_scenarios(work: Path) -> list[Scenario]:
+    """Four full-frame translucent drawings at 2160p (just under the event
+    render cache's 32 MiB budget on their own) and a large static line keep
+    more than the budget in images on screen, so the cut at the start of
+    every frame goes through the whole cache and drops every entry that no
+    image holds. The line has glyphs that no font provides: an unassigned
+    code point, the same beside a Devanagari letter whose fallback face is
+    added on the first frame, and a CJK line whose style's family has a CJK
+    font that cannot be opened, with the harness's own fonts, and an emoji
+    line through Core Text. Each is compared with the drawings alone."""
+    missing = work / "no-such-font.ttf"
+    times = enc(str(FONT_FILES["times"]))
+    own = [f"provider-font Base {times} 400 20-24F",
+           f"provider-font Fallback {enc(str(missing))} 400 E00-E7F",
+           f"provider-font Fallback {enc(str(FONT_FILES['arial-unicode']))} 400 900-97F",
+           f"provider-font CJK {times} 400 20-24F",
+           f"provider-font CJK {enc(str(missing))} 400 3000-30FF,4E00-9FFF"]
+    sheets = [event(0, 60000, "Sheet", rf"{{\pos(0,0)\p1\1c{c}\1a&HE0&}}"
+                    r"m 0 0 l 1920 0 1920 1080 0 1080{\p0}")
+              for c in ("&H3060C0&", "&HC06030&", "&H30C060&", "&HA0A0A0&")]
+
+    def styles(font: str) -> list[str]:
+        return [style("Sheet", font=font, outline_w=0, shadow=0, align=7),
+                style("Line", font=font, size=120, outline_w=2, shadow=1)]
+
+    run = [frames(1000, PRESSURE_FRAMES)]
+    base = "pressure-drawings-2160p"
+    lines = {"pressure-unassigned-2160p": ("Base", f"Unassigned {UNASSIGNED} code point"),
+             "pressure-face-added-2160p": ("Base", f"Unassigned {UNASSIGNED} and {DEVANAGARI_KA}"),
+             "pressure-emoji-2160p": ("Arial", "Plain text with emoji 😀🎬🍿"),
+             "pressure-cjk-2160p": ("CJK", "日本語の字幕が表示されない")}
+    out = [Scenario(base, "pressure", script(styles("Base"), sheets), UHD,
+                    init="none Fallback -", setup=list(own), commands=list(run))]
+    for name, (font, text) in lines.items():
+        core_text = font == "Arial"
+        out.append(Scenario(name, "pressure",
+                            script(styles(font), sheets + [event(0, 60000, "Line", text)]), UHD,
+                            init="coretext Arial -" if core_text else "none Fallback -",
+                            setup=[] if core_text else list(own), commands=list(run),
+                            baseline=base))
+    return out
+
+
 def build_corpus(work: Path) -> list[Scenario]:
     missing = [f"{n}: {p}" for n, p in {**FONT_FILES, **FAMILIES}.items() if not p.exists()]
     if missing:
         raise RuntimeError("system fonts the corpus needs are missing: " + "; ".join(missing))
     return (steady_scenarios() + dynamic_scenarios() + mixed_scenarios() + pixel_scenarios()
-            + symbol_scenarios() + fallback_scenarios(work) + memory_scenarios())
+            + symbol_scenarios() + fallback_scenarios(work) + memory_scenarios()
+            + pressure_scenarios(work))
 
 
 def write_inputs(s: Scenario, corpus: Path) -> Path:
@@ -469,6 +518,9 @@ class Frame:
     open_failures: int
     cache: int
     bad_types: int
+    ns: int               # time ass_render_frame() took
+    faces: int            # fallback faces added, from patch 0010's counter, or -1
+    unresolved: int       # glyph lookups no face satisfied, from 0010's counter, or -1
 
 
 def parse_output(text: str) -> dict:
@@ -479,7 +531,8 @@ def parse_output(text: str) -> dict:
             continue
         if p[0] == "frame":
             frames_.append(Frame(int(p[3]), int(p[4]), p[5], p[6], int(p[7]), int(p[8]),
-                                 int(p[9]), int(p[10]), int(p[11]), int(p[12])))
+                                 int(p[9]), int(p[10]), int(p[11]), int(p[12]), int(p[13]),
+                                 int(p[14]), int(p[15])))
         elif p[0] == "probe":
             probes[p[1]] = int(p[2])
         elif p[0] == "heap":
@@ -527,7 +580,7 @@ def evaluate(scenarios: list[Scenario], results: dict) -> dict:
     asan = results.get("patched-asan")
     totals = {"upstream_changes_on_static": {}, "event_cache_gaps": [], "symbol_differences": {},
               "unresolved_scenarios": [],
-              "mixed_value_differences": {}, "fallback": {}, "memory": {}}
+              "mixed_value_differences": {}, "fallback": {}, "memory": {}, "pressure": {}}
     for s in scenarios:
         g = v.group(s.group)
         before = v.checks
@@ -539,8 +592,9 @@ def evaluate(scenarios: list[Scenario], results: dict) -> dict:
             v.check(res[s.name]["done"] and len(res[s.name]["frames"]) == len(P),
                     f"{name}: {variant} build ran every frame")
         if asan is not None:
-            same = [(f.change, f.composite, f.images, f.attempts, f.cache) for f in P] == \
-                [(f.change, f.composite, f.images, f.attempts, f.cache)
+            same = [(f.change, f.composite, f.images, f.attempts, f.cache, f.faces,
+                     f.unresolved) for f in P] == \
+                [(f.change, f.composite, f.images, f.attempts, f.cache, f.faces, f.unresolved)
                  for f in asan[s.name]["frames"]]
             v.check(same, f"{name}: the AddressSanitizer build gives the patched build's results")
         # Clones carry their image's type. libass leaves a background box's
@@ -601,6 +655,8 @@ def evaluate(scenarios: list[Scenario], results: dict) -> dict:
             evaluate_core_text(v, s, totals, P, U)
         if s.group == "memory":
             evaluate_memory(v, s, totals, pa[s.name], ec[s.name], up[s.name])
+        if s.group == "pressure":
+            evaluate_pressure(v, s, totals, results)
         if s.group != "memory":
             gaps = [i for i, (a, b) in enumerate(zip(ec[s.name]["frames"], R))
                     if a.composite != b.composite]
@@ -700,6 +756,63 @@ def evaluate_memory(v: Verdict, s: Scenario, totals: dict, pa: dict, ec: dict, u
             k for k, val in eprobes.items() if k.startswith("after-") and val)
 
 
+def median_ms(frames_) -> float:
+    ns = sorted(f.ns for f in frames_)
+    return round((ns[len(ns) // 2] + ns[(len(ns) - 1) // 2]) / 2e6, 4) if ns else 0.0
+
+
+def messages(f: Frame) -> int:
+    return f.attempts + f.failures + f.open_failures
+
+
+def evaluate_pressure(v: Verdict, s: Scenario, totals: dict, results: dict) -> None:
+    """Frames are counted from 1 in these checks: frame 1 is the first render
+    and frame 2 the second, which may render the line once more only when
+    frame 1 added a fallback face. Timings are recorded, not checked: shared
+    runners are too noisy for a 0.01 ms bound, so the checks count fallback
+    searches and renders of the line instead."""
+    name = f"pressure/{s.name}"
+    P, E, U = (results[k][s.name]["frames"] for k in ("patched", "event-cache", "upstream"))
+    info = {"cache_bytes": min(f.cache for f in P),
+            "median_ms_after_frame_2": {k: median_ms(results[k][s.name]["frames"][2:])
+                                        for k in ("patched", "event-cache", "upstream")}}
+    totals["pressure"][s.name] = info
+    if not s.baseline:
+        v.check(not any(f.change for f in P[1:]), f"{name}: no change after the first frame")
+        return
+    v.check(all(f.cache > EVENT_CACHE_BUDGET for f in P),
+            f"{name}: the images on screen keep the event render cache over its 32 MiB budget "
+            f"on every frame (smallest {info['cache_bytes']} bytes)")
+    reached = P[0].unresolved > 0 and unresolved(P[:1])
+    after = P[2:]
+    base = median_ms(results["patched"][s.baseline]["frames"][2:])
+    info.update({
+        "unresolved_glyphs_reached": reached,
+        "patched_messages": [messages(f) for f in P[:3]] + [sum(messages(f) for f in after)],
+        "patched_line_renders_after_frame_2": sum(1 for f in after if f.unresolved),
+        "faces_added_on_frame_1": P[0].faces,
+        "event_cache_messages_after_frame_2": sum(messages(f) for f in E[2:]),
+        "upstream_messages_per_frame": round(sum(messages(f) for f in U) / len(U), 2),
+        "baseline_median_ms_after_frame_2": base,
+        "patched_difference_ms": round(info["median_ms_after_frame_2"]["patched"] - base, 4)})
+    # Core Text decides whether the emoji have glyphs; the harness's own
+    # fonts make the other lines unresolved on every system.
+    if not s.init.startswith("coretext"):
+        v.check(reached, f"{name}: the line has glyphs that no font provides")
+        v.check(all(f.attempts for f in U), f"{name}: upstream searches on every frame")
+    if "face-added" in s.name:
+        v.check(P[0].faces > 0 and P[1].unresolved > 0,
+                f"{name}: frame 1 adds a fallback face and frame 2 renders the line once more")
+    v.check(not any(messages(f) for f in after),
+            f"{name}: no fallback messages after frame 2 ({info['patched_messages']})")
+    v.check(not any(f.unresolved for f in after),
+            f"{name}: the line is not rendered again after frame 2")
+    v.check(P[0].faces > 0 or not (messages(P[1]) or P[1].unresolved or P[1].change),
+            f"{name}: frame 2 searches, renders the line or reports a change only when frame 1 "
+            "added a fallback face")
+    v.check(not any(f.change for f in after), f"{name}: no change after frame 2")
+
+
 def summary_markdown(scenarios: list[Scenario], verdict: dict, results: dict) -> str:
     frames_ = sum(len(r["frames"]) for res in results.values() for r in res.values())
     lines = ["## libass host tests", "",
@@ -727,6 +840,15 @@ def summary_markdown(scenarios: list[Scenario], verdict: dict, results: dict) ->
                   f"bytes; extra heap over upstream at each checkpoint: "
                   f"{m.get('long_run_extra_heap')}. Upstream event cache alone keeps entries "
                   f"after: {', '.join(m.get('event_cache_keeps_after', [])) or 'nothing'}.", ""]
+    if t["pressure"]:
+        lines += ["Over the event render cache's budget (patched build; median ms per frame after "
+                  "frame 2 for patched / event cache alone / upstream; fallback messages on "
+                  "frames 1, 2, 3 and after):",
+                  ", ".join(f"{k} {x['median_ms_after_frame_2']['patched']}/"
+                            f"{x['median_ms_after_frame_2']['event-cache']}/"
+                            f"{x['median_ms_after_frame_2']['upstream']}"
+                            + (f" messages {x['patched_messages']}" if "patched_messages" in x
+                               else "") for k, x in t["pressure"].items()), ""]
     if verdict["failures"]:
         lines += ["Failures:", ""] + [f"- {f}" for f in verdict["failures"][:40]] + [""]
     return "\n".join(lines)

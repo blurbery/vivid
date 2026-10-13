@@ -5,7 +5,8 @@ Subject: [PATCH] render: keep unresolved glyphs per event and refresh them
  after new fallback faces
 
 Applies to libass 0.17.5 after patches 0001 and 0002, and changes only
-the event render cache that 0002 adds and the counters it needs.
+the event render cache that 0002 adds, the counters it needs and a cache
+lookup that never creates an entry.
 
 - Output with glyphs that no font face could provide is never shared
   between events. A glyph counts as unresolved when ass_font_get_index()
@@ -16,6 +17,15 @@ the event render cache that 0002 adds and the counters it needs.
   its render started. Another event with the same text therefore renders
   its own text once, with the faces that exist then, instead of
   inheriting missing glyphs.
+- An event that has its own entry looks it up first, with
+  ass_cache_find(), which never creates an entry, and goes through the
+  shared entry only when its own is missing. The event's images on
+  screen hold its own entry, so the cache budget cannot drop it while
+  they are in use. The shared entry holds no images, and the cut at the
+  start of a frame drops it whenever the images on screen alone exceed
+  the budget, so the event must not depend on it. Such an event is
+  therefore searched for once per appearance, plus once per added
+  fallback face, however full the cache is.
 - Once any font gains a fallback face, each such event is rendered once
   more on its next frame (on the same frame if it is rendered after the
   face was added), so glyphs the new face covers appear when unpatched
@@ -82,6 +92,42 @@ diff --git a/libass/ass_cache.c b/libass/ass_cache.c
  }
  
  size_t ass_event_render_construct(void *key, void *value, void *priv);
+@@ -474,6 +480,35 @@
+     return value;
+ }
+ 
++// Retrieve the value for a key only if it already exists, without creating
++// one: returns NULL otherwise. The key stays the caller's. A value found is
++// used as by ass_cache_get(): it becomes the most recently used, and is
++// valid until the next ass_cache_cut call.
++void *ass_cache_find(Cache *cache, void *key)
++{
++    const CacheDesc *desc = cache->desc;
++    size_t key_offs = CACHE_ITEM_SIZE + align_cache(desc->value_size);
++    unsigned bucket = desc->hash_func(key, ASS_HASH_INIT) % cache->buckets;
++    for (CacheItem *item = cache->map[bucket]; item; item = item->next) {
++        if (!desc->compare_func(key, (char *) item + key_offs))
++            continue;
++        assert(item->size);
++        if (!item->queue_prev || item->queue_next) {
++            if (item->queue_prev) {
++                item->queue_next->queue_prev = item->queue_prev;
++                *item->queue_prev = item->queue_next;
++            } else
++                item->ref_count++;
++            *cache->queue_last = item;
++            item->queue_prev = cache->queue_last;
++            cache->queue_last = &item->queue_next;
++            item->queue_next = NULL;
++        }
++        return (char *) item + CACHE_ITEM_SIZE;
++    }
++    return NULL;
++}
++
+ void *ass_cache_key(void *value)
+ {
+     CacheItem *item = value_to_item(value);
 diff --git a/libass/ass_cache.h b/libass/ass_cache.h
 --- a/libass/ass_cache.h
 +++ b/libass/ass_cache.h
@@ -95,6 +141,14 @@ diff --git a/libass/ass_cache.h b/libass/ass_cache.h
      int top, height, left, width;
      int detect_collisions;
      int shift_direction;
+@@ -109,6 +110,7 @@
+ 
+ Cache *ass_cache_create(const CacheDesc *desc);
+ void *ass_cache_get(Cache *cache, void *key, void *priv);
++void *ass_cache_find(Cache *cache, void *key);
+ void *ass_cache_key(void *value);
+ void ass_cache_inc_ref(void *value);
+ void ass_cache_dec_ref(void *value);
 diff --git a/libass/ass_cache_template.h b/libass/ass_cache_template.h
 --- a/libass/ass_cache_template.h
 +++ b/libass/ass_cache_template.h
@@ -192,20 +246,38 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
          .state_generation = render_priv->state_generation,
          .style = event->Style,
          .margin_l = event->MarginL,
-@@ -3080,8 +3103,37 @@
+@@ -3078,10 +3101,55 @@
+         .margin_v = event->MarginV,
+     };
      struct event_render_construct_ctx ctx = { state, event };
-     EventRenderHashValue *v =
-         ass_cache_get(render_priv->cache.event_render_cache, &key, &ctx);
--    if (!v)
+-    EventRenderHashValue *v =
+-        ass_cache_get(render_priv->cache.event_render_cache, &key, &ctx);
++    EventRenderHashValue *v = NULL;
++
++    // An event that keeps its own entry looks it up first, so reusing it
++    // never depends on the shared entry that only records unresolved
++    // glyphs. That entry holds no images, and the cut at the start of a
++    // frame drops it whenever the images on screen alone exceed the
++    // budget, while the event's own images hold its own entry.
++    RenderPriv *priv = event->render_priv;
++    if (priv && priv->render_id == render_priv->render_id && priv->owner) {
++        key.owner = priv->owner;
++        key.font_epoch = font_epoch;
++        v = ass_cache_find(render_priv->cache.event_render_cache, &key);
++        if (!v)
++            key.owner = key.font_epoch = 0;
++    }
+     if (!v)
 -        return render_event_real(state, event, event_images);
++        v = ass_cache_get(render_priv->cache.event_render_cache, &key, &ctx);
 +
 +    // Output with glyphs that no font face could provide is never shared:
 +    // another event with the same text renders its own. Each event keeps
 +    // it under its own owner id and the number of fallback faces added
 +    // when its render started, so once any font gains a face the event is
 +    // rendered once more and shows whatever glyphs the new face covers.
-+    if (v && v->valid && !v->time_dependent && v->unresolved) {
-+        RenderPriv *priv = get_render_priv(render_priv, event);
++    if (!key.owner && v && v->valid && !v->time_dependent && v->unresolved) {
++        priv = get_render_priv(render_priv, event);
 +        v = NULL;
 +        if (priv) {
 +            if (!priv->owner)
@@ -223,8 +295,9 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
 +        *event_images = ctx.ei;
 +        return true;
 +    }
-+    // An owned entry from an earlier frame matched after the shared entry
-+    // had to be rendered again: release this frame's render.
++    // An owned entry matched although the shared entry was rendered this
++    // frame (the lookup above finds such an entry first, but nothing may
++    // leak): release this frame's render.
 +    if (ctx.rendered && ctx.ok && !ctx.taken && !v->time_dependent) {
 +        ass_frame_ref(ctx.ei.imgs);
 +        ass_frame_unref(ctx.ei.imgs);
@@ -232,7 +305,7 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
      if (v->time_dependent) {
          if (!ctx.rendered)
              return render_event_real(state, event, event_images);
-@@ -3111,6 +3163,7 @@
+@@ -3111,6 +3179,7 @@
              }
              return false;
          }
@@ -240,7 +313,7 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
          *tail = clone;
          tail = &clone->next;
      }
-@@ -3199,6 +3252,7 @@
+@@ -3199,6 +3268,7 @@
  {
      ASS_Track *track = priv->track;
      ASS_Settings *s = &priv->settings;
@@ -248,7 +321,7 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
  
      priv->state_scratch_len = 0;
      priv->state_scratch_ok = true;
-@@ -3242,6 +3296,12 @@
+@@ -3242,6 +3312,12 @@
          priv->state_scratch_cap = len;
          priv->state_generation++;
      }
