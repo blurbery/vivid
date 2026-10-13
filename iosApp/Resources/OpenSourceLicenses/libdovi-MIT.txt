@@ -1,10 +1,10 @@
 Component: libdovi (dolby_vision crate C API) and the Rust crates compiled into it
-Version: dolby_vision 3.3.2 (tag libdovi-3.3.2, commit 4fd2b2235c9f93582dd4a00e65ee34a07800afd7), via mpvkit/libdovi-build 3.3.2
+Version: dolby_vision 3.3.2 (tag libdovi-3.3.2, commit 4fd2b2235c9f93582dd4a00e65ee34a07800afd7), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0-interim.1, with Vivid's patch (MIT)
 Source: https://github.com/quietvoid/dovi_tool/tree/4fd2b2235c9f93582dd4a00e65ee34a07800afd7/dolby_vision
 SPDX: MIT AND (MIT OR Apache-2.0) AND (Zlib OR Apache-2.0 OR MIT)
 Note: Crate set: normal (non-dev) dependencies of dolby_vision with the capi feature only (serde, serde_json, roxmltree and criterion are not compiled), resolved from dolby_vision/Cargo.lock at the tag (the root Cargo.toml has no [workspace]).
 Note: Texts are taken from each crate's published .crate archive on crates.io; the git commit is from the archive's .cargo_vcs_info.json. For dual or triple licensed crates the MIT text is included.
-Note: libdovi is built with cargo cinstall -Zbuild-std, so the Rust standard library is also compiled in; see Rust-Standard-Library-MIT.
+Note: The Rust 1.98.0 standard library is also compiled into libdovi; see Rust-Standard-Library-MIT.
 ================================================================================
 
 ================================================================================

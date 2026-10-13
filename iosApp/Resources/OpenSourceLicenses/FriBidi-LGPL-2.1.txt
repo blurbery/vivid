@@ -1,5 +1,5 @@
 Component: GNU FriBidi
-Version: 1.0.12 (tag v1.0.12, commit 6428d8469e536bcbb6e12c7b79ba6659371c435a), via mpvkit/libass-build 0.17.4
+Version: 1.0.12 (tag v1.0.12, commit 6428d8469e536bcbb6e12c7b79ba6659371c435a), an interim prebuilt binary in Lucid Engine 0.1.0-interim.1
 Source: https://github.com/fribidi/fribidi/tree/6428d8469e536bcbb6e12c7b79ba6659371c435a
 SPDX: LGPL-2.1-or-later
 ================================================================================

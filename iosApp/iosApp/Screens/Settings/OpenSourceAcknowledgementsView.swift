@@ -24,7 +24,7 @@ enum OpenSourceAcknowledgements {
         let notice: String?
         let text: String?
 
-        /// Version and licence for the list, such as "8.0.1 · GPL 3.0 as built".
+        /// Version and licence for the list, such as "8.0.1 · LGPL 2.1 or later".
         var detail: String? {
             let parts = [version, licence].compactMap { $0 }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")

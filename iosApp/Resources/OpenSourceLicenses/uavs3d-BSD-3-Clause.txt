@@ -1,5 +1,5 @@
 Component: uavs3d
-Version: master at commit 0e20d2c291853f196c68922a264bcd8471d75b68 (master tip when mpvkit/libuavs3d-build 1.2.1-fix was released on 2026-07-25; unchanged since 2025-12-13)
+Version: 1.2 (commit 0e20d2c291853f196c68922a264bcd8471d75b68), an interim prebuilt binary in Lucid Engine 0.1.0-interim.1
 Source: https://github.com/uavs3/uavs3d/tree/0e20d2c291853f196c68922a264bcd8471d75b68
 SPDX: BSD-3-Clause
 ================================================================================

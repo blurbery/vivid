@@ -1,5 +1,5 @@
 Component: dav1d
-Version: 1.5.3 (tag 1.5.3, commit b546257f770768b2c88258c533da38b91a06f737), via edde746/libdav1d-build 1.5.3-neon
+Version: 1.5.3 (tag 1.5.3, commit b546257f770768b2c88258c533da38b91a06f737), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0-interim.1
 Source: https://code.videolan.org/videolan/dav1d/-/tree/b546257f770768b2c88258c533da38b91a06f737
 SPDX: BSD-2-Clause
 Note: Identical bytes on the official VideoLAN GitLab and the github.com/videolan/dav1d mirror at this commit.

@@ -1,5 +1,5 @@
 Component: uchardet
-Version: 0.0.8 (tag v0.0.8, commit ae6302a016088ad07177f86d417b20010053632b), via mpvkit/libuchardet-build 0.0.8-xcode
+Version: 0.0.8 (tag v0.0.8, commit ae6302a016088ad07177f86d417b20010053632b), an interim prebuilt binary in Lucid Engine 0.1.0-interim.1
 Source: https://gitlab.freedesktop.org/uchardet/uchardet/-/tree/ae6302a016088ad07177f86d417b20010053632b
 SPDX: MPL-1.1 OR GPL-2.0-or-later OR LGPL-2.1-or-later
 Note: COPYING contains all three licence texts (MPL 1.1 first).
