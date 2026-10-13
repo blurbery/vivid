@@ -1252,10 +1252,13 @@ def summarise(report: dict) -> str:
 # short name; the group prefix is stored once (patch spec 2.3, 7.2).
 VO_OPTION_NAMES = (b"composite-osd", b"pip-composite-osd", b"queue-lead-ms", b"presentation")
 VO_ABSENT_OPTIONS = (b"osd-max-height", b"osd-video-res")
-# What the output must reference to do its job (patch spec 4).
+# What the output must reference to do its job (patch spec 4). "a|b" accepts
+# either name: below a deployment target of iOS and tvOS 15 the SDK maps
+# CoreMedia's "source" timebase calls inline to their older "master" names.
 VO_REQUIRED_UNDEFINED = (
-    "_CMTimebaseCreateWithSourceClock", "_CMTimebaseSetRateAndAnchorTime",
-    "_CMTimebaseCopySource", "_CMClockGetHostTimeClock",
+    "_CMTimebaseCreateWithSourceClock|_CMTimebaseCreateWithMasterClock",
+    "_CMTimebaseSetRateAndAnchorTime",
+    "_CMTimebaseCopySource|_CMTimebaseCopyMaster", "_CMClockGetHostTimeClock",
     "_CMSampleBufferCreateReadyWithImageBuffer",
     "_CMVideoFormatDescriptionCreateForImageBuffer",
     "_CMVideoFormatDescriptionMatchesImageBuffer",
@@ -1304,7 +1307,7 @@ def check_video_output(c: Checks, fws: Path, work: Path) -> None:
                  b"\x00" + name + b"\x00" in data)
     for name in VO_ABSENT_OPTIONS:
         c.expect(f"Libmpv has no option {name.decode()}", name not in data)
-    missing = [s for s in VO_REQUIRED_UNDEFINED if s not in undefined]
+    missing = [s for s in VO_REQUIRED_UNDEFINED if not set(s.split("|")) & undefined]
     c.expect("Libmpv's video output references what it needs", not missing, str(missing))
     absent = [s.decode().rstrip("\x00") for s in VO_REQUIRED_STRINGS if s not in data]
     c.expect("Libmpv's video output carries its selectors and the Dolby Vision key",
