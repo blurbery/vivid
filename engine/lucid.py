@@ -142,6 +142,28 @@ DECODER_PATCHES = {"ffmpeg": range(10, 30), "mpv": range(40, 50)}
 # patched FFmpeg tree by `lucid.py test`.
 DECODER_TESTS = ENGINE / "tests" / "ffmpeg"
 HOST_TEST_TARGET = "arm64-apple-macos12.0"
+# FFmpeg for the build host, from the slice's patched tree, for the
+# VideoToolbox glue test (engine/tests/ffmpeg/vt_glue_tests.m): libavutil,
+# libavcodec and libavformat with only the HEVC decoder and parser, the
+# hevc_videotoolbox hwaccel, the raw HEVC demuxer and the file protocol,
+# under AddressSanitizer. Everything else is off, so nothing on the build
+# host is detected or linked.
+HOST_FFMPEG_CONFIGURE = (
+    "--disable-everything", "--disable-autodetect", "--disable-programs", "--disable-doc",
+    "--disable-network", "--disable-avdevice", "--disable-avfilter", "--disable-swscale",
+    "--disable-swresample", "--disable-asm", "--enable-static", "--disable-shared",
+    "--enable-pthreads", "--enable-videotoolbox", "--enable-decoder=hevc", "--enable-parser=hevc",
+    "--enable-hwaccel=hevc_videotoolbox", "--enable-demuxer=hevc", "--enable-protocol=file",
+    "--toolchain=clang-asan", "--cc=clang",
+)
+HOST_FFMPEG_LIBS = ("avformat", "avcodec", "avutil")
+HOST_FFMPEG_REQUIRED = {
+    "config.h": ("CONFIG_VIDEOTOOLBOX", "HAVE_PTHREADS"),
+    "config_components.h": ("CONFIG_HEVC_DECODER", "CONFIG_HEVC_PARSER",
+                            "CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL", "CONFIG_HEVC_DEMUXER",
+                            "CONFIG_FILE_PROTOCOL"),
+}
+GLUE_TEST_STREAM = DECODER_TESTS / "main10-64x64.hevc"
 
 
 @dataclass(frozen=True)
@@ -1770,13 +1792,53 @@ def write_decoder_corpus(assets: Path, dest: Path) -> dict:
             "converted_from_other_forms": sum(1 for e in entries if e[0].endswith("/as-nal"))}
 
 
+def build_host_ffmpeg(src: Path, dest: Path, dovi_include: Path, logfile: Path) -> dict:
+    """libavutil, libavcodec and libavformat for the build host, built out of
+    tree from the slice's patched FFmpeg source (HOST_FFMPEG_CONFIGURE). The
+    build folder also holds the host's generated headers (avconfig.h), which
+    every host test uses instead of a slice's."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    env = {k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "TMPDIR", "DEVELOPER_DIR")
+           if k in os.environ}
+    env["PATH"] = os.pathsep.join(["/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+    env["LC_ALL"] = "C"
+    # Keep FFmpeg's version script out of any enclosing repository.
+    env["GIT_CEILING_DIRECTORIES"] = str(src.parent)
+    target = f"-target {HOST_TEST_TARGET}"
+    args = list(HOST_FFMPEG_CONFIGURE) + [f"--extra-cflags={target} -I{dovi_include}",
+                                          f"--extra-ldflags={target}"]
+    try:
+        run([src / "configure"] + args, cwd=dest, env=env, logfile=logfile)
+    finally:
+        config_log = dest / "ffbuild" / "config.log"
+        if config_log.exists():
+            shutil.copy2(config_log, logfile.with_name(logfile.stem + "-config.log"))
+    for header, names in HOST_FFMPEG_REQUIRED.items():
+        text = (dest / header).read_text()
+        missing = [n for n in names if not re.search(rf"^#define {n} 1$", text, re.M)]
+        if missing:
+            raise Failure(f"host FFmpeg: {', '.join(missing)} not enabled in {header}")
+    libs = [dest / f"lib{lib}" / f"lib{lib}.a" for lib in HOST_FFMPEG_LIBS]
+    run(["make", f"-j{os.cpu_count() or 4}"] + [str(l.relative_to(dest)) for l in libs],
+        cwd=dest, env=env, logfile=logfile)
+    config_mak = (dest / "ffbuild" / "config.mak").read_text()
+    extralibs = []
+    for lib in HOST_FFMPEG_LIBS:
+        m = re.search(rf"^EXTRALIBS-{lib}=(.*)$", config_mak, re.M)
+        extralibs += shlex.split(m.group(1)) if m else []
+    return {"build": dest, "libs": [str(l) for l in libs], "extralibs": extralibs,
+            "configure": args}
+
+
 def run_host_test(name: str, sources: list[Path], includes: list[Path], defines: list[str],
-                  libs: list[str], argv: list[str], out: Path) -> dict:
+                  libs: list[str], argv: list[str], out: Path, flags: tuple = ()) -> dict:
     """Compile a host test and run it; it prints '<n> checks, <f> failed'."""
     exe = out / name
     cmd = ["xcrun", "--sdk", "macosx", "clang", "-target", HOST_TEST_TARGET, "-std=c17", "-O1",
            "-g", "-Wall", "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types"]
-    cmd += [f"-I{i}" for i in includes] + defines + [str(s) for s in sources] + libs
+    cmd += list(flags) + [f"-I{i}" for i in includes] + defines + [str(s) for s in sources] + libs
     cmd += ["-framework", "CoreFoundation", "-framework", "CoreMedia", "-framework", "CoreVideo",
             "-framework", "VideoToolbox", "-framework", "CoreGraphics", "-o", str(exe)]
     run(cmd)
@@ -1796,13 +1858,10 @@ def cmd_test(args) -> None:
     root = args.work.resolve()
     work, out = root / sl.name, root / "out" / sl.name
     report = json.loads((out / "provenance.json").read_text())
-    src, build = work / "src" / "ffmpeg", work / "build" / "ffmpeg"
+    src = work / "src" / "ffmpeg"
     module = src / "libavcodec" / "videotoolbox_dovi.c"
     if not module.is_file():
         raise Failure(f"{module} missing: build the slice first")
-    dovi_includes = [Path(f[2:].replace("<work>", str(work)))
-                     for f in report["ffmpeg_libdovi_flags"]["cflags"] if f.startswith("-I")]
-    includes = [src, build] + dovi_includes
     test_dir = work / "decoder-tests"
     if test_dir.exists():
         shutil.rmtree(test_dir)
@@ -1810,20 +1869,37 @@ def cmd_test(args) -> None:
     sources = [module, DECODER_TESTS / "vt_dovi_tests.c"]
     (out / "logs").mkdir(parents=True, exist_ok=True)
 
+    # libdovi and FFmpeg for the build host first: every suite compiles
+    # against the patched source tree plus the host's own generated headers,
+    # never a slice's build folder.
+    host = build_host_libdovi(root, work, pins, out / "logs" / "libdovi-host.log")
+    hostff = build_host_ffmpeg(src, test_dir / "ffmpeg-host", host["include"],
+                               out / "logs" / "ffmpeg-host.log")
+    report["decoder_test_host_ffmpeg"] = {
+        "configure": [a.replace(str(work), "<work>") for a in hostff["configure"]],
+        "extralibs": hostff["extralibs"]}
+    includes = [src, hostff["build"], host["include"]]
+
     results = [run_host_test("vt_dovi_tests_scripted_libdovi", sources, includes,
                              ["-DVT_DOVI_TEST_FAKE_LIBDOVI"], [], [], test_dir)]
 
-    host = build_host_libdovi(root, work, pins, out / "logs" / "libdovi-host.log")
     corpus = write_decoder_corpus(host["assets"], test_dir / "corpus.bin")
     report["decoder_test_corpus"] = corpus
     log(f"libdovi corpus for FFmpeg's conversion: {corpus['cases']} NAL units "
         f"({corpus['converted_from_other_forms']} from Annex B or raw entries), "
         f"{corpus['abort_class_entries']} abort class entries")
-    results.append(run_host_test("vt_dovi_tests_libdovi", sources,
-                                 [src, build, host["include"]], [],
-                                 [str(host["library"])] + host["libs"],
+    dovi_libs = [str(host["library"])] + host["libs"]
+    results.append(run_host_test("vt_dovi_tests_libdovi", sources, includes, [], dovi_libs,
                                  [str(host["assets"] / "tests"), str(test_dir / "corpus.bin")],
                                  test_dir))
+
+    # videotoolbox.c end to end: the host libraries above and a fake
+    # VideoToolbox session in the test itself, under AddressSanitizer.
+    results.append(run_host_test("vt_glue_tests", [DECODER_TESTS / "vt_glue_tests.m"], includes,
+                                 [], hostff["libs"] + dovi_libs + hostff["extralibs"] +
+                                 ["-framework", "Foundation"],
+                                 [str(GLUE_TEST_STREAM), str(host["assets"] / "tests")],
+                                 test_dir, ("-fsanitize=address", "-fno-omit-frame-pointer")))
 
     report["decoder_tests"] = results
     for r in results:
