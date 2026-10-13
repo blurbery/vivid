@@ -724,6 +724,9 @@ extension PlayerViewModel {
     }
 
     func finalizeTerminalPlaybackError(_ message: String) {
+        #if DEBUG
+        testRecorder?.record(.terminalError(message))
+        #endif
         suppressNextUpForPlaybackFailure()
         #if os(iOS) || os(tvOS)
         // Terminal outcome #1 of 2 (the other is `handleEndOfFile`). Every

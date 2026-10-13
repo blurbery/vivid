@@ -38,6 +38,9 @@ extension PlayerViewModel {
     /// server to adapt, which can fail outright when no remux route exists.
     private func attemptPrematureEndReload() -> Bool {
         guard vividPlaybackController.activeSpec?.options.nativeRemoteHLS == false else { return false }
+        #if DEBUG
+        testRecorder?.record(.sameRouteReopenRequest)
+        #endif
         return beginProtocolV3SameRouteReload(
             fallbackClassification: PlaybackErrorKind.softwarePipelineFailed.rawValue,
             fallbackMessage: Self.prematureSourceEndMessage,

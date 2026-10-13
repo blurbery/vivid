@@ -887,6 +887,16 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     func debugReceivePlaybackTime(_ seconds: Double) {
         property("time-pos", value: seconds, token: generation)
     }
+    /// Delivers a media-core property change to the current load, as the
+    /// core's delegate does, without opening a source.
+    func debugReceiveProperty(_ name: String, value: Any?) {
+        property(name, value: value, token: generation)
+    }
+    /// Delivers a media-core event to the current load, as the core's
+    /// delegate does, without opening a source.
+    func debugReceiveEvent(_ name: String, data: [String: Any]? = nil) {
+        event(name, data: data, token: generation)
+    }
     #endif
     func addExternalSubtitleTrack(_ track: ExternalSubtitleTrack) -> TrackInfo {
         let id = externalTracks.first(where: { $0.value == track })?.key ?? nextExternalID

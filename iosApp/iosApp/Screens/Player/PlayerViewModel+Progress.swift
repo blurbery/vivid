@@ -53,6 +53,12 @@ extension PlayerViewModel {
         let position = position ?? currentTime
         guard position.isFinite, position >= 0 else { return }
         let duration = duration.isFinite && duration > 0 ? duration : 0
+        #if DEBUG
+        if let testRecorder {
+            testRecorder.record(.offlineProgress(position: position, completed: watched))
+            return
+        }
+        #endif
         DownloadManager.shared.recordOfflineProgress(
             mediaItemId: context.mediaItemId,
             position: position,

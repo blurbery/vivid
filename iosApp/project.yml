@@ -116,6 +116,9 @@ targets:
       - path: Tests/VividPlayerCoreTests.swift
       - path: Tests/VividPlayerDisplayCriteriaTests.swift
       - path: Tests/VividPlayerEngineTests.swift
+      # Playback-end recovery, Next Up guards and end-of-stream confirmation.
+      - path: Tests/PlaybackEndRecoveryTests.swift
+      - path: Tests/VividEndOfStreamConfirmationTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:

@@ -658,6 +658,9 @@ extension PlayerViewModel {
                 }
             }
             do {
+                #if DEBUG
+                self.testRecorder?.record(.serverReplan(classification: classification))
+                #endif
                 guard let prepared = try await self.sessionBridge.replanProtocolV3(
                     watchDetail: watchDetail,
                     position: position,

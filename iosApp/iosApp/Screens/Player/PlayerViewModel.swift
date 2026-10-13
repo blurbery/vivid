@@ -370,6 +370,8 @@ class PlayerViewModel {
     @ObservationIgnored var pendingPlaybackStatsTelemetry: LiveTelemetry?
     #if DEBUG
     @ObservationIgnored var debugPlaybackStatsUptime: TimeInterval?
+    /// Test-only. Nil in the app, where nothing is recorded.
+    @ObservationIgnored var testRecorder: PlayerTestRecorder?
     #endif
     #if os(tvOS)
     /// Presentation only: prefer measured contiguous read-ahead, falling back
@@ -1275,6 +1277,33 @@ class PlayerViewModel {
     }
 
 }
+
+#if DEBUG
+/// What the player asked the server, the engine and the offline store to do,
+/// recorded for XCTest. Only a test installs one. While it is installed,
+/// offline progress is recorded here instead of being written to the
+/// download store, so tests never touch persisted downloads.
+@MainActor
+final class PlayerTestRecorder {
+    enum Entry: Equatable {
+        /// An early end asked to reopen the same route. Whether the reopen
+        /// started shows in what follows it.
+        case sameRouteReopenRequest
+        case serverReplan(classification: String)
+        case terminalError(String)
+        case postroll(videoEnded: Bool)
+        case watchedMutation(contentId: String)
+        case progressReport(position: Double, completedContentId: String?)
+        case offlineProgress(position: Double, completed: Bool)
+    }
+
+    private(set) var entries: [Entry] = []
+
+    func record(_ entry: Entry) {
+        entries.append(entry)
+    }
+}
+#endif
 
 /// Marker ranges containing the playhead. Ranges are start-inclusive and
 /// end-exclusive, matching the skip buttons and auto-skip checks.
