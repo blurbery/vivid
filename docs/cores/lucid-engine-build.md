@@ -8,7 +8,7 @@
 Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv, FFmpeg, libass, dav1d and libdovi from their upstream sources with Vivid's patch series, and checks every result against the recorded configuration of today's binaries. Nothing comes from a third-party build repository: the scripts, pins and patches all live in [`engine/`](../../engine).
 
 > [!IMPORTANT]
-> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on `experiment/lucid-engine-build` and the engine implementers' `experiment/lucid-engine-*` branches. Upstream mpv has no `avfoundation` video output. Vivid's own engine patches are now all in the series: the audio output (mpv `0010` to `0016`), the video output (mpv `0020` to `0025`) and the decoder work (FFmpeg `0010` to `0012`, mpv `0040`). These builds still cannot replace today's engine until those patches have passed the device checks of the patch specification.
+> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on `experiment/lucid-engine-build` and the engine implementers' `experiment/lucid-engine-*` branches. Upstream mpv has no `avfoundation` video output. Vivid's own engine patches are now all in the series: the audio output (mpv `0010` to `0016`), the video output (mpv `0020` to `0025`), the decoder work (FFmpeg `0010` to `0012`, mpv `0040`) and libass's event render cache (libass `0001`, `0002` and `0010`). These builds still cannot replace today's engine until those patches have passed the device checks of the patch specification.
 
 ## What it builds
 
@@ -16,7 +16,7 @@ Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv,
 | --- | --- | --- | --- | --- |
 | mpv (libmpv) | v0.41.0 (`41f6a645`) | upstream archive | LGPL-2.1-or-later (`-Dgpl=false`) | [`engine/patches/mpv`](../../engine/patches/mpv/series) |
 | FFmpeg | n8.0.1 (`894da5ca`) | upstream archive | LGPL-2.1-or-later | [`engine/patches/ffmpeg`](../../engine/patches/ffmpeg/series) |
-| libass | 0.17.5 (`4a05d812`) | upstream archive | ISC | none |
+| libass | 0.17.5 (`4a05d812`) | upstream archive | ISC | [`engine/patches/libass`](../../engine/patches/libass/series) |
 | dav1d | 1.5.3 (`b546257f`) | upstream archive | BSD-2-Clause | none |
 | libdovi (the `dolby_vision` crate's C API) | 3.3.2 (`4fd2b223`) | upstream archive, Rust 1.98.0 and cargo-c 0.10.25 | MIT | [`engine/patches/libdovi`](../../engine/patches/libdovi/series) |
 
@@ -50,7 +50,7 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
 7. builds and runs the decoder tests from the slice's patched FFmpeg and libdovi trees on the build host, including an end-to-end test of FFmpeg's VideoToolbox glue against a fake VideoToolbox;
 8. uploads the slice's frameworks, provenance report and logs.
 
-Alongside them, the libdovi C API test job builds libdovi for the runner itself, unpatched and patched, and runs the malformed RPU corpus through both (see [libdovi](#libdovi)). A final job, which waits for every slice and the libdovi test, turns the slices into xcframeworks. Artefacts are kept for three days. Each branch has its own concurrency group, so a newer push cancels only that branch's running build.
+Alongside them, the libdovi C API test job builds libdovi for the runner itself, unpatched and patched, and runs the malformed RPU corpus through both (see [libdovi](#libdovi)), and the libass host test job builds libass for the runner from upstream, from each prefix of its series and from the whole series under AddressSanitizer, and runs a scenario corpus through every build (see [libass](#libass)). A final job, which waits for every slice and both test jobs, turns the slices into xcframeworks. Artefacts are kept for three days. Each branch has its own concurrency group, so a newer push cancels only that branch's running build.
 
 The tool is [`engine/lucid.py`](../../engine/lucid.py), which needs Python 3.9 or later, the Xcode command-line tools and pkg-config. Build on CI rather than a personal Mac: a slice takes several minutes of full CPU. The steps are the same anywhere:
 
@@ -64,9 +64,10 @@ python3 engine/lucid.py test --slice tvos-arm64 --work /path/to/work --downloads
 python3 engine/lucid.py test-vo --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py package --input /path/to/work/out --out /path/to/release
 python3 engine/lucid.py test-libdovi --work /path/to/libdovi-test --downloads /path/to/downloads
+python3 engine/lucid.py test-libass --work /path/to/libass-test --downloads /path/to/downloads
 ```
 
-The work directory must be outside any Git repository and its path must not contain spaces. FFmpeg's version script would otherwise read the enclosing repository, and pkg-config and FFmpeg's configure split paths on spaces. `test-libdovi` has neither restriction and takes a few minutes of one core; `fetch --only rust:,tool:cargo-c,source:libdovi` fetches just what it needs.
+The work directory must be outside any Git repository and its path must not contain spaces. FFmpeg's version script would otherwise read the enclosing repository, and pkg-config and FFmpeg's configure split paths on spaces. `test-libdovi` has neither restriction and takes a few minutes of one core; `fetch --only rust:,tool:cargo-c,source:libdovi` fetches just what it needs. `test-libass` needs a work path without spaces (pkg-config) but may be inside a repository; it takes about two minutes on an Apple silicon Mac, most of it building HarfBuzz, and `fetch --only tool:meson,tool:ninja,source:libass,test:` fetches what it needs.
 
 ## Slices
 
@@ -88,9 +89,10 @@ Vivid links only arm64, so the pipeline builds no arm64e or x86_64 code. This ch
 - `[rust:*]`: Rust 1.98.0 stable from static.rust-lang.org: `rustc`, `cargo` and the standard library for the runner (`aarch64-apple-darwin`) and for each slice (`aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-apple-tvos`, `aarch64-apple-tvos-sim`). The hashes are the `xz_hash` values of that release's channel manifest. `lucid.py` unpacks the components itself, without rustup.
 - `[prebuilt:*]`: the interim release assets. `url` is the build input (headers, thin static libraries and pkg-config files for every slice). `xcframework_url` is the matching SwiftPM binary, for a package to use until the library is built here.
 - `[reference:libdovi]`: today's prebuilt libdovi 3.3.2. It is downloaded only so `check` can require the same header and the same exported C API from the libdovi built here, and is never staged or linked.
+- `[test:*]`: FreeType 2.12.1, FriBidi 1.0.12 and HarfBuzz 8.1.1, the versions and upstream commits of the interim prebuilt binaries, as tag archives from their upstream projects on GitHub (`fetch` checks each archive's embedded commit, as for `[source:*]`). Only `test-libass` builds them, for the runner; nothing from them reaches a slice.
 - `[toolchain]`: the Xcode version CI must use, the minimum OS (14.0) for every slice, Vivid's own deployment targets (iOS 18.0, tvOS 26.0) for the test link, and `source_date_epoch` (below).
 
-Every download goes through `lucid.py`'s single download function, from these projects and hosts only: FFmpeg, mpv-player, libass, videolan, mesonbuild and ninja-build on GitHub; mpvkit release assets for the interim binaries; quietvoid (libdovi's `dovi_tool`) and lu-zero (cargo-c) on GitHub; `static.rust-lang.org/dist/`; and `static.crates.io/crates/`. The libdovi build itself runs offline: Cargo uses the verified crates as a vendored directory source with `--frozen`, so it resolves and downloads nothing.
+Every download goes through `lucid.py`'s single download function, from these projects and hosts only: FFmpeg, mpv-player, libass, videolan, mesonbuild and ninja-build on GitHub; mpvkit release assets for the interim binaries; quietvoid (libdovi's `dovi_tool`) and lu-zero (cargo-c) on GitHub; freetype, fribidi and harfbuzz on GitHub, for the libass host test only; `static.rust-lang.org/dist/`; and `static.crates.io/crates/`. The libdovi build itself runs offline: Cargo uses the verified crates as a vendored directory source with `--frozen`, so it resolves and downloads nothing.
 
 `lucid.py check-allowlist` fails the run if any file in `engine/` or the workflow mentions a blocked project, if a URL points at a host that is not allowlisted, if a download is not one of the allowlisted upstream projects, if anything fetches outside `lucid.py`'s single download function, or if a workflow action is not pinned by commit SHA.
 
@@ -121,9 +123,12 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | mpv | `0024-vo_avfoundation-layers-and-observers.patch` | Video output, part 5: the host and subtitle layers, their renderers and timebase, the main-thread hops, the resize and app-state observers, and the layers' last release on the main thread. LGPL-2.1-or-later. |
 | mpv | `0025-vo_avfoundation-add-the-video-output.patch` | Adds `vo=avfoundation` (meson feature `vo-avfoundation`, first in the video output list) with its `avfoundation-*` options and the VideoToolbox device it registers. LGPL-2.1-or-later. |
 | mpv | `0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch` | Once hardware decoding has output a frame, a run of decoding errors ends it only after two keyframes fail to recover it or after 240 errors, instead of at the first error with `hwdec-software-fallback=yes`. Probing still falls back at once. LGPL-2.1-or-later. |
+| libass | `0001-ass_font-improve-symbol-font-base-offset.patch` | Upstream libass commit `057a5334` ("ass_font: improve symbol font base offset", merged with libass pull request #946), unchanged, with its upstream attribution: works out a symbol-encoded font's base offset from its character map, the way GDI does, instead of always using `0xF000`, and looks up only characters up to U+00FF and from U+F020 to U+F0FF in such a font, so Webdings, Wingdings and similar fonts given non-Latin text place their glyphs as today's engine does. ISC. |
+| libass | `0002-render-cache-rendered-events.patch` | Upstream libass pull request #951 ("render: cache rendered events", by kasper93), at its head commit `f96a521a`, unchanged, with its upstream attribution. The pull request was open when it was taken. Caches the finished images of events that do not depend on the time (no `\move`, `\fad`, `\t`, karaoke or scrolling effect), keyed by text, style, margins and a snapshot of every setting and track state the output depends on, within a 32 MiB budget. An unchanged sign with a vector clip, or a line with a background box, is then reported unchanged instead of changed on every frame. ISC. |
+| libass | `0010-render-keep-unresolved-glyphs-per-event.patch` | Vivid's own patch on top of `0002`; see [libass](#libass). Keeps output with glyphs that no font could provide to the event that rendered it, renders such events once more after any font gains a fallback face, adds the event's Effect to the cache key, releases the cache whenever the state snapshot changes, and gives image clones their image's type. ISC. |
 | libdovi | `0001-capi-return-an-error-instead-of-aborting-on-any-input.patch` | Makes every C API function return its normal error result instead of aborting the process, for any input (see [libdovi](#libdovi)). Valid input gives the same results. MIT, like libdovi. |
 
-The audio output patches add one module each, with the pure C decisions first and the Objective-C bindings last (`0016`), and each adds its own files to `meson.build`, so every stage of the series builds. The video output patches add their modules first (`0020` to `0024`, which `meson.build` does not build yet) and the output itself last (`0025`), which adds them all to `meson.build`. Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019 (0010 to 0016 so far, including the E-AC-3 carrier rate and the output-chain wake), video output mpv 0020 to 0039 (0020 to 0025 so far), decoder work mpv 0040 to 0049 (0040 so far) and FFmpeg 0010 to 0029 (0010 to 0012 so far).
+The audio output patches add one module each, with the pure C decisions first and the Objective-C bindings last (`0016`), and each adds its own files to `meson.build`, so every stage of the series builds. The video output patches add their modules first (`0020` to `0024`, which `meson.build` does not build yet) and the output itself last (`0025`), which adds them all to `meson.build`. Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019 (0010 to 0016 so far, including the E-AC-3 carrier rate and the output-chain wake), video output mpv 0020 to 0039 (0020 to 0025 so far), decoder work mpv 0040 to 0049 (0040 so far) and FFmpeg 0010 to 0029 (0010 to 0012 so far). libass takes upstream changes as `0001` to `0009` and Vivid's own from `0010`.
 
 Each part was written on its own implementer branch, against the pristine source with the patches already on the pipeline branch, and the three were then merged into one series per library. Only one hunk needed regenerating: the `meson.build` hunk of `0025`, which follows the audio output's `meson.build` additions in the merged series and so moved from line 1525 to line 1532. Its content is unchanged, and the merged tree is identical to applying the original `0025` after the audio output patches. Every prefix of every series applies to the pristine source with `patch -p1 -F0` without offsets, fuzz or leftover files, and changes exactly the files its patches name.
 
@@ -176,6 +181,54 @@ Results at `11994e3` (run 38368890048, `macos-26`): 19,381 cases; the patched bu
 
 The test fails on any abort, crash or hang (20 s per case) of the patched build, on more than 64 MiB of memory for one case, on any unexpected result, and on any difference from the unpatched build wherever that build does not abort, other than error texts the patch's own checks change and headers rule 4 above turns into null. It also requires the unpatched build to abort on every abort class, which shows the corpus reaches each abort site. The summary, with the abort counts per class and group, appears on the workflow run page, and the report is uploaded as `lucid-engine-libdovi-test`.
 
+## libass
+
+libass 0.17.5 is built with three patches. Unpatched upstream draws subtitles with the same pixels as today's engine, but a parity check found it costs more on every frame:
+
+- an unchanged sign with a vector clip, and an unchanged SubRip line drawn with a background box (`BorderStyle` 4), are rebuilt into new image buffers on every frame, and libass compares images by buffer, so it reports a change on every frame and the video output re-renders and re-enqueues the same subtitles;
+- for a static event with a character that no font can provide (no font covers it, or the suggested font file cannot be opened), font fallback is searched again on every frame;
+- symbol fonts (Webdings, Wingdings) given non-Latin text place their glyphs differently from today's engine.
+
+A review of upstream libass found that upstream commit `057a5334` (patch `0001`) fixes the symbol fonts, and that upstream pull request #951 (patch `0002`), applied to 0.17.5, gives today's change reports, pixels and fonts on large corpora. Both are taken unchanged; neither needed editing to apply.
+
+### Vivid's patch 0010
+
+`0002` caches an event's images under its text, style and margins, so it can keep a render with missing glyphs: another event with the same text later reuses them, and an event keeps them even after a later character of the same render, or another event, has added a font face that covers them. Unpatched libass shows those glyphs from the next frame. Patch `0010` (ISC, like libass) closes these gaps and changes nothing else:
+
+- **Unresolved glyphs stay with their event.** A glyph is unresolved when `ass_font_get_index()` finds none for a printable character, after its fallback search. Output with an unresolved glyph never goes into the shared entry for its key; that entry only records it, and the event keeps its own entry, under an owner id kept in its `ASS_RenderPriv` and the number of fallback faces added to any font when its render started. Another event with the same text renders its own text once, with the fonts as they are then, and never inherits missing glyphs.
+- **New fallback faces are picked up once.** When any font gains a fallback face, each event holding such an entry is rendered once more: on its next frame, or on the same frame when it is rendered after the face was added. Glyphs the new face covers appear when unpatched libass shows them. That costs at most one extra render, and one extra change report, per added face, and nothing while no faces are being added; an event whose glyphs cannot be resolved is not searched for again on later frames. Output without unresolved glyphs is shared and kept as before, because a new face is appended and glyphs that were found keep their face.
+- **Effects are part of the key.** Without the event's Effect field in the key, an event with a Banner or Scroll effect could reuse the static images of an earlier event with the same text and not move.
+- **Memory is released on every state change.** `0002` bounds the cache at 32 MiB, evicting the least recently used entries, and empties it when the renderer is reconfigured (frame or storage size, margins, aspect ratio, font scale, hinting, line position, style overrides, and `ass_set_fonts`), and when the renderer is freed. `0010` also empties it whenever the snapshot of settings and track state changes, since entries of an older snapshot can never match again: after the shaper, line spacing or margin use changes, or the track's styles or header change.
+- **Image clones keep their type.** `0002` hands out copies of cached images without setting their `type`; `0010` copies it.
+
+### Host tests
+
+`lucid.py test-libass` (the libass host test job) builds FreeType, FriBidi and HarfBuzz for the runner from the `[test:*]` pins, with only what libass needs (HarfBuzz is built with `-Dsincosf=__sincosf`, because its configure finds `sincosf` in macOS's libm, which declares it only under that name). It then builds libass for the runner from the pinned 0.17.5 archive five times, with the options in `libass-meson.txt` except `-Dlibunibreak=disabled` (libunibreak is not built for the runner; it only changes where lines wrap):
+
+| Build | Patches |
+| --- | --- |
+| `upstream` | none |
+| `symbol-font` | `0001` |
+| `event-cache` | `0001`, `0002` |
+| `patched` | the whole series |
+| `patched-asan` | the whole series, with AddressSanitizer |
+
+[`engine/tests/libass/harness.c`](../../engine/tests/libass/harness.c) is linked against each build. It renders frames through the public API, with fonts from the macOS system through Core Text or through a font provider of its own, and records for every frame the change value `ass_render_frame()` reports, a hash of the frame composited onto a black canvas with integer blending and cut to the tight bounding box of what is drawn (equal hashes mean frames that look the same), a hash of the image list's sizes, positions, colours and bitmap bytes, the font fallback messages (searches, failed searches and fonts that could not be opened) and, for the builds that have it, the size of the event render cache, read through libass's private headers. [`libass_test.py`](../../engine/tests/libass/libass_test.py) writes the scenarios, runs each in its own harness process through every build, and checks:
+
+| Group | Scenarios | The patched build must |
+| --- | --- | --- |
+| Steady | an opaque box (`BorderStyle` 3) and a background box (`BorderStyle` 4) SubRip line, signs with a vector clip, an inverse vector clip and a rectangle clip, an outlined line with a shadow, a drawing, a plain line, and four of them together; 240 frames each at 1920x1080 and 3840x2160 | report no change after the first render and repeat its images (the second render's, when a fallback face was added at the first). Upstream must report a change on every frame for the background box and the vector clips |
+| Dynamic | `\move`, `\fad` and `\fade`, `\t`, karaoke (`\k`, `\kf`, `\ko`, `\K`), animated rectangle and inverse clips, animated box colours (`BorderStyle` 3 and 4), collision shifts, events appearing and leaving, Banner and Scroll effects | report upstream's change value on every frame |
+| Mixed | static boxes and clipped signs beside moving, fading and karaoke events, and colliding boxed lines | report a change whenever the frame looks different; its values may be lower than upstream's where upstream rebuilt an unchanged image |
+| Pixels | styles, override tags, clips and drawings, 3D transforms, vertical Japanese (`@` font), Arabic and Hebrew, emoji, wrapping styles, recurring lines, the same text with different effects, a code point no font has (through Core Text), layers and collisions, at 1080p and 2160p | draw what upstream draws on every frame |
+| Symbol fonts | Webdings, Wingdings, Wingdings 2 and 3, and Symbol, with Latin, Cyrillic, Greek, CJK and Arabic text | draw what the `symbol-font` build draws, so any difference from upstream comes from `0001` |
+| Fallback | the harness's own fonts: Thai that cannot be resolved (its suggested font file cannot be opened) and Devanagari whose font also covers Thai; a static line and a boxed sign, a face added later in the same render, by a later and by an earlier event, recurring lines with and without a face added between them, and a font file that appears while a line is shown | draw what upstream draws on every frame, except while a newly appeared font file has not yet been added as a face; search for an unresolved glyph once; report one extra change per added face and none after; render a recurring line's own text |
+| Memory | 400 distinct boxed lines at 2160p; resets and settings changes | keep the event render cache between 24 and 40 MiB at its peak (32 MiB budget, plus the entries the current frame holds) with its extra memory over upstream bounded and not growing; empty the cache after `ass_set_fonts` and after changing the frame size, storage size, shaper, line spacing, margin use or a style |
+
+In every scenario, every build must finish; the AddressSanitizer build must give exactly the patched build's results; a frame that looks different from the previous one must report a change; a frame that reports no change must repeat the previous frame's images; and, where no background box is drawn, every image must have a valid type. Wherever no fallback search failed and apart from the scenario with different effects, the patched build must report the same change values and images as the `event-cache` build, so `0010` changes nothing else. The `event-cache` build must show each gap `0010` closes: it keeps the missing glyph after a face is added, reuses the first line's missing glyph, and does not search again for a recurring line.
+
+Results: see the libass test summary on the workflow run page; the report is uploaded as `lucid-engine-libass-test`.
+
 ## Reproducible builds
 
 - `ZERO_AR_DATE=1` is set for every build, so `ar`, `ranlib` and `libtool` write zero timestamps; Rust and `rust-objcopy` write zero timestamps themselves. `check` requires every member of every archive to carry a zero timestamp.
@@ -214,7 +267,7 @@ Compilers come from the selected Xcode (`/usr/bin/clang`). Every library gets th
 | FFmpeg TLS | OpenSSL 3.3.5 | Secure Transport, with the patch above | Decided |
 | FFmpeg components | as listed in the facts | without the `delogo` filter, the `whip` muxer and the `dtls`, `ffrtmpcrypt`, `rtmpe` and `rtmpte` protocols | GPL-only filter; the others need OpenSSL |
 | FFmpeg and libdovi | `-I` and `-L ... -ldovi` for a Dolby Vision patch | the same, from the `dovi.pc` of the libdovi built here, through `CFLAGS` and `LDFLAGS` only | Vivid's Dolby Vision patch (`0011`) calls libdovi; FFmpeg's configure has no libdovi switch, so the configure line is unchanged |
-| libass | three performance patches | upstream, unpatched | Decided |
+| libass | three performance patches | upstream commit `057a5334`, upstream pull request #951 and Vivid's patch `0010` | Upstream changes and Vivid's own patch instead of third-party ones, for today's change reports, pixels and fonts (see [libass](#libass)) |
 | dav1d | third-party prebuilt | built from source, same options | Part of this pipeline |
 | libdovi | third-party prebuilt: a Rust nightly of December 2025 with `-Zbuild-std`, `-Cpanic=abort`, cargo-c unpinned, crates not locked | built from source: Rust 1.98.0 stable with its prebuilt standard library, cargo-c 0.10.25, locked and vendored crates, `-Cpanic=unwind` and Vivid's patch | Pinned and reproducible; a malformed RPU no longer ends the app (specification 5.13) |
 | libdovi slices | arm64e (tvOS device) and x86_64 (simulators) as well | arm64 only | As for the other libraries |
@@ -244,6 +297,8 @@ Each slice job uploads `lucid-engine-slice-<slice>` with:
 - `logs/`: the build output of each library, plus FFmpeg's `config.log`, meson's logs and the decoder tests' host libdovi and FFmpeg builds.
 
 The libdovi C API test job uploads `lucid-engine-libdovi-test` with its report (`libdovi-test.json` and `.md`), the per-case results of both builds and their logs.
+
+The libass host test job uploads `lucid-engine-libass-test` with its report (`libass-test.json` and `.md`), every build's per-frame results (`frames/<build>/<scenario>.txt`) and the build and harness logs.
 
 The packaging job uploads `lucid-engine-xcframeworks` with:
 
@@ -319,6 +374,7 @@ Each suite counts its checks, and the step fails on any failed check or when a s
 
 - The device checks of the patch specification (9.5) for Vivid's own engine patches: the audio output (mpv `0010` to `0016`), the video output (mpv `0020` to `0025`) and the decoder work (FFmpeg `0010` to `0012`, mpv `0040`). All are in the series and pass the host tests, but none has been checked on a device, so these builds cannot yet be linked into a shipping app.
 - Building the remaining dependencies from source, starting with the ones that carry the most code (libplacebo, shaderc and MoltenVK).
-- An end-to-end host test of mpv patch `0040`: a host libmpv needs host builds of libplacebo and libass (with FreeType, FriBidi and HarfBuzz), which the pipeline pins only as iOS and tvOS binaries.
+- An end-to-end host test of mpv patch `0040`: a host libmpv needs a host build of libplacebo, which the pipeline pins only as iOS and tvOS binaries. libass, FreeType, FriBidi and HarfBuzz are already built for the host by `test-libass`.
+- The libass series on a device: subtitle playback with signs, boxed lines and fallback fonts, checking that the video output stops re-rendering unchanged subtitles.
 - A Swift package that serves these xcframeworks, updating `use-patched-libmpv.sh` for the new slice identifiers, and deciding the bundle identifiers.
 - Licence files and notices for the LGPL FFmpeg and libmpv and the removal of OpenSSL (`THIRD_PARTY_NOTICES.md` and the in-app licences) once the app links these builds.
