@@ -32,7 +32,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        slice: [ios-arm64, ios-arm64-simulator, tvos-arm64, tvos-arm64-simulator]
+        # Temporary: tvOS device slice only while the decoder patches settle.
+        slice: [tvos-arm64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
