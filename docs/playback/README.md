@@ -10,7 +10,7 @@
 
 Apple TV, iPhone and iPad use **Lucid Engine**. Vivid provides the controls, queues and server integration. See the [Lucid Engine guide](../cores/player-engine.md) for output behaviour and device verification.
 
-Read the [playback architecture](architecture.md) for current responsibilities and validation boundaries.
+Read the [playback architecture](architecture.md) for current responsibilities and validation boundaries. The [player bridge specification](player-bridge-spec.md) describes, by behaviour, the Swift bridge between Lucid Engine's adapter and libmpv, for the Vivid-written replacement being built behind the `VIVID_OWN_BRIDGE` build condition.
 
 ## Apple TV controls
 

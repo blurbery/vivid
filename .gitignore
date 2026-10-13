@@ -84,6 +84,7 @@ docs/*
 docs/playback/*
 !docs/playback/README.md
 !docs/playback/architecture.md
+!docs/playback/player-bridge-spec.md
 !docs/release/
 !docs/release/*
 
