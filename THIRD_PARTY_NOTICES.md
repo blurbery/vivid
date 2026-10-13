@@ -19,7 +19,7 @@ Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-E
 | ThumbHash decoder (adapted) | `a652ce6ed691242f459f468f0a8756cda3b90a82` | MIT |
 | tvOS media catalog sample code (adapted, Apple) | 2024 sample | Apple sample code licence (MIT-style) |
 
-This file is the full inventory of third-party components in both apps. The [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt) and the upstream licence text of every component, each with a header giving its version and source, are shown in Settings → About → Open Source Licences; keep both matched to this list.
+This file is the full inventory of third-party components in both apps. The [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt) and the upstream licence text of every component, each with a header giving its version and source, are shown in Settings → About → Open Source Licences and at [vividapp.co/licences](https://vividapp.co/licences); keep both matched to this list. [`licences.json`](iosApp/Resources/OpenSourceLicenses/licences.json) is the list both use. A licence body that several components share word for word (Apache 2.0, GPL 3.0 and LGPL 2.1) is stored once, and each of those components keeps its own notice with a marker line where the text was; `scripts/tests/licence-texts-tests.py` proves every original file still rebuilds byte for byte.
 
 ## Timestamp services
 
@@ -48,11 +48,16 @@ and SHA-256 checksum of every binary, and `versions.json` records the upstream
 pins. The package builds mpv with `-Dgpl=true` and FFmpeg with `--enable-gpl`
 and `--enable-version3`, so the media frameworks are distributed under GPLv3.
 The package supplies static libraries, which are linked into the app executable.
+The pinned `edde746/mpv-build` package applies its own Apple patch series to
+mpv and FFmpeg. Its LICENSE is the GPL-3.0 text and its README says the
+packages ship as GPL builds, so the patched libraries are GPL-3.0 as built;
+most upstream mpv and FFmpeg files remain LGPL-2.1-or-later. mpv's own
+licence texts are bundled unchanged.
 
 | Library | Version | Licence | Prebuilt by |
 | --- | --- | --- | --- |
-| mpv (libmpv) | 0.41.0 | GPL-2.0-or-later as built; most files LGPL-2.1-or-later | `edde746/mpv-build` |
-| FFmpeg (libavcodec, libavdevice, libavfilter, libavformat, libavutil, libswresample, libswscale) | 8.0.1 | GPL-3.0-or-later as built; most files LGPL-2.1-or-later | `edde746/mpv-build` |
+| mpv (libmpv) | 0.41.0 | GPL-3.0 as built; most files LGPL-2.1-or-later | `edde746/mpv-build` |
+| FFmpeg (libavcodec, libavdevice, libavfilter, libavformat, libavutil, libswresample, libswscale) | 8.0.1 | GPL-3.0 as built; most files LGPL-2.1-or-later | `edde746/mpv-build` |
 | libass | 0.17.5 | ISC | `edde746/mpv-build` |
 | FreeType | 2.12.1 | FreeType Licence | `mpvkit/libass-build` 0.17.4 |
 | FriBidi | 1.0.12 | LGPL-2.1-or-later | `mpvkit/libass-build` 0.17.4 |
@@ -72,11 +77,11 @@ The package supplies static libraries, which are linked into the app executable.
 LuaJIT is in the package for macOS only and is not part of either app. System
 libraries from Apple's SDKs are not redistributed.
 
-Settings → About → Open Source Licences shows the full licence text of every
-library above. FFmpeg and FreeType also ask for these credits: this software
-is based in part on the work of the Independent JPEG Group, and portions of
-this software are copyright © 2022 The FreeType Project (www.freetype.org).
-All rights reserved.
+Settings → About → Open Source Licences lists every library above, and each
+library opens on its own page with its notice and full licence text. FFmpeg
+and FreeType also ask for these credits: this software is based in part on
+the work of the Independent JPEG Group, and portions of this software are
+copyright © 2022 The FreeType Project (www.freetype.org). All rights reserved.
 
 `edde746/mpv-build` holds the build driver, upstream pins and patch series for
 mpv, FFmpeg and libass. The other libraries are prebuilt by the build

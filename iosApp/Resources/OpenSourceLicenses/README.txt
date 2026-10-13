@@ -2,9 +2,12 @@ Vivid: Source Licence and Third-Party Libraries
 ===============================================
 
 This overview records source provenance and dependency information for Vivid.
-The full licence text of every bundled third-party component follows it in
-Settings > About > Open Source Licences. THIRD_PARTY_NOTICES.md in the source
-revision for this build lists every component, version and source.
+Settings > About > Open Source Licences lists every bundled third-party
+component; each opens on its own page with its notice and full licence text.
+A licence text that several components share word for word (Apache 2.0,
+GPL 3.0 and LGPL 2.1) is stored once and listed under Licence texts; those
+components' notices mark where it applies. THIRD_PARTY_NOTICES.md in the
+source revision for this build lists every component, version and source.
 
 Vivid: GPL-3.0-only with the Apple distribution
 permission, copyright 2026 blurbery and the respective contributors.
@@ -41,7 +44,7 @@ Paths in the attribution terms refer to the corresponding source revision
 provided with this build.
 
 Corresponding source and build instructions:
-The first section of Open Source Licences, "Source for this build", gives
+The first row of Open Source Licences, "Source for this build", gives
 the exact source commit this build was made from and its GitHub link. That
 revision contains the complete source, project specs, patches, build
 instructions and THIRD_PARTY_NOTICES.md. Vivid's repository is
@@ -57,6 +60,10 @@ Lucid media engine (iOS and tvOS)
   binary URL and SHA-256 checksum; versions.json records the upstream pins.
   The package builds mpv with -Dgpl=true and FFmpeg with --enable-gpl and
   --enable-version3, so the media libraries are distributed under GPLv3.
+  The pinned edde746/mpv-build package applies its own Apple patch series
+  to mpv and FFmpeg. Its LICENSE is the GPL-3.0 text and its README says
+  the packages ship as GPL builds, so the patched libraries are GPL-3.0 as
+  built; most upstream mpv and FFmpeg files remain LGPL-2.1-or-later.
   They are static libraries linked into the app executable.
 
   Vivid's device builds additionally apply

@@ -10,7 +10,7 @@ const security = Object.freeze({
 });
 
 // Pages served at their path without the .html extension.
-const pages = Object.freeze(['/privacy', '/brand', '/support']);
+const pages = Object.freeze(['/privacy', '/brand', '/support', '/licences']);
 
 export default {
   fetch(request) {
