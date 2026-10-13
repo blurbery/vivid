@@ -9,18 +9,22 @@ final class VividSampleBufferLayer: AVSampleBufferDisplayLayer {}
 
 /// The UIKit half of Vivid's Lucid bridge. It owns the video surface and
 /// wires it to the engine, Match Content and EDR, external screens and the
-/// app lifecycle. Every member here is called on main.
+/// app lifecycle.
+///
+/// The adapter calls it on main. Two things are not on main:
+/// `preparesDisplayCriteriaEarly` is also read on the event queue, and
+/// `deinit` disposes on whichever thread lets go of the core last.
 class VividPlayerCore: VividPlayerCoreBase {
-    var isPipActive = false
-    var hdrEnabled: Bool { true }
-    var matchContentEnabled = true
-    var onEnterBackground: (() -> Void)?
+    final var isPipActive = false
+    final var hdrEnabled: Bool { true }
+    final var matchContentEnabled = true
+    final var onEnterBackground: (() -> Void)?
 
-    var sampleBufferDisplayLayer: VividSampleBufferLayer? { surface?.layer }
+    final var sampleBufferDisplayLayer: VividSampleBufferLayer? { surface?.layer }
 
     private var surface: VividPlayerVideoSurface?
     private var lifecycle: VividPlayerLifecycleObserver?
-    private var isVisible = false
+    private var presentsVideo = false
     private var isInitialised = false
 
     deinit {
@@ -29,8 +33,12 @@ class VividPlayerCore: VividPlayerCoreBase {
 
     // MARK: Set-up and teardown
 
-    func initialize(in window: UIWindow, hostView: UIView) -> Bool {
-        guard !isInitialised else { return true }
+    /// A repeated call only remembers the new host view.
+    final func initialize(in window: UIWindow, hostView: UIView) -> Bool {
+        guard !isInitialised else {
+            surface?.rememberHostView(hostView)
+            return true
+        }
         // The layer sits in its final parent before mpv exists, so Lucid's
         // video output always finds it there.
         let surface = VividPlayerVideoSurface(window: window, hostView: hostView)
@@ -58,7 +66,7 @@ class VividPlayerCore: VividPlayerCoreBase {
     /// Only the first call does anything, and only it calls `completion`, on
     /// the event queue once mpv is destroyed. Nothing here may capture the
     /// core, because `deinit` disposes too.
-    func dispose(preserveDisplayCriteria: Bool = false, completion: (@Sendable () -> Void)? = nil) {
+    final func dispose(preserveDisplayCriteria: Bool = false, completion: (@Sendable () -> Void)? = nil) {
         guard beginDisposal() else { return }
         #if os(tvOS)
         if !preserveDisplayCriteria {
@@ -80,27 +88,31 @@ class VividPlayerCore: VividPlayerCoreBase {
 
     // MARK: Surface
 
-    func setVisible(_ visible: Bool) {
+    final func setVisible(_ visible: Bool) {
         guard let surface, surface.hasContainer else { return }
-        isVisible = visible
+        presentsVideo = visible
         refreshPlacement()
-        surface.setContainerHidden(!visible)
+        surface.showContainer(visible)
     }
 
-    func updateFrame(_ frame: CGRect? = nil) {
+    final func updateFrame(_ frame: CGRect? = nil) {
         guard surface?.updateGeometry() == true else { return }
         #if os(iOS)
         applyExtendedDynamicRange(signalPeak: displayCriteria.signalPeak)
         #endif
     }
 
-    func externalDisplayDidChange() {
+    final func externalDisplayDidChange() {
         refreshPlacement()
     }
 
-    func setPipSubtitleCompositing(_ enabled: Bool) {
-        guard let option = VividPlayerVideoSurface.pictureInPictureCompositingOption(enabled) else { return }
-        setProperty(option.name, value: option.value)
+    /// Picture in Picture shows only the pictures, so on iOS subtitles are
+    /// burned into them while it runs. Sent on every call; Apple TV has no
+    /// Picture in Picture.
+    final func setPipSubtitleCompositing(_ enabled: Bool) {
+        #if os(iOS)
+        setProperty("avfoundation-pip-composite-osd", value: enabled ? "yes" : "no")
+        #endif
     }
 
     /// External screens take the video only while it is visible and Picture
@@ -108,17 +120,17 @@ class VividPlayerCore: VividPlayerCoreBase {
     private func refreshPlacement() {
         guard let surface, surface.hasContainer else { return }
         #if os(iOS)
-        let externalTarget = isVisible && !isPipActive ? VividExternalDisplay.shared.externalRootView : nil
+        let externalTarget = presentsVideo && !isPipActive ? VividExternalDisplay.shared.externalRootView : nil
         #else
         let externalTarget: UIView? = nil
         #endif
-        surface.place(externalTarget: externalTarget, visible: isVisible)
+        surface.place(externalTarget: externalTarget, visible: presentsVideo)
         updateFrame()
     }
 
     // MARK: Display
 
-    override var preparesDisplayCriteriaEarly: Bool {
+    final override var preparesDisplayCriteriaEarly: Bool {
         #if os(tvOS)
         return matchContentEnabled
         #else
@@ -126,12 +138,12 @@ class VividPlayerCore: VividPlayerCoreBase {
         #endif
     }
 
-    override func commitDisplayCriteria(_ request: VividPlayerDisplayCriteria.Request) -> Bool {
+    final override func commitDisplayCriteria(_ request: VividPlayerDisplayCriteria.Request) -> Bool {
         VividPlayerDisplayCriteria.commit(request, matchContentEnabled: matchContentEnabled,
                                           window: surface?.displayWindow)
     }
 
-    override func applyExtendedDynamicRange(signalPeak: Double) {
+    final override func applyExtendedDynamicRange(signalPeak: Double) {
         #if os(iOS)
         VividPlayerDisplayCriteria.applyExtendedDynamicRange(to: surface?.layer, signalPeak: signalPeak)
         #endif
@@ -142,20 +154,20 @@ class VividPlayerCore: VividPlayerCoreBase {
     private func didEnterBackground() {
         // First, so the adapter's hook sees the state before the bridge changes it.
         onEnterBackground?()
-        setBackgrounded(true)
+        isBackgrounded = true
         // Deselecting video tears down Lucid's video output; audio carries on.
         if !isPipActive { setProperty("vid", value: "no") }
     }
 
     private func willEnterForeground() {
-        setBackgrounded(false)
+        isBackgrounded = false
         if !isPipActive { setProperty("vid", value: "auto") }
     }
 
     /// iOS only. Also fires for returns that never reached the background,
     /// such as Control Centre or an alert.
     private func didActivate() {
-        setBackgrounded(false)
+        isBackgrounded = false
         guard !isPipActive else { return }
         setProperty("vid", value: "auto")
         refreshPlacement()
@@ -165,7 +177,7 @@ class VividPlayerCore: VividPlayerCoreBase {
         applyExtendedDynamicRange(signalPeak: displayCriteria.signalPeak)
         // A seek keeps the current picture until the next is ready, so this
         // redraws a paused frame without a black flash.
-        if pauseTracker.isPaused { command(["seek", "0", "relative+exact"]) }
+        if pauseTracker.showsPaused { command(["seek", "0", "relative+exact"]) }
     }
 }
 #endif

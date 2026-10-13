@@ -16,7 +16,7 @@ import AVKit
 /// single writes on main. The source-transition lock keeps those holds from
 /// interleaving with a write in progress. It is always taken before the cache
 /// lock, and the platform write runs with it held and the cache lock released.
-final class VividPlayerDisplayCriteria {
+final class VividPlayerDisplayCriteria: @unchecked Sendable {
     /// What one platform write asks the display for.
     struct Request: Equatable {
         var profile: Int64
@@ -82,11 +82,11 @@ final class VividPlayerDisplayCriteria {
     }
 
     private let transitionLock = NSLock()
-    private let cacheLock = NSLock()
+    private let inputsLock = NSLock()
     private var state = State()
 
     var signalPeak: Double {
-        cacheLock.lock(); defer { cacheLock.unlock() }
+        inputsLock.lock(); defer { inputsLock.unlock() }
         return state.inputs.signalPeak
     }
 
@@ -96,7 +96,7 @@ final class VividPlayerDisplayCriteria {
     /// nothing reliable about the stream about to be shown, so it is ignored.
     func observe(name: String, value: Any?) -> ObservationEffect {
         var effect = ObservationEffect()
-        cacheLock.lock(); defer { cacheLock.unlock() }
+        inputsLock.lock(); defer { inputsLock.unlock() }
         switch name {
         case "container-fps":
             guard let fps = value as? Double else { break }
@@ -154,12 +154,12 @@ final class VividPlayerDisplayCriteria {
         #if VIVID_P8_TRIAL
         let acquiredAt = DispatchTime.now().uptimeNanoseconds
         #endif
-        cacheLock.lock()
+        inputsLock.lock()
         if startingFile { state.inputs.measuredFps = 0 }
         state.epoch &+= 1
         state.earlySnapshotWanted = startingFile
         state.held = true
-        cacheLock.unlock()
+        inputsLock.unlock()
         transitionLock.unlock()
         #if VIVID_P8_TRIAL
         let releasedAt = DispatchTime.now().uptimeNanoseconds
@@ -176,7 +176,7 @@ final class VividPlayerDisplayCriteria {
         let params = readings.videoParams
         let track = readings.videoTrack
         transitionLock.lock()
-        cacheLock.lock()
+        inputsLock.lock()
         state.inputs = Inputs(
             width: Double(params?["w"] as? Int64 ?? 0),
             height: Double(params?["h"] as? Int64 ?? 0),
@@ -191,25 +191,25 @@ final class VividPlayerDisplayCriteria {
             matrix: params?["colormatrix"] as? String)
         state.held = false
         state.earlySnapshotWanted = false
-        cacheLock.unlock()
+        inputsLock.unlock()
         transitionLock.unlock()
     }
 
     /// The epoch to write against when this file still wants an early write.
     func earlySnapshotEpoch() -> UInt64? {
-        cacheLock.lock(); defer { cacheLock.unlock() }
+        inputsLock.lock(); defer { inputsLock.unlock() }
         return state.earlySnapshotWanted && state.held ? state.epoch : nil
     }
 
     /// At most one early write per file, however often video reconfigures.
     func finishEarlySnapshot() {
-        cacheLock.lock(); defer { cacheLock.unlock() }
+        inputsLock.lock(); defer { inputsLock.unlock() }
         state.earlySnapshotWanted = false
     }
 
     /// Whether the caller should queue a cached apply; false while one is queued.
     func markApplyScheduled() -> Bool {
-        cacheLock.lock(); defer { cacheLock.unlock() }
+        inputsLock.lock(); defer { inputsLock.unlock() }
         guard !state.applyScheduled else { return false }
         state.applyScheduled = true
         return true
@@ -217,7 +217,7 @@ final class VividPlayerDisplayCriteria {
 
     /// Disposal holds and resets the inputs under the cache lock only.
     func resetForDisposal() {
-        cacheLock.lock(); defer { cacheLock.unlock() }
+        inputsLock.lock(); defer { inputsLock.unlock() }
         state.held = true
         state.inputs.profile = 0
         state.inputs.level = 0
@@ -236,9 +236,9 @@ final class VividPlayerDisplayCriteria {
     /// happened since the snapshot was taken. `applied` runs inside the lock.
     func commitEarly(_ request: Request, epoch: UInt64, write: (Request) -> Bool, applied: () -> Void) {
         transitionLock.lock(); defer { transitionLock.unlock() }
-        cacheLock.lock()
+        inputsLock.lock()
         let current = state.epoch == epoch && state.held
-        cacheLock.unlock()
+        inputsLock.unlock()
         guard current else { return }
         if write(request) { applied() }
     }
@@ -246,15 +246,15 @@ final class VividPlayerDisplayCriteria {
     /// One merged write from the cached inputs. Nothing is written while held.
     func runCachedApply(write: (Request) -> Void) {
         transitionLock.lock(); defer { transitionLock.unlock() }
-        cacheLock.lock()
+        inputsLock.lock()
         // Changes that arrive during the write schedule a fresh pass.
         state.applyScheduled = false
         guard !state.held else {
-            cacheLock.unlock()
+            inputsLock.unlock()
             return
         }
         let inputs = state.inputs
-        cacheLock.unlock()
+        inputsLock.unlock()
         write(Self.request(from: inputs))
     }
 
@@ -360,18 +360,20 @@ final class VividPlayerDisplayCriteria {
     /// description atom that carries it.
     static func dolbyVisionConfiguration(profile: Int64, level: Int64,
                                          compatibility: Int64?) -> (atom: String, record: Data) {
-        let profile = UInt8(truncatingIfNeeded: profile)
-        let level = UInt8(truncatingIfNeeded: level)
-        let compatibility = UInt8(truncatingIfNeeded: compatibility ?? (profile == 8 ? 1 : 0))
+        // The default follows the full profile; the record itself uses 8-bit values.
+        let assumedCompatibility: Int64 = profile == 8 ? 1 : 0
+        let narrowProfile = UInt8(truncatingIfNeeded: profile)
+        let narrowLevel = UInt8(truncatingIfNeeded: level)
+        let narrowCompatibility = UInt8(truncatingIfNeeded: compatibility ?? assumedCompatibility)
         var bytes = [UInt8](repeating: 0, count: 24)
         bytes[0] = 1
         bytes[1] = 0
         // Profile (7 bits), level (6), RPU present, no enhancement layer, base layer present.
-        let fields = UInt16(profile & 0x7F) << 9 | UInt16(level & 0x3F) << 3 | 0b101
+        let fields = UInt16(narrowProfile & 0x7F) << 9 | UInt16(narrowLevel & 0x3F) << 3 | 0b101
         bytes[2] = UInt8(fields >> 8)
         bytes[3] = UInt8(fields & 0xFF)
-        bytes[4] = (compatibility & 0x0F) << 4
-        return (profile > 7 ? "dvvC" : "dvcC", Data(bytes))
+        bytes[4] = (narrowCompatibility & 0x0F) << 4
+        return (narrowProfile > 7 ? "dvvC" : "dvcC", Data(bytes))
     }
 
     /// The format hint for a range. Every non-Dolby-Vision request is
@@ -417,7 +419,9 @@ final class VividPlayerDisplayCriteria {
 
     // MARK: Platform write (main thread)
 
-    private struct Identity: Equatable {
+    #if os(tvOS)
+    /// What the shared slot remembers about the last write.
+    struct WrittenIdentity: Equatable {
         let range: DynamicRange
         let rate: Float
         let width: Int32
@@ -427,10 +431,37 @@ final class VividPlayerDisplayCriteria {
         let compatibility: Int64?
     }
 
-    #if os(tvOS)
+    /// The display manager calls the write makes. The app always wraps the
+    /// window's `avDisplayManager`; tests can put a stand-in in its place.
+    struct DisplayManagerAccess {
+        var isMatchingEnabled: () -> Bool
+        var preferredCriteria: () -> AVDisplayCriteria?
+        var setPreferredCriteria: (AVDisplayCriteria?) -> Void
+    }
+
     /// The criteria this bridge last wrote, shared by every core so a new
     /// episode recognises the mode already on the HDMI link. Main thread only.
-    nonisolated(unsafe) private static var writtenIdentity: Identity?
+    nonisolated(unsafe) private static var writtenIdentity: WrittenIdentity?
+
+    /// Test seam: when set, writes and clears go to this stand-in instead of
+    /// the window's display manager. The app never sets it.
+    nonisolated(unsafe) static var displayManagerForTesting: ((UIWindow) -> DisplayManagerAccess)?
+
+    /// Test seam: the identity of the criteria last written by any core.
+    static var writtenIdentityForTesting: WrittenIdentity? { writtenIdentity }
+
+    /// Test seam: forgets the shared identity without touching any display.
+    static func forgetWrittenIdentityForTesting() {
+        writtenIdentity = nil
+    }
+
+    private static func displayManager(for window: UIWindow) -> DisplayManagerAccess {
+        if let substitute = displayManagerForTesting { return substitute(window) }
+        let manager = window.avDisplayManager
+        return DisplayManagerAccess(isMatchingEnabled: { manager.isDisplayCriteriaMatchingEnabled },
+                                    preferredCriteria: { manager.preferredDisplayCriteria },
+                                    setPreferredCriteria: { manager.preferredDisplayCriteria = $0 })
+    }
     #endif
 
     /// Asks the TV for the mode that suits `request`. Returns whether suitable
@@ -439,21 +470,21 @@ final class VividPlayerDisplayCriteria {
         guard matchContentEnabled else { return false }
         #if os(tvOS)
         guard let window else { return false }
-        let manager = window.avDisplayManager
+        let manager = displayManager(for: window)
         let rate: Float = request.rate > 0 ? Float(request.rate) : 0
         let describesStream = rate > 0 || request.profile > 0 || request.signalPeak > 0
             || request.transfer != nil || request.primaries != nil || request.matrix != nil
         guard VividPlayerMPVConversion.dimensionsAreAcceptable(Int64(request.width), Int64(request.height)),
-              describesStream, manager.isDisplayCriteriaMatchingEnabled,
+              describesStream, manager.isMatchingEnabled(),
               let format = requestedFormat(request) else {
             clear(manager)
             return false
         }
-        let identity = Identity(range: format.range, rate: rate, width: request.width, height: request.height,
-                                profile: request.profile, level: request.level,
-                                compatibility: request.compatibility)
-        if identity == writtenIdentity, manager.preferredDisplayCriteria != nil { return true }
-        manager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: rate, formatDescription: format.hint)
+        let identity = WrittenIdentity(range: format.range, rate: rate, width: request.width,
+                                       height: request.height, profile: request.profile, level: request.level,
+                                       compatibility: request.compatibility)
+        if identity == writtenIdentity, manager.preferredCriteria() != nil { return true }
+        manager.setPreferredCriteria(AVDisplayCriteria(refreshRate: rate, formatDescription: format.hint))
         writtenIdentity = identity
         return true
         #else
@@ -466,13 +497,13 @@ final class VividPlayerDisplayCriteria {
     /// manager. Nothing happens without a window.
     static func clear(in window: UIWindow?) {
         guard let window else { return }
-        clear(window.avDisplayManager)
+        clear(displayManager(for: window))
     }
 
     /// Only acts when something is set, so repeated failures never write.
-    private static func clear(_ manager: AVDisplayManager) {
-        guard writtenIdentity != nil || manager.preferredDisplayCriteria != nil else { return }
-        manager.preferredDisplayCriteria = nil
+    private static func clear(_ manager: DisplayManagerAccess) {
+        guard writtenIdentity != nil || manager.preferredCriteria() != nil else { return }
+        manager.setPreferredCriteria(nil)
         writtenIdentity = nil
     }
 

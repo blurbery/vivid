@@ -42,6 +42,11 @@ final class VividPlayerVideoSurface {
 
     var hasContainer: Bool { container != nil }
 
+    /// A repeated `initialize` changes only which host view video returns to.
+    func rememberHostView(_ hostView: UIView) {
+        self.hostView = hostView
+    }
+
     /// The window whose display the video is on: the container's own, or the
     /// one the core was initialised with.
     var displayWindow: UIWindow? { container?.window ?? window }
@@ -87,12 +92,12 @@ final class VividPlayerVideoSurface {
         } else {
             removeCover()
         }
-        setContainerHidden(!visible)
+        showContainer(visible)
     }
 
-    func setContainerHidden(_ hidden: Bool) {
+    func showContainer(_ shown: Bool) {
         guard let container else { return }
-        Self.withoutAnimation { container.isHidden = hidden }
+        Self.withoutAnimation { container.isHidden = !shown }
     }
 
     #if os(iOS)
@@ -115,16 +120,6 @@ final class VividPlayerVideoSurface {
         layer = nil
         container = nil
         cover = nil
-    }
-
-    /// The engine option that burns subtitles into the pictures, which is all
-    /// Picture in Picture shows. Apple TV has no Picture in Picture.
-    static func pictureInPictureCompositingOption(_ enabled: Bool) -> (name: String, value: String)? {
-        #if os(iOS)
-        return ("avfoundation-pip-composite-osd", enabled ? "yes" : "no")
-        #else
-        return nil
-        #endif
     }
 
     private func move(to target: UIView) {

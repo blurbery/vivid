@@ -6,7 +6,7 @@ import Foundation
 /// Asynchronous mpv requests waiting for their reply. Each core numbers its
 /// requests from 1, and every completion leaves the table exactly once: with
 /// its reply, a rejected submission or disposal.
-final class VividPlayerRequestTable {
+final class VividPlayerRequestTable: @unchecked Sendable {
     enum Request {
         case set((Result<Void, Error>) -> Void)
         case get((Result<String?, Error>) -> Void)
@@ -51,7 +51,7 @@ final class VividPlayerRequestTable {
 /// The pause state the viewer sees. It follows Vivid's own `pause` requests
 /// straight away and falls back to what mpv confirms, so iOS scene activation
 /// knows whether a paused frame needs redrawing.
-final class VividPlayerPauseTracker {
+final class VividPlayerPauseTracker: @unchecked Sendable {
     private let lock = NSLock()
     private var displayed = true
     private var confirmed = true
@@ -61,7 +61,7 @@ final class VividPlayerPauseTracker {
     private var lastObservation: UInt64 = 0
     private var outstanding: [(ticket: UInt64, paused: Bool)] = []
 
-    var isPaused: Bool {
+    var showsPaused: Bool {
         lock.lock(); defer { lock.unlock() }
         return displayed
     }

@@ -7,7 +7,7 @@ import UIKit
 /// external-display scene. One per process, main thread only. It looks for
 /// such a scene only when a core attaches, once per load.
 final class VividExternalDisplay {
-    static let shared = VividExternalDisplay()
+    nonisolated(unsafe) static let shared = VividExternalDisplay()
 
     private weak var activeCore: VividPlayerCore?
     private var scene: UIWindowScene?

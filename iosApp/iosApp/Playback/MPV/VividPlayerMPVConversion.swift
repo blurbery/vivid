@@ -7,7 +7,7 @@ import Libmpv
 /// Turns what libmpv hands over into the Swift values Vivid reads. Stateless,
 /// so it runs on any thread, including on a bare core in a detached task.
 enum VividPlayerMPVConversion {
-    static let maximumNodeDepth = 32
+    static let deepestNode = 32
     static let nodeBudget = 4_096
     static let byteBudget = 16_777_216
     static let maximumDimension: Int64 = 16_384
@@ -70,7 +70,7 @@ enum VividPlayerMPVConversion {
     }
 
     private static func convert(_ node: mpv_node, depth: Int, budget: inout Budget) -> Any? {
-        guard depth <= maximumNodeDepth, budget.nodes > 0 else { return nil }
+        guard depth <= deepestNode, budget.nodes > 0 else { return nil }
         budget.nodes -= 1
         switch node.format {
         case MPV_FORMAT_INT64:
@@ -91,21 +91,21 @@ enum VividPlayerMPVConversion {
         case MPV_FORMAT_NODE_ARRAY:
             guard let list = node.u.list?.pointee,
                   let count = entryCount(of: list, isMap: false, budget: budget) else { return nil }
-            var items: [Any] = []
+            var elements: [Any] = []
             for index in 0..<count {
-                if let item = convert(list.values[index], depth: depth + 1, budget: &budget) {
-                    items.append(item)
+                if let converted = convert(list.values[index], depth: depth + 1, budget: &budget) {
+                    elements.append(converted)
                 }
             }
-            return items
+            return elements
         case MPV_FORMAT_NODE_MAP:
             guard let list = node.u.list?.pointee,
                   let count = entryCount(of: list, isMap: true, budget: budget),
-                  sideDataSizeIsAcceptable(list, count: count) else { return nil }
+                  sizeRuleAllows(list, count: count) else { return nil }
             var map: [String: Any] = [:]
             for index in 0..<count {
-                guard let keyPointer = list.keys[index],
-                      let key = string(keyPointer, budget: &budget) else { continue }
+                guard let rawKey = list.keys[index],
+                      let key = string(rawKey, budget: &budget) else { continue }
                 if let value = convert(list.values[index], depth: depth + 1, budget: &budget) {
                     map[key] = value
                 }
@@ -142,29 +142,28 @@ enum VividPlayerMPVConversion {
         return !overflow && pixels <= maximumPixelCount
     }
 
-    /// Rejects a map that carries bytes (an embedded image, say) with a
-    /// missing or implausible size, before anything is allocated for it.
-    private static func sideDataSizeIsAcceptable(_ list: mpv_node_list, count: Int) -> Bool {
-        var carriesBytes = false
-        var width: mpv_node?
-        var height: mpv_node?
-        for index in 0..<count {
-            let value = list.values[index]
-            if value.format == MPV_FORMAT_BYTE_ARRAY { carriesBytes = true }
-            guard let key = list.keys[index] else { continue }
-            if strcmp(key, "width") == 0 || strcmp(key, "w") == 0 {
-                width = value
-            } else if strcmp(key, "height") == 0 || strcmp(key, "h") == 0 {
-                height = value
-            }
+    /// A map that carries bytes (an embedded picture, say) must state a
+    /// plausible size, so nothing is allocated for an implausible one. The
+    /// scan reads raw keys and uses none of the conversion budget.
+    private static func sizeRuleAllows(_ list: mpv_node_list, count: Int) -> Bool {
+        let slots = 0..<count
+        guard slots.contains(where: { list.values[$0].format == MPV_FORMAT_BYTE_ARRAY }) else { return true }
+        // Both spellings of an axis are one key: the last entry for either decides.
+        func lastEntry(spelt spellings: String...) -> mpv_node? {
+            slots.last { slot in
+                guard let key = list.keys[slot] else { return false }
+                return spellings.contains { strcmp(key, $0) == 0 }
+            }.map { list.values[$0] }
         }
-        guard carriesBytes, width != nil || height != nil else { return true }
-        guard let width = width.flatMap(integerDimension),
-              let height = height.flatMap(integerDimension) else { return false }
-        return dimensionsAreAcceptable(width, height)
+        let across = lastEntry(spelt: "width", "w")
+        let down = lastEntry(spelt: "height", "h")
+        if across == nil, down == nil { return true }
+        guard let across = across.flatMap(wholeNumber), let down = down.flatMap(wholeNumber) else { return false }
+        return dimensionsAreAcceptable(across, down)
     }
 
-    private static func integerDimension(_ node: mpv_node) -> Int64? {
+    /// An integer, or a double that is exactly one.
+    private static func wholeNumber(_ node: mpv_node) -> Int64? {
         switch node.format {
         case MPV_FORMAT_INT64: return node.u.int64
         case MPV_FORMAT_DOUBLE: return Int64(exactly: node.u.double_)
