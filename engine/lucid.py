@@ -1739,22 +1739,35 @@ def build_host_libdovi(root: Path, work: Path, pins, logfile: Path) -> dict:
 def write_decoder_corpus(assets: Path, dest: Path) -> dict:
     """The RPUs of the libdovi corpus (engine/tests/libdovi) in the form FFmpeg
     hands to libdovi, an HEVC NAL unit starting 0x7C 0x01, for the decoder
-    test to pass through FFmpeg's conversion. Format: b"VTDC", a count, then
-    per case a 16-bit name length, the name, a flag byte (1: an entry of an
-    abort class, 2: FFmpeg's conversion is expected to succeed), a 32-bit
-    length and the bytes, all big-endian."""
+    test to pass through FFmpeg's conversion. Entries in Annex B form get the
+    NAL header in place of their start code and raw RPUs are escaped behind
+    it, as they would sit in a packet; AV1 payloads are left out. Format:
+    b"VTDC", a count, then per case a 16-bit name length, the name, a flag
+    byte (1: an entry of an abort class, 2: FFmpeg's conversion is expected
+    to succeed), a 32-bit length and the bytes, all big-endian."""
     t = load_libdovi_test()
-    cases = [c for c in t.build_corpus(assets) if c.data[:2] == b"\x7c\x01"]
-    out = bytearray(b"VTDC" + len(cases).to_bytes(4, "big"))
-    for c in cases:
-        name = c.name.encode()
-        flags = (1 if c.abort_class else 0) | (2 if c.ffmpeg_expect == "convert" else 0)
-        out += len(name).to_bytes(2, "big") + name + bytes([flags])
-        out += len(c.data).to_bytes(4, "big") + c.data
+    entries = []
+    for c in t.build_corpus(assets):
+        flags = 1 if c.abort_class else 0
+        if c.data[:2] == b"\x7c\x01":
+            nal, name = c.data, c.name
+            flags |= 2 if c.ffmpeg_expect == "convert" else 0
+        elif c.data[:5] == b"\x00\x00\x00\x01\x19":
+            nal, name = b"\x7c\x01" + c.data[4:], c.name + "/as-nal"
+        elif c.data[:4] == b"\x00\x00\x01\x19":
+            nal, name = b"\x7c\x01" + c.data[3:], c.name + "/as-nal"
+        elif c.data[:1] == b"\x19":
+            nal, name = b"\x7c\x01" + t.escape(c.data), c.name + "/as-nal"
+        else:
+            continue
+        entries.append((name, flags, nal))
+    out = bytearray(b"VTDC" + len(entries).to_bytes(4, "big"))
+    for name, flags, nal in entries:
+        out += len(name.encode()).to_bytes(2, "big") + name.encode() + bytes([flags])
+        out += len(nal).to_bytes(4, "big") + nal
     dest.write_bytes(bytes(out))
-    classes = sorted({c.abort_class for c in cases if c.abort_class})
-    return {"cases": len(cases), "abort_class_entries": sum(1 for c in cases if c.abort_class),
-            "abort_classes": classes}
+    return {"cases": len(entries), "abort_class_entries": sum(1 for e in entries if e[1] & 1),
+            "converted_from_other_forms": sum(1 for e in entries if e[0].endswith("/as-nal"))}
 
 
 def run_host_test(name: str, sources: list[Path], includes: list[Path], defines: list[str],
@@ -1803,8 +1816,9 @@ def cmd_test(args) -> None:
     host = build_host_libdovi(root, work, pins, out / "logs" / "libdovi-host.log")
     corpus = write_decoder_corpus(host["assets"], test_dir / "corpus.bin")
     report["decoder_test_corpus"] = corpus
-    log(f"libdovi corpus for FFmpeg's conversion: {corpus['cases']} NAL units, "
-        f"{corpus['abort_class_entries']} from the abort classes {corpus['abort_classes']}")
+    log(f"libdovi corpus for FFmpeg's conversion: {corpus['cases']} NAL units "
+        f"({corpus['converted_from_other_forms']} from Annex B or raw entries), "
+        f"{corpus['abort_class_entries']} abort class entries")
     results.append(run_host_test("vt_dovi_tests_libdovi", sources,
                                  [src, build, host["include"]], [],
                                  [str(host["library"])] + host["libs"],
