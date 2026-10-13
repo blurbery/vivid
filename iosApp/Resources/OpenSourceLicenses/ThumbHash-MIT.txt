@@ -2,7 +2,7 @@ Component: ThumbHash decoder (adapted Swift reference decode path)
 Version: revision a652ce6ed691242f459f468f0a8756cda3b90a82
 Source: https://github.com/evanw/thumbhash/tree/a652ce6ed691242f459f468f0a8756cda3b90a82
 SPDX: MIT
-Note: Byte-identical to the currently bundled ThumbHash-MIT.txt.
+Note: The licence text was checked byte for byte against LICENSE.md at this revision.
 ================================================================================
 
 --------------------------------------------------------------------------------

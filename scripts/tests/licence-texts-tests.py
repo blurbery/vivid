@@ -8,7 +8,9 @@ in place of the marker must reproduce the original file byte for byte.
 
 ORIGINALS holds the SHA-256 and size of each file as bundled before the split
 (the 35 files in iosApp/Resources/OpenSourceLicenses at the commit that first
-listed every shipped library). README.txt is Vivid's own overview, which
+listed every shipped library). The mpv, FFmpeg, Plezy and ThumbHash entries
+record those files after their Vivid-written header lines were corrected; the
+upstream texts in them are unchanged. README.txt is Vivid's own overview, which
 changes with the docs, so it is only checked for presence. When a licence
 file changes deliberately (for example a library update), update its entry
 here with the hash this script prints for the reconstructed file.
@@ -29,19 +31,19 @@ manifest_path = folder / 'licences.json'
 ORIGINALS = {
     "CollectionHStack-MIT.txt": ("15b4a276eedf002db591914c38370c999d6ff705001a0f6dcb76d605395d5637", 1626),
     "DifferenceKit-Apache-2.0.txt": ("b68a29426b9fc7ec32083b034ed6536ac00bb05dabc2a65f87a628e53f33270b", 12048),
-    "FFmpeg-GPL-3.0-or-later.txt": ("085076450a7fe140cc871b3936cd715431009ab32b22394722d0ee2c5b9757c3", 47600),
+    "FFmpeg-GPL-3.0-or-later.txt": ("bf53c3b10c2cf2db88ccb7b882262d37f7cc3ec2ec0cf18166230c74d0af3d21", 47870),
     "FreeType-FTL.txt": ("a0a88ce5d8b60f5b65e4e1dd126d04f05a12860defc1595732a689ea4ae44b18", 15634),
     "FriBidi-LGPL-2.1.txt": ("bc49e3817305aebeb5cae9fcbda5d25496edba30567290e027eabe0ae9e3485f", 27035),
     "HarfBuzz-MIT.txt": ("9292bc854de0b74c7c68d600d6ae13f27b60f420440283a191087d14da10606d", 4154),
     "LittleCMS-MIT.txt": ("51c6e5ceac95d51abfbaeabc7112c32737f805f82dedf42032fe6ce3d5c4810f", 1664),
     "MoltenVK-Apache-2.0.txt": ("eb118319a0c21de2ff35e1239be628d9004aff578ee1229fe43cdd16a9f35f4e", 12156),
     "OpenSSL-Apache-2.0.txt": ("345f1e1a3f8faf9aec81cc317c669773fee85dd5a1ccd66a5eda6460f2f9afbb", 10831),
-    "Plezy-GPL-3.0.txt": ("cadee7a5c565a0dc0751adb09ba1930252f55cb39103456d873dffaa82dfb18b", 35955),
+    "Plezy-GPL-3.0.txt": ("0b42f7a097ec756e8a2a62c7d61da8c81d5dd5f08ae16d9d5572fe207a196ba4", 35973),
     "Rust-Standard-Library-MIT.txt": ("4768b5b4d43bebe22c12e23aa4ed28f795416b3180bea43180ae22a248a6a9da", 3879),
     "SPIRV-Cross-Apache-2.0.txt": ("fb9b07689f16dd2f26bb823b304f866c3510b26cbf9882be78f115e473e16de2", 13751),
     "SPIRV-Headers-MIT.txt": ("53f637fa9add95006c58844267eeda7cb3ec8afda9b57ba27235a571e0292ee8", 24230),
     "SPIRV-Tools-Apache-2.0.txt": ("b03185cd87802fe40144ff4e75251c20a8c1dce90c4a2e27911f2a0a1f1fd223", 12065),
-    "ThumbHash-MIT.txt": ("6606e42664459c756f5dd09200f689d04df36f82f22f6bff85d8e138dfd07ec6", 1700),
+    "ThumbHash-MIT.txt": ("c3848c6ae5964087a2a7c73de48d47d713f641319beebc74d243652614d8d65b", 1721),
     "Vivid-Apache-2.0.txt": ("cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30", 11358),
     "Vivid-Apple-Distribution.txt": ("0e34a96aa82d61d38a37721f23825f1e2a76d08d85c0b92bd199c83f167f00fd", 4930),
     "Vivid-GPL-3.0.txt": ("3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986", 35149),
@@ -57,7 +59,7 @@ ORIGINALS = {
     "libplacebo-LGPL-2.1.txt": ("5668d3f00936677e272f723dcc068801af2688d5a81e13e6491ae08ad493656c", 25195),
     "libudfread-LGPL-2.1.txt": ("a62ba659972196d4302bf2eb610de0c49d887edf3b8dd98b4aa52ed4b706821a", 27174),
     "libunibreak-Zlib.txt": ("0fd3236dc8ae59edfebe2e09e315ba6336eb104594bfdf89bd603b330c401101", 1642),
-    "mpv-GPL-2.0-or-later.txt": ("974cd36ce277ec0f79fc30dd5982f30e618ce9930308de13a88d3af36a77f4a9", 49850),
+    "mpv-GPL-2.0-or-later.txt": ("9bdbdbc62baf2ffd61e705ea1cea13aa459fb6da31e52c2e79f80424df1dbc10", 50034),
     "shaderc-Apache-2.0.txt": ("2e6e7b9a7b8c85dc6e1753baad991192fdfc43b8773b7506088c1b714b869743", 12241),
     "uavs3d-BSD-3-Clause.txt": ("92987241ce896e958db7ef187d8b9bf95a7ead2593847ea875aec7cd1bb311d1", 2331),
     "uchardet-MPL-1.1.txt": ("7c2910b9704f9cf35b3524aed78a479bf64233ed9caa6663d082d1c296c0c1e6", 71244),

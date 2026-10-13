@@ -196,7 +196,11 @@ private struct OpenSourceLicencePage: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
                 Text(page.title).font(.system(size: 30, weight: .bold, design: .rounded))
-                if let subtitle = page.subtitle {
+                if case .source = page, let label = page.subtitle, let url = VividAbout.sourceURL {
+                    // The same tappable source link as About.
+                    Link(label, destination: url).font(.footnote).foregroundStyle(.secondary)
+                        .buttonStyle(.borderless).padding(.top, -16)
+                } else if let subtitle = page.subtitle {
                     Text(subtitle).foregroundStyle(.secondary).padding(.top, -16)
                 }
                 if blocks.isEmpty { ProgressView("Loading licence…") }

@@ -1,8 +1,8 @@
 Component: mpv
 Version: 0.41.0 (tag v0.41.0, commit 41f6a645068483470267271e1d09966ca3b9f413)
 Source: https://github.com/mpv-player/mpv/tree/41f6a645068483470267271e1d09966ca3b9f413
-SPDX: GPL-2.0-or-later
-Note: Built by edde746/mpv-build with -Dgpl=true, so libmpv is GPLv2+ (combined with the GPLv3 FFmpeg build it is conveyed under GPLv3).
+SPDX: GPL-2.0-or-later (upstream mpv's own licence with -Dgpl=true; its texts are bundled below)
+Note: The pinned edde746/mpv-build package builds mpv with -Dgpl=true and applies its own Apple patch series. Its LICENSE is the GPL-3.0 text and its README says the packages ship as GPL builds, so the patched libmpv in Vivid is GPL-3.0 as built.
 Note: Most source files are LGPL-2.1-or-later; Copyright explains the split and the per-file BSD/MIT/ISC exceptions.
 ================================================================================
 

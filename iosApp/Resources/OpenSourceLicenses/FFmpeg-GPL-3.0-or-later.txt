@@ -1,8 +1,8 @@
 Component: FFmpeg
 Version: 8.0.1 (tag n8.0.1, commit 894da5ca7d742e4429ffb2af534fcda0103ef593)
 Source: https://github.com/FFmpeg/FFmpeg/tree/894da5ca7d742e4429ffb2af534fcda0103ef593
-SPDX: GPL-3.0-or-later
-Note: Configured by edde746/mpv-build with --enable-gpl --enable-version3 (plus OpenSSL 3, which FFmpeg allows only with --enable-version3), so the build is GPLv3+.
+SPDX: GPL-3.0-or-later (upstream FFmpeg's own licence with --enable-gpl --enable-version3; its text is bundled below)
+Note: The pinned edde746/mpv-build package configures FFmpeg with --enable-gpl --enable-version3 (plus OpenSSL 3, which FFmpeg allows only with --enable-version3) and applies its own Apple patch series. Its LICENSE is the GPL-3.0 text and its README says the packages ship as GPL builds, so the patched FFmpeg in Vivid is GPL-3.0 as built.
 Note: LICENSE.md requires executables that include the IJG-derived DCT files to state in their documentation: this software is based in part on the work of the Independent JPEG Group. The three IJG notices follow the GPL text.
 ================================================================================
 
