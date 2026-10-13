@@ -984,7 +984,8 @@ def prepare_source(ctx: Ctx, lib: str) -> dict:
             "patched_tree": tree_digest(patched), "changed_files": changed}
 
 
-def write_cross_file(ctx: Ctx, path: Path, ndebug: bool, flags: list[str] | None = None) -> None:
+def write_cross_file(ctx: Ctx, path: Path, ndebug: bool, flags: list[str] | None = None,
+                     properties: tuple = ()) -> None:
     flags = ctx.flags if flags is None else flags
 
     def arr(items):
@@ -1010,6 +1011,7 @@ def write_cross_file(ctx: Ctx, path: Path, ndebug: bool, flags: list[str] | None
         "[properties]",
         f"pkg_config_libdir = {arr(ctx.pc_dirs)}",
         "needs_exe_wrapper = true",
+        *properties,
         "",
         "[built-in options]",
         f"prefix = {PREFIX!r}",
@@ -1041,12 +1043,13 @@ MESON_BUILTINS = ("buildtype", "optimization", "debug", "b_ndebug", "b_lto", "de
 
 
 def build_meson(ctx: Ctx, lib: str, options: list[str], ndebug: bool,
-                dest: Path | None = None, flags: list[str] | None = None) -> dict:
+                dest: Path | None = None, flags: list[str] | None = None,
+                properties: tuple = ()) -> dict:
     """Configure, build and install a meson project; returns the options meson
     reports for the configured build (the built-ins above and every -D option
     passed), read back with `meson introspect`."""
     cross = ctx.work / f"cross-{lib}.ini"
-    write_cross_file(ctx, cross, ndebug, flags)
+    write_cross_file(ctx, cross, ndebug, flags, properties)
     env = {k: v for k, v in ctx.env.items()
            if k not in ("CC", "CXX", "CFLAGS", "CPPFLAGS", "CXXFLAGS", "ASMFLAGS", "LDFLAGS")}
     logfile = ctx.logfile(lib)
@@ -1159,13 +1162,29 @@ def dep_flags_env(ctx: Ctx, lib: str) -> tuple[list[str], dict]:
     return flags, env
 
 
+def cross_properties(lib: str) -> tuple:
+    """Extra cross-file properties for a library (engine/config/<lib>-cross.txt),
+    one `name = value` per line: meson's has_function_<name> overrides."""
+    path = CONFIG / f"{lib}-cross.txt"
+    if not path.exists():
+        return ()
+    lines = [re.sub(r"(^|\s)#.*$", "", l).strip() for l in path.read_text().splitlines()]
+    props = tuple(l for l in lines if l)
+    bad = [p for p in props if not re.fullmatch(r"has_function_\w+ = (true|false)", p)]
+    if bad:
+        raise Failure(f"{path.name}: not a has_function override: {bad}")
+    return props
+
+
 def build_meson_dep(ctx: Ctx, lib: str) -> dict:
     """A meson library with meson's default b_ndebug=false (assertions as
     upstream builds them), not the libass and mpv cross file's true."""
     flags, _ = dep_flags_env(ctx, lib)
     options = read_list(CONFIG / f"{lib}-meson.txt")
-    return {"meson_options": options,
-            "meson": build_meson(ctx, lib, options, ndebug=False, dest=ctx.dep(lib), flags=flags)}
+    properties = cross_properties(lib)
+    return {"meson_options": options, "cross_properties": list(properties),
+            "meson": build_meson(ctx, lib, options, ndebug=False, dest=ctx.dep(lib), flags=flags,
+                                 properties=properties)}
 
 
 def cmake_cache(path: Path) -> dict[str, str]:
@@ -1381,7 +1400,8 @@ DEP_BUILDERS = {
 }
 # The functions whose code decides each library's build, for its cache key.
 COMMON_BUILD_FUNCTIONS = ("compile_flags", "build_env", "dep_flags_env", "dep_minimum_os",
-                          "write_cross_file", "build_meson", "build_meson_dep", "build_cmake",
+                          "write_cross_file", "build_meson", "build_meson_dep", "cross_properties",
+                          "build_cmake",
                           "assemble_source", "prepare_source", "apply_series", "extract_tar",
                           "write_system_pc", "prune_dep")
 DEP_FUNCTIONS = {
