@@ -2,7 +2,7 @@ Component: libass
 Version: 0.17.5 (tag 0.17.5, commit 4a05d8127f525943ebf45fdc6497c9e665947f0d)
 Source: https://github.com/libass/libass/tree/4a05d8127f525943ebf45fdc6497c9e665947f0d
 SPDX: ISC
-Note: Built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0-interim.1, without patches.
+Note: Built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0, with three patches, all ISC like libass: upstream libass commit 057a5334 (patch 0001) and upstream pull request #951 (patch 0002), both unchanged, and Vivid's own patch 0010. Pipeline and patches: https://github.com/blurbery/vivid/tree/fcb6782121e72c6ed755336be913c036f4679ddb/engine
 ================================================================================
 
 --------------------------------------------------------------------------------

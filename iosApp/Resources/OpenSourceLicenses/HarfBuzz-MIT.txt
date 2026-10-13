@@ -1,5 +1,5 @@
 Component: HarfBuzz
-Version: 8.1.1 (tag 8.1.1, commit 1d665c2b521512cdd56964138fc601debd1f1177), an interim prebuilt binary in Lucid Engine 0.1.0-interim.1
+Version: 8.1.1 (tag 8.1.1, commit 1d665c2b521512cdd56964138fc601debd1f1177), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0
 Source: https://github.com/harfbuzz/harfbuzz/tree/1d665c2b521512cdd56964138fc601debd1f1177
 SPDX: MIT-Modern-Variant AND MIT
 Note: COPYING is the HarfBuzz "Old MIT" licence; src/ms-use/COPYING covers the Microsoft Universal Shaping Engine data compiled into the USE shaper.

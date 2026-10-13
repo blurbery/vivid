@@ -2,7 +2,7 @@ Component: mpv (libmpv)
 Version: 0.41.0 (tag v0.41.0, commit 41f6a645068483470267271e1d09966ca3b9f413)
 Source: https://github.com/mpv-player/mpv/tree/41f6a645068483470267271e1d09966ca3b9f413
 SPDX: LGPL-2.1-or-later (built with -Dgpl=false)
-Note: Built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0-interim.1, with Vivid's engine patches (LGPL-2.1-or-later; patch 0001 is an unchanged upstream mpv commit). Pipeline and patches: https://github.com/blurbery/vivid/tree/10faa2a8b45d683380e8e452638be2d9c4c8a3cd/engine
+Note: Built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0, with Vivid's engine patches (LGPL-2.1-or-later; patch 0001 is an unchanged upstream mpv commit). Pipeline and patches: https://github.com/blurbery/vivid/tree/fcb6782121e72c6ed755336be913c036f4679ddb/engine
 Note: Copyright explains which parts of mpv are GPL-only; -Dgpl=false leaves them out, so the library is LGPL-2.1-or-later as built. Copyright also lists the per-file BSD/MIT/ISC exceptions.
 ================================================================================
 

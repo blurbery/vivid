@@ -49,29 +49,41 @@ The first row of Open Source Licences, "Source for this build", gives
 the exact source commit this build was made from and its GitHub link. That
 revision contains the complete source, project specs, build instructions
 and THIRD_PARTY_NOTICES.md. Lucid Engine's build pipeline and Vivid's
-engine patches are at the pipeline link under Lucid media engine below.
+engine patches are in its engine/ folder, and the source link under
+Lucid media engine below gives the exact commit the engine release was
+built from.
 Vivid's repository is https://github.com/blurbery/vivid
 The Apple permission preserves source disclosure; it does not allow
 closed-source covered derivatives. Apple system frameworks retain Apple's
 terms.
 
 Lucid media engine (iOS and tvOS)
-  Package: https://github.com/blurbery/lucid-engine/tree/11d60dc20a28e946677eb15ff832e7135603e92b
-  Lucid Engine 0.1.0-interim.1, product LucidEngine. Its NOTICE lists
-  every library with its version, upstream commit and licence, and its
-  LICENSES folder holds their texts. Package.swift records every binary
-  URL and SHA-256 checksum.
-  Vivid's engine pipeline built mpv 0.41.0, FFmpeg 8.0.1, libass, dav1d
-  and libdovi from upstream source with Vivid's engine patches.
-  Pipeline and patches:
-  https://github.com/blurbery/vivid/tree/10faa2a8b45d683380e8e452638be2d9c4c8a3cd/engine
+  Package: https://github.com/blurbery/lucid-engine/tree/53ebeac793f251df987a8d80b997e7fe8064d1b7
+  Lucid Engine 0.1.0 (tag v0.1.0), product LucidEngine. Its README and
+  NOTICE list every library with its version, upstream commit and
+  licence, and its LICENSES folder holds their texts. Package.swift
+  records every binary URL and SHA-256 checksum.
+  Vivid's engine pipeline built every library in it from upstream source:
+  mpv 0.41.0, FFmpeg 8.0.1, libass, dav1d, libdovi, FreeType, FriBidi,
+  HarfBuzz, libunibreak, Little CMS, shaderc, MoltenVK, libplacebo,
+  uavs3d, libbluray and uchardet.
+  Source: the pipeline, the pinned upstream sources (engine/pins.ini, by
+  URL, commit and SHA-256) and every patch are in engine/ at the commit
+  this release was built from:
+  https://github.com/blurbery/vivid/tree/fcb6782121e72c6ed755336be913c036f4679ddb/engine
   mpv is built with -Dgpl=false and FFmpeg without --enable-gpl or
   --enable-version3, so both are LGPL-2.1-or-later as built. FFmpeg uses
-  Apple's Secure Transport for HTTPS; there is no OpenSSL. Vivid's own
-  engine patches are licensed under LGPL-2.1-or-later, except the libdovi
-  patch, which is MIT. The other libraries listed in THIRD_PARTY_NOTICES.md
-  are interim prebuilt binaries until a later Lucid Engine release builds
-  them from source. All of them are static libraries linked into the app
+  Apple's Secure Transport for HTTPS; there is no OpenSSL.
+  Each patch is licensed like the library it patches:
+    mpv: Vivid's patches, LGPL-2.1-or-later (patch 0001 is an unchanged
+      upstream mpv commit).
+    FFmpeg: Vivid's patches, LGPL-2.1-or-later.
+    libass: upstream commit 057a5334 and upstream pull request #951,
+      both unchanged, and Vivid's patch 0010, all ISC.
+    libdovi: Vivid's patch, MIT.
+    libbluray: Vivid's patch, LGPL-2.1-or-later.
+    uavs3d: Vivid's patch, BSD-3-Clause.
+  All of the libraries are static libraries linked into the app
   executable.
 
   This software is based in part on the work of the Independent JPEG Group.

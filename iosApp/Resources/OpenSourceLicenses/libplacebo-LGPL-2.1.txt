@@ -1,5 +1,5 @@
 Component: libplacebo
-Version: 7.351.0 (tag v7.351.0, commit 3188549fba13bbdf3a5a98de2a38c2e71f04e21e), an interim prebuilt binary in Lucid Engine 0.1.0-interim.1
+Version: 7.351.0 (tag v7.351.0, commit 3188549fba13bbdf3a5a98de2a38c2e71f04e21e), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0
 Source: https://github.com/haasn/libplacebo/tree/3188549fba13bbdf3a5a98de2a38c2e71f04e21e
 SPDX: LGPL-2.1-or-later
 Note: Compiled-in submodules (fast_float, the generated glad loader, Vulkan-Headers) have their own entries.
