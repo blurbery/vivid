@@ -1,0 +1,1094 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] videotoolbox: decode Dolby Vision profiles 5, 7 and 8 natively
+
+HEVC streams whose container record (AV_PKT_DATA_DOVI_CONF in the codec
+context's coded side data, at least as large as the public struct) has
+both an RPU and a base layer are decoded with VideoToolbox's Dolby Vision
+HEVC decoder ('dvh1') instead of a plain HEVC session:
+
+- profiles 5 and 8 natively; profile 7 as profile 8.1, with a rewritten
+  configuration record, every RPU converted by libdovi 3.3.2 (mode 2) and
+  no enhancement layer;
+- the decoder specification keeps pristine's hvcC atom and the
+  Enable-hardware key, and adds a 24-byte DOVIDecoderConfigurationRecord
+  as dvvC (profile 8 and converted 7) or dvcC (profile 5), with the
+  metadata compression and reserved bits always zero; for an HDR
+  base (profiles 7 and 8) it also carries BT.2020 primaries, PQ (HLG for
+  profile 8 with compatibility id 4) and the BT.2020 matrix;
+- if VideoToolbox refuses the session and the base is HDR, one more
+  attempt is made with a plain HEVC description; profile 5 never retries;
+- a Dolby Vision session asks for per-frame HDR display metadata where the
+  OS has the properties, ignoring (and logging at verbose) a failure;
+- at the end of each frame every type 62 NAL unit of the packet longer
+  than 2 bytes is appended after the slices, unchanged for profiles 5 and
+  8 or converted for profile 7. An RPU that cannot be converted or
+  appended is left out with warnings and the frame is still decoded.
+  Profile 7 RPUs that are empty once their header, emulation prevention
+  bytes and trailing zero bytes are removed are skipped without calling
+  libdovi, because libdovi 3.3.2 aborts the process on them. For profile
+  7 streams, RPU and enhancement layer NAL units never reach the sample
+  any other way;
+- decoded buffers from a Dolby Vision session keep VideoToolbox's own
+  attachments (DolbyVisionRPUData among them) instead of FFmpeg's, and for
+  an HDR base get BT.2020, PQ or HLG and a colour space only where
+  missing. The decision follows the session current when the frame is
+  output, through a reference each frame holds.
+
+Every other stream and codec is decoded as before. The Dolby Vision logic
+lives in its own file, videotoolbox_dovi.c. libavcodec now references
+libdovi's C API; FFmpeg's configure has no switch for it, so the build
+passes libdovi's include path and -ldovi through its compiler and linker
+flags. Applies to FFmpeg n8.0.1 on top of Vivid's patches 0001 to 0010.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for
+FFmpeg. Like the files it modifies, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser
+General Public License as published by the Free Software Foundation;
+either version 2.1 of the License, or (at your option) any later
+version (LGPL-2.1-or-later). The new files carry the same licence.
+---
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 0000000000..0000000000 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -1021,7 +1021,7 @@
+ OBJS-$(CONFIG_DXVA2)                      += dxva2.o
+ OBJS-$(CONFIG_NVDEC)                      += nvdec.o
+ OBJS-$(CONFIG_VAAPI)                      += vaapi_decode.o
+-OBJS-$(CONFIG_VIDEOTOOLBOX)               += videotoolbox.o
++OBJS-$(CONFIG_VIDEOTOOLBOX)               += videotoolbox.o videotoolbox_dovi.o
+ OBJS-$(CONFIG_VDPAU)                      += vdpau.o
+ OBJS-$(CONFIG_VULKAN)                     += vulkan.o vulkan_video.o
+ 
+@@ -1331,7 +1331,8 @@
+ SKIPHEADERS-$(CONFIG_QSVENC)           += qsvenc.h
+ SKIPHEADERS-$(CONFIG_VAAPI)            += vaapi_decode.h vaapi_hevc.h vaapi_encode.h
+ SKIPHEADERS-$(CONFIG_VDPAU)            += vdpau.h vdpau_internal.h
+-SKIPHEADERS-$(CONFIG_VIDEOTOOLBOX)     += videotoolbox.h vt_internal.h
++SKIPHEADERS-$(CONFIG_VIDEOTOOLBOX)     += videotoolbox.h vt_internal.h \
++                                          videotoolbox_dovi.h
+ SKIPHEADERS-$(CONFIG_VULKAN)           += ffv1_vulkan.h vulkan_video.h \
+                                           vulkan_encode.h vulkan_decode.h
+ SKIPHEADERS-$(CONFIG_V4L2_M2M)         += v4l2_buffers.h v4l2_context.h v4l2_m2m.h
+diff --git a/libavcodec/videotoolbox.c b/libavcodec/videotoolbox.c
+index 0000000000..0000000000 100644
+--- a/libavcodec/videotoolbox.c
++++ b/libavcodec/videotoolbox.c
+@@ -20,11 +20,14 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
++#include <stdatomic.h>
++
+ #include "config.h"
+ #include "config_components.h"
+ #include "videotoolbox.h"
+ #include "libavutil/hwcontext_videotoolbox.h"
+ #include "libavutil/mem.h"
++#include "libavutil/refstruct.h"
+ #include "vt_internal.h"
+ #include "libavutil/avutil.h"
+ #include "libavutil/hwcontext.h"
+@@ -67,6 +70,20 @@
+     AVBufferRef *hw_frames_ctx;
+ } VTHWFrame;
+ 
++/**
++ * The Dolby Vision flags (FF_VT_DOVI_FRAME_*) of the current session. Each
++ * frame holds a reference, so that it is tagged for the session current
++ * when it is output rather than the one that decoded it.
++ */
++typedef struct VTDoviFrameState {
++    atomic_int flags;
++} VTDoviFrameState;
++
++static void videotoolbox_dovi_state_unref(void *opaque)
++{
++    av_refstruct_unref(&opaque);
++}
++
+ static void videotoolbox_buffer_release(void *opaque, uint8_t *data)
+ {
+     VTHWFrame *ref = (VTHWFrame *)data;
+@@ -120,6 +137,9 @@
+ {
+     int ret;
+     VTHWFrame *ref = (VTHWFrame *)frame->buf[0]->data;
++    FrameDecodeData *fdd = frame->private_ref;
++    VTDoviFrameState *dovi = fdd ? fdd->post_process_opaque : NULL;
++    int dovi_flags = dovi ? atomic_load(&dovi->flags) : 0;
+ 
+     if (!ref->pixbuf) {
+         av_log(avctx, AV_LOG_ERROR, "No frame decoded?\n");
+@@ -132,7 +152,11 @@
+     frame->crop_top = 0;
+     frame->crop_bottom = 0;
+ 
+-    if ((ret = av_vt_pixbuf_set_attachments(avctx, ref->pixbuf, frame)) < 0)
++    // Dolby Vision HEVC sessions keep VideoToolbox's own attachments
++    // (DolbyVisionRPUData among them) and only get missing HDR tags.
++    if (dovi_flags & FF_VT_DOVI_FRAME_DVH1)
++        ff_vt_dovi_tag_frame(ref->pixbuf, dovi_flags);
++    else if ((ret = av_vt_pixbuf_set_attachments(avctx, ref->pixbuf, frame)) < 0)
+         return ret;
+ 
+     frame->data[3] = (uint8_t*)ref->pixbuf;
+@@ -152,6 +176,7 @@
+     size_t      size = sizeof(VTHWFrame);
+     uint8_t    *data = NULL;
+     AVBufferRef *buf = NULL;
++    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+     int ret = ff_attach_decode_data(frame);
+     FrameDecodeData *fdd;
+     if (ret < 0)
+@@ -169,6 +194,10 @@
+ 
+     fdd = frame->private_ref;
+     fdd->post_process = videotoolbox_postproc_frame;
++    if (vtctx && vtctx->dovi_frame_state) {
++        fdd->post_process_opaque      = av_refstruct_ref(vtctx->dovi_frame_state);
++        fdd->post_process_opaque_free = videotoolbox_dovi_state_unref;
++    }
+ 
+     frame->width  = avctx->width;
+     frame->height = avctx->height;
+@@ -535,6 +564,7 @@
+ 
+     av_buffer_unref(&vtctx->cached_hw_frames_ctx);
+     av_freep(&vtctx->vt_ctx);
++    av_refstruct_unref(&vtctx->dovi_frame_state);
+ 
+     return 0;
+ }
+@@ -834,7 +864,8 @@
+ }
+ 
+ static CFDictionaryRef videotoolbox_decoder_config_create(CMVideoCodecType codec_type,
+-                                                          AVCodecContext *avctx)
++                                                          AVCodecContext *avctx,
++                                                          const FFVTDoviStream *dovi)
+ {
+     CFMutableDictionaryRef avc_info;
+     CFDataRef data = NULL;
+@@ -845,7 +876,8 @@
+                                                                    &kCFTypeDictionaryValueCallBacks);
+ 
+     CFDictionarySetValue(config_info,
+-                         codec_type == kCMVideoCodecType_HEVC ?
++                         codec_type == kCMVideoCodecType_HEVC ||
++                         codec_type == FF_VT_DOVI_CODEC_TYPE ?
+                             kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder :
+                             kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
+                          kCFBooleanTrue);
+@@ -868,9 +900,14 @@
+             CFDictionarySetValue(avc_info, CFSTR("avcC"), data);
+         break;
+     case kCMVideoCodecType_HEVC :
++    case FF_VT_DOVI_CODEC_TYPE :
+         data = ff_videotoolbox_hvcc_extradata_create(avctx);
+         if (data)
+             CFDictionarySetValue(avc_info, CFSTR("hvcC"), data);
++        // Dolby Vision HEVC: the configuration atom next to hvcC, plus the
++        // colour extensions for an HDR-compatible base.
++        if (codec_type == FF_VT_DOVI_CODEC_TYPE && dovi)
++            ff_vt_dovi_add_extensions(dovi, config_info, avc_info);
+         break;
+ #if CONFIG_VP9_VIDEOTOOLBOX_HWACCEL
+     case kCMVideoCodecType_VP9 :
+@@ -899,15 +936,110 @@
+ 
+     CFRelease(avc_info);
+     return config_info;
++}
++
++/**
++ * Classify an HEVC stream from its container's Dolby Vision record at each
++ * session start, and choose a Dolby Vision HEVC session for profiles 5, 7
++ * and 8.
++ */
++static int videotoolbox_dovi_start(AVCodecContext *avctx,
++                                   AVVideotoolboxContext *videotoolbox)
++{
++    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
++    const AVPacketSideData *sd;
++    const AVDOVIDecoderConfigurationRecord *rec;
++
++    if (!vtctx)
++        return 0;
++
++    vtctx->dovi_session = false;
++    if (vtctx->dovi_frame_state)
++        atomic_store(&vtctx->dovi_frame_state->flags, 0);
++
++    if (avctx->codec_id != AV_CODEC_ID_HEVC) {
++        ff_vt_dovi_classify(&vtctx->dovi, NULL, 0);
++        return 0;
++    }
++
++    if (!vtctx->dovi_frame_state) {
++        vtctx->dovi_frame_state = av_refstruct_allocz(sizeof(*vtctx->dovi_frame_state));
++        if (!vtctx->dovi_frame_state)
++            return AVERROR(ENOMEM);
++    }
++
++    sd = ff_get_coded_side_data(avctx, AV_PKT_DATA_DOVI_CONF);
++    ff_vt_dovi_classify(&vtctx->dovi, sd ? sd->data : NULL, sd ? sd->size : 0);
++    if (vtctx->dovi.cls == FF_VT_DOVI_PLAIN)
++        return 0;
++
++    rec = &vtctx->dovi.record;
++    av_log(avctx, AV_LOG_VERBOSE,
++           "Dolby Vision profile %d, level %d, compatibility id %d: "
++           "opening a Dolby Vision HEVC session%s\n",
++           rec->dv_profile, rec->dv_level, rec->dv_bl_signal_compatibility_id,
++           vtctx->dovi.cls == FF_VT_DOVI_CONVERTED ?
++               " as profile 8.1 with converted RPUs" : "");
++    videotoolbox->cm_codec_type = FF_VT_DOVI_CODEC_TYPE;
++    return 0;
++}
++
++/**
++ * VideoToolbox refused the Dolby Vision HEVC session of a stream with an
++ * HDR-compatible base: make exactly one more attempt with a plain HEVC
++ * description. Returns the status of that attempt, or the original status
++ * if the plain description could not be built.
++ */
++static OSStatus videotoolbox_dovi_retry(AVCodecContext *avctx,
++                                        AVVideotoolboxContext *videotoolbox,
++                                        OSStatus status,
++                                        CFDictionaryRef buf_attr,
++                                        const VTDecompressionOutputCallbackRecord *decoder_cb)
++{
++    CFDictionaryRef decoder_spec;
++    CMVideoFormatDescriptionRef cm_fmt_desc;
++
++    av_log(avctx, AV_LOG_WARNING,
++           "VideoToolbox refused the Dolby Vision HEVC session (status %d); "
++           "trying a plain HEVC session\n", (int)status);
++
++    decoder_spec = videotoolbox_decoder_config_create(kCMVideoCodecType_HEVC, avctx, NULL);
++    if (!decoder_spec)
++        return status;
++
++    cm_fmt_desc = videotoolbox_format_desc_create(kCMVideoCodecType_HEVC,
++                                                  decoder_spec,
++                                                  avctx->width,
++                                                  avctx->height);
++    if (!cm_fmt_desc) {
++        CFRelease(decoder_spec);
++        return status;
++    }
++
++    // Samples are created from the session's format description.
++    CFRelease(videotoolbox->cm_fmt_desc);
++    videotoolbox->cm_fmt_desc   = cm_fmt_desc;
++    videotoolbox->cm_codec_type = kCMVideoCodecType_HEVC;
++
++    status = VTDecompressionSessionCreate(NULL,
++                                          videotoolbox->cm_fmt_desc,
++                                          decoder_spec,
++                                          buf_attr,
++                                          decoder_cb,
++                                          &videotoolbox->session);
++    CFRelease(decoder_spec);
++    return status;
+ }
+ 
+ static int videotoolbox_start(AVCodecContext *avctx)
+ {
+     AVVideotoolboxContext *videotoolbox = videotoolbox_get_context(avctx);
++    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+     OSStatus status;
+     VTDecompressionOutputCallbackRecord decoder_cb;
+     CFDictionaryRef decoder_spec;
+     CFDictionaryRef buf_attr;
++    int ret;
+ 
+     if (!videotoolbox) {
+         av_log(avctx, AV_LOG_ERROR, "hwaccel context is not set\n");
+@@ -958,6 +1090,9 @@
+         break;
+     }
+ 
++    if ((ret = videotoolbox_dovi_start(avctx, videotoolbox)) < 0)
++        return ret;
++
+ #if defined(MAC_OS_X_VERSION_10_9) && !TARGET_OS_IPHONE && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_9) && AV_HAS_BUILTIN(__builtin_available)
+     if (avctx->codec_id == AV_CODEC_ID_PRORES) {
+         if (__builtin_available(macOS 10.9, *)) {
+@@ -972,7 +1107,8 @@
+     }
+ #endif
+ 
+-    decoder_spec = videotoolbox_decoder_config_create(videotoolbox->cm_codec_type, avctx);
++    decoder_spec = videotoolbox_decoder_config_create(videotoolbox->cm_codec_type, avctx,
++                                                      vtctx ? &vtctx->dovi : NULL);
+ 
+     if (!decoder_spec) {
+         av_log(avctx, AV_LOG_ERROR, "decoder specification creation failed\n");
+@@ -1005,10 +1141,24 @@
+                                           &decoder_cb,               // outputCallback
+                                           &videotoolbox->session);   // decompressionSessionOut
+ 
++    if (vtctx && videotoolbox->cm_codec_type == FF_VT_DOVI_CODEC_TYPE &&
++        ff_vt_dovi_retry_as_hevc(&vtctx->dovi, status))
++        status = videotoolbox_dovi_retry(avctx, videotoolbox, status,
++                                         buf_attr, &decoder_cb);
++
+     if (decoder_spec)
+         CFRelease(decoder_spec);
+     if (buf_attr)
+         CFRelease(buf_attr);
++
++    if (vtctx && status == 0 &&
++        videotoolbox->cm_codec_type == FF_VT_DOVI_CODEC_TYPE) {
++        vtctx->dovi_session = true;
++        ff_vt_dovi_set_session_properties(avctx, videotoolbox->session);
++    }
++    if (vtctx && vtctx->dovi_frame_state)
++        atomic_store(&vtctx->dovi_frame_state->flags,
++                     ff_vt_dovi_frame_flags(&vtctx->dovi, vtctx->dovi_session));
+ 
+     switch (status) {
+     case kVTVideoDecoderNotAvailableNowErr:
+@@ -1109,6 +1259,13 @@
+                                           const uint8_t *buffer,
+                                           uint32_t size)
+ {
++    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
++
++    // Profile 7: neither RPUs nor enhancement layer NAL units reach the
++    // sample this way; converted RPUs are appended at the end of the frame.
++    if (ff_vt_dovi_drop_nal(&vtctx->dovi, buffer, size))
++        return 0;
++
+     return videotoolbox_common_decode_slice(avctx, buffer, size);
+ }
+ 
+@@ -1118,7 +1275,48 @@
+                                            const uint8_t *buffer,
+                                            uint32_t size)
+ {
++    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
++
++    if (ff_vt_dovi_drop_nal(&vtctx->dovi, buffer, size))
++        return 0;
++
+     return videotoolbox_common_decode_slice(avctx, buffer, size);
++}
++
++static int videotoolbox_dovi_append(void *opaque, const uint8_t *nal, size_t size)
++{
++    AVCodecContext *avctx = opaque;
++    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
++
++    if (size > INT_MAX - 4 || vtctx->bitstream_size > INT_MAX - 4 - (int)size)
++        return AVERROR(ERANGE);
++
++    return videotoolbox_common_decode_slice(avctx, nal, size);
++}
++
++/**
++ * Append the current packet's Dolby Vision RPUs after its slices, in packet
++ * order: unchanged for profiles 5 and 8, converted to profile 8.1 for
++ * profile 7. Done only while the session is a Dolby Vision HEVC session; a
++ * failed RPU is left out and the frame is decoded without it.
++ */
++static void videotoolbox_dovi_forward_rpus(AVCodecContext *avctx)
++{
++    HEVCContext *h = avctx->priv_data;
++    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
++
++    if (!vtctx->dovi_session || vtctx->dovi.cls == FF_VT_DOVI_PLAIN ||
++        !vtctx->bitstream_size)
++        return;
++
++    for (int i = 0; i < h->pkt.nb_nals; i++) {
++        const H2645NAL *nal = &h->pkt.nals[i];
++
++        if (ff_vt_dovi_is_rpu(nal->type, nal->raw_size))
++            ff_vt_dovi_forward_rpu(avctx, &vtctx->dovi, nal->raw_data,
++                                   nal->raw_size, videotoolbox_dovi_append,
++                                   avctx);
++    }
+ }
+ 
+ static int videotoolbox_hevc_end_frame(AVCodecContext *avctx)
+@@ -1128,6 +1326,10 @@
+     VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+     int ret;
+ 
++    // Before the pending-restart check in ff_videotoolbox_common_end_frame,
++    // so a frame that triggers a restart follows the session it replaces.
++    videotoolbox_dovi_forward_rpus(avctx);
++
+     ret = ff_videotoolbox_common_end_frame(avctx, frame);
+     vtctx->bitstream_size = 0;
+     return ret;
+diff --git a/libavcodec/videotoolbox_dovi.c b/libavcodec/videotoolbox_dovi.c
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/libavcodec/videotoolbox_dovi.c
+@@ -0,0 +1,426 @@
++/*
++ * Dolby Vision support for the VideoToolbox HEVC hwaccel
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <stdint.h>
++#include <string.h>
++
++#include <Availability.h>
++#include <AvailabilityMacros.h>
++#include <TargetConditionals.h>
++
++#include <CoreFoundation/CoreFoundation.h>
++#include <CoreMedia/CoreMedia.h>
++#include <CoreVideo/CoreVideo.h>
++#include <VideoToolbox/VideoToolbox.h>
++
++#include <libdovi/rpu_parser.h>
++
++#include "libavutil/error.h"
++#include "libavutil/log.h"
++
++#include "videotoolbox_dovi.h"
++
++void ff_vt_dovi_classify(FFVTDoviStream *s, const uint8_t *side_data,
++                         size_t size)
++{
++    AVDOVIDecoderConfigurationRecord rec;
++
++    memset(s, 0, sizeof(*s));
++    s->cls = FF_VT_DOVI_PLAIN;
++
++    // A record smaller than the public struct counts as absent.
++    if (!side_data || size < sizeof(rec))
++        return;
++    memcpy(&rec, side_data, sizeof(rec));
++
++    // Usable only with both an RPU and a base layer, whatever the profile.
++    if (!rec.rpu_present_flag || !rec.bl_present_flag)
++        return;
++
++    switch (rec.dv_profile) {
++    case 5:
++        // The profile 5 base layer is not a picture a plain decode can show.
++        s->cls = FF_VT_DOVI_NATIVE;
++        break;
++    case 8:
++        // Every compatibility id qualifies; only 4 is an HLG base, the rest
++        // (0 and 2 included) are treated as PQ.
++        s->cls      = FF_VT_DOVI_NATIVE;
++        s->hdr_base = 1;
++        s->hlg_base = rec.dv_bl_signal_compatibility_id == 4;
++        break;
++    case 7:
++        s->cls      = FF_VT_DOVI_CONVERTED;
++        s->hdr_base = 1;
++        break;
++    default:
++        return;
++    }
++    s->record = rec;
++}
++
++int ff_vt_dovi_effective_profile(const FFVTDoviStream *s)
++{
++    switch (s->cls) {
++    case FF_VT_DOVI_NATIVE:
++        return s->record.dv_profile;
++    case FF_VT_DOVI_CONVERTED:
++        return 8;
++    default:
++        return 0;
++    }
++}
++
++int ff_vt_dovi_write_record(const FFVTDoviStream *s,
++                            uint8_t record[FF_VT_DOVI_RECORD_SIZE])
++{
++    const AVDOVIDecoderConfigurationRecord *rec = &s->record;
++    unsigned profile, level, rpu, el, bl, compat, fields;
++
++    if (s->cls == FF_VT_DOVI_PLAIN)
++        return AVERROR(EINVAL);
++
++    profile = ff_vt_dovi_effective_profile(s) & 0x7f;
++    level   = rec->dv_level & 0x3f;
++    rpu     = !!rec->rpu_present_flag;
++    bl      = !!rec->bl_present_flag;
++    if (s->cls == FF_VT_DOVI_CONVERTED) {
++        // Presented as profile 8.1: no enhancement layer, an HDR10 base.
++        el     = 0;
++        compat = 1;
++    } else {
++        el     = !!rec->el_present_flag;
++        compat = rec->dv_bl_signal_compatibility_id & 0x0f;
++    }
++
++    // ETSI TS 103 572 DOVIDecoderConfigurationRecord. The metadata
++    // compression field and the reserved bits are always written as zero:
++    // VideoToolbox refuses a non-zero compression value, which FFmpeg's
++    // MPEG-TS demuxer can report.
++    fields = profile << 9 | level << 3 | rpu << 2 | el << 1 | bl;
++    memset(record, 0, FF_VT_DOVI_RECORD_SIZE);
++    record[0] = rec->dv_version_major;
++    record[1] = rec->dv_version_minor;
++    record[2] = fields >> 8;
++    record[3] = fields & 0xff;
++    record[4] = compat << 4;
++    return 0;
++}
++
++CFStringRef ff_vt_dovi_atom_key(const FFVTDoviStream *s)
++{
++    return ff_vt_dovi_effective_profile(s) > 7 ? CFSTR("dvvC") : CFSTR("dvcC");
++}
++
++int ff_vt_dovi_add_extensions(const FFVTDoviStream *s,
++                              CFMutableDictionaryRef extensions,
++                              CFMutableDictionaryRef atoms)
++{
++    uint8_t record[FF_VT_DOVI_RECORD_SIZE];
++    CFDataRef data;
++    int ret;
++
++    if ((ret = ff_vt_dovi_write_record(s, record)) < 0)
++        return ret;
++
++    data = CFDataCreate(kCFAllocatorDefault, record, sizeof(record));
++    if (!data)
++        return AVERROR(ENOMEM);
++    CFDictionarySetValue(atoms, ff_vt_dovi_atom_key(s), data);
++    CFRelease(data);
++
++    // Colour extensions only where the base layer is an HDR picture, so
++    // never for profile 5.
++    if (s->hdr_base) {
++        CFDictionarySetValue(extensions,
++                             kCMFormatDescriptionExtension_ColorPrimaries,
++                             kCMFormatDescriptionColorPrimaries_ITU_R_2020);
++        CFDictionarySetValue(extensions,
++                             kCMFormatDescriptionExtension_TransferFunction,
++                             s->hlg_base ?
++                                 kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG :
++                                 kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ);
++        CFDictionarySetValue(extensions,
++                             kCMFormatDescriptionExtension_YCbCrMatrix,
++                             kCMFormatDescriptionYCbCrMatrix_ITU_R_2020);
++    }
++    return 0;
++}
++
++int ff_vt_dovi_retry_as_hevc(const FFVTDoviStream *s, OSStatus status)
++{
++    return status != 0 && s->cls != FF_VT_DOVI_PLAIN && s->hdr_base;
++}
++
++void ff_vt_dovi_set_session_properties(void *logctx,
++                                       VTDecompressionSessionRef session)
++{
++    OSStatus status;
++
++    if (__builtin_available(macOS 11.0, iOS 14.0, tvOS 14.0, *)) {
++        status = VTSessionSetProperty(session,
++                                      kVTDecompressionPropertyKey_PropagatePerFrameHDRDisplayMetadata,
++                                      kCFBooleanTrue);
++        if (status)
++            av_log(logctx, AV_LOG_VERBOSE,
++                   "Could not ask VideoToolbox to propagate per-frame HDR "
++                   "display metadata: %d\n", (int)status);
++    }
++
++    if (__builtin_available(macOS 14.0, iOS 17.0, tvOS 17.0, *)) {
++        status = VTSessionSetProperty(session,
++                                      kVTDecompressionPropertyKey_GeneratePerFrameHDRDisplayMetadata,
++                                      kCFBooleanTrue);
++        if (status)
++            av_log(logctx, AV_LOG_VERBOSE,
++                   "Could not ask VideoToolbox to generate per-frame HDR "
++                   "display metadata: %d\n", (int)status);
++    }
++}
++
++int ff_vt_dovi_drop_nal(const FFVTDoviStream *s, const uint8_t *nal,
++                        size_t size)
++{
++    int type;
++
++    if (s->cls != FF_VT_DOVI_CONVERTED || size < 2)
++        return 0;
++
++    type = (nal[0] >> 1) & 0x3f;
++    return type == FF_VT_DOVI_NAL_RPU || type == FF_VT_DOVI_NAL_EL;
++}
++
++int ff_vt_dovi_is_rpu(int nal_type, int raw_size)
++{
++    return nal_type == FF_VT_DOVI_NAL_RPU && raw_size > 2;
++}
++
++int ff_vt_dovi_rpu_is_empty(const uint8_t *nal, size_t size)
++{
++    static const uint8_t start[5] = { 0x7c, 0x01, 0x19, 0x08, 0x09 };
++    const uint8_t *payload;
++    size_t payload_size, kept = 0, used = 0;
++
++    if (size < 25 || memcmp(nal, start, sizeof(start)))
++        return 0;
++
++    // Count what is left after dropping the 2-byte NAL header, every
++    // emulation prevention byte (a 0x03 whose two preceding bytes in the
++    // header-less input are both zero; the first two bytes are always kept)
++    // and the run of zero bytes at the end.
++    payload      = nal + 2;
++    payload_size = size - 2;
++    for (size_t i = 0; i < payload_size; i++) {
++        if (i >= 2 && payload[i] == 0x03 && !payload[i - 1] && !payload[i - 2])
++            continue;
++        kept++;
++        if (payload[i])
++            used = kept;
++    }
++    return used <= 5;
++}
++
++static int vt_dovi_stripped(void *logctx, const FFVTDoviStream *s)
++{
++    av_log(logctx, AV_LOG_WARNING, "Dolby Vision RPU stripped (could not %s)\n",
++           s->cls == FF_VT_DOVI_CONVERTED ? "convert" : "append");
++    return 0;
++}
++
++static const char *vt_dovi_error(const DoviRpuOpaque *rpu)
++{
++    const char *error = dovi_rpu_get_error(rpu);
++    return error ? error : "unknown error";
++}
++
++static int vt_dovi_convert_rpu(void *logctx, const FFVTDoviStream *s,
++                               const uint8_t *nal, size_t size,
++                               FFVTDoviAppendFn append, void *opaque)
++{
++    DoviRpuOpaque *rpu;
++    const DoviData *out;
++    const char *error;
++    int appended = 0;
++
++    // Zero-filled or truncated RPUs make libdovi 3.3.2 abort the process,
++    // so they are skipped as parse failures without calling it.
++    if (ff_vt_dovi_rpu_is_empty(nal, size)) {
++        av_log(logctx, AV_LOG_WARNING,
++               "Dolby Vision RPU holds no metadata after its header and was "
++               "not passed to libdovi\n");
++        return vt_dovi_stripped(logctx, s);
++    }
++
++    rpu = dovi_parse_unspec62_nalu(nal, size);
++    if (!rpu)
++        return vt_dovi_stripped(logctx, s);
++
++    error = dovi_rpu_get_error(rpu);
++    if (error) {
++        av_log(logctx, AV_LOG_WARNING,
++               "Could not parse Dolby Vision RPU: %s\n", error);
++        goto end;
++    }
++
++    if (dovi_convert_rpu_with_mode(rpu, FF_VT_DOVI_CONVERSION_MODE) < 0) {
++        av_log(logctx, AV_LOG_WARNING,
++               "Could not convert Dolby Vision RPU to profile 8.1: %s\n",
++               vt_dovi_error(rpu));
++        goto end;
++    }
++
++    out = dovi_write_unspec62_nalu(rpu);
++    if (!out) {
++        av_log(logctx, AV_LOG_WARNING,
++               "Could not write converted Dolby Vision RPU: %s\n",
++               vt_dovi_error(rpu));
++        goto end;
++    }
++
++    // The sample's 4-byte length prefix must be able to describe it.
++    if (out->len <= UINT32_MAX && append(opaque, out->data, out->len) >= 0)
++        appended = 1;
++    dovi_data_free(out);
++
++end:
++    dovi_rpu_free(rpu);
++    return appended ? 1 : vt_dovi_stripped(logctx, s);
++}
++
++int ff_vt_dovi_forward_rpu(void *logctx, const FFVTDoviStream *s,
++                           const uint8_t *nal, size_t size,
++                           FFVTDoviAppendFn append, void *opaque)
++{
++    switch (s->cls) {
++    case FF_VT_DOVI_NATIVE:
++        if (size <= UINT32_MAX && append(opaque, nal, size) >= 0)
++            return 1;
++        return vt_dovi_stripped(logctx, s);
++    case FF_VT_DOVI_CONVERTED:
++        return vt_dovi_convert_rpu(logctx, s, nal, size, append, opaque);
++    default:
++        return 0;
++    }
++}
++
++int ff_vt_dovi_frame_flags(const FFVTDoviStream *s, int dvh1_session)
++{
++    int flags;
++
++    if (!dvh1_session)
++        return 0;
++
++    flags = FF_VT_DOVI_FRAME_DVH1;
++    if (s->hdr_base)
++        flags |= FF_VT_DOVI_FRAME_HDR_BASE;
++    if (s->hlg_base)
++        flags |= FF_VT_DOVI_FRAME_HLG_BASE;
++    return flags;
++}
++
++/**
++ * Copy all attachments in a mode, with the API the running OS has.
++ */
++static CFDictionaryRef vt_dovi_copy_attachments(CVBufferRef buffer,
++                                                CVAttachmentMode mode)
++{
++#if (TARGET_OS_OSX  && defined(__MAC_12_0)    && __MAC_OS_X_VERSION_MAX_ALLOWED  >= __MAC_12_0)     || \
++    (TARGET_OS_IOS  && defined(__IPHONE_15_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_15_0)  || \
++    (TARGET_OS_TV   && defined(__TVOS_15_0)   && __TV_OS_VERSION_MAX_ALLOWED     >= __TVOS_15_0)
++    if (__builtin_available(macOS 12.0, iOS 15.0, tvOS 15.0, *))
++        return CVBufferCopyAttachments(buffer, mode);
++#endif
++
++#if (TARGET_OS_OSX  && (!defined(__MAC_12_0)    || __MAC_OS_X_VERSION_MIN_REQUIRED  < __MAC_12_0))     || \
++    (TARGET_OS_IOS  && (!defined(__IPHONE_15_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_15_0))  || \
++    (TARGET_OS_TV   && (!defined(__TVOS_15_0)   || __TV_OS_VERSION_MIN_REQUIRED     < __TVOS_15_0))
++    {
++        CFDictionaryRef dict = CVBufferGetAttachments(buffer, mode);
++        return dict ? CFDictionaryCreateCopy(kCFAllocatorDefault, dict) : NULL;
++    }
++#else
++    return NULL;
++#endif
++}
++
++/**
++ * Whether the buffer carries an attachment for the key, in any mode.
++ */
++static int vt_dovi_has_attachment(CVBufferRef buffer, CFStringRef key)
++{
++#if (TARGET_OS_OSX  && defined(__MAC_12_0)    && __MAC_OS_X_VERSION_MAX_ALLOWED  >= __MAC_12_0)     || \
++    (TARGET_OS_IOS  && defined(__IPHONE_15_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_15_0)  || \
++    (TARGET_OS_TV   && defined(__TVOS_15_0)   && __TV_OS_VERSION_MAX_ALLOWED     >= __TVOS_15_0)
++    if (__builtin_available(macOS 12.0, iOS 15.0, tvOS 15.0, *))
++        return CVBufferHasAttachment(buffer, key);
++#endif
++
++#if (TARGET_OS_OSX  && (!defined(__MAC_12_0)    || __MAC_OS_X_VERSION_MIN_REQUIRED  < __MAC_12_0))     || \
++    (TARGET_OS_IOS  && (!defined(__IPHONE_15_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_15_0))  || \
++    (TARGET_OS_TV   && (!defined(__TVOS_15_0)   || __TV_OS_VERSION_MIN_REQUIRED     < __TVOS_15_0))
++    return CVBufferGetAttachment(buffer, key, NULL) != NULL;
++#else
++    return 0;
++#endif
++}
++
++static void vt_dovi_set_if_absent(CVBufferRef buffer, CFStringRef key,
++                                  CFTypeRef value)
++{
++    if (!vt_dovi_has_attachment(buffer, key))
++        CVBufferSetAttachment(buffer, key, value,
++                              kCVAttachmentMode_ShouldPropagate);
++}
++
++void ff_vt_dovi_tag_frame(CVPixelBufferRef pixbuf, int frame_flags)
++{
++    CFDictionaryRef attachments;
++    CGColorSpaceRef colorspace;
++
++    // Profile 5 buffers keep exactly what VideoToolbox gave them.
++    if (!(frame_flags & FF_VT_DOVI_FRAME_DVH1) ||
++        !(frame_flags & FF_VT_DOVI_FRAME_HDR_BASE))
++        return;
++
++    vt_dovi_set_if_absent(pixbuf, kCVImageBufferColorPrimariesKey,
++                          kCVImageBufferColorPrimaries_ITU_R_2020);
++    vt_dovi_set_if_absent(pixbuf, kCVImageBufferTransferFunctionKey,
++                          frame_flags & FF_VT_DOVI_FRAME_HLG_BASE ?
++                              kCVImageBufferTransferFunction_ITU_R_2100_HLG :
++                              kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ);
++    vt_dovi_set_if_absent(pixbuf, kCVImageBufferYCbCrMatrixKey,
++                          kCVImageBufferYCbCrMatrix_ITU_R_2020);
++
++    if (vt_dovi_has_attachment(pixbuf, kCVImageBufferCGColorSpaceKey))
++        return;
++
++    attachments = vt_dovi_copy_attachments(pixbuf,
++                                           kCVAttachmentMode_ShouldPropagate);
++    if (!attachments)
++        return;
++    colorspace = CVImageBufferCreateColorSpaceFromAttachments(attachments);
++    CFRelease(attachments);
++    if (!colorspace)
++        return;
++    CVBufferSetAttachment(pixbuf, kCVImageBufferCGColorSpaceKey, colorspace,
++                          kCVAttachmentMode_ShouldPropagate);
++    CFRelease(colorspace);
++}
+diff --git a/libavcodec/videotoolbox_dovi.h b/libavcodec/videotoolbox_dovi.h
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/libavcodec/videotoolbox_dovi.h
+@@ -0,0 +1,195 @@
++/*
++ * Dolby Vision support for the VideoToolbox HEVC hwaccel
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++/**
++ * @file
++ * Dolby Vision decisions for VideoToolbox HEVC sessions.
++ *
++ * HEVC streams whose container record describes Dolby Vision profile 5, 7
++ * or 8 with an RPU and a base layer are decoded with a Dolby Vision HEVC
++ * ('dvh1') session. Profile 7 is presented to VideoToolbox as profile 8.1:
++ * the configuration record is rewritten, every RPU is converted with
++ * libdovi and the enhancement layer is never sent. Everything here is
++ * independent of the HEVC decoder's internals, so it can be exercised on
++ * its own; videotoolbox.c calls it at session start, for each NAL unit it
++ * appends, at the end of each frame and when a decoded frame is output.
++ */
++
++#ifndef AVCODEC_VIDEOTOOLBOX_DOVI_H
++#define AVCODEC_VIDEOTOOLBOX_DOVI_H
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include <CoreFoundation/CoreFoundation.h>
++#include <CoreVideo/CoreVideo.h>
++#include <VideoToolbox/VideoToolbox.h>
++
++#include "libavutil/dovi_meta.h"
++#include "libavutil/macros.h"
++
++/**
++ * CoreMedia's kCMVideoCodecType_DolbyVisionHEVC, written as its
++ * four-character code so that no SDK availability guard is needed.
++ */
++#define FF_VT_DOVI_CODEC_TYPE MKBETAG('d', 'v', 'h', '1')
++
++/** Size of the DOVIDecoderConfigurationRecord handed to VideoToolbox. */
++#define FF_VT_DOVI_RECORD_SIZE 24
++
++/** libdovi 3.3.2 conversion mode 2 ("To81"). */
++#define FF_VT_DOVI_CONVERSION_MODE 2
++
++/** HEVC NAL unit types that carry Dolby Vision RPUs and enhancement layers. */
++#define FF_VT_DOVI_NAL_RPU 62
++#define FF_VT_DOVI_NAL_EL  63
++
++enum FFVTDoviClass {
++    /** No usable record: a pristine HEVC session. */
++    FF_VT_DOVI_PLAIN = 0,
++    /** Profile 5 or 8: a 'dvh1' session, RPUs forwarded unchanged. */
++    FF_VT_DOVI_NATIVE,
++    /** Profile 7: a 'dvh1' session as profile 8.1, RPUs converted. */
++    FF_VT_DOVI_CONVERTED,
++};
++
++typedef struct FFVTDoviStream {
++    enum FFVTDoviClass cls;
++    /** The container's record; only meaningful when cls is not plain. */
++    AVDOVIDecoderConfigurationRecord record;
++    /** The base layer is a picture a plain HDR decode can show. */
++    int hdr_base;
++    /** That base layer is HLG (profile 8 with compatibility id 4). */
++    int hlg_base;
++} FFVTDoviStream;
++
++/**
++ * Flags describing the session current when a frame is output.
++ */
++enum {
++    FF_VT_DOVI_FRAME_DVH1     = 1 << 0, ///< the session is a 'dvh1' session
++    FF_VT_DOVI_FRAME_HDR_BASE = 1 << 1, ///< the stream has an HDR-compatible base
++    FF_VT_DOVI_FRAME_HLG_BASE = 1 << 2, ///< ... which is HLG
++};
++
++/**
++ * Classify a stream from its coded AV_PKT_DATA_DOVI_CONF side data.
++ *
++ * @param side_data the side data payload, or NULL when there is none
++ * @param size      the payload size; a record smaller than
++ *                  AVDOVIDecoderConfigurationRecord counts as absent
++ */
++void ff_vt_dovi_classify(FFVTDoviStream *s, const uint8_t *side_data,
++                         size_t size);
++
++/** The Dolby Vision profile presented to VideoToolbox (7 becomes 8). */
++int ff_vt_dovi_effective_profile(const FFVTDoviStream *s);
++
++/**
++ * Write the 24-byte configuration record presented to VideoToolbox.
++ *
++ * @return 0, or a negative error code for a plain HEVC stream
++ */
++int ff_vt_dovi_write_record(const FFVTDoviStream *s,
++                            uint8_t record[FF_VT_DOVI_RECORD_SIZE]);
++
++/** "dvvC" when the effective profile is above 7, otherwise "dvcC". */
++CFStringRef ff_vt_dovi_atom_key(const FFVTDoviStream *s);
++
++/**
++ * Add the Dolby Vision configuration atom to the sample description
++ * extension atoms, and, for an HDR-compatible base, the colour extensions
++ * to the top level of the format description extensions.
++ *
++ * @return 0, or a negative error code when nothing could be added
++ */
++int ff_vt_dovi_add_extensions(const FFVTDoviStream *s,
++                              CFMutableDictionaryRef extensions,
++                              CFMutableDictionaryRef atoms);
++
++/**
++ * Whether a refused 'dvh1' session is retried once as plain HEVC:
++ * only for a non-zero status and an HDR-compatible base, never profile 5.
++ */
++int ff_vt_dovi_retry_as_hevc(const FFVTDoviStream *s, OSStatus status);
++
++/**
++ * Ask a 'dvh1' session for per-frame HDR display metadata where the OS has
++ * the properties. A property that cannot be set is logged and ignored.
++ */
++void ff_vt_dovi_set_session_properties(void *logctx,
++                                       VTDecompressionSessionRef session);
++
++/**
++ * The profile 7 NAL filter: whether a NAL unit headed for the sample must
++ * be dropped because it is an RPU or an enhancement layer NAL unit of a
++ * converted stream. NAL units shorter than 2 bytes are never dropped.
++ */
++int ff_vt_dovi_drop_nal(const FFVTDoviStream *s, const uint8_t *nal,
++                        size_t size);
++
++/**
++ * Whether a NAL unit of the current packet is forwarded at the end of the
++ * frame: type 62, more than 2 bytes escaped, header included.
++ */
++int ff_vt_dovi_is_rpu(int nal_type, int raw_size);
++
++/**
++ * Whether a profile 7 RPU is zero-filled or truncated, so that it is
++ * skipped as a parse failure without calling libdovi: at least 25 bytes,
++ * starting 0x7C 0x01 0x19 0x08 0x09, and 5 bytes or fewer left once the
++ * header, the emulation prevention bytes and the trailing zero bytes are
++ * removed.
++ */
++int ff_vt_dovi_rpu_is_empty(const uint8_t *nal, size_t size);
++
++/**
++ * Appends one NAL unit to the sample, length-prefixed.
++ *
++ * @return 0, or a negative error code
++ */
++typedef int (*FFVTDoviAppendFn)(void *opaque, const uint8_t *nal,
++                                size_t size);
++
++/**
++ * Forward one RPU NAL unit (escaped, header included) of a Dolby Vision
++ * stream: unchanged for native streams, converted to profile 8.1 for
++ * profile 7. An RPU that cannot be converted or appended is skipped with
++ * warnings; the frame carries on without it.
++ *
++ * @return 1 if the RPU was appended, 0 if it was skipped
++ */
++int ff_vt_dovi_forward_rpu(void *logctx, const FFVTDoviStream *s,
++                           const uint8_t *nal, size_t size,
++                           FFVTDoviAppendFn append, void *opaque);
++
++/** The FF_VT_DOVI_FRAME_* flags for a stream and its current session. */
++int ff_vt_dovi_frame_flags(const FFVTDoviStream *s, int dvh1_session);
++
++/**
++ * Tag a decoded buffer from a 'dvh1' session. VideoToolbox's own
++ * attachments are kept; for an HDR-compatible base, BT.2020 primaries, PQ
++ * (or HLG) transfer and BT.2020 matrix are added where absent, and then a
++ * colour space where absent. Profile 5 buffers are left untouched.
++ */
++void ff_vt_dovi_tag_frame(CVPixelBufferRef pixbuf, int frame_flags);
++
++#endif /* AVCODEC_VIDEOTOOLBOX_DOVI_H */
+diff --git a/libavcodec/vt_internal.h b/libavcodec/vt_internal.h
+index 0000000000..0000000000 100644
+--- a/libavcodec/vt_internal.h
++++ b/libavcodec/vt_internal.h
+@@ -21,7 +21,10 @@
+ 
+ #include "avcodec.h"
+ #include "videotoolbox.h"
++#include "videotoolbox_dovi.h"
+ 
++struct VTDoviFrameState;
++
+ typedef struct VTContext {
+     // The current bitstream buffer.
+     uint8_t                     *bitstream;
+@@ -47,6 +50,16 @@
+     bool                        reconfig_needed;
+ 
+     void *logctx;
++
++    // Dolby Vision class of the HEVC stream, set at every session start.
++    FFVTDoviStream              dovi;
++
++    // Whether the current session is a Dolby Vision HEVC ('dvh1') session.
++    bool                        dovi_session;
++
++    // The current session's Dolby Vision frame flags, shared with every
++    // frame this hwaccel allocates so they are tagged at output time.
++    struct VTDoviFrameState    *dovi_frame_state;
+ } VTContext;
+ 
+ int ff_videotoolbox_alloc_frame(AVCodecContext *avctx, AVFrame *frame);
