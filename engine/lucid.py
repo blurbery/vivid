@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Lucid Engine build tool.
 
-Builds Vivid's media engine libraries (libdovi, dav1d, libass, FFmpeg and
-libmpv) from pinned upstream sources plus Vivid's patch series, packages them
-as static xcframeworks and writes a provenance report. Everything else the
-engine links comes from the interim prebuilt binaries pinned in pins.ini.
+Builds every library of Vivid's media engine (libdovi, FreeType, FriBidi,
+HarfBuzz, libunibreak, Little CMS, shaderc, MoltenVK, libplacebo, uavs3d,
+libbluray, uchardet, dav1d, libass, FFmpeg and libmpv) from pinned upstream
+sources plus Vivid's patch series, packages them as static xcframeworks and
+writes a provenance report.
 
     python3 engine/lucid.py check-allowlist
     python3 engine/lucid.py fetch
-    python3 engine/lucid.py build --slice tvos-arm64
+    python3 engine/lucid.py cache-key --slice tvos-arm64
+    python3 engine/lucid.py build --slice tvos-arm64 [--cache DIR]
     python3 engine/lucid.py test-audio --slice tvos-arm64
     python3 engine/lucid.py check --slice tvos-arm64
     python3 engine/lucid.py test --slice tvos-arm64
@@ -28,6 +30,7 @@ import configparser
 import datetime
 import hashlib
 import importlib.util
+import inspect
 import json
 import os
 import plistlib
@@ -55,7 +58,8 @@ PATCHES = ENGINE / "patches"
 # strings.
 PREFIX = "/lucid-engine"
 
-# Every download must start with one of these (scheme, host and project).
+# Every download must start with one of these (scheme, host and project):
+# upstream projects and their official release hosts only.
 FETCH_ALLOWED = (
     "https://github.com/FFmpeg/",
     "https://github.com/mpv-player/",
@@ -63,25 +67,43 @@ FETCH_ALLOWED = (
     "https://github.com/videolan/",
     "https://github.com/mesonbuild/",
     "https://github.com/ninja-build/",
-    "https://github.com/mpvkit/",  # interim prebuilt release assets only
+    "https://github.com/Kitware/",  # CMake release binary
     "https://github.com/quietvoid/",  # libdovi (dovi_tool) source
     "https://github.com/lu-zero/",  # cargo-c release binary
+    "https://github.com/freetype/",  # FreeType (official mirror)
+    "https://github.com/fribidi/",
+    "https://github.com/harfbuzz/",
+    "https://github.com/adah1972/",  # libunibreak
+    "https://github.com/mm2/",  # Little CMS
+    "https://github.com/haasn/",  # libplacebo (official mirror)
+    "https://github.com/fastfloat/",  # libplacebo's 3rdparty/fast_float
+    "https://github.com/Dav1dde/",  # libplacebo's 3rdparty/glad
+    "https://github.com/pallets/",  # libplacebo's 3rdparty/jinja and markupsafe
+    "https://github.com/KhronosGroup/",  # MoltenVK, Vulkan-Headers, SPIRV-*, glslang
+    "https://github.com/USCiLab/",  # cereal, for MoltenVK
+    "https://github.com/google/shaderc/",
+    "https://github.com/uavs3/",
+    "https://download.videolan.org/pub/videolan/libbluray/",  # release tarball
+    "https://www.freedesktop.org/software/uchardet/releases/",  # release tarball
     "https://static.rust-lang.org/dist/",  # Rust toolchain components
     "https://static.crates.io/crates/",  # crates in libdovi's Cargo.lock
 )
 # Hosts that may appear in references (upstream homes, patch descriptions,
-# and the GNU licence address in the licence header of new source files).
+# the GNU licence address in the licence header of new source files, and the
+# URL field of FreeType's pkg-config file).
 REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org",
-                   "www.gnu.org"}
-# Projects nothing here may reference. Split so this file does not match itself.
-DENIED = ("edde" "746",)
+                   "www.gnu.org", "freetype.org"}
+# Projects nothing here may reference: third-party build repositories and
+# their binaries. Split so this file does not match itself.
+DENIED = ("edde" "746", "mpv" "kit", "mpv-" "build", "ple" "zy")
 FETCH_WORDS = re.compile(r"\b(curl|wget|urlopen|urlretrieve|git clone|git fetch)\b")
 
-# Values today's frameworks carry (facts 4.1). Kept for parity; the bundle
-# identifier prefix and version are open questions (facts 6, item 5).
-PLIST_ID_PREFIX = "com.mpvkit."
+# Info.plist values of every framework. The identifier prefix is Vivid's own
+# (blurbery's decision); the version and MinimumOSVersion keep today's values
+# (facts 4.1 and 1.7, ITMS-90208).
+PLIST_ID_PREFIX = "com.blurbery.vivid.lucid."
 PLIST_VERSION = "87.88.520"
-PLIST_MINIMUM_OS = "100.0"  # see facts 1.7 (ITMS-90208)
+PLIST_MINIMUM_OS = "100.0"
 
 FFMPEG_LIBS = ("avcodec", "avdevice", "avfilter", "avformat", "avutil", "swresample", "swscale")
 # Non-public FFmpeg headers today's frameworks also ship (facts 2.2, edit 2).
@@ -103,21 +125,59 @@ MODULE_EXCLUDES = {
                   "hwcontext_qsv.h", "hwcontext_opencl.h", "hwcontext_dxva2.h",
                   "hwcontext_d3d11va.h", "hwcontext_d3d12va.h", "hwcontext_cuda.h"),
 }
-BUILD_ORDER = ("libdovi", "dav1d", "libass", "ffmpeg", "mpv")
-BUILT_FRAMEWORKS = {"Libdovi", "Libdav1d", "Libass", "Libmpv"} | {f"Lib{ff}" for ff in FFMPEG_LIBS}
+
+# The libraries FFmpeg, libass and libmpv depend on, built here from upstream
+# source (build facts for the libraries: docs/cores/lucid-engine-libs-build-facts.md).
+# Each is installed on its own (`<work>/<slice>/deps/<name>`), can be reused
+# from the dependency cache (`lucid.py build --cache`), and is checked against
+# what today's interim build ships, recorded in engine/config/expected-libs/.
+@dataclass(frozen=True)
+class Dep:
+    framework: str       # framework (or, for MoltenVK, static library) name
+    library: str         # the installed static library the framework wraps
+    pkgconfig: tuple     # pkg-config files consumers use
+    needs: tuple = ()    # libraries whose pkg-config files and headers it uses
+    kind: str = "framework"
+
+
+# In build order: the quick ones first, then the three that take longest.
+DEPS = {
+    "freetype": Dep("Libfreetype", "libfreetype.a", ("freetype2",)),
+    "fribidi": Dep("Libfribidi", "libfribidi.a", ("fribidi",)),
+    "harfbuzz": Dep("Libharfbuzz", "libharfbuzz.a", ("harfbuzz",)),
+    "unibreak": Dep("Libunibreak", "libunibreak.a", ("libunibreak",)),
+    "lcms2": Dep("lcms2", "liblcms2.a", ("lcms2",)),
+    "uavs3d": Dep("Libuavs3d", "libuavs3d.a", ("uavs3d",)),
+    "libbluray": Dep("Libbluray", "libbluray.a", ("libbluray",), ("freetype",)),
+    "uchardet": Dep("Libuchardet", "libuchardet.a", ("uchardet",)),
+    "shaderc": Dep("Libshaderc_combined", "libshaderc_combined.a", ("shaderc",)),
+    "moltenvk": Dep("MoltenVK", "libMoltenVK.a", ("vulkan",), kind="library"),
+    "libplacebo": Dep("Libplacebo", "libplacebo.a", ("libplacebo",),
+                      ("libdovi", "lcms2", "shaderc", "moltenvk")),
+}
+def dep_of(framework: str) -> str | None:
+    """The dependency library a framework (or library) name belongs to."""
+    return next((lib for lib, d in DEPS.items() if d.framework == framework), None)
+
+
+BUILD_ORDER = ("libdovi",) + tuple(DEPS) + ("dav1d", "libass", "ffmpeg", "mpv")
+BUILT_FRAMEWORKS = ({"Libdovi", "Libdav1d", "Libass", "Libmpv"} | {f"Lib{ff}" for ff in FFMPEG_LIBS}
+                    | {d.framework for d in DEPS.values() if d.kind == "framework"})
+BUILT_LIBRARIES = {d.framework for d in DEPS.values() if d.kind == "library"}
+EXPECTED_LIBS = CONFIG / "expected-libs"
+CMAKE_COMMON = ("-DBUILD_SHARED_LIBS=0", "-DCMAKE_BUILD_TYPE=Release",
+                f"-DCMAKE_INSTALL_PREFIX={PREFIX}", "-DCMAKE_OSX_ARCHITECTURES=arm64",
+                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-DCMAKE_SYSTEM_PROCESSOR=arm64",
+                "-DCMAKE_VERBOSE_MAKEFILE=0")
+# The build host's Python for CMake projects' generator scripts (Xcode's,
+# the one meson runs under), so no other Python on the runner is picked up.
+HOST_PYTHON = "/usr/bin/python3"
 CRATES_URL = "https://static.crates.io/crates/{name}/{name}-{version}.crate"
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 HOST_RUST_TARGET = "aarch64-apple-darwin"
-# libdovi's C API, as today's prebuilt exports it (facts 2.7).
-LIBDOVI_API = {
-    "_dovi_convert_rpu_with_mode", "_dovi_data_free", "_dovi_parse_itu_t35_dovi_metadata_obu",
-    "_dovi_parse_rpu", "_dovi_parse_rpu_bin_file", "_dovi_parse_unspec62_nalu", "_dovi_rpu_free",
-    "_dovi_rpu_free_data_mapping", "_dovi_rpu_free_header", "_dovi_rpu_free_vdr_dm_data",
-    "_dovi_rpu_get_data_mapping", "_dovi_rpu_get_error", "_dovi_rpu_get_header",
-    "_dovi_rpu_get_vdr_dm_data", "_dovi_rpu_list_free", "_dovi_rpu_remove_mapping",
-    "_dovi_rpu_set_active_area_offsets", "_dovi_write_av1_rpu_metadata_obu_t35_complete",
-    "_dovi_write_av1_rpu_metadata_obu_t35_payload", "_dovi_write_rpu", "_dovi_write_unspec62_nalu",
-}
+# libdovi as today's engine ships it: header SHA-256, exported C API and the
+# functions libplacebo calls, recorded from the last green run (facts 2.7).
+LIBDOVI_EXPECTED = CONFIG / "expected-libdovi.txt"
 OPENSSL_SYMBOL = re.compile(
     r"^_(SSL_|TLS_|DTLS_|OPENSSL_|OpenSSL_|EVP_|X509_|BIO_|ERR_|CRYPTO_|PEM_|RAND_|HMAC_)")
 MPV_PATCH_MARKER = b"Still waiting for TrueHD major sync"  # from mpv patch 0001
@@ -224,30 +284,34 @@ class Slice:
     target: str          # clang -target, {v} = minimum OS
     min_flag: str        # version-min flag, {v} = minimum OS
     subsystem: str       # meson host_machine subsystem
-    prebuilt: str        # platform folder inside the prebuilt -all.zip files
-    moltenvk: str        # slice inside MoltenVK.xcframework
     plist_platform: str  # CFBundleSupportedPlatforms
     macho_platform: int  # LC_BUILD_VERSION platform
     tvos: bool
+    simulator: bool
     rust_target: str     # Rust target triple for libdovi
     version_min_cmd: str  # older load command naming the platform (device slices)
+    cmake_system: str    # CMAKE_SYSTEM_NAME
+    # configure --host: the canonical form (aarch64) of today's arm64-ios-darwin
+    # and arm64-tvos-darwin (facts 1.4), which libunibreak's config.sub of
+    # 2018 does not recognise. It is the same host.
+    autotools_host: str
+    mvk_platform: str    # MoltenVK: xcodebuild generic/platform= and make target
+    mvk_make: str
 
 
 SLICES = {s.name: s for s in (
     Slice("ios-arm64", "iphoneos", "arm64-apple-ios{v}", "-mios-version-min={v}",
-          "ios", "ios", "ios-arm64", "iPhoneOS", 2, False,
-          "aarch64-apple-ios", "LC_VERSION_MIN_IPHONEOS"),
+          "ios", "iPhoneOS", 2, False, False, "aarch64-apple-ios", "LC_VERSION_MIN_IPHONEOS",
+          "iOS", "aarch64-ios-darwin", "iOS", "ios"),
     Slice("ios-arm64-simulator", "iphonesimulator", "arm64-apple-ios{v}-simulator",
-          "-mios-simulator-version-min={v}", "ios-simulator", "isimulator",
-          "ios-arm64_x86_64-simulator", "iPhoneSimulator", 7, False,
-          "aarch64-apple-ios-sim", ""),
+          "-mios-simulator-version-min={v}", "ios-simulator", "iPhoneSimulator", 7, False, True,
+          "aarch64-apple-ios-sim", "", "iOS", "aarch64-ios-darwin", "iOS Simulator", "iossim"),
     Slice("tvos-arm64", "appletvos", "arm64-apple-tvos{v}", "-mtvos-version-min={v}",
-          "tvos", "tvos", "tvos-arm64_arm64e", "AppleTVOS", 3, True,
-          "aarch64-apple-tvos", "LC_VERSION_MIN_TVOS"),
+          "tvos", "AppleTVOS", 3, True, False, "aarch64-apple-tvos", "LC_VERSION_MIN_TVOS",
+          "tvOS", "aarch64-tvos-darwin", "tvOS", "tvos"),
     Slice("tvos-arm64-simulator", "appletvsimulator", "arm64-apple-tvos{v}-simulator",
-          "-mtvos-simulator-version-min={v}", "tvos-simulator", "tvsimulator",
-          "tvos-arm64_x86_64-simulator", "AppleTVSimulator", 8, True,
-          "aarch64-apple-tvos-sim", ""),
+          "-mtvos-simulator-version-min={v}", "tvos-simulator", "AppleTVSimulator", 8, True, True,
+          "aarch64-apple-tvos-sim", "", "tvOS", "aarch64-tvos-darwin", "tvOS Simulator", "tvossim"),
 )}
 
 
@@ -428,6 +492,39 @@ def archive_commit(archive: Path) -> str:
     with tarfile.open(archive) as tar:
         tar.next()
         return tar.pax_headers.get("comment", "")
+
+
+def embedded_commit(pin) -> str:
+    """The commit id a pinned archive must embed: GitHub's archives embed the
+    commit they were made from; a project's own release tarball embeds none."""
+    return "" if pin.get("release_tarball") == "yes" else pin["commit"]
+
+
+def source_parts(pins, lib: str) -> list[tuple[str, str]]:
+    """The further archives a source tree is assembled from, in order, as
+    (part name, folder in the tree): submodules and fetched externals."""
+    return [tuple(p.split(":", 1)) for p in pins[f"source:{lib}"].get("parts", "").split()]
+
+
+def assemble_source(pins, downloads: Path, lib: str, dest: Path) -> list[dict]:
+    """Extract the library's archive into dest, then each part into its folder,
+    which must be absent or empty in the archives extracted before it."""
+    pin = pins[f"source:{lib}"]
+    extract_tar(downloads / download_name(f"source:{lib}", pin["url"]), dest)
+    parts = []
+    for name, rel in source_parts(pins, lib):
+        section = f"part:{name}"
+        part_pin = pins[section]
+        archive = downloads / download_name(section, part_pin["url"])
+        target = dest / rel
+        if target.is_symlink() or (target.exists() and any(target.iterdir())):
+            raise Failure(f"{lib}: {rel} is not empty in the archives before {name}")
+        extract_tar(archive, target)
+        parts.append({"part": name, "path": rel, "version": part_pin["version"],
+                      "url": part_pin["url"], "archive": archive.name,
+                      "sha256": sha256_file(archive), "commit": part_pin["commit"],
+                      "archive_commit": archive_commit(archive)})
+    return parts
 
 
 # --------------------------------------------------------------- Rust parts
@@ -663,12 +760,26 @@ def cmd_check_allowlist(args) -> None:
                 problems.append(f"{rel}:{n}: fetches outside lucid.py download(): {line.strip()}")
     pins = load_pins()
     for section in pins.sections():
-        for key in ("url", "xcframework_url"):
-            url = pins[section].get(key)
-            if url and not url.startswith(FETCH_ALLOWED):
-                problems.append(f"pins.ini [{section}] {key}: not an allowlisted project: {url}")
-            if url and not pins[section].get(key.replace("url", "sha256")):
-                problems.append(f"pins.ini [{section}] {key}: no SHA-256")
+        if not section.startswith(("toolchain", "tool:", "rust:", "source:", "part:")):
+            problems.append(f"pins.ini [{section}]: not a known kind of pin")
+        url = pins[section].get("url")
+        if url and not url.startswith(FETCH_ALLOWED):
+            problems.append(f"pins.ini [{section}] url: not an allowlisted project: {url}")
+        if url and not re.fullmatch(r"[0-9a-f]{64}", pins[section].get("sha256", "")):
+            problems.append(f"pins.ini [{section}] url: no SHA-256")
+    used = set()
+    for section in pin_sections(pins, "source"):
+        lib = section.split(":", 1)[1]
+        for name, _ in source_parts(pins, lib):
+            used.add(f"part:{name}")
+            if f"part:{name}" not in pins:
+                problems.append(f"pins.ini [{section}]: no [part:{name}]")
+        if not (PATCHES / lib / "series").is_file():
+            problems.append(f"pins.ini [{section}]: no engine/patches/{lib}/series")
+    for section in set(pin_sections(pins, "part")) - used:
+        problems.append(f"pins.ini [{section}]: no source uses it")
+    if set(pin_sections(pins, "source")) != {f"source:{lib}" for lib in BUILD_ORDER}:
+        problems.append("pins.ini: the [source:*] sections differ from the build order")
     for n, line in enumerate(WORKFLOW.read_text().splitlines(), 1):
         m = re.search(r"uses:\s*(\S+)", line)
         if m and not re.fullmatch(r"[\w.-]+(/[\w.-]+)+@[0-9a-f]{40}", m.group(1)):
@@ -709,10 +820,11 @@ def cmd_fetch(args) -> None:
             continue
         dest = args.downloads / download_name(section, pin["url"])
         download(pin["url"], pin["sha256"], dest)
-        if section.startswith("source:"):
-            commit = archive_commit(dest)
-            if commit != pin["commit"]:
-                raise Failure(f"{dest.name}: archive commit {commit}, pinned {pin['commit']}")
+        if section.startswith(("source:", "part:")):
+            commit, expected = archive_commit(dest), embedded_commit(pin)
+            if commit != expected:
+                raise Failure(f"{dest.name}: archive commit {commit or 'none'}, "
+                              f"expected {expected or 'none (release tarball)'}")
     if not only or "source:libdovi".startswith(only):
         crates = locked_crates(pins, args.downloads)
         (args.downloads / "crates").mkdir(exist_ok=True)
@@ -740,6 +852,8 @@ class Ctx:
     pkg_config: str
     rust: Path | None = None      # pinned Rust toolchain prefix
     cargo_c: Path | None = None   # directory holding the cargo-c binaries
+    cmake: Path | None = None     # the pinned CMake
+    toolchain_summary: dict | None = None  # recorded with each dependency build
 
     @property
     def install(self) -> Path:
@@ -759,11 +873,25 @@ class Ctx:
     def build(self, lib: str) -> Path:
         return self.work / "build" / lib
 
+    def dep_destdir(self, lib: str) -> Path:
+        """Where a dependency library's build installs it (DESTDIR)."""
+        return self.work / "deps-stage" / lib
+
+    def dep_staged(self, lib: str) -> Path:
+        """The installed prefix inside the DESTDIR."""
+        return self.dep_destdir(lib) / PREFIX.lstrip("/")
+
+    def dep_prefix(self, lib: str) -> Path:
+        """The dependency's installed files (include/, lib/), from which the
+        libraries after it build, as today's builds had them: the same
+        folder layout gives the same paths in compiled-in assertion texts."""
+        return self.work / "deps" / lib
+
     def logfile(self, name: str) -> Path:
         return self.out / "logs" / f"{name}.log"
 
 
-def prepare_tools(pins, downloads: Path, root: Path) -> tuple[list[str], str, str, Path]:
+def prepare_tools(pins, downloads: Path, root: Path) -> tuple[list[str], str, str, Path, Path]:
     tools = root / "tools"
     bindir = tools / "bin"
     if tools.exists():
@@ -774,13 +902,19 @@ def prepare_tools(pins, downloads: Path, root: Path) -> tuple[list[str], str, st
     with zipfile.ZipFile(downloads / download_name("tool:ninja", pins["tool:ninja"]["url"])) as z:
         (bindir / "ninja").write_bytes(z.read("ninja"))
     (bindir / "ninja").chmod(0o755)
+    extract_tar(downloads / download_name("tool:cmake", pins["tool:cmake"]["url"]), tools / "cmake")
+    cmake = tools / "cmake" / "CMake.app" / "Contents" / "bin" / "cmake"
+    version = run([cmake, "--version"], capture=True).split()
+    if version[:3] != ["cmake", "version", pins["tool:cmake"]["version"]]:
+        raise Failure(f"pinned CMake {pins['tool:cmake']['version']}, found {' '.join(version[:3])}")
+    (bindir / "cmake").symlink_to(cmake)
     host_pkg_config = shutil.which("pkg-config")
     if not host_pkg_config:
         raise Failure("pkg-config is required (the CI runner image provides pkgconf)")
     (bindir / "pkg-config").symlink_to(host_pkg_config)
-    python = "/usr/bin/python3"  # Xcode's Python runs meson and mpv's build scripts
+    python = HOST_PYTHON  # Xcode's Python runs meson and mpv's build scripts
     return [python, str(tools / "meson" / "meson.py")], str(bindir / "ninja"), \
-        str(bindir / "pkg-config"), bindir
+        str(bindir / "pkg-config"), bindir, cmake
 
 
 def build_env(ctx_root: Path, bindir: Path, flags: list[str], pc_dirs: list[Path],
@@ -806,57 +940,20 @@ def build_env(ctx_root: Path, bindir: Path, flags: list[str], pc_dirs: list[Path
     return env
 
 
-def stage_prebuilt(ctx: Ctx) -> list[dict]:
-    """Unpack this slice's headers, static libraries and pkg-config files."""
-    staged = []
+def stage_dep(ctx: Ctx, lib: str) -> list[str]:
+    """Make an installed dependency visible to the libraries built after it:
+    copy its pkg-config files into the slice's pkg-config folder, pointed at
+    its own install folder. The installed files themselves keep the prefix
+    /lucid-engine, so a cached copy stays valid in any work folder."""
     pc_dir = ctx.work / "pkgconfig"
     pc_dir.mkdir(parents=True, exist_ok=True)
-    sl = ctx.sl
-    for section in pin_sections(ctx.pins, "prebuilt"):
-        name = section.split(":", 1)[1]
-        pin = ctx.pins[section]
-        archive = ctx.downloads / download_name(section, pin["url"])
-        dest = ctx.work / "deps" / name
-        lib_prefix = f"lib/{sl.prebuilt}/thin/arm64/lib/"
-        moltenvk_lib = f"lib/MoltenVK.xcframework/{sl.moltenvk}/libMoltenVK.a"
-        pc_prefix = f"pkgconfig-example/{sl.prebuilt}/arm64/"
-        libs, pcs = [], []
-        with zipfile.ZipFile(archive) as z:
-            for info in z.infolist():
-                n = info.filename
-                if info.is_dir() or ".." in Path(n).parts or n.startswith("/"):
-                    continue
-                if n.startswith("include/"):
-                    target = dest / n
-                elif n.startswith(lib_prefix) and n.endswith(".a") or n == moltenvk_lib:
-                    target = dest / "lib" / Path(n).name
-                    libs.append(target.name)
-                elif n.startswith(pc_prefix) and n.endswith(".pc"):
-                    text = z.read(n).decode()
-                    text = re.sub(r"/path/to/workdir/[^/\s]+/[^/\s]+/thin/[^/\s]+", str(dest), text)
-                    if "/path/to/workdir" in text:
-                        raise Failure(f"{section}: unexpected path in {n}")
-                    (pc_dir / Path(n).name).write_text(text)
-                    pcs.append(Path(n).name)
-                    continue
-                else:
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(z.read(n))
-        if not libs or not pcs:
-            raise Failure(f"{section}: nothing staged for {sl.name} (libraries {libs}, pc {pcs})")
-        for lib in libs:
-            path = dest / "lib" / lib
-            archs = run(["lipo", "-archs", path], capture=True).split()
-            if archs != ["arm64"]:
-                if "arm64" not in archs:
-                    raise Failure(f"{section}: {lib} has no arm64 ({archs})")
-                thin = path.with_name(path.name + ".thin")
-                run(["lipo", path, "-thin", "arm64", "-output", thin])
-                thin.replace(path)
-        staged.append({"name": name, "archive": archive.name, "sha256": pin["sha256"],
-                       "libraries": sorted(libs), "pkgconfig": sorted(pcs)})
-    write_system_pc(ctx.sdk, pc_dir)
+    staged = []
+    for pc in sorted((ctx.dep_prefix(lib) / "lib" / "pkgconfig").glob("*.pc")):
+        (pc_dir / pc.name).write_text(rewrite_prefix(pc.read_text(), ctx.dep_prefix(lib)))
+        staged.append(pc.name)
+    missing = [n for n in DEPS[lib].pkgconfig if f"{n}.pc" not in staged]
+    if missing:
+        raise Failure(f"{lib}: no {', '.join(missing)}.pc installed")
     return staged
 
 
@@ -866,6 +963,7 @@ def write_system_pc(sdk: Path, pc_dir: Path) -> None:
     xml = c_string(define(sdk / "usr/include/libxml2/libxml/xmlversion.h", "LIBXML_DOTTED_VERSION"))
     if not zlib or not xml:
         raise Failure(f"could not read the zlib or libxml2 version from {sdk}")
+    pc_dir.mkdir(parents=True, exist_ok=True)
     (pc_dir / "zlib.pc").write_text(
         f"Name: zlib\nDescription: zlib from the SDK\nVersion: {zlib}\nLibs: -lz\nCflags:\n")
     (pc_dir / "libxml-2.0.pc").write_text(
@@ -881,7 +979,7 @@ def prepare_source(ctx: Ctx, lib: str) -> dict:
     pin = ctx.pins[section]
     archive = ctx.downloads / download_name(section, pin["url"])
     src = ctx.src(lib)
-    extract_tar(archive, src)
+    parts = assemble_source(ctx.pins, ctx.downloads, lib, src)
     pristine = tree_files(src)
     applied = apply_series(lib, src, ctx.logfile(f"{lib}-patch"))
     patched = tree_files(src)
@@ -891,12 +989,15 @@ def prepare_source(ctx: Ctx, lib: str) -> dict:
         raise Failure(f"{lib}: changed files {changed} differ from the series' files {declared}")
     return {"version": pin["version"], "commit": pin["commit"], "url": pin["url"],
             "archive": archive.name, "sha256": sha256_file(archive),
-            "archive_commit": archive_commit(archive), "patches": applied,
-            "pristine_tree": tree_digest(pristine), "patched_tree": tree_digest(patched),
-            "changed_files": changed}
+            "archive_commit": archive_commit(archive), "embedded_commit": embedded_commit(pin),
+            "parts": parts, "patches": applied, "pristine_tree": tree_digest(pristine),
+            "patched_tree": tree_digest(patched), "changed_files": changed}
 
 
-def write_cross_file(ctx: Ctx, path: Path, ndebug: bool) -> None:
+def write_cross_file(ctx: Ctx, path: Path, ndebug: bool, flags: list[str] | None = None,
+                     properties: tuple = ()) -> None:
+    flags = ctx.flags if flags is None else flags
+
     def arr(items):
         return "[" + ", ".join(repr(str(i)) for i in items) + "]"
     lines = [
@@ -920,6 +1021,7 @@ def write_cross_file(ctx: Ctx, path: Path, ndebug: bool) -> None:
         "[properties]",
         f"pkg_config_libdir = {arr(ctx.pc_dirs)}",
         "needs_exe_wrapper = true",
+        *properties,
         "",
         "[built-in options]",
         f"prefix = {PREFIX!r}",
@@ -929,23 +1031,35 @@ def write_cross_file(ctx: Ctx, path: Path, ndebug: bool) -> None:
     if ndebug:
         lines.append("b_ndebug = 'true'")
     for lang in ("c", "cpp", "objc", "objcpp"):
-        lines.append(f"{lang}_args = {arr(ctx.flags)}")
-        lines.append(f"{lang}_link_args = {arr(['-lc++'] + ctx.flags)}")
+        lines.append(f"{lang}_args = {arr(flags)}")
+        lines.append(f"{lang}_link_args = {arr(['-lc++'] + flags)}")
     path.write_text("\n".join(lines) + "\n")
+
+
+def rewrite_prefix(text: str, prefix: Path) -> str:
+    """A pkg-config file's paths under /lucid-engine, pointed at prefix."""
+    return re.sub(rf"(^|[=\s]|-I|-L){re.escape(PREFIX)}(?=/|\s|$)",
+                  lambda m: m.group(1) + str(prefix), text, flags=re.M)
 
 
 def rewrite_installed_pc(ctx: Ctx) -> None:
     """Point the installed pkg-config files at the staged prefix."""
     for pc in (ctx.prefix / "lib" / "pkgconfig").glob("*.pc"):
-        text = pc.read_text()
-        text = re.sub(rf"(^|[=\s]|-I|-L){re.escape(PREFIX)}(?=/|\s|$)",
-                      lambda m: m.group(1) + str(ctx.prefix), text, flags=re.M)
-        pc.write_text(text)
+        pc.write_text(rewrite_prefix(pc.read_text(), ctx.prefix))
 
 
-def build_meson(ctx: Ctx, lib: str, options: list[str], ndebug: bool) -> None:
+MESON_BUILTINS = ("buildtype", "optimization", "debug", "b_ndebug", "b_lto", "default_library",
+                  "b_staticpic", "wrap_mode")
+
+
+def build_meson(ctx: Ctx, lib: str, options: list[str], ndebug: bool,
+                dest: Path | None = None, flags: list[str] | None = None,
+                properties: tuple = ()) -> dict:
+    """Configure, build and install a meson project; returns the options meson
+    reports for the configured build (the built-ins above and every -D option
+    passed), read back with `meson introspect`."""
     cross = ctx.work / f"cross-{lib}.ini"
-    write_cross_file(ctx, cross, ndebug)
+    write_cross_file(ctx, cross, ndebug, flags, properties)
     env = {k: v for k, v in ctx.env.items()
            if k not in ("CC", "CXX", "CFLAGS", "CPPFLAGS", "CXXFLAGS", "ASMFLAGS", "LDFLAGS")}
     logfile = ctx.logfile(lib)
@@ -956,13 +1070,18 @@ def build_meson(ctx: Ctx, lib: str, options: list[str], ndebug: bool) -> None:
             cwd=ctx.work, env=env, logfile=logfile)
         # -k 0 reports every failing file in one run, not just the first.
         run([ctx.ninja, "-C", build, "-k", "0"], env=env, logfile=logfile)
-        run(ctx.meson + ["install", "-C", build, "--destdir", ctx.install, "--no-rebuild"],
+        run(ctx.meson + ["install", "-C", build, "--destdir", dest or ctx.install, "--no-rebuild"],
             env=env, logfile=logfile)
     finally:
         meson_log = build / "meson-logs" / "meson-log.txt"
         if meson_log.exists():
             shutil.copy2(meson_log, ctx.out / "logs" / f"{lib}-meson-log.txt")
-    rewrite_installed_pc(ctx)
+    if dest is None:
+        rewrite_installed_pc(ctx)
+    wanted = set(MESON_BUILTINS) | {o[2:].split("=", 1)[0] for o in options if o.startswith("-D")}
+    found = json.loads(run(ctx.meson + ["introspect", "--buildoptions", build], env=env,
+                           capture=True))
+    return {o["name"]: o["value"] for o in found if o["name"] in wanted}
 
 
 def libdovi_flags(pkg_config: str, env: dict) -> dict:
@@ -1030,6 +1149,383 @@ def build_libdovi(ctx: Ctx) -> dict:
             "rustflags": env["CARGO_ENCODED_RUSTFLAGS"].split("\x1f")}
 
 
+# ------------------------------------------------------- dependency builds
+#
+# Each library is built with its upstream build system and the options of
+# engine/config/<name>-*.txt (facts 1.4 and 3.1 to 3.11), installed with
+# DESTDIR into its own folder, pruned to what consumers use, and recorded.
+
+def dep_minimum_os(pins, lib: str) -> str:
+    """The deployment target a library is compiled for (facts 1.3)."""
+    return pins[f"source:{lib}"].get("minimum_os", pins["toolchain"]["minimum_os"])
+
+
+def dep_flags_env(ctx: Ctx, lib: str) -> tuple[list[str], dict]:
+    """The compiler flags and build environment of facts 1.4 for one library,
+    at its own deployment target."""
+    flags = compile_flags(ctx.sl, ctx.sdk, dep_minimum_os(ctx.pins, lib))
+    env = dict(ctx.env)
+    joined = " ".join(flags)
+    for var in ("CFLAGS", "CPPFLAGS", "CXXFLAGS", "ASMFLAGS"):
+        env[var] = joined
+    env["LDFLAGS"] = "-lc++ " + joined
+    return flags, env
+
+
+def cross_properties(lib: str) -> tuple:
+    """Extra cross-file properties for a library (engine/config/<lib>-cross.txt),
+    one `name = value` per line: meson's has_function_<name> overrides."""
+    path = CONFIG / f"{lib}-cross.txt"
+    if not path.exists():
+        return ()
+    lines = [re.sub(r"(^|\s)#.*$", "", l).strip() for l in path.read_text().splitlines()]
+    props = tuple(l for l in lines if l)
+    bad = [p for p in props if not re.fullmatch(r"has_function_\w+ = (true|false)", p)]
+    if bad:
+        raise Failure(f"{path.name}: not a has_function override: {bad}")
+    return props
+
+
+def build_meson_dep(ctx: Ctx, lib: str) -> dict:
+    """A meson library with meson's default b_ndebug=false (assertions as
+    upstream builds them), not the libass and mpv cross file's true."""
+    flags, _ = dep_flags_env(ctx, lib)
+    options = read_list(CONFIG / f"{lib}-meson.txt")
+    properties = cross_properties(lib)
+    return {"meson_options": options, "cross_properties": list(properties),
+            "meson": build_meson(ctx, lib, options, ndebug=False, dest=ctx.dep_destdir(lib),
+                                 flags=flags, properties=properties)}
+
+
+def cmake_cache(path: Path) -> dict[str, str]:
+    values = {}
+    for line in path.read_text(errors="replace").splitlines():
+        m = re.match(r"^([A-Za-z_][\w.-]*):\w+=(.*)$", line)
+        if m:
+            values[m.group(1)] = m.group(2)
+    return values
+
+
+def build_cmake(ctx: Ctx, lib: str, src: Path, options: list[str], targets: tuple = (),
+                build: Path | None = None) -> dict:
+    """Configure with CMake's Makefile generator and the common values of
+    facts 1.4, build with make (only `targets` if given) and install."""
+    _, env = dep_flags_env(ctx, lib)
+    build = build or ctx.build(lib)
+    logfile = ctx.logfile(lib)
+    args = [ctx.cmake, "-S", src, "-B", build, "-G", "Unix Makefiles", *CMAKE_COMMON,
+            f"-DCMAKE_OSX_SYSROOT={ctx.sl.sdk}", f"-DCMAKE_SYSTEM_NAME={ctx.sl.cmake_system}",
+            f"-DPython_EXECUTABLE={HOST_PYTHON}", f"-DPython3_EXECUTABLE={HOST_PYTHON}", *options]
+    try:
+        run(args, env=env, logfile=logfile)
+        run(["make", f"-j{os.cpu_count() or 4}", *targets], cwd=build, env=env, logfile=logfile)
+        if targets:
+            # Installs what the install rules name, without building the rest.
+            run([ctx.cmake, "--install", build], env={**env, "DESTDIR": str(ctx.dep_destdir(lib))},
+                logfile=logfile)
+        else:
+            run(["make", "install", f"DESTDIR={ctx.dep_destdir(lib)}"], cwd=build, env=env,
+                logfile=logfile)
+    finally:
+        for name in ("CMakeCache.txt", "CMakeFiles/CMakeConfigure.log"):
+            if (build / name).exists():
+                shutil.copy2(build / name, ctx.out / "logs" / f"{lib}-{Path(name).name}")
+    cache = cmake_cache(build / "CMakeCache.txt")
+    keys = [a[2:].split("=", 1)[0] for a in list(CMAKE_COMMON) + options if a.startswith("-D")]
+    keys += ["CMAKE_OSX_SYSROOT", "CMAKE_SYSTEM_NAME", "CMAKE_C_FLAGS", "CMAKE_CXX_FLAGS",
+             "CMAKE_C_FLAGS_RELEASE", "CMAKE_CXX_FLAGS_RELEASE", "CMAKE_ASM_FLAGS"]
+    return {"cmake_options": options, "targets": list(targets),
+            "cmake": {k: cache.get(k) for k in keys}}
+
+
+def build_unibreak(ctx: Ctx) -> dict:
+    """libunibreak with its own configure script and the cross flags as
+    CFLAGS, so autoconf adds no -O (unoptimised, as today: facts 3.4)."""
+    lib = "unibreak"
+    _, env = dep_flags_env(ctx, lib)
+    build = ctx.build(lib)
+    build.mkdir(parents=True, exist_ok=True)
+    logfile = ctx.logfile(lib)
+    args = [f"--prefix={PREFIX}"] + read_list(CONFIG / "unibreak-configure.txt") + \
+        [f"--host={ctx.sl.autotools_host}"]
+    try:
+        run([ctx.src(lib) / "configure"] + args, cwd=build, env=env, logfile=logfile)
+        run(["make", f"-j{os.cpu_count() or 4}"], cwd=build, env=env, logfile=logfile)
+        run(["make", "install", f"DESTDIR={ctx.dep_destdir(lib)}"], cwd=build, env=env, logfile=logfile)
+    finally:
+        if (build / "config.log").exists():
+            shutil.copy2(build / "config.log", ctx.out / "logs" / f"{lib}-config.log")
+    makefile = (build / "src" / "Makefile").read_text()
+    made = {k: (re.search(rf"^{k} = (.*)$", makefile, re.M) or [None, None])[1]
+            for k in ("CC", "CFLAGS", "CPPFLAGS", "LDFLAGS", "libunibreak_la_CFLAGS")}
+    return {"configure": args, "make_variables": made}
+
+
+def build_shaderc(ctx: Ctx) -> dict:
+    """shaderc with glslang, SPIRV-Tools and SPIRV-Headers in third_party/,
+    as its DEPS file places them. Consumers resolve `shaderc` to the combined
+    library, so shaderc.pc becomes upstream's shaderc_combined.pc (facts 3.8)."""
+    lib = "shaderc"
+    record = build_cmake(ctx, lib, ctx.src(lib), read_list(CONFIG / "shaderc-cmake.txt"))
+    pc = ctx.dep_staged(lib) / "lib" / "pkgconfig"
+    shutil.copy2(pc / "shaderc_combined.pc", pc / "shaderc.pc")
+    return record
+
+
+def build_uavs3d(ctx: Ctx) -> dict:
+    """uavs3d writes version.h and uavs3d.pc into its source folder while
+    configuring, so it is built from a copy. Only the library target is
+    built: the uavs3dec test program is not (facts 3.9)."""
+    lib = "uavs3d"
+    tree = ctx.build(lib) / "tree"
+    shutil.copytree(ctx.src(lib), tree, symlinks=True)
+    record = build_cmake(ctx, lib, tree, read_list(CONFIG / "uavs3d-cmake.txt"),
+                         targets=("uavs3d",), build=ctx.build(lib) / "build")
+    version_h = tree / "version.h"
+    record["version_h"] = {name: macro(version_h, name) for name in
+                           ("VER_MAJOR", "VER_MINOR", "VER_BUILD", "VERSION_TYPE", "VERSION_STR",
+                            "VERSION_SHA1")}
+    return record
+
+
+def build_uchardet(ctx: Ctx) -> dict:
+    return build_cmake(ctx, "uchardet", ctx.src("uchardet"), read_list(CONFIG / "uchardet-cmake.txt"))
+
+
+def moltenvk_env(ctx: Ctx) -> dict:
+    """xcodebuild and MoltenVK's scripts get a plain environment: the Xcode
+    project's own settings decide every compiler flag (facts 3.7)."""
+    env = {k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "TMPDIR", "DEVELOPER_DIR")
+           if k in os.environ}
+    env.update({"PATH": os.pathsep.join(["/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
+                "LC_ALL": "C", "ZERO_AR_DATE": "1",
+                "SOURCE_DATE_EPOCH": ctx.env["SOURCE_DATE_EPOCH"],
+                "GIT_CEILING_DIRECTORIES": ctx.env["GIT_CEILING_DIRECTORIES"]})
+    return env
+
+
+def vulkan_header_version(include: Path) -> str:
+    """The Vulkan API version of MoltenVK's headers: 1.4.<VK_HEADER_VERSION>."""
+    core = include / "vulkan" / "vulkan_core.h"
+    complete = define(core, "VK_HEADER_VERSION_COMPLETE") or ""
+    m = re.fullmatch(r"VK_MAKE_API_VERSION\(0, (\d+), (\d+), VK_HEADER_VERSION\)", complete)
+    if not m:
+        raise Failure(f"no VK_HEADER_VERSION_COMPLETE in {core}")
+    return f"{m.group(1)}.{m.group(2)}.{define(core, 'VK_HEADER_VERSION')}"
+
+
+def write_vulkan_pc(ctx: Ctx, prefix: Path) -> None:
+    """vulkan.pc for MoltenVK, which upstream does not produce (facts 3.7):
+    the Khronos loader's name and today's fields, at the version of the
+    Vulkan headers MoltenVK ships (1.4.334)."""
+    frameworks = ["CoreFoundation", "CoreGraphics", "Foundation", "IOSurface", "Metal",
+                  "QuartzCore", "UIKit"] + ([] if ctx.sl.tvos else ["IOKit"])
+    pc_dir = prefix / "lib" / "pkgconfig"
+    pc_dir.mkdir(parents=True, exist_ok=True)
+    (pc_dir / "vulkan.pc").write_text(
+        f"prefix={PREFIX}\nincludedir=${{prefix}}/include\nlibdir=${{prefix}}/lib\n\n"
+        "Name: Vulkan-Loader\nDescription: Vulkan Loader\n"
+        f"Version: {vulkan_header_version(prefix / 'include')}\n"
+        "Libs: -L${libdir} -lMoltenVK " + " ".join(f"-framework {f}" for f in frameworks) + "\n"
+        "Cflags: -I${includedir}\n")
+
+
+def build_moltenvk(ctx: Ctx) -> dict:
+    """MoltenVK by upstream's documented procedure for one platform (facts
+    3.7). The source tree already holds the externals at the revisions in
+    ExternalRevisions/, where fetchDependencies would put them, so of that
+    script only its remaining steps run here, exactly as it runs them:
+    unpacking SPIRV-Tools' pre-generated headers, building the external
+    libraries for the platform and packaging them. Then upstream's Makefile
+    target builds MoltenVK, with the command-line variables of
+    engine/config/moltenvk-make.txt."""
+    lib = "moltenvk"
+    tree = ctx.build(lib) / "MoltenVK"
+    shutil.copytree(ctx.src(lib), tree, symlinks=True)
+    env = moltenvk_env(ctx)
+    logfile = ctx.logfile(lib)
+    revisions = {name: (tree / "ExternalRevisions" / f"{name}_repo_revision").read_text().strip()
+                 for name in ("SPIRV-Cross", "SPIRV-Headers", "SPIRV-Tools", "Vulkan-Headers",
+                              "cereal")}
+    parts = {rel: ctx.pins[f"part:{name}"]["commit"] for name, rel in source_parts(ctx.pins, lib)}
+    placed = {"SPIRV-Cross": "External/SPIRV-Cross", "Vulkan-Headers": "External/Vulkan-Headers",
+              "SPIRV-Tools": "External/SPIRV-Tools", "cereal": "External/cereal",
+              "SPIRV-Headers": "External/SPIRV-Tools/external/spirv-headers"}
+    for name, rel in placed.items():
+        if parts.get(rel) != revisions[name]:
+            raise Failure(f"MoltenVK: {rel} is pinned at {parts.get(rel)}, "
+                          f"ExternalRevisions/ says {revisions[name]}")
+    run(["unzip", "-o", "-q", "-d", "External/SPIRV-Tools", "Templates/spirv-tools/build.zip"],
+        cwd=tree, env=env, logfile=logfile)
+    shutil.rmtree(tree / "External" / "SPIRV-Tools" / "__MACOSX", ignore_errors=True)
+    platform = ctx.sl.mvk_platform
+    # fetchDependencies exports KEEP_CACHE="" and SKIP_PACKAGING=Y around
+    # this build, so the scheme's own packaging phases do nothing; it
+    # packages afterwards, below.
+    run(["xcodebuild", "-project", "ExternalDependencies.xcodeproj",
+         "-scheme", f"ExternalDependencies-{ctx.sl.cmake_system}",
+         "-destination", f"generic/platform={platform}", "-configuration", "Release",
+         "-enableAddressSanitizer", "NO", "-enableThreadSanitizer", "NO",
+         "-enableUndefinedBehaviorSanitizer", "NO",
+         "-derivedDataPath", f"External/build/Intermediates/{platform}", "-quiet", "build"],
+        cwd=tree, env={**env, "KEEP_CACHE": "", "SKIP_PACKAGING": "Y"}, logfile=logfile)
+    run(["bash", "-c", ". ./Scripts/create_ext_lib_xcframeworks.sh && "
+                       ". ./Scripts/package_ext_libs_finish.sh"],
+        cwd=tree, env={**env, "PROJECT_DIR": ".", "CONFIGURATION": "Release", "SKIP_PACKAGING": "",
+                       "KEEP_CACHE": ""}, logfile=logfile)
+    variables = read_list(CONFIG / "moltenvk-make.txt")
+    run(["make", ctx.sl.mvk_make] + variables, cwd=tree, env=env, logfile=logfile)
+    package = tree / "Package" / "Release" / "MoltenVK"
+    xcf = package / "static" / "MoltenVK.xcframework"
+    info = plistlib.loads((xcf / "Info.plist").read_bytes())
+    platform_id = "tvos" if ctx.sl.tvos else "ios"
+    variant = "simulator" if ctx.sl.simulator else None
+    found = [l for l in info["AvailableLibraries"] if l["SupportedPlatform"] == platform_id
+             and l.get("SupportedPlatformVariant") == variant]
+    if len(found) != 1:
+        raise Failure(f"MoltenVK: no single {platform_id} {variant or 'device'} library in {xcf}")
+    built = xcf / found[0]["LibraryIdentifier"] / found[0]["LibraryPath"]
+    prefix = ctx.dep_staged(lib)
+    (prefix / "lib").mkdir(parents=True)
+    target = prefix / "lib" / DEPS[lib].library
+    if "Non-fat" in run(["lipo", "-info", built], capture=True):
+        shutil.copy2(built, target)
+    else:
+        run(["lipo", built, "-thin", "arm64", "-output", target], logfile=logfile)
+    shutil.copytree(package / "include", prefix / "include", symlinks=False)
+    write_vulkan_pc(ctx, prefix)
+    return {"make": [ctx.sl.mvk_make] + variables, "external_revisions": revisions,
+            "xcframework_library": found[0], "archs": found[0].get("SupportedArchitectures")}
+
+
+DEP_BUILDERS = {
+    "freetype": lambda ctx: build_meson_dep(ctx, "freetype"),
+    "fribidi": lambda ctx: build_meson_dep(ctx, "fribidi"),
+    "harfbuzz": lambda ctx: build_meson_dep(ctx, "harfbuzz"),
+    "unibreak": build_unibreak,
+    "lcms2": lambda ctx: build_meson_dep(ctx, "lcms2"),
+    "shaderc": build_shaderc,
+    "moltenvk": build_moltenvk,
+    "libplacebo": lambda ctx: build_meson_dep(ctx, "libplacebo"),
+    "uavs3d": build_uavs3d,
+    "libbluray": lambda ctx: build_meson_dep(ctx, "libbluray"),
+    "uchardet": build_uchardet,
+}
+# The functions whose code decides each library's build, for its cache key.
+COMMON_BUILD_FUNCTIONS = ("compile_flags", "build_env", "dep_flags_env", "dep_minimum_os",
+                          "write_cross_file", "build_meson", "build_meson_dep", "cross_properties",
+                          "build_cmake",
+                          "assemble_source", "prepare_source", "apply_series", "extract_tar",
+                          "write_system_pc", "prune_dep")
+DEP_FUNCTIONS = {
+    "unibreak": ("build_unibreak",), "shaderc": ("build_shaderc",),
+    "moltenvk": ("build_moltenvk", "moltenvk_env", "write_vulkan_pc", "vulkan_header_version"),
+    "uavs3d": ("build_uavs3d", "macro"), "uchardet": ("build_uchardet",),
+    "libdovi": ("build_libdovi", "cargo_cinstall", "cargo_env", "vendor_crates",
+                "strip_embedded_bitcode", "install_rust", "install_cargo_c"),
+}
+
+
+def prune_dep(ctx: Ctx, lib: str) -> None:
+    """Keep only what consumers and the framework use: the headers, the one
+    static library and the consumers' pkg-config files; then move them from
+    the DESTDIR to the dependency's own folder."""
+    prefix = ctx.dep_staged(lib)
+    keep = {f"lib/{DEPS[lib].library}"} | {f"lib/pkgconfig/{n}.pc" for n in DEPS[lib].pkgconfig}
+    for path in sorted(prefix.rglob("*"), reverse=True):
+        rel = path.relative_to(prefix).as_posix()
+        if rel == "include" or rel.startswith("include/"):
+            continue
+        if path.is_dir() and not path.is_symlink():
+            if not any(path.iterdir()):
+                path.rmdir()
+        elif rel not in keep:
+            path.unlink()
+    for rel in keep:
+        if not (prefix / rel).is_file():
+            raise Failure(f"{lib}: {rel} was not installed")
+    for item in ctx.dep_destdir(lib).iterdir():
+        if item.name != PREFIX.lstrip("/"):
+            raise Failure(f"{lib}: installed {item.name} outside {PREFIX}")
+    ctx.dep_prefix(lib).parent.mkdir(parents=True, exist_ok=True)
+    prefix.rename(ctx.dep_prefix(lib))
+
+
+def dep_key(pins, sl: Slice, lib: str) -> str:
+    """Everything that decides a library's build output: its pins (source
+    and parts, the toolchain and build tools), its patch series, its option
+    files, the code of the functions that build it and the keys of the
+    libraries it builds against. A cached build is reused only when its key
+    is equal."""
+    h = hashlib.sha256()
+
+    def add(label: str, data) -> None:
+        h.update(label.encode() + b"\0")
+        h.update(data if isinstance(data, bytes) else str(data).encode())
+        h.update(b"\0")
+
+    add("slice", repr(sl))
+    add("toolchain", [(k, pins["toolchain"][k]) for k in ("xcode", "minimum_os",
+                                                          "source_date_epoch")])
+    sections = [s for s in pins.sections() if s.startswith("tool:")]
+    if lib == "libdovi":
+        sections += [s for s in pins.sections() if s.startswith("rust:")]
+    sections += [f"source:{lib}"] + [f"part:{n}" for n, _ in source_parts(pins, lib)]
+    for section in sections:
+        add(section, sorted(pins[section].items()))
+    series = PATCHES / lib / "series"
+    if series.exists():
+        add("series", series.read_bytes())
+        for _, patch in read_series(lib):
+            add(patch.name, patch.read_bytes())
+    for path in sorted(CONFIG.glob(f"{lib}-*.txt")):
+        add(path.name, path.read_bytes())
+    for name in COMMON_BUILD_FUNCTIONS + DEP_FUNCTIONS.get(lib, ()):
+        add(name, inspect.getsource(globals()[name]))
+    add("constants", (PREFIX, CMAKE_COMMON, HOST_PYTHON, MESON_BUILTINS, DEPS.get(lib)))
+    for need in (DEPS[lib].needs if lib in DEPS else ()):
+        add(f"needs {need}", dep_key(pins, sl, need))
+    return h.hexdigest()
+
+
+def deps_key(pins, sl: Slice) -> str:
+    """One key for all of a slice's dependency builds."""
+    return hashlib.sha256("".join(f"{lib} {dep_key(pins, sl, lib)}\n" for lib in DEPS)
+                          .encode()).hexdigest()
+
+
+def build_dep(ctx: Ctx, lib: str, cache: Path | None) -> dict:
+    """Build one dependency, or reuse its cached build when the key is equal;
+    either way stage its pkg-config files for the libraries after it."""
+    key = dep_key(ctx.pins, ctx.sl, lib)
+    entry = cache / ctx.sl.name / lib if cache else None
+    if entry and (entry / "record.json").is_file() and (entry / "install").is_dir():
+        record = json.loads((entry / "record.json").read_text())
+        if record.get("key") == key:
+            log(f"reusing the cached build of {lib} (key {key[:16]})")
+            shutil.copytree(entry / "install", ctx.dep_prefix(lib), symlinks=True)
+            record["cache"] = "reused"
+            record["staged_pkgconfig"] = stage_dep(ctx, lib)
+            return record
+    source = prepare_source(ctx, lib)
+    started = now()
+    configuration = DEP_BUILDERS[lib](ctx)
+    record = {"key": key, "source": source, "configuration": configuration,
+              "post_build_tree": tree_digest(tree_files(ctx.src(lib))),
+              "started": started, "finished": now(), "built_by": ctx.toolchain_summary}
+    prune_dep(ctx, lib)
+    if entry:
+        if entry.exists():
+            shutil.rmtree(entry)
+        shutil.copytree(ctx.dep_prefix(lib), entry / "install", symlinks=True)
+        write_json(entry / "record.json", record)
+        with open(cache / ctx.sl.name / "new", "a") as f:
+            f.write(lib + "\n")
+    record["cache"] = "built"
+    record["staged_pkgconfig"] = stage_dep(ctx, lib)
+    return record
+
+
 def make_framework(ctx: Ctx, name: str, library: Path, headers: list[tuple[Path, str]]) -> dict:
     fw = ctx.out / "frameworks" / f"{name}.framework"
     (fw / "Headers").mkdir(parents=True)
@@ -1064,10 +1560,49 @@ def make_framework(ctx: Ctx, name: str, library: Path, headers: list[tuple[Path,
     return {"name": name, "binary_sha256": sha256_file(fw / name), "headers": count}
 
 
+def dep_headers(lib: str, inc: Path) -> list[tuple[Path, str]]:
+    """The framework's Headers/ content, laid out as today's (facts 3.1 to
+    3.11 and engine/config/expected-libs/)."""
+    def folders(*names):
+        return [(inc / n, n) for n in names]
+
+    def contents(folder):
+        return [(p, p.name) for p in sorted(folder.iterdir())]
+    return {
+        "freetype": lambda: folders("freetype2"),
+        "fribidi": lambda: folders("fribidi"),
+        "harfbuzz": lambda: folders("harfbuzz"),
+        "unibreak": lambda: contents(inc),
+        "lcms2": lambda: contents(inc),
+        "shaderc": lambda: folders("glslang", "shaderc", "spirv-tools"),
+        "libplacebo": lambda: contents(inc / "libplacebo"),
+        "uavs3d": lambda: contents(inc),
+        "libbluray": lambda: contents(inc / "libbluray"),
+        "uchardet": lambda: folders("uchardet"),
+    }[lib]()
+
+
+def package_deps(ctx: Ctx) -> list[dict]:
+    made = []
+    for lib, dep in DEPS.items():
+        prefix = ctx.dep_prefix(lib)
+        library = prefix / "lib" / dep.library
+        if dep.kind == "library":
+            dest = ctx.out / "libraries" / dep.framework / dep.library
+            dest.parent.mkdir(parents=True)
+            shutil.copy2(library, dest)
+            made.append({"name": dep.framework, "library": dep.library,
+                         "binary_sha256": sha256_file(dest), "headers": 0})
+        else:
+            made.append(make_framework(ctx, dep.framework, library,
+                                       dep_headers(lib, prefix / "include")))
+    return made
+
+
 def package_frameworks(ctx: Ctx) -> list[dict]:
     inc = ctx.prefix / "include"
     lib = ctx.prefix / "lib"
-    made = [
+    made = package_deps(ctx) + [
         make_framework(ctx, "Libdovi", lib / "libdovi.a",
                        [(inc / "libdovi" / "rpu_parser.h", "rpu_parser.h")]),
         make_framework(ctx, "Libdav1d", lib / "libdav1d.a", [(inc / "dav1d", "dav1d")]),
@@ -1094,6 +1629,7 @@ def toolchain(ctx: Ctx) -> dict:
         "meson": first(ctx.meson + ["--version"]),
         "meson_python": first([ctx.meson[0], "--version"]),
         "ninja": first([ctx.ninja, "--version"]),
+        "cmake": first([ctx.cmake, "--version"]),
         "pkg-config": first([ctx.pkg_config, "--version"]),
         "make": first(["make", "--version"]),
         "rustc": first([ctx.rust / "bin" / "rustc", "-vV"]),
@@ -1125,21 +1661,47 @@ def cmd_build(args) -> None:
             shutil.rmtree(d)
     (out / "logs").mkdir(parents=True)
     work.mkdir(parents=True)
-    meson, ninja, pkg_config, bindir = prepare_tools(pins, args.downloads, root)
+    meson, ninja, pkg_config, bindir, cmake = prepare_tools(pins, args.downloads, root)
     rust = install_rust(pins, args.downloads, root / "tools" / "rust", [sl.rust_target])
     install_cargo_c(pins, args.downloads, root / "tools" / "cargo-c")
     sdk = sdk_path(sl.sdk)
     flags = compile_flags(sl, sdk, pins["toolchain"]["minimum_os"])
     ctx = Ctx(sl, pins, args.downloads, root, work, out, sdk, flags, {}, meson, ninja, pkg_config,
-              root / "tools" / "rust", root / "tools" / "cargo-c")
+              root / "tools" / "rust", root / "tools" / "cargo-c", cmake)
     ctx.env = build_env(root, bindir, flags, ctx.pc_dirs, pins["toolchain"]["source_date_epoch"])
     report = {"slice": sl.name, "started": now(), "repository_commit": repo_commit(),
               "pins_sha256": sha256_file(ENGINE / "pins.ini"), "toolchain": toolchain(ctx)}
     report["toolchain"]["rust_std_targets"] = rust["std_targets"]
-    report["prebuilt"] = stage_prebuilt(ctx)
-    report["sources"] = {}
+    ctx.toolchain_summary = {k: report["toolchain"][k] for k in
+                             ("xcode", "sdk", "sdk_version", "clang", "meson", "ninja", "cmake",
+                              "make")}
+    write_system_pc(ctx.sdk, ctx.work / "pkgconfig")
+    cache = args.cache.resolve() if args.cache else None
+    if cache:
+        # `complete` holds the key once every dependency is in the cache;
+        # `new` lists the dependencies this run built and stored.
+        (cache / sl.name).mkdir(parents=True, exist_ok=True)
+        for other in cache.iterdir():
+            if other.name != sl.name:  # only this slice's builds belong here
+                shutil.rmtree(other) if other.is_dir() else other.unlink()
+        (cache / sl.name / "complete").unlink(missing_ok=True)
+        (cache / sl.name / "new").write_text("")
+    report["sources"], report["deps"] = {}, {}
     for lib in BUILD_ORDER:
         log(f"\n==== {lib} ({sl.name})")
+        if lib in DEPS:
+            record = build_dep(ctx, lib, cache)
+            report["sources"][lib] = record.pop("source")
+            report["deps"][lib] = record
+            if cache and lib == tuple(DEPS)[-1]:
+                # Every dependency is built or reused: the cache is complete.
+                (cache / sl.name / "complete").write_text(deps_key(pins, sl) + "\n")
+                for stale in (cache / sl.name).iterdir():
+                    if stale.is_dir() and stale.name not in DEPS:
+                        shutil.rmtree(stale)
+                if not (cache / sl.name / "new").read_text().strip():
+                    log("every dependency was reused from the cache")
+            continue
         report["sources"][lib] = prepare_source(ctx, lib)
         if lib == "libdovi":
             report["libdovi"] = build_libdovi(ctx)
@@ -1200,17 +1762,26 @@ class Checks:
         return self.expect(name, not missing and not extra, detail)
 
 
-def check_trees(c: Checks, ctx_work: Path, report: dict, tmp: Path) -> None:
+def check_trees(c: Checks, pins, ctx_work: Path, report: dict, tmp: Path) -> None:
     for lib, info in report["sources"].items():
         src = ctx_work / "src" / lib
-        c.equal(f"{lib}: source archive commit", info["archive_commit"], info["commit"])
-        c.equal(f"{lib}: source tree unchanged by the build",
-                tree_digest(tree_files(src)), info["patched_tree"])
+        c.equal(f"{lib}: source archive commit", info["archive_commit"],
+                info.get("embedded_commit", info["commit"]))
+        for part in info.get("parts", []):
+            c.equal(f"{lib}: {part['path']} archive commit", part["archive_commit"], part["commit"])
+        if lib in DEPS:
+            # Recorded straight after the library's build, which may have
+            # been an earlier run's (the dependency cache).
+            c.equal(f"{lib}: source tree unchanged by the build",
+                    report["deps"][lib]["post_build_tree"], info["patched_tree"])
+        else:
+            c.equal(f"{lib}: source tree unchanged by the build",
+                    tree_digest(tree_files(src)), info["patched_tree"])
         again = tmp / lib
-        extract_tar(Path(report["downloads"]) / info["archive"], again)
+        assemble_source(pins, Path(report["downloads"]), lib, again)
         pristine = tree_digest(tree_files(again))
         apply_series(lib, again)
-        c.equal(f"{lib}: pristine archive re-extracted", pristine, info["pristine_tree"])
+        c.equal(f"{lib}: pristine archives re-extracted", pristine, info["pristine_tree"])
         c.equal(f"{lib}: tree equals pristine plus series",
                 tree_digest(tree_files(again)), info["patched_tree"])
         shutil.rmtree(again)
@@ -1249,6 +1820,18 @@ def version_tuple(v: str) -> tuple[int, ...]:
 
 
 def check_binary_form(c: Checks, sl: Slice, fw: Path, name: str, minimum_os: str) -> None:
+    if name in BUILT_LIBRARIES:
+        binary = fw / DEPS[dep_of(name)].library
+        c.equal(f"{name}: architectures", run(["lipo", "-archs", binary], capture=True).split(),
+                ["arm64"])
+        out = run(["otool", "-l", binary], capture=True)
+        c.equal(f"{name}: LC_BUILD_VERSION platform",
+                set(re.findall(r"^\s*platform (\S+)$", out, re.M)), {str(sl.macho_platform)})
+        c.equal(f"{name}: minimum OS", set(re.findall(r"^\s*minos (\S+)$", out, re.M)),
+                {minimum_os})
+        c.equal(f"{name}: static library only (no headers or module, as today)",
+                sorted(p.name for p in fw.iterdir()), [DEPS[dep_of(name)].library])
+        return
     binary = fw / name
     c.equal(f"{name}: architectures", run(["lipo", "-archs", binary], capture=True).split(), ["arm64"])
     out = run(["otool", "-l", binary], capture=True)
@@ -1278,6 +1861,260 @@ def check_binary_form(c: Checks, sl: Slice, fw: Path, name: str, minimum_os: str
     c.equal(f"{name}: Info.plist MinimumOSVersion", plist.get("MinimumOSVersion"), PLIST_MINIMUM_OS)
     c.expect(f"{name}: module map", (fw / "Modules" / "module.modulemap").read_text()
              .startswith(f"framework module {name} [system] {{"))
+
+
+# ------------------------------------------------------ dependency checks
+
+NM_DEFINED = re.compile(r"^[0-9a-f]+ \(([^)]*)\) (?:\(alignment [^)]*\) )?(.*?external)"
+                        r"(?: automatically hidden)?(?: \[[^\]]*\])* (\S+)$")
+
+
+def defined_symbols(archive: Path) -> dict[str, str]:
+    """Defined global symbols of an arm64 archive with their kind, as recorded
+    in engine/config/expected-libs/: default, hidden (private extern),
+    weak-default or weak-hidden. A line nm prints in another form is kept
+    as kind `unparsed`, so the comparison shows it."""
+    found = {}
+    for line in run(["nm", "-arch", "arm64", "-m", "-g", "-U", archive], capture=True).splitlines():
+        m = NM_DEFINED.match(line)
+        if m:
+            kind = "hidden" if "private external" in m.group(2) else "default"
+            found[m.group(3)] = ("weak-" if m.group(2).startswith("weak") else "") + kind
+        elif line.strip() and not line.endswith(":"):
+            found[line.strip()] = "unparsed"
+    return found
+
+
+def archive_imports(archive: Path, defined: dict[str, str]) -> set[str]:
+    """Symbols the archive needs from outside itself."""
+    undefined = {s.strip() for s in run(["nm", "-arch", "arm64", "-u", "-j", archive],
+                                         capture=True).splitlines()
+                 if s.strip() and not s.endswith(":")}
+    return undefined - set(defined)
+
+
+def names_digest(names) -> str:
+    return hashlib.sha256("".join(n + "\n" for n in sorted(names)).encode()).hexdigest()
+
+
+def pc_entries(text: str) -> dict[str, str]:
+    """A pkg-config file's variables (`name=`) and fields (`Name:`), with
+    whitespace collapsed and the install prefix written as <prefix>."""
+    entries = {}
+    for line in text.replace(PREFIX, "<prefix>").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        eq, colon = line.find("="), line.find(":")
+        if eq >= 0 and (colon < 0 or eq < colon):
+            key, value = "$" + line[:eq].strip(), line[eq + 1:]
+        elif colon >= 0:
+            key, value = line[:colon].strip() + ":", line[colon + 1:]
+        else:
+            key, value = line, ""
+        entries[key] = " ".join(value.split())
+    return entries
+
+
+def expected_pc(sl: Slice, name: str) -> Path:
+    plain = EXPECTED_LIBS / f"{name}.pc"
+    return plain if plain.exists() else EXPECTED_LIBS / f"{name}-{'tvos' if sl.tvos else 'ios'}.pc"
+
+
+def header_defines(path: Path) -> set[str]:
+    """Macros a header defines (active #define lines only)."""
+    return set(re.findall(r"^#\s*define\s+(\w+)", path.read_text(errors="replace"), re.M))
+
+
+def macro(path: Path, name: str) -> str | None:
+    """A macro's value without a trailing comment."""
+    m = re.search(rf"^#\s*define\s+{re.escape(name)}\s+(.*?)\s*(/[*/].*)?$",
+                  path.read_text(errors="replace"), re.M)
+    return m.group(1) if m else None
+
+
+def archive_cstrings(archive: Path) -> set[bytes]:
+    """Every C string in the (__TEXT,__cstring) sections of an archive's members."""
+    strings = set()
+    for member in archive_members(archive):
+        if member.startswith("__.SYMDEF") or member == "SORTED":
+            continue
+        data = subprocess.run(["ar", "-p", str(archive), member], stdout=subprocess.PIPE,
+                              check=True).stdout
+        if data[:4] == b"\xcf\xfa\xed\xfe":
+            strings.update(macho_cstrings(data))
+    return strings
+
+
+def check_dep_configuration(c: Checks, lib: str, config: dict) -> None:
+    """The build options read back from the configured build."""
+    if "meson" in config:
+        got = config["meson"]
+        for opt in config["meson_options"]:
+            name, value = opt[2:].split("=", 1)
+            c.equal(f"{lib}: meson option {name}", str(got.get(name)).lower(), value.lower())
+        builtins = {"buildtype": "release", "optimization": "3", "debug": "false",
+                    "b_ndebug": "false", "b_lto": "false", "default_library": "static"}
+        c.equal(f"{lib}: meson built-in options",
+                {k: str(got.get(k)).lower() for k in builtins}, builtins)
+    if "cmake" in config:
+        got = config["cmake"]
+        for opt in list(CMAKE_COMMON) + config["cmake_options"]:
+            name, value = opt[2:].split("=", 1)
+            c.equal(f"{lib}: CMake {name}", got.get(name), value)
+        c.equal(f"{lib}: CMake Release flags (-O3, NDEBUG defined)",
+                [got.get("CMAKE_C_FLAGS_RELEASE"), got.get("CMAKE_CXX_FLAGS_RELEASE")],
+                ["-O3 -DNDEBUG", "-O3 -DNDEBUG"])
+    if "make_variables" in config:
+        cflags = config["make_variables"].get("CFLAGS") or ""
+        c.expect(f"{lib}: CFLAGS are the cross flags only, with no -O (unoptimised, as today)",
+                 "-arch arm64" in cflags and not re.search(r"(^|\s)-O", cflags)
+                 and not re.search(r"(^|\s)-O", config["make_variables"].get("libunibreak_la_CFLAGS")
+                                   or ""), cflags)
+
+
+def check_dep_specifics(c: Checks, sl: Slice, lib: str, fw: Path, inc: Path, record: dict,
+                        binary: Path) -> None:
+    """What each library must have compiled in (facts 3.1 to 3.11)."""
+    h = fw / "Headers"
+    if lib == "freetype":
+        opts = header_defines(h / "freetype2" / "freetype" / "config" / "ftoption.h")
+        c.expect("FreeType: system zlib on (FT_CONFIG_OPTION_USE_ZLIB, _SYSTEM_ZLIB)",
+                 {"FT_CONFIG_OPTION_USE_ZLIB", "FT_CONFIG_OPTION_SYSTEM_ZLIB"} <= opts)
+        off = {"FT_CONFIG_OPTION_USE_PNG", "FT_CONFIG_OPTION_USE_BROTLI",
+               "FT_CONFIG_OPTION_USE_BZIP2", "FT_CONFIG_OPTION_USE_HARFBUZZ"}
+        c.expect("FreeType: PNG, brotli, bzip2 and HarfBuzz off", not off & opts, str(off & opts))
+    elif lib == "fribidi":
+        conf = h / "fribidi" / "fribidi-config.h"
+        c.equal("FriBidi: version and Unicode version",
+                [define(conf, "FRIBIDI_VERSION"), define(conf, "FRIBIDI_INTERFACE_VERSION"),
+                 define(h / "fribidi" / "fribidi-unicode-version.h", "FRIBIDI_UNICODE_VERSION")],
+                ['"1.0.12"', "4", '"14.0.0"'])
+    elif lib == "harfbuzz":
+        has = {d for d in header_defines(h / "harfbuzz" / "hb-features.h") if d.startswith("HB_HAS_")}
+        c.equal("HarfBuzz: no optional backend (no GLib, ICU, FreeType, CoreText, cairo, GObject)",
+                has, set())
+        c.equal("HarfBuzz: version", define(h / "harfbuzz" / "hb-version.h", "HB_VERSION_STRING"),
+                '"8.1.1"')
+    elif lib == "unibreak":
+        c.equal("libunibreak: version", macro(h / "unibreakbase.h", "UNIBREAK_VERSION"), "0x0601")
+    elif lib == "lcms2":
+        c.equal("Little CMS: version", macro(h / "lcms2.h", "LCMS_VERSION"), "2170")
+    elif lib == "shaderc":
+        info = h / "glslang" / "build_info.h"
+        c.equal("shaderc: glslang version", [define(info, f"GLSLANG_VERSION_{p}")
+                                             for p in ("MAJOR", "MINOR", "PATCH")],
+                ["16", "0", "0"])
+    elif lib == "moltenvk":
+        c.equal("MoltenVK: Vulkan headers version", vulkan_header_version(inc), "1.4.334")
+        api = inc / "MoltenVK" / "mvk_private_api.h"
+        c.equal("MoltenVK: version", [macro(api, f"MVK_VERSION_{p}")
+                                      for p in ("MAJOR", "MINOR", "PATCH")], ["1", "4", "1"])
+        c.equal("MoltenVK: built with MVK_XCODE_16=0 and MVK_XCODE_26=0 (today's SDK gates)",
+                record["configuration"]["make"][1:], ["MVK_XCODE_16=0", "MVK_XCODE_26=0"])
+    elif lib == "libplacebo":
+        conf = h / "config.h"
+        have = {d for d in header_defines(conf) if d.startswith("PL_HAVE_")}
+        c.equal("libplacebo: PL_HAVE_ features", have,
+                {"PL_HAVE_DOVI", "PL_HAVE_GL_PROC_ADDR", "PL_HAVE_LCMS", "PL_HAVE_LIBDOVI",
+                 "PL_HAVE_OPENGL", "PL_HAVE_SHADERC", "PL_HAVE_VK_PROC_ADDR", "PL_HAVE_VULKAN"})
+        c.equal("libplacebo: version", [define(conf, "PL_MAJOR_VER"), define(conf, "PL_API_VER")],
+                ["7", "351"])
+        versions = {s for s in archive_cstrings(binary) if s.startswith(b"v7.")}
+        c.equal("libplacebo: pl_version() string (an archive build: no git description)",
+                versions, {b"v7.351.0"})
+    elif lib == "uavs3d":
+        v = record["configuration"]["version_h"]
+        c.equal("uavs3d: version.h", v, {"VER_MAJOR": "1", "VER_MINOR": "2", "VER_BUILD": "1",
+                                         "VERSION_TYPE": '"release"', "VERSION_STR": '"1.2.1"',
+                                         "VERSION_SHA1": '"0e20d2c291853f196c68922a264bcd8471d75b68"'})
+        strings = archive_cstrings(binary)
+        c.expect("uavs3d: version line strings in the binary (1.2.1, release, VERSION_SHA1)",
+                 {b"1.2.1", b"release", b"0e20d2c291853f196c68922a264bcd8471d75b68"} <= strings)
+        c.equal("uavs3d: COMPILE_10BIT", record["configuration"]["cmake"].get("COMPILE_10BIT"), "1")
+        asm = [m for m in archive_members(binary) if m.endswith(".S.o")]
+        c.equal("uavs3d: arm64 NEON assembly objects", len(asm), 10)
+    elif lib == "libbluray":
+        v = h / "bluray-version.h"
+        c.equal("libbluray: version", [define(v, f"BLURAY_VERSION_{p}")
+                                       for p in ("MAJOR", "MINOR", "MICRO")], ["1", "4", "0"])
+    elif lib == "uchardet":
+        c.expect("uchardet: header", (h / "uchardet" / "uchardet.h").is_file())
+
+
+def check_deps(c: Checks, sl: Slice, pins, work: Path, out: Path, report: dict) -> dict:
+    """Every dependency against what today's interim build ships
+    (engine/config/expected-libs/): form, headers, exported symbols,
+    imports, assertions, deployment target, pkg-config contract and the
+    configuration read back from its build."""
+    summary = {}
+    pc_env = {**os.environ, "PKG_CONFIG_LIBDIR": os.pathsep.join(
+        [str(work / "pkgconfig"), str(work / "install" / PREFIX.lstrip("/") / "lib" / "pkgconfig")])}
+    pc_env.pop("PKG_CONFIG_PATH", None)
+    for lib, dep in DEPS.items():
+        exp = read_sections(EXPECTED_LIBS / f"{lib}.txt")
+        record = report["deps"][lib]
+        name = dep.framework
+        if dep.kind == "library":
+            fw = out / "libraries" / name
+            binary = fw / dep.library
+        else:
+            fw = out / "frameworks" / f"{name}.framework"
+            binary = fw / name
+        c.equal(f"{name}: {'library' if dep.kind == 'library' else 'framework'} name as today",
+                exp.get("library" if dep.kind == "library" else "framework"), [name])
+        minos = exp[f"minos-{sl.name}"]
+        c.equal(f"{name}: deployment target as today", len(minos), 1)
+        check_binary_form(c, sl, fw, name, minos[0])
+        if dep.kind == "framework":
+            headers = sorted(p.relative_to(fw / "Headers").as_posix()
+                             for p in (fw / "Headers").rglob("*") if p.is_file())
+            c.equal(f"{name}: headers as today", headers,
+                    sorted(set(exp["headers"]) - set(exp.get("headers-not-built", []))))
+        defined = defined_symbols(binary)
+        unparsed = sorted(s for s, k in defined.items() if k == "unparsed")
+        c.expect(f"{name}: every defined symbol has a known kind", not unparsed, str(unparsed[:5]))
+        for kind in ("default", "hidden"):
+            c.sets(f"{name}: {kind}-visibility symbols as today",
+                   {s for s, k in defined.items() if k == kind}, set(exp[kind]))
+        weak = {}
+        for kind in ("weak-default", "weak-hidden"):
+            names = [s for s, k in defined.items() if k == kind]
+            weak[kind] = [len(names), names_digest(names)]
+            if f"{kind}-toolchain" in exp:
+                # Which inline functions and template instances the compiler
+                # emits differs between Xcode 15.4 and 26.6 for the same
+                # sources: the set Xcode 26.6 gives is recorded instead.
+                c.equal(f"{name}: {kind} definitions as the pipeline's toolchain gives "
+                        f"(count, SHA-256; today's: {exp[kind][0]})",
+                        [str(len(names)), names_digest(names)], exp[f"{kind}-toolchain"])
+            else:
+                c.equal(f"{name}: {kind} definitions as today (count, SHA-256)",
+                        [str(len(names)), names_digest(names)], exp[kind])
+        imports = archive_imports(binary, defined)
+        added = set(exp.get("imports-toolchain-added", []))
+        removed = set(exp.get("imports-toolchain-removed", []))
+        c.sets(f"{name}: imports as today" + (" apart from the toolchain's recorded differences"
+                                              if added or removed else ""),
+               imports, (set(exp[f"imports-{sl.name}"]) - removed) | added)
+        asserts = "___assert_rtn" in set(exp[f"imports-{sl.name}"])
+        c.equal(f"{name}: assertions {'on' if asserts else 'off'} as today",
+                "___assert_rtn" in imports, asserts)
+        inc = work / "deps" / lib / "include"
+        for pc_name in dep.pkgconfig:
+            ours = work / "deps" / lib / "lib" / "pkgconfig" / f"{pc_name}.pc"
+            c.equal(f"{pc_name}.pc: contract as today", pc_entries(ours.read_text()),
+                    pc_entries(expected_pc(sl, pc_name).read_text()))
+            res = subprocess.run(["pkg-config", "--static", "--exists", "--print-errors", pc_name],
+                                 env=pc_env, capture_output=True, text=True)
+            c.expect(f"{pc_name}.pc: resolves with every Requires", res.returncode == 0, res.stderr)
+        check_dep_configuration(c, lib, record["configuration"])
+        check_dep_specifics(c, sl, lib, fw, inc, record, binary)
+        summary[lib] = {"cache": record["cache"], "key": record["key"],
+                        "symbols": {k: sum(1 for v in defined.values() if v == k)
+                                    for k in ("default", "hidden", "weak-default", "weak-hidden")},
+                        "weak": weak, "imports": len(imports)}
+    return summary
 
 
 # ------------------------------------------------------------- link checks
@@ -1387,14 +2224,10 @@ def with_reexports(links: set[str], reexports: dict[str, set[str]]) -> set[str]:
     return result
 
 
-def prebuilt_archives(pins, work: Path) -> dict[str, Path]:
-    """The staged archive behind each pinned prebuilt framework."""
-    archives = {}
-    for section in pin_sections(pins, "prebuilt"):
-        for fw in pins[section]["frameworks"].split():
-            lib = "lib" + (fw[3:] if fw.startswith("Lib") else fw) + ".a"
-            archives[fw] = work / "deps" / section.split(":", 1)[1] / "lib" / lib
-    return archives
+def built_libraries(out: Path) -> dict[str, Path]:
+    """The static libraries packaged as library xcframeworks (MoltenVK)."""
+    return {name: out / "libraries" / name / DEPS[dep_of(name)].library
+            for name in sorted(BUILT_LIBRARIES)}
 
 
 def app_link_flags(app_link: dict[str, list[str]]) -> tuple[list[str], set[str]]:
@@ -1405,16 +2238,19 @@ def app_link_flags(app_link: dict[str, list[str]]) -> tuple[list[str], set[str]]
     return flags, names | {"lib:System", "lib:objc"}
 
 
-def check_link(c: Checks, sl: Slice, pins, work: Path, fws: Path, sdk: Path) -> dict:
+def check_link(c: Checks, sl: Slice, pins, work: Path, out: Path, sdk: Path) -> dict:
     """Symbol closure over the whole link set, then a dead-stripped test link
     of a small program, as an app would link these frameworks."""
     app_min = pins["toolchain"]["app_minimum_tvos" if sl.tvos else "app_minimum_ios"]
     target = sl.target.format(v=app_min)
+    fws = out / "frameworks"
     built = {p.stem: p / p.stem for p in sorted(fws.glob("*.framework"))}
-    prebuilt = prebuilt_archives(pins, work)
-    c.expect("pinned prebuilt archives staged", all(p.exists() for p in prebuilt.values()),
-             str([str(p) for p in prebuilt.values() if not p.exists()]))
-    archives = {**built, **prebuilt}
+    libraries = built_libraries(out)
+    c.expect("every library of the link set is built here",
+             set(built) == BUILT_FRAMEWORKS and all(p.is_file() for p in libraries.values()),
+             f"frameworks {sorted(set(built) ^ BUILT_FRAMEWORKS)}, libraries "
+             f"{[str(p) for p in libraries.values() if not p.is_file()]}")
+    archives = {**built, **libraries}
     runtime = Path(run(["xcrun", "--sdk", sl.sdk, "clang", "-target", target,
                         "-print-libgcc-file-name"], capture=True).strip())
     defined = set().union(*(nm_symbols(p, False) for p in archives.values()))
@@ -1449,7 +2285,7 @@ def check_link(c: Checks, sl: Slice, pins, work: Path, fws: Path, sdk: Path) -> 
     cmd = ["xcrun", "--sdk", sl.sdk, "clang", "-target", target, "-isysroot", str(sdk),
            "-F", str(fws), str(test / "main.c"), "-o", str(test / "linktest"), "-Wl,-dead_strip"]
     cmd += [f for name in built for f in ("-framework", name)]
-    cmd += [str(p) for p in prebuilt.values()]
+    cmd += [str(p) for p in libraries.values()]
     cmd += link_flags
     log(f"$ {shlex.join(cmd)}")
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -1519,14 +2355,16 @@ def first_difference(a: bytes, b: bytes) -> str:
     return f"{len(la)} lines != {len(lb)} lines"
 
 
-def check_libdovi(c: Checks, sl: Slice, pins, work: Path, fws: Path, downloads: Path,
+def check_libdovi(c: Checks, sl: Slice, pins, work: Path, fws: Path,
                   undefined: dict, defined: dict) -> dict:
-    """libdovi against today's prebuilt (same C API and header), its panic
-    strategy, and the libdovi functions libplacebo and FFmpeg call."""
+    """libdovi against today's (the header and C API recorded in
+    engine/config/expected-libdovi.txt), its panic strategy, and the libdovi
+    functions libplacebo and FFmpeg call."""
+    expected = read_sections(LIBDOVI_EXPECTED)
     fw = fws / "Libdovi.framework"
     header = (fw / "Headers" / "rpu_parser.h").read_bytes()
     exported = {s for s in defined["Libdovi"] if s.startswith("_dovi_")}
-    c.sets("Libdovi: exported C API", exported, LIBDOVI_API)
+    c.sets("Libdovi: exported C API as today's", exported, set(expected["exported"]))
     members = archive_members(fw / "Libdovi")
     unwind = sorted(m for m in members if m.startswith("panic_unwind-"))
     abort = sorted(m for m in members if m.startswith("panic_abort-"))
@@ -1543,22 +2381,15 @@ def check_libdovi(c: Checks, sl: Slice, pins, work: Path, fws: Path, downloads: 
     c.expect("dovi.pc: name dovi, version as pinned", re.search(r"^Name: dovi$", pc, re.M) is not None
              and re.search(rf"^Version: {re.escape('.'.join(version))}$", pc, re.M) is not None, pc)
 
-    ref = pins["reference:libdovi"]
-    with zipfile.ZipFile(downloads / download_name("reference:libdovi", ref["url"])) as z:
-        ref_header = z.read("include/libdovi/rpu_parser.h")
-        ref_lib = z.read(f"lib/{sl.prebuilt}/thin/arm64/lib/libdovi.a")
-    c.expect("Libdovi: rpu_parser.h identical to today's prebuilt", header == ref_header,
-             first_difference(header, ref_header))
-    with tempfile.TemporaryDirectory(dir=work) as tmp:
-        ref_path = Path(tmp) / "libdovi.a"
-        ref_path.write_bytes(ref_lib)
-        ref_exported = {s for s in nm_symbols(ref_path, False) if s.startswith("_dovi_")}
-    c.sets("Libdovi: exported C API equals today's prebuilt", exported, ref_exported)
+    c.equal("Libdovi: rpu_parser.h identical to today's (SHA-256)",
+            hashlib.sha256(header).hexdigest(), expected["header-sha256"][0])
 
-    placebo = prebuilt_archives(pins, work)["Libplacebo"]
+    placebo = fws / "Libplacebo.framework" / "Libplacebo"
     placebo_calls = {s for s in nm_symbols(placebo, True) if s.startswith("_dovi_")}
     c.expect("Libplacebo calls libdovi only through exported functions",
              bool(placebo_calls) and placebo_calls <= exported, str(sorted(placebo_calls)))
+    c.sets("Libplacebo calls the same libdovi functions as today's", placebo_calls,
+           set(expected["libplacebo-calls"]))
     ffmpeg_calls = set().union(*(undefined[f"Lib{ff}"] for ff in FFMPEG_LIBS))
     ffmpeg_calls = {s for s in ffmpeg_calls if s.startswith("_dovi_")}
     c.expect("FFmpeg calls libdovi only through exported functions", ffmpeg_calls <= exported,
@@ -1681,19 +2512,26 @@ def cmd_check(args) -> None:
     if args.strict:
         c.expect("Xcode version matches pins.ini", report["toolchain"]["xcode"]
                  .startswith(f"Xcode {pins['toolchain']['xcode']} "), report["toolchain"]["xcode"])
+    c.equal("every library built from source, in order", list(report["sources"]),
+            list(BUILD_ORDER))
     for lib, info in report["sources"].items():
         c.equal(f"{lib}: archive SHA-256 matches pins.ini", info["sha256"],
                 pins[f"source:{lib}"]["sha256"])
+        c.equal(f"{lib}: parts match pins.ini",
+                [[p["part"], p["path"], p["sha256"]] for p in info.get("parts", [])],
+                [[n, rel, pins[f"part:{n}"]["sha256"]] for n, rel in source_parts(pins, lib)])
         c.equal(f"{lib}: patch series", [p["file"] for p in info["patches"]],
                 [f"{lib}/{p.name}" for _, p in read_series(lib)])
     with tempfile.TemporaryDirectory(dir=root) as tmp:
-        check_trees(c, work, report, Path(tmp))
+        check_trees(c, pins, work, report, Path(tmp))
 
-    # Framework form.
+    # Framework form (the dependencies' in check_deps below).
     expected_names = set(BUILT_FRAMEWORKS)
     c.sets("framework set", {p.stem for p in fws.glob("*.framework")}, expected_names)
+    c.sets("library set", {p.name for p in (out / "libraries").iterdir()}, BUILT_LIBRARIES)
     for name in sorted(expected_names):
-        check_binary_form(c, sl, fws / f"{name}.framework", name, minimum_os)
+        if not dep_of(name):
+            check_binary_form(c, sl, fws / f"{name}.framework", name, minimum_os)
     for name, count in HEADER_COUNTS.items():
         c.equal(f"{name}: header count", sum(1 for p in (fws / f"{name}.framework" / "Headers")
                                              .rglob("*") if p.is_file()), count)
@@ -1804,19 +2642,23 @@ def cmd_check(args) -> None:
         c.expect(f"{name}: arm64 assembly built", bool(asm), "no .S objects in the archive")
 
     # libdovi: C API and header as today's prebuilt, panic strategy, callers.
-    report["libdovi_checks"] = check_libdovi(c, sl, pins, work, fws, args.downloads,
-                                             undefined, defined)
+    report["libdovi_checks"] = check_libdovi(c, sl, pins, work, fws, undefined, defined)
+
+    # The dependencies built here against what today's interim build ships.
+    report["dependency_checks"] = check_deps(c, sl, pins, work, out, report)
     c.equal("Libdovi: built with the pinned rustc", report["toolchain"]["rustc"],
             "rustc " + pins["rust:rustc"]["version"])
 
     # Reproducible archives: no member carries a build timestamp.
-    for name in sorted(expected_names):
-        dated = [l for l in run(["ar", "-tv", fws / f"{name}.framework" / name],
-                                capture=True).splitlines() if " 1970 " not in l]
+    archives = {name: fws / f"{name}.framework" / name for name in sorted(expected_names)}
+    archives.update(built_libraries(out))
+    for name, archive in archives.items():
+        dated = [l for l in run(["ar", "-tv", archive], capture=True).splitlines()
+                 if " 1970 " not in l]
         c.expect(f"{name}: archive members have zero timestamps", not dated, str(dated[:3]))
 
     # Linkability: symbol closure and a dead-stripped test link.
-    report["link"] = check_link(c, sl, pins, work, fws, sdk_path(sl.sdk))
+    report["link"] = check_link(c, sl, pins, work, out, sdk_path(sl.sdk))
 
     # The AVFoundation video output (patch spec 2.1, 2.3, 8.6).
     check_video_output(c, fws, work)
@@ -1850,9 +2692,15 @@ def summarise(report: dict) -> str:
     for lib, info in report["sources"].items():
         patches = ", ".join(f"`{Path(p['file']).name}` ({p['sha256'][:12]})" for p in info["patches"]) or "none"
         lines.append(f"| {lib} | {info['version']} | `{info['commit'][:12]}` | `{info['sha256'][:16]}...` | {patches} |")
-    lines += ["", "| Prebuilt | Archive | SHA-256 |", "| --- | --- | --- |"]
-    for item in report["prebuilt"]:
-        lines.append(f"| {item['name']} | `{item['archive']}` | `{item['sha256'][:16]}...` |")
+        for part in info.get("parts", []):
+            lines.append(f"| {lib}: `{part['path']}` | {part['version']} | `{part['commit'][:12]}` "
+                         f"| `{part['sha256'][:16]}...` | |")
+    lines += ["", "| Dependency | Build | Cache key | Symbols (default, hidden, weak) | Imports |",
+              "| --- | --- | --- | --- | --- |"]
+    for lib, dep in report.get("dependency_checks", {}).items():
+        sym = dep["symbols"]
+        lines.append(f"| {lib} | {dep['cache']} | `{dep['key'][:16]}...` | {sym['default']}, "
+                     f"{sym['hidden']}, {sym['weak-default'] + sym['weak-hidden']} | {dep['imports']} |")
     dovi = report.get("libdovi_checks", {})
     lines += ["", f"libdovi: {report['toolchain'].get('rustc', '')}, "
               f"{report['toolchain'].get('cargo_c', '')}, target `{report['libdovi']['rust_target']}`, "
@@ -2260,20 +3108,58 @@ def zip_tree(src: Path, dest: Path) -> None:
                 z.writestr(info, path.read_bytes())
 
 
-def package_xcframeworks(inputs: dict[str, Path], names: list[str], out: Path) -> list[str]:
+FRAMEWORK_PLIST_KEYS = {"CFBundleDevelopmentRegion", "CFBundleExecutable", "CFBundleIdentifier",
+                        "CFBundleInfoDictionaryVersion", "CFBundleName", "CFBundlePackageType",
+                        "CFBundleShortVersionString", "CFBundleSignature",
+                        "CFBundleSupportedPlatforms", "CFBundleVersion", "MinimumOSVersion",
+                        "NSPrincipalClass"}
+
+
+def verify_xcframework(xcf: Path, name: str, kind: str, info: dict) -> None:
+    """Each slice has today's form: a framework with its module map and
+    Info.plist keys (Vivid's identifier), or MoltenVK's bare static library."""
+    for lib in info["AvailableLibraries"]:
+        root = xcf / lib["LibraryIdentifier"]
+        if kind == "library":
+            library = DEPS[dep_of(name)].library
+            if (lib["LibraryPath"], lib["BinaryPath"], "HeadersPath" in lib) != (library, library,
+                                                                                  False) \
+                    or sorted(p.name for p in root.iterdir()) != [library]:
+                raise Failure(f"{name}: {lib['LibraryIdentifier']} is not a bare {library}")
+            continue
+        fw = root / f"{name}.framework"
+        if lib["LibraryPath"] != fw.name or lib["BinaryPath"] != f"{fw.name}/{name}":
+            raise Failure(f"{name}: {lib['LibraryIdentifier']} paths {lib}")
+        if not (fw / "Modules" / "module.modulemap").read_text() \
+                .startswith(f"framework module {name} [system] {{\n"):
+            raise Failure(f"{name}: module map does not name module {name}")
+        plist = plistlib.loads((fw / "Info.plist").read_bytes())
+        if set(plist) != FRAMEWORK_PLIST_KEYS or \
+                plist["CFBundleIdentifier"] != PLIST_ID_PREFIX + name.replace("_", "-") or \
+                plist["CFBundleExecutable"] != name or plist["CFBundleName"] != name:
+            raise Failure(f"{name}: Info.plist {plist}")
+
+
+def package_xcframeworks(inputs: dict[str, Path], names: list[tuple[str, str]],
+                         out: Path) -> list[str]:
     """Create each xcframework and its zip in out; returns SHA256SUMS lines."""
     staging = out / "xcframeworks"
     sums = []
-    for name in names:
+    for name, kind in names:
         xcf = staging / f"{name}.xcframework"
         cmd = ["xcodebuild", "-create-xcframework"]
         for slice_name in sorted(inputs):
-            cmd += ["-framework", inputs[slice_name] / "frameworks" / f"{name}.framework"]
+            if kind == "library":
+                cmd += ["-library", inputs[slice_name] / "libraries" / name /
+                        DEPS[dep_of(name)].library]
+            else:
+                cmd += ["-framework", inputs[slice_name] / "frameworks" / f"{name}.framework"]
         run(cmd + ["-output", xcf])
         info = plistlib.loads((xcf / "Info.plist").read_bytes())
         ids = sorted(lib["LibraryIdentifier"] for lib in info["AvailableLibraries"])
         if ids != sorted(inputs):
             raise Failure(f"{name}: xcframework slices {ids}, expected {sorted(inputs)}")
+        verify_xcframework(xcf, name, kind, info)
         # xcodebuild lists the slices in a different order from run to run;
         # sort them so identical frameworks give an identical Info.plist.
         info["AvailableLibraries"].sort(key=lambda lib: lib["LibraryIdentifier"])
@@ -2300,12 +3186,13 @@ def cmd_package(args) -> None:
         inputs[report["slice"]] = prov.parent
     if not inputs:
         raise Failure(f"no slice outputs under {args.input}")
-    names = None
+    names = sorted([(n, "framework") for n in BUILT_FRAMEWORKS] +
+                   [(n, "library") for n in BUILT_LIBRARIES])
     for slice_name, path in inputs.items():
-        found = sorted(p.stem for p in (path / "frameworks").glob("*.framework"))
-        if names is not None and found != names:
-            raise Failure(f"{slice_name} has frameworks {found}, other slices {names}")
-        names = found
+        found = sorted([(p.stem, "framework") for p in (path / "frameworks").glob("*.framework")] +
+                       [(p.name, "library") for p in (path / "libraries").iterdir()])
+        if found != names:
+            raise Failure(f"{slice_name} has {found}, expected {names}")
     out = args.out
     if out.exists():
         shutil.rmtree(out)
@@ -2439,8 +3326,9 @@ def cmd_test_libdovi(args) -> None:
     c.expect("patched and unpatched rpu_parser.h are identical",
              built["patched"]["header"] == built["unpatched"]["header"],
              first_difference(built["patched"]["header"], built["unpatched"]["header"]))
-    c.sets("patched library exports libdovi's C API", built["patched"]["exported"], LIBDOVI_API)
-    c.sets("unpatched library exports libdovi's C API", built["unpatched"]["exported"], LIBDOVI_API)
+    api = set(read_sections(LIBDOVI_EXPECTED)["exported"])
+    c.sets("patched library exports libdovi's C API", built["patched"]["exported"], api)
+    c.sets("unpatched library exports libdovi's C API", built["unpatched"]["exported"], api)
     c.equal("unpatched library aborts on panic (upstream's -Cpanic=abort)",
             report["variants"]["unpatched"]["panic_runtime"], ["panic_abort"])
     c.equal("patched library unwinds (panic_unwind)",
@@ -2518,9 +3406,13 @@ def main(argv=None) -> int:
                    help="work directory for the test (replaced on each run)")
     p.add_argument("--downloads", type=Path,
                    default=default_dir("LUCID_DOWNLOADS", "lucid-downloads"), help="download cache")
+    p = sub.add_parser("cache-key", help="print the key of a slice's dependency builds")
+    p.add_argument("--slice", required=True, choices=sorted(SLICES))
     p = sub.add_parser("build", help="build one slice")
     common(p)
     p.add_argument("--slice", required=True, choices=sorted(SLICES))
+    p.add_argument("--cache", type=Path,
+                   help="dependency cache: reuse builds whose key is unchanged, store new ones")
     p = sub.add_parser("test-audio", help="run the audio output test vectors against the "
                                           "slice's patched mpv tree")
     common(p)
@@ -2542,6 +3434,7 @@ def main(argv=None) -> int:
     p.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     handlers = {"check-allowlist": cmd_check_allowlist, "fetch": cmd_fetch, "build": cmd_build,
+                "cache-key": lambda a: print(deps_key(load_pins(), SLICES[a.slice])),
                 "test-audio": cmd_test_audio, "check": cmd_check, "test": cmd_test,
                 "test-vo": cmd_test_vo, "package": cmd_package,
                 "test-libdovi": cmd_test_libdovi}

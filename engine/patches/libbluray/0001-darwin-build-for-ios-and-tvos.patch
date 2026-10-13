@@ -1,0 +1,118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] darwin: build for iOS and tvOS
+
+libbluray 1.4.0 does not build for iOS or tvOS. On every Darwin host its
+meson build requires the DiskArbitration framework, and the Darwin mount
+helper includes a DiskArbitration header, but only the macOS SDK has
+DiskArbitration. On tvOS, vfork and execl, which the macOS Java home
+lookup uses to run /usr/libexec/java_home, are unavailable.
+
+Link DiskArbitration only when the SDK has it (HAVE_DISKARBITRATION).
+Without it, the mount point lookup for a block device is not performed
+and finds no mount point, so mount_get_mountpoint() returns the device
+path as it does when DiskArbitration finds none; only CoreFoundation is
+linked. On iOS and tvOS (TARGET_OS_IPHONE), the Java home lookup never
+runs the helper process and behaves as if vfork had failed: it logs
+"vfork failed" and returns no Java home, so libbluray falls back to its
+other ways of finding a Java runtime. macOS builds are unchanged.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for
+libbluray. Like the files it modifies, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser
+General Public License as published by the Free Software Foundation;
+either version 2.1 of the License, or (at your option) any later
+version (LGPL-2.1-or-later).
+---
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -51,8 +51,14 @@
+ endif
+ 
+ if host_machine.system() == 'darwin'
++    # DiskArbitration exists on macOS only; iOS and tvOS SDKs lack it.
++    darwin_frameworks = ['CoreFoundation']
++    if cc.has_header('DiskArbitration/DiskArbitration.h')
++        darwin_frameworks += 'DiskArbitration'
++        cdata.set('HAVE_DISKARBITRATION', 1)
++    endif
+     extra_dependencies += dependency('appleframeworks',
+-        modules: ['CoreFoundation', 'DiskArbitration'])
++        modules: darwin_frameworks)
+ elif host_machine.system() == 'netbsd'
+     test_args += '-D_NETBSD_SOURCE'
+ elif host_machine.system() == 'openbsd'
+diff --git a/src/file/mount_darwin.c b/src/file/mount_darwin.c
+--- a/src/file/mount_darwin.c
++++ b/src/file/mount_darwin.c
+@@ -30,12 +30,18 @@
+ #define _DARWIN_C_SOURCE
+ #include <sys/stat.h>
+ 
++#ifdef HAVE_DISKARBITRATION
+ #include <DiskArbitration/DADisk.h>
++#endif
+ 
+ static char *bsdname_get_mountpoint(const char *device_path)
+ {
+     char *result = NULL;
+ 
++#ifndef HAVE_DISKARBITRATION
++    /* No DiskArbitration (iOS, tvOS): a block device has no known mount point */
++    (void)device_path;
++#else
+     DASessionRef session = DASessionCreate(kCFAllocatorDefault);
+     if (session) {
+         DADiskRef disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, device_path);
+@@ -57,6 +63,7 @@
+         }
+         CFRelease(session);
+     }
++#endif
+ 
+     return result;
+ }
+diff --git a/src/libbluray/bdj/bdj.c b/src/libbluray/bdj/bdj.c
+--- a/src/libbluray/bdj/bdj.c
++++ b/src/libbluray/bdj/bdj.c
+@@ -44,6 +44,7 @@
+ #include <sys/wait.h>
+ #include <limits.h>
+ #include <unistd.h>
++#include <TargetConditionals.h>
+ #endif
+ 
+ #ifdef _WIN32
+@@ -256,12 +257,21 @@
+         return NULL;
+     }
+ 
+-    switch (java_home_pid = vfork())
++#if TARGET_OS_IPHONE
++    /* iOS and tvOS cannot run a helper process (tvOS has no vfork or execl):
++     * behave as if vfork failed */
++    java_home_pid = -1;
++#else
++    java_home_pid = vfork();
++#endif
++
++    switch (java_home_pid)
+     {
+         case -1:
+             BD_DEBUG(DBG_BDJ | DBG_CRIT, "vfork failed\n");
+             return NULL;
+ 
++#if !TARGET_OS_IPHONE
+         case 0:
+             if (dup2(fd[1], STDOUT_FILENO) == -1) {
+                 _exit(-1);
+@@ -273,6 +283,7 @@
+             execl(MACOS_JAVA_HOME, MACOS_JAVA_HOME);
+ 
+             _exit(-1);
++#endif
+ 
+         default:
+             close(fd[1]);

@@ -1,11 +1,11 @@
 <p align="center"><img src="../branding/vivid-mark-silver.png" width="96" height="96" alt="Vivid logo"></p>
 <p align="center"><strong>Vivid</strong></p>
 <h1 align="center">Lucid Engine build</h1>
-<p align="center"><a href="../README.md">Documentation</a> · <a href="player-engine.md">Lucid Engine</a> · <a href="lucid-engine-build-facts.md">Build facts</a> · <a href="../playback/lucid-engine-patch-spec.md">Patch specification</a></p>
+<p align="center"><a href="../README.md">Documentation</a> · <a href="player-engine.md">Lucid Engine</a> · <a href="lucid-engine-build-facts.md">Build facts</a> · <a href="lucid-engine-libs-build-facts.md">Library build facts</a> · <a href="../playback/lucid-engine-patch-spec.md">Patch specification</a></p>
 
 ---
 
-Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv, FFmpeg, libass, dav1d and libdovi from their upstream sources with Vivid's patch series, and checks every result against the recorded configuration of today's binaries. Nothing comes from a third-party build repository: the scripts, pins and patches all live in [`engine/`](../../engine).
+Vivid's own build pipeline for Lucid Engine's media libraries. It builds every library the engine links, from libmpv and FFmpeg down to FreeType and MoltenVK, from their upstream sources with Vivid's patch series, and checks every result against the recorded configuration of today's binaries. Nothing comes from a third-party build repository or a third-party binary: the scripts, pins and patches all live in [`engine/`](../../engine).
 
 > [!IMPORTANT]
 > These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on `experiment/lucid-engine-build` and the engine implementers' `experiment/lucid-engine-*` branches. Upstream mpv has no `avfoundation` video output. Vivid's own engine patches are now all in the series: the audio output (mpv `0010` to `0016`), the video output (mpv `0020` to `0025`) and the decoder work (FFmpeg `0010` to `0012`, mpv `0040`). These builds still cannot replace today's engine until those patches have passed the device checks of the patch specification.
@@ -19,21 +19,19 @@ Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv,
 | libass | 0.17.5 (`4a05d812`) | upstream archive | ISC | none |
 | dav1d | 1.5.3 (`b546257f`) | upstream archive | BSD-2-Clause | none |
 | libdovi (the `dolby_vision` crate's C API) | 3.3.2 (`4fd2b223`) | upstream archive, Rust 1.98.0 and cargo-c 0.10.25 | MIT | [`engine/patches/libdovi`](../../engine/patches/libdovi/series) |
+| FreeType | 2.12.1 (`e8ebfe98`) | upstream archive (GitHub mirror, tag `VER-2-12-1`) | FTL | none |
+| FriBidi | 1.0.12 (`6428d846`) | upstream archive | LGPL-2.1-or-later | none |
+| HarfBuzz | 8.1.1 (`1d665c2b`) | upstream archive | MIT | none |
+| libunibreak | 6.1 (`304585d8`) | upstream release tarball | Zlib | none |
+| Little CMS (lcms2) | 2.17 (`51763476`) | upstream archive | MIT | none |
+| uavs3d | 1.2 (`0e20d2c2`) | upstream archive | BSD-3-Clause | [`engine/patches/uavs3d`](../../engine/patches/uavs3d/series) |
+| libbluray, with libudfread 1.2.0 | 1.4.0 (`9f07fbb2`) | upstream release tarball | LGPL-2.1-or-later | [`engine/patches/libbluray`](../../engine/patches/libbluray/series) |
+| uchardet | 0.0.8 (`ae6302a0`) | upstream release tarball | LGPL-2.1-or-later | none |
+| shaderc, with glslang, SPIRV-Tools and SPIRV-Headers | 2025.5 (`c4b0af6c`) | upstream archives | Apache-2.0 (glslang: BSD-3-Clause and others; SPIRV-Headers: MIT) | none |
+| MoltenVK, with SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers and cereal | 1.4.1 (`db445ff2`) | upstream archives | Apache-2.0 (cereal: BSD-3-Clause; Vulkan-Headers: Apache-2.0 or MIT) | none |
+| libplacebo, with its five submodules | 7.351.0 (`3188549f`) | upstream archives | LGPL-2.1-or-later | none |
 
-Each build produces eleven static frameworks: `Libmpv`, `Libass`, `Libdav1d`, `Libdovi` and the seven FFmpeg frameworks (`Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample` and `Libswscale`).
-
-The remaining dependencies are not built here yet. They come from pinned release assets, at the versions and checksums today's package uses:
-
-| Dependency | Version | Licence |
-| --- | --- | --- |
-| FreeType, FriBidi, HarfBuzz, libunibreak | 2.12.1, 1.0.12, 8.1.1, 6.1 | FTL, LGPL-2.1-or-later, MIT, Zlib |
-| libplacebo | 7.351.0 | LGPL-2.1-or-later |
-| Little CMS (lcms2) | 2.17 | MIT |
-| MoltenVK | 1.4.1 | Apache-2.0 |
-| shaderc | 2025.5 | Apache-2.0 |
-| uavs3d | 1.2 | BSD-3-Clause |
-| libbluray | 1.4.0 | LGPL-2.1-or-later |
-| uchardet | 0.0.8 | LGPL-2.1-or-later |
+Each build produces 21 static frameworks and one static library: `Libmpv`, `Libass`, `Libdav1d`, `Libdovi`, the seven FFmpeg frameworks (`Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample` and `Libswscale`), `Libfreetype`, `Libfribidi`, `Libharfbuzz`, `Libunibreak`, `lcms2`, `Libuavs3d`, `Libbluray`, `Libuchardet`, `Libshaderc_combined` and `Libplacebo`, and `MoltenVK`, which ships, as today, as a bare static library (`libMoltenVK.a`) without headers or a module.
 
 OpenSSL (`Libssl`, `Libcrypto`) is gone: FFmpeg uses Apple's Secure Transport for TLS. LuaJIT was only ever linked on macOS and is not needed.
 
@@ -43,12 +41,13 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
 
 1. checks that every fetch is pinned and on the allowlist;
 2. restores or downloads the pinned inputs and verifies each SHA-256;
-3. builds libdovi, dav1d, libass, FFmpeg and libmpv for the slice;
-4. builds and runs the audio output's test vectors on the runner, from the mpv tree it has just patched;
-5. runs the provenance, licence, TLS, libdovi, decoder, audio output, video output, reproducibility and link checks below;
-6. builds and runs the video output tests for the build host, from the patched mpv tree (in the `ios-arm64-simulator` job only, so once per run, and also when the checks failed);
-7. builds and runs the decoder tests from the slice's patched FFmpeg and libdovi trees on the build host, including an end-to-end test of FFmpeg's VideoToolbox glue against a fake VideoToolbox;
-8. uploads the slice's frameworks, provenance report and logs.
+3. restores the slice's [dependency cache](#dependency-cache);
+4. builds libdovi, then the eleven dependencies (or reuses their cached builds), then dav1d, libass, FFmpeg and libmpv for the slice, and saves the dependency cache when it built any dependency, even if a later step fails;
+5. builds and runs the audio output's test vectors on the runner, from the mpv tree it has just patched;
+6. runs the provenance, licence, TLS, libdovi, dependency, decoder, audio output, video output, reproducibility and link checks below;
+7. builds and runs the video output tests for the build host, from the patched mpv tree (in the `ios-arm64-simulator` job only, so once per run, and also when the checks failed);
+8. builds and runs the decoder tests from the slice's patched FFmpeg and libdovi trees on the build host, including an end-to-end test of FFmpeg's VideoToolbox glue against a fake VideoToolbox;
+9. uploads the slice's frameworks, provenance report and logs.
 
 Alongside them, the libdovi C API test job builds libdovi for the runner itself, unpatched and patched, and runs the malformed RPU corpus through both (see [libdovi](#libdovi)). A final job, which waits for every slice and the libdovi test, turns the slices into xcframeworks. Artefacts are kept for three days. Each branch has its own concurrency group, so a newer push cancels only that branch's running build.
 
@@ -57,7 +56,8 @@ The tool is [`engine/lucid.py`](../../engine/lucid.py), which needs Python 3.9 o
 ```sh
 python3 engine/lucid.py check-allowlist
 python3 engine/lucid.py fetch --downloads /path/to/downloads
-python3 engine/lucid.py build --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
+python3 engine/lucid.py build --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads \
+  [--cache /path/to/dependency-cache]
 python3 engine/lucid.py test-audio --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py check --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py test --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
@@ -83,16 +83,15 @@ Vivid links only arm64, so the pipeline builds no arm64e or x86_64 code. This ch
 
 [`engine/pins.ini`](../../engine/pins.ini) lists every input the build downloads, with its exact URL, version or commit, and SHA-256:
 
-- `[source:*]`: the five upstream source archives. `lucid.py fetch` also reads the commit id GitHub embeds in each archive and compares it with the pinned commit. libdovi's entry also pins the SHA-256 of the `Cargo.lock` in the archive's `dolby_vision` folder (`7400fd25…`); fetch checks it, then downloads every crate that lock file lists (83, development dependencies included, because Cargo resolves them all) from static.crates.io and checks each against the lock file's checksum, which is the SHA-256 of the `.crate` file.
-- `[tool:*]`: meson 1.4.2, ninja 1.12.1 and cargo-c 0.10.25 (the macOS release binary; it embeds cargo 0.99.0, Rust 1.98's). pkg-config comes from the runner image.
+- `[source:*]`: the 16 upstream source archives, one per library. `lucid.py fetch` also reads the commit id GitHub embeds in each archive and compares it with the pinned commit. Three are the projects' own release tarballs: libunibreak's (which adds upstream's generated `configure` to the tag's tree, so no autotools are needed) and libbluray's (which carries libudfread 1.2.0), marked `release_tarball = yes` because they embed no commit, and uchardet's, which embeds the tag's commit. `minimum_os` gives a library's deployment target where it differs from 14.0. libdovi's entry also pins the SHA-256 of the `Cargo.lock` in the archive's `dolby_vision` folder (`7400fd25…`); fetch checks it, then downloads every crate that lock file lists (83, development dependencies included, because Cargo resolves them all) from static.crates.io and checks each against the lock file's checksum, which is the SHA-256 of the `.crate` file.
+- `[part:*]`: further upstream archives a source tree is assembled from, each extracted into the folder its source's `parts` names: libplacebo's five submodules (`3rdparty/`), the glslang, SPIRV-Tools and SPIRV-Headers revisions of shaderc's `DEPS` file (`third_party/`), and the SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers and cereal revisions of MoltenVK's `ExternalRevisions/` folder (`External/`, where MoltenVK's `fetchDependencies` script would put them). Their embedded commits are checked too.
+- `[tool:*]`: meson 1.4.2, ninja 1.12.1, CMake 4.4.3 (Kitware's macOS release, checked against Kitware's published SHA-256) and cargo-c 0.10.25 (the macOS release binary; it embeds cargo 0.99.0, Rust 1.98's). pkg-config comes from the runner image.
 - `[rust:*]`: Rust 1.98.0 stable from static.rust-lang.org: `rustc`, `cargo` and the standard library for the runner (`aarch64-apple-darwin`) and for each slice (`aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-apple-tvos`, `aarch64-apple-tvos-sim`). The hashes are the `xz_hash` values of that release's channel manifest. `lucid.py` unpacks the components itself, without rustup.
-- `[prebuilt:*]`: the interim release assets. `url` is the build input (headers, thin static libraries and pkg-config files for every slice). `xcframework_url` is the matching SwiftPM binary, for a package to use until the library is built here.
-- `[reference:libdovi]`: today's prebuilt libdovi 3.3.2. It is downloaded only so `check` can require the same header and the same exported C API from the libdovi built here, and is never staged or linked.
-- `[toolchain]`: the Xcode version CI must use, the minimum OS (14.0) for every slice, Vivid's own deployment targets (iOS 18.0, tvOS 26.0) for the test link, and `source_date_epoch` (below).
+- `[toolchain]`: the Xcode version CI must use, the default minimum OS (14.0), Vivid's own deployment targets (iOS 18.0, tvOS 26.0) for the test link, and `source_date_epoch` (below).
 
-Every download goes through `lucid.py`'s single download function, from these projects and hosts only: FFmpeg, mpv-player, libass, videolan, mesonbuild and ninja-build on GitHub; mpvkit release assets for the interim binaries; quietvoid (libdovi's `dovi_tool`) and lu-zero (cargo-c) on GitHub; `static.rust-lang.org/dist/`; and `static.crates.io/crates/`. The libdovi build itself runs offline: Cargo uses the verified crates as a vendored directory source with `--frozen`, so it resolves and downloads nothing.
+Every download goes through `lucid.py`'s single download function, from these projects and hosts only, all upstream: FFmpeg, mpv-player, libass, videolan, mesonbuild, ninja-build, Kitware (CMake), quietvoid (libdovi's `dovi_tool`), lu-zero (cargo-c), freetype, fribidi, harfbuzz, adah1972 (libunibreak), mm2 (Little CMS), haasn (libplacebo), fastfloat, Dav1dde (glad) and pallets (jinja, MarkupSafe) for libplacebo's submodules, KhronosGroup, USCiLab (cereal), google/shaderc and uavs3 on GitHub; `download.videolan.org/pub/videolan/libbluray/`; `www.freedesktop.org/software/uchardet/releases/`; `static.rust-lang.org/dist/`; and `static.crates.io/crates/`. No third-party binary is downloaded. The libdovi build itself runs offline: Cargo uses the verified crates as a vendored directory source with `--frozen`, so it resolves and downloads nothing.
 
-`lucid.py check-allowlist` fails the run if any file in `engine/` or the workflow mentions a blocked project, if a URL points at a host that is not allowlisted, if a download is not one of the allowlisted upstream projects, if anything fetches outside `lucid.py`'s single download function, or if a workflow action is not pinned by commit SHA.
+`lucid.py check-allowlist` fails the run if any file in `engine/` or the workflow mentions a blocked project (third-party build repositories among them), if a URL points at a host that is not allowlisted, if a download is not one of the allowlisted upstream projects, if anything fetches outside `lucid.py`'s single download function, if a pin has no SHA-256, if a source names a part that has no pin (or a part is unused), if the sources differ from the build order or a source has no patch series, or if a workflow action is not pinned by commit SHA.
 
 ## Patch series
 
@@ -122,6 +121,10 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | mpv | `0025-vo_avfoundation-add-the-video-output.patch` | Adds `vo=avfoundation` (meson feature `vo-avfoundation`, first in the video output list) with its `avfoundation-*` options and the VideoToolbox device it registers. LGPL-2.1-or-later. |
 | mpv | `0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch` | Once hardware decoding has output a frame, a run of decoding errors ends it only after two keyframes fail to recover it or after 240 errors, instead of at the first error with `hwdec-software-fallback=yes`. Probing still falls back at once. LGPL-2.1-or-later. |
 | libdovi | `0001-capi-return-an-error-instead-of-aborting-on-any-input.patch` | Makes every C API function return its normal error result instead of aborting the process, for any input (see [libdovi](#libdovi)). Valid input gives the same results. MIT, like libdovi. |
+| libbluray | `0001-darwin-build-for-ios-and-tvos.patch` | Vivid's own patch, needed to build for iOS and tvOS, with the two effects the build facts record for today's binary (facts 3.10). DiskArbitration is linked only when the SDK has it (macOS); without it the mount point lookup for a block device is not performed and finds no mount point, and only CoreFoundation is linked. On iOS and tvOS the Java home lookup never runs `/usr/libexec/java_home` and behaves as if `vfork` had failed (it logs `vfork failed` and returns no Java home), so the binary references no `vfork`, `execl`, `dup2` or `waitpid`, as today's. macOS builds are unchanged. LGPL-2.1-or-later. |
+| uavs3d | `0001-version-describe-tag-1.2-without-git-history.patch` | uavs3d's `version.sh` derives the build number and commit id from Git, which an archive build has not got. The patch fixes them for tag 1.2, so `version.h` holds today's `VER_BUILD 1`, `VERSION_STR "1.2.1"` and `VERSION_TYPE "release"`, the pkg-config version stays 1.2.1, and `VERSION_SHA1`, which `uavs3d_create` prints, is uavs3d's own commit for the tag (`0e20d2c2…`) instead of today's third-party build identifier. BSD-3-Clause, like uavs3d. |
+
+FreeType, FriBidi, HarfBuzz, libunibreak, Little CMS, shaderc, MoltenVK, libplacebo and uchardet are built unpatched, like dav1d and libass: their series files are empty. None needs a change to build with Xcode 26.6. Today's libplacebo carried upstream commit `a22f0dff` (a Python 3.14 fix for its Vulkan code generator, with no effect on the generated code), and today's shaderc two edits to SPIRV-Tools command-line tools that are not built; neither is needed here, because meson runs under Xcode's Python 3.9 and those tools are still not built.
 
 The audio output patches add one module each, with the pure C decisions first and the Objective-C bindings last (`0016`), and each adds its own files to `meson.build`, so every stage of the series builds. The video output patches add their modules first (`0020` to `0024`, which `meson.build` does not build yet) and the output itself last (`0025`), which adds them all to `meson.build`. Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019 (0010 to 0016 so far, including the E-AC-3 carrier rate and the output-chain wake), video output mpv 0020 to 0039 (0020 to 0025 so far), decoder work mpv 0040 to 0049 (0040 so far) and FFmpeg 0010 to 0029 (0010 to 0012 so far).
 
@@ -137,10 +140,10 @@ libdovi is the C API of the `dolby_vision` crate (Rust, MIT). Two callers in the
 
 - **Source and pins:** tag `libdovi-3.3.2` of `quietvoid/dovi_tool` (commit `4fd2b223`, archive SHA-256 `8ccb1922…`), its locked crates, Rust 1.98.0 and cargo-c 0.10.25, all pinned as above. Rust 1.98.0 ships a standard library for every slice's target, tvOS included, so no nightly and no `-Zbuild-std` is needed.
 - **Build:** `cargo cinstall --release --frozen --library-type=staticlib --target <triple>` in the crate folder, with `IPHONEOS_DEPLOYMENT_TARGET` or `TVOS_DEPLOYMENT_TARGET` set to 14.0 and `--remap-path-prefix` keeping build paths out of panic locations. It is built first, so FFmpeg's and mpv's configure steps find its `dovi.pc` where libplacebo's pkg-config file requires it.
-- **Form:** framework `Libdovi`, module `Libdovi`, with `Headers/rpu_parser.h`, as today. The header, the pkg-config name `dovi` and the 21 exported `dovi_*` functions are unchanged; `check` compares them with today's prebuilt for every slice.
+- **Form:** framework `Libdovi`, module `Libdovi`, with `Headers/rpu_parser.h`, as today. The header, the pkg-config name `dovi` and the 21 exported `dovi_*` functions are unchanged; `check` compares them, for every slice, with today's prebuilt as the last green run with the prebuilt recorded it in [`engine/config/expected-libdovi.txt`](../../engine/config/expected-libdovi.txt) (the header's SHA-256 and the exported C API).
 - **Minimum OS:** the crate's own objects carry 14.0. Rust's prebuilt standard library keeps Rust's own minimums: `LC_VERSION_MIN_IPHONEOS` or `LC_VERSION_MIN_TVOS` 10.0 on the devices and 14.0 on the simulators, the same as today's prebuilt.
 - **Embedded bitcode removed:** Rust's prebuilt standard library objects carry LLVM bitcode for cross-crate LTO, written by a newer LLVM (22) than Xcode 26.6's `nm` and linker read. The build removes the `__LLVM` sections with the toolchain's own `rust-objcopy`; the machine code is unchanged, and `check` requires no `__LLVM` segment.
-- **Callers:** `check` records the `dovi_*` functions the pinned libplacebo archive imports (parse, the header and display management queries, and their frees) and those the built FFmpeg imports (the ones its Dolby Vision patch calls), and requires each to be exported.
+- **Callers:** `check` records the `dovi_*` functions the libplacebo built here imports (parse, the header and display management queries, and their frees) and those the built FFmpeg imports (the ones its Dolby Vision patch calls), requires each to be exported, and requires libplacebo's to be the six today's libplacebo calls.
 
 ### Crash-proof patch
 
@@ -176,6 +179,42 @@ Results at `11994e3` (run 38368890048, `macos-26`): 19,381 cases; the patched bu
 
 The test fails on any abort, crash or hang (20 s per case) of the patched build, on more than 64 MiB of memory for one case, on any unexpected result, and on any difference from the unpatched build wherever that build does not abort, other than error texts the patch's own checks change and headers rule 4 above turns into null. It also requires the unpatched build to abort on every abort class, which shows the corpus reaches each abort site. The summary, with the abort counts per class and group, appears on the workflow run page, and the report is uploaded as `lucid-engine-libdovi-test`.
 
+## Dependencies
+
+The eleven libraries FFmpeg, libass and libmpv depend on are built from upstream source with each project's own build system, at the versions, options, flags, assertions, optimisation and deployment targets of today's binaries, as the [library build facts](lucid-engine-libs-build-facts.md) record them. Each is installed on its own (`<work>/<slice>/deps/<name>`), keeps only its headers, its static library and the pkg-config file consumers use, and its pkg-config file is then made visible to the libraries built after it.
+
+| Library | Build | Options (`engine/config/`) | Deployment target | Assertions |
+| --- | --- | --- | --- | --- |
+| FreeType 2.12.1 | meson, `release` | `freetype-meson.txt`: brotli, bzip2, HarfBuzz, mmap and PNG off; `zlib=system` | 13.0 | none in the code |
+| FriBidi 1.0.12 | meson, `release` | `fribidi-meson.txt`: no binaries, deprecated API, docs or tests | 13.0 | none in the code |
+| HarfBuzz 8.1.1 | meson, `release` | `harfbuzz-meson.txt`: today's four options, plus every optional backend (GLib, GObject, cairo, ICU, chafa, introspection, Graphite, CoreText) disabled explicitly instead of left to detection on the build host | 13.0 | on |
+| libunibreak 6.1 | upstream's `configure` and make | `unibreak-configure.txt`: static only; `CFLAGS` are the cross flags alone, so it is unoptimised, as today | 13.0 | on |
+| Little CMS 2.17 | meson, `release` | `lcms2-meson.txt`: none | 14.0 | on |
+| uavs3d 1.2 | CMake `Release`, Makefiles | `uavs3d-cmake.txt`: `COMPILE_10BIT=1`; arm64 NEON assembly; only the library target is built | 15.0 | off |
+| libbluray 1.4.0 | meson, `release` | `libbluray-meson.txt`: embedded libudfread, FreeType and libxml2 on, fontconfig, BD-J jar, tools and docs off; patch `0001` | 14.0 | none in the code |
+| uchardet 0.0.8 | CMake `Release`, Makefiles | `uchardet-cmake.txt`: no command-line tool | 13.0 | off |
+| shaderc 2025.5 | CMake `Release`, Makefiles | `shaderc-cmake.txt`: today's options, plus no executables; consumers get upstream's combined `shaderc_combined.pc` as `shaderc.pc` | 14.0 | off |
+| MoltenVK 1.4.1 | MoltenVK's Xcode projects | `moltenvk-make.txt`: `MVK_XCODE_16=0 MVK_XCODE_26=0` | its project's: iOS 14.0, tvOS 14.5 | off |
+| libplacebo 7.351.0 | meson, `release` | `libplacebo-meson.txt`: Vulkan, OpenGL, shaderc, Little CMS, Dolby Vision and libdovi on; d3d11, glslang, xxhash, unwind, demos and tests off | 14.0 | on |
+
+- **Flags:** every library except MoltenVK gets exactly the cross flags of the build facts (1.4): `-arch arm64 -isysroot <SDK> -target <triple> <version-min flag>`, plus `-DHAVE_FORK=0` on tvOS, as `CFLAGS`, `CPPFLAGS`, `CXXFLAGS` and `ASMFLAGS` (through the meson cross file for meson projects), and `-lc++` plus the same flags as `LDFLAGS`. The minimum OS is the library's own (column above), as today; clang raises a 13.0 arm64 simulator target to 14.0, as it did today.
+- **Assertions:** the meson libraries keep meson's default `b_ndebug=false`, not the `b_ndebug=true` the libass and mpv cross files use, so HarfBuzz, Little CMS and libplacebo keep their assertions as today. The CMake libraries are `Release` builds, which define `NDEBUG`, and MoltenVK's Release configuration defines `NDEBUG=1`, as today.
+- **CMake projects** get the common values of facts 1.4: `BUILD_SHARED_LIBS=0`, `CMAKE_BUILD_TYPE=Release`, `CMAKE_INSTALL_PREFIX=/lucid-engine`, `CMAKE_OSX_ARCHITECTURES=arm64`, `CMAKE_OSX_SYSROOT=<sdk>`, `CMAKE_POLICY_VERSION_MINIMUM=3.5`, `CMAKE_SYSTEM_NAME=iOS` or `tvOS`, `CMAKE_SYSTEM_PROCESSOR=arm64` and `CMAKE_VERBOSE_MAKEFILE=0`. They are also pointed at Xcode's Python (`Python_EXECUTABLE`, `Python3_EXECUTABLE`), the one meson runs under, for their code generators, so no other Python on the runner is picked up.
+- **libunibreak** is configured from upstream's release tarball, whose `configure` script upstream generated from the tag's tree; today's build generated it on the build host from the tag archive. The library's sources and flags are the same. The tarball's `config.sub` (2018) does not know `arm64`, so `--host` is `aarch64-ios-darwin` or `aarch64-tvos-darwin`, its canonical name for today's `arm64-ios-darwin` and `arm64-tvos-darwin`.
+- **HarfBuzz** gets one meson cross-file property from `harfbuzz-cross.txt`, `has_function_sincosf = false`: Xcode 26.6's clang has a `__builtin_sincosf`, which meson's check takes as the function being present, but the SDK declares no `sincosf`, so HarfBuzz would fail to compile. Xcode 15.4's check found none, so this keeps today's code (it calls `sinf` and `cosf`, which clang joins into `__sincosf_stret`).
+- **shaderc** is built with glslang, SPIRV-Tools and SPIRV-Headers in `third_party/` at its `DEPS` revisions. Upstream installs its non-combined library as `shaderc.pc`; consumers need the combined library (`-lshaderc_combined`), so the build copies upstream's `shaderc_combined.pc` over it, as today's `shaderc.pc` is.
+- **MoltenVK** follows upstream's documented procedure for the slice's platform. The source tree already holds the externals where `fetchDependencies` would put them, so of that script only its remaining steps run, with its own arguments: unpacking SPIRV-Tools' pre-generated headers (`Templates/spirv-tools/build.zip`), building the `ExternalDependencies` scheme for the platform and packaging it with upstream's scripts. Then upstream's Makefile target (`ios`, `iossim`, `tvos` or `tvossim`) builds MoltenVK. The Makefile turns command-line variables into preprocessor definitions; `MVK_XCODE_16=0` and `MVK_XCODE_26=0` keep the SDK-gated code paths compiled out, as they were with today's SDK 17.5. The slice's library is taken from upstream's static `MoltenVK.xcframework` and thinned to arm64, with upstream's `include/` (Vulkan-Headers v1.4.334). MoltenVK produces no `vulkan.pc`, so the build writes today's: `Vulkan-Loader`, version 1.4.334 (read from the headers), `-lMoltenVK` and its frameworks (IOKit on iOS only).
+- **uavs3d** writes `version.h` and `uavs3d.pc` into its source folder while configuring, so it is built from a copy; patch `0001` gives `version.h` today's version values.
+- **libplacebo** uses the slice's own libdovi, Little CMS, shaderc and MoltenVK through pkg-config (today it was also given libdovi's include and library paths directly, which changes nothing), and the `3rdparty/Vulkan-Headers` submodule (v1.4.310) for its Vulkan code generation, as today. Built from archives without Git, it reports `v7.351.0` as its version.
+
+### Dependency cache
+
+The dependencies take most of a slice's build time (shaderc, MoltenVK and HarfBuzz above all), so CI keeps their builds. `lucid.py build --cache DIR` gives every dependency a key: the SHA-256 of its pins (its source, its parts, the toolchain and the build tools), its patch series, its option files, the code of the functions that build it, and the keys of the libraries it builds against (libplacebo's include libdovi's). A cached build is reused only when its key is equal; any other dependency is built and stored. `lucid.py cache-key --slice <slice>` prints the key of all of a slice's dependencies together.
+
+The workflow restores the cache with `actions/cache` under that key, or failing that the slice's most recent entry, and saves it whenever the run built a dependency: under the key once every dependency is in the cache, otherwise under a key of its own that the next run still finds. Each dependency's provenance records whether it was built or reused, its key, and the toolchain that built it. The checks run on reused builds exactly as on new ones.
+
+Timings on the `macos-26` runners (run 38425539055): building all eleven took 10 to 18 minutes per slice (shaderc 3 to 5, MoltenVK 5 to 10, the simulators' longest because MoltenVK also builds their x86_64 code, HarfBuzz about 1), and a slice job 18 to 27 minutes. With every dependency reused, a slice job takes about 10 minutes, as before. A slice's cache entry is about 10 MB.
+
 ## Reproducible builds
 
 - `ZERO_AR_DATE=1` is set for every build, so `ar`, `ranlib` and `libtool` write zero timestamps; Rust and `rust-objcopy` write zero timestamps themselves. `check` requires every member of every archive to carry a zero timestamp.
@@ -185,6 +224,11 @@ The test fails on any abort, crash or hang (20 s per case) of the patched build,
 - The packaging job packages the same slices twice and fails unless the two sets of zips are identical.
 
 Results: runs 38367673194 and 38368890048 built every framework of all four slices byte for byte the same, and packaging the first run's slices again gave exactly the second run's `SHA256SUMS`, so unchanged libraries give identical zips across runs.
+
+For the dependencies built from source:
+
+- Runs 38412603172 and 38425539055 each built all eleven from source on all four slices, on different runners, and gave byte-identical `libMoltenVK.a` and dependency framework binaries on every slice.
+- With the dependencies built here, run 38425539055's `Libmpv`, `Libass`, `Libdav1d`, `Libdovi` and seven FFmpeg frameworks are byte for byte the same, on all four slices, as those of run 38400124717, which built them against today's interim binaries. Swapping the eleven dependencies changed nothing in the libraries built against them. (This needs each dependency installed in its own `deps/<name>` folder, as the interim binaries were staged: libplacebo's `libav_internal.h` puts its header path into an assertion text in FFmpeg's `vf_libplacebo`.)
 
 ## Configuration
 
@@ -199,8 +243,16 @@ The configuration lives in [`engine/config/`](../../engine/config) as plain list
 | `expected-ffmpeg-components.txt` | every FFmpeg decoder, encoder, demuxer, muxer, parser, bitstream filter, hwaccel, protocol and filter every slice must enable, and no others |
 | `expected-ffmpeg-config.txt` | external libraries FFmpeg must enable or disable |
 | `app-link.txt` | the system frameworks and libraries the link checks use, as Vivid's app targets link them |
+| `freetype-meson.txt`, `fribidi-meson.txt`, `harfbuzz-meson.txt`, `lcms2-meson.txt`, `libplacebo-meson.txt`, `libbluray-meson.txt` | the meson options of those dependencies |
+| `unibreak-configure.txt` | libunibreak's `configure` options |
+| `shaderc-cmake.txt`, `uavs3d-cmake.txt`, `uchardet-cmake.txt` | the CMake options of those dependencies (the common values are in `lucid.py`) |
+| `moltenvk-make.txt` | the command-line variables for MoltenVK's Makefile |
+| `expected-libs/<name>.txt` | what today's interim build of each dependency ships, recorded by automated comparison of its xcframework and archives: the framework or library name, the files under `Headers/`, the defined global symbols by visibility (default and hidden in full; weak definitions as a count and the SHA-256 of their sorted names), each slice's imports and each slice's minimum OS; and, where Xcode 26.6 differs, the recorded differences (`[imports-toolchain-added]`, `[imports-toolchain-removed]`, `[weak-default-toolchain]`, `[weak-hidden-toolchain]`) |
+| `harfbuzz-cross.txt` | an extra meson cross-file property for HarfBuzz: `has_function_sincosf = false` |
+| `expected-libs/<name>.pc` | today's pkg-config file of each dependency (`vulkan-ios.pc` and `vulkan-tvos.pc` for MoltenVK's) |
+| `expected-libdovi.txt` | libdovi's header SHA-256, exported C API and the functions libplacebo calls, as the last green run recorded them from today's prebuilt |
 
-Compilers come from the selected Xcode (`/usr/bin/clang`). Every library gets the same flags: `-arch arm64 -isysroot <SDK> -target <triple> <version-min flag>`, plus `-DHAVE_FORK=0` on tvOS and `-lc++` when linking. Meson projects get them through a generated cross file. FFmpeg gets them through `CFLAGS`, `CPPFLAGS` and `LDFLAGS`, as today. Libraries install under the prefix `/lucid-engine` and are staged with `DESTDIR`, so no build-machine path appears in the configuration strings.
+Compilers come from the selected Xcode (`/usr/bin/clang`). Every library except MoltenVK gets the same flags: `-arch arm64 -isysroot <SDK> -target <triple> <version-min flag>`, plus `-DHAVE_FORK=0` on tvOS and `-lc++` when linking, with the library's own minimum OS (see [Dependencies](#dependencies)). Meson projects get them through a generated cross file, CMake and autotools projects and FFmpeg through `CFLAGS`, `CPPFLAGS`, `CXXFLAGS`, `ASMFLAGS` and `LDFLAGS`, as today. MoltenVK's Xcode projects use their own settings. Libraries install under the prefix `/lucid-engine` and are staged with `DESTDIR`, so no build-machine path appears in the configuration strings.
 
 ### Differences from today's binaries
 
@@ -226,11 +278,28 @@ Compilers come from the selected Xcode (`/usr/bin/clang`). Every library gets th
 | FFmpeg version string | `n8.0.1` | `8.0.1` | A release archive has no Git tag; changing it would need a source edit |
 | mpv version string | `v0.41.0-dirty` | `v0.41.0` | Built from the release archive |
 | Minimum OS | 14.0 for these four libraries; libdovi 10.0 (devices) and 14.0 (arm64 simulators) | 14.0; libdovi's crate objects 14.0, its Rust standard library objects as today | Unchanged |
+| The eleven dependencies | third-party prebuilt binaries | built from upstream source here, at the same versions, options, assertions, optimisation and deployment targets | Part of this pipeline; checked against today's in `check` |
+| Dependencies' compiler | Xcode 15.4, SDK 17.5 | Xcode 26.6 and its SDKs | The pipeline's toolchain. No dependency archive references the compiler's run-time OS-version check. Floating-point results (libplacebo's and Little CMS's colour maths) can differ in the last bit between compiler versions |
+| Dependencies' imports | as today's binaries | the same, except: HarfBuzz and Little CMS also call `wcslen`, uavs3d `strlen`; libbluray calls `free` where it read the `xmlFree` pointer (the SDK's libxml2 headers now define `xmlFree(ptr)` as `free(ptr)`); shaderc and MoltenVK no longer call five to seven `std::string` and `basic_streambuf` functions that the SDK's libc++ headers now inline, and call `std::locale`, `setbuf`, `wcslen` and `wmemchr` instead | Xcode 26.6's compiler and SDK; all are libSystem or libc++ functions the app links anyway. `check` requires exactly these differences (`[imports-toolchain-*]` in `engine/config/expected-libs/`) |
+| Dependencies' weak definitions | Xcode 15.4's | Xcode 26.6's: the same for eight libraries; HarfBuzz 967 weak hidden (today 961), shaderc 2,534 weak default and 1,176 weak hidden (today 2,477 and 1,063), libplacebo 34 weak hidden (today 32) | Which inline functions and template instances a compiler emits as weak copies, including libc++'s versioned names, differs between compilers; every other defined symbol is as today's. `check` requires the recorded Xcode 26.6 sets |
+| HarfBuzz's `sincosf` check | not found (Xcode 15.4) | forced to not found (`has_function_sincosf = false` in `engine/config/harfbuzz-cross.txt`) | Xcode 26.6's clang has a `__builtin_sincosf`, which meson takes as `sincosf` being present, but the SDK declares none and HarfBuzz would not compile; this keeps today's result and code |
+| libunibreak's `--host` | `arm64-ios-darwin`, `arm64-tvos-darwin` | `aarch64-ios-darwin`, `aarch64-tvos-darwin` | The release tarball's `config.sub` (2018) does not know `arm64`; `aarch64` is its canonical name for the same host, and libunibreak's `configure` uses the host only to look for tools |
+| MoltenVK's SDK-gated code | compiled out (SDK 17.5) | compiled out (`MVK_XCODE_16=0`, `MVK_XCODE_26=0`) | Unchanged; kept with upstream's own Makefile variables |
+| MoltenVK and Apple GPU family 9 | never detected (a source change in today's build) | detected, as upstream does | Not reproduced: no source change is needed to build, and Vivid never creates a Vulkan instance, so it is not reached |
+| MoltenVK revision string | the tag's commit, from `git rev-parse` | what upstream's build script gives without Git | Built from an archive; it feeds only the Vulkan pipeline-cache UUID |
+| SPIRV-Tools version string in shaderc | `SPIRV-Tools v2025.5 v2025.5-0-g262bdab4` | `SPIRV-Tools v2025.5` and `unknown hash`, dated by `SOURCE_DATE_EPOCH` | Built from an archive; reached only through shaderc, which Vivid's playback does not call |
+| libplacebo version string | `v7.351.0 (v7.351.0-dirty)` | `v7.351.0` | Built from an archive, without today's Python 3.14 fix (not needed with Xcode's Python); it appears in mpv's version and log output |
+| uavs3d version line | `1.2.1_release` and a third-party build identifier | `1.2.1_release` and uavs3d's own commit for tag 1.2 | Patch `0001`; today's identifier was a third-party build repository's commit |
+| HarfBuzz optional headers | `hb-cairo.h`, `hb-gobject.h`, `hb-gobject-enums.h`, `hb-gobject-structs.h`, and `HB_HAS_CAIRO` and `HB_HAS_GOBJECT` in `hb-features.h` | none of them | Today cairo and GObject were found on the build host; `libharfbuzz` itself is unchanged and nothing uses them |
+| shaderc's `glslc` | built, not shipped | not built | Not part of the combined library |
+| libunibreak's `configure` | generated on the build host from the tag archive | upstream's, from the release tarball | The same sources and flags; no autotools needed |
+| Source paths in assertion messages | today's build paths | this pipeline's (`../../src/<library>/...`) | Seen only if an assertion fails |
+| Bundle identifiers | the third-party prefix | `com.blurbery.vivid.lucid.<Name>` | Decided (blurbery) |
 
 Kept as today, for parity:
 
-- Framework and module names, `[system]` module maps with the umbrella directory `"."` and `export *`, the same header exclusions, and the same `Headers/` layout, including FFmpeg's internal headers and `config.h`.
-- Info.plist keys and values: `com.mpvkit.<Name>` bundle identifiers, version `87.88.520` and `MinimumOSVersion` `100.0`. Whether to change the identifiers is still open (facts section 6, item 5).
+- Framework and module names, `[system]` module maps with the umbrella directory `"."` and `export *`, the same header exclusions, and the same `Headers/` layout, including FFmpeg's internal headers and `config.h`. The dependencies' frameworks and headers match today's interim xcframeworks file for file (apart from HarfBuzz's four optional headers above), and MoltenVK is again a bare static library xcframework (`libMoltenVK.a`, no headers or module).
+- Info.plist keys and values apart from the identifier prefix: version `87.88.520` and `MinimumOSVersion` `100.0`.
 - The Libavutil module still fails to import, because `hwcontext_amf.h`, `hwcontext_drm.h`, `hwcontext_mediacodec.h` and `hwcontext_oh.h` are not excluded. Vivid reaches `avformat_configuration` by symbol name, which still works.
 
 ## Outputs
@@ -238,7 +307,8 @@ Kept as today, for parity:
 Each slice job uploads `lucid-engine-slice-<slice>` with:
 
 - `frameworks/<Name>.framework`: static archive, `Headers/`, `Modules/module.modulemap` and `Info.plist`;
-- `provenance.json` and `provenance.md`, including the decoder test results;
+- `libraries/MoltenVK/libMoltenVK.a`: MoltenVK's static library;
+- `provenance.json` and `provenance.md`, including the dependency and decoder test results;
 - `audio-tests.json`: the audio output test vectors' result and the hashes it was checked against;
 - `vo-tests.txt`: the video output tests' output (`ios-arm64-simulator` only);
 - `logs/`: the build output of each library, plus FFmpeg's `config.log`, meson's logs and the decoder tests' host libdovi and FFmpeg builds.
@@ -247,16 +317,23 @@ The libdovi C API test job uploads `lucid-engine-libdovi-test` with its report (
 
 The packaging job uploads `lucid-engine-xcframeworks` with:
 
-- `<Name>.xcframework.zip` for each of the eleven frameworks, with `<Name>.xcframework/` as the zip's root. The zips are written with fixed timestamps and ordering, so identical frameworks give identical zips, and the job checks this by packaging twice;
+- `<Name>.xcframework.zip` for each of the 21 frameworks and for MoltenVK, with `<Name>.xcframework/` as the zip's root. Before zipping, the job checks every slice's form: a framework with its module map naming the module and the Info.plist keys and identifier, or, for MoltenVK, a bare `libMoltenVK.a`. The zips are written with fixed timestamps and ordering, so identical frameworks give identical zips, and the job checks this by packaging twice;
 - `SHA256SUMS`: the SHA-256 of each zip, which is also its SwiftPM checksum;
 - `provenance/`: each slice's report.
 
 ## Provenance and checks
 
-`lucid.py build` records the toolchain (Xcode, SDK, clang, meson, ninja, pkg-config, make, rustc, cargo, cargo-c, `SOURCE_DATE_EPOCH` and `ZERO_AR_DATE`), libdovi's Rust target, `Cargo.lock` hash, vendored crates and Rust flags, the repository commit, the SHA-256 of `pins.ini`, every source archive with its hash and embedded commit, every applied patch with its hash, the pristine and patched tree digests, the FFmpeg configure arguments and the mpv meson options. `lucid.py check` then verifies the slice and adds its results:
+`lucid.py build` records the toolchain (Xcode, SDK, clang, meson, ninja, CMake, pkg-config, make, rustc, cargo, cargo-c, `SOURCE_DATE_EPOCH` and `ZERO_AR_DATE`), libdovi's Rust target, `Cargo.lock` hash, vendored crates and Rust flags, the repository commit, the SHA-256 of `pins.ini`, every source archive and part with its hash and embedded commit, every applied patch with its hash, the pristine and patched tree digests, each dependency's configuration as its build reports it (meson's options, CMake's cache, libunibreak's make variables, MoltenVK's Makefile variables), its cache key, whether it was built or reused and the toolchain that built it, the FFmpeg configure arguments and the mpv meson options. `lucid.py check` then verifies the slice and adds its results:
 
-- **Patched trees:** each source tree is unchanged by the build, and equals a fresh extraction of the pristine archive with the series applied again.
-- **Inputs:** archive hashes and commits match `pins.ini`, and the applied patches match the series.
+- **Patched trees:** every library is built from source, in the build order; each source tree is unchanged by the build (for a dependency, as recorded straight after its build), and equals a fresh assembly of the pristine archives with the series applied again.
+- **Inputs:** archive and part hashes and commits match `pins.ini`, and the applied patches match the series.
+- **Dependencies**, each against what today's interim build ships ([`engine/config/expected-libs/`](../../engine/config/expected-libs)), on every slice:
+  - The framework (or, for MoltenVK, bare static library) name, form and minimum OS; the Info.plist and module map; and the files under `Headers/`, apart from HarfBuzz's four optional headers.
+  - The defined global symbols: default and hidden visibility exactly as today's, for every library. Every symbol `nm` prints must be of a known kind. Weak definitions (copies of inline functions and template instances, the compiler's choice) are compared by count and SHA-256 of their names: with today's where they match (FreeType, FriBidi, libunibreak, Little CMS, uavs3d, libbluray, uchardet and MoltenVK), and otherwise with the set Xcode 26.6 gives from the same sources and options, recorded in the library's `[weak-*-toolchain]` section (HarfBuzz, shaderc and libplacebo; see the differences below).
+  - The imports (symbols the archive needs from outside itself), exactly as today's apart from the few each library's `[imports-toolchain-*]` sections record (below), which also shows that nothing pulls in a library today's build did not (PNG, brotli, GLib, ICU, DiskArbitration, `vfork`, `execl` and so on), and whether assertions are compiled in (`___assert_rtn`).
+  - The pkg-config file consumers use, field by field and variable by variable, and that it resolves with all its `Requires` through the slice's pkg-config path.
+  - The configuration read back: every meson option as passed, with `buildtype=release`, `optimization=3`, `debug=false`, `b_ndebug=false`, `b_lto=false` and `default_library=static`; every CMake option as passed, with `-O3 -DNDEBUG` release flags; libunibreak's `CFLAGS` with no `-O`; MoltenVK's `MVK_XCODE_16=0 MVK_XCODE_26=0`.
+  - Per library: FreeType's `ftoption.h` (system zlib on; PNG, brotli, bzip2 and HarfBuzz off); FriBidi's version, interface version and Unicode version (14.0.0); HarfBuzz's version and no `HB_HAS_*` backend; libunibreak's and Little CMS's versions; glslang 16.0.0 in shaderc; MoltenVK 1.4.1 with Vulkan headers 1.4.334; libplacebo's `PL_HAVE_*` set, API version 351 and version string `v7.351.0`; uavs3d's `version.h`, the version line's strings in the binary, `COMPILE_10BIT=1` and its ten NEON assembly objects; libbluray 1.4.0; uchardet's header.
 - **FFmpeg:**
   - The configuration in `config.h` and the string `avformat_configuration()` returns (read from the `Libavformat` object that defines it) both equal the configured arguments.
   - The configuration contains `--enable-securetransport` and none of `--enable-gpl`, `--enable-version3`, `--enable-openssl` or `delogo`.
@@ -279,14 +356,14 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
   - The client API version is 2.5, with the four expected headers.
 - **libass and dav1d:** the versions are 0.17.5 (`0x01705000`) and API 7.0.0, and both archives contain their arm64 assembly.
 - **libdovi:**
-  - `rpu_parser.h` is identical to today's prebuilt's, and the exported `dovi_*` functions are the same 21 as the prebuilt's for the slice.
+  - `rpu_parser.h` is identical to today's prebuilt's (its recorded SHA-256), and the exported `dovi_*` functions are the same 21.
   - It is built with `-Cpanic=unwind` (`panic_unwind` linked, `panic_abort` not), with the pinned rustc, without embedded LLVM bitcode, and `dovi.pc` names `dovi` 3.3.2.
-  - The `dovi_*` functions libplacebo and FFmpeg import are all exported, and are recorded in the provenance report.
+  - The `dovi_*` functions libplacebo and FFmpeg import are all exported, and are recorded in the provenance report; libplacebo's are the six today's libplacebo imports.
 - **Reproducibility:** every archive member has a zero timestamp, and `Libmpv`'s build date is the one `SOURCE_DATE_EPOCH` gives.
-- **Form:** every framework binary is arm64 only, built for the slice's platform with minimum OS 14.0 (libdovi: the crate's objects 14.0, every member for the slice's platform and no newer than 14.0). Info.plist values and module maps match, and the FFmpeg header counts match today's (26, 3, 5, 6, 109, 3 and 3).
+- **Form:** every framework binary is arm64 only, built for the slice's platform with minimum OS 14.0 (libdovi: the crate's objects 14.0, every member for the slice's platform and no newer than 14.0; the dependencies: their own, above). Info.plist values and module maps match, and the FFmpeg header counts match today's (26, 3, 5, 6, 109, 3 and 3).
 - **Linkability:**
-  - Symbol closure: every undefined symbol in every built and pinned archive is defined by another archive in the link set, by the compiler runtime, or by a public `.tbd` stub in the SDK. Only `___dso_handle` and the Objective-C selector stubs (`_objc_msgSend$<selector>`), which the linker synthesises, are exempt. Every SDK symbol must come from a framework or library in `app-link.txt`, following re-exports, or from libSystem or libobjc.
-  - Test link: a small C program that calls `mpv_create`, `mpv_initialize`, `mpv_terminate_destroy`, `avformat_configuration`, `dovi_parse_unspec62_nalu` and `dovi_rpu_free` links, dead-stripped and without forced whole-archive loading, against the eleven new frameworks, the eleven pinned prebuilt archives and `app-link.txt`, at Vivid's own deployment targets (iOS 18.0, tvOS 26.0).
+  - Symbol closure: every undefined symbol in every archive built here is defined by another archive in the link set, by the compiler runtime, or by a public `.tbd` stub in the SDK. Only `___dso_handle` and the Objective-C selector stubs (`_objc_msgSend$<selector>`), which the linker synthesises, are exempt. Every SDK symbol must come from a framework or library in `app-link.txt`, following re-exports, or from libSystem or libobjc.
+  - Test link: a small C program that calls `mpv_create`, `mpv_initialize`, `mpv_terminate_destroy`, `avformat_configuration`, `dovi_parse_unspec62_nalu` and `dovi_rpu_free` links, dead-stripped and without forced whole-archive loading, against the 21 frameworks, `libMoltenVK.a` and `app-link.txt`, at Vivid's own deployment targets (iOS 18.0, tvOS 26.0).
   - `Libmpv` keeps the AVFoundation output's `notification name:` log line, which Vivid's adapter reads.
 - **Audio output:**
   - `Libmpv` contains all 25 log formats Vivid reads from the audio output, each with its trailing newline, and the standalone `falling back to PCM` with a NUL straight before it. The check also runs on a copy of `Libmpv` without that NUL and must reject it.
@@ -318,7 +395,6 @@ Each suite counts its checks, and the step fails on any failed check or when a s
 ## Still to do
 
 - The device checks of the patch specification (9.5) for Vivid's own engine patches: the audio output (mpv `0010` to `0016`), the video output (mpv `0020` to `0025`) and the decoder work (FFmpeg `0010` to `0012`, mpv `0040`). All are in the series and pass the host tests, but none has been checked on a device, so these builds cannot yet be linked into a shipping app.
-- Building the remaining dependencies from source, starting with the ones that carry the most code (libplacebo, shaderc and MoltenVK).
-- An end-to-end host test of mpv patch `0040`: a host libmpv needs host builds of libplacebo and libass (with FreeType, FriBidi and HarfBuzz), which the pipeline pins only as iOS and tvOS binaries.
-- A Swift package that serves these xcframeworks, updating `use-patched-libmpv.sh` for the new slice identifiers, and deciding the bundle identifiers.
-- Licence files and notices for the LGPL FFmpeg and libmpv and the removal of OpenSSL (`THIRD_PARTY_NOTICES.md` and the in-app licences) once the app links these builds.
+- An end-to-end host test of mpv patch `0040`: a host libmpv needs host builds of libplacebo and libass (with FreeType, FriBidi and HarfBuzz). The pipeline now builds all of them from source, but only for iOS and tvOS; a build for the runner is not written yet.
+- A Swift package that serves these xcframeworks, and updating `use-patched-libmpv.sh` for the new slice identifiers.
+- Licence files and notices for the LGPL FFmpeg and libmpv, the removal of OpenSSL and the libraries now built here with their parts (`THIRD_PARTY_NOTICES.md` and the in-app licences) once the app links these builds.

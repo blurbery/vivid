@@ -1,0 +1,16 @@
+# libplacebo 7.351.0 meson options (facts 3.5 and D8). libdovi, lcms2,
+# shaderc and MoltenVK's vulkan.pc come from this slice's own builds through
+# pkg-config. vk-proc-addr and gl-proc-addr stay at auto (both enabled).
+
+-Dd3d11=disabled
+-Ddemos=false
+-Ddovi=enabled
+-Dglslang=disabled
+-Dlcms=enabled
+-Dlibdovi=enabled
+-Dopengl=enabled
+-Dshaderc=enabled
+-Dtests=false
+-Dunwind=disabled
+-Dvulkan=enabled
+-Dxxhash=disabled

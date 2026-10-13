@@ -1,8 +1,10 @@
 # Lucid Engine build configuration: facts for an independent rebuild
 
-Dirty-side fact sheet. It records what Vivid consumes today and how each binary in the dependency graph is configured, so that a clean-room engineer can produce equivalent binaries with their own scripts. It states values and observed outputs only. It contains no build-script code and does not describe how edde746's or mpvkit's scripts are organised.
+Dirty-side fact sheet. It records what Vivid consumes today and how each binary in the dependency graph is configured, so that a clean-room engineer can produce equivalent binaries with their own scripts. It states values and observed outputs only. It contains no build-script code and does not describe how provider A's or provider B's scripts are organised.
 
-Prepared 13 October 2026 from the pinned package `edde746/mpv-build` at `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6`.
+Prepared 13 October 2026 from the pinned engine package of provider A at `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6`.
+
+Third-party build providers are named here only as provider A (the previous engine package, which built libmpv, FFmpeg and libass and published dav1d) and provider B (the interim builds of the other libraries). Their repositories and assets are no longer used by the pipeline.
 
 ## 0. Evidence and conventions
 
@@ -27,21 +29,21 @@ Other conventions:
 
 ### 1.1 Package pin and identity [vivid]
 
-- `iosApp/project-ios.yml` (target `Vivid`, iOS) and `iosApp/project.yml` (target `VividTV`, tvOS) declare the package key `MPVKit`:
-  - URL `https://github.com/edde746/mpv-build`
+- `iosApp/project-ios.yml` (target `Vivid`, iOS) and `iosApp/project.yml` (target `VividTV`, tvOS) declare the package key `<EnginePackage>`:
+  - URL: provider A's engine package repository on GitHub
   - revision `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6`
-  - each app target depends on `package: MPVKit, product: MPVKit`
+  - each app target depends on `package: <EnginePackage>, product: <EnginePackage>`
 - The extensions do not link the engine: `VividDownloadsActivity` (iOS) and `VividTVTopShelf` (tvOS).
-- `iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` pins the engine with identity `mpv-build`, kind `remoteSourceControl`, the same URL and revision. SwiftPM derives the identity from the last URL path component, so a new repository name changes it.
-- The identity is also the folder name of the resolved binaries: `<DerivedData>/SourcePackages/artifacts/mpv-build/<Target>/<Target>.xcframework`. `scripts/release/use-patched-libmpv.sh` and `.github/workflows/mpv-audio-driver.yml` both depend on that path (see 1.8).
+- `iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` pins the engine with identity `<identity>` (the engine package repository's name), kind `remoteSourceControl`, the same URL and revision. SwiftPM derives the identity from the last URL path component, so a new repository name changes it.
+- The identity is also the folder name of the resolved binaries: `<DerivedData>/SourcePackages/artifacts/<identity>/<Target>/<Target>.xcframework`. `scripts/release/use-patched-libmpv.sh` and `.github/workflows/mpv-audio-driver.yml` both depend on that path (see 1.8).
 
 ### 1.2 Package manifest at the pin [cfg]
 
-- Swift tools version 5.8. Package name `MPVKit`. Platforms macOS 12, iOS 15 and tvOS 15.
-- There is one library product, `MPVKit`, built from the target `_MPVKit`, with automatic linkage.
+- Swift tools version 5.8. Package name `<EnginePackage>`. Platforms macOS 12, iOS 15 and tvOS 15.
+- There is one library product, `<EnginePackage>`, built from the target `_<EnginePackage>`, with automatic linkage.
 - There are two source targets. Each contains only `dummy.c` and `include/dummy.h` and exists to carry dependencies and linker settings.
 
-`_MPVKit` (path `Sources/_MPVKit`):
+`_<EnginePackage>` (path `Sources/_<EnginePackage>`):
 - Dependencies: `Libmpv`, `_FFmpeg`, `Libuchardet`, `Libbluray`, and `Libluajit` (macOS only).
 - Linked frameworks: AVFoundation, CoreImage, CoreMedia, CoreVideo, Metal, QuartzCore, CoreAudio, AppKit (macOS only) and UIKit (iOS and tvOS only).
 
@@ -54,8 +56,8 @@ The 25 binary targets (URL and SwiftPM checksum) are below. The checksum is the 
 
 | Binary target | Published asset | Checksum |
 | --- | --- | --- |
-| Libmpv | edde746/mpv-build `binaries-apple` / `Libmpv-4016569ef4b2.xcframework.zip` | `9b1ae5cebb28960335b6f2764c6e23ff414567b781705c006e073d756062f403` |
-| Libavcodec | edde746/mpv-build `binaries-apple` / `Libavcodec-c04b889c6bf7.xcframework.zip` | `dde8d31d9cffe811cf880b2280e9d77d308cc4d8796e6c4d2da60c821f16641d` |
+| Libmpv | Provider A's engine package `binaries-apple` / `Libmpv-4016569ef4b2.xcframework.zip` | `9b1ae5cebb28960335b6f2764c6e23ff414567b781705c006e073d756062f403` |
+| Libavcodec | Provider A's engine package `binaries-apple` / `Libavcodec-c04b889c6bf7.xcframework.zip` | `dde8d31d9cffe811cf880b2280e9d77d308cc4d8796e6c4d2da60c821f16641d` |
 | Libavdevice | same release, `Libavdevice-c04b889c6bf7.xcframework.zip` | `75d5092f471d4aa7a84214d1755893fd5d25f6d5969f90853c6889025c967cd4` |
 | Libavfilter | same, `Libavfilter-c04b889c6bf7` | `408c744a5b5fc071fd17b7f733d4d07e0d9a5355221a00f6d5ddecb339842d49` |
 | Libavformat | same, `Libavformat-c04b889c6bf7` | `ed734294892b1c70c53929a03ba186021108a40e3725945a9561fc28e093c67d` |
@@ -63,27 +65,27 @@ The 25 binary targets (URL and SwiftPM checksum) are below. The checksum is the 
 | Libswresample | same, `Libswresample-c04b889c6bf7` | `7fd1148782093afbc9aa0409406b9054ee0d2e5adc0c0ec50b078a2e568583b3` |
 | Libswscale | same, `Libswscale-c04b889c6bf7` | `3fe8789f0c297dc84e0064b84e4697d44650defbbaff5d13eeb8b112f93996a3` |
 | Libass | same, `Libass-dcf94c1d6ebe` | `7f4aa426e94193b8b5f6a7edd0d6033e14a1b61ecba28e4631b4cadad610e414` |
-| Libunibreak | mpvkit/libass-build `0.17.4` / `Libunibreak.xcframework.zip` | `001087c0e927ae00f604422b539898b81eb77230ea7700597b70393cd51e946c` |
-| Libfreetype | mpvkit/libass-build `0.17.4` | `f2840aba1ce35e51c0595557eee82c908dac8e32108ecc0661301c06061e051c` |
-| Libfribidi | mpvkit/libass-build `0.17.4` | `4a55513792ef7a17893875f74cc84c56f3657e8768c07a7a96f563a11dc4b743` |
-| Libharfbuzz | mpvkit/libass-build `0.17.4` | `91558d8497d9d97bc11eeef8b744d104315893bfee8f17483d8002e14565f84b` |
-| Libbluray | mpvkit/libbluray-build `1.4.0` | `bc037d34e2b0b5ab7f202fb371f5fb298136cc66fdf406c2172185d06f53f18d` |
-| Libcrypto | mpvkit/openssl-build `3.3.5` | `593283be2a90f7fd66f6e6ed331b2f099cf403e0926fe3b4ac09a7062b793965` |
-| Libssl | mpvkit/openssl-build `3.3.5` | `ff5ffd43d015d7285fd37e4a3145b25cbd8d2842740bd629a711c299a20e226a` |
-| Libuavs3d | mpvkit/libuavs3d-build `1.2.1-fix` | `bd5256081486d16c51c868d755bf70266c424b54c895269580de44ec6707f789` |
-| Libdovi | mpvkit/libdovi-build `3.3.2` | `e693e239808350868e79c5448ef9f02e2716bc822dd8632a41a368a1eae5ca7d` |
-| MoltenVK | mpvkit/moltenvk-build `1.4.1` | `9bd1ca1e4563bacd25d6e55d37b10341d50b2601bc2684bc332188e79daa2b79` |
-| Libshaderc_combined | mpvkit/libshaderc-build `2025.5.0` | `758047b615708575b580eb960a2d083f760a29dc462d6eaa360416c946ce433b` |
-| lcms2 | mpvkit/lcms2-build `2.17.0` | `dc0dce0606f6ab6841a8ec5a6bd4448e2f3ef00661a050460f806c9393dc6982` |
-| Libplacebo | mpvkit/libplacebo-build `7.351.0-2512` | `3b2bd57b82549566963effadf0891a141448d9f89c7d48fca0b8f823b854bac6` |
-| Libdav1d | edde746/libdav1d-build `1.5.3-neon` (pre-release) | `7965ecf274af5448fa830bc1fec4e78257cf1d7509ed1cd95e32023b7bdff965` |
-| Libuchardet | mpvkit/libuchardet-build `0.0.8-xcode` | `503202caa0dafb6996b2443f53408a713b49f6c2d4a26d7856fd6143513a50d7` |
-| Libluajit | mpvkit/libluajit-build `2.1.0-xcode` (macOS only in the product) | `8e76f267ee100ff5f3bbde7641b2240566df722241cdf8e135be7ef3d29e237a` |
+| Libunibreak | Provider B's libass build `0.17.4` / `Libunibreak.xcframework.zip` | `001087c0e927ae00f604422b539898b81eb77230ea7700597b70393cd51e946c` |
+| Libfreetype | Provider B's libass build `0.17.4` | `f2840aba1ce35e51c0595557eee82c908dac8e32108ecc0661301c06061e051c` |
+| Libfribidi | Provider B's libass build `0.17.4` | `4a55513792ef7a17893875f74cc84c56f3657e8768c07a7a96f563a11dc4b743` |
+| Libharfbuzz | Provider B's libass build `0.17.4` | `91558d8497d9d97bc11eeef8b744d104315893bfee8f17483d8002e14565f84b` |
+| Libbluray | Provider B's libbluray build `1.4.0` | `bc037d34e2b0b5ab7f202fb371f5fb298136cc66fdf406c2172185d06f53f18d` |
+| Libcrypto | Provider B's openssl build `3.3.5` | `593283be2a90f7fd66f6e6ed331b2f099cf403e0926fe3b4ac09a7062b793965` |
+| Libssl | Provider B's openssl build `3.3.5` | `ff5ffd43d015d7285fd37e4a3145b25cbd8d2842740bd629a711c299a20e226a` |
+| Libuavs3d | Provider B's libuavs3d build `1.2.1-fix` | `bd5256081486d16c51c868d755bf70266c424b54c895269580de44ec6707f789` |
+| Libdovi | Provider B's libdovi build `3.3.2` | `e693e239808350868e79c5448ef9f02e2716bc822dd8632a41a368a1eae5ca7d` |
+| MoltenVK | Provider B's moltenvk build `1.4.1` | `9bd1ca1e4563bacd25d6e55d37b10341d50b2601bc2684bc332188e79daa2b79` |
+| Libshaderc_combined | Provider B's libshaderc build `2025.5.0` | `758047b615708575b580eb960a2d083f760a29dc462d6eaa360416c946ce433b` |
+| lcms2 | Provider B's lcms2 build `2.17.0` | `dc0dce0606f6ab6841a8ec5a6bd4448e2f3ef00661a050460f806c9393dc6982` |
+| Libplacebo | Provider B's libplacebo build `7.351.0-2512` | `3b2bd57b82549566963effadf0891a141448d9f89c7d48fca0b8f823b854bac6` |
+| Libdav1d | Provider A's dav1d build `1.5.3-neon` (pre-release) | `7965ecf274af5448fa830bc1fec4e78257cf1d7509ed1cd95e32023b7bdff965` |
+| Libuchardet | Provider B's libuchardet build `0.0.8-xcode` | `503202caa0dafb6996b2443f53408a713b49f6c2d4a26d7856fd6143513a50d7` |
+| Libluajit | Provider B's libluajit build `2.1.0-xcode` (macOS only in the product) | `8e76f267ee100ff5f3bbde7641b2240566df722241cdf8e135be7ef3d29e237a` |
 
 Full asset URL forms:
-- edde746: `https://github.com/edde746/mpv-build/releases/download/binaries-apple/<asset>`
-- mpvkit: `https://github.com/mpvkit/<repo>/releases/download/<tag>/<Name>.xcframework.zip`
-- edde746 dav1d: `https://github.com/edde746/libdav1d-build/releases/download/1.5.3-neon/Libdav1d.xcframework.zip`
+- Provider A: release `binaries-apple` of its engine package, asset `<asset>`
+- Provider B: release `<tag>` of its build repository `<repo>`, asset `<Name>.xcframework.zip`
+- Provider A dav1d: release `1.5.3-neon` of its dav1d build, asset `Libdav1d.xcframework.zip`
 
 ### 1.3 Modules and symbols Vivid uses [vivid]
 
@@ -94,7 +96,7 @@ Full asset URL forms:
   - types: `mpv_node`, `mpv_node_list`, `mpv_stream_cb_open_ro_fn`
   - constants: `MPV_FORMAT_NODE`, `MPV_FORMAT_STRING`, `MPV_FORMAT_NODE_ARRAY`, `MPV_EVENT_FILE_LOADED`, `MPV_EVENT_END_FILE`, `MPV_ERROR_LOADING_FAILED`, `MPV_ERROR_UNSUPPORTED`, `MPV_ERROR_GENERIC`
 - So the headers `mpv/client.h` and `mpv/stream_cb.h` are required at minimum. `Libmpv` ships `mpv/client.h`, `mpv/render.h`, `mpv/render_gl.h` and `mpv/stream_cb.h`, with `MPV_CLIENT_API_VERSION` = `MPV_MAKE_VERSION(2, 5)` [bin].
-- Unknown: whether the three files I could not open import other engine modules. Keep all 25 module names and the product name `MPVKit` until the caller confirms.
+- Unknown: whether the three files I could not open import other engine modules. Keep all 25 module names and the product name `<EnginePackage>` until the caller confirms.
 
 ### 1.4 Slices present and slices Vivid uses [bin]
 
@@ -132,8 +134,8 @@ Per-library `LC_BUILD_VERSION` [bin], aggregated over every archive member:
 | Libluajit | 17.5 | 17.5 |
 
 Toolchains [ci] [bin]:
-- edde746-built (Libmpv, Libass, FFmpeg): GitHub runner `macos-26`, `/Applications/Xcode_26.6.app`, SDKs `iPhoneOS26.5` and `AppleTVOS26.5`. `CC_IDENT` is "Apple clang version 21.0.0 (clang-2100.1.1.101)". meson 1.4.2 from pip.
-- mpvkit-built prebuilts: runner `macos-14`, `xcode-select -s /Applications/Xcode_15.4.app` (SDK 17.5), meson 1.4.2. dav1d and uavs3d go through the shared `mpvkit/BuildShared` workflow, which selects the same runner and Xcode.
+- Provider-A-built (Libmpv, Libass, FFmpeg): GitHub runner `macos-26`, `/Applications/Xcode_26.6.app`, SDKs `iPhoneOS26.5` and `AppleTVOS26.5`. `CC_IDENT` is "Apple clang version 21.0.0 (clang-2100.1.1.101)". meson 1.4.2 from pip.
+- Provider-B-built prebuilts: runner `macos-14`, `xcode-select -s /Applications/Xcode_15.4.app` (SDK 17.5), meson 1.4.2. dav1d and uavs3d go through provider B's shared build workflow, which selects the same runner and Xcode.
 - The local Mac has Xcode 27.0 (27A266a). The archives above were built with SDK 27.0.
 
 ### 1.6 Form of every framework [bin]
@@ -159,12 +161,12 @@ Toolchains [ci] [bin]:
 
 | File | Dependency |
 | --- | --- |
-| `iosApp/project-ios.yml`, `iosApp/project.yml` | package key `MPVKit`, URL, revision, product `MPVKit` |
-| `Package.resolved` | identity `mpv-build`, URL, revision |
+| `iosApp/project-ios.yml`, `iosApp/project.yml` | package key `<EnginePackage>`, URL, revision, product `<EnginePackage>` |
+| `Package.resolved` | identity `<identity>` (the engine package repository's name), URL, revision |
 | `VividMPVPlayer.swift`, `VividManagedStreamProtocol.swift`, `LucidSubtitleInventory.swift` (and `LucidTLS.swift` on the LGPL branch) | `import Libmpv` |
 | `LucidTLS.swift` (LGPL branch) | C symbol `avformat_configuration` |
-| `scripts/release/use-patched-libmpv.sh` | path `SourcePackages/artifacts/mpv-build/<Name>/<Name>.xcframework/<slice>/<Name>.framework`; slice names `tvos-arm64_arm64e` and `ios-arm64`; framework names (Libmpv on main; Libmpv plus the seven FFmpeg frameworks on the LGPL branch); marker strings `-Dgpl=false`, `LGPL version 2.1 or later` and `GPL version 3 or later` |
-| `.github/workflows/mpv-audio-driver.yml` | checks out `edde746/mpv-build` at the pin, applies Vivid patches, runs `make build use-prebuilt libs=... platform=...`, uploads `Libmpv*.zip`, `Libav*.zip` and `Libsw*.zip` |
+| `scripts/release/use-patched-libmpv.sh` | path `SourcePackages/artifacts/<identity>/<Name>/<Name>.xcframework/<slice>/<Name>.framework`; slice names `tvos-arm64_arm64e` and `ios-arm64`; framework names (Libmpv on main; Libmpv plus the seven FFmpeg frameworks on the LGPL branch); marker strings `-Dgpl=false`, `LGPL version 2.1 or later` and `GPL version 3 or later` |
+| `.github/workflows/mpv-audio-driver.yml` | checks out provider A's engine package at the pin, applies Vivid patches, runs `make build use-prebuilt libs=... platform=...`, uploads `Libmpv*.zip`, `Libav*.zip` and `Libsw*.zip` |
 | `.github/workflows/mpv-experiment.yml` | mentions the package (not inspected in detail) |
 | `THIRD_PARTY_NOTICES.md`, `docs/cores/player-engine.md`, `iosApp/Resources/OpenSourceLicenses/*` (`licences.json`, `FFmpeg-GPL-3.0-or-later.txt`, `mpv-GPL-2.0-or-later.txt`, `OpenSSL-Apache-2.0.txt` and the others) | names, versions, sources and licences of every component |
 
@@ -174,7 +176,7 @@ Toolchains [ci] [bin]:
 
 ### 2.0 Common cross-compilation settings
 
-These apply to all libraries built by mpv-build (FFmpeg, libass, mpv) and, unless a subsection says otherwise, to every mpvkit-built prebuilt [cfg]. Values for the four Vivid platforms:
+These apply to all libraries built by the engine package (FFmpeg, libass, mpv) and, unless a subsection says otherwise, to every provider-B-built prebuilt [cfg]. Values for the four Vivid platforms:
 
 | Platform | SDK (`xcrun --sdk`) | `-target` triple (arm64 / x86_64) | Version-min flag | meson `subsystem` | CMake `CMAKE_SYSTEM_NAME` | autotools `--host` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -184,7 +186,7 @@ These apply to all libraries built by mpv-build (FFmpeg, libass, mpv) and, unles
 | tvOS simulator | `appletvsimulator` | `arm64-apple-tvos<MIN>-simulator` / `x86_64-apple-tvos<MIN>-simulator` | `-mtvos-simulator-version-min=<MIN>` | `tvos-simulator` | `tvOS` | `arm64-tvos-darwin` / `x86_64-tvos-darwin` |
 
 `<MIN>` by producer:
-- edde746 (mpv, FFmpeg, libass) and mpvkit repos that use 14.0 (lcms2, libbluray, libplacebo, moltenvk-build wrapper, shaderc; dav1d via BuildShared `f5a3600`): 14.0
+- Provider A (mpv, FFmpeg, libass) and provider B repos that use 14.0 (lcms2, libbluray, libplacebo, moltenvk-build wrapper, shaderc; dav1d via BuildShared `f5a3600`): 14.0
 - libass-build (unibreak, freetype, fribidi, harfbuzz), openssl-build, libdovi-build, uchardet-build, luajit-build: 13.0
 - uavs3d (BuildShared `794a8f5`): 15.0
 
@@ -203,7 +205,7 @@ Meson cross-compilation values (meson's own cross-file keys):
 - Built-in options: static libraries only, release build type, install prefix per platform and arch. The compile arguments for every language are the CFLAGS above, and the link arguments are the LDFLAGS above.
 - mpv and libass are built with `b_ndebug=true`. The prebuilt libraries are not.
 
-CMake projects (mpvkit) receive:
+CMake projects (provider B) receive:
 - `-DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_SYSROOT=<sdk> -DCMAKE_OSX_ARCHITECTURES=<arch> -DCMAKE_SYSTEM_NAME=<iOS|tvOS> -DCMAKE_SYSTEM_PROCESSOR=<arch> -DCMAKE_INSTALL_PREFIX=<dir> -DBUILD_SHARED_LIBS=0 -DCMAKE_POLICY_VERSION_MINIMUM=3.5`
 - plus the per-library options below
 
@@ -218,7 +220,7 @@ Exceptions to these settings:
 
 - Upstream: `https://github.com/mpv-player/mpv`, tag `v0.41.0`, commit `41f6a645068483470267271e1d09966ca3b9f413` [cfg].
 - Licence: GPL-2.0-or-later as built today (`-Dgpl=true`); LGPL-2.1-or-later with `-Dgpl=false` [up].
-- Source today: built from source by edde746/mpv-build (upstream plus edde746's Apple patch series). Published as `Libmpv-4016569ef4b2.xcframework.zip`, with per-platform zips `libmpv-all-4016569ef4b2-<platform>.zip`. The tvOS zip's SHA-256 is `9ab90c831102d38b11c17b4a801fc79e93e7240ef9e42f03e9578e4dcf22dc25` [ci].
+- Source today: built from source by provider A's engine package (upstream plus provider A's Apple patch series). Published as `Libmpv-4016569ef4b2.xcframework.zip`, with per-platform zips `libmpv-all-4016569ef4b2-<platform>.zip`. The tvOS zip's SHA-256 is `9ab90c831102d38b11c17b4a801fc79e93e7240ef9e42f03e9578e4dcf22dc25` [ci].
 - Build system: meson, using the 2.0 cross file. Output `libmpv.a`, installed headers `include/mpv/{client,render,render_gl,stream_cb}.h` and `mpv.pc`.
 - Version string in the binary: `mpv v0.41.0-dirty` [bin].
 
@@ -228,7 +230,7 @@ Meson options for iOS and tvOS, identical on all four platforms and both archs. 
 -Dlibmpv=true -Dgl=enabled -Dplain-gl=enabled -Diconv=enabled -Duchardet=enabled -Dvulkan=enabled -Dmoltenvk=enabled -Djavascript=disabled -Dzimg=disabled -Djpeg=disabled -Dvapoursynth=disabled -Drubberband=disabled -Dgpl=true -Dlibbluray=enabled -Dcplayer=false -Dvideotoolbox-gl=disabled -Dvideotoolbox-pl=enabled -Dswift-build=disabled -Daudiounit=enabled -Davfoundation=enabled -Dvo-avfoundation=enabled -Dlua=disabled -Dios-gl=enabled
 ```
 
-- Option origin [up]: every option above exists in upstream mpv 0.41.0 `meson.options` except `moltenvk` and `vo-avfoundation`. Those two exist only once edde746's patches `0001-player-add-moltenvk-context.patch` and `0004-avfoundation-video-output.patch` are applied. Upstream meson rejects them otherwise.
+- Option origin [up]: every option above exists in upstream mpv 0.41.0 `meson.options` except `moltenvk` and `vo-avfoundation`. Those two exist only once provider A's patches `0001-player-add-moltenvk-context.patch` and `0004-avfoundation-video-output.patch` are applied. Upstream meson rejects them otherwise.
 - `-Dlibbluray=enabled` requires libbluray's headers and `.pc` file for the target platform and arch at configure time. `-Dcplayer=false` means no mpv executable is built for iOS or tvOS.
 - The macOS and Catalyst variants use different options. They are not needed by Vivid and are omitted here.
 
@@ -249,7 +251,7 @@ audiounit avfoundation bsd-fstatfs build-date cplugins darwin ffmpeg gl glob glo
 - Upstream: `https://github.com/FFmpeg/FFmpeg`, tag `n8.0.1`, commit `894da5ca7d742e4429ffb2af534fcda0103ef593`. `FFMPEG_VERSION "n8.0.1"` [cfg] [bin].
 - Library versions from the shipped `.pc` files: avcodec 62.11.100, avformat 62.3.100, avutil 60.8.100, avfilter 11.4.100, swresample 6.1.100, swscale 9.1.100.
 - Licence: LGPL-2.1-or-later by default; "GPL version 3 or later" as built today (`FFMPEG_LICENSE`) [bin].
-- Source today: built from source by edde746/mpv-build (upstream plus edde746's Apple FFmpeg series). Published as `Lib{avcodec,avdevice,avfilter,avformat,avutil,swresample,swscale}-c04b889c6bf7.xcframework.zip`, with per-platform zips `FFmpeg-all-c04b889c6bf7-<platform>.zip`. The tvOS zip's SHA-256 is `3b183cf45518bb3cfa10e7cbe7e8429966d1ba27f3eb508671f75d2ed550d9e1`.
+- Source today: built from source by provider A's engine package (upstream plus provider A's Apple FFmpeg series). Published as `Lib{avcodec,avdevice,avfilter,avformat,avutil,swresample,swscale}-c04b889c6bf7.xcframework.zip`, with per-platform zips `FFmpeg-all-c04b889c6bf7-<platform>.zip`. The tvOS zip's SHA-256 is `3b183cf45518bb3cfa10e7cbe7e8429966d1ba27f3eb508671f75d2ed550d9e1`.
 - Build system: `./configure` (autotools-style), then `make -j8` and `make -j8 install`. Output is static `lib{avcodec,avdevice,avfilter,avformat,avutil,swresample,swscale}.a`. The compiler is the configure default (`gcc` on the PATH, which is Apple clang); flags reach configure through the environment variables in 2.0. No `--cc`, `--sysroot` or `--extra-cflags` is passed.
 - Extra environment for FFmpeg only: `-I<libdovi>/include` in the C flags, and `-L<libdovi>/lib -ldovi` in `LDFLAGS`.
 - Host tools: `nasm` (Homebrew). `sdl2` is also present on the build host but is only used for the macOS `ffplay` build.
@@ -295,8 +297,8 @@ Patch-series dependencies that change linking [cfg] [bin]:
 
 - Upstream: `https://github.com/libass/libass`, tag `0.17.5` (annotated tag object `64ebcac7...`), commit `4a05d8127f525943ebf45fdc6497c9e665947f0d` [cfg] [up]. `LIBASS_VERSION 0x01705000` [bin].
 - Licence: ISC.
-- Source today: built from source by edde746/mpv-build, from upstream 0.17.5 plus three edde746 patches (`patches/libass/series.common`): fast blur, parser and rasteriser speedups, and threaded rendering with image pool and layout cache. Published as `Libass-dcf94c1d6ebe.xcframework.zip`; tvOS per-platform zip SHA-256 `0d224ea28fb21852d17984ec39589c960396d0d783e69d5934638cd30dc48045`.
-- Build system: meson, using mpv-build's cross file (`b_ndebug=true`).
+- Source today: built from source by provider A's engine package, from upstream 0.17.5 plus three provider A patches (`patches/libass/series.common`): fast blur, parser and rasteriser speedups, and threaded rendering with image pool and layout cache. Published as `Libass-dcf94c1d6ebe.xcframework.zip`; tvOS per-platform zip SHA-256 `0d224ea28fb21852d17984ec39589c960396d0d783e69d5934638cd30dc48045`.
+- Build system: meson, using the engine package's cross file (`b_ndebug=true`).
 
 Meson options [cfg]:
 - arm64 and arm64e: `-Dasm=enabled`. x86_64 simulator: `-Dasm=disabled`.
@@ -304,12 +306,12 @@ Meson options [cfg]:
 - All are upstream 0.17.5 options [up]. Patch 0003 adds a `threads` feature option, which is not passed and is left at its default.
 
 Other facts:
-- Dependencies, through pkg-config from the mpvkit libass-build prebuilts: `freetype2 >= 9.17.3, fribidi >= 0.19.7, harfbuzz >= 1.2.3, libunibreak >= 1.1`. Shipped `libass.pc` `Libs`: `-lass -lm -liconv -framework CoreText -framework CoreFoundation` [bin].
-- The mpvkit libass-build `0.17.4` release also ships its own `Libass`, built from upstream 0.17.4 with `-Dasm=disabled` and otherwise the same options. Vivid does not use it.
+- Dependencies, through pkg-config from the provider B libass-build prebuilts: `freetype2 >= 9.17.3, fribidi >= 0.19.7, harfbuzz >= 1.2.3, libunibreak >= 1.1`. Shipped `libass.pc` `Libs`: `-lass -lm -liconv -framework CoreText -framework CoreFoundation` [bin].
+- The provider B libass-build `0.17.4` release also ships its own `Libass`, built from upstream 0.17.4 with `-Dasm=disabled` and otherwise the same options. Vivid does not use it.
 
 ### 2.4 FreeType, FriBidi, HarfBuzz, libunibreak
 
-All four are prebuilt by `mpvkit/libass-build`, tag `0.17.4`:
+All four are prebuilt by provider B's libass build, tag `0.17.4`:
 - tag object `de7bcc21...`, commit `392f59146f1e043401126abb385678180f6ae8ef`
 - assets produced by run 19487080817 at commit `a4d8ea60264c`, which differs from the tag commit only in `Package.swift`
 - `-all.zip` digests: libfreetype `f0eec59e51f4137ba57afa849393ba4815c25418870b9511990bd4ebeacdbfaf`, libfribidi `e20ccc160ea2995f2ef2c5ee0ec50f307cbc10c371fb299b5df62546de07d59d`, libharfbuzz `c1f56b4f47b64b15e0be16a93703a6db484079878de16b6d598d22055d86f24c`, libunibreak `06f7e68102bb9f9f963b2517455dc543f438f7beccd002edcd63dcd1cbccd9a5`
@@ -334,8 +336,8 @@ The "0.17.4" in this tag is libass's version, not these libraries'. minos 13.0 a
   - `3rdparty/markupsafe` `28ace20b140d15c083e1cbc163ee6b7778ba098c`
   - `3rdparty/Vulkan-Headers` `cacef3039d277c448c89336290ec3937270b0996`
 - Licences of these: fast_float MIT/Apache-2.0/BSL-1.0 (used under MIT); glad CC0-1.0 and Apache-2.0. jinja and markupsafe are build-time code generators only.
-- Source today: prebuilt by `mpvkit/libplacebo-build` `7.351.0-2512`. Assets produced by run 20434622243 at `47a712b6eacd`, which differs from the tag commit `d9ff9205` only in `Package.swift`. `libplacebo-all.zip` SHA-256 `aa8574c1160deb17863a82258d9a4289e5a5413ca3a58f5e3b12bd25e5585919`.
-- Build system: meson (mpvkit cross file, no `b_ndebug`). Python `jinja2` is needed on the host.
+- Source today: prebuilt by provider B's libplacebo build `7.351.0-2512`. Assets produced by run 20434622243 at `47a712b6eacd`, which differs from the tag commit `d9ff9205` only in `Package.swift`. `libplacebo-all.zip` SHA-256 `aa8574c1160deb17863a82258d9a4289e5a5413ca3a58f5e3b12bd25e5585919`.
+- Build system: meson (provider B cross file, no `b_ndebug`). Python `jinja2` is needed on the host.
 - Source edit: patch `00001-fix-python-3.14-build.patch`, the upstream fix in `src/vulkan/utils_gen.py` (`ET.parse(...).getroot()`).
 
 Meson options [cfg]:
@@ -343,7 +345,7 @@ Meson options [cfg]:
 - `-Ddovi=enabled -Dlibdovi=enabled` require libdovi's headers and library for the target platform and arch at configure time.
 - libdovi include and link flags are also added to the C flags and `LDFLAGS`.
 
-Dependencies at build time: lcms2, libdovi, shaderc and MoltenVK, taken from the mpvkit prebuilt `-all.zip` files of 2.6 to 2.9 at the same versions Vivid uses.
+Dependencies at build time: lcms2, libdovi, shaderc and MoltenVK, taken from the provider B prebuilt `-all.zip` files of 2.6 to 2.9 at the same versions Vivid uses.
 
 Vulkan headers [up]: libplacebo v7.351.0 compiles against its own `3rdparty/Vulkan-Headers` submodule whenever that directory exists. Gitlink `cacef303` is Vulkan-Headers `v1.4.310`. It also forces that submodule's `registry/vk.xml` for code generation. The `vulkan` pkg-config dependency (MoltenVK, 1.4.334) is used only to link `vkGetInstanceProcAddr` directly (`vk-proc-addr`, default auto), which gives `PL_HAVE_VK_PROC_ADDR 1`.
 
@@ -358,7 +360,7 @@ Result [bin]:
 
 - Upstream: `https://github.com/mm2/Little-CMS`, tag `lcms2.17`, commit `5176347635785e53ee5cee92328f76fda766ecc6`. `LCMS_VERSION 2170` [bin].
 - Licence: MIT.
-- Source today: `mpvkit/lcms2-build` `2.17.0`. Assets produced by run 20432385218 at `68a37c94f4db` (tag commit differs only in `Package.swift`). `lcms2-all.zip` SHA-256 `8c118b2c04e2440ecf25ffebfa7952ebb09aba83a71378e3b9ed45dae3a6115a`.
+- Source today: provider B's lcms2 build `2.17.0`. Assets produced by run 20432385218 at `68a37c94f4db` (tag commit differs only in `Package.swift`). `lcms2-all.zip` SHA-256 `8c118b2c04e2440ecf25ffebfa7952ebb09aba83a71378e3b9ed45dae3a6115a`.
 - Build system: meson with no library-specific options, so upstream defaults apply [up]:
   - `tests` enabled (yield)
   - `jpeg` auto and `tiff` auto (neither found when cross-compiling)
@@ -376,7 +378,7 @@ Result [bin]:
 - Resolved runtime crates from `dolby_vision/Cargo.lock` at the tag, for default features plus `capi`: `anyhow 1.0.98`, `bitvec 1.0.1` (with `funty 2.0.0`, `radium 0.7.0`, `tap 1.0.1`, `wyz 0.5.1`), `bitvec_helpers 3.1.6` (with `bitstream-io 2.6.0`), `crc 3.3.0` (with `crc-catalog 2.4.0`), `tinyvec 1.9.0` and `libc 0.2.172`. That is 12 crates, all from crates.io with checksums in the lock file. `roxmltree`, `serde` and `serde_json` are optional and not enabled.
 - The build command passes no `--locked`, so Cargo uses the committed lock file but is not prevented from updating it.
 - Licence: MIT. Crates MIT, Apache-2.0 or zlib; Rust standard library MIT or Apache-2.0 (per Vivid's notices).
-- Source today: `mpvkit/libdovi-build` `3.3.2`. Assets produced by run 20428353657 at `77328e399a42` (tag commit differs only in `Package.swift`). `libdovi-all.zip` SHA-256 `81b85386016a012391c473674ef96e4e494fa76aef2f7b6c102a335e844644f8`.
+- Source today: provider B's libdovi build `3.3.2`. Assets produced by run 20428353657 at `77328e399a42` (tag commit differs only in `Package.swift`). `libdovi-all.zip` SHA-256 `81b85386016a012391c473674ef96e4e494fa76aef2f7b6c102a335e844644f8`.
 - Toolchain [ci]: `macos-14`, Xcode 15.4. Rust from `rustup toolchain install nightly --profile complete` and `rustup default nightly`, so the nightly date is whatever was current on 22 December 2025. `cargo install cargo-c`, unpinned. The run logs have expired, so the exact `rustc` and `cargo-c` versions cannot be recovered.
 
 Build [cfg]:
@@ -410,7 +412,7 @@ Result [bin]:
   - Vulkan-Headers `6aefb8eb95c8e170d0805fd0f2d02832ec1e099a` = `v1.4.334` (Apache-2.0 or MIT)
   - Vulkan-Tools `013058f74e2356347f8d9317233bc769816c9dfb`
   - cereal `a56bad8bbb770ee266e930c95d37fff2a5be7fea` (BSD-3-Clause)
-- Source today: `mpvkit/moltenvk-build` `1.4.1`. Assets produced by run 19818078306 at `ae47104a669e` (tag commit differs only in `Package.swift`). `MoltenVK-all.zip` SHA-256 `9f65e1025f49c55394da475e40fbe1da8dbd10382d730ce81ebc4c5ac40104d1`.
+- Source today: provider B's moltenvk build `1.4.1`. Assets produced by run 19818078306 at `ae47104a669e` (tag commit differs only in `Package.swift`). `MoltenVK-all.zip` SHA-256 `9f65e1025f49c55394da475e40fbe1da8dbd10382d730ce81ebc4c5ac40104d1`.
 - Build system: MoltenVK's own `fetchDependencies` with one platform flag per platform (`--ios --iossim --tvos --tvossim` for Vivid's four), then MoltenVK's own `make` targets for the same platforms (`ios iossim tvos tvossim`). The xcframework is MoltenVK's own static package (`Package/Release/MoltenVK/static/MoltenVK.xcframework`).
 - Source edit: patch `00001-fix-xcode15-build.patch` wraps `supportsApple9 = supportsGPUFam(Apple9, mtlDev);` in `MoltenVK/MoltenVK/GPUObjects/MVKDevice.mm` with `#if MVK_XCODE_15 && !MVK_TVOS && !MVK_VISIONOS`.
 
@@ -431,7 +433,7 @@ Consumer requirements: FFmpeg `--enable-vulkan` needs `vulkan >= 1.3.277` (and c
   - SPIRV-Headers `b824a462d4256d720bebb40e78b9eb8f78bbb305`
   - abseil `1315c900e1ddbb08a23e06eeb9a06450052ccb5e`, effcee `08da24ec245a274fea3a128ba50068f163390565`, googletest `1d17ea141d2c11b8917d2c7d029f1c4e2b9769b2` and re2 `4a8cee3dd3c3d81b6fe8b867811e193d5819df07`. These are test-only.
 - Licences: shaderc Apache-2.0; glslang BSD-3-Clause, BSD-2-Clause, MIT and Apache-2.0; SPIRV-Tools Apache-2.0; SPIRV-Headers MIT-style.
-- Source today: `mpvkit/libshaderc-build` `2025.5.0`. Assets produced by run 20433138455 at `73542fcaa6f0` (tag commit `ed375d78` differs only in `Package.swift`). `libshaderc-all.zip` SHA-256 `1079da73a292e5b2cea6a02fa2208c4935ead79a98043f81708424510e0ab53f`.
+- Source today: provider B's libshaderc build `2025.5.0`. Assets produced by run 20433138455 at `73542fcaa6f0` (tag commit `ed375d78` differs only in `Package.swift`). `libshaderc-all.zip` SHA-256 `1079da73a292e5b2cea6a02fa2208c4935ead79a98043f81708424510e0ab53f`.
 
 CMake options [cfg]: `-DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON -DENABLE_EXCEPTIONS=ON -DENABLE_GLSLANG_BINARIES=OFF -DSPIRV_SKIP_EXECUTABLES=ON -DSPIRV_TOOLS_BUILD_STATIC=ON -DBUILD_SHARED_LIBS=OFF`.
 
@@ -446,10 +448,10 @@ Shipped artefact:
 
 - Upstream: `https://github.com/videolan/dav1d` (mirror of `code.videolan.org/videolan/dav1d`), tag `1.5.3` (tag object `0664c109...`), commit `b546257f770768b2c88258c533da38b91a06f737`. `DAV1D_API_VERSION 7.0.0` [bin].
 - Licence: BSD-2-Clause.
-- Source today: `edde746/libdav1d-build` `1.5.3-neon`, a pre-release.
-  - The repository is a fork of `mpvkit/libdav1d-build`. Its only functional change is commit `3714f81146b0`, which sets `-Denable_asm=true` where mpvkit uses `false`.
+- Source today: provider A's dav1d build `1.5.3-neon`, a pre-release.
+  - The repository is a fork of provider B's dav1d build. Its only functional change is commit `3714f81146b0`, which sets `-Denable_asm=true` where provider B uses `false`.
   - Assets produced by run 28639903812 at `3714f81146b0`. `libdav1d-all.zip` SHA-256 `ae80dd63322cd8acc262f6a825334b363f41c3182cb1a3ec7490c644aef27095`.
-  - The build environment is `mpvkit/BuildShared` at branch `main`, which was commit `f5a360068961fc837b92b4fe2cb7f6ab0ee862cd` at build time (minimum OS 14.0).
+  - The build environment is provider B's shared build workflow at branch `main`, which was commit `f5a360068961fc837b92b4fe2cb7f6ab0ee862cd` at build time (minimum OS 14.0).
 - Build system: meson. Options [cfg]: `-Denable_asm=true -Denable_tests=false -Denable_tools=false -Denable_examples=false -Dxxhash_muxer=disabled`.
 - Host tools: `nasm` (x86_64 asm) and `ninja`.
 
@@ -459,7 +461,7 @@ Shipped artefact:
   - The build clones the branch head without a tag (`--depth 1`, default branch). At build time (25 July 2026) the head was commit `0e20d2c291853f196c68922a264bcd8471d75b68`, which is also tag `1.2` [up].
   - `version.sh` is run before building.
 - Licence: three-clause BSD (`COPYING`).
-- Source today: `mpvkit/libuavs3d-build` `1.2.1-fix`. Assets produced by run 30140956213 at `51f936c182af` (tag commit differs only in `Package.swift` and `docs/Package.template.swift`). `libuavs3d-all.zip` SHA-256 `8644c7a8182679dbe762b522356606220bb6d2196a5ec65511eda42ef48b3e7a`. The build environment is `mpvkit/BuildShared` at commit `794a8f559e548dcf0543045c6bf4289dc3513861` (minimum OS 15.0).
+- Source today: provider B's libuavs3d build `1.2.1-fix`. Assets produced by run 30140956213 at `51f936c182af` (tag commit differs only in `Package.swift` and `docs/Package.template.swift`). `libuavs3d-all.zip` SHA-256 `8644c7a8182679dbe762b522356606220bb6d2196a5ec65511eda42ef48b3e7a`. The build environment is provider B's shared build workflow at commit `794a8f559e548dcf0543045c6bf4289dc3513861` (minimum OS 15.0).
 - Build system: CMake with `-DCOMPILE_10BIT=1`.
 - Source edit: patch `0001-fix-cross-compile.patch` comments out the `uavs3dec` test executable and its `aux_source_directory(./test ...)` in `CMakeLists.txt`.
 
@@ -467,7 +469,7 @@ Shipped artefact:
 
 - Upstream: `https://code.videolan.org/videolan/libbluray.git`, tag `1.4.0` (tag object `0852c0ea...`), commit `9f07fbb2077be7a40b062bcf2463a9941c2a3b13`. Cloned recursively. The submodule `contrib/libudfread` (`https://code.videolan.org/videolan/libudfread.git`) is pinned at gitlink `c3cd5cbb097924557ea4d9da1ff76a74620c51a8`, which is libudfread tag `1.2.0` [up].
 - Licence: LGPL-2.1-or-later, and the same for libudfread.
-- Source today: `mpvkit/libbluray-build` `1.4.0`. Assets produced by run 20433356876 at `3590f0a3880f` (tag commit differs only in `Package.swift`). `libbluray-all.zip` SHA-256 `c0302f43258ba41d9661dea0be4a7c9c1dd59d30d284ecfbf7319157c8e8a8de`.
+- Source today: provider B's libbluray build `1.4.0`. Assets produced by run 20433356876 at `3590f0a3880f` (tag commit differs only in `Package.swift`). `libbluray-all.zip` SHA-256 `c0302f43258ba41d9661dea0be4a7c9c1dd59d30d284ecfbf7319157c8e8a8de`.
 
 Meson options [cfg]: `-Denable_docs=false -Denable_tools=false -Denable_devtools=false -Denable_examples=false -Dbdj_jar=disabled -Djava9=false -Dembed_udfread=true -Dfontconfig=disabled -Dfreetype=enabled -Dlibxml2=enabled`.
 
@@ -483,14 +485,14 @@ Result [bin]: references FreeType (9 symbols), system libxml2 and pthread, and n
 
 - Upstream: `https://gitlab.freedesktop.org/uchardet/uchardet`, tag `v0.0.8` (tag object `3ac6d310...`), commit `ae6302a016088ad07177f86d417b20010053632b`.
 - Licence: MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later. Vivid uses it under LGPL-2.1-or-later.
-- Source today: `mpvkit/libuchardet-build` `0.0.8-xcode`. The assets were re-uploaded on 13 November 2025 by run 19318526426 at `fe0537696919`. That commit is one commit after the tag commit `153d8f6a` and changes only architecture lists: it removes arm64e from iOS device, macOS, Catalyst and visionOS, and leaves tvOS as arm64 and arm64e. `libuchardet-all.zip` SHA-256 `2e530b2d5448a1ca9d1f0a6b3ddf80729a870a6ec6c0f8555bc89c58143f01d1`.
+- Source today: provider B's libuchardet build `0.0.8-xcode`. The assets were re-uploaded on 13 November 2025 by run 19318526426 at `fe0537696919`. That commit is one commit after the tag commit `153d8f6a` and changes only architecture lists: it removes arm64e from iOS device, macOS, Catalyst and visionOS, and leaves tvOS as arm64 and arm64e. `libuchardet-all.zip` SHA-256 `2e530b2d5448a1ca9d1f0a6b3ddf80729a870a6ec6c0f8555bc89c58143f01d1`.
 - Build system: CMake with `-DBUILD_BINARY=0`.
 
 ### 2.14 OpenSSL
 
 - Upstream: `https://github.com/openssl/openssl`, tag `openssl-3.3.5` (tag object `c45e822d...`), commit `f10934c46fef092d04788f01fd0a4eafe3ef715f`. `OPENSSL_VERSION_TEXT "OpenSSL 3.3.5 30 Sep 2025"` [bin].
 - Licence: Apache-2.0.
-- Source today: `mpvkit/openssl-build` `3.3.5`. Assets produced by run 20428458744 at `83c78cee8803` (tag commit differs only in `Package.swift`). `openssl-all.zip` SHA-256 `8bc37424aa98fdeac17fd00fbeea7b784a39f1f800cc7f9e0c948d3b169c6f2f`.
+- Source today: provider B's openssl build `3.3.5`. Assets produced by run 20428458744 at `83c78cee8803` (tag commit differs only in `Package.swift`). `openssl-all.zip` SHA-256 `8bc37424aa98fdeac17fd00fbeea7b784a39f1f800cc7f9e0c948d3b169c6f2f`.
 - Configure options [cfg]: `--prefix=<dir> no-async no-shared no-dso no-engine no-tests <target>`, with the 2.0 environment. On a case-insensitive file system, `configure` resolves to OpenSSL's `Configure`. `<target>` is:
 
 | Arch | `<target>` |
@@ -506,9 +508,9 @@ Result [bin]: references FreeType (9 symbols), system libxml2 and pthread, and n
 
 - Upstream: `https://github.com/LuaJIT/LuaJIT.git`, branch `v2.1`, unpinned. The binary reports `LuaJIT 2.1.1762795099`, which corresponds to commit `eba91fceb67a0a0163a9222869bf254c988c48c4` (10 November 2025).
 - Licence: MIT.
-- Source today: `mpvkit/libluajit-build` `2.1.0-xcode`; assets produced by run 19318514213 at `1fc93b53eff8`. That is one commit after the tag commit and makes the same architecture-list change as for uchardet.
+- Source today: provider B's libluajit build `2.1.0-xcode`; assets produced by run 19318514213 at `1fc93b53eff8`. That is one commit after the tag commit and makes the same architecture-list change as for uchardet.
 - Built with `make` (`TARGET_SYS=iOS`, `DEFAULT_CC=clang`, `CROSS=<Xcode toolchain>/usr/bin/`, `TARGET_FLAGS="-arch <arch> -isysroot <sdk>"`). `-$(ABIVER)` is removed from `Makefile`, `src/Makefile` and `etc/luajit.pc`. No Catalyst build.
-- Linked only on macOS, as a platform-conditional dependency of `_MPVKit`. Not needed by Vivid.
+- Linked only on macOS, as a platform-conditional dependency of `_<EnginePackage>`. Not needed by Vivid.
 
 ### 2.16 System libraries and frameworks
 
@@ -525,7 +527,7 @@ These come from the SDK and are not built [bin]:
 
 ## 3. Changes already decided for Vivid, and their knock-on effects
 
-Evidence for the LGPL deltas: Vivid run 38330109119 (`origin/fix/lgpl-media-engine` at `89835c1`, tvOS device). It applied Vivid's `patches/mpv-build/0001-build-mpv-and-ffmpeg-as-lgpl.patch` and the two `0901` patches to mpv-build at the pin, and rebuilt FFmpeg and libmpv. I compared its artefact with today's binaries [ci] [bin].
+Evidence for the LGPL deltas: Vivid run 38330109119 (`origin/fix/lgpl-media-engine` at `89835c1`, tvOS device). It applied Vivid's `patches/<engine package>/0001-build-mpv-and-ffmpeg-as-lgpl.patch` and the two `0901` patches to the engine package at the pin, and rebuilt FFmpeg and libmpv. I compared its artefact with today's binaries [ci] [bin].
 
 ### 3.1 mpv `-Dgpl=false`
 
@@ -563,8 +565,8 @@ Other effects:
 
 ### 3.4 `-Dmoltenvk=enabled` removed
 
-- The option exists only with edde746's patch `0001-player-add-moltenvk-context.patch`. Upstream mpv 0.41.0 rejects an unknown `-D`, so the option must go whenever that patch is absent.
-- Run 38330109119 still passed it because it used edde746's series.
+- The option exists only with provider A's patch `0001-player-add-moltenvk-context.patch`. Upstream mpv 0.41.0 rejects an unknown `-D`, so the option must go whenever that patch is absent.
+- Run 38330109119 still passed it because it used provider A's series.
 - `-Dvo-avfoundation=enabled` has the same status: it comes from patch `0004`. Whether to pass it depends on Vivid's own mpv series.
 
 MoltenVK stays a hard link dependency without the option [up] [bin]:
@@ -580,14 +582,14 @@ MoltenVK stays a hard link dependency without the option [up] [bin]:
 ### 3.5 libass from upstream, unpatched
 
 - Pin 0.17.5, commit `4a05d812`. All meson options used today are upstream options, so the option set needs no change (`-Dasm` enabled on arm64 and arm64e, disabled on x86_64).
-- The three edde746 patches add public API and a `threads` meson option. The new APIs are `ASS_FEATURE_FAST_BLUR`, `ass_set_threads`, the image pool, `ASS_FEATURE_CACHE_LAYOUT` and `ASS_FEATURE_MOTION_CACHE`. In edde746's mpv series, `0006-sd-ass-fast-blur-and-render-threads.patch` and `0013-sd-ass-isolate-event-prefetch-renderer.patch` use them.
+- The three provider A patches add public API and a `threads` meson option. The new APIs are `ASS_FEATURE_FAST_BLUR`, `ass_set_threads`, the image pool, `ASS_FEATURE_CACHE_LAYOUT` and `ASS_FEATURE_MOTION_CACHE`. In provider A's mpv series, `0006-sd-ass-fast-blur-and-render-threads.patch` and `0013-sd-ass-isolate-event-prefetch-renderer.patch` use them.
 - Any Vivid mpv patch that relies on those APIs will not build against unpatched libass. Subtitle rendering then runs single-threaded, without the fast-blur or layout-cache paths.
 - FFmpeg's `ass` and `subtitles` filters work with upstream libass.
 
-### 3.6 Other knock-ons from replacing edde746's patches
+### 3.6 Other knock-ons from replacing provider A's patches
 
-- FFmpeg's link dependency on libdovi exists only through edde746's `0003-videotoolbox-convert-dolby-vision-p7.patch`. Without an equivalent Vivid patch, FFmpeg needs no libdovi include or link flags. Libplacebo still needs libdovi (`PL_HAVE_LIBDOVI`).
-- Static libmpv needs no patch [up]. Upstream mpv 0.41.0 declares the library with `library('mpv', ...)`, which honours `default_library=static`, so it yields `libmpv.a`. edde746's `0002-revert-build-static.patch` touches only `osdep/mac/meson.build`, which is not part of iOS or tvOS builds.
+- FFmpeg's link dependency on libdovi exists only through provider A's `0003-videotoolbox-convert-dolby-vision-p7.patch`. Without an equivalent Vivid patch, FFmpeg needs no libdovi include or link flags. Libplacebo still needs libdovi (`PL_HAVE_LIBDOVI`).
+- Static libmpv needs no patch [up]. Upstream mpv 0.41.0 declares the library with `library('mpv', ...)`, which honours `default_library=static`, so it yields `libmpv.a`. Provider A's `0002-revert-build-static.patch` touches only `osdep/mac/meson.build`, which is not part of iOS or tvOS builds.
 - The `videotoolbox.c` Metal-compatibility substitution (2.2) is not a patch file. A clean build must decide whether to reproduce it.
 
 ---
@@ -647,7 +649,7 @@ Header layout per framework. Contents at `Headers/` root:
 | --- | --- |
 | `CFBundleDevelopmentRegion` | `en` |
 | `CFBundleExecutable` | `<Name>` |
-| `CFBundleIdentifier` | `com.mpvkit.<Name>`, with `_` replaced by `-` (for example `com.mpvkit.Libshaderc-combined`) |
+| `CFBundleIdentifier` | `<third-party prefix>.<Name>`, with `_` replaced by `-` (for example `<third-party prefix>.Libshaderc-combined`) |
 | `CFBundleInfoDictionaryVersion` | `6.0` |
 | `CFBundleName` | `<Name>` |
 | `CFBundlePackageType` | `FMWK` |
@@ -667,11 +669,11 @@ Header layout per framework. Contents at `Headers/` root:
 
 Published form [ci]:
 - Each platform is built in a separate CI job. The published xcframework contains every platform's framework.
-- edde746 publishes each xcframework as `<Name>-<12-hex content key>.xcframework.zip` on the rolling pre-release `binaries-apple`. mpvkit publishes `<Name>.xcframework.zip` on a versioned release, with a `<Name>.xcframework.checksum.txt` beside it.
+- Provider A publishes each xcframework as `<Name>-<12-hex content key>.xcframework.zip` on the rolling pre-release `binaries-apple`. Provider B publishes `<Name>.xcframework.zip` on a versioned release, with a `<Name>.xcframework.checksum.txt` beside it.
 - The zip's root entry is `<Name>.xcframework/`.
 - The SwiftPM checksum is the output of `swift package compute-checksum <zip>`, which is the SHA-256 of the zip.
 
-Per-platform "-all" zips (`<lib>-all-<key>-<platform>.zip` for edde746; `<lib>-all.zip` for mpvkit) hold:
+Per-platform "-all" zips (`<lib>-all-<key>-<platform>.zip` for provider A; `<lib>-all.zip` for provider B) hold:
 - `lib/<platform>/thin/<arch>/lib/*.a`
 - one `include/`
 - `pkgconfig-example/<platform>/<arch>/*.pc`, with absolute paths rewritten to `/path/to/workdir`
@@ -679,8 +681,8 @@ Per-platform "-all" zips (`<lib>-all-<key>-<platform>.zip` for edde746; `<lib>-a
 ### 4.3 SwiftPM exposure [cfg]
 
 - Each xcframework is a `.binaryTarget(name:url:checksum:)` whose name equals the framework and module name.
-- The product `MPVKit` exposes them through the dummy source targets `_MPVKit` and `_FFmpeg` (section 1.2).
-- Swift code imports binary modules directly (`import Libmpv`). `_MPVKit` and `_FFmpeg` are also importable but empty.
+- The product `<EnginePackage>` exposes them through the dummy source targets `_<EnginePackage>` and `_FFmpeg` (section 1.2).
+- Swift code imports binary modules directly (`import Libmpv`). `_<EnginePackage>` and `_FFmpeg` are also importable but empty.
 - MoltenVK exposes no module.
 
 ---
@@ -734,55 +736,55 @@ The package's linker settings do not list OpenGLES, CoreGraphics, CoreText, IOSu
 ### 5.4 CI hardware and time, from job start to job end [ci]
 
 Runners:
-- edde746 and Vivid use GitHub-hosted `macos-26`.
-- mpvkit uses GitHub-hosted `macos-14`.
+- Provider A and Vivid use GitHub-hosted `macos-26`.
+- Provider B uses GitHub-hosted `macos-14`.
 - Run metadata records no CPU or memory figures, and none were measured here.
 
 | Job | What it compiled | Duration |
 | --- | --- | --- |
-| edde746 run 36139871015 (libass, FFmpeg, libmpv from source; the rest from prebuilt zips) | iOS device | 7 min 02 s |
+| Provider A run 36139871015 (libass, FFmpeg, libmpv from source; the rest from prebuilt zips) | iOS device | 7 min 02 s |
 | | tvOS device (arm64 and arm64e) | 12 min 39 s |
 | | iOS simulator (arm64 and x86_64) | 12 min 58 s |
 | | tvOS simulator | 10 min 41 s |
 | | Mac Catalyst | 8 min 12 s |
 | | macOS | 14 min 57 s |
 | | merge and publish | 58 s |
-| edde746 run 36015974247 (libass and libmpv) | per platform | 2.5 to 4 min |
+| Provider A run 36015974247 (libass and libmpv) | per platform | 2.5 to 4 min |
 | Vivid run 38330109119 (LGPL FFmpeg and libmpv, tvOS device) | build step | 12 min 00 s (job 12 min 30 s; job timeout 45 min) |
 | Vivid main runs (libmpv only) | per device platform | about 3 min |
-| mpvkit libass-build | unibreak, FreeType, FriBidi, HarfBuzz, libass, all platforms | 17 min 36 s |
-| mpvkit openssl-build | | 27 min 03 s |
-| mpvkit libdovi-build | | 12 min 08 s |
-| mpvkit moltenvk-build | | 70 min 13 s |
-| mpvkit libshaderc-build (with split-platform xcframeworks) | | 54 min 52 s |
-| mpvkit libplacebo-build (including SPIRV-Cross) | | 10 min 48 s |
-| mpvkit libbluray-build | | 2 min 43 s |
-| mpvkit lcms2-build | | 2 min 02 s |
-| edde746 libdav1d-build | | 5 min 22 s |
-| mpvkit libuavs3d-build | | 1 min 40 s |
-| mpvkit libuchardet-build | | 1 min 17 s |
-| mpvkit libluajit-build | | 2 min 07 s |
+| Provider B libass-build | unibreak, FreeType, FriBidi, HarfBuzz, libass, all platforms | 17 min 36 s |
+| Provider B openssl-build | | 27 min 03 s |
+| Provider B libdovi-build | | 12 min 08 s |
+| Provider B moltenvk-build | | 70 min 13 s |
+| Provider B libshaderc-build (with split-platform xcframeworks) | | 54 min 52 s |
+| Provider B libplacebo-build (including SPIRV-Cross) | | 10 min 48 s |
+| Provider B libbluray-build | | 2 min 43 s |
+| Provider B lcms2-build | | 2 min 02 s |
+| Provider A libdav1d-build | | 5 min 22 s |
+| Provider B libuavs3d-build | | 1 min 40 s |
+| Provider B libuchardet-build | | 1 min 17 s |
+| Provider B libluajit-build | | 2 min 07 s |
 
-Most mpvkit jobs build every Apple platform, including visionOS.
+Most provider B jobs build every Apple platform, including visionOS.
 
 Host tools used:
 - Homebrew: autoconf, automake, libtool, ninja, pkg-config, wget, nasm, cmake.
 - pip: meson 1.4.2.
 - For libdovi: rustup nightly and cargo-c.
 - For libplacebo: Python jinja2.
-- Xcode: 26.6 for edde746, 15.4 for mpvkit.
+- Xcode: 26.6 for provider A, 15.4 for provider B.
 
 ---
 
 ## 6. Ambiguities and open questions
 
-1. Imports in the forbidden files. Whether `MpvPlayerCoreBase.swift`, `MpvPlayerCore.swift` or `ExternalDisplayManager.swift` import modules other than `Libmpv`, or call C symbols by name (as `LucidTLS` does), is unknown. Keep all 25 module names and the product name `MPVKit` until the caller confirms. Partial evidence: on 13 October 2026 the worktree had uncommitted, in-progress files `iosApp/iosApp/Playback/MPV/Vivid*.swift` (for example `VividPlayerCore.swift` and `VividExternalDisplay.swift`). Among engine modules they import only `Libmpv`, and they use no `@_silgen_name`.
+1. Imports in the forbidden files. Whether `MpvPlayerCoreBase.swift`, `MpvPlayerCore.swift` or `ExternalDisplayManager.swift` import modules other than `Libmpv`, or call C symbols by name (as `LucidTLS` does), is unknown. Keep all 25 module names and the product name `<EnginePackage>` until the caller confirms. Partial evidence: on 13 October 2026 the worktree had uncommitted, in-progress files `iosApp/iosApp/Playback/MPV/Vivid*.swift` (for example `VividPlayerCore.swift` and `VividExternalDisplay.swift`). Among engine modules they import only `Libmpv`, and they use no `@_silgen_name`.
 2. Deployment targets. "Configured exactly like today" has no single value: objects carry minos 10.0, 13.0, 14.0, 14.5 or 15.0 depending on the producer. Vivid's targets (iOS 18.0, tvOS 26.0) accept any of these. A uniform choice needs a decision. The package manifest says iOS 15 and tvOS 15.
 3. Slices. Vivid links only arm64, on device and simulator. Options are to keep arm64e and x86_64 for parity, or drop them and change the slice names that `use-patched-libmpv.sh` hard-codes. Also decide whether to keep Catalyst, macOS and visionOS slices. Vivid does not need them, and dropping macOS means the `.macOS(.v12)` platform and `Libluajit` can go.
-4. Package identity and paths. A new repository URL changes the SwiftPM identity (`mpv-build`) and the `SourcePackages/artifacts/<identity>/` path used by `use-patched-libmpv.sh` and the audio-driver workflow.
-5. `MinimumOSVersion` 100.0 and bundle identifiers `com.mpvkit.*`. Should the new frameworks keep these values, or use Vivid's own identifiers? If the value changes, check it against ITMS-90208 first (see 1.7); the exact App Store rule was not verified here.
+4. Package identity and paths. A new repository URL changes the SwiftPM identity (`<identity>`) and the `SourcePackages/artifacts/<identity>/` path used by `use-patched-libmpv.sh` and the audio-driver workflow.
+5. `MinimumOSVersion` 100.0 and bundle identifiers `<third-party prefix>.*`. Should the new frameworks keep these values, or use Vivid's own identifiers? If the value changes, check it against ITMS-90208 first (see 1.7); the exact App Store rule was not verified here.
 6. Undeclared system frameworks. OpenGLES, CoreGraphics, CoreText, IOSurface and Foundation are needed by the archives but not declared in the package. They resolve in Vivid's apps, and the source of the OpenGLES link was not found. Decide whether to declare them in the new package. Also decide whether to keep the unused `bz2`, `expat` and `resolv`, and `Libssl`/`Libcrypto` once Secure Transport replaces OpenSSL.
-7. Internal FFmpeg headers and the `videotoolbox.c` Metal key substitution. Nothing in Vivid's inspected code uses the internal headers, and whether edde746's mpv patches do was not checked exhaustively. The Metal key edit changes runtime pixel-buffer attributes. Both are outside the patch series, so their status is undecided.
+7. Internal FFmpeg headers and the `videotoolbox.c` Metal key substitution. Nothing in Vivid's inspected code uses the internal headers, and whether provider A's mpv patches do was not checked exhaustively. The Metal key edit changes runtime pixel-buffer attributes. Both are outside the patch series, so their status is undecided.
 8. libdovi in FFmpeg. It is needed only if Vivid's own FFmpeg series includes Dolby Vision profile 7 conversion through libdovi.
 9. Unpinned upstreams today:
    - uavs3d (master head at build time, commit `0e20d2c2`)
@@ -794,8 +796,8 @@ Host tools used:
    A reproducible rebuild must choose pins; the commits listed above are the ones that match today's binaries.
 10. Rust tier-3 targets. Rebuilding libdovi for tvOS (`aarch64-apple-tvos`, `aarch64-apple-tvos-sim`, `x86_64-apple-tvos`) and for arm64e requires nightly with `-Zbuild-std=std,panic_abort`. This is the largest reproducibility risk in the graph.
 11. Static libmpv: resolved. Upstream produces `libmpv.a` with `default_library=static` (see 3.6).
-12. HarfBuzz and FreeType are old. The prebuilts are FreeType 2.12.1, HarfBuzz 8.1.1 and FriBidi 1.0.12, much older than the versions mpv-build pins for Android (2.14.1, 12.3.2, 1.0.16). "Like today" means the old versions.
-13. `-Dvo-avfoundation`. Like `-Dmoltenvk`, it needs an edde746 patch. Whether Vivid's own series provides an equivalent option is outside this spec.
+12. HarfBuzz and FreeType are old. The prebuilts are FreeType 2.12.1, HarfBuzz 8.1.1 and FriBidi 1.0.12, much older than the versions the engine package pins for Android (2.14.1, 12.3.2, 1.0.16). "Like today" means the old versions.
+13. `-Dvo-avfoundation`. Like `-Dmoltenvk`, it needs an provider A patch. Whether Vivid's own series provides an equivalent option is outside this spec.
 14. Runner hardware. CPU and memory were not recorded in CI metadata (see 5.4).
 15. Shipped baseline. Today's device archives already link workflow-rebuilt slices (see 1.7). "Zero regressions" should be measured against those, not only against the package's stock binaries. On tvOS that means the LGPL FFmpeg and libmpv.
 
@@ -841,20 +843,20 @@ Not enabled: android_content, bluray, libamqp, librist, librtmp*, libsmbclient, 
 
 | Producer | Tag (release created) | Tag commit | Asset-producing run, commit | Other differences |
 | --- | --- | --- | --- | --- |
-| mpvkit/libass-build | 0.17.4 (2025-12-22; assets 2025-11-19) | 392f5914 | 19487080817, a4d8ea60 | Package.swift |
-| mpvkit/libbluray-build | 1.4.0 (2025-12-22) | a25a5f01 | 20433356876, 3590f0a3 | Package.swift |
-| mpvkit/openssl-build | 3.3.5 (2025-12-22) | 5634c152 | 20428458744, 83c78cee | Package.swift |
-| mpvkit/libdovi-build | 3.3.2 (2025-12-22) | c08af75c | 20428353657, 77328e39 | Package.swift |
-| mpvkit/moltenvk-build | 1.4.1 (2025-12-01) | c8bdb96a | 19818078306, ae47104a | Package.swift |
-| mpvkit/libshaderc-build | 2025.5.0 (2025-12-22) | ed375d78 | 20433138455, 73542fca | Package.swift |
-| mpvkit/lcms2-build | 2.17.0 (2025-12-22) | 9ffcc2ea | 20432385218, 68a37c94 | Package.swift |
-| mpvkit/libplacebo-build | 7.351.0-2512 (2025-12-22) | d9ff9205 | 20434622243, 47a712b6 | Package.swift |
-| edde746/libdav1d-build | 1.5.3-neon, pre-release (2026-07-03) | 54c75146 | 28639903812, 3714f811 | Package.swift |
-| mpvkit/libuavs3d-build | 1.2.1-fix (2026-07-25) | bfb5c5a7 | 30140956213, 51f936c1 | Package.swift, docs template |
-| mpvkit/libuchardet-build | 0.0.8-xcode (2025-11-12; assets 2025-11-13) | 153d8f6a | 19318526426, fe053769 | one commit after the tag: iOS arm64e removed |
-| mpvkit/libluajit-build | 2.1.0-xcode (2025-11-12; assets 2025-11-13) | a8855621 | 19318514213, 1fc93b53 | one commit after the tag: iOS arm64e removed |
-| edde746/mpv-build | `binaries-apple` rolling | pin c6f7e635 | FFmpeg key c04b889c6bf7, libmpv key 4016569ef4b2, libass key dcf94c1d6ebe | per-platform zips dated 2026-09-10 (libass) and 2026-09-14/15 (FFmpeg, libmpv) |
+| Provider B's libass build | 0.17.4 (2025-12-22; assets 2025-11-19) | 392f5914 | 19487080817, a4d8ea60 | Package.swift |
+| Provider B's libbluray build | 1.4.0 (2025-12-22) | a25a5f01 | 20433356876, 3590f0a3 | Package.swift |
+| Provider B's openssl build | 3.3.5 (2025-12-22) | 5634c152 | 20428458744, 83c78cee | Package.swift |
+| Provider B's libdovi build | 3.3.2 (2025-12-22) | c08af75c | 20428353657, 77328e39 | Package.swift |
+| Provider B's moltenvk build | 1.4.1 (2025-12-01) | c8bdb96a | 19818078306, ae47104a | Package.swift |
+| Provider B's libshaderc build | 2025.5.0 (2025-12-22) | ed375d78 | 20433138455, 73542fca | Package.swift |
+| Provider B's lcms2 build | 2.17.0 (2025-12-22) | 9ffcc2ea | 20432385218, 68a37c94 | Package.swift |
+| Provider B's libplacebo build | 7.351.0-2512 (2025-12-22) | d9ff9205 | 20434622243, 47a712b6 | Package.swift |
+| Provider A's dav1d build | 1.5.3-neon, pre-release (2026-07-03) | 54c75146 | 28639903812, 3714f811 | Package.swift |
+| Provider B's libuavs3d build | 1.2.1-fix (2026-07-25) | bfb5c5a7 | 30140956213, 51f936c1 | Package.swift, docs template |
+| Provider B's libuchardet build | 0.0.8-xcode (2025-11-12; assets 2025-11-13) | 153d8f6a | 19318526426, fe053769 | one commit after the tag: iOS arm64e removed |
+| Provider B's libluajit build | 2.1.0-xcode (2025-11-12; assets 2025-11-13) | a8855621 | 19318514213, 1fc93b53 | one commit after the tag: iOS arm64e removed |
+| Provider A's engine package | `binaries-apple` rolling | pin c6f7e635 | FFmpeg key c04b889c6bf7, libmpv key 4016569ef4b2, libass key dcf94c1d6ebe | per-platform zips dated 2026-09-10 (libass) and 2026-09-14/15 (FFmpeg, libmpv) |
 
 Local evidence copies, all read-only and in the scratchpad:
-- `dirty-side/engine-src/build-config/`: build repos at the tags above, `mpvkit_BuildShared`, the LGPL run artefact `lgpl-run-38330109119/` and `assets/` (FFmpeg, libmpv and libass tvOS per-platform zips, `MoltenVK-all.zip`, `libplacebo-all.zip`)
+- `dirty-side/engine-src/build-config/`: build repos at the tags above, `provider-B-shared-build`, the LGPL run artefact `lgpl-run-38330109119/` and `assets/` (FFmpeg, libmpv and libass tvOS per-platform zips, `MoltenVK-all.zip`, `libplacebo-all.zip`)
 - `bc-tools/`: inspection outputs
