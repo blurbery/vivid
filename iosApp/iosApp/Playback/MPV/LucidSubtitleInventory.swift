@@ -124,6 +124,7 @@ private enum LucidSubtitleProbe {
                 "cache":"no", "network-timeout":"10", "demuxer-max-bytes":"4194304"] {
                 guard mpv_set_option_string(mpv, name, value) >= 0 else { throw OpenSubtitlesError.file }
             }
+            guard LucidTLS.apply(to: mpv) >= 0 else { throw OpenSubtitlesError.file }
             VividMPVHeaders.apply(request.headers, to: mpv)
             guard mpv_initialize(mpv) >= 0 else { throw OpenSubtitlesError.file }
             let status = "loadfile".withCString { command in

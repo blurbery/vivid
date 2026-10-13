@@ -1177,6 +1177,9 @@ private final class VividMPVCore: MpvPlayerCore {
                         "cache": "yes", "demuxer-max-bytes": "268435456", "demuxer-max-back-bytes": "16777216",
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
         for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value), option: name) }
+        // Check HTTPS certificates when the linked FFmpeg uses Secure Transport.
+        // The stock OpenSSL build has no trust store on Apple platforms.
+        checkError(LucidTLS.apply(to: mpv), option: "tls-verify")
         #if os(tvOS)
         // Read at most a minute ahead. On a fast link the 256 MiB packet cache
         // otherwise fills over a long play, a large share of Apple TV's memory.
