@@ -32,9 +32,9 @@ jobs:
   build:
     name: Build ${{ matrix.slice }}
     runs-on: macos-26
-    # A run that has to build every dependency (no cached builds) takes far
-    # longer than one that reuses them.
-    timeout-minutes: 180
+    # About 25 minutes when every dependency is built (no cached builds), about
+    # 10 when they are reused.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

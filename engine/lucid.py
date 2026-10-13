@@ -81,7 +81,7 @@ FETCH_ALLOWED = (
     "https://github.com/pallets/",  # libplacebo's 3rdparty/jinja and markupsafe
     "https://github.com/KhronosGroup/",  # MoltenVK, Vulkan-Headers, SPIRV-*, glslang
     "https://github.com/USCiLab/",  # cereal, for MoltenVK
-    "https://github.com/google/",  # shaderc
+    "https://github.com/google/shaderc/",
     "https://github.com/uavs3/",
     "https://download.videolan.org/pub/videolan/libbluray/",  # release tarball
     "https://www.freedesktop.org/software/uchardet/releases/",  # release tarball

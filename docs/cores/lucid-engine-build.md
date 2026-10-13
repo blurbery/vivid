@@ -89,7 +89,7 @@ Vivid links only arm64, so the pipeline builds no arm64e or x86_64 code. This ch
 - `[rust:*]`: Rust 1.98.0 stable from static.rust-lang.org: `rustc`, `cargo` and the standard library for the runner (`aarch64-apple-darwin`) and for each slice (`aarch64-apple-ios`, `aarch64-apple-ios-sim`, `aarch64-apple-tvos`, `aarch64-apple-tvos-sim`). The hashes are the `xz_hash` values of that release's channel manifest. `lucid.py` unpacks the components itself, without rustup.
 - `[toolchain]`: the Xcode version CI must use, the default minimum OS (14.0), Vivid's own deployment targets (iOS 18.0, tvOS 26.0) for the test link, and `source_date_epoch` (below).
 
-Every download goes through `lucid.py`'s single download function, from these projects and hosts only, all upstream: FFmpeg, mpv-player, libass, videolan, mesonbuild, ninja-build, Kitware (CMake), quietvoid (libdovi's `dovi_tool`), lu-zero (cargo-c), freetype, fribidi, harfbuzz, adah1972 (libunibreak), mm2 (Little CMS), haasn (libplacebo), fastfloat, Dav1dde (glad) and pallets (jinja, MarkupSafe) for libplacebo's submodules, KhronosGroup, USCiLab (cereal), google (shaderc) and uavs3 on GitHub; `download.videolan.org/pub/videolan/libbluray/`; `www.freedesktop.org/software/uchardet/releases/`; `static.rust-lang.org/dist/`; and `static.crates.io/crates/`. No third-party binary is downloaded. The libdovi build itself runs offline: Cargo uses the verified crates as a vendored directory source with `--frozen`, so it resolves and downloads nothing.
+Every download goes through `lucid.py`'s single download function, from these projects and hosts only, all upstream: FFmpeg, mpv-player, libass, videolan, mesonbuild, ninja-build, Kitware (CMake), quietvoid (libdovi's `dovi_tool`), lu-zero (cargo-c), freetype, fribidi, harfbuzz, adah1972 (libunibreak), mm2 (Little CMS), haasn (libplacebo), fastfloat, Dav1dde (glad) and pallets (jinja, MarkupSafe) for libplacebo's submodules, KhronosGroup, USCiLab (cereal), google/shaderc and uavs3 on GitHub; `download.videolan.org/pub/videolan/libbluray/`; `www.freedesktop.org/software/uchardet/releases/`; `static.rust-lang.org/dist/`; and `static.crates.io/crates/`. No third-party binary is downloaded. The libdovi build itself runs offline: Cargo uses the verified crates as a vendored directory source with `--frozen`, so it resolves and downloads nothing.
 
 `lucid.py check-allowlist` fails the run if any file in `engine/` or the workflow mentions a blocked project (third-party build repositories among them), if a URL points at a host that is not allowlisted, if a download is not one of the allowlisted upstream projects, if anything fetches outside `lucid.py`'s single download function, if a pin has no SHA-256, if a source names a part that has no pin (or a part is unused), if the sources differ from the build order or a source has no patch series, or if a workflow action is not pinned by commit SHA.
 
@@ -213,6 +213,8 @@ The dependencies take most of a slice's build time (shaderc, MoltenVK and HarfBu
 
 The workflow restores the cache with `actions/cache` under that key, or failing that the slice's most recent entry, and saves it whenever the run built a dependency: under the key once every dependency is in the cache, otherwise under a key of its own that the next run still finds. Each dependency's provenance records whether it was built or reused, its key, and the toolchain that built it. The checks run on reused builds exactly as on new ones.
 
+Timings on the `macos-26` runners (run 38425539055): building all eleven took 10 to 18 minutes per slice (shaderc 3 to 5, MoltenVK 5 to 10, the simulators' longest because MoltenVK also builds their x86_64 code, HarfBuzz about 1), and a slice job 18 to 27 minutes. With every dependency reused, a slice job takes about 10 minutes, as before. A slice's cache entry is about 10 MB.
+
 ## Reproducible builds
 
 - `ZERO_AR_DATE=1` is set for every build, so `ar`, `ranlib` and `libtool` write zero timestamps; Rust and `rust-objcopy` write zero timestamps themselves. `check` requires every member of every archive to carry a zero timestamp.
@@ -222,6 +224,11 @@ The workflow restores the cache with `actions/cache` under that key, or failing 
 - The packaging job packages the same slices twice and fails unless the two sets of zips are identical.
 
 Results: runs 38367673194 and 38368890048 built every framework of all four slices byte for byte the same, and packaging the first run's slices again gave exactly the second run's `SHA256SUMS`, so unchanged libraries give identical zips across runs.
+
+For the dependencies built from source:
+
+- Runs 38412603172 and 38425539055 each built all eleven from source on all four slices, on different runners, and gave byte-identical `libMoltenVK.a` and dependency framework binaries on every slice.
+- With the dependencies built here, run 38425539055's `Libmpv`, `Libass`, `Libdav1d`, `Libdovi` and seven FFmpeg frameworks are byte for byte the same, on all four slices, as those of run 38400124717, which built them against today's interim binaries. Swapping the eleven dependencies changed nothing in the libraries built against them. (This needs each dependency installed in its own `deps/<name>` folder, as the interim binaries were staged: libplacebo's `libav_internal.h` puts its header path into an assertion text in FFmpeg's `vf_libplacebo`.)
 
 ## Configuration
 
