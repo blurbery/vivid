@@ -1,9 +1,10 @@
 name: Lucid Engine build
 
-# Builds Lucid Engine's dav1d, libass, FFmpeg and libmpv from the pinned
-# upstream sources and Vivid's patch series in engine/, checks every slice
-# against the recorded build facts and packages static xcframeworks.
-# See docs/cores/lucid-engine-build.md.
+# Builds Lucid Engine's libdovi, dav1d, libass, FFmpeg and libmpv from the
+# pinned upstream sources and Vivid's patch series in engine/, checks every
+# slice against the recorded build facts, runs the malformed RPU corpus
+# against the patched and unpatched libdovi, and packages static
+# xcframeworks. See docs/cores/lucid-engine-build.md.
 
 # Runs on the pipeline branch and on every engine implementer's branch
 # (experiment/lucid-engine-*). Each branch has its own concurrency group, so
@@ -32,7 +33,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        slice: [ios-arm64, ios-arm64-simulator, tvos-arm64, tvos-arm64-simulator]
+        # tvOS device only while libdovi's source build is first proven;
+        # the next commit restores all four slices.
+        slice: [tvos-arm64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -85,9 +88,55 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+  libdovi-test:
+    name: libdovi C API test
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that every fetch is pinned and allowlisted
+        run: python3 engine/lucid.py check-allowlist
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Restore pinned downloads
+        id: downloads
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libdovi-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Fetch and verify the Rust toolchain, cargo-c, libdovi and its crates
+        run: |
+          python3 engine/lucid.py fetch --only rust:,tool:cargo-c,source:libdovi \
+            --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Save pinned downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libdovi-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Malformed RPU corpus through patched and unpatched libdovi
+        run: |
+          python3 engine/lucid.py test-libdovi \
+            --work "$RUNNER_TEMP/lucid-libdovi-test" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Upload the libdovi test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-libdovi-test
+          path: |
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.json
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.md
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.tsv
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.log
+          if-no-files-found: ignore
+          retention-days: 3
+
   package:
     name: Package xcframeworks
-    needs: build
+    needs: [build, libdovi-test]
     runs-on: macos-26
     timeout-minutes: 20
     steps:

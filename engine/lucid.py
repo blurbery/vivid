@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Lucid Engine build tool.
 
-Builds Vivid's media engine libraries (dav1d, libass, FFmpeg and libmpv) from
-pinned upstream sources plus Vivid's patch series, packages them as static
-xcframeworks and writes a provenance report. Everything else the engine links
-comes from the interim prebuilt binaries pinned in pins.ini.
+Builds Vivid's media engine libraries (libdovi, dav1d, libass, FFmpeg and
+libmpv) from pinned upstream sources plus Vivid's patch series, packages them
+as static xcframeworks and writes a provenance report. Everything else the
+engine links comes from the interim prebuilt binaries pinned in pins.ini.
 
     python3 engine/lucid.py check-allowlist
     python3 engine/lucid.py fetch
     python3 engine/lucid.py build --slice tvos-arm64
     python3 engine/lucid.py check --slice tvos-arm64
     python3 engine/lucid.py package --input DIR --out DIR
+    python3 engine/lucid.py test-libdovi
 
 Needs Python 3.9 or later (standard library only), the Xcode command-line
 tools and pkg-config. Building is meant for CI; see
@@ -23,6 +24,7 @@ import argparse
 import configparser
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
 import plistlib
@@ -58,6 +60,10 @@ FETCH_ALLOWED = (
     "https://github.com/mesonbuild/",
     "https://github.com/ninja-build/",
     "https://github.com/mpvkit/",  # interim prebuilt release assets only
+    "https://github.com/quietvoid/",  # libdovi (dovi_tool) source
+    "https://github.com/lu-zero/",  # cargo-c release binary
+    "https://static.rust-lang.org/dist/",  # Rust toolchain components
+    "https://static.crates.io/crates/",  # crates in libdovi's Cargo.lock
 )
 # Hosts that may appear in references (upstream homes, patch descriptions).
 REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org"}
@@ -91,7 +97,21 @@ MODULE_EXCLUDES = {
                   "hwcontext_qsv.h", "hwcontext_opencl.h", "hwcontext_dxva2.h",
                   "hwcontext_d3d11va.h", "hwcontext_d3d12va.h", "hwcontext_cuda.h"),
 }
-BUILD_ORDER = ("dav1d", "libass", "ffmpeg", "mpv")
+BUILD_ORDER = ("libdovi", "dav1d", "libass", "ffmpeg", "mpv")
+BUILT_FRAMEWORKS = {"Libdovi", "Libdav1d", "Libass", "Libmpv"} | {f"Lib{ff}" for ff in FFMPEG_LIBS}
+CRATES_URL = "https://static.crates.io/crates/{name}/{name}-{version}.crate"
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
+HOST_RUST_TARGET = "aarch64-apple-darwin"
+# libdovi's C API, as today's prebuilt exports it (facts 2.7).
+LIBDOVI_API = {
+    "_dovi_convert_rpu_with_mode", "_dovi_data_free", "_dovi_parse_itu_t35_dovi_metadata_obu",
+    "_dovi_parse_rpu", "_dovi_parse_rpu_bin_file", "_dovi_parse_unspec62_nalu", "_dovi_rpu_free",
+    "_dovi_rpu_free_data_mapping", "_dovi_rpu_free_header", "_dovi_rpu_free_vdr_dm_data",
+    "_dovi_rpu_get_data_mapping", "_dovi_rpu_get_error", "_dovi_rpu_get_header",
+    "_dovi_rpu_get_vdr_dm_data", "_dovi_rpu_list_free", "_dovi_rpu_remove_mapping",
+    "_dovi_rpu_set_active_area_offsets", "_dovi_write_av1_rpu_metadata_obu_t35_complete",
+    "_dovi_write_av1_rpu_metadata_obu_t35_payload", "_dovi_write_rpu", "_dovi_write_unspec62_nalu",
+}
 OPENSSL_SYMBOL = re.compile(
     r"^_(SSL_|TLS_|DTLS_|OPENSSL_|OpenSSL_|EVP_|X509_|BIO_|ERR_|CRYPTO_|PEM_|RAND_|HMAC_)")
 MPV_PATCH_MARKER = b"Still waiting for TrueHD major sync"  # from mpv patch 0001
@@ -109,19 +129,25 @@ class Slice:
     plist_platform: str  # CFBundleSupportedPlatforms
     macho_platform: int  # LC_BUILD_VERSION platform
     tvos: bool
+    rust_target: str     # Rust target triple for libdovi
+    version_min_cmd: str  # older load command naming the platform (device slices)
 
 
 SLICES = {s.name: s for s in (
     Slice("ios-arm64", "iphoneos", "arm64-apple-ios{v}", "-mios-version-min={v}",
-          "ios", "ios", "ios-arm64", "iPhoneOS", 2, False),
+          "ios", "ios", "ios-arm64", "iPhoneOS", 2, False,
+          "aarch64-apple-ios", "LC_VERSION_MIN_IPHONEOS"),
     Slice("ios-arm64-simulator", "iphonesimulator", "arm64-apple-ios{v}-simulator",
           "-mios-simulator-version-min={v}", "ios-simulator", "isimulator",
-          "ios-arm64_x86_64-simulator", "iPhoneSimulator", 7, False),
+          "ios-arm64_x86_64-simulator", "iPhoneSimulator", 7, False,
+          "aarch64-apple-ios-sim", ""),
     Slice("tvos-arm64", "appletvos", "arm64-apple-tvos{v}", "-mtvos-version-min={v}",
-          "tvos", "tvos", "tvos-arm64_arm64e", "AppleTVOS", 3, True),
+          "tvos", "tvos", "tvos-arm64_arm64e", "AppleTVOS", 3, True,
+          "aarch64-apple-tvos", "LC_VERSION_MIN_TVOS"),
     Slice("tvos-arm64-simulator", "appletvsimulator", "arm64-apple-tvos{v}-simulator",
           "-mtvos-simulator-version-min={v}", "tvos-simulator", "tvsimulator",
-          "tvos-arm64_x86_64-simulator", "AppleTVSimulator", 8, True),
+          "tvos-arm64_x86_64-simulator", "AppleTVSimulator", 8, True,
+          "aarch64-apple-tvos-sim", ""),
 )}
 
 
@@ -291,16 +317,171 @@ def apply_series(lib: str, src: Path, logfile: Path | None = None) -> list[dict]
 
 
 def extract_tar(archive: Path, dest: Path) -> None:
+    """Extract a .tar.gz or .tar.xz without its top-level folder."""
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
-    run(["tar", "-xzf", archive, "-C", dest, "--strip-components", "1"])
+    run(["tar", "-xf", archive, "-C", dest, "--strip-components", "1"])
 
 
 def archive_commit(archive: Path) -> str:
     with tarfile.open(archive) as tar:
         tar.next()
         return tar.pax_headers.get("comment", "")
+
+
+# --------------------------------------------------------------- Rust parts
+
+def archive_member(archive: Path, rel: str) -> bytes:
+    """A file from a source archive, by its path below the top-level folder."""
+    with tarfile.open(archive) as tar:
+        for member in tar:
+            parts = member.name.split("/", 1)
+            if len(parts) == 2 and parts[1] == rel and member.isfile():
+                return tar.extractfile(member).read()
+    raise Failure(f"{archive.name}: no {rel}")
+
+
+def parse_cargo_lock(text: str) -> list[dict]:
+    """The [[package]] entries of a Cargo.lock (name, version, source, checksum)."""
+    packages = []
+    for chunk in text.split("[[package]]")[1:]:
+        entry = {}
+        for key in ("name", "version", "source", "checksum"):
+            m = re.search(rf'^{key} = "([^"]*)"$', chunk, re.M)
+            if m:
+                entry[key] = m.group(1)
+        packages.append(entry)
+    return packages
+
+
+def locked_crates(pins, downloads: Path) -> list[dict]:
+    """Every crates.io package in libdovi's Cargo.lock, after checking the
+    lock file against its pinned SHA-256. The lock file's checksum for each
+    crate is the SHA-256 of its .crate file."""
+    pin = pins["source:libdovi"]
+    archive = downloads / download_name("source:libdovi", pin["url"])
+    lock = archive_member(archive, pin["crate"] + "/Cargo.lock")
+    digest = hashlib.sha256(lock).hexdigest()
+    if digest != pin["cargo_lock_sha256"]:
+        raise Failure(f"libdovi Cargo.lock: SHA-256 {digest}, pinned {pin['cargo_lock_sha256']}")
+    crates = []
+    for entry in parse_cargo_lock(lock.decode()):
+        if "source" not in entry:
+            continue  # the crate itself
+        if entry["source"] != CRATES_IO or not re.fullmatch(r"[0-9a-f]{64}", entry.get("checksum", "")):
+            raise Failure(f"libdovi Cargo.lock: {entry.get('name')} is not a checksummed crates.io package")
+        crates.append({**entry, "url": CRATES_URL.format(**entry),
+                       "file": f"{entry['name']}-{entry['version']}.crate"})
+    return crates
+
+
+def install_rust(pins, downloads: Path, prefix: Path, targets: list[str]) -> dict:
+    """Install the pinned rustc, cargo and standard libraries (the host's and
+    each target's) into prefix, from the dist tarballs, without rustup."""
+    if prefix.exists():
+        shutil.rmtree(prefix)
+    prefix.mkdir(parents=True)
+    sections = ["rust:rustc", "rust:cargo"] + [f"rust:std-{t}" for t in [HOST_RUST_TARGET] + targets]
+    with tempfile.TemporaryDirectory(dir=prefix.parent) as tmp:
+        for section in sections:
+            if section not in pins:
+                raise Failure(f"pins.ini has no [{section}]")
+            unpacked = Path(tmp) / section.replace(":", "-")
+            extract_tar(downloads / download_name(section, pins[section]["url"]), unpacked)
+            for component in (unpacked / "components").read_text().split():
+                src = unpacked / component
+                for item in src.iterdir():
+                    if item.name == "manifest.in":
+                        continue
+                    if item.is_dir():
+                        shutil.copytree(item, prefix / item.name, symlinks=True, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(item, prefix / item.name)
+    rustc = run([prefix / "bin" / "rustc", "-V"], capture=True).strip()
+    expected = "rustc " + pins["rust:rustc"]["version"]
+    if rustc != expected:
+        raise Failure(f"installed {rustc!r}, pinned {expected!r}")
+    installed = sorted(p.name for p in (prefix / "lib" / "rustlib").iterdir()
+                       if (p / "lib").is_dir())
+    return {"rustc": rustc, "cargo": run([prefix / "bin" / "cargo", "-V"], capture=True).strip(),
+            "std_targets": installed}
+
+
+def install_cargo_c(pins, downloads: Path, bindir: Path) -> str:
+    pin = pins["tool:cargo-c"]
+    bindir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(downloads / download_name("tool:cargo-c", pin["url"])) as z:
+        for name in ("cargo-capi", "cargo-cbuild", "cargo-cinstall", "cargo-ctest"):
+            (bindir / name).write_bytes(z.read(name))
+            (bindir / name).chmod(0o755)
+    return run([bindir / "cargo-cinstall", "cinstall", "--version"], capture=True).strip()
+
+
+def vendor_crates(pins, downloads: Path, dest: Path) -> list[dict]:
+    """A Cargo directory source holding every locked crate, so the build runs
+    offline (`--frozen`) from the verified downloads."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    crates = locked_crates(pins, downloads)
+    for crate in crates:
+        archive = downloads / "crates" / crate["file"]
+        if sha256_file(archive) != crate["checksum"]:
+            raise Failure(f"{archive.name}: SHA-256 differs from Cargo.lock")
+        target = dest / f"{crate['name']}-{crate['version']}"
+        extract_tar(archive, target)
+        (target / ".cargo-checksum.json").write_text(
+            json.dumps({"files": {}, "package": crate["checksum"]}))
+    return crates
+
+
+def cargo_env(rust: Path, cargo_bin: Path, cargo_home: Path, vendor: Path, remaps: dict) -> dict:
+    """Environment for cargo-c: the pinned toolchain only, offline, with the
+    vendored crates replacing crates.io."""
+    cargo_home.mkdir(parents=True, exist_ok=True)
+    (cargo_home / "config.toml").write_text(
+        '[source.crates-io]\nreplace-with = "lucid-vendored"\n\n'
+        f'[source.lucid-vendored]\ndirectory = {json.dumps(str(vendor))}\n\n'
+        "[net]\noffline = true\n")
+    env = {k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "TMPDIR", "DEVELOPER_DIR")
+           if k in os.environ}
+    env["PATH"] = os.pathsep.join([str(rust / "bin"), str(cargo_bin), "/usr/bin", "/bin",
+                                   "/usr/sbin", "/sbin"])
+    env.update({"LC_ALL": "C", "CARGO_HOME": str(cargo_home), "RUSTC": str(rust / "bin" / "rustc"),
+                "CARGO": str(rust / "bin" / "cargo"), "CARGO_INCREMENTAL": "0",
+                "CARGO_TERM_COLOR": "never", "ZERO_AR_DATE": "1"})
+    # Keep build-machine paths out of the panic locations Rust records. The
+    # encoded form (separated by 0x1f) allows spaces in paths.
+    env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(
+        f"--remap-path-prefix={src}={dst}" for src, dst in remaps.items())
+    return env
+
+
+def cargo_cinstall(crate_dir: Path, target: str, install: Path, target_dir: Path, env: dict,
+                   rust: Path, logfile: Path | None = None) -> Path:
+    """Build and stage libdovi; returns the static library, its embedded
+    bitcode removed."""
+    run([env["CARGO"], "cinstall", "--release", "--frozen", "--library-type=staticlib",
+         f"--target={target}", f"--prefix={PREFIX}", f"--destdir={install}", "--libdir=lib",
+         "--includedir=include", "--pkgconfigdir=lib/pkgconfig", f"--target-dir={target_dir}",
+         f"--manifest-path={crate_dir / 'Cargo.toml'}"], cwd=crate_dir, env=env, logfile=logfile)
+    library = install / PREFIX.lstrip("/") / "lib" / "libdovi.a"
+    strip_embedded_bitcode(rust, library, logfile)
+    return library
+
+
+def strip_embedded_bitcode(rust: Path, archive: Path, logfile: Path | None = None) -> None:
+    """Rust's prebuilt standard library objects carry LLVM bitcode (the
+    __LLVM segment) for cross-crate LTO, written by a newer LLVM than
+    Xcode's nm and linker read. Remove it with the pinned toolchain's own
+    rust-objcopy; the machine code is unchanged."""
+    objcopy = rust / "lib" / "rustlib" / HOST_RUST_TARGET / "bin" / "rust-objcopy"
+    env = {**os.environ, "DYLD_LIBRARY_PATH": str(rust / "lib")}
+    stripped = archive.with_name(archive.name + ".stripped")
+    run([objcopy, "--remove-section=__LLVM,__bitcode", "--remove-section=__LLVM,__cmdline",
+         archive, stripped], env=env, logfile=logfile)
+    stripped.replace(archive)
 
 
 def sdk_path(sdk: str) -> Path:
@@ -421,9 +602,10 @@ def download(url: str, sha256: str, dest: Path) -> None:
 def cmd_fetch(args) -> None:
     pins = load_pins()
     args.downloads.mkdir(parents=True, exist_ok=True)
+    only = tuple(args.only.split(",")) if args.only else ()
     for section in pins.sections():
         pin = pins[section]
-        if "url" not in pin:
+        if "url" not in pin or (only and not section.startswith(only)):
             continue
         dest = args.downloads / download_name(section, pin["url"])
         download(pin["url"], pin["sha256"], dest)
@@ -431,6 +613,12 @@ def cmd_fetch(args) -> None:
             commit = archive_commit(dest)
             if commit != pin["commit"]:
                 raise Failure(f"{dest.name}: archive commit {commit}, pinned {pin['commit']}")
+    if not only or "source:libdovi".startswith(only):
+        crates = locked_crates(pins, args.downloads)
+        (args.downloads / "crates").mkdir(exist_ok=True)
+        for crate in crates:
+            download(crate["url"], crate["checksum"], args.downloads / "crates" / crate["file"])
+        log(f"{len(crates)} crates from libdovi's Cargo.lock present and verified.")
     log("All pinned inputs present and verified.")
 
 
@@ -450,6 +638,8 @@ class Ctx:
     meson: list[str]
     ninja: str
     pkg_config: str
+    rust: Path | None = None      # pinned Rust toolchain prefix
+    cargo_c: Path | None = None   # directory holding the cargo-c binaries
 
     @property
     def install(self) -> Path:
@@ -493,12 +683,17 @@ def prepare_tools(pins, downloads: Path, root: Path) -> tuple[list[str], str, st
         str(bindir / "pkg-config"), bindir
 
 
-def build_env(ctx_root: Path, bindir: Path, flags: list[str], pc_dirs: list[Path]) -> dict:
+def build_env(ctx_root: Path, bindir: Path, flags: list[str], pc_dirs: list[Path],
+              source_date_epoch: str) -> dict:
     env = {k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "TMPDIR", "DEVELOPER_DIR")
            if k in os.environ}
     # Xcode's tools first, so `gcc` (FFmpeg's default compiler) is Apple clang.
     env["PATH"] = os.pathsep.join([str(bindir), "/usr/bin", "/bin", "/usr/sbin", "/sbin"])
     env["LC_ALL"] = "C"
+    # Reproducible archives: ar, ranlib and libtool write zero timestamps, and
+    # clang's __DATE__ and __TIME__ (mpv's build date) come from this date.
+    env["ZERO_AR_DATE"] = "1"
+    env["SOURCE_DATE_EPOCH"] = source_date_epoch
     env["CC"] = "/usr/bin/clang"
     env["CXX"] = "/usr/bin/clang++"
     joined = " ".join(flags)
@@ -688,6 +883,30 @@ def build_ffmpeg(ctx: Ctx) -> list[str]:
     return args
 
 
+def build_libdovi(ctx: Ctx) -> dict:
+    """libdovi's C library (the dolby_vision crate) with cargo-c, as a static
+    library, from the patched source and the vendored, locked crates."""
+    pin = ctx.pins["source:libdovi"]
+    crate_dir = ctx.src("libdovi") / pin["crate"]
+    lock = sha256_file(crate_dir / "Cargo.lock")
+    if lock != pin["cargo_lock_sha256"]:
+        raise Failure(f"libdovi Cargo.lock: SHA-256 {lock}, pinned {pin['cargo_lock_sha256']}")
+    vendor = ctx.work / "vendor"
+    crates = vendor_crates(ctx.pins, ctx.downloads, vendor)
+    env = cargo_env(ctx.rust, ctx.cargo_c, ctx.work / "cargo-home", vendor,
+                    {ctx.src("libdovi"): "/lucid-engine/src/libdovi",
+                     vendor: "/lucid-engine/vendor"})
+    env["SOURCE_DATE_EPOCH"] = ctx.env["SOURCE_DATE_EPOCH"]
+    env["TVOS_DEPLOYMENT_TARGET" if ctx.sl.tvos else "IPHONEOS_DEPLOYMENT_TARGET"] = \
+        ctx.pins["toolchain"]["minimum_os"]
+    cargo_cinstall(crate_dir, ctx.sl.rust_target, ctx.install, ctx.build("libdovi"), env,
+                   ctx.rust, ctx.logfile("libdovi"))
+    rewrite_installed_pc(ctx)
+    return {"rust_target": ctx.sl.rust_target, "cargo_lock_sha256": lock,
+            "crates": [f"{c['name']} {c['version']}" for c in crates],
+            "rustflags": env["CARGO_ENCODED_RUSTFLAGS"].split("\x1f")}
+
+
 def make_framework(ctx: Ctx, name: str, library: Path, headers: list[tuple[Path, str]]) -> dict:
     fw = ctx.out / "frameworks" / f"{name}.framework"
     (fw / "Headers").mkdir(parents=True)
@@ -726,6 +945,8 @@ def package_frameworks(ctx: Ctx) -> list[dict]:
     inc = ctx.prefix / "include"
     lib = ctx.prefix / "lib"
     made = [
+        make_framework(ctx, "Libdovi", lib / "libdovi.a",
+                       [(inc / "libdovi" / "rpu_parser.h", "rpu_parser.h")]),
         make_framework(ctx, "Libdav1d", lib / "libdav1d.a", [(inc / "dav1d", "dav1d")]),
         make_framework(ctx, "Libass", lib / "libass.a", [(inc / "ass", "ass")]),
     ]
@@ -752,7 +973,13 @@ def toolchain(ctx: Ctx) -> dict:
         "ninja": first([ctx.ninja, "--version"]),
         "pkg-config": first([ctx.pkg_config, "--version"]),
         "make": first(["make", "--version"]),
+        "rustc": first([ctx.rust / "bin" / "rustc", "-vV"]),
+        "rustc_verbose": run([ctx.rust / "bin" / "rustc", "-vV"], capture=True).strip().splitlines(),
+        "cargo": first([ctx.rust / "bin" / "cargo", "-V"]),
+        "cargo_c": first([ctx.cargo_c / "cargo-cinstall", "cinstall", "--version"]),
         "minimum_os": ctx.pins["toolchain"]["minimum_os"],
+        "source_date_epoch": ctx.env["SOURCE_DATE_EPOCH"],
+        "zero_ar_date": ctx.env["ZERO_AR_DATE"],
         "flags": ctx.flags,
     }
 
@@ -776,18 +1003,24 @@ def cmd_build(args) -> None:
     (out / "logs").mkdir(parents=True)
     work.mkdir(parents=True)
     meson, ninja, pkg_config, bindir = prepare_tools(pins, args.downloads, root)
+    rust = install_rust(pins, args.downloads, root / "tools" / "rust", [sl.rust_target])
+    install_cargo_c(pins, args.downloads, root / "tools" / "cargo-c")
     sdk = sdk_path(sl.sdk)
     flags = compile_flags(sl, sdk, pins["toolchain"]["minimum_os"])
-    ctx = Ctx(sl, pins, args.downloads, root, work, out, sdk, flags, {}, meson, ninja, pkg_config)
-    ctx.env = build_env(root, bindir, flags, ctx.pc_dirs)
+    ctx = Ctx(sl, pins, args.downloads, root, work, out, sdk, flags, {}, meson, ninja, pkg_config,
+              root / "tools" / "rust", root / "tools" / "cargo-c")
+    ctx.env = build_env(root, bindir, flags, ctx.pc_dirs, pins["toolchain"]["source_date_epoch"])
     report = {"slice": sl.name, "started": now(), "repository_commit": repo_commit(),
               "pins_sha256": sha256_file(ENGINE / "pins.ini"), "toolchain": toolchain(ctx)}
+    report["toolchain"]["rust_std_targets"] = rust["std_targets"]
     report["prebuilt"] = stage_prebuilt(ctx)
     report["sources"] = {}
     for lib in BUILD_ORDER:
         log(f"\n==== {lib} ({sl.name})")
         report["sources"][lib] = prepare_source(ctx, lib)
-        if lib == "dav1d":
+        if lib == "libdovi":
+            report["libdovi"] = build_libdovi(ctx)
+        elif lib == "dav1d":
             build_meson(ctx, lib, read_list(CONFIG / "dav1d-meson.txt"), ndebug=False)
         elif lib == "libass":
             build_meson(ctx, lib, read_list(CONFIG / "libass-meson.txt"), ndebug=True)
@@ -861,14 +1094,57 @@ def archive_members(archive: Path) -> list[str]:
     return run(["ar", "-t", archive], capture=True).split()
 
 
+def member_platforms(binary: Path) -> dict[str, tuple[str, str]]:
+    """(platform, minimum OS) of every archive member, from LC_BUILD_VERSION
+    or, for older objects, the LC_VERSION_MIN_* command naming the platform."""
+    found: dict[str, tuple[str, str]] = {}
+    member = None
+    lines = run(["otool", "-l", binary], capture=True).splitlines()
+    for i, line in enumerate(lines):
+        m = re.match(r"^\S.*\((\S+)\):$", line)
+        if m:
+            member = m.group(1)
+            continue
+        m = re.match(r"^\s*cmd (LC_BUILD_VERSION|LC_VERSION_MIN_\w+)$", line)
+        if m and member:
+            block = "\n".join(lines[i:i + 6])
+            if m.group(1) == "LC_BUILD_VERSION":
+                platform = re.search(r"^\s*platform (\S+)$", block, re.M).group(1)
+                minos = re.search(r"^\s*minos (\S+)$", block, re.M).group(1)
+            else:
+                platform = m.group(1)
+                minos = re.search(r"^\s*version (\S+)$", block, re.M).group(1)
+            found[member] = (platform, minos)
+    return found
+
+
+def version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in v.split("."))
+
+
 def check_binary_form(c: Checks, sl: Slice, fw: Path, name: str, minimum_os: str) -> None:
     binary = fw / name
     c.equal(f"{name}: architectures", run(["lipo", "-archs", binary], capture=True).split(), ["arm64"])
     out = run(["otool", "-l", binary], capture=True)
     platforms = set(re.findall(r"^\s*platform (\S+)$", out, re.M))
     minos = set(re.findall(r"^\s*minos (\S+)$", out, re.M))
-    c.equal(f"{name}: LC_BUILD_VERSION platform", platforms, {str(sl.macho_platform)})
-    c.equal(f"{name}: minimum OS", minos, {minimum_os})
+    if name == "Libdovi":
+        # Rust's prebuilt standard library carries Rust's own minimums
+        # (device objects use LC_VERSION_MIN_*); the crate's objects use 14.0.
+        members = member_platforms(binary)
+        allowed = {str(sl.macho_platform)} | ({sl.version_min_cmd} if sl.version_min_cmd else set())
+        c.expect(f"{name}: every member is built for the slice's platform",
+                 bool(members) and all(p in allowed for p, _ in members.values()),
+                 str(sorted({p for p, _ in members.values()})))
+        c.expect(f"{name}: no member needs a newer OS than {minimum_os}",
+                 all(version_tuple(v) <= version_tuple(minimum_os) for _, v in members.values()),
+                 str(sorted({v for _, v in members.values()})))
+        # cargo-c builds the dolby_vision crate under its library name, dovi.
+        crate = {v for m, (_, v) in members.items() if m.startswith("dovi-")}
+        c.equal(f"{name}: the crate's own objects' minimum OS", crate, {minimum_os})
+    else:
+        c.equal(f"{name}: LC_BUILD_VERSION platform", platforms, {str(sl.macho_platform)})
+        c.equal(f"{name}: minimum OS", minos, {minimum_os})
     plist = plistlib.loads((fw / "Info.plist").read_bytes())
     c.equal(f"{name}: Info.plist identifier", plist.get("CFBundleIdentifier"),
             PLIST_ID_PREFIX + name.replace("_", "-"))
@@ -894,6 +1170,7 @@ TBD_KINDS = {
     "objc-ivars": ("_OBJC_IVAR_$_{}",), "objc_ivar": ("_OBJC_IVAR_$_{}",),
 }
 LINK_TEST_SOURCE = """\
+#include <Libdovi/rpu_parser.h>
 #include <Libmpv/mpv/client.h>
 
 const char *avformat_configuration(void);
@@ -905,6 +1182,7 @@ int main(void)
         mpv_initialize(mpv);
         mpv_terminate_destroy(mpv);
     }
+    dovi_rpu_free(dovi_parse_unspec62_nalu(NULL, 0));
     return avformat_configuration()[0] == '\\0';
 }
 """
@@ -1052,14 +1330,82 @@ def check_link(c: Checks, sl: Slice, pins, work: Path, fws: Path, sdk: Path) -> 
     if res.stdout:
         log(res.stdout)
     linked = res.returncode == 0
-    c.expect("dead-stripped test link of mpv_create, mpv_initialize, mpv_terminate_destroy "
-             "and avformat_configuration", linked, res.stdout[-2000:])
+    c.expect("dead-stripped test link of mpv_create, mpv_initialize, mpv_terminate_destroy, "
+             "avformat_configuration, dovi_parse_unspec62_nalu and dovi_rpu_free",
+             linked, res.stdout[-2000:])
     if linked:
         symbols = nm_symbols(test / "linktest", False)
-        c.expect("test link contains libmpv and libavformat",
-                 {"_mpv_create", "_avformat_configuration"} <= symbols)
+        c.expect("test link contains libmpv, libavformat and libdovi",
+                 {"_mpv_create", "_avformat_configuration", "_dovi_parse_unspec62_nalu"} <= symbols)
     return {"target": target, "system_libraries_needed": sorted(needed),
             "selector_stub_references": stubs, "linked": linked}
+
+
+def first_difference(a: bytes, b: bytes) -> str:
+    la, lb = a.decode(errors="replace").splitlines(), b.decode(errors="replace").splitlines()
+    for n, (x, y) in enumerate(zip(la, lb), 1):
+        if x != y:
+            return f"line {n}: {x!r} != {y!r}"
+    return f"{len(la)} lines != {len(lb)} lines"
+
+
+def check_libdovi(c: Checks, sl: Slice, pins, work: Path, fws: Path, downloads: Path,
+                  undefined: dict, defined: dict) -> dict:
+    """libdovi against today's prebuilt (same C API and header), its panic
+    strategy, and the libdovi functions libplacebo and FFmpeg call."""
+    fw = fws / "Libdovi.framework"
+    header = (fw / "Headers" / "rpu_parser.h").read_bytes()
+    exported = {s for s in defined["Libdovi"] if s.startswith("_dovi_")}
+    c.sets("Libdovi: exported C API", exported, LIBDOVI_API)
+    members = archive_members(fw / "Libdovi")
+    unwind = sorted(m for m in members if m.startswith("panic_unwind-"))
+    abort = sorted(m for m in members if m.startswith("panic_abort-"))
+    c.expect("Libdovi: built with panic=unwind (panic_unwind linked, panic_abort not)",
+             bool(unwind) and not abort, f"panic_unwind {unwind}, panic_abort {abort}")
+    c.expect("Libdovi: no embedded LLVM bitcode",
+             not re.search(r"^\s*segname __LLVM$", run(["otool", "-l", fw / "Libdovi"], capture=True),
+                           re.M))
+    version = pins["source:libdovi"]["version"].split(".")
+    c.equal("Libdovi: RPU_PARSER version macros",
+            [define(fw / "Headers" / "rpu_parser.h", f"RPU_PARSER_{p}")
+             for p in ("MAJOR", "MINOR", "PATCH")], version)
+    pc = (work / "install" / PREFIX.lstrip("/") / "lib" / "pkgconfig" / "dovi.pc").read_text()
+    c.expect("dovi.pc: name dovi, version as pinned", re.search(r"^Name: dovi$", pc, re.M) is not None
+             and re.search(rf"^Version: {re.escape('.'.join(version))}$", pc, re.M) is not None, pc)
+
+    ref = pins["reference:libdovi"]
+    with zipfile.ZipFile(downloads / download_name("reference:libdovi", ref["url"])) as z:
+        ref_header = z.read("include/libdovi/rpu_parser.h")
+        ref_lib = z.read(f"lib/{sl.prebuilt}/thin/arm64/lib/libdovi.a")
+    c.expect("Libdovi: rpu_parser.h identical to today's prebuilt", header == ref_header,
+             first_difference(header, ref_header))
+    with tempfile.TemporaryDirectory(dir=work) as tmp:
+        ref_path = Path(tmp) / "libdovi.a"
+        ref_path.write_bytes(ref_lib)
+        ref_exported = {s for s in nm_symbols(ref_path, False) if s.startswith("_dovi_")}
+    c.sets("Libdovi: exported C API equals today's prebuilt", exported, ref_exported)
+
+    placebo = prebuilt_archives(pins, work)["Libplacebo"]
+    placebo_calls = {s for s in nm_symbols(placebo, True) if s.startswith("_dovi_")}
+    c.expect("Libplacebo calls libdovi only through exported functions",
+             bool(placebo_calls) and placebo_calls <= exported, str(sorted(placebo_calls)))
+    ffmpeg_calls = set().union(*(undefined[f"Lib{ff}"] for ff in FFMPEG_LIBS))
+    ffmpeg_calls = {s for s in ffmpeg_calls if s.startswith("_dovi_")}
+    c.expect("FFmpeg calls libdovi only through exported functions", ffmpeg_calls <= exported,
+             str(sorted(ffmpeg_calls)))
+    ffmpeg_src = work / "src" / "ffmpeg"
+    ffmpeg_files = sorted(str(p.relative_to(ffmpeg_src)) for p in ffmpeg_src.rglob("*")
+                          if p.suffix in (".c", ".h", ".m") and p.is_file()
+                          and re.search(rb"libdovi|rpu_parser\.h", p.read_bytes()))
+    return {"exported": sorted(exported), "libplacebo_calls": sorted(placebo_calls),
+            "ffmpeg_calls": sorted(ffmpeg_calls), "ffmpeg_sources_using_libdovi": ffmpeg_files,
+            "panic_runtime": unwind, "members": len(members)}
+
+
+def build_date(epoch: int) -> str:
+    """clang's __DATE__ " " __TIME__ for SOURCE_DATE_EPOCH (UTC)."""
+    t = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc)
+    return f"{t.strftime('%b')} {t.day:2d} {t.year} {t.strftime('%H:%M:%S')}"
 
 
 def cmd_check(args) -> None:
@@ -1086,7 +1432,7 @@ def cmd_check(args) -> None:
         check_trees(c, work, report, Path(tmp))
 
     # Framework form.
-    expected_names = {"Libdav1d", "Libass", "Libmpv"} | {f"Lib{ff}" for ff in FFMPEG_LIBS}
+    expected_names = set(BUILT_FRAMEWORKS)
     c.sets("framework set", {p.stem for p in fws.glob("*.framework")}, expected_names)
     for name in sorted(expected_names):
         check_binary_form(c, sl, fws / f"{name}.framework", name, minimum_os)
@@ -1178,6 +1524,8 @@ def cmd_check(args) -> None:
     # Vivid's adapter reads the AVFoundation output's restart log line.
     c.expect("Libmpv keeps the AVFoundation 'notification name' log line",
              b"notification name: %s" in libmpv)
+    date = build_date(int(pins["toolchain"]["source_date_epoch"]))
+    c.expect(f"Libmpv build date is SOURCE_DATE_EPOCH ({date})", date.encode() in libmpv)
     client_h = fws / "Libmpv.framework" / "Headers" / "mpv" / "client.h"
     c.equal("MPV_CLIENT_API_VERSION", define(client_h, "MPV_CLIENT_API_VERSION"), "MPV_MAKE_VERSION(2, 5)")
     c.sets("Libmpv headers", {p.name for p in client_h.parent.iterdir()},
@@ -1192,6 +1540,18 @@ def cmd_check(args) -> None:
     for name in ("Libass", "Libdav1d"):
         asm = [m for m in archive_members(fws / f"{name}.framework" / name) if m.endswith(".S.o")]
         c.expect(f"{name}: arm64 assembly built", bool(asm), "no .S objects in the archive")
+
+    # libdovi: C API and header as today's prebuilt, panic strategy, callers.
+    report["libdovi_checks"] = check_libdovi(c, sl, pins, work, fws, args.downloads,
+                                             undefined, defined)
+    c.equal("Libdovi: built with the pinned rustc", report["toolchain"]["rustc"],
+            "rustc " + pins["rust:rustc"]["version"])
+
+    # Reproducible archives: no member carries a build timestamp.
+    for name in sorted(expected_names):
+        dated = [l for l in run(["ar", "-tv", fws / f"{name}.framework" / name],
+                                capture=True).splitlines() if " 1970 " not in l]
+        c.expect(f"{name}: archive members have zero timestamps", not dated, str(dated[:3]))
 
     # Linkability: symbol closure and a dead-stripped test link.
     report["link"] = check_link(c, sl, pins, work, fws, sdk_path(sl.sdk))
@@ -1228,7 +1588,16 @@ def summarise(report: dict) -> str:
     lines += ["", "| Prebuilt | Archive | SHA-256 |", "| --- | --- | --- |"]
     for item in report["prebuilt"]:
         lines.append(f"| {item['name']} | `{item['archive']}` | `{item['sha256'][:16]}...` |")
-    lines += ["", f"FFmpeg `avformat_configuration()`: `{report['ffmpeg']['configuration']}`", "",
+    dovi = report.get("libdovi_checks", {})
+    lines += ["", f"libdovi: {report['toolchain'].get('rustc', '')}, "
+              f"{report['toolchain'].get('cargo_c', '')}, target `{report['libdovi']['rust_target']}`, "
+              f"Cargo.lock `{report['libdovi']['cargo_lock_sha256'][:16]}...`, "
+              f"{len(report['libdovi']['crates'])} vendored crates. Panic runtime: "
+              f"{', '.join(dovi.get('panic_runtime', [])) or 'none'}.", "",
+              f"libdovi functions libplacebo calls: "
+              f"{', '.join(f'`{s[1:]}`' for s in dovi.get('libplacebo_calls', [])) or 'none'}. "
+              f"FFmpeg calls: {', '.join(f'`{s[1:]}`' for s in dovi.get('ffmpeg_calls', [])) or 'none'}.",
+              "", f"FFmpeg `avformat_configuration()`: `{report['ffmpeg']['configuration']}`", "",
               f"FFmpeg licence: {', '.join(report['ffmpeg']['licences'])}", "",
               f"mpv configuration: `{report['mpv']['configuration']}`", "",
               f"mpv features: `{' '.join(report['mpv']['features'])}`", "",
@@ -1264,6 +1633,30 @@ def zip_tree(src: Path, dest: Path) -> None:
                 z.writestr(info, path.read_bytes())
 
 
+def package_xcframeworks(inputs: dict[str, Path], names: list[str], out: Path) -> list[str]:
+    """Create each xcframework and its zip in out; returns SHA256SUMS lines."""
+    staging = out / "xcframeworks"
+    sums = []
+    for name in names:
+        xcf = staging / f"{name}.xcframework"
+        cmd = ["xcodebuild", "-create-xcframework"]
+        for slice_name in sorted(inputs):
+            cmd += ["-framework", inputs[slice_name] / "frameworks" / f"{name}.framework"]
+        run(cmd + ["-output", xcf])
+        info = plistlib.loads((xcf / "Info.plist").read_bytes())
+        ids = sorted(lib["LibraryIdentifier"] for lib in info["AvailableLibraries"])
+        if ids != sorted(inputs):
+            raise Failure(f"{name}: xcframework slices {ids}, expected {sorted(inputs)}")
+        archive = out / f"{name}.xcframework.zip"
+        zip_tree(xcf, archive)
+        with zipfile.ZipFile(archive) as z:
+            if any(not n.startswith(f"{name}.xcframework/") for n in z.namelist()):
+                raise Failure(f"{archive.name}: root entry is not {name}.xcframework/")
+        sums.append(f"{sha256_file(archive)}  {archive.name}")
+    shutil.rmtree(staging)
+    return sums
+
+
 def cmd_package(args) -> None:
     inputs = {}
     for prov in sorted(args.input.rglob("provenance.json")):
@@ -1285,36 +1678,188 @@ def cmd_package(args) -> None:
     if out.exists():
         shutil.rmtree(out)
     (out / "provenance").mkdir(parents=True)
-    staging = out / "xcframeworks"
-    sums = []
-    for name in names:
-        xcf = staging / f"{name}.xcframework"
-        cmd = ["xcodebuild", "-create-xcframework"]
-        for slice_name in sorted(inputs):
-            cmd += ["-framework", inputs[slice_name] / "frameworks" / f"{name}.framework"]
-        run(cmd + ["-output", xcf])
-        info = plistlib.loads((xcf / "Info.plist").read_bytes())
-        ids = sorted(lib["LibraryIdentifier"] for lib in info["AvailableLibraries"])
-        if ids != sorted(inputs):
-            raise Failure(f"{name}: xcframework slices {ids}, expected {sorted(inputs)}")
-        archive = out / f"{name}.xcframework.zip"
-        zip_tree(xcf, archive)
-        with zipfile.ZipFile(archive) as z:
-            if any(not n.startswith(f"{name}.xcframework/") for n in z.namelist()):
-                raise Failure(f"{archive.name}: root entry is not {name}.xcframework/")
-        sums.append(f"{sha256_file(archive)}  {archive.name}")
-    shutil.rmtree(staging)
+    sums = package_xcframeworks(inputs, names, out)
+    # Reproducibility: packaging the same inputs again must give the same zips.
+    with tempfile.TemporaryDirectory(dir=out.parent) as tmp:
+        again = package_xcframeworks(inputs, names, Path(tmp))
+    if again != sums:
+        raise Failure("packaging the same slices twice gave different zips:\n  "
+                      + "\n  ".join(sorted(set(sums) ^ set(again))))
     (out / "SHA256SUMS").write_text("\n".join(sums) + "\n")
     for slice_name, path in inputs.items():
         shutil.copy2(path / "provenance.json", out / "provenance" / f"{slice_name}.json")
         shutil.copy2(path / "provenance.md", out / "provenance" / f"{slice_name}.md")
     summary = ["## Lucid Engine xcframeworks", "",
                f"Slices: {', '.join(sorted(inputs))}", "",
+               "Packaged twice from the same slices: identical zips.", "",
                "SwiftPM checksums (SHA-256 of each zip):", "", "```", *sums, "```", ""]
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
             f.write("\n".join(summary))
     log("\n".join(summary))
+
+
+# ------------------------------------------------------------- libdovi test
+
+def load_libdovi_test():
+    path = ENGINE / "tests" / "libdovi" / "libdovi_test.py"
+    spec = importlib.util.spec_from_file_location("libdovi_test", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["libdovi_test"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def pc_field(pc: Path, key: str) -> list[str]:
+    m = re.search(rf"^{re.escape(key)}:(.*)$", pc.read_text(), re.M)
+    return m.group(1).split() if m else []
+
+
+def run_harness(harness: Path, cases: Path, tmp: Path, dumps: Path, stderr_log: Path) -> str:
+    log(f"$ {harness} {cases} {tmp} {dumps}  (stderr to {stderr_log.name})")
+    for d in (tmp, dumps):
+        d.mkdir(parents=True, exist_ok=True)
+    with open(stderr_log, "w") as err:
+        res = subprocess.run([str(harness), str(cases), str(tmp), str(dumps)],
+                             stdout=subprocess.PIPE, stderr=err, text=True)
+    if res.returncode != 0:
+        raise Failure(f"{harness.name} failed ({res.returncode}); see {stderr_log}")
+    return res.stdout
+
+
+def panics_per_case(stderr_log: Path) -> dict[int, int]:
+    """Rust panic messages each case printed, from the harness's markers."""
+    counts: dict[int, int] = {}
+    case = -1
+    for line in stderr_log.read_text(errors="replace").splitlines():
+        m = re.match(r"^harness: case (\d+)$", line)
+        if m:
+            case = int(m.group(1))
+        elif " panicked at " in line:
+            counts[case] = counts.get(case, 0) + 1
+    return counts
+
+
+def cmd_test_libdovi(args) -> None:
+    """Build libdovi for the host twice, unpatched and with Vivid's series,
+    from the same pinned source, toolchain and crates as the slices, and run
+    the malformed and valid RPU corpus through harness.c against both."""
+    t = load_libdovi_test()
+    pins = load_pins()
+    pin = pins["source:libdovi"]
+    base = args.work.resolve()
+    if base.exists():
+        shutil.rmtree(base)
+    base.mkdir(parents=True)
+    out = base / "out"
+    out.mkdir()
+    rust = install_rust(pins, args.downloads, base / "tools" / "rust", [])
+    cargo_c_bin = base / "tools" / "cargo-c"
+    cargo_c = install_cargo_c(pins, args.downloads, cargo_c_bin)
+    vendor = base / "vendor"
+    crates = vendor_crates(pins, args.downloads, vendor)
+    archive = args.downloads / download_name("source:libdovi", pin["url"])
+    if sha256_file(archive) != pin["sha256"] or archive_commit(archive) != pin["commit"]:
+        raise Failure(f"{archive.name} does not match pins.ini; run fetch first")
+    sdk = sdk_path("macosx")
+    report = {"started": now(), "repository_commit": repo_commit(),
+              "pins_sha256": sha256_file(ENGINE / "pins.ini"), "target": HOST_RUST_TARGET,
+              "toolchain": {**rust, "cargo_c": cargo_c,
+                            "clang": run(["/usr/bin/clang", "--version"], capture=True).splitlines()[0]},
+              "crates": len(crates), "variants": {}}
+    built = {}
+    for variant in ("unpatched", "patched"):
+        log(f"\n==== libdovi, {variant} ({HOST_RUST_TARGET})")
+        work = base / variant
+        src = work / "src"
+        extract_tar(archive, src)
+        pristine = tree_files(src)
+        applied = apply_series("libdovi", src, out / f"{variant}-patch.log") \
+            if variant == "patched" else []
+        crate_dir = src / pin["crate"]
+        if sha256_file(crate_dir / "Cargo.lock") != pin["cargo_lock_sha256"]:
+            raise Failure("libdovi Cargo.lock differs from pins.ini")
+        env = cargo_env(base / "tools" / "rust", cargo_c_bin, work / "cargo-home", vendor,
+                        {src: "/lucid-engine/src/libdovi", vendor: "/lucid-engine/vendor"})
+        install = work / "install"
+        lib = cargo_cinstall(crate_dir, HOST_RUST_TARGET, install, work / "target", env,
+                             base / "tools" / "rust", out / f"{variant}-build.log")
+        prefix = install / PREFIX.lstrip("/")
+        harness = work / "harness"
+        run(["/usr/bin/clang", "-isysroot", sdk, "-O1", "-Wall", "-Werror",
+             "-Wno-deprecated-declarations", "-I", prefix / "include",
+             ENGINE / "tests" / "libdovi" / "harness.c", lib, "-o", harness]
+            + pc_field(prefix / "lib" / "pkgconfig" / "dovi.pc", "Libs.private"))
+        members = archive_members(lib)
+        built[variant] = {
+            "header": (prefix / "include" / "libdovi" / "rpu_parser.h").read_bytes(),
+            "exported": {s for s in nm_symbols(lib, False) if s.startswith("_dovi_")},
+            "harness": harness,
+        }
+        report["variants"][variant] = {
+            "patches": applied, "pristine_tree": tree_digest(pristine),
+            "tree": tree_digest(tree_files(src)), "library_sha256": sha256_file(lib),
+            "panic_runtime": sorted(m.split("-")[0] for m in members
+                                    if m.startswith(("panic_unwind-", "panic_abort-"))),
+        }
+
+    c = Checks()
+    c.expect("patched and unpatched rpu_parser.h are identical",
+             built["patched"]["header"] == built["unpatched"]["header"],
+             first_difference(built["patched"]["header"], built["unpatched"]["header"]))
+    c.sets("patched library exports libdovi's C API", built["patched"]["exported"], LIBDOVI_API)
+    c.sets("unpatched library exports libdovi's C API", built["unpatched"]["exported"], LIBDOVI_API)
+    c.equal("unpatched library aborts on panic (upstream's -Cpanic=abort)",
+            report["variants"]["unpatched"]["panic_runtime"], ["panic_abort"])
+    c.equal("patched library unwinds (panic_unwind)",
+            report["variants"]["patched"]["panic_runtime"], ["panic_unwind"])
+
+    cases = t.build_corpus(base / "unpatched" / "src" / "assets")
+    cases_file = out / "cases.bin"
+    t.write_cases(cases, cases_file)
+    results, panics = {}, {}
+    for variant in ("patched", "unpatched"):
+        log(f"\n==== corpus of {len(cases)} cases through the {variant} library")
+        stderr_log = out / f"{variant}-stderr.log"
+        text = run_harness(built[variant]["harness"], cases_file, base / variant / "tmp",
+                           out / f"{variant}-dumps", stderr_log)
+        (out / f"{variant}-results.tsv").write_text(text)
+        results[variant] = t.parse_output(text, len(cases))
+        panics[variant] = panics_per_case(stderr_log)
+    verdict = t.evaluate(cases, results["patched"], results["unpatched"],
+                         (out / "patched-dumps", out / "unpatched-dumps"))
+    for name, g in verdict["groups"].items():
+        g["patched_panics_caught"] = sum(panics["patched"].get(i, 0)
+                                         for i, cs in enumerate(cases) if (cs.group or cs.kind) == name)
+    c.expect("corpus: cases ran", len(cases) > 0 and len(results["patched"]) == len(cases))
+    c.expect("corpus: no abort in the patched library, expected results, unchanged results "
+             "wherever unpatched 3.3.2 does not abort, and every abort class reached",
+             not verdict["failures"], "; ".join(verdict["failures"][:20]))
+    for cls, k in verdict["classes"].items():
+        c.expect(f"abort class '{cls}': unpatched 3.3.2 aborts on it", k["unpatched_aborts"] > 0,
+                 str(k))
+    c.expect("corpus: the patched library caught panics at the boundary",
+             sum(panics["patched"].values()) > 0, str(sum(panics["patched"].values())))
+
+    report["corpus"] = verdict
+    report["corpus"]["patched_panics_caught"] = sum(panics["patched"].values())
+    report["checks"] = c.results
+    report["finished"] = now()
+    write_json(out / "libdovi-test.json", report)
+    summary = t.summary_markdown(verdict) + "\n" + "\n".join(
+        f"- {'PASS' if r['ok'] else 'FAIL'}: {r['check']}" for r in c.results) + "\n" + (
+        f"\nToolchain: {rust['rustc']}, {rust['cargo']}, {cargo_c}. Patched tree "
+        f"`{report['variants']['patched']['tree'][:16]}...`; patched panics caught: "
+        f"{report['corpus']['patched_panics_caught']}.\n")
+    (out / "libdovi-test.md").write_text(summary)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write(summary)
+    log("\n" + summary)
+    failed = [r for r in c.results if not r["ok"]]
+    if failed:
+        raise Failure(f"{len(failed)} of {len(c.results)} libdovi test checks failed")
+    log(f"All {len(c.results)} libdovi test checks passed.")
 
 
 # --------------------------------------------------------------------- main
@@ -1333,6 +1878,14 @@ def main(argv=None) -> int:
     sub.add_parser("check-allowlist", help="refuse fetches from projects that are not allowlisted")
     p = sub.add_parser("fetch", help="download and verify every pinned input")
     common(p)
+    p.add_argument("--only", help="comma-separated pins.ini section prefixes to fetch")
+    p = sub.add_parser("test-libdovi", help="run the malformed RPU corpus against patched and "
+                       "unpatched libdovi on the host")
+    p.add_argument("--work", type=Path,
+                   default=default_dir("LUCID_LIBDOVI_TEST", "lucid-libdovi-test"),
+                   help="work directory for the test (replaced on each run)")
+    p.add_argument("--downloads", type=Path,
+                   default=default_dir("LUCID_DOWNLOADS", "lucid-downloads"), help="download cache")
     p = sub.add_parser("build", help="build one slice")
     common(p)
     p.add_argument("--slice", required=True, choices=sorted(SLICES))
@@ -1345,7 +1898,7 @@ def main(argv=None) -> int:
     p.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     handlers = {"check-allowlist": cmd_check_allowlist, "fetch": cmd_fetch, "build": cmd_build,
-                "check": cmd_check, "package": cmd_package}
+                "check": cmd_check, "package": cmd_package, "test-libdovi": cmd_test_libdovi}
     try:
         handlers[args.command](args)
     except Failure as e:
