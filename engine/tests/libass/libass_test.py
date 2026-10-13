@@ -123,6 +123,7 @@ class Scenario:
     allowed_window: tuple | None = None   # (from, to) ms where missing glyphs may lag
     cleanup: list = field(default_factory=list)    # files to remove before a run
     baseline: str = ""    # pressure: the same scenario without the line under test
+    over_budget: bool = False   # pressure: the visible output alone exceeds the budget
 
 
 def frames(t0: int, count: int, step: int = FRAME) -> str:
@@ -450,7 +451,13 @@ def pressure_scenarios(work: Path) -> list[Scenario]:
     code point, the same beside a Devanagari letter whose fallback face is
     added on the first frame, and a CJK line whose style's family has a CJK
     font that cannot be opened, with the harness's own fonts, and an emoji
-    line through Core Text. Each is compared with the drawings alone."""
+    line through Core Text. Each is compared with the drawings alone.
+
+    Then lines that draw nothing visible, so no image on screen holds their
+    cache entry: the unassigned code point fully transparent, off screen
+    and clipped to nothing, and the CJK line fully transparent. Three static
+    boxed signs join the drawings, so the visible output alone keeps the
+    cache over its budget whether or not the line adds to it."""
     missing = work / "no-such-font.ttf"
     times = enc(str(FONT_FILES["times"]))
     own = [f"provider-font Base {times} 400 20-24F",
@@ -481,6 +488,38 @@ def pressure_scenarios(work: Path) -> list[Scenario]:
                             init="coretext Arial -" if core_text else "none Fallback -",
                             setup=[] if core_text else list(own), commands=list(run),
                             baseline=base))
+
+    # A line that draws nothing visible (fully transparent, off screen or
+    # clipped to nothing) has no image on screen, and an off-screen or
+    # clipped one adds nothing to the cache. So the visible output alone
+    # must keep the cache over its budget: the four drawings and three
+    # static boxed signs, about 37 MB.
+    visible = "pressure-visible-2160p"
+    own_arial = own + [f"provider-font Arial {enc(str(FAMILIES['Arial']))} 400 20-24F"]
+    signs = [event(0, 60000, "SignBox", rf"{{\an5\pos(960,{y})}}Static boxed sign {n} stays put")
+             for n, y in ((1, 200), (2, 540), (3, 880))]
+
+    def boxed(font: str) -> list[str]:
+        return styles(font) + [style("SignBox", font="Arial", size=90, border=4, outline_w=2,
+                                     shadow=0, back="&H70101010")]
+
+    out.append(Scenario(visible, "pressure", script(boxed("Base"), sheets + signs), UHD,
+                        init="none Fallback -", setup=list(own_arial), commands=list(run),
+                        over_budget=True))
+    invisible = {
+        "pressure-transparent-2160p": ("Base", rf"{{\alpha&HFF&}}Unassigned {UNASSIGNED} "
+                                               "code point line"),
+        "pressure-off-screen-2160p": ("Base", rf"{{\pos(-3000,-3000)}}Unassigned {UNASSIGNED} "
+                                              "code point line"),
+        "pressure-clipped-2160p": ("Base", rf"{{\clip(0,0,0,0)}}Unassigned {UNASSIGNED} "
+                                           "code point line"),
+        "pressure-transparent-cjk-2160p": ("CJK", r"{\alpha&HFF&}日本語の字幕が表示されない"),
+    }
+    for name, (font, text) in invisible.items():
+        out.append(Scenario(name, "pressure",
+                            script(boxed(font), sheets + signs + [event(0, 60000, "Line", text)]),
+                            UHD, init="none Fallback -", setup=list(own_arial),
+                            commands=list(run), baseline=visible, over_budget=True))
     return out
 
 
@@ -779,6 +818,10 @@ def evaluate_pressure(v: Verdict, s: Scenario, totals: dict, results: dict) -> N
     totals["pressure"][s.name] = info
     if not s.baseline:
         v.check(not any(f.change for f in P[1:]), f"{name}: no change after the first frame")
+        if s.over_budget:
+            v.check(all(f.cache > EVENT_CACHE_BUDGET for f in P),
+                    f"{name}: the visible output alone keeps the event render cache over its "
+                    f"32 MiB budget on every frame (smallest {info['cache_bytes']} bytes)")
         return
     v.check(all(f.cache > EVENT_CACHE_BUDGET for f in P),
             f"{name}: the images on screen keep the event render cache over its 32 MiB budget "

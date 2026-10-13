@@ -5,8 +5,9 @@ Subject: [PATCH] render: keep unresolved glyphs per event and refresh them
  after new fallback faces
 
 Applies to libass 0.17.5 after patches 0001 and 0002, and changes only
-the event render cache that 0002 adds, the counters it needs and a cache
-lookup that never creates an entry.
+the event render cache that 0002 adds, the counters it needs, a cache
+lookup that never creates an entry and the references a frame keeps on
+the entries it used.
 
 - Output with glyphs that no font face could provide is never shared
   between events. A glyph counts as unresolved when ass_font_get_index()
@@ -19,13 +20,21 @@ lookup that never creates an entry.
   inheriting missing glyphs.
 - An event that has its own entry looks it up first, with
   ass_cache_find(), which never creates an entry, and goes through the
-  shared entry only when its own is missing. The event's images on
-  screen hold its own entry, so the cache budget cannot drop it while
-  they are in use. The shared entry holds no images, and the cut at the
-  start of a frame drops it whenever the images on screen alone exceed
-  the budget, so the event must not depend on it. Such an event is
-  therefore searched for once per appearance, plus once per added
-  fallback face, however full the cache is.
+  shared entry only when its own is missing. The shared entry holds no
+  images, and the cut at the start of a frame drops it whenever the
+  images on screen exceed the budget, so the event must not depend on
+  it.
+- Every entry a frame uses keeps a reference of its own until the next
+  frame has been rendered, as the frame's images keep theirs, so the cut
+  at the start of a frame cannot drop the entry of an event that is
+  still on screen, even one that draws nothing visible (fully
+  transparent, off screen or clipped to nothing) and so has no image to
+  keep it. Such an event is searched for once per appearance, plus once
+  per added fallback face, however full the cache is, and a static event
+  that draws nothing is not rendered again either. The references
+  belong to the renderer, not to events: each is released after the
+  next frame, or when the renderer is freed, so freeing an event or a
+  track leaves nothing behind.
 - Once any font gains a fallback face, each such event is rendered once
   more on its next frame (on the same frame if it is rendered after the
   face was added), so glyphs the new face covers appear when unpatched
@@ -178,7 +187,27 @@ diff --git a/libass/ass_cache_template.h b/libass/ass_cache_template.h
 diff --git a/libass/ass_render.c b/libass/ass_render.c
 --- a/libass/ass_render.c
 +++ b/libass/ass_render.c
-@@ -3023,12 +3023,18 @@
+@@ -175,6 +175,8 @@
+     return NULL;
+ }
+ 
++static void release_event_renders(void **held, size_t *n);
++
+ void ass_renderer_done(ASS_Renderer *render_priv)
+ {
+     if (!render_priv)
+@@ -182,6 +184,10 @@
+ 
+     ass_frame_unref(render_priv->images_root);
+     ass_frame_unref(render_priv->prev_images_root);
++    release_event_renders(render_priv->held, &render_priv->n_held);
++    release_event_renders(render_priv->prev_held, &render_priv->n_prev_held);
++    free(render_priv->held);
++    free(render_priv->prev_held);
+ 
+     ass_cache_done(render_priv->cache.event_render_cache);
+     ass_cache_done(render_priv->cache.composite_cache);
+@@ -3023,12 +3029,18 @@
      return true;
  }
  
@@ -197,7 +226,7 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
  };
  
  size_t ass_event_render_construct(void *key, void *value, void *priv)
-@@ -3037,17 +3043,30 @@
+@@ -3037,17 +3049,30 @@
      EventRenderHashValue *v = value;
      struct event_render_construct_ctx *ctx = priv;
  
@@ -233,7 +262,43 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
          v->top = ctx->ei.top;
          v->height = ctx->ei.height;
          v->left = ctx->ei.left;
-@@ -3069,8 +3088,12 @@
+@@ -3060,6 +3085,35 @@
+     return FFMAX(size, 2);
+ }
+ 
++// Keep an event render cache entry this frame uses until the next frame
++// has been rendered, as the frame's images keep theirs. An event that
++// draws nothing visible (fully transparent, off screen or clipped to
++// nothing) has no image to keep its entry, so without this the cut at the
++// start of a frame would drop the entry whenever the images on screen
++// exceed the budget, and the event would be rendered, and its fonts
++// searched, again on every frame. If the list cannot grow the entry is
++// simply not held.
++static void hold_event_render(ASS_Renderer *render_priv, EventRenderHashValue *v)
++{
++    if (render_priv->n_held == render_priv->held_cap) {
++        size_t cap = FFMAX(2 * render_priv->held_cap, 16);
++        void **held = realloc(render_priv->held, cap * sizeof(*held));
++        if (!held)
++            return;
++        render_priv->held = held;
++        render_priv->held_cap = cap;
++    }
++    ass_cache_inc_ref(v);
++    render_priv->held[render_priv->n_held++] = v;
++}
++
++static void release_event_renders(void **held, size_t *n)
++{
++    for (size_t i = 0; i < *n; i++)
++        ass_cache_dec_ref(held[i]);
++    *n = 0;
++}
++
+ static bool
+ ass_render_event(RenderContext *state, ASS_Event *event,
+                  EventImages *event_images)
+@@ -3069,8 +3123,12 @@
      if (!event->Text)
          return render_event_real(state, event, event_images);
  
@@ -246,7 +311,7 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
          .state_generation = render_priv->state_generation,
          .style = event->Style,
          .margin_l = event->MarginL,
-@@ -3078,10 +3101,55 @@
+@@ -3078,10 +3136,58 @@
          .margin_v = event->MarginV,
      };
      struct event_render_construct_ctx ctx = { state, event };
@@ -302,10 +367,13 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
 +        ass_frame_ref(ctx.ei.imgs);
 +        ass_frame_unref(ctx.ei.imgs);
 +    }
++    // Reusing the entry next frame must not depend on images on screen.
++    if (!v->time_dependent)
++        hold_event_render(render_priv, v);
      if (v->time_dependent) {
          if (!ctx.rendered)
              return render_event_real(state, event, event_images);
-@@ -3111,6 +3179,7 @@
+@@ -3111,6 +3217,7 @@
              }
              return false;
          }
@@ -313,7 +381,7 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
          *tail = clone;
          tail = &clone->next;
      }
-@@ -3199,6 +3268,7 @@
+@@ -3199,6 +3306,7 @@
  {
      ASS_Track *track = priv->track;
      ASS_Settings *s = &priv->settings;
@@ -321,7 +389,7 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
  
      priv->state_scratch_len = 0;
      priv->state_scratch_ok = true;
-@@ -3242,6 +3312,12 @@
+@@ -3242,6 +3350,12 @@
          priv->state_scratch_cap = len;
          priv->state_generation++;
      }
@@ -334,10 +402,37 @@ diff --git a/libass/ass_render.c b/libass/ass_render.c
  }
  
  /**
+@@ -3298,6 +3412,18 @@
+     render_priv->prev_images_root = render_priv->images_root;
+     render_priv->images_root = NULL;
+ 
++    // The entries the previous frame used stay held through the cut below,
++    // like its images, and are released once this frame has been rendered.
++    release_event_renders(render_priv->prev_held, &render_priv->n_prev_held);
++    void **held = render_priv->prev_held;
++    size_t held_cap = render_priv->prev_held_cap;
++    render_priv->prev_held = render_priv->held;
++    render_priv->n_prev_held = render_priv->n_held;
++    render_priv->prev_held_cap = render_priv->held_cap;
++    render_priv->held = held;
++    render_priv->n_held = 0;
++    render_priv->held_cap = held_cap;
++
+     check_cache_limits(render_priv, &render_priv->cache);
+ 
+     return true;
+@@ -3641,6 +3767,7 @@
+     // free the previous image list
+     ass_frame_unref(priv->prev_images_root);
+     priv->prev_images_root = NULL;
++    release_event_renders(priv->prev_held, &priv->n_prev_held);
+ 
+     if (track->parser_priv->prune_delay >= 0)
+         ass_prune_events(track, now - track->parser_priv->prune_delay);
 diff --git a/libass/ass_render.h b/libass/ass_render.h
 --- a/libass/ass_render.h
 +++ b/libass/ass_render.h
-@@ -330,6 +330,13 @@
+@@ -330,6 +330,19 @@
      size_t state_scratch_cap;
      bool state_scratch_ok;
  
@@ -348,10 +443,16 @@ diff --git a/libass/ass_render.h b/libass/ass_render.h
 +    uint64_t unresolved_glyphs;
 +    uint64_t last_owner;
 +
++    // event render cache entries the current frame used (held) and those
++    // the previous frame used (prev_held), each with a reference of its
++    // own until the frame after it has been rendered
++    void **held, **prev_held;
++    size_t n_held, n_prev_held, held_cap, prev_held_cap;
++
      ASS_Image *images_root;     // rendering result is stored here
      ASS_Image *prev_images_root;
  
-@@ -357,6 +364,7 @@
+@@ -357,6 +370,7 @@
  typedef struct render_priv {
      int top, height, left, width;
      int render_id;
