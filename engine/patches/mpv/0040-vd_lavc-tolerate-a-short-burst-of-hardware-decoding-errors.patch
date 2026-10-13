@@ -40,8 +40,8 @@ index 0000000000..0000000000 100644
 +// reaches --hwdec-software-fallback ends it only after this many keyframes
 +// have been sent during the run without recovering, or once the run is this
 +// long.
-+#define HWDEC_FAIL_KEYFRAMES 2
-+#define HWDEC_FAIL_MAX_RUN 240
++#define HWDEC_RUN_KEYFRAME_LIMIT 2
++#define HWDEC_RUN_ERROR_LIMIT 240
  
  #define OPT_BASE_STRUCT struct vd_lavc_params
  
@@ -51,7 +51,7 @@ index 0000000000..0000000000 100644
      int hwdec_fail_count;
 +    // Keyframe packets accepted by the decoder during the current run of
 +    // hardware decoding errors (hwdec_fail_count above 0).
-+    int hwdec_fail_keyframes;
++    int hwdec_run_keyframes;
  
      struct mp_image_pool *hwdec_swpool;
  
@@ -59,7 +59,7 @@ index 0000000000..0000000000 100644
  
      ctx->hwdec_failed = false;
      ctx->hwdec_fail_count = 0;
-+    ctx->hwdec_fail_keyframes = 0;
++    ctx->hwdec_run_keyframes = 0;
      ctx->max_delay_queue = 0;
      ctx->hw_probing = false;
      ctx->hwdec = (struct hwdec_info){0};
@@ -73,8 +73,8 @@ index 0000000000..0000000000 100644
 +        // a single frame the hardware decoder rejects.
 +        if (ctx->hwdec_fail_count >= hwdec_opts->software_fallback &&
 +            (!ctx->hwdec_notified ||
-+             ctx->hwdec_fail_keyframes >= HWDEC_FAIL_KEYFRAMES ||
-+             ctx->hwdec_fail_count >= HWDEC_FAIL_MAX_RUN))
++             ctx->hwdec_run_keyframes >= HWDEC_RUN_KEYFRAME_LIMIT ||
++             ctx->hwdec_fail_count >= HWDEC_RUN_ERROR_LIMIT))
              ctx->hwdec_failed = true;
      }
  }
@@ -85,8 +85,8 @@ index 0000000000..0000000000 100644
 +
 +    // A keyframe accepted during a run of hardware decoding errors counts
 +    // before this packet's own error, if any.
-+    if (ctx->use_hwdec && ctx->hwdec_fail_count > 0 && pkt && pkt->keyframe)
-+        ctx->hwdec_fail_keyframes += 1;
++    if (pkt && pkt->keyframe && ctx->hwdec_fail_count > 0 && ctx->use_hwdec)
++        ctx->hwdec_run_keyframes += 1;
  
      if (ctx->hw_probing && ctx->num_sent_packets < 32 &&
          ctx->hwdec_opts->software_fallback <= 32)
@@ -95,11 +95,11 @@ index 0000000000..0000000000 100644
      }
  
 +    if (ctx->hwdec_fail_count > 0) {
-+        MP_WARN(vd, "Hardware decoding recovered after %d failed frame%s.\n",
++        MP_WARN(vd, "Hardware decoder produced a frame again after %d decode failure%s.\n",
 +                ctx->hwdec_fail_count, ctx->hwdec_fail_count == 1 ? "" : "s");
 +    }
      ctx->hwdec_fail_count = 0;
-+    ctx->hwdec_fail_keyframes = 0;
++    ctx->hwdec_run_keyframes = 0;
  
      mpi->pts = mp_pts_from_av(ctx->pic->pts, &ctx->codec_timebase);
      mpi->dts = mp_pts_from_av(ctx->pic->pkt_dts, &ctx->codec_timebase);

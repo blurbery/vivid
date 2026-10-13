@@ -20,9 +20,13 @@
  */
 
 /*
- * `engine/lucid.py check` builds this file on the build host together with
+ * `engine/lucid.py test` builds this file on the build host together with
  * libavcodec/videotoolbox_dovi.c taken from the FFmpeg tree it has just
- * patched, so the code under test is the code that ships. It is built twice:
+ * patched, so the code under test is the code that ships. Its include path
+ * is that source tree plus the host FFmpeg build folder of the glue test
+ * (for the generated libavutil/avconfig.h), never a slice's build folder.
+ * How videotoolbox.c drives the module, decoded frame attachments included,
+ * is tested end to end by vt_glue_tests.m. This file is built twice:
  *
  *  - with VT_DOVI_TEST_FAKE_LIBDOVI, against a scripted stand-in for the six
  *    libdovi functions the module calls, to drive every outcome of FFmpeg's
@@ -44,7 +48,6 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreMedia/CoreMedia.h>
-#include <CoreVideo/CoreVideo.h>
 
 #include <libdovi/rpu_parser.h>
 
@@ -519,18 +522,6 @@ static void test_retry(void)
     CHECK(ff_vt_dovi_retry_as_hevc(&p7, -12911), "profile 7 retries");
     CHECK(!ff_vt_dovi_retry_as_hevc(&p81, 0), "no retry after success");
     CHECK(!ff_vt_dovi_retry_as_hevc(&plain, -12910), "plain HEVC never retries");
-
-    /* Frame flags follow the session: a retried session counts as plain. */
-    CHECK(ff_vt_dovi_frame_flags(&p5, 1) == FF_VT_DOVI_FRAME_DVH1, "profile 5 flags");
-    CHECK(ff_vt_dovi_frame_flags(&p81, 1) == (FF_VT_DOVI_FRAME_DVH1 | FF_VT_DOVI_FRAME_HDR_BASE),
-          "profile 8.1 flags");
-    CHECK(ff_vt_dovi_frame_flags(&p84, 1) ==
-          (FF_VT_DOVI_FRAME_DVH1 | FF_VT_DOVI_FRAME_HDR_BASE | FF_VT_DOVI_FRAME_HLG_BASE),
-          "profile 8.4 flags");
-    CHECK(ff_vt_dovi_frame_flags(&p7, 1) == (FF_VT_DOVI_FRAME_DVH1 | FF_VT_DOVI_FRAME_HDR_BASE),
-          "profile 7 flags");
-    CHECK(ff_vt_dovi_frame_flags(&p81, 0) == 0, "retried session flags");
-    CHECK(ff_vt_dovi_frame_flags(&plain, 0) == 0, "plain flags");
 }
 
 /* --------------------------------------- NAL filter and RPU selection */
@@ -603,132 +594,6 @@ static void test_guard_decisions(void)
     CHECK(!ff_vt_dovi_rpu_is_empty(kept_03, sizeof(kept_03)),
           "a 0x03 not preceded by two zeros is kept, leaving six bytes");
     CHECK(!ff_vt_dovi_rpu_is_empty(wrong_start, sizeof(wrong_start)), "other start bytes go to libdovi");
-}
-
-/* ---------------------------------------- frame attachments (5.7) */
-
-static CFTypeRef attachment(CVPixelBufferRef pb, CFStringRef key, CVAttachmentMode *mode)
-{
-    CVAttachmentMode m = kCVAttachmentMode_ShouldNotPropagate;
-    CFTypeRef value = CVBufferCopyAttachment(pb, key, &m);
-    if (mode)
-        *mode = m;
-    if (value)
-        CFAutorelease(value);
-    return value;
-}
-
-static CVPixelBufferRef new_buffer(void)
-{
-    CVPixelBufferRef pb = NULL;
-    CVReturn ret = CVPixelBufferCreate(kCFAllocatorDefault, 64, 64,
-                                       kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
-                                       NULL, &pb);
-    if (ret != kCVReturnSuccess || !pb) {
-        fprintf(stderr, "could not create a pixel buffer (%d)\n", ret);
-        exit(1);
-    }
-    CVBufferRemoveAllAttachments(pb);
-    return pb;
-}
-
-static int attachment_count(CVPixelBufferRef pb)
-{
-    CFDictionaryRef a = CVBufferCopyAttachments(pb, kCVAttachmentMode_ShouldPropagate);
-    CFDictionaryRef b = CVBufferCopyAttachments(pb, kCVAttachmentMode_ShouldNotPropagate);
-    int n = (a ? (int)CFDictionaryGetCount(a) : 0) + (b ? (int)CFDictionaryGetCount(b) : 0);
-    if (a)
-        CFRelease(a);
-    if (b)
-        CFRelease(b);
-    return n;
-}
-
-static void test_frame_tags(void)
-{
-    const int p81 = FF_VT_DOVI_FRAME_DVH1 | FF_VT_DOVI_FRAME_HDR_BASE;
-    const int p84 = p81 | FF_VT_DOVI_FRAME_HLG_BASE;
-    CFStringRef rpu_key = CFSTR("DolbyVisionRPUData");
-    CVPixelBufferRef pb;
-    CVAttachmentMode mode;
-    CGColorSpaceRef srgb;
-    CFDataRef rpu_data;
-    static const uint8_t rpu_bytes[] = { 1, 2, 3 };
-
-    /* Profile 8.1: everything filled, propagated, colour space derived. */
-    pb = new_buffer();
-    rpu_data = CFDataCreate(NULL, rpu_bytes, sizeof(rpu_bytes));
-    CVBufferSetAttachment(pb, rpu_key, rpu_data, kCVAttachmentMode_ShouldPropagate);
-    ff_vt_dovi_tag_frame(pb, p81);
-    CHECK(CFEqual(attachment(pb, kCVImageBufferColorPrimariesKey, &mode),
-                  kCVImageBufferColorPrimaries_ITU_R_2020) &&
-          mode == kCVAttachmentMode_ShouldPropagate, "8.1: BT.2020 primaries, propagated");
-    CHECK(CFEqual(attachment(pb, kCVImageBufferTransferFunctionKey, &mode),
-                  kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ) &&
-          mode == kCVAttachmentMode_ShouldPropagate, "8.1: PQ transfer, propagated");
-    CHECK(CFEqual(attachment(pb, kCVImageBufferYCbCrMatrixKey, &mode),
-                  kCVImageBufferYCbCrMatrix_ITU_R_2020) &&
-          mode == kCVAttachmentMode_ShouldPropagate, "8.1: BT.2020 matrix, propagated");
-    CHECK(attachment(pb, kCVImageBufferCGColorSpaceKey, &mode) &&
-          mode == kCVAttachmentMode_ShouldPropagate, "8.1: colour space derived");
-    CHECK(CFEqual(attachment(pb, rpu_key, NULL), rpu_data), "8.1: DolbyVisionRPUData kept");
-    CHECK(!attachment(pb, kCVImageBufferPixelAspectRatioKey, NULL) &&
-          !attachment(pb, kCVImageBufferChromaLocationTopFieldKey, NULL) &&
-          !attachment(pb, kCVImageBufferGammaLevelKey, NULL),
-          "8.1: no pixel aspect, chroma location or gamma from FFmpeg");
-    CFRelease(pb);
-
-    /* Profile 8.4: HLG. */
-    pb = new_buffer();
-    ff_vt_dovi_tag_frame(pb, p84);
-    CHECK(CFEqual(attachment(pb, kCVImageBufferTransferFunctionKey, NULL),
-                  kCVImageBufferTransferFunction_ITU_R_2100_HLG), "8.4: HLG transfer");
-    CFRelease(pb);
-
-    /* Only where absent: VideoToolbox's own values are never replaced. */
-    pb = new_buffer();
-    CVBufferSetAttachment(pb, kCVImageBufferTransferFunctionKey,
-                          kCVImageBufferTransferFunction_ITU_R_2100_HLG,
-                          kCVAttachmentMode_ShouldNotPropagate);
-    CVBufferSetAttachment(pb, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2,
-                          kCVAttachmentMode_ShouldPropagate);
-    ff_vt_dovi_tag_frame(pb, p81);
-    CHECK(CFEqual(attachment(pb, kCVImageBufferTransferFunctionKey, &mode),
-                  kCVImageBufferTransferFunction_ITU_R_2100_HLG) &&
-          mode == kCVAttachmentMode_ShouldNotPropagate, "existing transfer kept");
-    CHECK(CFEqual(attachment(pb, kCVImageBufferYCbCrMatrixKey, NULL),
-                  kCVImageBufferYCbCrMatrix_ITU_R_709_2), "existing matrix kept");
-    CHECK(CFEqual(attachment(pb, kCVImageBufferColorPrimariesKey, NULL),
-                  kCVImageBufferColorPrimaries_ITU_R_2020), "missing primaries filled");
-    CFRelease(pb);
-
-    /* An existing colour space is kept, though one could be derived. */
-    pb = new_buffer();
-    srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CVBufferSetAttachment(pb, kCVImageBufferCGColorSpaceKey, srgb, kCVAttachmentMode_ShouldPropagate);
-    ff_vt_dovi_tag_frame(pb, p81);
-    CHECK(attachment(pb, kCVImageBufferCGColorSpaceKey, NULL) == (CFTypeRef)srgb,
-          "existing colour space kept");
-    CHECK(CFEqual(attachment(pb, kCVImageBufferTransferFunctionKey, NULL),
-                  kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ), "tags filled beside it");
-    CFRelease(srgb);
-    CFRelease(pb);
-
-    /* Profile 5: nothing added or removed. */
-    pb = new_buffer();
-    CVBufferSetAttachment(pb, rpu_key, rpu_data, kCVAttachmentMode_ShouldPropagate);
-    ff_vt_dovi_tag_frame(pb, FF_VT_DOVI_FRAME_DVH1);
-    CHECK(attachment_count(pb) == 1 && attachment(pb, rpu_key, NULL),
-          "profile 5: only VideoToolbox's attachments");
-    CFRelease(pb);
-
-    /* Not a Dolby Vision session: the module does nothing. */
-    pb = new_buffer();
-    ff_vt_dovi_tag_frame(pb, 0);
-    CHECK(attachment_count(pb) == 0, "plain session: untouched");
-    CFRelease(pb);
-
-    CFRelease(rpu_data);
 }
 
 #ifdef VT_DOVI_TEST_FAKE_LIBDOVI
@@ -1149,7 +1014,6 @@ int main(int argc, char **argv)
     test_retry();
     test_nal_rules();
     test_guard_decisions();
-    test_frame_tags();
 #ifdef VT_DOVI_TEST_FAKE_LIBDOVI
     (void)argc;
     (void)argv;

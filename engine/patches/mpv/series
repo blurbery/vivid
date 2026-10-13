@@ -2,4 +2,4 @@
 # Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
 9a8c970f0e900a359936990e90ca6288c572b1ee798d876252ef31d10f5a7a88  0001-ad_spdif-recreate-spdif-muxer-on-reset.patch
 964f2f00526cd41d921e14a0a8a72729a63fcedc125114fd0bf63588ddfb1b7b  0002-ao_avfoundation-build-for-ios-and-tvos.patch
-c33a7ebe2b905cef871d6eb53ed4e3dabef8ce61fba4456f6a21aea3aa7fa6a7  0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch
+103a3651057fe7f37ede0daa985994c3dba2f7c80aa630d330005d8d27cefcd5  0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch

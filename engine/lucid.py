@@ -131,7 +131,7 @@ HEVCDEC_VERBOSE_MESSAGES = (
     r"Multiple Dolby Vision RPUs found in one AU. Skipping previous.\n",
     r"Skipping NAL unit %d\n",
 )
-MPV_HWDEC_RECOVERY_MARKER = b"Hardware decoding recovered after %d failed frame%s."
+MPV_HWDEC_RECOVERY_MARKER = b"Hardware decoder produced a frame again after %d decode failure%s."
 # Substrings Vivid's adapter records as faults (patch spec 2.8); no message
 # the decoder patches add may contain one.
 FAULT_SUBSTRINGS = ("Too many packets", "queue overflow", "EOF", "End of file", "timed out",

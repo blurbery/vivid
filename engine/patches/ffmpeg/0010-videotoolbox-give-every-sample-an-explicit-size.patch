@@ -30,7 +30,7 @@ index 0000000000..0000000000 100644
      CMSampleBufferRef sample_buf;
 +    // An explicit size for the one sample: the Dolby Vision HEVC decoder
 +    // fails samples without it (kCMBlockBufferBadLengthParameterErr).
-+    size_t sample_size = size;
++    size_t sample_bytes = size;
  
      block_buf  = NULL;
      sample_buf = NULL;
@@ -41,7 +41,7 @@ index 0000000000..0000000000 100644
 -                                      0,                    // numSampleSizeEntries
 -                                      NULL,                 // sampleSizeArray
 +                                      1,                    // numSampleSizeEntries
-+                                      &sample_size,         // sampleSizeArray
++                                      &sample_bytes,        // sampleSizeArray
                                        &sample_buf);
      }
  
