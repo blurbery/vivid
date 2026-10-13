@@ -8,7 +8,7 @@
 
 ---
 
-This guide specifies, by behaviour, the Swift bridge that sits between Vivid's Lucid Engine adapter and libmpv on iPhone, iPad and Apple TV. It is written for a clean-room reimplementation and is the implementer's only description of how the current bridge behaves.
+This guide specifies, by behaviour, the Swift bridge that sits between Vivid's Lucid Engine adapter and libmpv on iPhone, iPad and Apple TV. It was written for a clean-room reimplementation of the previous bridge, which has since been removed, and it describes how Vivid's own bridge behaves.
 
 Contents:
 
@@ -49,9 +49,9 @@ The bridge does not render frames, own the audio session, choose tracks (apart f
 
 ### 1.2 Status
 
-The current bridge (`MpvPlayerCoreBase.swift`, `MpvPlayerCore.swift` and `ExternalDisplayManager.swift` in `iosApp/iosApp/Playback/MPV/`) was adapted from a third-party GPL-3.0 project without App Store permission. This specification drives a Vivid-written replacement that must behave exactly the same: blurbery describes current playback as perfect, so any visible difference is a regression.
+The previous bridge (three files in `iosApp/iosApp/Playback/MPV/`, listed in section 2.2) was adapted from a third-party GPL-3.0 project without App Store permission. This specification drove a Vivid-written replacement that had to behave exactly the same: blurbery described playback as perfect, so any visible difference was a regression.
 
-The replacement is compiled alongside the current files. A small selection file picks one of them with the compilation condition `VIVID_OWN_BRIDGE`, which is not defined by default, so the current bridge stays in use until a separate switch-over change defines it (section 4.5).
+The replacement was first compiled alongside the previous bridge, and a small selection file chose between them with a compilation condition. The switch-over made the replacement permanent and removed the previous bridge, the selection file and the condition (section 4.5). Where this document describes the previous bridge, it does so only to explain why the bridge behaves as it does.
 
 ### 1.3 How to read this document
 
@@ -59,7 +59,7 @@ The replacement is compiled alongside the current files. A small selection file 
 | --- | --- |
 | (no tag) | Live: a current caller, mpv or the system drives it in Release builds. Reproduce it exactly. |
 | **[debug-only]** | Compiled only when `VIVID_P8_TRIAL` is defined, which only the tvOS Debug configuration does. Reproduce it exactly under the same condition. |
-| **[unreached]** | Used only in section 13, for code paths of the current bridge that nothing reaches today. The replacement omits them. |
+| **[unreached]** | Used only in section 13, for code paths of the previous bridge that nothing reached. The replacement omits them. |
 | *Vivid (`hash`)* | Behaviour Vivid added after the original import, with the commit that added it (details in section 12). |
 
 Naming rules:
@@ -71,7 +71,7 @@ Naming rules:
 
 ## 2. Clean-room rules for readers
 
-The implementer must never see the current bridge code, and must not see the engine's Apple patches either. Everything the implementer needs about the engine is stated as behaviour in this document, so no engine source is required.
+The implementer must never see the previous bridge code, and must not see the previous engine package's Apple patches either. Everything the implementer needs about the engine is stated as behaviour in this document, so no engine source is required. Both have been removed from the repository, but they remain in its history, so these rules still apply to anyone who changes the bridge.
 
 The engine's Apple patches (its `avfoundation` video and audio outputs and related changes) are being rewritten clean-room as a separate project. Sections 6.19 and 7 are therefore the single interface both rewrites share: the bridge may rely on nothing about the engine beyond what they state, and the engine rewrite must keep everything they state true.
 
@@ -82,26 +82,26 @@ The engine's Apple patches (its `avfoundation` video and audio outputs and relat
 | `iosApp/iosApp/Playback/MPV/VividMPVPlayer.swift` | The adapter and its subclass of the core. The main caller. |
 | `iosApp/iosApp/Playback/MPV/LucidSubtitleInventory.swift` | Uses a bare base instance to convert a `track-list` node. |
 | `iosApp/iosApp/Shared/Diagnostics/Playback/PlaybackSessionRecorder.swift` | Uses the external-display role test. |
-| Everything under `iosApp/Tests/` | Includes `MpvPropertyCoalescingTests.swift` and `PlayerSurfaceLayoutTests.swift`. |
-| Everything under `scripts/` except the two scripts named in section 2.2 | Includes `scripts/tests/mpv-track-tests.py` and `scripts/release/use-patched-libmpv.sh`. |
-| `.github/workflows/` except `mpv-audio-driver.yml` | CI definitions. |
+| Everything under `iosApp/Tests/` | Includes `VividPlayerCoreTests.swift` and `PlayerSurfaceLayoutTests.swift`. |
+| Everything under `scripts/` | Includes `scripts/tests/mpv-track-tests.py`. |
+| `.github/workflows/` | CI definitions. |
 | Other current Vivid source files | They contain no bridge or engine code. |
 | Vivid documentation | `docs/`, `README.md`, `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt`. These describe the engine only in prose. |
 | `docs/playback/lucid-engine-patch-spec.md` (on the engine branch, `experiment/lucid-engine-build`) | The engine side of the same contract, also written by behaviour for a clean-room rewrite. Sections 6.19 and 7 of this document remain the interface both rewrites share: the bridge may rely on nothing about the engine beyond what they state. |
-| mpv's public C headers, and nothing else from the engine package | `mpv/client.h`, `mpv/render.h`, `mpv/render_gl.h` and `mpv/stream_cb.h` under `Headers/` inside `Libmpv.xcframework` in the resolved `edde746/mpv-build` SwiftPM binary artifacts at revision `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` (mpv 0.41.0, FFmpeg 8.0.1). The bridge uses only `client.h` and `stream_cb.h`. |
+| mpv's public C headers, and nothing else from the engine package | `mpv/client.h`, `mpv/render.h`, `mpv/render_gl.h` and `mpv/stream_cb.h` under `Headers/` inside `Libmpv.xcframework` in the resolved Lucid Engine package (`blurbery/lucid-engine`; mpv 0.41.0, FFmpeg 8.0.1). The bridge uses only `client.h` and `stream_cb.h`. |
 | mpv's public manual (upstream mpv documentation) | Options, properties, commands and the libmpv client API, for mpv 0.41. It does not describe the `avfoundation` video output or the `ao-avfoundation-*` options; this document does. |
 | Apple developer documentation | UIKit, AVFoundation, AVKit, Core Media, Core Animation. |
 
 ### 2.2 Must not read
 
-- The three current bridge files, any earlier version of them, and anything that shows their content: `git log -p`, `git show`, `git blame` or diffs that include them (including the import commits `1598f91` and `04a349d`, and any repository-wide history listing without a path filter).
-- `scripts/tests/playback-end-recovery-tests.py` (it embeds the current bridge's private structure).
-- `edde746/plezy` in any form: repository, forks, releases, issues, pull requests or packaged builds.
-- Anything from `edde746/mpv-build` or `edde746/MPVKit` other than the four public headers listed above: no patch files (the `patches/` trees and their series files), engine sources, Swift files (including `Demo/`, `Sources/` and the package manifests), build scripts, READMEs or other documents, in the repositories, their history or the resolved SwiftPM checkout.
-- Vivid files that reproduce engine patch source: `patches/mpv/` (Vivid's audio-driver patch, whose context lines come from the patched engine), `scripts/tests/compressed-audio-recovery-tests.py` (it extracts and embeds the patched audio driver's source) and `.github/workflows/mpv-audio-driver.yml` (it embeds lines of that source).
+- The previous bridge's three files (`MpvPlayerCoreBase.swift`, `MpvPlayerCore.swift` and `ExternalDisplayManager.swift`, formerly in `iosApp/iosApp/Playback/MPV/`), any version of them in history, and anything that shows their content: `git log -p`, `git show`, `git blame` or diffs that include them (including the import commits `1598f91` and `04a349d`, the commit that removed them, and any repository-wide history listing without a path filter).
+- `scripts/tests/playback-end-recovery-tests.py`, now removed, in any version in history (it embedded the previous bridge's private structure).
+- The third-party project the previous bridge was adapted from, in any form: repository, forks, releases, issues, pull requests or packaged builds.
+- Anything from the previous engine package or the projects it was built from: no patch files (the `patches/` trees and their series files), engine sources, Swift files (including demos, sources and the package manifests), build scripts, READMEs or other documents, in the repositories, their history or a resolved SwiftPM checkout. The only engine files the bridge needs are the four public headers in section 2.1, read from Lucid Engine.
+- Vivid files, now removed, that reproduced the previous engine's patch source, in any version in history: `patches/mpv/` (Vivid's audio-driver patch for the previous package, whose context lines came from the patched engine), `scripts/tests/compressed-audio-recovery-tests.py` (it extracted and embedded the patched audio driver's source) and `.github/workflows/mpv-audio-driver.yml` (it embedded lines of that source).
 - The working notes the spec editor used to prepare this document.
 
-If something here seems incomplete or contradictory, ask the spec editor. Do not look at the current code or the engine patches to settle it.
+If something here seems incomplete or contradictory, ask the spec editor. Do not look at the previous bridge's code or the previous engine's patches to settle it.
 
 ## 3. Build context and platform conditions
 
@@ -109,10 +109,10 @@ If something here seems incomplete or contradictory, ask the spec editor. Do not
 | --- | --- |
 | Platforms | iPhone and iPad (iOS 18.0 and later, `TARGETED_DEVICE_FAMILY` `1,2`, Mac and Vision Pro "Designed for iPad" switched off) and Apple TV (tvOS 26.0 and later). No macOS, Mac Catalyst or visionOS code paths exist or may be added. |
 | Language | Swift 5 language mode, minimal concurrency checking, no default actor isolation. Unannotated classes are nonisolated. |
-| Imports | `import Libmpv` (the `edde746/mpv-build` binary package pinned above). On tvOS the core file also imports AVKit, which provides `UIWindow.avDisplayManager`, `AVDisplayCriteria` and the mode-switch notifications. |
-| New files | `iosApp/iosApp/Playback/MPV/VividPlayerCoreBase.swift` and `VividPlayerCore.swift`, each wrapped in `#if os(iOS) \|\| os(tvOS)`; `VividExternalDisplay.swift`, wrapped in `#if os(iOS)`; `VividBridgeSelection.swift` (section 4.5). |
-| Compilation of both bridges | The new files are not wrapped in `VIVID_OWN_BRIDGE`. Both bridges compile in every configuration; only the selection file reads the flag. Consequences: the new code ships in every binary from its first commit, so the forbidden strings in section 10.4 apply immediately; and the new files must not collide with the current files at the top level. |
-| Top-level declarations | Declare only the top-level types named in section 4.5 (plus the private relay type). No top-level functions, variables or constants, and no extensions on system types. The current bridge declares a global C-string helper, and any same-signature global would fail to compile. Do not give any class an explicit `@objc(...)` runtime name. |
+| Imports | `import Libmpv` (from the Lucid Engine package, `blurbery/lucid-engine`). On tvOS the core file also imports AVKit, which provides `UIWindow.avDisplayManager`, `AVDisplayCriteria` and the mode-switch notifications. |
+| New files | `iosApp/iosApp/Playback/MPV/VividPlayerCoreBase.swift` and `VividPlayerCore.swift`, each wrapped in `#if os(iOS) \|\| os(tvOS)`; `VividExternalDisplay.swift`, wrapped in `#if os(iOS)`. Until the switch-over there was also a selection file, `VividBridgeSelection.swift` (section 4.5). |
+| Compilation | The bridge files compile in every configuration and are not wrapped in any build condition. Until the switch-over, both bridges compiled side by side and only the selection file read the condition, so the new code shipped in every binary from its first commit (the forbidden strings in section 10.4 applied from then on) and the new files could not collide with the previous files at the top level. |
+| Top-level declarations | Declare only the top-level types named in section 4.5 (plus the private relay type). No top-level functions, variables or constants, and no extensions on system types. The previous bridge declared a global C-string helper, so a same-signature global would not have compiled beside it. Do not give any class an explicit `@objc(...)` runtime name. |
 | Availability | Every API older than the deployment targets is always available. The only runtime branch is iOS 26: `preferredDynamicRange` on iOS 26 and later, `wantsExtendedDynamicRangeContent` on iOS 18 to 25 (section 8.15). |
 | `targetEnvironment(simulator)` | Changes two start-up options (section 6.3). Takes precedence over the platform. |
 | `VIVID_P8_TRIAL` | **[debug-only]** diagnostics: the `display-commit-lock` event (section 8.3) and, on tvOS, the `display-switch-started` and `display-switch-ended` events (section 8.16). |
@@ -127,7 +127,7 @@ If something here seems incomplete or contradictory, ask the spec editor. Do not
 | `VividMPVPlayer.swift` | Declares `private final class VividMPVCore` as a subclass of the core and overrides three hooks (section 4.4). Declares `private final class VividMPVDelegate`, which conforms to the delegate protocol. `VividMPVHostView` holds `fileprivate weak var core` typed as the core and calls `updateFrame()` from `layoutSubviews`. Calls the members in section 4.3. Is `@MainActor`, so all its calls arrive on the main thread. |
 | `LucidSubtitleInventory.swift` | Inside `Task.detached(priority: .utility)`, creates a bare base instance with no arguments and calls `convertNode(_:)` on a `track-list` node fetched from its own throwaway mpv handle, then casts the result to `[[String: Any]]`. |
 | `PlaybackSessionRecorder.swift` | iOS only, on the main actor: calls the static external-display role test on every connected scene's session role to fill the latest-playback report's `externalScreen` field. |
-| `iosApp/Tests/MpvPropertyCoalescingTests.swift` | Conforms a recorder to the delegate protocol, creates bare base instances, assigns `delegate`, calls `dispatchDelegateProperty` and `dispatchDelegateEvent` from a private serial queue entered with `sync` from the main actor, and calls `beginDisposal()`. |
+| `iosApp/Tests/VividPlayerCoreTests.swift` | Among its tests, conforms a recorder to the delegate protocol, creates bare base instances, assigns `delegate`, calls `dispatchDelegateProperty` and `dispatchDelegateEvent` from a private serial queue entered with `sync` from the main actor, and calls `beginDisposal()`. |
 | `iosApp/Tests/PlayerSurfaceLayoutTests.swift` | Through the adapter, with real media in the simulator, asserts that the PiP source's layer is the core's `sampleBufferDisplayLayer`; that `layer.superlayer?.superlayer` is the host view's layer; that the layer reports `isReadyForDisplay` within 15 seconds; that layout and preview cycles leave the paused state and position unchanged; that the same layer survives presentation changes within one load; that a successor load has a different layer; and that the video route is the sample-buffer route with no `AVPlayer`. |
 | `scripts/tests/mpv-track-tests.py` | Slices the text of `VividMPVPlayer.stop()` between the line that clears the core's delegate and the line that resets the core and proxy, and runs it against a stand-in with `delegate` and `dispose(preserveDisplayCriteria:completion:)`. The text of `stop()` must not change. |
 
@@ -192,7 +192,7 @@ Members marked "base" must be declared on the base class, because callers use th
 
 Name collisions to avoid: `VividMPVCore` declares stored properties named `headers`, `registersManagedStreams`, `managedStreamsRegistered`, `startPosition`, `autoplay`, `audioOnly`, `initialRate`, `initialVolume`, `audioLanguages`, `plannedAudio` and `airPlayPCM`. The new base and core must not declare members with any of these names.
 
-### 4.5 Naming plan and selection aliases
+### 4.5 Naming plan
 
 New top-level types:
 
@@ -211,28 +211,15 @@ The delegate protocol `VividPlayerCoreDelegate` has exactly:
 - `func onPropertyChange(name: String, value: Any?, sourceId: Int64?)`
 - `func onEvent(name: String, data: [String: Any]?)`
 
-Selection file `iosApp/iosApp/Playback/MPV/VividBridgeSelection.swift`, compiled for iOS and tvOS. Each caller-visible type has exactly one alias. With `VIVID_OWN_BRIDGE` defined each alias names the new type; otherwise it names the current type.
+Until the switch-over, a selection file (`iosApp/iosApp/Playback/MPV/VividBridgeSelection.swift`) gave each caller-visible type one alias, which named either the previous bridge's type or the new type according to a compilation condition. The switch-over removed the file and the condition, and callers now name the new types directly:
 
-| Alias | Current type (flag off) | New type (flag on) | Platforms |
-| --- | --- | --- | --- |
-| `VividBridgeCoreBase` | `MpvPlayerCoreBase` | `VividPlayerCoreBase` | iOS, tvOS |
-| `VividBridgeCore` | `MpvPlayerCore` | `VividPlayerCore` | iOS, tvOS |
-| `VividBridgeCoreDelegate` | `MpvPlayerDelegate` | `VividPlayerCoreDelegate` | iOS, tvOS |
-| `VividBridgeSampleBufferLayer` | `MpvVideoLayer` | `VividSampleBufferLayer` | iOS, tvOS |
-| `VividBridgeExternalDisplay` | `ExternalDisplayManager` | `VividExternalDisplay` | iOS only (inside `#if os(iOS)`) |
-
-No caller needs `VividBridgeSampleBufferLayer` today; it exists so the layer type has a selected name like every other caller-visible type.
-
-Caller edits (the only changes outside the new files and the selection file):
-
-| File | Change |
+| File | Uses |
 | --- | --- |
-| `VividMPVPlayer.swift` | The superclass of `VividMPVCore` becomes `VividBridgeCore`; the conformance of `VividMPVDelegate` becomes `VividBridgeCoreDelegate`; the type of `VividMPVHostView.core` becomes `VividBridgeCore?`. No other line, and nothing in `stop()`. |
-| `LucidSubtitleInventory.swift` | The bare instance becomes `VividBridgeCoreBase()`. |
-| `PlaybackSessionRecorder.swift` | The role test is called on `VividBridgeExternalDisplay`. |
-| `iosApp/Tests/MpvPropertyCoalescingTests.swift` | The recorder conforms to `VividBridgeCoreDelegate` and the bare instances become `VividBridgeCoreBase()`, so the tests exercise whichever bridge is selected. |
+| `VividMPVPlayer.swift` | `VividMPVCore` subclasses `VividPlayerCore`; `VividMPVDelegate` conforms to `VividPlayerCoreDelegate`; `VividMPVHostView.core` is a `VividPlayerCore?`. Nothing in `stop()` changed. |
+| `LucidSubtitleInventory.swift` | Converts the track list with a bare `VividPlayerCoreBase()`. |
+| `PlaybackSessionRecorder.swift` | Calls the role test on `VividExternalDisplay`. |
 
-Subclassing and overriding through a type alias work in Swift, so `VividMPVCore`'s three overrides compile against either bridge. The selection aliases live in the app module, so `@testable import Vivid` and `@testable import VividTV` pick up the same selection.
+No caller names `VividSampleBufferLayer`; callers reach it through `sampleBufferDisplayLayer`.
 
 ### 4.6 Delegate events and payloads
 
@@ -710,7 +697,7 @@ Consequences callers depend on: flags stay `Bool`, integers stay `Int64`, fracti
 
 The side-data dimension check takes two `Int64` values and passes exactly when both are above 0, both are at most 16,384, and width times height, computed without overflow, is at most 67,108,864 (64 x 1,024 x 1,024). It is used by the early snapshot, by the tvOS platform write and by this map rule:
 
-Map rule (applied to every map before its entries are converted): scan all entries. If no value in the map is a byte array, or the map has neither a `width`/`w` key nor a `height`/`h` key, the map passes. Otherwise both a width-like and a height-like entry must exist (when a key appears more than once the last occurrence counts; entries with null keys are skipped for this lookup but still count towards "has a byte array"); each value must convert to `Int64` (an `MPV_FORMAT_INT64` value as is, or an `MPV_FORMAT_DOUBLE` value that is finite, integral and exactly representable as `Int64`); and the pair must pass the dimension check. The scan compares raw key bytes and uses none of the budget. (The current bridge traps on a double of exactly 2^63 here; the replacement may reject it instead.) Failing makes the whole map nil. Purpose: reject attacker-sized side data (for example an embedded image) before allocating for it.
+Map rule (applied to every map before its entries are converted): scan all entries. If no value in the map is a byte array, or the map has neither a `width`/`w` key nor a `height`/`h` key, the map passes. Otherwise both a width-like and a height-like entry must exist (when a key appears more than once the last occurrence counts; entries with null keys are skipped for this lookup but still count towards "has a byte array"); each value must convert to `Int64` (an `MPV_FORMAT_INT64` value as is, or an `MPV_FORMAT_DOUBLE` value that is finite, integral and exactly representable as `Int64`); and the pair must pass the dimension check. The scan compares raw key bytes and uses none of the budget. (The previous bridge trapped on a double of exactly 2^63 here; the replacement may reject it instead.) Failing makes the whole map nil. Purpose: reject attacker-sized side data (for example an embedded image) before allocating for it.
 
 #### 6.16.4 Other conversions
 
@@ -808,7 +795,7 @@ The bridge sets no audio option, never touches `AVAudioSession`, and must never 
 | `ao-avfoundation-compressed-anchor-resume` | `yes` (tvOS, AirPlay route only) | After a pause, anchor mpv to AirPlay's clock as at start-up, so video waits for the audio instead of running ahead and then stopping to resynchronise. |
 | `ao-avfoundation-compressed-buffer` | `1.25` (tvOS, AirPlay route only) | Seconds of compressed audio queued before starting (instead of two), kept above the output's one-second priming reserve. |
 
-These options belong to Vivid's own engine (the Lucid Engine patch specification). A build that still links the third-party package without the old driver rebuild rejects them; the console then shows, through the error check (section 10.2), one `MPV error: option not found option=ao-avfoundation-manage-audio-session at <module>/VividMPVPlayer.swift:<line>` line on every load (the module is `Vivid` on iOS and `VividTV` on tvOS) and, on tvOS with an AirPlay route, five more `MPV error: option not found at ...` lines with no `option=` detail, because the adapter does not pass the name for those. Playback continues without the options' effects.
+These options belong to Vivid's own engine (the Lucid Engine patch specification). A build that links an engine without Vivid's audio output, such as the previous package, rejects them; the console then shows, through the error check (section 10.2), one `MPV error: option not found option=ao-avfoundation-manage-audio-session at <module>/VividMPVPlayer.swift:<line>` line on every load (the module is `Vivid` on iOS and `VividTV` on tvOS) and, on tvOS with an AirPlay route, five more `MPV error: option not found at ...` lines with no `option=` detail, because the adapter does not pass the name for those. Playback continues without the options' effects.
 
 ## 7. Video surface and the video-output contract
 
@@ -832,7 +819,7 @@ What the bridge guarantees:
 | After creation, `bounds` and `contentsScale` are written only with their exact final values, with implicit animations disabled, and `bounds` and `position` are always set together (section 7.5). | The engine sizes its output, including subtitle resolution, from `bounds` and `contentsScale` only, and it visibly re-lays out separate-layer subtitles whenever either changes. It does not follow `position` on its own. |
 | The main thread never blocks waiting on mpv, and a stored context is never destroyed from main (section 5.3). | The engine waits synchronously for the main thread while creating, reconfiguring and tearing down the video output (creation happens at load and at every `vid=auto`), when reading geometry (including on the first frame after any subtitle-layer resynchronisation) and when recovering the layer, so a main thread blocked on mpv deadlocks playback. |
 | The bridge never sets `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`. | The engine never re-renders, scales or moves the picture for these options, so they have no effect on it. mpv still applies them to the rectangle that separate-layer subtitles are placed against, so subtitles would move away from the picture. Vivid has no viewer zoom (section 13), so nothing needs them. |
-| The bridge never sets `panscan` or `video-aspect-override`. | The engine handles these without re-rendering, but fitting the picture belongs to the adapter's `videoGravity` on the layer (section 7.4), and the current bridge never sets them. |
+| The bridge never sets `panscan` or `video-aspect-override`. | The engine handles these without re-rendering, but fitting the picture belongs to the adapter's `videoGravity` on the layer (section 7.4), and the previous bridge never set them. |
 | The bridge never touches the layer's `controlTimebase`. | The engine creates and drives it. |
 | The bridge may remove the layer from its parent before mpv is destroyed (section 6.17.2). | The engine keeps its own reference to the layer from creating its video output until tearing it down. |
 
@@ -1208,7 +1195,7 @@ The bridge prints only these lines, with Swift `print` to standard output (tvOS 
 | `mpv_initialize` failed | One line, starting with the tag, giving the `mpv_error_string` of the status. Wording free. |
 | `checkError` sees a negative status | Exactly `[VividPlayerCore] MPV error: <mpv_error_string>`, then ` option=<name>` when an option name was passed, then ` at <file>:<line>` from the `file` and `line` parameters. |
 
-`checkError` does nothing for a status of 0 or above. Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS). The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`. The adapter passes the name for the options in its dictionary group and not for the others (section 6.19). `docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail. The tag changes from the current `[MpvPlayerCore]` to `[VividPlayerCore]`; nothing in the repository depends on the tag.
+`checkError` does nothing for a status of 0 or above. Its `file` and `line` defaults (`#fileID`, `#line`) capture the caller's location, so the adapter's option errors report `<module>/VividMPVPlayer.swift` (`Vivid` on iOS, `VividTV` on tvOS). The bridge's own checks (the initial log level request, `wid`, every bridge option and `mpv_hook_add`) pass no option name; only the preload `aid` write passes `aid`. The adapter passes the name for the options in its dictionary group and not for the others (section 6.19). `docs/cores/player-engine.md` quotes the `MPV error: option not found` form, which is what an unpatched engine prints for Vivid's driver options; keep that text and the `option=` detail. The previous bridge used a different tag; nothing in the repository depends on the tag.
 
 ### 10.3 Strings other code reads
 
@@ -1221,11 +1208,11 @@ The bridge prints only these lines, with Swift `print` to standard output (tvOS 
 
 ### 10.4 Forbidden strings
 
-`scripts/release/use-patched-libmpv.sh verify` proves that the patched audio driver is linked by finding the literal strings `first start recovery after` and `trace edge %s` in the app binary. They must therefore never appear in any Swift source, including the new bridge (which ships in every binary, section 3) and its tests.
+A release check for the previous engine package, now removed, proved that its patched audio driver was linked by finding the literal strings `first start recovery after` and `trace edge %s` in the app binary. They must still never appear in any Swift source, including the bridge (which ships in every binary, section 3) and its tests.
 
-### 10.5 Documents to update later
+### 10.5 Documents updated at the switch-over
 
-`THIRD_PARTY_NOTICES.md` and `iosApp/Resources/OpenSourceLicenses/README.txt` describe the current files as adapted from a third-party project. Update them when the current files are retired, not before.
+`THIRD_PARTY_NOTICES.md` and `iosApp/Resources/OpenSourceLicenses/README.txt` described the previous bridge's files as adapted from a third-party project. The switch-over removed those files and those descriptions, and both documents now describe Lucid Engine's libraries.
 
 ## 11. Constants and timing values
 
@@ -1264,7 +1251,7 @@ The bridge has no timers, retry counts, polling intervals, timeouts or animation
 
 ## 12. Vivid-authored behaviour by commit
 
-The current files arrived in the import commits `1598f91` (base and core, 15 September 2026) and `04a349d` (external display file, 16 September 2026). Everything below was written by blurbery for Vivid, either while importing or in later commits. Code blocks quote only whole lines that later Vivid commits added and that are Vivid's own expression. Lines that existed before, or that closely copy earlier lines, are replaced by `// [not quoted: ...]` placeholders and their behaviour is described in the section the text points to. Neutral structural lines (braces, conditional-compilation lines, bare returns) and generic idioms inside Vivid blocks are quoted as they are; lines that name an identifier introduced by the original import, including its lock, are placeholders. Identifiers inside the quotes are illustrative: the implementer may reuse Vivid's own code or choose different names.
+The previous bridge's files arrived in the import commits `1598f91` (base and core, 15 September 2026) and `04a349d` (external display file, 16 September 2026). Everything below was written by blurbery for Vivid, either while importing or in later commits. Code blocks quote only whole lines that later Vivid commits added and that are Vivid's own expression. Lines that existed before, or that closely copy earlier lines, are replaced by `// [not quoted: ...]` placeholders and their behaviour is described in the section the text points to. Neutral structural lines (braces, conditional-compilation lines, bare returns) and generic idioms inside Vivid blocks are quoted as they are; lines that name an identifier introduced by the original import, including its lock, are placeholders. Identifiers inside the quotes are illustrative: the implementer may reuse Vivid's own code or choose different names.
 
 ### 12.1 Import-time adaptations (`1598f91`, `04a349d`)
 
@@ -1661,11 +1648,11 @@ Vivid-authored (`8268108`), the audio choice:
 
 ## 13. Deliberately omitted members and paths
 
-The current bridge contains code that nothing in Vivid reaches. The replacement omits it. Each row gives the evidence, from a repository-wide search, that it is unreached today.
+The previous bridge contained code that nothing in Vivid reached. The replacement omits it. Each row gives the evidence, from a repository-wide search before the switch-over, that it was unreached.
 
 Evidence used by several rows: the complete set of property names the adapter passes to `setProperty` and `setPropertyAsync` is `volume`, `pause`, `hr-seek`, `speed`, `audio-spdif`, `aid`, `sid`, `secondary-sid`, `sub-delay`, `secondary-sub-delay` and the subtitle style keys `sub-ass-override`, `secondary-sub-ass-override`, `sub-font`, `sub-font-size`, `sub-color`, `sub-border-style`, `sub-back-color`, `sub-outline-color`, `sub-outline-size`, `sub-shadow-offset`, `sub-align-y`, `sub-pos`, `sub-scale-with-window` and `sub-use-margins`. Nothing else calls the setters.
 
-| Omitted from the current bridge **[unreached]** | Evidence | What the replacement does instead |
+| Omitted from the previous bridge **[unreached]** | Evidence | What the replacement does instead |
 | --- | --- | --- |
 | An unused API for waiting until an HDMI mode switch has finished, with its supporting state and its cancellation inside `dispose` | No caller. The adapter passes autoplay straight through, and `docs/cores/player-engine.md` states that playback continues through the switch with no startup pause. | Nothing. Real writes and clears only update the shared identity. |
 | An unused viewer zoom (a scale transform on the video layer, with clipping on the container) | No caller. | Nothing. Never set a layer transform or container clipping. |
@@ -1678,7 +1665,7 @@ Evidence used by several rows: the complete set of property names the adapter pa
 | `updateFrame` with an explicit frame | Every call passes no argument. | Keep the signature; a non-nil frame needs no particular behaviour. |
 | `setVisible(false)` | The adapter only passes `true`. | Keep the signature; `false` needs no particular behaviour. |
 | A second `initialize` on an initialised core | The adapter creates a new core for every load and initialises it once. | Need not be supported; returning `true` with no other effect is the simplest safe choice. |
-| Getters no caller reads: cached duration, time position, video size, signal peak, Dolby Vision profile and level, container frame rate, and "has a live handle"; plus the duration and time-position caches that fed only those getters | No reference outside the current files. | No public API. The pause state, signal peak and display caches still exist internally where sections 6 and 8 use them. |
+| Getters no caller reads: cached duration, time position, video size, signal peak, Dolby Vision profile and level, container frame rate, and "has a live handle"; plus the duration and time-position caches that fed only those getters | No reference outside the previous bridge's files. | No public API. The pause state, signal peak and display caches still exist internally where sections 6 and 8 use them. |
 | A `DEBUG`-only hook that feeds a synthetic `pause` observation | No test calls it. | Nothing. |
 | The debug trace function, its "is this a verbose level" helper and every trace message | The trace gate is a constant that is off in every build, so nothing is ever printed. | No debug output at all (section 10.2). |
 | A synchronous destroy variant and its "already on the event queue" detection | Production always destroys asynchronously. | Destruction is always enqueued (section 6.17). |
@@ -1810,16 +1797,16 @@ Values and flags:
 40. Backgrounding drops non-critical property deliveries and every log message, and nothing else.
 41. `selectsAudioWhilePreloading` is read once, during set-up; the preload hook is always continued.
 42. `keep-open=yes` must remain.
-43. Never introduce the strings in section 10.4, and never add handling for mpv events, notifications, memory warnings or audio session changes that the current bridge ignores.
+43. Never introduce the strings in section 10.4, and never add handling for mpv events, notifications, memory warnings or audio session changes that the bridge ignores.
 
 ## 16. Test checklist
 
-### 16.1 How the tests relate to the two bridges
+### 16.1 How the tests relate to the bridge
 
-- Both bridges compile in every configuration, so new unit tests should name the new types (`VividPlayerCoreBase`, `VividPlayerCore`, `VividExternalDisplay`) directly. They then run in CI with `VIVID_OWN_BRIDGE` off. Put the new coalescing and conversion tests in both test targets (`VividTests` and `VividTVTests`).
-- `iosApp/Tests/MpvPropertyCoalescingTests.swift` switches to the selection aliases (section 4.5), so it tests the selected bridge. It is compiled only into the iOS test target today (`iosApp/project.yml` lists five files for `VividTVTests`), so its scenarios do not run on tvOS unless it is added there.
-- Before the switch-over, run the complete iOS suite (normal and optimised builds, as `.github/workflows/player-regression.yml` does) and the tvOS suite on simulators with `VIVID_OWN_BRIDGE` added to `SWIFT_ACTIVE_COMPILATION_CONDITIONS`. These engine-level tests drive real media through the selected bridge, via the adapter: `PlayerSurfaceLayoutTests` (section 4.1); `VividPlaybackBoundaryTests`, including `testInitialAudioOrdinalResolvesInsideTheFirstOpen` (the `on_preloaded` choice end to end) and `testEmbeddedPickerTracksRemainSelectableAfterPrimaryClears`; and `VividPlaybackStatsProjectionTests.testSimulatorPlaybackKeepsTransportWorkingThroughTelemetryUpdates` (in both test targets). With the flag off they test only the current bridge.
-- `scripts/tests/playback-end-recovery-tests.py` (run by `.github/workflows/player-regression.yml` on any change under `iosApp/iosApp/**`) keeps testing the current base file while the flag is off. It extracts private code from that file by text, so it cannot test the new bridge. The switch-over change must retarget it (or replace its bridge section) so the behaviours under "Display criteria" in section 16.2 are checked against the new code. The clean side adds equivalent tests for the new code from this section; design the new code so the early snapshot, the cached apply and the holds can be exercised without a live mpv context (for example, by making the synchronous reads and the platform write replaceable in tests).
+- Unit tests name the bridge's types (`VividPlayerCoreBase`, `VividPlayerCore`, `VividExternalDisplay`) directly. The coalescing and conversion tests are in both test targets (`VividTests` and `VividTVTests`).
+- The three coalescing scenarios of section 6.10 are in `VividPlayerCoreTests`. An identical copy that tested whichever bridge the selection file chose was removed at the switch-over.
+- These engine-level tests drive real media through the bridge, via the adapter: `PlayerSurfaceLayoutTests` (section 4.1); `VividPlaybackBoundaryTests`, including `testInitialAudioOrdinalResolvesInsideTheFirstOpen` (the `on_preloaded` choice end to end) and `testEmbeddedPickerTracksRemainSelectableAfterPrimaryClears`; and `VividPlaybackStatsProjectionTests.testSimulatorPlaybackKeepsTransportWorkingThroughTelemetryUpdates` (in both test targets). The complete iOS suite (normal and optimised builds, as `.github/workflows/player-regression.yml` runs them) and the tvOS suite passed on simulators with the new bridge selected before the switch-over.
+- The behaviours under "Display criteria" in section 16.2 are covered by `VividPlayerDisplayCriteriaTests`, and playback-end recovery by `PlaybackEndRecoveryTests` and `VividEndOfStreamConfirmationTests`. The text-extraction script that checked the previous bridge's base file was removed at the switch-over.
 - `scripts/tests/mpv-track-tests.py` needs no change: the text of `VividMPVPlayer.stop()` stays identical.
 
 ### 16.2 Automated (unit-testable) behaviours
@@ -1861,7 +1848,7 @@ Pause cache (section 6.12):
 - [ ] Every row of the scenario table, including that `pause` with `ON` or `on` means paused and that a failing request reverts the displayed value.
 - [ ] Scene activation issues the paused redraw only when the displayed value is paused.
 
-Display criteria (restating the bridge assertions of the current CI harness as behaviour). Default fixture: early snapshot enabled; decoded output 1920 x 1080 with transfer `bt.1886`; empty track map; container 24 fps and measured 24 fps; deinterlace flag false; "early snapshot wanted" and the hold both set; core live.
+Display criteria (restating as behaviour the bridge assertions of the CI harness that checked the previous bridge). Default fixture: early snapshot enabled; decoded output 1920 x 1080 with transfer `bt.1886`; empty track map; container 24 fps and measured 24 fps; deinterlace flag false; "early snapshot wanted" and the hold both set; core live.
 
 - [ ] 1. The early snapshot does not perform the platform write synchronously; the write is dispatched to main.
 - [ ] 2. After main runs, exactly one write happens, at 24 Hz: matching starts from the decoded cadence before playback restart.
@@ -1901,12 +1888,12 @@ Lifecycle:
 - [ ] `initialize` returns true; the `wid` layer is `sampleBufferDisplayLayer`; the layer's grandparent layer is the host view's layer; on iOS the container is hidden until `setVisible(true)`.
 - [ ] `dispose` calls its completion exactly once, off main, after the context is destroyed; a second `dispose` is a no-op; `dispose` after a failed set-up still calls its completion.
 - [ ] Two cores (one disposing, one loading) run side by side with independent queues, requests and caches; a preserving dispose followed by an identical commit from the new core does not write again.
-- [ ] Console output in normal playback is empty except, in a build that still links the third-party package without the old driver rebuild, the `MPV error: option not found` lines described in section 6.19.
-- [ ] The app binary does not contain `first start recovery after` or `trace edge %s` from Swift sources (search the built product when the engine slice is unpatched).
+- [ ] Console output in normal playback is empty. Only an engine without Vivid's audio output prints the `MPV error: option not found` lines described in section 6.19.
+- [ ] No Swift source contains `first start recovery after` or `trace edge %s` (section 10.4).
 
 ### 16.3 Device tests
 
-Record for each: device, OS, source (codec, range, frame rate, container), route, build and bridge (flag on or off). Compare the current and new bridges side by side where possible.
+Record for each: device, OS, source (codec, range, frame rate, container), route and build.
 
 Apple TV, with Match Dynamic Range and Match Frame Rate on:
 
@@ -1922,7 +1909,7 @@ Apple TV, with Match Dynamic Range and Match Frame Rate on:
 - [ ] An HDR10 episode followed by an SDR episode: one switch to SDR early in the second episode, with no clear in between.
 - [ ] Close the player: the TV returns to its default mode promptly; no film rate lingers on the Home screen.
 - [ ] Seek several times in a 23.976 film: no mode switches; the last frame stays on screen during each seek.
-- [ ] Press Home during playback and return: video comes back (the engine rebuilds its video output), the HDMI mode is unchanged and there is no extra switch. Note any brief black frame and compare the two bridges.
+- [ ] Press Home during playback and return: video comes back (the engine rebuilds its video output), the HDMI mode is unchanged and there is no extra switch. Note any brief black frame.
 - [ ] Start a title that fails to load straight after one that played (for example a damaged file), then close the player: the TV returns to its default mode.
 - [ ] Match Content setting by load path (section 8.14): a server-plan load started with the setting off never writes or clears; a direct-without-options or offline load started with it off clears instead of writing, and turning it on mid-play switches at the next re-evaluation (for example after a seek); any load started with it on clears at the next re-evaluation after turning it off.
 - [ ] An audio-only item after a video item clears the criteria at the audio item's start.
@@ -1942,7 +1929,7 @@ iPhone and iPad:
 - [ ] Lock and unlock while paused and while playing.
 - [ ] Control Centre pull-down and release while paused: one paused redraw (a brief seeking state), picture unchanged.
 - [ ] AirPlay audio route change during playback: audio moves, video stays on the device.
-- [ ] External display with an HDMI adapter, and with AirPlay Screen Mirroring: record whether video moves to the external screen (with a black device screen) or mirrors, and the latest-playback report's `externalScreen` value. Unplug during playback and record what each bridge shows (section 14.2).
+- [ ] External display with an HDMI adapter, and with AirPlay Screen Mirroring: record whether video moves to the external screen (with a black device screen) or mirrors, and the latest-playback report's `externalScreen` value. Unplug during playback and record what the bridge shows (section 14.2).
 - [ ] Simulator: software decoding works.
 
 ## 17. Amendments after implementation
@@ -1951,11 +1938,11 @@ Recorded after the first implementation and its reviews, as behaviour and decisi
 
 ### 17.1 Extra files for internal components
 
-Coordinator decision: the implementation may add internal top-level types prefixed `VividPlayer`, in extra files, to split the bridge into a centre plus outer components (video surface, display criteria, external display, lifecycle observation). This overrides the top-level rule in section 3 in that respect only. Everything else in that rule still applies: no top-level functions, variables or constants, no extensions on system types, no explicit `@objc(...)` runtime names, and no clash with the current files.
+Coordinator decision: the implementation may add internal top-level types prefixed `VividPlayer`, in extra files, to split the bridge into a centre plus outer components (video surface, display criteria, external display, lifecycle observation). This overrides the top-level rule in section 3 in that respect only. Everything else in that rule still applies: no top-level functions, variables or constants, no extensions on system types, no explicit `@objc(...)` runtime names, and, while the previous bridge was still compiled, no clash with its files.
 
 ### 17.2 Wakeup callback and guard nesting
 
-The wakeup callback is installed while the liveness guard is held (section 6.2), and mpv may call it synchronously on the calling thread, so the relay guard can be taken while the liveness guard is held. This nesting is allowed (the current bridge does the same), provided nothing ever takes the liveness guard while holding the relay guard. This amends section 5.3 rules 7 and 8.
+The wakeup callback is installed while the liveness guard is held (section 6.2), and mpv may call it synchronously on the calling thread, so the relay guard can be taken while the liveness guard is held. This nesting is allowed (the previous bridge did the same), provided nothing ever takes the liveness guard while holding the relay guard. This amends section 5.3 rules 7 and 8.
 
 ### 17.3 Last-resort screen on tvOS
 
@@ -1989,7 +1976,7 @@ Corrections from the engine specification, applied to the section 6.19 table and
 - With `ao-avfoundation-manage-audio-session=no`, the output sets no category or mode and never activates or deactivates the session, but it still declares multichannel content (passthrough, or more than two channels) and still sets the preferred output channel count for decoded audio. Vivid's session recorder reads both.
 - `ao-avfoundation-compressed-start-grace` is also the deadline between the recovery and the fallback to decoded audio, extended by the same amount each time a slow source delivers more.
 - `audio-exclusive` has no effect on this audio output.
-- Every `ao-avfoundation-*` option belongs to Vivid's own engine and is accepted by every build that links it. Only a build that still links the third-party package without the old driver rebuild rejects them, with the console lines described in section 6.19.
+- Every `ao-avfoundation-*` option belongs to Vivid's own engine and is accepted by every build that links it. Only a build that links an engine without Vivid's audio output, such as the previous package, rejects them, with the console lines described in section 6.19.
 
 ### 17.8 Zoom, pan and scale options and subtitles
 
