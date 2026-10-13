@@ -24,14 +24,15 @@ Contents:
 10. [Harness rewrites](#10-harness-rewrites)
 11. [Decisions, open items and documents to update](#11-decisions-open-items-and-documents-to-update)
 12. [Amendments after implementation](#12-amendments-after-implementation)
+13. [Amendments after the fix rounds and the library work](#13-amendments-after-the-fix-rounds-and-the-library-work)
 
 ## 1. Purpose, status, licence and reading rules
 
 ### 1.1 What this document covers
 
-Lucid Engine is libmpv 0.41.0 with FFmpeg n8.0.1 for iPhone, iPad and Apple TV. The engine Vivid ships today comes from a third-party build (`edde746/mpv-build` at `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6`) that carries its own GPL-3.0 Apple patch series, plus three Vivid patches on top.
+Lucid Engine is libmpv 0.41.0 with FFmpeg n8.0.1 for iPhone, iPad and Apple TV. The engine Vivid ships today comes from the previous third-party package, at the revision Vivid's app pins on `main`. Its engine carries that package's own GPL-3.0 Apple patch series, plus three Vivid patches on top, and it links the previous third-party build of the libraries listed in 8.3.
 
-Vivid now builds the engine itself from pristine upstream sources, with its own patch series, in its engine build pipeline (`engine/` on the branch `experiment/lucid-engine-build`, described in `docs/cores/lucid-engine-build.md`). That series already holds four patches (8.2). The patches this document specifies are the rest, and they are written to apply on top of that series:
+Vivid now builds the engine itself from pristine upstream sources, with its own patch series, in its engine build pipeline (`engine/` on the branch `experiment/lucid-engine-build`, described in `docs/cores/lucid-engine-build.md`). When this document was first written, that series held four patches (8.2). The patches this document specifies are the rest, written to apply on top of that series, and all of them are now implemented, reviewed and in the series (8.2, 12, 13):
 
 - the AVFoundation audio output (section 3);
 - the AVFoundation video output (section 4);
@@ -39,7 +40,7 @@ Vivid now builds the engine itself from pristine upstream sources, with its own 
 - a libdovi change that turns its aborts into errors (5.13);
 - a small set of other mpv and FFmpeg changes (section 6).
 
-Section 7 lists what is not carried over, what is omitted and what deliberately changes. Section 8 states what the build pipeline must prove about the result.
+Section 7 lists what is not carried over, what is omitted and what deliberately changes. Section 8 states what the build pipeline must prove about the result. Section 13 adds the libass series and the libraries the pipeline now also builds from upstream source.
 
 ### 1.2 Status and baseline
 
@@ -47,21 +48,23 @@ Section 7 lists what is not carried over, what is omitted and what deliberately 
 | --- | --- |
 | mpv | Upstream tag `v0.41.0`, commit `41f6a645068483470267271e1d09966ca3b9f413` |
 | FFmpeg | Upstream tag `n8.0.1`, commit `894da5ca7d742e4429ffb2af534fcda0103ef593` |
-| libass | Upstream tag `0.17.5`, commit `4a05d8127f525943ebf45fdc6497c9e665947f0d`, built unpatched |
+| libass | Upstream tag `0.17.5`, commit `4a05d8127f525943ebf45fdc6497c9e665947f0d`, built with upstream libass commit `057a5334`, upstream libass pull request #951 at `f96a521` and Vivid's own patch `0010` (13.4) |
 | dav1d | Upstream tag `1.5.3`, commit `b546257f770768b2c88258c533da38b91a06f737`, built unpatched |
+| FreeType, FriBidi, HarfBuzz, libunibreak, libplacebo, Little CMS (lcms2), MoltenVK, shaderc, uavs3d, libbluray, uchardet | 2.12.1, 1.0.12, 8.1.1, 6.1, 7.351.0, 2.17, 1.4.1, 2025.5, 1.2, 1.4.0 and 0.0.8, today's versions. Vivid's pipeline now builds all eleven from upstream source with today's options, in place of the previous third-party build of these libraries; only libbluray and uavs3d carry patches, both Vivid's own (13.5) |
 | libdovi | `dolby_vision` crate 3.3.2 (tag `libdovi-3.3.2` of `quietvoid/dovi_tool`, MIT). Vivid's pipeline now builds it from source with Vivid's own patch, in place of the prebuilt it used to pin (5.13, 8.3, 12.6) |
-| Build | Vivid's pipeline: `engine/lucid.py`, `engine/pins.ini`, `engine/patches/<library>/series`, `.github/workflows/lucid-engine.yml`; Xcode 26.6; minimum OS 14.0; four arm64 slices (2.11) |
-| Target behaviour | The engine in Vivid device builds today: upstream plus the third-party common and Apple series plus Vivid's three old patches. blurbery describes playback as perfect, so any observable difference not listed in section 7 or 12 is a regression. |
+| Build | Vivid's pipeline: `engine/lucid.py`, `engine/pins.ini`, `engine/patches/<library>/series`, `.github/workflows/lucid-engine.yml`; Xcode 26.6; minimum OS 14.0 for Vivid's own libraries, while the eleven libraries above keep today's per-library minimum OS (13.5); four arm64 slices (2.11) |
+| Target behaviour | The engine in Vivid device builds today: upstream plus the third-party common and Apple series plus Vivid's three old patches. blurbery describes playback as perfect, so any observable difference not listed in section 7, 12 or 13 is a regression. |
 
 Upstream behaviour that this document does not mention must stay exactly as upstream has it.
 
 ### 1.3 Licence target
 
-- Every new patch is Vivid-owned and licensed `LGPL-2.1-or-later`, written by clean implementers against the pristine sources in 1.2 plus Vivid's existing series.
+- Every new patch to mpv and FFmpeg is Vivid-owned and licensed `LGPL-2.1-or-later`, written by clean implementers against the pristine sources in 1.2 plus Vivid's existing series.
 - That includes the video output, whatever licence header the old file carried.
 - Use the header form of Vivid's existing patches in `engine/patches/`: author `blurbery` with the account's noreply address, a subject line, a plain description of the change, and a closing licence paragraph naming LGPL-2.1-or-later.
 - mpv's upstream commit `1388a453950f202a29d1c0346797d730a9710d72` is already in the series unchanged, with its upstream attribution (6.3).
 - The libdovi patch (5.13) is Vivid-owned too, with the same header form. Because libdovi itself is MIT, it is proposed under MIT rather than LGPL-2.1-or-later; blurbery confirms that choice (11.2).
+- The libass series carries two upstream libass changes unchanged, with their upstream attribution, and Vivid's own libass patch `0010`, licensed ISC like libass (13.4). Vivid's own libbluray patch is `LGPL-2.1-or-later` and its own uavs3d patch `BSD-3-Clause`, each under its library's licence (13.5).
 
 ### 1.4 Clean-room reading rules
 
@@ -71,20 +74,20 @@ Upstream behaviour that this document does not mention must stay exactly as upst
 | --- | --- |
 | This document | The only description of the current engine's behaviour. |
 | `docs/playback/player-bridge-spec.md` | The bridge side of the same contract (sections 6.3, 6.18, 6.19, 7.1 to 7.6, 8). Where the two differ, this document wins for engine behaviour; 11.3 and the bridge editor's correction list cover the differences. |
-| Vivid's engine build pipeline | On `experiment/lucid-engine-build`: everything under `engine/` (`lucid.py`, `pins.ini`, `config/`, `patches/` with its series files and four patches), `.github/workflows/lucid-engine.yml` and `docs/cores/lucid-engine-build.md`. That guide links to the build facts document, and some pipeline comments (in `engine/pins.ini`, for example) cite its sections: do not follow those links or look up those citations. |
+| Vivid's engine build pipeline | On `experiment/lucid-engine-build`: everything under `engine/` (`lucid.py`, `pins.ini`, `config/`, `patches/` with its series files and patches, `tests/`), `.github/workflows/lucid-engine.yml`, `docs/cores/lucid-engine-build.md` and `docs/cores/lucid-engine-libs-build-facts.md` (the audited facts for the eleven libraries of 8.3). Both guides link to the build facts document, and some pipeline comments (in `engine/pins.ini`, for example) cite its sections: do not follow those links or look up those citations. |
 | Pristine upstream mpv at `v0.41.0`, and upstream mpv history | |
-| Pristine upstream FFmpeg at `n8.0.1`, libass `0.17.5` and dav1d `1.5.3` | Any file. |
+| Pristine upstream FFmpeg at `n8.0.1`, libass `0.17.5` and dav1d `1.5.3`; upstream libass commit `057a5334` and pull request #951 at `f96a521`; the upstream sources of the eleven libraries of 8.3 at their pinned versions | Any file. |
 | libdovi 3.3.2 source and its public C header | MIT. |
 | Apple developer documentation and SDK headers | AVFoundation, AVFAudio, CoreMedia, CoreVideo, CoreImage, CoreGraphics, QuartzCore, Metal, IOSurface, VideoToolbox, UIKit, Security. |
 | Vivid's app source, tests and documentation | Except the files listed below. |
 
 **Clean implementers must not read:**
 
-- anything from `edde746/mpv-build` or `edde746/MPVKit` other than mpv's four public headers inside the binary package: no patch files, series files, harness scripts, build scripts, sources or documents, in the repositories, their history or a resolved SwiftPM checkout;
-- edde746's forks, or any other third-party fork, of mpv, FFmpeg, libass or MPVKit;
-- `edde746/plezy` in any form;
+- anything from the previous third-party package (its build repository and its binary package repository) or from the build repositories that produced the previous third-party build of its libraries, other than mpv's four public headers inside the binary package: no patch files, series files, harness scripts, build scripts, sources or documents, in the repositories, their history or a resolved SwiftPM checkout;
+- forks of mpv, FFmpeg, libass or the previous third-party package, by that package's author or by any other third party;
+- the third-party media app from which Vivid's old player bridge was derived, in any form;
 - Vivid's old bridge files (`MpvPlayerCoreBase.swift`, `MpvPlayerCore.swift`, `ExternalDisplayManager.swift`) or any history that shows them;
-- Vivid's old `patches/` folder (`patches/mpv/`, the unrebased `patches/ffmpeg/` file and `patches/mpv-build/`) on `main` and `fix/lgpl-media-engine`;
+- Vivid's old `patches/` folder at the repository root (`patches/mpv/`, the unrebased `patches/ffmpeg/` file and the subfolder of patches for the previous third-party build) on `main` and `fix/lgpl-media-engine`;
 - `scripts/tests/compressed-audio-recovery-tests.py`;
 - `scripts/tests/playback-end-recovery-tests.py`;
 - `.github/workflows/mpv-audio-driver.yml`;
@@ -326,7 +329,7 @@ Vivid also calls FFmpeg's public `avformat_configuration()` by symbol name and t
 
 - Both bridges request `warn` when they create the mpv context. The adapter then requests `v` in trial builds and `warn` in every other build. Only lines at or above the requested level reach the app as `log-message` events, so **the level of every engine log line is part of the interface**.
 - Both bridges drop every `log-message` while the app is in the background, so nothing logged then is recorded (for example AO faults during iOS background audio).
-- mpv maps FFmpeg levels as follows: `AV_LOG_WARNING` becomes `warn`, `AV_LOG_INFO` becomes `v`, `AV_LOG_VERBOSE` becomes `debug`. FFmpeg decoder messages arrive with the prefix `ffmpeg/video`. mpv's video decoder wrapper logs as `vd`.
+- mpv maps FFmpeg levels as follows: `AV_LOG_ERROR` becomes `error`, `AV_LOG_WARNING` becomes `warn`, `AV_LOG_INFO` becomes `v`, `AV_LOG_VERBOSE` becomes `debug`. FFmpeg decoder messages arrive with the prefix `ffmpeg/video`. mpv's video decoder wrapper logs as `vd`.
 - The adapter trims whitespace from each message and then decides, in this order of precedence:
   1. for any prefix, a message beginning `Too many packets in the demuxer packet queues:` is a fault;
   2. for prefix `ao/avfoundation`, the exact line `resuming compressed feed after audio EOF` is an event;
@@ -960,7 +963,7 @@ Without the attachment the layer shows non-square pixels as square. Removing it 
 - the anchor is valid, and the timebase's paused mark equals playback's paused state;
 - the anchor counts towards the pacing summary.
 
-*Phase error.* With *A* the rate currently applied to the timebase (the nominal rate if none is recorded): *e* = frame media time − (timebase time now + projection), where the projection is (target host time − now) × *A*, computed in double precision and truncated towards zero to whole nanoseconds before it is added. Positive *e* means the timebase is behind. The largest |*e*| is kept for the pacing summary.
+*Phase error.* With *A* the rate currently applied to the timebase (the nominal rate if none is recorded): *e* = frame media time − (timebase time now + projection), where the projection is (target host time − now) × *A*, computed in double precision and truncated towards zero to whole nanoseconds before it is added. Positive *e* means the timebase is behind. The largest |*e*| is kept for the pacing summary, sampled only on the frames that reach this decision: a valid anchor, neither playback nor the timebase marked paused, and no nominal-rate change on that frame. A frame whose |*e*| is above 50 ms after a valid anchor is still sampled, before it re-anchors (4.18, 13.1).
 
 *Slewing.* With horizon *H* = 2 s, integral time *Ti* = 8 s and limit *L* = 0.015:
 
@@ -1225,13 +1228,17 @@ Evaluating every operation separately instead gives a result one code value diff
 
 1. Refresh the option cache; stop if nothing changed.
 2. If the queue lead changed, call `vo_set_queue_params(new lead in ns, 1)`.
-3. If `avfoundation-pip-composite-osd` changed: log the new value at verbose; clear the subtitle cache; if it is now off, release the Core Image context; flush the subtitle layer's renderer with removal (VO thread); sync the subtitle layer (4.14.2).
+3. If `avfoundation-pip-composite-osd` changed: log the new value at verbose; clear the subtitle cache; if it is now off, release the Core Image context; flush the subtitle layer's renderer with removal (VO thread); sync the subtitle layer (4.14.2). Nothing else: no video buffer is written, so a decoder buffer that carries a composited cue keeps it (13.1).
 
 **On `VOCTRL_VO_OPTS_CHANGED`:** the same refresh (steps 1 to 3, so a composite flag that changed at that moment still gets step 3, flush included), then clear the subtitle cache and sync the subtitle layer, whatever changed. It adds no flush of its own.
 
 **On `VOCTRL_SET_PANSCAN`:** clear the subtitle cache and sync the subtitle layer. No flush.
 
-**No redraw is requested** by any of these. Turning compositing on while paused shows no subtitle until the next frame or redraw; turning it off while paused leaves the last composited sample, with its burned-in cue, visible until the following frame or redraw (hazard V15). The bridge also re-lays out the host on every Picture in Picture flag change, which leads to a redraw only if `bounds` or `contentsScale` really changed and subtitles are on the separate layer.
+**No redraw is requested** by any of these. Turning compositing on while paused shows no subtitle until the next frame or redraw; turning it off while paused leaves the last composited sample, with its burned-in cue, visible until the following frame or redraw (hazard V15).
+
+**Buffers that may be on screen (13.1).** Switching compositing off touches no buffer: a decoder buffer composited in place (12.3) is not written at the switch. Its original rows, kept from the composite, are written back only immediately before that same buffer is presented again, so that sample carries no cue. If a different buffer is presented first, or the VO is torn down, the kept rows are released and the composited buffer is not written. A same-buffer redraw while compositing is on builds the new composite away from the buffer and then writes into it only the rows whose bytes change, so the displayed picture never passes through a state without its cue.
+
+The bridge also re-lays out the host on every Picture in Picture flag change, which leads to a redraw only if `bounds` or `contentsScale` really changed and subtitles are on the separate layer.
 
 ### 4.15 Geometry
 
@@ -1371,13 +1378,13 @@ Nothing in Vivid parses `vo/avfoundation` lines. Wording is free; keep each mess
 
 | Level | Messages |
 | --- | --- |
-| Error | No layer given through `wid`; system below iOS 17 or tvOS 17; timebase creation failed; VideoToolbox device allocation or initialisation failed; a pool could not be created (naming it); no buffer from a pool (upload, subtitle, YUV composite, Core Image composite); an unsupported software format or a failed upload; format description or sample buffer creation failed (video or subtitle); the Metal device or Core Image context could not be created (each time it is tried). |
+| Error | No layer given through `wid` (verbose instead while mpv is autoprobing video outputs, which Vivid never makes it do, 13.1); system below iOS 17 or tvOS 17; timebase creation failed; VideoToolbox device allocation or initialisation failed; a pool could not be created (naming it); no buffer from a pool (upload, subtitle, YUV composite, Core Image composite); an unsupported software format or a failed upload; format description or sample buffer creation failed (video or subtitle); the Metal device or Core Image context could not be created (each time it is tried); the kept rows of a composite could not be written back because the buffer could not be locked (13.1). |
 | Warning | The host layer has no superlayer at creation; a timebase anchor or pause failed; every display layer recovery (reason, status, flags, media time, timebase time, rate); once per VO, a frame-space composite discarded for changing the sample size. |
 | Verbose | The creation summary; the reconfiguration size; a pool created (name, size, format); a nominal rate change; a re-anchor (error in ms); deadline drops (already past, reached while waiting, unrecovered layer); a subtitle sample dropped because its layer was not ready; a host resize resync; a composite-mode change; the slow subtitle render line; the pacing summary; the subtitle performance summary. |
 
 The two summaries should keep their cadence, so trial traces stay comparable:
 
-- **Pacing summary,** when a 5 s window ends with any non-zero count (12.2 gives the exact condition, which frames the phase error is sampled on, and when the first window opens): how often and how long frames waited for readiness, deadline drops, anchors, rate writes and the resulting offset from nominal in ppm (applied ÷ nominal − 1, × 10⁶), and the largest phase error in ms.
+- **Pacing summary,** when a 5 s window ends with a non-zero count of readiness waits, deadline drops, anchors or rate writes, or a non-zero largest phase error. Recoveries alone never trigger it, although the line may report them. The largest phase error is sampled only on frames that reach the slew decision of 4.8.2 (a valid anchor, neither playback nor the timebase marked paused, and no nominal-rate change on that frame); a frame whose error is above the 50 ms re-anchor limit after a valid anchor still counts. So the first frame after creation, a reset, a resume or a recovery, every paused frame and the frame that adopts a new nominal rate are not sampled (12.2 says when the first window opens; 13.1). The line gives how often and how long frames waited for readiness, deadline drops, anchors, rate writes and the resulting offset from nominal in ppm (applied ÷ nominal − 1, × 10⁶), and the largest phase error in ms.
 - **Subtitle performance summary,** when at least 32 renders have accumulated, or at least 1 render and 300 frames, and at teardown: canvas size, render count with average and maximum render time and the split between clearing, blending, CoreGraphics and the bounding box, skipped and empty renders, enqueue time, video sample and wait time per frame, subtitle enqueue margin (average and minimum), and subtitle sample drops. Counters always accumulate; the text is built only when verbose logging is on. Exactly what the skipped and empty counters count is free.
 
 ## 5. Dolby Vision and FFmpeg VideoToolbox
@@ -1476,7 +1483,7 @@ What mode 2 does in libdovi 3.3.2, as a parity reference. It follows the RPU's o
 
 Mode numbering and meaning differ between libdovi releases, so the version is part of the contract (hazard D7). The conversion runs once per frame on the decode thread and changes only the bytes sent to VideoToolbox; hevcdec still parses the original profile 7 RPU for frame side data (5.11).
 
-**Linking.** FFmpeg's `configure` has no libdovi switch. The build passes libdovi's include path and `-ldovi` through FFmpeg's compiler and linker flags, and the static `libavcodec` keeps undefined `dovi_*` references that the app link resolves against the libdovi archive the pipeline provides: today the pinned prebuilt, and once 5.13 lands, Vivid's own patched build. Vivid's pipeline does not pass these flags today, because no patch in its series needs libdovi yet; the Dolby Vision patch and that build change land together (8.4).
+**Linking.** FFmpeg's `configure` has no libdovi switch. The build passes libdovi's include path and `-ldovi` through FFmpeg's compiler and linker flags, and the static `libavcodec` keeps undefined `dovi_*` references that the app link resolves against the libdovi archive the pipeline provides, Vivid's own patched build (5.13). The pipeline has passed these flags since the Dolby Vision patch landed with them (8.4, 13.3).
 
 ### 5.7 Decoded frame attachments
 
@@ -1495,12 +1502,13 @@ Replaced after implementation (12.4). At frame output every VideoToolbox frame, 
 | The path chosen, for Dolby Vision sessions, once per session start, before the first creation attempt (a retry logs only the warning below) | `AV_LOG_VERBOSE` |
 | A session property could not be set (one line per property) | `AV_LOG_VERBOSE` |
 | The Dolby Vision session was refused (with the status); one plain HEVC attempt follows | `AV_LOG_WARNING` |
+| The Dolby Vision configuration could not be added to the decoder specification: at most once per failed Dolby Vision session start, followed by pristine FFmpeg's own decoder specification error; no plain HEVC retry follows, and the line contains no fault substring of 2.8 (13.2) | `AV_LOG_ERROR` |
 | A profile 7 RPU could not be parsed, converted or written (including the 7.3 guard, whose line has its own single-line text, wording free), with libdovi's error text (or "unknown error") | `AV_LOG_WARNING` |
 | An RPU was stripped; the line says "convert" for converted profile 7 streams and "append" for native ones, whatever stage failed | `AV_LOG_WARNING` |
 
 Warning count per failed RPU, for exact parity: when libdovi parses the NAL but reports an error, or conversion or writing fails, or the guard skips it, two lines are logged (the stage line, then the stripped line). When libdovi returns nothing at all from parsing, when the converted NAL is too long, when appending a converted RPU fails, or when a native RPU cannot be appended, only the stripped line is logged. libdovi's error text for unrecognised start bytes contains one line break, so mpv delivers that stage line as exactly two `warn` events, three with the stripped line. An input that Vivid's libdovi patch turns from an abort into an error (5.13) has a single-line error text, so it gives exactly two `warn` events.
 
-These levels are interface (2.8): `AV_LOG_WARNING` becomes `warn`, which Release builds receive, and `AV_LOG_VERBOSE` becomes `debug`, which no Vivid build receives. None of these messages, libdovi's error texts included, may contain the fault substrings of 2.8; today's do not, and the error texts that Vivid's libdovi patch adds (5.13) must not either.
+These levels are interface (2.8): `AV_LOG_ERROR` becomes `error` and `AV_LOG_WARNING` becomes `warn`, both of which Release builds receive, and `AV_LOG_VERBOSE` becomes `debug`, which no Vivid build receives. None of these messages, libdovi's error texts included, may contain the fault substrings of 2.8; today's do not, and the error texts that Vivid's libdovi patch adds (5.13) must not either.
 
 ### 5.10 Metal compatibility for VideoToolbox output buffers
 
@@ -1536,7 +1544,7 @@ This is a patch to libdovi 3.3.2 itself (Rust, MIT), not to FFmpeg. Vivid's pipe
 
 **Why.** Unpatched libdovi 3.3.2 is built to abort the process on any panic, and several kinds of malformed RPU make its parser or writer panic. Two callers in the engine hand it RPUs taken from the media: FFmpeg's profile 7 conversion (5.6), and libplacebo, whose `pl_hdr_metadata_from_dovi_rpu` mpv calls for every frame that carries an RPU buffer from hevcdec, whatever the Dolby Vision profile. So today a malformed RPU in any Dolby Vision title can end the app. blurbery chose to fix this now (deliberate difference 4, 7.3).
 
-**Entry points covered:** exactly those that FFmpeg and libplacebo call: `dovi_parse_unspec62_nalu`, `dovi_rpu_get_error`, `dovi_rpu_get_header`, `dovi_rpu_get_vdr_dm_data`, `dovi_convert_rpu_with_mode`, `dovi_write_unspec62_nalu`, `dovi_data_free`, `dovi_rpu_free`, `dovi_rpu_free_header` and `dovi_rpu_free_vdr_dm_data`. (The libplacebo 7.351.0 prebuilt references the parse, header and display-management queries and the three matching frees.) Other entry points may stay as they are.
+**Entry points covered:** exactly those that FFmpeg and libplacebo call: `dovi_parse_unspec62_nalu`, `dovi_rpu_get_error`, `dovi_rpu_get_header`, `dovi_rpu_get_vdr_dm_data`, `dovi_convert_rpu_with_mode`, `dovi_write_unspec62_nalu`, `dovi_data_free`, `dovi_rpu_free`, `dovi_rpu_free_header` and `dovi_rpu_free_vdr_dm_data`. (libplacebo 7.351.0, today's build and the one Vivid's pipeline now builds from source alike (13.5), references the parse, header and display-management queries and the three matching frees.) Other entry points may stay as they are.
 
 **Required behaviour:**
 
@@ -1544,7 +1552,7 @@ This is a patch to libdovi 3.3.2 itself (Rust, MIT), not to FFmpeg. Vivid's pipe
 2. Where unpatched 3.3.2 would abort, the call reports an error through the channel the API already has, and never returns null where the API has always returned an object:
    - parsing always returns an object; on failure it carries the error, whose text `dovi_rpu_get_error` returns, and the header and display-management queries return null for it;
    - conversion returns −1 and records the error; writing returns null and records the error;
-   - the header query returns null if it cannot finish, and also whenever the display-management query for the same object would fail although the header says display-management data is present. libplacebo 7.351.0 checks the header for null but reads the display-management result without checking it (seen in its prebuilt's code), so after a header with `vdr_dm_metadata_present_flag` set, that query must never return null;
+   - the header query returns null if it cannot finish, and also whenever the display-management query for the same object would fail although the header says display-management data is present. libplacebo 7.351.0 checks the header for null but reads the display-management result without checking it (seen in its compiled code), so after a header with `vdr_dm_metadata_present_flag` set, that query must never return null;
    - the free functions accept whatever the others returned, null included.
 3. Every input on which unpatched 3.3.2 does not abort gives the same result as before: the same success or failure, the same output bytes and the same structures. Error texts stay the same too, except where a check added by the patch fires before an existing error would. The header rule in item 2 is the one exception, in a case neither caller reaches (12.5).
 4. Every error text the patch adds is a single line (no line break), contains none of the fault substrings of 2.8, and is otherwise free.
@@ -1628,9 +1636,9 @@ Everything not listed here is carried over as behaviour: the third-party mpv pat
 | FFmpeg | 0020 | Sized libavfilter audio frame pools exactly to each request. | Only libavfilter audio graphs reach it; Vivid sets no `af` and no `lavfi-complex`, and mpv's own audio chain does not use libavfilter. Re-evaluate if a loudness or night mode is ever added. |
 | libass | 0001 | Opt-in narrow blur kernels, behind a new feature flag. | Opt-in; nothing enables it. |
 | libass | 0002 | Parser and rasteriser speed-ups, no API change. | Same output intended; covered by the subtitle device checks (9.5). |
-| libass | 0003 | Thread-safe caches, threaded event rendering with a new public threading call, an image pool, opt-in layout and motion caches, and a meson `threads` option. | mpv never calls the new API and the build passes no `threads` option. The patched library did default to rendering on every CPU, so today's app renders ASS multithreaded; upstream renders on one thread. Output should match; speed may not. This is a measured device check (9.5), not a behaviour to emulate. |
+| libass | 0003 | Thread-safe caches, threaded event rendering with a new public threading call, an image pool, opt-in layout and motion caches, and a meson `threads` option. | mpv never calls the new API and the build passes no `threads` option. The patched library did default to rendering on every CPU, so today's app renders ASS multithreaded; upstream renders on one thread. Output should match; speed may not: today's library gives byte-identical output with its threading on and off (13.4). This is a measured device check (9.5), not a behaviour to emulate. |
 
-libass is therefore built from upstream `0.17.5` with no patches, and dav1d from upstream `1.5.3` with none.
+None of the three third-party libass patches is carried over. The integrated parity check later found that dropping them changes no pixel but costs more on static events, and that today's library also behaves as a later upstream symbol-font change does. libass `0.17.5` is therefore built with two upstream libass changes and Vivid's own patch, which restore today's change reports, pixels and font behaviour without today's patches; rendering stays on one thread (13.4). dav1d is built from upstream `1.5.3` with no patches.
 
 ### 7.2 Behaviour omitted from carried-over areas
 
@@ -1650,7 +1658,7 @@ Each item exists in today's engine but is unreached by Vivid or has no observabl
 
 ### 7.3 Deliberate differences
 
-These four changes are intentional. 12.3 records how item 1 is implemented, and 12.8 lists the differences accepted after implementation. Everything else must match today's engine.
+These four changes are intentional. 12.3 and 13.1 record how item 1 is implemented, and 12.8 and 13.8 list the differences accepted after implementation. Everything else must match today's engine.
 
 **1. Picture in Picture subtitles are blended exactly once per displayed image.**
 
@@ -1663,7 +1671,8 @@ The rewrite must guarantee all of the following; how is the implementer's choice
 - the sample keeps the frame's coded size;
 - for hardware frames, the composited sample carries exactly the attachments the decoder's buffer would carry after 4.5 and 4.4, with the same modes, including `DolbyVisionRPUData` when present and the transfer repair. This also covers a composite copy, which today misses the repair in the rare case where the decoder's buffer cannot be locked;
 - the Core Image fallback is unchanged;
-- a copy's buffer comes from a pool with the attributes of 4.3, covered by the 60-flip maintenance.
+- a buffer that may be on screen is written only as 4.14.9 and 13.1 say: never when compositing switches off, and on a same-buffer redraw only row by row from a composite built elsewhere;
+- a copy's buffer comes from a pool with the attributes of 4.3, covered by the 60-flip maintenance (no copy is made since 12.3).
 
 **2. The hardware device list is freed at teardown.** Today the VO removes its VideoToolbox entry but never frees the list. The rewrite destroys the list after removing the entry and releasing the device reference (4.16.5), as upstream's other hardware-device VOs do. `uninit_video_out` tears the decoder down before `vo_destroy`, and FFmpeg's frames hold their own references to the device.
 
@@ -1691,7 +1700,8 @@ Vivid's existing series and pipeline already differ from today's engine in ways 
 | Version strings | FFmpeg reports `8.0.1` instead of `n8.0.1`, and mpv `v0.41.0` instead of `v0.41.0-dirty`. Vivid reads neither. |
 | FFmpeg components | No `delogo` filter (GPL-only), and no `whip` muxer or `dtls`, `ffrtmpcrypt`, `rtmpe` and `rtmpte` protocols (they need OpenSSL). Vivid uses none of them. |
 | Slices | arm64 only; the tvOS device slice is `tvos-arm64`, not arm64 plus arm64e. |
-| Interim libdovi linking | FFmpeg is not given libdovi until the Dolby Vision patch lands (8.4). |
+| libdovi linking | Resolved: FFmpeg has been given libdovi again since the Dolby Vision patch landed, and its libdovi references equal today's (8.4, 13.3). |
+| The eleven libraries of 8.3 | Built from upstream source with Xcode 26.6 instead of today's older toolchain; the differences are accepted in 13.5. |
 
 ## 8. Build and CI provenance
 
@@ -1705,59 +1715,71 @@ Retiring the old workflows and scripts that embed or extract the old engine's so
 
 Each library's `engine/patches/<library>/series` lists its patches in order, one line per patch with the patch's SHA-256 and file name. The pipeline applies them in order with `patch -p1` and zero fuzz, refuses a patch whose hash differs, and fails if the files a series changes differ from the files its patches name. Each new patch is written against the tree the series before it produces, and is added to the end of its series with its hash.
 
+The series as they stand once the integration, the libass work and the library work are merged into the pipeline branch (13):
+
 | Library | In the series now | To add |
 | --- | --- | --- |
-| mpv `v0.41.0` | `0001` upstream `1388a45` (6.3); `0002` build for iOS and tvOS, including mpv's CoreFoundation string helpers since `546e11f` (2.11, 6.5) | the E-AC-3 carrier rate (6.4); the output-chain wake (6.2); the hardware decode error tolerance (6.1); the AO (section 3); the VO (section 4), including its meson option and `vo.c` registration |
-| FFmpeg `n8.0.1` | `0001` Secure Transport without the private identity call (6.7); `0002` Metal-compatible VideoToolbox buffers (5.10) | the Dolby Vision VideoToolbox work (section 5); the hevcdec log levels (6.6) |
-| libass `0.17.5` | empty | nothing |
+| mpv `v0.41.0` | `0001` upstream `1388a45` (6.3); `0002` build for iOS and tvOS, including mpv's CoreFoundation string helpers since `546e11f` (2.11, 6.5); `0010` the E-AC-3 carrier rate (6.4); `0011` the output-chain wake (6.2); `0012` to `0016` the AO (section 3); `0020` to `0025` the VO (section 4), `0025` with its meson option and `vo.c` registration; `0040` the hardware decode error tolerance (6.1) | nothing |
+| FFmpeg `n8.0.1` | `0001` Secure Transport without the private identity call (6.7); `0002` Metal-compatible VideoToolbox buffers (5.10); `0010` the explicit sample size (5.5 item 3); `0011` the Dolby Vision VideoToolbox work (section 5); `0012` the hevcdec log levels (6.6) | nothing |
+| libass `0.17.5` | `0001` upstream commit `057a5334`; `0002` upstream pull request #951 at `f96a521`; `0010` Vivid's own (13.4) | nothing |
 | dav1d `1.5.3` | empty | nothing |
 | libdovi `3.3.2` | `0001`, the patch of 5.13, built from source (12.6) | nothing |
+| libbluray `1.4.0` | `0001` Vivid's own (13.5) | nothing |
+| uavs3d `1.2` | `0001` Vivid's own (13.5) | nothing |
+| FreeType, FriBidi, HarfBuzz, libunibreak, Little CMS, shaderc, MoltenVK, libplacebo, uchardet | empty | nothing |
 
 The split of the new work into patch files, and their order within the "to add" column, are the implementer's choice, as long as each applies with zero fuzz in series order.
 
 ### 8.3 Inputs and what is built
 
 - Sources come from the release archives pinned in `engine/pins.ini` (URL, version, embedded commit and SHA-256), and `lucid.py fetch` refuses a file whose hash differs. Every source tree is extracted fresh for each build; only the hash-checked downloads are cached between runs.
-- Built from source for each of the four slices: dav1d, libass, FFmpeg (seven libraries) and libmpv, as ten static frameworks (`Libdav1d`, `Libass`, `Libmpv`, `Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample`, `Libswscale`), with Xcode 26.6 and minimum OS 14.0. libdovi is now built from source too, as an eleventh framework, `Libdovi`, replacing the prebuilt of that name (12.6).
-- Still prebuilt, pinned in `engine/pins.ini` from `mpvkit` release assets:
+- Built from source for each of the four slices, with Xcode 26.6:
+  - dav1d, libass, FFmpeg (seven libraries), libmpv and libdovi, at minimum OS 14.0 (libdovi's Rust standard library objects as 12.6 says), as eleven static frameworks (`Libdav1d`, `Libass`, `Libmpv`, `Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample`, `Libswscale`, `Libdovi`);
+  - the other eleven libraries in the table below, which today come from the previous third-party build of these libraries, at today's versions, options and per-library deployment targets (13.5), as ten more static frameworks (`Libfreetype`, `Libfribidi`, `Libharfbuzz`, `Libunibreak`, `lcms2`, `Libuavs3d`, `Libbluray`, `Libuchardet`, `Libshaderc_combined`, `Libplacebo`) and MoltenVK's bare static library, `libMoltenVK.a`, as today.
+- No library comes as a prebuilt binary any more.
 
-| Binary | Version | Licence | Notes |
+| Library | Version | Licence | Notes |
 | --- | --- | --- | --- |
-| FreeType, FriBidi, HarfBuzz, libunibreak | 2.12.1, 1.0.12, 8.1.1, 6.1 | FTL, LGPL-2.1-or-later, MIT, Zlib | libass dependencies |
-| libplacebo | 7.351.0 | LGPL-2.1-or-later | mpv dependency; requires libdovi |
-| Little CMS (lcms2) | 2.17 | MIT | |
-| libdovi | 3.3.2 | MIT | used by libplacebo and by the profile 7 conversion (5.6); no longer prebuilt, now built from source (12.6) |
-| MoltenVK | 1.4.1 | Apache-2.0 | linked because Vulkan stays enabled |
-| shaderc | 2025.5 | Apache-2.0 | |
-| uavs3d | 1.2 | BSD-3-Clause | |
-| libbluray | 1.4.0 | LGPL-2.1-or-later | |
-| uchardet | 0.0.8 | LGPL-2.1-or-later (MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later) | |
+| FreeType, FriBidi, HarfBuzz, libunibreak | 2.12.1, 1.0.12, 8.1.1, 6.1 | FTL, LGPL-2.1-or-later, MIT, Zlib | libass dependencies; unpatched |
+| libplacebo | 7.351.0 | LGPL-2.1-or-later | mpv dependency, with its five submodules; requires libdovi; unpatched |
+| Little CMS (lcms2) | 2.17 | MIT | unpatched |
+| libdovi | 3.3.2 | MIT | used by libplacebo and by the profile 7 conversion (5.6); Vivid's patch (5.13, 12.6) |
+| MoltenVK | 1.4.1 | Apache-2.0 (its parts include cereal, BSD-3-Clause, and Vulkan-Headers, Apache-2.0 or MIT) | linked because Vulkan stays enabled; unpatched |
+| shaderc | 2025.5 | Apache-2.0 (glslang BSD-3-Clause and others; SPIRV-Headers MIT) | with glslang, SPIRV-Tools and SPIRV-Headers; unpatched |
+| uavs3d | 1.2 | BSD-3-Clause | Vivid's patch `0001` (13.5) |
+| libbluray | 1.4.0, with libudfread 1.2.0 | LGPL-2.1-or-later | Vivid's patch `0001` (13.5) |
+| uchardet | 0.0.8 | LGPL-2.1-or-later (MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later) | unpatched |
 
 Nothing links OpenSSL any more: FFmpeg uses Secure Transport.
 
 ### 8.4 Configuration changes that land with the patches
 
+All of these have landed (13.3); they stay listed as the record of what came with each patch.
+
 - **With the VO patch:** add `-Dvo-avfoundation=enabled` to `engine/config/mpv-meson.txt`, and `vo-avfoundation` to `engine/config/expected-mpv-features.txt`. The VO uses Core Image (4.14.7), which `engine/config/app-link.txt` does not list, so add `CoreImage` there too, plus any other framework the symbol closure check (8.5) then reports; otherwise the closure and test-link checks fail.
-- **With the Dolby Vision patch:** pass libdovi's include path and `-ldovi` to FFmpeg through its compiler and linker flags again (the libdovi prebuilt is already staged for libplacebo), and record those flags in the provenance report.
+- **With the Dolby Vision patch:** pass libdovi's include path and `-ldovi` to FFmpeg through its compiler and linker flags again (libdovi is already staged for libplacebo), and record those flags in the provenance report.
 - **With the libdovi patch (5.13):** replace `[prebuilt:libdovi]` in `engine/pins.ini` with a source entry for the `libdovi-3.3.2` release archive of `quietvoid/dovi_tool` (URL, embedded commit `4fd2b2235c9f93582dd4a00e65ee34a07800afd7` and SHA-256), and add `engine/patches/libdovi/series` with the patch. Pin the Rust toolchain version and every crate dependency: use the lock file in the archive's `dolby_vision` folder, fetch each crate by checksum, and resolve nothing at build time. Build libdovi's C API as a static library for the four slices; if the pinned toolchain ships no standard library for the tvOS targets, build that from source with the same toolchain (the stable toolchain chosen ships one, 12.6). Keep the public header and the pkg-config name unchanged, and stage the result where the prebuilt was, so that libplacebo's pkg-config requirement and FFmpeg's flags find it. Record the source and patch hashes and the toolchain in the provenance report. Then bring the checks into line: the framework-set check expects `Libdovi` as an eleventh framework, libdovi leaves the prebuilt set that is staged and passed to the test link, and the fetch allowlist (`FETCH_ALLOWED` in `lucid.py`, enforced by `lucid.py check-allowlist`) gains the libdovi source project and the hosts the pinned Rust toolchain and crates come from, each still fetched only through `lucid.py` with its SHA-256.
-- Nothing else in the configuration changes: the FFmpeg configure line, its expected components and switches, and the libass and dav1d options stay as they are.
+- Nothing else in the configuration changes: the FFmpeg configure line, its expected components and switches, and the libass and dav1d options stay as they are. The libass series (13.4) and the configuration of the eleven libraries built from source (13.5) came later.
 
 ### 8.5 Checks the pipeline already makes
 
 `lucid.py check` already verifies, for every slice:
 
 - **Inputs and trees:** archive hashes and embedded commits match `pins.ini`; the applied patches match the series; each source tree was not changed by the build and equals a fresh extraction of the pristine archive with the series applied again.
-- **Form:** exactly the frameworks built, now eleven with libdovi built from source (8.4, 12.6); arm64 only; the slice's platform and minimum OS 14.0; the Info.plist values and module maps; FFmpeg's header counts.
+- **Form:** exactly the frameworks built, now 21 with libdovi and ten of the eleven libraries of 8.3 built from source, plus MoltenVK as a bare static library (8.4, 12.6, 13.5); arm64 only; the slice's platform and minimum OS (14.0 for Vivid's own libraries, each of the eleven libraries' own as today, 13.5); the Info.plist values and module maps; FFmpeg's header counts.
+- **The eleven libraries of 8.3** (13.5): each against what today's build of it ships: form, minimum OS, Info.plist, module map and headers; defined global symbols by visibility; weak definitions and imports, with the recorded toolchain differences; pkg-config files; the configuration read back; and the per-library facts that decide output.
 - **FFmpeg:** the configuration in `config.h` and the string `avformat_configuration()` returns both equal the configured arguments; they contain `--enable-securetransport` and none of `--enable-gpl`, `--enable-version3`, `--enable-openssl`, `--enable-nonfree` or `delogo`; every library's licence string is `LGPL version 2.1 or later`; the expected `CONFIG_*` switches are on or off, and `HAVE_SECITEMIMPORT` is 0; the enabled components and the filter registry symbols match exactly.
 - **Symbols:** no OpenSSL symbols; no reference to `_SecIdentityCreate`; no `delogo` filter; `Libavformat` defines `_avformat_configuration`; `Libavcodec` references `_kCVPixelBufferMetalCompatibilityKey` and neither OpenGL compatibility key.
 - **mpv:** the recorded meson options; `-Dgpl=false` and no `-Dgpl=true` in the binary; the feature list matches `expected-mpv-features.txt` exactly (so `coreaudio` is absent and `macos-11-3-features` and `macos-12-features` are present, 2.11); the binary contains the text of `0001`; client API version 2.5 with the four expected headers.
 - **libass and dav1d:** versions 0.17.5 and API 7.0.0, both with their arm64 assembly.
-- **Linkability** (since `ad498b4`, green on all four slices): a symbol closure in which every undefined symbol in every built and pinned archive is defined by another archive in the link set, by the compiler runtime, or by a public `.tbd` stub in the slice's SDK. Only `___dso_handle` and the Objective-C selector stubs (`_objc_msgSend$<selector>`), which the linker synthesises, are exempt, and compiler-runtime symbols count as defined. Every SDK symbol must come from a framework or library in `engine/config/app-link.txt`, following re-exports, or from libSystem or libobjc. Then a dead-stripped test link, without forced whole-archive loading, of a small C program that calls `mpv_create`, `mpv_initialize`, `mpv_terminate_destroy` and `avformat_configuration`, against the built frameworks, the pinned prebuilt archives and `app-link.txt`, at Vivid's own deployment targets (iOS 18.0, tvOS 26.0). A forced whole-archive link would not be a usable check: FFmpeg compiles its Vulkan helpers into three libraries, so such a link fails on duplicate symbols, as today's binaries do too. This is the check that would have caught the earlier `0002` link failure (2.11).
+- **Linkability** (since `ad498b4`, green on all four slices): a symbol closure in which every undefined symbol in every built archive is defined by another archive in the link set, by the compiler runtime, or by a public `.tbd` stub in the slice's SDK. Only `___dso_handle` and the Objective-C selector stubs (`_objc_msgSend$<selector>`), which the linker synthesises, are exempt, and compiler-runtime symbols count as defined. Every SDK symbol must come from a framework or library in `engine/config/app-link.txt`, following re-exports, or from libSystem or libobjc. Then a dead-stripped test link, without forced whole-archive loading, of a small C program that calls `mpv_create`, `mpv_initialize`, `mpv_terminate_destroy` and `avformat_configuration`, against the built frameworks, MoltenVK's library and `app-link.txt`, at Vivid's own deployment targets (iOS 18.0, tvOS 26.0). A forced whole-archive link would not be a usable check: FFmpeg compiles its Vulkan helpers into three libraries, so such a link fails on duplicate symbols, as today's binaries do too. This is the check that would have caught the earlier `0002` link failure (2.11).
 - **Notification name:** Libmpv contains the format `notification name: %s` (2.9).
 
 Each check that looks at a binary first finds it (the framework-set check fails on a missing framework), and the uploads fail when files are missing.
 
 ### 8.6 Checks to add
+
+All six are now in place: items 1 to 4 as per-slice checks, and items 5 and 6 as test steps and jobs of the pipeline (the video output tests once per run, in the `ios-arm64-simulator` job; the libdovi corpus in its own host job), all passing (13.3).
 
 1. **All 25 frozen log formats.** Every exact format string in the 2.9 table appears verbatim in every slice's Libmpv, searched together with its trailing newline (each format ends in one in the source, as mpv's log calls expect). For the standalone `falling back to PCM`, also require a NUL byte straight before it: three other frozen formats end with the same text, so without that anchor the check would still pass if the separate line were dropped or merged into the rejection line. Validate the check once against a slice that contains the AO, and once against a binary that lacks the standalone line, which it must reject.
 2. **The remaining binary markers** of 2.10 in every slice's Libmpv: `manage-audio-session` followed by a NUL byte, `compressed-anchor-start` followed by a NUL byte, and `compressed-lead`. Also `max-lookahead` followed by a NUL byte in both tvOS slices and absent from both iOS slices (2.2).
@@ -1768,24 +1790,24 @@ Each check that looks at a binary first finds it (the framework-set check fails 
 
 ### 8.7 Install, package and the old workflows
 
-- The pipeline's packaging job already publishes `<Name>.xcframework.zip` for each of the ten frameworks (eleven once libdovi is built from source) with a `SHA256SUMS` file (also the SwiftPM checksums) and each slice's provenance report; artefacts are kept for 3 days.
-- Still to do before an app can link these builds: a Swift package that serves them, and an install script updated for the pipeline's slice names and artefacts. Both must install or serve every framework the pipeline builds, all ten (eleven with `Libdovi`), `Libass` and `Libdav1d` included, and the script's `verify` must check each installed binary against `SHA256SUMS` and the provenance reports.
+- The pipeline's packaging job already publishes `<Name>.xcframework.zip` for each of the 21 frameworks and for MoltenVK's library (13.5) with a `SHA256SUMS` file (also the SwiftPM checksums) and each slice's provenance report; artefacts are kept for 3 days.
+- The Swift package that serves these builds is `blurbery/lucid-engine`, and Vivid's app links it on `experiment/vivid-player-bridge` (13.5). It must serve every framework the pipeline builds, all 21 and MoltenVK's library, `Libass` and `Libdav1d` included. If the install script is kept rather than retired, it must be updated for the pipeline's slice names and artefacts, install the same set, and its `verify` must check each installed binary against `SHA256SUMS` and the provenance reports.
 - `scripts/release/use-patched-libmpv.sh` today expects the old artefact (`mpv-<platform>-audio-driver`, slices `ios-arm64` and `tvos-arm64_arm64e`) and searches the 30 newest successful runs of the old workflow. On `main` and `experiment/vivid-player-bridge` it replaces Libmpv alone; on `fix/lgpl-media-engine`, Libmpv and the seven FFmpeg frameworks (eight in all). It never replaces Libass or Libdav1d, so an install that followed its pattern would leave the app linking the third-party threaded libass and its dav1d, with no visible error.
-- Until the app links the pipeline's simulator slices, simulator builds, the player-regression tests and the experiment tests run the old engine, which rejects `ao-avfoundation-manage-audio-session` on every load (a console line only) and manages the audio session itself. Simulator checks prove nothing about the rewrite until then.
+- Wherever the app does not yet link the package (on `main`, for example), simulator builds, the player-regression tests and the experiment tests run the old engine, which rejects `ao-avfoundation-manage-audio-session` on every load (a console line only) and manages the audio session itself. Simulator checks prove nothing about the rewrite there.
 - The old audio-driver workflow and its harness are retired when the new AO lands, and `mpv-experiment.yml`'s checks move to the new package (its SwiftPM pin check then compares against the new package instead of the third-party one).
 
 ### 8.8 Switch-over notes
 
 What changes for Vivid's other code when the app first links the pipeline's builds:
 
-- **Install script.** `scripts/release/use-patched-libmpv.sh` must install every framework the pipeline builds (8.7), not Libmpv alone, and must use the pipeline's slice identifiers, `ios-arm64` (unchanged), `tvos-arm64` (instead of `tvos-arm64_arm64e`), `ios-arm64-simulator` and `tvos-arm64-simulator`, and the new package's artefact path instead of `SourcePackages/artifacts/mpv-build/`. Its marker checks (2.10) pass only once the AO patch is in the series, because `first start recovery after` and `trace edge %s` come from the new AO.
+- **Install script.** `scripts/release/use-patched-libmpv.sh` must install every framework the pipeline builds (8.7), not Libmpv alone, and must use the pipeline's slice identifiers, `ios-arm64` (unchanged), `tvos-arm64` (instead of `tvos-arm64_arm64e`), `ios-arm64-simulator` and `tvos-arm64-simulator`, and the new package's artefact path instead of the previous third-party package's folder under `SourcePackages/artifacts/`. Its marker checks (2.10) pass only once the AO patch is in the series, because `first start recovery after` and `trace edge %s` come from the new AO.
 - **Options.** Vivid's `ao-avfoundation-*` options, `audio-spdif` passthrough and the `avfoundation-*` video options work only once the AO and VO patches are in the series; before that, mpv rejects the options (a console line each) and the stock AO refuses spdif formats. Before the VO patch, `vo=avfoundation` is accepted but skipped as an unknown driver, because mpv does not check its video output list for unknown names; mpv then autoprobes its other outputs and plays with no picture. Before the AO patch, upstream's AO sets the session category and mode, activates the shared session, and deactivates it itself on teardown and after a failed `init`.
 - **GPU context.** No iOS or tvOS build sets `gpu-context` today (1.7). The new engine rejects `gpu-context=moltenvk`; the bridge must not start setting it, and the engine must not accept it as a no-op. This has no effect with `vo=avfoundation`.
 - **TLS.** `LucidTLS` works unchanged: the configuration string has `--enable-securetransport` and `avformat_configuration` is exported.
 
 ### 8.9 Licence notes to update
 
-Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt` and `docs/cores/player-engine.md` once the app links the pipeline's builds: the engine patches are Vivid-owned LGPL-2.1-or-later (plus the upstream cherry-pick), libdovi is built from source with Vivid's patch under its MIT licence (unless blurbery decides otherwise, 11.2), libass and dav1d are built unpatched, OpenSSL is gone, and the prebuilt list is 8.3's.
+Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt` and `docs/cores/player-engine.md` once the app links the pipeline's builds: the engine patches are Vivid-owned LGPL-2.1-or-later (plus the upstream cherry-pick), libdovi is built from source with Vivid's patch under its MIT licence (unless blurbery decides otherwise, 11.2), libass carries two upstream changes and Vivid's ISC patch (13.4), dav1d is built unpatched, the eleven libraries of 8.3 are built from upstream source with their parts and licences, two of them with Vivid's own patches under their libraries' licences (13.5), and OpenSSL is gone.
 
 ## 9. Constants, parity hazards, tests and device checklist
 
@@ -1953,7 +1975,7 @@ Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt
 - V12. The subtitle layer goes on top of the parent's sublayers, one `zPosition` above the host, copies the host's `frame`, uses resize gravity, is clear and non-opaque, and shares the timebase.
 - V13. Picture in Picture composites keep the coded size, blend each displayed image exactly once, and carry the decoder buffer's attachments (7.3).
 - V14. Software uploads always use the video-range format codes.
-- V15. No redraw on a composite-mode switch: turning compositing on while paused shows no subtitle until the next frame or redraw; turning it off while paused leaves the last composited sample, with its burned-in cue, on screen until then.
+- V15. No redraw on a composite-mode switch: turning compositing on while paused shows no subtitle until the next frame or redraw; turning it off while paused leaves the last composited sample, with its burned-in cue, on screen until then. Switching compositing off writes no buffer: the kept rows go back into a composited decoder buffer only immediately before that same buffer is presented again, and are released unwritten when a different buffer is presented or at teardown. A same-buffer redraw with compositing on builds the composite away from the buffer and writes only the rows that change (4.14.9, 13.1).
 - V16. In host mode on tvOS, up to 128 ms of handed-over frames still show after a pause.
 - V17. The presentation mode is fixed per VO at creation; a VO created again after `vid=auto` reads the option then.
 - V18. The scale fallback is `UIScreen.main.scale`, not `nativeScale`.
@@ -1990,7 +2012,7 @@ Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt
 - D16. The FFmpeg log levels and the warning count per failed RPU (5.9, 6.6).
 - D17. The keyframe counter counts at packet acceptance, before that packet's error, only during a run; neither counter is reset by a flush; probing still fails over at once.
 - D18. Metal-compatible VideoToolbox buffers and no OpenGL keys (5.10).
-- D19. Upstream libass renders on one thread; heavy typesetting may drop frames (9.5).
+- D19. libass carries upstream commit `057a5334`, upstream pull request #951 and Vivid's patch `0010`, so static events report no change and repeat no font search, as today (13.4). It still renders on one thread, where today's library renders on every CPU, so heavy animated typesetting may drop frames; device check 46 decides (9.5, 13.4).
 - D20. Patches apply with zero fuzz on top of the existing series (8.2).
 - D21. libdovi flags and checks return with the Dolby Vision patch (8.4, 8.6).
 - D22. Session property failures stay non-fatal and OS-gated.
@@ -2245,9 +2267,11 @@ The clean side designs its own scenarios, sizes and durations. The tests must es
 - **Unchanged elsewhere:** for real profile 5, 7 FEL, 7 MEL, 8.1 and 8.4 RPUs, and for every corpus RPU on which unpatched 3.3.2 does not abort, the patched and unpatched builds give the same results and output bytes, and the same error texts apart from those 5.13 allows to change. The header case of 12.5 is the one exception.
 - **Configuration record:** for profile 5, 8.1, 8.4 and converted 7 records, and for a record with compression 3, the 24-byte atom matches 5.2 exactly.
 
+**libass.** The acceptance tests of 13.4, on the build host against the patched libass.
+
 ### 9.5 Device checklist
 
-Run on the rebuilt engine after the pipeline's checks (8.5, 8.6). Use a trial build (log level `v`) for trace-based checks and a Release build for fault recording, and compare the current engine and the rewrite side by side on the same hardware and titles. For each check record the device, OS, build revision and source (codec, profile, range, frame rate, container, resolution, pixel aspect), the route, and whether the result came from a person or a log. Simulator results count only once the app links the pipeline's simulator slices (8.7); until then run the software-decode checks on a device with a forced fallback. 12.7 adds checks 59 to 64.
+Run on the rebuilt engine after the pipeline's checks (8.5, 8.6). Use a trial build (log level `v`) for trace-based checks and a Release build for fault recording, and compare the current engine and the rewrite side by side on the same hardware and titles. For each check record the device, OS, build revision and source (codec, profile, range, frame rate, container, resolution, pixel aspect), the route, and whether the result came from a person or a log. Simulator results count only once the app links the pipeline's simulator slices (8.7); until then run the software-decode checks on a device with a forced fallback. 12.7 adds checks 59 to 64, and 13.7 adds checks 65 to 69.
 
 **AirPlay, Apple TV 4K to a HomePod or HomePod stereo pair** (Vivid's AirPlay options apply)
 
@@ -2317,14 +2341,14 @@ Run on the rebuilt engine after the pipeline's checks (8.5, 8.6). Use a trial bu
 43. Separate-layer subtitle brightness on HDR10 and Dolby Vision output: the same as today's build.
 44. A primary and a secondary embedded subtitle with cues at the same time: both visible together, the secondary drawn over the primary where they overlap, on the separate layer and in Picture in Picture; a cue change in either updates on the right frame. (Today only the secondary shows; this is deliberate difference 3.) Include a 4K title in Picture in Picture with one cue at the top and one at the bottom, and record the subtitle performance summary and dropped frames against a single cue.
 45. Vivid's subtitle appearance presets with an SRT (box, outline, drop shadow, top, lower third) and an external ASS added during playback, on the separate layer and in Picture in Picture: side by side with today's build; a change of preset or subtitle delay shows on the next frame, also while paused.
-46. Heavy styled ASS (anime karaoke or dense signs) on Apple TV 4K and an older supported iPhone: measure dropped frames (`frame-drop-count`, `vo-delayed-frame-count`) and the VO's subtitle performance summary against today's build. Upstream libass renders on one thread, and this check decides whether that is acceptable (7.1).
+46. Heavy styled ASS (anime karaoke or dense signs) on Apple TV 4K and an older supported iPhone: measure dropped frames (`frame-drop-count`, `vo-delayed-frame-count`) and the VO's subtitle performance summary against today's build. The new libass renders on one thread, where today's renders on every CPU. Static events now cost what they cost today (13.4), so the difference shows on animated karaoke and motion-tracked typesetting. This check decides whether one thread is acceptable (7.1, 11.2, 13.4).
 
 **Geometry, Picture in Picture and external displays**
 
 47. Rotation on iPhone and iPad, iPad split-view resizing, preview to full screen, the Next Up mini-player: the video snaps to size; subtitles are re-laid out after each resize, also while paused; no old-geometry subtitle left behind.
 48. Gravity `fit`, `fill` and `stretch`: the video follows the layer; subtitles stay placed against mpv's aspect-fit rectangle in every mode.
 49. Picture in Picture on iPhone and iPad, from the button and automatically by swiping home, with SRT and ASS subtitles at the default and lower-third positions: subtitles burned into the window; the window does not resize when cues come and go; play, pause and skip work and the timeline matches; back to full screen, subtitles return to the separate layer with no burned-in cue left behind.
-50. Pause in Picture in Picture while a cue changes, and resize the Picture in Picture window while paused: no doubled, heavier or stale cue (7.3).
+50. Pause in Picture in Picture while a cue changes, and resize the Picture in Picture window while paused: no doubled, heavier or stale cue (7.3), and the cue never disappears for a moment during such a redraw (13.1).
 51. Picture in Picture across Next Up: the window stays and switches to the new episode, with subtitles. With HDR10 and Dolby Vision content and subtitles, the picture stays correct (note subtitle brightness).
 52. External displays on iOS (HDMI adapter and AirPlay mirroring): note whether video moves or mirrors; if it moves, subtitles render at the external screen's scale and the container moves with both layers.
 
@@ -2390,21 +2414,24 @@ Both depend on the old driver's names and layout, so they fail against any clean
 | Vulkan and MoltenVK? | Stay linked for now (7.1). |
 | Upstream's `HAVE_MACOS_*` guards in the AO, or `@available` alone? | Either; the shipped result must be "enabled", and the pipeline checks it (2.11, 8.5). |
 | How free is log wording? | Free where nothing consumes it, within 2.9's constraints. Consumed strings and every level are frozen. |
-| Licence of the new patches? | LGPL-2.1-or-later, the VO included (1.3). |
+| Licence of the new patches? | LGPL-2.1-or-later for mpv and FFmpeg, the VO included; MIT for libdovi; ISC for Vivid's libass patch; each library's own licence for the libbluray and uavs3d patches (1.3). |
 | Two subtitle objects at once? | Show both, in the separate layer and in Picture in Picture (deliberate difference 3). |
 | libdovi aborting on a malformed RPU? | Fix it now (deliberate difference 4). FFmpeg keeps its exact guard for zero-filled or truncated profile 7 RPUs, and Vivid's pipeline builds libdovi 3.3.2 from source with a Vivid-owned patch that makes every entry point FFmpeg and libplacebo use return an error instead of aborting, for any input (5.13). Every RPU libdovi cannot parse, convert or write is skipped (5.6). |
 | What is dropped or omitted? | 7.1 and 7.2, each with evidence. |
 | What deliberately changes? | The four items of 7.3; 7.4 lists differences already in Vivid's series. |
+| libass cost on static events, and repeated font fallback? | Restored to today's by carrying upstream libass commit `057a5334`, upstream pull request #951 and Vivid's own patch `0010` (13.4). |
 | Single-threaded libass? | Accepted as a known risk and measured on devices (9.5 item 46); not emulated. |
+| The eleven libraries from the previous third-party build? | Built from upstream source by Vivid's pipeline with today's options (13.5). |
+| Framework bundle identifiers? | Prefix `com.blurbery.vivid.lucid.` (blurbery's decision, 13.5). |
 | mpv 0003, 0025, 0027 and 0102; FFmpeg 0010 and 0015? | Kept (section 6); 0003 is covered by Vivid's `0002`, and mpv 0026 is Vivid's `0001` (upstream `1388a45`). |
 | Where do the patches apply? | On top of Vivid's existing series in `engine/patches/`, with zero fuzz (8.2). |
 
 ### 11.2 Open items for the coordinator
 
 1. **Retiring the old harness.** Removing `scripts/tests/compressed-audio-recovery-tests.py` and `.github/workflows/mpv-audio-driver.yml` needs the dirty side or blurbery (10.4).
-2. **Linking the pipeline's builds.** A Swift package serving the pipeline's xcframeworks, and an install script updated for its slices and artefacts, do not exist yet (8.7, 8.8); both must cover every framework the pipeline builds. Until then simulator builds and the CI app tests run the old engine. Vivid's mpv `0002` already links (`546e11f`), and the pipeline checks linkability on every slice (`ad498b4`, 8.5).
-3. **libass performance.** Device check 46 decides whether single-threaded upstream libass is acceptable, or whether Vivid wants its own threading work later.
-4. **Bundle identifiers.** The pipeline's frameworks keep today's `com.mpvkit.<Name>` identifiers, an open question in `docs/cores/lucid-engine-build.md`.
+2. **Linking the pipeline's builds.** The Swift package is `blurbery/lucid-engine`, and the app links it on `experiment/vivid-player-bridge` (8.7, 13.5); it must serve every framework the pipeline builds. The install script still needs updating for the pipeline's slices and artefacts, or retiring (8.7, 8.8). Vivid's mpv `0002` already links (`546e11f`), and the pipeline checks linkability on every slice (`ad498b4`, 8.5).
+3. **libass threading.** The libass series restores today's cost on static events (13.4), but rendering stays on one thread. Device check 46 decides whether that is acceptable, or whether Vivid wants its own threading work later. Device checks 65 and 66 settle the font-fallback and static-subtitle costs on devices.
+4. **Bundle identifiers.** Closed: the pipeline's frameworks use the prefix `com.blurbery.vivid.lucid.` (blurbery's decision, 13.5).
 5. **macOS.** Nothing here supports macOS. If Vivid ever builds a macOS slice, the VO's meson feature and the omitted macOS paths need revisiting.
 6. **Licence of the libdovi patch.** Proposed: MIT, matching libdovi (1.3). blurbery confirms, or chooses LGPL-2.1-or-later like the other patches.
 
@@ -2460,7 +2487,7 @@ Recorded after the first implementations of the audio output, the video output a
   - With a new frame duration of 500 ms or more, a change above 4% is adopted on frame 2: the discontinuity at frame 1 has emptied both windows, and frame 2's single step, too few for the fast window, fills the averaging window on its own, which gives the estimate.
   - A change of more than 1% and at most 4% with frames of 500 ms or more is also adopted on frame 2, since each such frame completes the averaging window by itself. The 520 to 580 ms and 710 ms figures in 4.10 apply to shorter frames.
   - If the adoption frame does not reach the timebase step (dropped, or paused), its estimate is discarded (4.8.3). With frames under 500 ms both windows were emptied, so adoption moves to frame 5, or frame 7 after two such losses. With frames of 500 ms or more the fast window still holds frame 2's step, so frame 3 adopts, or frame 4 after two losses.
-- **Pacing summary (4.18).** A 5 s window's summary is emitted when at least one of these is non-zero: readiness waits, deadline drops, anchors, rate writes or the largest phase error. A window whose only event is a recovery emits nothing. The largest phase error is sampled only on frames that reach the phase-error test of 4.8.2 (a valid anchor, playback not paused, and no nominal-rate change on that frame), so a frame that anchors because the nominal rate has just changed does not count. The first window opens at the start of the first `flip_page`. Extra fields, such as a recovery count or the longest wait, are allowed.
+- **Pacing summary (4.18).** A 5 s window's summary is emitted when at least one of these is non-zero: readiness waits, deadline drops, anchors, rate writes or the largest phase error. A window whose only event is a recovery emits nothing. The largest phase error is sampled only on frames that reach the phase-error test of 4.8.2 (a valid anchor, neither playback nor the timebase marked paused, and no nominal-rate change on that frame), so a frame that anchors because the nominal rate has just changed does not count, while a frame whose error is above the 50 ms limit after a valid anchor does (13.1). The first window opens at the start of the first `flip_page`. Extra fields, such as a recovery count or the longest wait, are allowed.
 - **Subtitle sample due but not enqueued (4.9 step 5; video question 6).** A subtitle sample is due when subtitles are on the separate layer and the pending mark is set once that flip's subtitles have been rendered. Whenever a due sample is not enqueued, for any reason, change tracking is reset, so the next frame renders again, and the pending mark stays as it is. The reasons are: the subtitle sample could not be built (no canvas, no pool buffer, or a format description or sample failure); the video sample could not be built (a hardware frame without a buffer, an upload failure, or a format description or sample failure); the frame was dropped at the readiness deadline, by any of the three kinds of drop; or the subtitle layer was not ready, or is absent. Only the not-ready case logs its verbose line and counts a subtitle sample drop; a deadline drop counts only the video drop. The mark stays set unless a recovery in the same flip cleared it (next item).
 - **Pending mark after a recovery (4.11; video question 7).** A recovery that runs, forced or allowed by the throttle, resets change tracking and clears the pending mark; one the throttle suppresses changes nothing. If the recovery runs during the readiness wait, after this flip's subtitle sample was built, and the frame then proceeds, that sample is still enqueued. If the frame is dropped instead, nothing is enqueued and the mark stays cleared. A pending clear is then lost: nothing is cached, so nothing renders again, and because the recovery flush keeps the displayed image, the subtitle layer can go on showing a subtitle that has ended until the next subtitle change. A subtitle that is still showing is unaffected: tracking was reset, so it renders again on the next frame. Keep this.
 - **What a reset clears (4.13; video question 8).** `VOCTRL_RESET` clears the next frame's target host time (to 0), its media time (invalid) and its rate estimate (absent), and also the last media time, the anchor, the servo and the whole estimator, previous sample included, while leaving the nominal rate and the pause state as 4.13 says. No image is released, because none is held between flips. mpv runs `VOCTRL_RESET` at the top of the VO loop, never between `draw_frame` and `flip_page`, so before the next `draw_frame` the cleared values can show only in the media time of a recovery warning (which then falls back to the timebase, reading 0 after the media-mode reseed) and in the pause fallback for a non-numeric timebase, which never happens.
@@ -2469,7 +2496,7 @@ Recorded after the first implementations of the audio output, the video output a
 
 - **Core Image cannot wrap the frame (4.14.7).** When the Core Image fallback cannot wrap the video buffer as an image, it produces no composite and the frame goes out as decoded, without the subtitle, as today. It must never render the subtitle over an empty picture. On macOS, Core Image wraps none of `y416`, `v210`, `b64a`, `r408` and `v408`. FFmpeg asks VideoToolbox for `y416` for sources with alpha and more than 8 bits, such as ProRes 4444 with alpha, which Vivid decodes in hardware where the device can, so the case is reachable in Picture in Picture.
 - **Core Image output format (4.14.7; video question 4).** Half float (`kCVPixelFormatType_64RGBAHalf`) is used only for `x420` and `xf20` sources (`kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange` and `kCVPixelFormatType_420YpCbCr10BiPlanarFullRange`). Every other source gets `kCVPixelFormatType_32BGRA`, including the 10-bit 4:2:2 and 4:4:4 biplanar codes (`x422`, `xf22`, `x444`, `xf44`) and the 16-bit biplanar ones.
-- **Blending once, in place (7.3 item 1).** The Picture in Picture YUV composite of a hardware frame is blended into the decoder's own buffer, with no full-frame copy. Before blending, the VO keeps the original pixels of the frame rows that the blend rectangle spans, in both planes, and writes them back before the same buffer is blended again or enqueued again. So each displayed image carries the current cue exactly once, a sample enqueued with compositing off carries none, and the blend still runs once per image. This is the "keep the original pixels and restore them first" choice that 7.3 item 1 allows. All its guarantees hold, and its last bullet (a copy's buffer comes from a pool) no longer applies to these composites, because nothing is copied.
+- **Blending once, in place (7.3 item 1).** The Picture in Picture YUV composite of a hardware frame is blended into the decoder's own buffer, with no full-frame copy. Before blending, the VO keeps the original pixels of the frame rows that the blend rectangle spans, in both planes, and writes them back only immediately before that same buffer is presented again. (Superseded wording: this said "before the same buffer is blended again or enqueued again". 4.14.9 and 13.1 give the rule: nothing is written when compositing switches off, and a same-buffer redraw builds its composite away from the buffer and writes only the rows that change.) So each displayed image carries the current cue exactly once, a sample enqueued with compositing off carries none, and the blend still runs once per image. This is the "keep the original pixels and restore them first" choice that 7.3 item 1 allows. All its guarantees hold, and its last bullet (a copy's buffer comes from a pool) no longer applies to these composites, because nothing is copied.
 - **Bounding box (4.14.5).** For each drawn part, the left (`x`), top (`y`), right (`x` + `dw`) and bottom (`y` + `dh`) edges, with the defaulting rule, are each clamped to the canvas on their own, and the union is then taken over the clamped rectangles, including any that came out empty. A part lying wholly outside the canvas therefore still pulls the box out to the canvas edge beyond which it lies. On the separate layer this only changes the area cleared next time. In frame space it matters when every drawn part lies off the frame, on different sides: the box is then not empty, the YUV blend runs and changes nothing, and the decoder's frame goes out untouched, Dolby Vision included, where a box built by intersection would be empty and send the frame to Core Image.
 - **CoreGraphics part sizes (4.14.5; video question 5).** The CoreGraphics path draws each part into the rectangle built from its raw `dw` and `dh`. A `dw` or `dh` of 0 gives an empty rectangle, so nothing is drawn, while the path choice and the bounding box still count that 0 as `w` or `h`, so the box covers an area left blank. A negative size is standardised by CoreGraphics, so the part is drawn at |`dw`| × |`dh`| in the box that ends at the part's (`x`, `y`) corner, above and to the left of its usual place: an 8 by 6 part at (10, 5) with `dw` −4 and `dh` −3 covers columns 6 to 9 and rows 2 to 4. This is unreachable in practice (libass parts always have `dw` equal to `w`), but keep it.
 - **Path choice (4.14.5).** Only parts that are drawn (with a bitmap and a positive width and height) count when choosing between the direct and CoreGraphics paths; a skipped part never sends its object to CoreGraphics.
@@ -2520,7 +2547,7 @@ Recorded after the first implementations of the audio output, the video output a
 
 - libdovi is built from source as the eleventh framework, `Libdovi`, with a pinned stable Rust toolchain (1.98.0). That toolchain ships a standard library for every slice's target, tvOS included, so neither a nightly toolchain nor a standard-library build is needed (8.4). The header, the pkg-config name and the exported functions are unchanged.
 - The symbol closure and the app-style test link of 8.5 run on every slice. They found the missing CoreFoundation string helper that 2.11 describes, since fixed.
-- An end-to-end test of the hardware decode error tolerance (6.1) through mpv needs host builds of libplacebo and libass from source, which the pipeline does not make yet. It is deferred until it does; device check 36 covers the behaviour meanwhile.
+- An end-to-end test of the hardware decode error tolerance (6.1) through mpv needs host builds of libplacebo and libass from source. The libass host test now builds libass, FreeType, FriBidi and HarfBuzz for the build host (13.4), but nothing builds libplacebo for it yet, so the test is still deferred; device check 36 covers the behaviour meanwhile.
 
 ### 12.7 Device checks added to 9.5
 
@@ -2539,3 +2566,250 @@ These are accepted in addition to 7.3. Everything else must still match today's 
 | --- | --- | --- | --- |
 | Audio output: the asset or item cannot be created at `start` (12.1) | No check: no item, every feed step does nothing, and audio stalls until a later `reset` and `start` | A fatal line and a fallback to PCM | Unreachable in practice, and the new path plays audio |
 | Decoder: the frame's bitstream is empty at frame end (12.4) | The RPUs are submitted alone; VideoToolbox reports bad data and the session restarts | Nothing is submitted; the frame fails without a restart | An error path only; mpv sees one error for the frame either way, and fewer frames fail afterwards |
+
+## 13. Amendments after the fix rounds and the library work
+
+Recorded after the video output's two further fix rounds and their behaviour re-checks against today's engine, the integration of the audio output, video output and decoder work into the pipeline (`10faa2a` on `experiment/lucid-engine-build`, CI run 38400124717), a parity check of those integrated binaries against today's engine, the libass work (`experiment/lucid-engine-libass` at `6884b24`) and the libraries built from upstream source (`experiment/lucid-engine-libs` at `ac945ce`). As in section 12, everything here is behaviour and decisions. Where this section differs from an earlier one, section 12 included, this section wins.
+
+### 13.1 Video output
+
+**Pacing summary (4.8.2, 4.18, 12.2).**
+
+- The largest phase error is sampled only on frames that reach the slew decision of 4.8.2: a frame with a valid media time and a valid anchor, with neither playback nor the timebase marked paused, and whose nominal rate did not change on that frame. It is sampled before the 50 ms test, so a frame whose error is above the re-anchor limit after a valid anchor still counts.
+- So these are never sampled: the first frame after creation, a reset (every seek), a resume or a recovery; every frame while paused, paused redraws included; and the frame that adopts a new nominal rate.
+- A first implementation sampled every frame that kept its nominal rate. That put the media position (seconds to minutes) into the figure of every window with a start, seek, resume or recovery, and a paused redraw's error into others. Trial traces only, but the figure is meant to be the servo's real error, so the rule above is required.
+- Recoveries alone never trigger the summary line. A window whose only event is a recovery, for example the forced presentation-resume recovery in host mode on tvOS, logs nothing; the same window with one deadline drop logs one line. The line may report a recovery count as an extra field (12.2).
+- A timebase marked paused while playback is not cannot happen (pausing sets both marks, and every other step sets the timebase mark from playback's), but such a frame counts as paused.
+
+**Switching Picture in Picture compositing off (4.14.9, V15).** The rewrite composites hardware frames into the decoder's own buffer and keeps the original pixels of the rows it changes (12.3).
+
+- An option refresh that turns compositing off does what 4.14.9 step 3 lists and nothing more. It writes no video buffer, so the displayed decoder buffer keeps its burned-in cue, as today, until the next frame or redraw.
+- The kept rows are written back only immediately before that same buffer is presented again (the next redraw while paused, for example), so that sample shows the decoded picture with no cue.
+- If a different buffer is presented first, or the VO is torn down, the kept rows are released and the composited buffer is not written.
+- Off, then on again, then a redraw with the same cue blends the cue exactly once and writes no row.
+- The kept rows of a buffer are freed whenever they are written back or let go. The VO holds a reference to the last composited decoder buffer until a frame with a different buffer is presented, or teardown; this adds no memory in practice, because the display layer holds that buffer while it is on screen or queued.
+- A first implementation wrote the kept rows back at the switch, into the buffer on screen, where the system may pick up the write at once, part way or not at all. Today never writes there. The rule above is required.
+
+**Same-buffer redraw with compositing on.** When the buffer to present is the one the VO last composited into (a paused redraw, a cue change while paused, a resize while paused):
+
+- The VO builds the new composite away from the buffer: in scratch memory covering the union of the old and new blend rectangles (its corner rounded down to even coordinates), starting from the kept original rows, blended once with the arithmetic of 4.14.7.
+- It then writes into the buffer only the rows whose bytes change, each once. An unchanged cue writes no row.
+- Every presentation therefore equals the current cue blended once over the decoded picture, and the displayed picture never passes through a state without its cue.
+- The rewrite writes the luma and then the chroma rows that gain the new cue first, and then the luma and then the chroma rows that only lose the old one. For a moment a row can carry the new cue's luma with the old chroma: accepted (13.8).
+- This replaces 12.3's wording "writes them back before the same buffer is blended again or enqueued again".
+
+**Order against the readiness wait.** The composite, including a redraw's rebuild, is still made before the readiness wait, as today. A redraw that is then dropped leaves the decoder buffer with the new cue blended once, where today leaves the new cue over the old composite.
+
+**Error paths (accepted, 13.8).**
+
+- **Core Image fallback on a buffer that carries the previous composite.** When the YUV composite cannot be made (the decoder buffer or the subtitle canvas cannot be locked, the scratch or kept-row store cannot grow, there is no canvas, the drawn box is empty, or the blend rectangle maps to nothing), the rewrite first writes the kept rows back, so the buffer shows the decoded picture. It then takes the Core Image fallback from that clean picture; if Core Image cannot be used either, the sample is the decoder buffer with no cue. Today renders Core Image over the buffer as it stands (the old cue under the new one), or sends the old cue alone. On these error paths only, the displayed picture can be without its cue for a moment: on a Mac, the write-back plus the Core Image render took 10.5 to 11.3 ms at 4K, before the readiness wait and display latency.
+- **A decoder buffer that cannot be locked for writing.** Today falls back to a pool copy with the YUV blend; the rewrite goes to Core Image (RGB output). A failed kept-row allocation does the same. Lock failures on IOSurface-backed buffers do not occur in practice.
+- **Kept rows that cannot be written back** because the buffer cannot be locked: the rewrite logs an error (4.18, wording free) and leaves the cue in the buffer, where a later composite blends over it, as today's would.
+
+**Other harmless differences (13.8).**
+
+- The rewrite logs the missing-layer line (`wid` −1) at verbose while mpv is autoprobing video outputs and at error otherwise; today always logs it at error. Vivid always sets `vo=avfoundation` together with `wid`, so mpv never probes and the line never appears. Error level throughout would be exact parity.
+- The rewrite closes a pacing window at the end of `flip_page`, after that flip's frame is presented, so the frame presented in a window's closing flip counts in that window; today it counts in the next one.
+- Two microsecond-scale races in the readiness wait. A renderer that becomes ready just after the wait's first readiness check, microseconds before its first give-up test, can proceed at once today, and proceeds after one more 1 ms poll in the rewrite. When a recovery inside the first pass runs past the deadline and the layer is then not ready, the two may log different drop kinds ("already past" against "reached while waiting"), and a frame that proceeds after such a recovery without a sleep may be counted as a ready-wait in one and not the other. Drop counts are the same.
+- Production code holds a per-row observer hook (a null check per written row) and a Core Image state accessor, for host tests only; the output sets no observer.
+
+**What the re-checks measured** (host comparisons with today's code, on a Mac):
+
+- Timing: the estimator (800,000 fuzzed frames), speed-change adoption frames, per-frame anchors, rate writes, sample times and phase-error sampling are identical to today's; readiness decisions, drop counts, drop kinds, recovery logs and times are identical.
+- Pixels: 11,744 picture-path checks identical. The rewrite's blends and uploads are bit-identical to today's (exhaustive libass and BGRA blend sets, 20,000 fuzzed blends and 3,000 fuzzed uploads) and faster: 1.4 to 4.8 times for the blends and up to 11% for the uploads.
+- A first composite of a new frame costs about 1.1 to 1.25 times today's in-place blend (0.63 to 0.69 ms against 0.55 to 0.57 ms for a 2000 by 250 cue at 4K). The cost of a same-buffer redraw and its memory are in 13.8.
+- Similarity: the fix rounds' code is independent of today's.
+
+### 13.2 Decoder: a Dolby Vision configuration that cannot be added
+
+- **The line.** The rewrite's FFmpeg Dolby Vision patch logs one line at `AV_LOG_ERROR` (5.9) when it cannot add the Dolby Vision configuration to the decoder specification of a `dvh1` session. Its wording is free and currently reads "Could not add the Dolby Vision configuration to the decoder specification". The app receives it with the prefix `ffmpeg/video`, after the codec name (`hevc: `), at level `error`, in Release and trial builds alike. It contains no fault substring of 2.8, so the adapter records nothing, and nothing else in Vivid reacts to it.
+- **When.** At most once per failed Dolby Vision session start: hwaccel initialisation, re-initialisation after a parameter change, or a pristine restart, at any decoder thread count. The only way to reach it in practice is a failed allocation of the 24-byte configuration record while a session starts, for HEVC with a usable profile 5, 7 or 8 record (5.1). iOS and tvOS normally end an app under memory pressure long before an allocation that small fails.
+- **What follows.** Pristine FFmpeg's own decoder specification error (also `AV_LOG_ERROR`); the session start then fails before any format description or session is made. There is no plain HEVC retry, which follows only a refused session (5.3).
+  - At hwaccel initialisation, pristine FFmpeg's hwaccel set-up error follows, the hwaccel fails to open and mpv continues in software (`hwdec-current` `no`), as 12.4 already says for a format description that cannot be created.
+  - At a restart, that frame and every later one fail for want of a session, without another restart, until mpv's tolerance (6.1) falls back to software.
+- **Today.** Today's engine leaves the configuration atom out silently in the same situation and attempts the `dvh1` session without it. What VideoToolbox then does was not measured. Inferred: a refused session takes today's plain HEVC retry for profiles 7 and 8 and goes to software for profile 5; an accepted one decodes without the configuration. Accepted difference (13.8): unreachable in practice, and an error path in both engines.
+- The patch's own description now says it logs two error lines in this case.
+- **Test** (host, behavioural, not yet written): inject a failure of that allocation for profile 5, 7 and 8 records, at hwaccel initialisation and at a forced restart, at 1 and 4 decoder threads. Per failed start expect exactly the new line once and then the specification error once, both at `AV_LOG_ERROR`; no format description and no session creation; no plain HEVC attempt; at initialisation the hwaccel fails to open, at a restart later frames fail without another start; and no line on this path contains a fault substring.
+
+### 13.3 Integrated parity
+
+The integrated binaries at `10faa2a` (all four slices, eleven frameworks) were compared with today's engine: its LGPL reference builds of Libmpv and FFmpeg for the two device slices, and today's shipped package for libass, dav1d, libdovi and the simulator slices. Host comparisons drove both sides' sources or binaries through the same scenarios. No regression was found.
+
+| Area | Verdict |
+| --- | --- |
+| Configuration and symbols | Matches today, apart from the expected and cosmetic differences below. All four slices pass the symbol closure and the dead-stripped test link. FFmpeg's configuration string, licence strings and component sets equal today's LGPL device engine's. On tvOS, every FFmpeg and Libmpv object outside the rewritten and dropped parts has today's code and constants, including the kept E-AC-3 carrier rate, output-chain wake and hevcdec log levels. |
+| Audio output | Matches today. The same 30 scenarios on an iOS-like and a tvOS-like host build: after normalising the lines whose wording 2.9 leaves free, 25 (iOS) and 22 (tvOS) are identical, and the rest differ only as listed below. |
+| Decoder and Dolby Vision | Matches today in Vivid's configuration (4 decoder threads): across 49 scenarios against real macOS VideoToolbox, every session creation, property, sample, decode call, callback, libdovi call, frame count and per-frame attachment is identical; only free-wording FFmpeg lines differ, with equal counts. At 1 thread Dolby Vision frames differ by design (12.4). The VO's pixel-aspect and Dolby Vision repair steps give identical buffers and format descriptions in all 21 combined scenarios. |
+| Video output | Matches today, apart from deliberate difference 7.3 item 1 and the accepted error paths of 13.1: timing and pacing 0 differences, picture path 11,744 checks with 0 mismatches. |
+| libass | Pixel-identical on the parity corpus (23,280 renders, and 8,410 in Vivid's configuration), but unpatched upstream reported static content as changed on every frame and repeated font fallback on every frame. Since resolved by the libass series (13.4). |
+
+The CI run passed 265 checks per slice, which include the binary checks of 8.5 and items 1 to 4 of 8.6. Its test steps and jobs passed alongside: the 140 audio vectors, the decoder suites (534, 199,060 and 3,921 checks), 1,920 video output cases (in the `ios-arm64-simulator` job) and the libdovi corpus (its own host job).
+
+Differences it saw, all decided or harmless:
+
+- **Expected (7.1, 7.4):**
+  - no `moltenvk` meson option or feature, and `-Dgpl=false`; against the shipped package, FFmpeg without its GPL, version 3, OpenSSL and `delogo` parts;
+  - libavfilter's audio frame pools as upstream (FFmpeg 0020 dropped);
+  - no spdif refusal in `ao_audiounit`, no `sub-video-rect-aspect` and no MoltenVK context;
+  - no `list_devs` on iOS and tvOS;
+  - version strings and the source paths in FFmpeg's assertion texts.
+- **Accepted (12.8):** the AO's fatal line and PCM fallback when the item cannot be created.
+- **Harmless:**
+  - On tvOS the option table registers `ao-avfoundation-max-lookahead` last instead of first. The order cannot be observed.
+  - The block-refusal line's wording, which 2.9 leaves free: same level, same position, no fault substring.
+  - Bounded tvOS PCM: the order of calls inside one AO-queue block, extra calls that stop the renderer requesting data (bounded mode never uses readiness callbacks), and no synchroniser created when a replacement renderer cannot be created. No log line, rate change, enqueue, read, reload or notification outcome differs.
+  - Zero-length or already complete loader requests are finished before the window and write-head checks, the reverse of 3.4.4's order, so such a request below the window or beyond the write head succeeds silently, where today refuses it (an error line with a fault, or a verbose line). Believed unreachable, because AVFoundation is not known to send zero-length requests. Optional fix: test the window base and the write head first.
+  - The bounded tvOS PCM code is compiled into the iOS slices too, and is unreachable there because `max-lookahead` does not exist on iOS. All 25 frozen formats are in every slice's Libmpv, where today's iOS Libmpv lacks the five bounded-PCM lines.
+  - The compressed asset URL is one fixed URL per format, with a scheme and host of the rewrite's choosing (12.1).
+  - libavcodec's AV1 and VP9 VideoToolbox hwaccel objects differ in constant data only, with the total size unchanged. Inferred, not proven: the recorded size of the shared VideoToolbox context, which the Dolby Vision patch extends.
+  - The link set needs Core Image again (the VO) and Security (Secure Transport), and no OpenSSL.
+  - Cosmetic: module maps now end with a newline; prefix paths in FFmpeg's `config.h`; `8.0.1` instead of `n8.0.1` in FFmpeg's version header; libass's public header differs from today's, which today's patches change; Libmpv holds an empty CoreAudio properties object; Libdav1d records SDK 26.5 instead of 17.5. A `-Wundef` compiler warning in mpv's `ao_coreaudio_chmap.c` is shared with today's build.
+- **Not covered by host comparison** (the device checks remain the test): real AVFoundation behaviour (item readiness, loader request patterns, AirPlay clock parking, HDMI passthrough, route changes, the audio session), iOS and tvOS VideoToolbox, real display layers and Picture in Picture, long-session memory, device fonts and libass cost on devices, and anything in the background.
+- **Evidence the comparison did not keep** (low risk): cost and memory figures for the same-buffer composite at that commit (13.1 and 13.8 give the re-checks' figures); the decoder configuration sweep and the malformed-RPU corpus spliced into streams, last run before the 12.4 rework; section comparisons for the iOS and simulator slices and for duplicate-named FFmpeg objects; the local link exit codes; the raw traces behind the decoder log-line counts (equal counts do not prove equal levels; a scan of the patched sources shows the levels of 5.9). The subtitle comparison has not been re-run against FreeType, FriBidi and HarfBuzz built from source (13.5).
+
+### 13.4 libass
+
+**Today's library.** Today's libass is upstream 0.17.5 with three third-party patches (7.1). What it does, observably:
+
+- an event without time-dependent overrides reports no change from frame to frame while it stays on screen, including a sign with a vector clip and a SubRip line in Vivid's background-box style (`BorderStyle` 4);
+- font fallback for such an event is searched once, not on every frame, including characters no font covers and characters whose suggested font file cannot be opened;
+- symbol fonts (Webdings, Wingdings, Wingdings 2 and 3) given text beyond their symbol range fall back to another font, as upstream master has since commit `057a5334`;
+- when an event's first render gives up on characters whose suggested font cannot be opened, and a later character of the same render adds a face that covers them, it keeps the missing glyphs for that event's life; a later event with the same text is laid out afresh and is correct;
+- it renders on every CPU by default, and its output is byte-identical with threading on and off.
+
+**Unpatched upstream** (0.17.4, 0.17.5 and master alike) draws the same pixels on the parity corpus, but:
+
+- It reports a change on every frame for a static vector-clipped sign and a static boxed SubRip line, because it rebuilds their images into new buffers every frame. Through the VO that is a re-render, and on the separate layer a new subtitle sample, on every frame. Measured on a Mac with the new VO: a boxed line costs 0.11 ms per frame median (0.65 ms p99) at 1080p and 0.31 ms (2.29 ms) at 4K on the separate layer, and 0.64 ms and 2.48 ms extra in Picture in Picture; a vector-clipped sign costs less in every mode; today's cost is about 0.001 ms. An Apple TV 4K (A15) is estimated at two to four times those figures.
+- It searches font fallback again on every frame for every character without a usable font: about 0.11 ms per uncovered code point and about 0.4 ms per CJK character answered with a font file the process cannot open. On a Mac, where the PingFang files cannot be opened, that is 2.2 ms per frame for a mixed CJK SubRip line under Vivid's default font, 6.6 ms with Vivid's font set to PingFang SC, and 18 to 44 ms for authored files whose styles name PingFang or Hiragino; with mixed CJK text, 116 of the 180 font families Vivid's picker offers there repeat the search. Whether tvOS can open those files is unknown (device check 65).
+- The repeated messages are libass warnings (its level 2), which mpv logs at `info`: trial builds receive them, Release builds do not, and the adapter ignores them either way.
+- It differs from today's symbol-font behaviour (0.17.5 lacks `057a5334`), and in the CJK case above it shows the real glyphs from the event's second frame.
+
+No upstream release or merged commit changes the first two points; upstream treats false change reports as acceptable.
+
+**The series built now** (decided under blurbery's permission; 8.2):
+
+1. `0001`: upstream libass commit `057a5334` ("ass_font: improve symbol font base offset", merged with upstream pull request #946, in no release yet), unchanged, with its upstream attribution. A symbol-encoded font's base offset is worked out from its character map instead of always being 0xF000, so symbol fonts given text beyond their range behave as today's.
+2. `0002`: upstream libass pull request #951 ("render: cache rendered events") at its head commit `f96a521`, unchanged, with its upstream attribution; it was open, not merged, when taken. Events that do not depend on time (no `\move`, `\fad`, `\fade`, `\t`, karaoke or scrolling effect) are rendered once, and their finished images reused while nothing they depend on changes. The key is the event's text, style and margins plus an exact snapshot of the renderer's settings and the track's state. Entries are evicted least recently used beyond a 32 MiB budget, and dropped when the renderer is reconfigured or freed. So static events report no change and repeat no font search.
+3. `0010`: Vivid's own patch (ISC), on top of `0002`, changing only that cache:
+   - **Unresolved glyphs are kept per event.** A glyph is unresolved when no face provides a printable character after the fallback search. Output with an unresolved glyph is never shared between events: another event with the same text renders its own text once, with the faces that exist then, and never inherits a missing glyph.
+   - **A face addition re-renders affected events once.** When any font gains a fallback face, each event whose cached output has an unresolved glyph is rendered once more, on its next frame, or on the same frame if it is rendered after the face was added. Glyphs the new face covers then appear when unpatched upstream shows them: in the CJK case above, from the event's second frame, where today keeps them missing. This costs at most one extra render, and one extra change report, per added face, and nothing while no face is added. A glyph that still cannot be resolved is not searched for again on later frames. Output without unresolved glyphs stays shared and unchanged, since a new face is appended and glyphs that were found keep their face.
+   - **Effect is part of the key**, so an event with a Banner or Scroll effect never reuses the static output of an earlier event with the same text and stands still.
+   - **Cloned images copy their type** from the image they clone (`0002` leaves it unset; mpv never reads it).
+   - **The cache is emptied on every state-generation change**, that is whenever the snapshot of settings and track state changes (the shaper, line spacing, margin use, or the track's styles or header, for example), as well as on reconfiguration and when the renderer is freed, because entries of an older snapshot can never match again. The 32 MiB budget still bounds it in between.
+
+   Everything else behaves as `0002` does: unchanged static output reports no change, and every real change reports the same value as before.
+4. Rendering stays on one thread; no threading change is carried.
+
+**Required outcomes.** Any implementation meeting these is acceptable; they are what the series was built and is tested against:
+
+1. An unchanged static event keeps identical images (geometry, colours and bitmap bytes) from frame to frame and reports no change, while nothing it depends on changes (renderer settings, frame and storage size, track header, styles, fonts). This includes vector clips, inverse vector clips, rectangle clips and border-style-4 boxes.
+2. Every real change is still reported, with today's value (0, 1 or 2) per render: moves, fades, transforms, karaoke, scrolling, animated clips and box colours, fading boxes, events appearing and leaving, and collision shifts. No render ever reports no change when its images differ from the previous render's.
+3. For static events, font selection runs once per appearance: the characters that resolve, the faces chosen and the glyphs drawn equal today's on the first frame, and an unresolvable search is not repeated while the event is unchanged on screen.
+4. A reused render never outlives a change in the faces available to it (the face-addition rule above), and two events with identical text never share a missing glyph.
+5. Memory stays bounded and is released on reset and on settings changes.
+6. Animated events behave as unpatched upstream (and today) do, including repeating an unresolvable font search on every frame.
+7. A static event with unresolved glyphs searches for them once per appearance, plus once per added fallback face, whatever the cache pressure (below).
+
+**Acceptance tests.** The libass host test job (`lucid.py test-libass`) builds libass for the build host five ways (upstream; `0001` only; `0001` and `0002`; the whole series; the whole series under AddressSanitizer), against FreeType, FriBidi and HarfBuzz at today's versions built for the host, and renders each scenario through every build:
+
+- **Steady:** an opaque-box and a background-box SubRip line, signs with a vector clip, an inverse vector clip and a rectangle clip, an outlined line with a shadow, a drawing, a plain line, and all of them together, 240 frames each at 1920x1080 and 3840x2160. The patched build reports no change after the first render and repeats its images (the second render's, when a face was added at the first). Upstream must report a change on every frame for the background box and the vector clips.
+- **Dynamic:** moves, fades, transforms, karaoke, animated clips and box colours, collision shifts, events appearing and leaving, and Banner and Scroll effects: upstream's change value on every frame.
+- **Mixed** static and animated events: a change whenever the frame looks different.
+- **Pixels:** styles, override tags, clips and drawings, 3D transforms, vertical Japanese, Arabic and Hebrew, emoji, wrapping styles, recurring lines, the same text with different effects, a code point no font has, layers and collisions, at 1080p and 2160p: upstream's drawing on every frame.
+- **Symbol fonts** with Latin, Cyrillic, Greek, CJK and Arabic text: what `0001` alone draws.
+- **Fallback:** a script whose suggested font file cannot be opened, a face added later in the same render and by a later or an earlier event, recurring lines with and without a face added between them, and a font file that appears while a line is shown: upstream's drawing on every frame (except while a newly appeared file is not yet added as a face); one search per unresolved glyph; one extra change report per added face and none after; a recurring line renders its own text.
+- **Memory:** 400 distinct boxed lines at 2160p, resets and settings changes: the cache peaks between 24 and 40 MiB, its extra memory over upstream stays bounded and does not grow, and it is empty after every reset and settings change.
+- **Every scenario:** every build finishes; the AddressSanitizer build gives exactly the patched build's results; a frame that looks different reports a change; a frame that reports no change repeats the previous images; every image has a valid type where no background box is drawn. Wherever no fallback search failed (and apart from the different-effects scenario), the patched build gives exactly the results of `0001` plus `0002`, so `0010` changes nothing else.
+- **Result** on the libass branch (CI run 38433199206): 72 scenarios through all five builds, 8,862 frames per build, 9,532 checks, all passed.
+
+The comparison with today's library itself needs today's binary, so it is the dirty side's review. It checks: every composite of the parity corpus and of the three-size, two-parse-mode run identical to today's (the `type` field ignored), except renders after an event's first render had missing glyphs, which must equal upstream 0.17.5's; every change report equal to today's, apart from one extra right after a fallback face is added; 240 steady frames per static case at 1080p and 4K; no false negatives; for every font family, today's output with Latin text on every frame, and with mixed CJK text today's first frame and upstream's last; symbol fonts equal to today's; per-frame cost of static lines with unresolved characters within 0.01 ms of today's; and through the new VO, no repack, render or subtitle enqueue after the first frame for a static boxed line or vector-clipped sign, at 1080p and 4K, on the separate layer and in Picture in Picture.
+
+**Review against today's library.** The series at `6884b24`, built for a Mac host, was compared with today's library rebuilt from source, which reproduces today's shipped binary render for render:
+
+| Item | Verdict | Numbers |
+| --- | --- | --- |
+| 1. Pixels | Matches today, with the allowed exception only | The Vivid-configuration corpus (8,410 renders) and the three-size, two-parse-mode run (23,280 renders) are byte-identical to today's, change reports and image types included. In the CJK corpus (9,730 renders) 147 renders differ from today's, every one equal to upstream 0.17.5's (the missing-glyph exception). |
+| 2. Change reports | Matches today, with the allowed extras only | 0 differences in the first two corpora. CJK corpus: 3 extra changes, each on the render right after a fallback face was added and each a real content change. Acceptance file: identical to today's at 1080p and 4K (720 renders each, all ten segments). The branch's own 72 scenarios: 10 extra changes, each right after a face was added and each a real change. |
+| 3. Steadiness, false negatives and fonts | Matches today, with one condition that could regress (below) | 12 steadiness runs of 240 frames: every frame equal to the first, or to the second when a face was added, with no change and no font message after frame 2. No false negative in about 67,000 renders. All 180 font families: with Latin text equal to today's on every frame; with mixed CJK text equal to today's on the first frame and to upstream with the symbol-font change on the last, with no font message after frame 2. A recurring CJK line shows its real glyphs (area 79,070 at 4 s, as today and upstream). |
+| 4. Cost | Matches today; could regress under the same condition | Static fallback cases: median 0.000 ms per frame after the first frame, against today's 0.000 to 0.003 ms; the one-off re-render on frame 2 after a face is added costs up to 9.7 ms on a Mac, which upstream pays on every frame. Animated CJK with fades: 43.42 and 43.68 ms against today's 43.90 and 43.94 ms (1080p and 4K). Through the new VO: no repack, VO render or subtitle enqueue after the first frame for a boxed line, a vector-clipped sign and an outlined line, at 1080p and 4K, on the separate layer and in Picture in Picture. |
+| 5. The implementer's choices | Effect in the key: matches today. Cloned image types: match today. Emptying the cache on every state-generation change: harmless and better than `0002` alone (it only releases memory; mpv's unchanged per-frame settings do not move the generation, so steady playback never empties it). Re-rendering after any face addition: harmless, the allowed extra. A font file appearing on disk while a line shows: harmless, every frame equals today's or upstream's output. Memory: harmless (below). Eviction of the shared record that marks output with unresolved glyphs: could regress (below). | |
+| 6. Similarity of `0010` with today's patches | Independent | 0 of 78 lines of 20 or more characters shared; 7 of 124 winnowing fingerprints (5.6%), of which only 1 is not upstream code (a forward declaration dictated by upstream's signature); no token run of 20 or more tokens, where the independently written upstream pull request #951 has 13, up to 60 tokens, against the same reference; no shared comment apart from libass's ISC licence text. No rewording is needed. |
+
+**Required: unresolved glyphs are searched once, whatever the cache pressure.** The review found one behaviour the series must change. When more than about 32 MiB of static images is on screen at once (four full-frame translucent drawings at 4K, for example), the cache budget evicts, at the start of every frame, the shared record that marks output with unresolved glyphs, although the event's own images are still in use. A static event with unresolved glyphs is then rendered and searched again on every frame: 1, 3 and 39 font messages and 0.11, 0.36 and 4.3 ms per frame on a Mac for an unassigned code point, an emoji line and CJK under a font that cannot be opened, where today logs nothing after the first frame and costs 0.003 to 0.004 ms. Change reports and pixels stay correct. The case is rare, but it repeats on every frame while it lasts. The rule the series must meet:
+
+- A static event with unresolved glyphs searches for them once per appearance, plus once per added fallback face, whatever the cache pressure. Its reuse must not depend on bookkeeping that the cache budget can evict while the event's own images are in use.
+
+Test (host, behavioural): render at 3840x2160 with storage 3840x2160, 120 frames at 24 fps, four static full-frame drawings (on a 1920x1080 script) with alpha `&HE0&` and no border or shadow, plus one static plain line containing U+0378. Expect no fallback message after frame 2; a per-frame median within 0.01 ms of the same run without the U+0378 line; no change after frame 2, and at most one change on frame 2, only when a fallback face was added on frame 1. Repeat with an emoji line instead, and with a CJK line whose style names a family whose font file cannot be opened.
+
+**Accepted differences from the review** (13.8):
+
+- **Missing glyphs replaced from frame 2**, as upstream does (above): 147 renders and 3 extra changes in the CJK corpus, and 112 of 180 families with mixed CJK text. It costs one extra change report and one repeated search on frame 2.
+- **Face additions by other events.** After another event adds a fallback face, each event holding unresolved glyphs is rendered once more. For a boxed or clipped event this can report one change with nothing visible changing, and it repeats the failed search once per added face. Bounded.
+- **Symbol fonts with several events.** The first frame equals today's single-threaded result, which is one of the outcomes today gives; today's own first frame varies from run to run with its render threads.
+- **Memory.** About 11 to 14 MB more than today with boxed lines, because the cache keeps past events' box images, and about 1 MB or less with plain lines; bounded and flat, not growing. The cache's own accounting peaked at 34.4 to 36.6 MB in film-length runs. No leaks, and no AddressSanitizer report in 82 scenario runs.
+- **The type of background-box images** is left indeterminate by upstream libass, and the series copies it as it is. mpv never reads it.
+- **Log volume.** 1,191 lines against today's 1,171 in the Vivid-configuration corpus: the emoji file's search on frame 2.
+- **Also harmless:** two renderers drawing the same track could share, or keep resetting, the per-event bookkeeping, which mpv never does; and a glyph that draws nothing but that the font lacks (a variation selector or a joiner, for example) counts as unresolved, so its event's output is not shared and is re-rendered after face additions, with no visible effect.
+
+**Threading (open, 11.2).** Measured on a Mac with synthetic heavy karaoke and typesetting: single-threaded libass costs at most 4.3 ms per frame at 4K (fully animated karaoke), against 1.5 ms for today's library on six threads. With the series, static-heavy typesetting costs what today's library costs on one thread. At 4K the VO's own canvas work costs more than libass in both engines. Estimated for an Apple TV 4K (A15), animated 4K karaoke: about 8.3 ms for libass against 2.9 to 5.1 ms today, with 14 to 27 ms of VO canvas work in both. Device check 46 decides.
+
+### 13.5 Libraries built from upstream source
+
+- **What changed.** The eleven libraries that today come from the previous third-party build (FreeType 2.12.1, FriBidi 1.0.12, HarfBuzz 8.1.1, libunibreak 6.1, libplacebo 7.351.0, Little CMS 2.17, MoltenVK 1.4.1, shaderc 2025.5, uavs3d 1.2, libbluray 1.4.0 with libudfread 1.2.0, and uchardet 0.0.8) are now built by Vivid's pipeline from their upstream sources for all four slices, at today's versions and with today's options, features, flags, assertions, optimisation and per-library deployment targets (`experiment/lucid-engine-libs`, CI runs 38425539055 and 38434702061). None of them comes as a prebuilt binary any more.
+- **Reached in Vivid's playback:** FreeType, FriBidi, HarfBuzz and libunibreak (libass, so every text subtitle); libplacebo (its CPU colour utilities, and the Dolby Vision metadata path through libdovi, 5.13); uchardet (text subtitles that are neither UTF-8 nor marked by a byte-order mark); uavs3d (AVS3 video, decoded in software). Little CMS, MoltenVK, shaderc and libbluray are linked but not reached, although MoltenVK's and glslang's static initialisers run at launch.
+- **Kept as today, because they decide output:**
+  - the exact versions;
+  - FreeType without PNG, brotli, bzip2, HarfBuzz integration and mmap, and with the system zlib, so colour bitmap emoji do not render in subtitles and WOFF2 fonts do not load, as today;
+  - HarfBuzz with every optional backend off and its built-in Unicode data;
+  - assertions on in HarfBuzz, libplacebo, Little CMS and libunibreak, and off in the CMake builds and MoltenVK; libunibreak unoptimised;
+  - libplacebo with libdovi and Dolby Vision support;
+  - uavs3d with 10-bit decoding and its arm64 assembly;
+  - the pkg-config names and versions consumers resolve, including `vulkan` 1.4.334 and the combined shaderc library;
+  - the frameworks' names, module maps, header layout and Info.plist values, apart from the identifier prefix.
+- **Vivid's own patches**, each under its library's licence:
+  - **libbluray `0001`** (LGPL-2.1-or-later), needed to build for iOS and tvOS, with today's two effects there. There is no DiskArbitration lookup: the mount point of a block device is not looked up and none is found, and only CoreFoundation is linked. The Java home lookup never starts a helper process and behaves as if process creation had failed, so it finds no Java home. macOS builds are unchanged.
+  - **uavs3d `0001`** (BSD-3-Clause): uavs3d's version header is fixed for tag 1.2 without Git history, so its build number, version (`1.2.1`), release type and pkg-config version are today's. The commit id in the start-up line uavs3d prints to standard output is uavs3d's own commit for the tag, instead of today's third-party build identifier.
+  - The other nine are built unpatched. Today's build fix for libplacebo's code generator (an upstream commit with no effect on the generated code) and today's edits to SPIRV-Tools command-line tools that are not built are not needed.
+- **MoltenVK.** Built with its SDK-gated feature paths compiled out, as today. Today's build never detects Apple GPU family 9; the new build detects it as upstream does. Accepted: Vivid never creates a Vulkan instance, so this is unreachable.
+- **Checks** (683 per slice): each library against what today's build of it ships (form, minimum OS, Info.plist, module map and headers; defined global symbols by visibility, which equal today's exactly; weak definitions and imports, with the recorded toolchain differences; pkg-config files; the configuration read back; the per-library facts above). Vivid's own libraries built against these are byte-for-byte identical to those built against today's library binaries.
+- **Accepted differences:**
+  - **Toolchain:** Xcode 26.6 and its SDKs instead of Xcode 15.4 and SDK 17.5. Exported symbol sets equal today's. Weak-definition counts differ for HarfBuzz, shaderc and libplacebo, and a few imports differ, all libSystem or libc++ functions the app links anyway (for example libbluray calls `free` where today it read libxml2's free pointer). libplacebo's and Little CMS's floating-point results can differ in the last bit between compilers.
+  - **Version strings:** libplacebo reports `v7.351.0` instead of `v7.351.0 (v7.351.0-dirty)`, which shows in mpv's version and log output; MoltenVK's revision string and SPIRV-Tools' description in shaderc differ (Vulkan and shaderc only, not reached); uavs3d's commit id differs (above).
+  - **HarfBuzz optional headers:** the cairo and GObject headers and their feature macros are absent; nothing uses them.
+  - **Assertion paths:** source paths in assertion messages differ, seen only if an assertion fails.
+  - Smaller build details with no effect on the libraries: libunibreak is configured from its release tarball with the host name that tarball knows, and shaderc's command-line compiler is not built (it is not part of the combined library).
+- **Bundle identifiers.** Every framework the pipeline builds, all 21, uses the prefix `com.blurbery.vivid.lucid.` instead of the previous package's prefix (blurbery's decision; 11.2 item 4). They are static frameworks, so the identifiers do not reach the app.
+- **Package.** `blurbery/lucid-engine`, a Swift package of binary targets that serves the pipeline's frameworks. Vivid's app links it on `experiment/vivid-player-bridge`.
+
+### 13.6 Names
+
+This document no longer names the previous third-party package, its build repositories or the third-party app from which Vivid's old player bridge was derived. "Today's engine", "today's shipped engine" and "the previous third-party package" mean the engine Vivid's app links on `main`, and "the previous third-party build of these libraries" means the eleven library binaries that package links today. The read rules of 1.4 keep their meaning: nothing from that package, the build repositories behind it and its libraries, forks of them, or that app may be read.
+
+### 13.7 Device checks added to 9.5
+
+65. **Font fallback on devices** (13.4). On Apple TV 4K (A15, and an A12 model if available) and an iPhone, in a trial build (libass's font messages arrive at mpv's `info` level, which only trial builds receive), side by side with today's build, play: a SubRip file with mixed Japanese, simplified and traditional Chinese and Korean lines under Vivid's default appearance; the same file with Vivid's subtitle font set to PingFang SC, and to Hiragino Sans; and an ASS file whose styles name PingFang SC and Hiragino Sans. After an event's first frame, look for libass saying a font cannot be opened (upstream's `Error opening font`) or that no fallback was found (upstream's `fontselect: failed to find any fallback`). With the series neither may repeat while an event stays on screen. Record which families open on tvOS, the VO's subtitle performance summary and dropped frames. Glyphs must match today's on the first frame; a glyph today leaves missing may appear from the second frame.
+66. **Static subtitles at 4K** (13.4). A SubRip line in Vivid's background-box preset and a static vector-clipped ASS sign, at 4K, on the separate layer and in Picture in Picture, on Apple TV 4K and an iPhone: `frame-drop-count`, `vo-delayed-frame-count` and the VO's subtitle performance summary (renders, skipped renders, subtitle enqueues, render time) against today's build. Renders and subtitle samples happen only when a cue changes, not on every frame.
+67. **Emoji in subtitles** (13.4, 13.5). SubRip and ASS lines with emoji, static and animated, side by side with today's build: the same drawing as today's (colour bitmap emoji do not render, because FreeType is built without PNG), and no font search repeated on every frame for a static line.
+68. **Uncovered code points** (13.4). A static SubRip line with code points no font covers (unassigned or private-use), on screen for at least a minute, in a trial build: the same drawing as today's (missing-glyph boxes), one fallback search per event, and no growth in render time from frame to frame.
+69. **Libraries reached in playback** (13.5). A text subtitle file in a legacy encoding without a byte-order mark (Windows-1252 or Shift_JIS, for example): the same detected encoding and text as today's. An AVS3 sample, if one is available: plays in software, as today. (Checks 26 to 29 cover libplacebo's Dolby Vision metadata path.)
+
+### 13.8 Accepted differences found after the fix rounds and the library work
+
+These are accepted in addition to 7.3 and 12.8. Everything else must still match today's engine. Figures are from a Mac (Apple M5 Pro) at 4K unless stated, not from devices.
+
+| Area | Today | Now | Why accepted |
+| --- | --- | --- | --- |
+| Video output: cost of a same-buffer redraw with compositing on (13.1) | One blend over the buffer as it stands: about 0.55 to 0.57 ms for a 2000 by 250 cue, 9.1 to 9.5 ms for a full-frame cue | The composite is rebuilt away from the buffer and the changed rows written: 1.2 to 1.5 times today's for a cue changed in place or unchanged (0.69 to 0.82 ms), 2.1 (8-bit) and 3.3 (10-bit) times for a cue moved between bottom and top (1.21 and 1.87 ms), 1.2 to 1.6 times for a full-frame or full-width top-and-bottom cue (up to 13.0 ms) | Only same-buffer presentations take this path, in practice paused redraws. The worst case adds about 1.3 ms for a typical cue and 3.8 ms for a full-frame cue, and the result is correct where today blends the cue twice |
+| Video output: transient memory of a same-buffer redraw (13.1) | None (an in-place blend) | Scratch of twice the union of the old and new blend rectangles, freed before the call returns: about 1.5 MiB (8-bit) or 2.9 MiB (10-bit) for a 2000 by 250 cue, 11.2 or 22.3 MiB when it moves between bottom and top, 23.8 or 47.5 MiB for a full-frame cue. Kept rows (also held at a first composite): 0.8 or 1.5 MiB for a typical cue, 11.9 or 23.8 MiB for a full-frame cue, until written back or let go | Only with compositing on and a changed cue on the same buffer. The worst case is about two decoded 4K 10-bit frames for a moment, while the decoder and display already hold several. Whether tvOS's allocator keeps the freed scratch cached was not checked |
+| Video output: the YUV composite fails on a buffer that carries the previous composite (13.1) | Core Image over the old composite (old cue under the new), or the old cue alone | Kept rows written back first, then Core Image from the clean picture, or the picture with no cue; the displayed picture can be without its cue for a moment | Error paths only, and the sample is correct |
+| Video output: row write order during a redraw (13.1) | The displayed buffer changes progressively for the length of the blend (0.55 to 9.5 ms), ending with the cue blended twice | Rows written plane by plane, each changed row once (0.02 to 1.13 ms); for a moment a row can carry the new cue's luma with the old chroma | Neither is atomic; the new window is shorter and its end state correct |
+| Video output: a decoder buffer that cannot be locked for writing (13.1) | A pool copy with the YUV blend | Core Image (RGB output) | Does not occur on IOSurface-backed buffers |
+| Video output: missing `wid` while mpv autoprobes (13.1) | Error | Verbose while probing, error otherwise | Vivid never makes mpv probe |
+| Video output: other items of the two re-checks (13.1) | As 13.1 describes | Pacing window evaluated after the flip's frame; two microsecond-scale readiness races; a new error line when kept rows cannot be written back; a reference to the last composited decoder buffer held until a different buffer is presented; test-only hooks | No observable effect in Vivid |
+| Audio output: zero-length or already complete loader requests below the window or beyond the write head (13.3) | Refused, with an error line and a fault below the window, or a verbose line beyond the write head | Finished successfully, with no log line | Believed unreachable; an optional fix would test the window base and the write head first |
+| Decoder: the Dolby Vision configuration cannot be added to the decoder specification (13.2) | Silent; the `dvh1` session is attempted without the configuration (outcome inferred, not measured) | Two error lines; the session start fails, with software decoding after an initialisation failure; no plain HEVC retry | Reachable only through a failed 24-byte allocation; an error path in both engines |
+| libass: memory (13.4) | Only what is on screen | About 11 to 14 MB more with boxed lines, about 1 MB or less with plain lines | Bounded by the 32 MiB budget and flat |
+| libass: other review items (13.4) | As 13.4 describes | One re-render, possibly with no visible change, and one repeated search per face added by another event; symbol fonts with several events give today's single-threaded first frame; background-box image types copied as upstream leaves them; 20 more log lines in the Vivid-configuration corpus | Bounded, or no effect in Vivid |
+| libass: CJK fallback within an event's first render (13.4) | The missing glyphs stay for the event's life | The real glyphs from the event's second frame, with one extra change report per added face | Upstream's behaviour and correct; everything else matches today's |
+| Libraries: toolchain, version strings, HarfBuzz optional headers, assertion paths, MoltenVK and Apple GPU family 9 (13.5) | Xcode 15.4 builds from the previous third-party build of these libraries | Xcode 26.6 builds from upstream source | Exported symbol sets equal today's; the rest is unreached or cosmetic |
+| Framework bundle identifiers (13.5) | The previous package's prefix | `com.blurbery.vivid.lucid.` | blurbery's decision; the identifiers do not reach the app |
