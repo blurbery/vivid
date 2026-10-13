@@ -4,8 +4,9 @@
     python3 engine/publish_package.py --run RUN_ID --version 0.1.0 \\
         --package /path/to/lucid-engine [--work DIR] [--downloads DIR]
 
-Takes one green run of the Lucid Engine build workflow and, in a checkout of
-the package repository:
+Takes one green run of the Lucid Engine build workflow and, in a clean
+checkout of the package repository (it refuses one with uncommitted or
+untracked files before writing anything):
 
 1. checks the run: the Lucid Engine build workflow on the pipeline branch,
    completed and successful, with every slice, both host test jobs and the
@@ -704,6 +705,25 @@ def release_notes(version: str, run: dict, run_id: int, pins) -> str:
 
 # ------------------------------------------------------------------ checks
 
+def check_clean(package: Path) -> None:
+    """Refuse a package checkout with uncommitted or untracked files, before
+    anything is written: the release replaces LICENSES/ and the package's
+    own files there. Ignored files (the staged .build/ folder) do not count."""
+    res = subprocess.run(["git", "-C", str(package), "status", "--porcelain",
+                          "--untracked-files=all"],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if res.returncode != 0:
+        raise Failure(f"git status failed in {package}: {res.stderr.strip()}")
+    changes = res.stdout.splitlines()
+    if changes:
+        listed = "\n".join(f"  {line}" for line in changes[:20])
+        more = f"\n  ... and {len(changes) - 20} more" if len(changes) > 20 else ""
+        raise Failure(f"{package} has uncommitted or untracked files, which the release "
+                      f"would overwrite or delete; commit, stash or remove them first, "
+                      f"including the files of an earlier preparation that was not "
+                      f"committed:\n{listed}{more}")
+
+
 def check_manifest(package: Path, release: str, sums: dict[str, str],
                    link: dict[str, list[str]]) -> None:
     text = (package / "Package.swift").read_text()
@@ -786,6 +806,7 @@ def main(argv=None) -> int:
         package = args.package.resolve()
         if not (package / ".git").exists():
             raise Failure(f"{package} is not a checkout of {args.package_repo}")
+        check_clean(package)
         tag = f"v{args.version}"
         release = f"https://github.com/{args.package_repo}/releases/download/{tag}"
 

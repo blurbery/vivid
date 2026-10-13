@@ -866,6 +866,12 @@ static void test_composite_size(void)
             enum avf_composite_kind k;
             CVPixelBufferRef out = present_composite(f, video, cue, box, &k);
             CVPixelBufferRef shown = out ? out : video;
+            // A cue that reaches the frame is blended into the decoder's
+            // buffer, so the size check below covers a real composite; a cue
+            // wholly off the frame leaves nothing to composite.
+            enum avf_composite_kind want = avf_irect_empty(box) ? AVF_COMPOSITE_NONE
+                                                                : AVF_COMPOSITE_DECODER;
+            CHECK(k == want, "sub-pos %d%%: composite kind %d, expected %d", pos, k, want);
             CHECK(CVPixelBufferGetWidth(shown) == (size_t)w &&
                   CVPixelBufferGetHeight(shown) == (size_t)h, "sub-pos %d%%: size changed", pos);
             if (out)

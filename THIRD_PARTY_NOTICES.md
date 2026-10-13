@@ -48,8 +48,13 @@ commit and licence text, its README describes the release, and its
 `Package.swift` records the URL and SHA-256 checksum of every binary. The
 package supplies static libraries, which are linked into the app executable.
 
-Vivid's own engine pipeline built every library in this release from upstream
-source. The corresponding source is this repository's [`engine/`](engine) at
+Vivid's own engine pipeline built every library in this release from its
+pinned upstream source, applying Vivid's patch series where a library has
+one. The one part not compiled from source is the Rust 1.98.0 standard
+library linked into libdovi, which comes from the Rust project's prebuilt
+`rust-std` archive for each target, pinned by URL and SHA-256 in
+`engine/pins.ini`. The corresponding source is this repository's
+[`engine/`](engine) at
 [`fcb6782121e72c6ed755336be913c036f4679ddb`](https://github.com/blurbery/vivid/tree/fcb6782121e72c6ed755336be913c036f4679ddb/engine),
 the commit the release was built from: the pipeline (`engine/lucid.py`), the
 upstream sources pinned by URL, commit and SHA-256 (`engine/pins.ini`), the

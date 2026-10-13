@@ -20,6 +20,8 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
+#include <stdatomic.h>
+
 #include "common/msg.h"
 #include "video/out/avfoundation/layers.h"
 
@@ -94,16 +96,18 @@ static bool spin(bool (^done)(void), double seconds)
 
 // Runs a block on a background thread, as the VO thread, while main keeps
 // its run loop going for the module's main-thread hops. Fails the case if it
-// does not finish (a hop that deadlocked).
+// does not finish (a hop that deadlocked). The flag is stored with release
+// and loaded with acquire, so whatever the block wrote (sizes, states) is
+// visible here once it reads as finished.
 static void off_main(const char *what, void (^block)(void))
 {
-    __block volatile bool finished = false;
+    __block _Atomic bool finished = false;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         block();
-        finished = true;
+        atomic_store_explicit(&finished, true, memory_order_release);
     });
-    CHECK(spin(^bool { return finished; }, 10.0), "%s did not finish: a main-thread "
-          "hop deadlocked", what);
+    CHECK(spin(^bool { return atomic_load_explicit(&finished, memory_order_acquire); }, 10.0),
+          "%s did not finish: a main-thread hop deadlocked", what);
 }
 
 static void drain_main(void)

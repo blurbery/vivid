@@ -432,12 +432,14 @@ static void test_upload_kernels(void)
                       dc[y * dstride * 2 + 2 * x + 1] == v[y * sstride + x];
         CHECK(ok, "8-bit interleave");
 
-        // 10- and 12-bit shifts.
+        // 10- and 12-bit shifts, over every luma sample (w) and chroma pair
+        // (cw) of the plane. The strides hold 2 * w bytes per luma row and
+        // the chroma rows 2 * cw (planar) and 4 * cw (interleaved) bytes.
         for (int shift = 4; shift <= 6; shift += 2) {
-            avf_shift_rows16(dst, dstride, src, sstride, w / 2 ? w / 2 : 1, h, shift);
+            avf_shift_rows16(dst, dstride, src, sstride, w, h, shift);
             ok = true;
             for (int y = 0; y < h; y++)
-                for (int x = 0; x < (w / 2 ? w / 2 : 1); x++) {
+                for (int x = 0; x < w; x++) {
                     uint16_t s = (uint16_t)(src[y * sstride + 2 * x] |
                                             src[y * sstride + 2 * x + 1] << 8);
                     uint16_t d = (uint16_t)(dst[y * dstride + 2 * x] |
@@ -445,7 +447,7 @@ static void test_upload_kernels(void)
                     ok &= d == (uint16_t)(s << shift);
                 }
             CHECK(ok, "16-bit shift %d", shift);
-            int cs = cw / 2 ? cw / 2 : 1;
+            int cs = cw;
             avf_interleave_uv16(dc, dstride * 2, u, sstride, v, sstride, cs, chh, shift);
             ok = true;
             for (int y = 0; y < chh; y++)

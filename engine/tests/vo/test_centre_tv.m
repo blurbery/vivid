@@ -48,11 +48,17 @@ void avf_test_centre_tv(void)
                      .osd = (struct osd_state *)&osd_token };
     vo.priv = calloc(1, video_out_avfoundation.priv_size);
     @autoreleasepool {
-        CHECK(video_out_avfoundation.preinit(&vo) == 0, "creation failed");
-        struct priv *p = vo.priv;
-        CHECK(p->host_mode, "host mode not latched");
-        CHECK(ev_find("attach_timebase rate=1 ", 0) >= 0, "timebase not seeded for host mode");
-        video_out_avfoundation.uninit(&vo);
+        // A failed preinit has already cleaned up, as mpv expects, so the
+        // VO is only examined and uninitialised when it was created.
+        int r = video_out_avfoundation.preinit(&vo);
+        CHECK(r == 0, "creation failed");
+        if (r == 0) {
+            struct priv *p = vo.priv;
+            CHECK(p->host_mode, "host mode not latched");
+            CHECK(ev_find("attach_timebase rate=1 ", 0) >= 0,
+                  "timebase not seeded for host mode");
+            video_out_avfoundation.uninit(&vo);
+        }
     }
     free(vo.priv);
 }

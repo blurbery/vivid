@@ -79,7 +79,7 @@ The last command prepares a release of the Swift package from a green run's arte
 | `tvos-arm64` | `appletvos` | `arm64-apple-tvos14.0` |
 | `tvos-arm64-simulator` | `appletvsimulator` | `arm64-apple-tvos14.0-simulator` |
 
-Vivid links only arm64, so the pipeline builds no arm64e or x86_64 code. This changes two of the identifiers from today's package, where they are `tvos-arm64_arm64e` and `ios-arm64_x86_64-simulator`, and the tvOS simulator one from `tvos-arm64_x86_64-simulator`. The old install script, `scripts/release/use-patched-libmpv.sh`, hard-coded the old device identifiers; it has been removed, and the [Swift package](#publishing-the-package) serves these slices instead.
+Vivid links only arm64, so every slice the pipeline ships is arm64 only, with no arm64e or x86_64 code. The one place x86_64 is compiled at all is MoltenVK's upstream simulator build, which also builds x86_64; the pipeline thins that library to arm64 before staging it (see [Dependencies](#dependencies)). This changes two of the identifiers from today's package, where they are `tvos-arm64_arm64e` and `ios-arm64_x86_64-simulator`, and the tvOS simulator one from `tvos-arm64_x86_64-simulator`. The old install script, `scripts/release/use-patched-libmpv.sh`, hard-coded the old device identifiers; it has been removed, and the [Swift package](#publishing-the-package) serves these slices instead.
 
 ## Pins
 
@@ -383,14 +383,14 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
 
 ## Publishing the package
 
-The workflow publishes nothing. The Swift package [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) serves its builds as release assets, and [`engine/publish_package.py`](../../engine/publish_package.py) prepares each release from one green run, in a checkout of that repository:
+The workflow publishes nothing. The Swift package [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) serves its builds as release assets, and [`engine/publish_package.py`](../../engine/publish_package.py) prepares each release from one green run, in a clean checkout of that repository:
 
 ```sh
 python3 engine/publish_package.py --run <run id> --version <version> --package /path/to/lucid-engine \
   [--work /path/to/work] [--downloads /path/to/downloads]
 ```
 
-It needs the GitHub CLI, signed in, Git with the run's commit fetched, the Xcode command-line tools (`swift`) and Python 3.9 or later. It reads `pins.ini` and `app-link.txt` as the run's commit has them, and it refuses to go on at the first problem:
+It needs the GitHub CLI, signed in, Git with the run's commit fetched, the Xcode command-line tools (`swift`) and Python 3.9 or later. It replaces `LICENSES/` and the package's own files in the checkout, so before writing anything it refuses one with uncommitted or untracked files (ignored files such as `.build/` do not count), including those of an earlier preparation that was not committed. It reads `pins.ini` and `app-link.txt` as the run's commit has them, and it refuses to go on at the first problem:
 
 1. **The run.** It must be a push run of the Lucid Engine build workflow on `experiment/lucid-engine-build` by default (`--branch` names another, for example `--branch main` for a push run on `main`), completed and successful, with all four slice jobs, the libdovi and libass test jobs and the packaging job successful.
 2. **The artefact.** It downloads the run's `lucid-engine-xcframeworks` (kept for three days), which must hold exactly the 22 zips, `SHA256SUMS` and the four slices' provenance reports. Each zip's SHA-256 must equal its `SHA256SUMS` line and `swift package compute-checksum`; each zip must have only `<Name>.xcframework/` at its root, pass its CRC checks and have an `Info.plist` naming the four arm64 slices; and each provenance report must come from the run's commit, with every check and decoder test passed.

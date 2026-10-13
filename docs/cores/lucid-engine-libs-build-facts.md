@@ -117,8 +117,8 @@ Each item gives today's fact and the way to keep it. Details are in section 3.
    - `COMPILE_10BIT=1`, confirmed in the binary (bit depth 10). With upstream's default of 0, 10-bit AVS3 streams do not decode.
    - The arm64 NEON assembly is selected by `CMAKE_SYSTEM_PROCESSOR=arm64`.
    - Every `uavs3d_create` call prints one line to standard output, of the form `libuavs3d(10): 1.2.1_release, <40-hex commit id>`. The same version, `1.2.1`, is the `.pc` version.
-   - Both values come from git metadata at build time (item 13). Today the build directory sat inside a third-party build repository's checkout that had a single commit, so the commit count was 1 and the commit id is that repository's, not uavs3d's. Today's binary therefore embeds a third-party build identifier in that line; Vivid's build will embed its own.
-   - To keep the printed version and the `.pc` version as today, the generated `version.h` must hold `VER_BUILD 1`, `VERSION_STR "1.2.1"` and `VERSION_TYPE "release"`. `VERSION_SHA1` holds Vivid's own 40-hex identifier.
+   - Both values come from git metadata at build time (item 13). Today the build directory sat inside a third-party build repository's checkout that had a single commit, so the commit count was 1 and the commit id is that repository's, not uavs3d's. Today's binary therefore embeds a third-party build identifier in that line; Vivid's build embeds uavs3d's own commit for tag 1.2 there instead.
+   - To keep the printed version and the `.pc` version as today, the generated `version.h` must hold `VER_BUILD 1`, `VERSION_STR "1.2.1"` and `VERSION_TYPE "release"`. In Vivid's build, `VERSION_SHA1` holds `0e20d2c291853f196c68922a264bcd8471d75b68`, the tag's commit, fixed by uavs3d patch `0001` and checked by `lucid.py check`.
    - FFmpeg requires `uavs3d >= 1.1.41`.
 10. **pkg-config contract.** Consumers resolve these names and versions: `freetype2` 24.3.18, `fribidi` 1.0.12, `harfbuzz` 8.1.1, `libunibreak` 6.1, `libplacebo` 7.351.0, `lcms2` 2.17, `vulkan` 1.4.334, `shaderc` (the combined library, version string 2023.8.1), `uavs3d` 1.2.1, `libbluray` 1.4.0, `uchardet` 0.0.8 and `dovi` (libdovi, source-built).
     - `vulkan.pc` is not produced by MoltenVK upstream; section 3.7 gives its content.
@@ -132,7 +132,7 @@ Each item gives today's fact and the way to keep it. Details are in section 3.
     - libplacebo: `pl_version()` returns `v7.351.0 (v7.351.0-dirty)` from `git describe --dirty`. Without git it is `v7.351.0`. It appears in mpv's version and log output.
     - MoltenVK: the full commit `db445ff2042d9ce348c439ad8451112f354b8d2a`, from `git rev-parse HEAD`, written to its generated revision header. Its first 8 characters feed MoltenVK's pipeline-cache UUID, which is Vulkan-only.
     - shaderc (combined library): SPIRV-Tools' version strings `v2025.5` and `SPIRV-Tools v2025.5 v2025.5-0-g262bdab4`. Without git the second ends in `unknown hash, <date>`, with the date taken from `SOURCE_DATE_EPOCH` when set. Upstream SPIRV-Tools takes the description from the environment variable `FORCED_BUILD_VERSION_DESCRIPTION` when it is set. glslang's `16.0.0` comes from its change log, not git.
-    - uavs3d: the version line and `.pc` version of item 9. Today's line carries a third-party build identifier; Vivid's will carry its own.
+    - uavs3d: the version line and `.pc` version of item 9. Today's line carries a third-party build identifier; Vivid's carries uavs3d's own tag commit, `0e20d2c2…` (item 9).
     - FreeType, FriBidi, HarfBuzz, libunibreak, lcms2, libbluray and uchardet embed no git-derived strings.
 
 ---
@@ -522,7 +522,7 @@ Link-time references in today's binaries [bin]:
   - `CMAKE_SYSTEM_PROCESSOR=arm64` selects upstream's arm64 sources: 10 NEON assembly files (alf, deblock, def, inter_pred, intra_pred, intra_pred_chroma, itrans_dct2, itrans_dct8_dst7, pixel, sao_kernel) and `arm64.c`, `itrans_arm64.c`, `sao_arm64.c`.
 - Version metadata [up] [bin]:
   - Upstream's CMake runs `version.sh` from the CMake build directory. It writes `version.h` from `git rev-list` and `git log` in whatever repository contains that directory.
-  - Today that directory was inside a third-party build repository's checkout with a single commit. So `version.h` held `VER_MAJOR 1`, `VER_MINOR 2`, `VER_BUILD 1`, `VERSION_STR "1.2.1"`, `VERSION_TYPE "release"`, and in `VERSION_SHA1` that repository's 40-hex commit id, a third-party build identifier. Vivid's build will embed its own identifier there.
+  - Today that directory was inside a third-party build repository's checkout with a single commit. So `version.h` held `VER_MAJOR 1`, `VER_MINOR 2`, `VER_BUILD 1`, `VERSION_STR "1.2.1"`, `VERSION_TYPE "release"`, and in `VERSION_SHA1` that repository's 40-hex commit id, a third-party build identifier. Vivid's build has no Git history to read: its uavs3d patch `0001` writes the same values and, in `VERSION_SHA1`, uavs3d's own commit for tag 1.2, `0e20d2c291853f196c68922a264bcd8471d75b68`, which `lucid.py check` requires in the binary.
   - `uavs3d_create` prints `libuavs3d(10): 1.2.1_release, <VERSION_SHA1>` to standard output every time it is called. The bit depth 10 in that call confirms `COMPILE_10BIT=1` in the binary.
   - `VERSION_STR` is also the `.pc` version.
 - Source modification, by effect: the `uavs3dec` test program is not built. The library is unaffected.
