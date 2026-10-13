@@ -1,0 +1,287 @@
+name: Lucid Engine build
+
+# Builds every Lucid Engine library (libdovi, FreeType, FriBidi, HarfBuzz,
+# libunibreak, Little CMS, shaderc, MoltenVK, libplacebo, uavs3d, libbluray,
+# uchardet, dav1d, libass, FFmpeg and libmpv) from the pinned upstream
+# sources and Vivid's patch series in engine/, checks every slice against the
+# recorded build facts, runs the audio output, video output and decoder
+# tests built on the runner from the patched trees, runs the malformed RPU
+# corpus against the patched and unpatched libdovi and the libass scenario
+# corpus against upstream, partly patched and patched libass built for the
+# runner, and packages static xcframeworks. See
+# docs/cores/lucid-engine-build.md.
+
+# Runs on the pipeline branch and on every engine implementer's branch
+# (experiment/lucid-engine-*). Each branch has its own concurrency group, so
+# a newer push cancels only that branch's running build.
+on:
+  push:
+    branches:
+      - 'experiment/lucid-engine-build'
+      - 'experiment/lucid-engine-*'
+    paths:
+      - 'engine/**'
+      - '.github/workflows/lucid-engine.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lucid-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.slice }}
+    runs-on: macos-26
+    # About 25 minutes when every dependency is built (no cached builds), about
+    # 10 when they are reused.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [ios-arm64, ios-arm64-simulator, tvos-arm64, tvos-arm64-simulator]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that every fetch is pinned and allowlisted
+        run: python3 engine/lucid.py check-allowlist
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Restore pinned downloads
+        id: downloads
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Fetch and verify pinned inputs
+        run: python3 engine/lucid.py fetch --downloads "$RUNNER_TEMP/lucid-downloads"
+      # Saved straight after fetching, so a failed build does not lose them.
+      - name: Save pinned downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Dependency build key
+        id: depkey
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: echo "key=$(python3 engine/lucid.py cache-key --slice "$SLICE")" >> "$GITHUB_OUTPUT"
+      # The libraries FFmpeg, libass and libmpv depend on, as built by an
+      # earlier run, keyed on their pins, patches, options and build code.
+      # An older entry is restored too: lucid.py reuses each library whose
+      # own key is unchanged and builds the others.
+      - name: Restore dependency builds
+        id: depcache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-deps-cache
+          key: lucid-engine-deps-${{ matrix.slice }}-key-${{ steps.depkey.outputs.key }}
+          restore-keys: lucid-engine-deps-${{ matrix.slice }}-key-
+      - name: Build ${{ matrix.slice }}
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py build --slice "$SLICE" \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads" \
+            --cache "$RUNNER_TEMP/lucid-deps-cache"
+      # Saved whenever this run built a dependency, even when a later step
+      # failed: under the full key once every dependency is in the cache,
+      # otherwise under a key of its own, which the next run's restore-keys
+      # still finds.
+      - name: Choose the dependency cache key to save
+        id: depsave
+        if: always() && steps.depcache.outputs.cache-hit != 'true'
+        env:
+          SLICE: ${{ matrix.slice }}
+          KEY: ${{ steps.depkey.outputs.key }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          cache="$RUNNER_TEMP/lucid-deps-cache/$SLICE"
+          if [ -s "$cache/new" ]; then
+            if [ "$(cat "$cache/complete" 2>/dev/null)" = "$KEY" ]; then
+              echo "key=lucid-engine-deps-$SLICE-key-$KEY" >> "$GITHUB_OUTPUT"
+            else
+              echo "key=lucid-engine-deps-$SLICE-key-partial-$RUN" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Save dependency builds
+        if: always() && steps.depsave.outputs.key != ''
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-deps-cache
+          key: ${{ steps.depsave.outputs.key }}
+      # Built on the runner from the audio output files of the mpv tree this
+      # slice just patched; check then requires its result.
+      - name: Audio output test vectors
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py test-audio --slice "$SLICE" \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Provenance, licence, TLS and link checks
+        id: check
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py check --slice "$SLICE" --strict \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      # Host-side tests compiled from the patched mpv tree (patch spec 8.6, 9.4).
+      # They run on the build host, so one slice's job runs them for the whole
+      # workflow run. They also run when the checks failed, so one run reports
+      # both.
+      - name: Video output tests
+        if: matrix.slice == 'ios-arm64-simulator' && (success() || steps.check.outcome == 'failure')
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py test-vo --slice "$SLICE" \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      # Host-side decoder tests compiled from the slice's patched FFmpeg tree.
+      - name: Decoder tests from the patched trees
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py test --slice "$SLICE" \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Upload ${{ matrix.slice }} frameworks and provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-slice-${{ matrix.slice }}
+          path: ${{ runner.temp }}/lucid-engine/out/${{ matrix.slice }}
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-logs-${{ matrix.slice }}
+          path: ${{ runner.temp }}/lucid-engine/out/${{ matrix.slice }}
+          if-no-files-found: ignore
+          retention-days: 3
+
+  libdovi-test:
+    name: libdovi C API test
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that every fetch is pinned and allowlisted
+        run: python3 engine/lucid.py check-allowlist
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Restore pinned downloads
+        id: downloads
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libdovi-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Fetch and verify the Rust toolchain, cargo-c, libdovi and its crates
+        run: |
+          python3 engine/lucid.py fetch --only rust:,tool:cargo-c,source:libdovi \
+            --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Save pinned downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libdovi-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Malformed RPU corpus through patched and unpatched libdovi
+        run: |
+          python3 engine/lucid.py test-libdovi \
+            --work "$RUNNER_TEMP/lucid-libdovi-test" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Upload the libdovi test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-libdovi-test
+          path: |
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.json
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.md
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.tsv
+            ${{ runner.temp }}/lucid-libdovi-test/out/*.log
+          if-no-files-found: ignore
+          retention-days: 3
+
+  libass-test:
+    name: libass host tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that every fetch is pinned and allowlisted
+        run: python3 engine/lucid.py check-allowlist
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Restore pinned downloads
+        id: downloads
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libass-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      # The slices' own FreeType, FriBidi and HarfBuzz pins, built here for
+      # the runner. CMake is only unpacked, with the other build tools.
+      - name: Fetch and verify the build tools, libass, FreeType, FriBidi and HarfBuzz
+        run: |
+          python3 engine/lucid.py fetch \
+            --only tool:meson,tool:ninja,tool:cmake,source:libass,source:freetype,source:fribidi,source:harfbuzz \
+            --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Save pinned downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libass-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      # Upstream 0.17.5, each upstream patch of the series added in turn, the
+      # whole series, and the whole series under AddressSanitizer, all built
+      # for the runner and run through the same scenarios.
+      - name: libass scenarios through upstream, partly patched and patched builds
+        run: |
+          python3 engine/lucid.py test-libass \
+            --work "$RUNNER_TEMP/lucid-libass-test" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Upload the libass test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-libass-test
+          path: |
+            ${{ runner.temp }}/lucid-libass-test/out
+          if-no-files-found: ignore
+          retention-days: 3
+
+  package:
+    name: Package xcframeworks
+    needs: [build, libdovi-test, libass-test]
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: lucid-engine-slice-*
+          path: ${{ runner.temp }}/lucid-slices
+      - name: Create xcframeworks and checksums
+        run: |
+          python3 engine/lucid.py package \
+            --input "$RUNNER_TEMP/lucid-slices" --out "$RUNNER_TEMP/lucid-engine-release"
+      - name: Upload xcframeworks
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-xcframeworks
+          path: ${{ runner.temp }}/lucid-engine-release
+          if-no-files-found: error
+          retention-days: 3

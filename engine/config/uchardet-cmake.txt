@@ -1,0 +1,4 @@
+# uchardet 0.0.8 CMake options (facts 3.11); lucid.py adds the common values
+# of facts 1.4 (BUILD_SHARED_LIBS=0, Release).
+
+-DBUILD_BINARY=0

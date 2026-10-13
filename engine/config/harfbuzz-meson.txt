@@ -1,0 +1,19 @@
+# HarfBuzz 8.1.1 meson options (facts 3.3 and D3): today's four, then every
+# optional backend disabled explicitly, so nothing on the build host is
+# detected. Today cairo and gobject were found on the build host; that only
+# added HB_HAS_CAIRO and HB_HAS_GOBJECT to hb-features.h, their headers and
+# side libraries that are not shipped. libharfbuzz itself is the same.
+
+-Ddocs=disabled
+-Dfreetype=disabled
+-Dglib=disabled
+-Dtests=disabled
+# disabled explicitly instead of left to host detection (facts D3):
+-Dgobject=disabled
+-Dcairo=disabled
+-Dicu=disabled
+-Dchafa=disabled
+-Dintrospection=disabled
+-Dgraphite=disabled
+-Dgraphite2=disabled
+-Dcoretext=disabled

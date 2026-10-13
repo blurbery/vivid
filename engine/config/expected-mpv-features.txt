@@ -1,0 +1,10 @@
+# Expected mpv feature list (FULLCONFIG), identical on every slice. It is
+# today's list (facts 2.1) without gpl (now -Dgpl=false) and moltenvk (needs
+# a third-party mpv patch, facts 3.4). vo-avfoundation now comes from
+# Vivid's own video output patches (0020 to 0025).
+
+audiounit avfoundation bsd-fstatfs build-date cplugins darwin ffmpeg gl glob
+glob-posix iconv ios-gl lcms2 libass libavdevice libbluray libdl libplacebo
+mac-thread-name macos-10-15-4-features macos-11-3-features macos-11-features
+macos-12-features posix posix-shm uchardet vector videotoolbox-pl vo-avfoundation
+vulkan zlib

@@ -1,0 +1,42 @@
+# libdovi 3.3.2 as today's engine ships it, recorded from the last green run
+# of the pipeline (38400124717, every slice), where `lucid.py check` compared
+# the libdovi built here with today's prebuilt and found them identical.
+# `lucid.py check` and `lucid.py test-libdovi` require the same values.
+
+# SHA-256 of include/libdovi/rpu_parser.h.
+[header-sha256]
+6cc3f77466917881f6f4e2d3e8561b0c42da7e3e48aa289ad5f55278fd2ee09d
+
+# The exported C API: every defined dovi_* symbol (facts 2.7).
+[exported]
+_dovi_convert_rpu_with_mode
+_dovi_data_free
+_dovi_parse_itu_t35_dovi_metadata_obu
+_dovi_parse_rpu
+_dovi_parse_rpu_bin_file
+_dovi_parse_unspec62_nalu
+_dovi_rpu_free
+_dovi_rpu_free_data_mapping
+_dovi_rpu_free_header
+_dovi_rpu_free_vdr_dm_data
+_dovi_rpu_get_data_mapping
+_dovi_rpu_get_error
+_dovi_rpu_get_header
+_dovi_rpu_get_vdr_dm_data
+_dovi_rpu_list_free
+_dovi_rpu_remove_mapping
+_dovi_rpu_set_active_area_offsets
+_dovi_write_av1_rpu_metadata_obu_t35_complete
+_dovi_write_av1_rpu_metadata_obu_t35_payload
+_dovi_write_rpu
+_dovi_write_unspec62_nalu
+
+# The libdovi functions libplacebo 7.351.0 calls (its undefined dovi_*
+# symbols), as the green run recorded them from today's libplacebo.
+[libplacebo-calls]
+_dovi_parse_unspec62_nalu
+_dovi_rpu_free
+_dovi_rpu_free_header
+_dovi_rpu_free_vdr_dm_data
+_dovi_rpu_get_header
+_dovi_rpu_get_vdr_dm_data

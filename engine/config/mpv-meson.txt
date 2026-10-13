@@ -1,0 +1,31 @@
+# mpv v0.41.0 meson options, one per line, in the order today's binaries were
+# configured (facts 2.1), with the decided changes marked. mpv embeds these
+# options in its build configuration string, which `lucid.py check` reads
+# back. Built-in options (prefix, buildtype, default_library, b_ndebug and the
+# compiler arguments) live in the generated cross file instead.
+
+-Dlibmpv=true
+-Dgl=enabled
+-Dplain-gl=enabled
+-Diconv=enabled
+-Duchardet=enabled
+-Dvulkan=enabled
+# removed -Dmoltenvk=enabled: only exists with a third-party mpv patch (facts 3.4)
+-Djavascript=disabled
+-Dzimg=disabled
+-Djpeg=disabled
+-Dvapoursynth=disabled
+-Drubberband=disabled
+# changed -Dgpl=true to -Dgpl=false: LGPL-2.1-or-later libmpv (facts 3.1)
+-Dgpl=false
+-Dlibbluray=enabled
+-Dcplayer=false
+-Dvideotoolbox-gl=disabled
+-Dvideotoolbox-pl=enabled
+-Dswift-build=disabled
+-Daudiounit=enabled
+-Davfoundation=enabled
+# -Dvo-avfoundation=enabled: Vivid's own video output (mpv patches 0020 to 0025)
+-Dvo-avfoundation=enabled
+-Dlua=disabled
+-Dios-gl=enabled

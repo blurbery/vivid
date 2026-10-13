@@ -1,0 +1,16 @@
+# Expected CONFIG_ and HAVE_ switches in FFmpeg's config.h on every slice
+# (facts 2.2 and 3.2 to 3.3). `lucid.py check` fails on any difference.
+
+[on]
+avfoundation coreimage metal zlib lcms2 libass libdav1d libfreetype libfribidi
+libharfbuzz libplacebo libshaderc libuavs3d libxml2 audiotoolbox videotoolbox
+vulkan securetransport network
+
+[off]
+gpl version3 nonfree openssl gnutls libtls mbedtls bzlib iconv lzma sdl2
+opengl opencl libglslang appkit mediafoundation libdrm
+
+# HAVE_SECITEMIMPORT stays 0 on iOS and tvOS, so the Secure Transport patch
+# compiles the client-certificate path (and SecIdentityCreate) out.
+[have-off]
+secitemimport

@@ -1,0 +1,434 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] ao_avfoundation: shared centre of the rebuilt output
+
+Lucid Engine's AVFoundation audio output plays decoded PCM through
+AVSampleBufferAudioRenderer, as upstream does, and passes AC-3 and E-AC-3
+through AVPlayer, which upstream refuses. Its decisions are plain C that
+reaches mpv, AVFoundation and the audio session only through operation
+tables, so the shipped code can be driven by test fakes on the build host.
+
+The series adds one module per patch: this shared centre, the decoded PCM
+sink (0013), the passthrough start-up supervision (0014), the passthrough
+sink (0015), and last the Objective-C bindings that make the Apple calls
+and replace upstream's driver (0016). Each patch adds its own files to
+meson.build, so every stage of the series builds; the C modules stay
+unused until 0016.
+
+This patch adds ao_avfoundation_core.h and .c: trace edges and the 8 s
+detail window after each one, the prefetch guard both sinks use, the
+process-wide passthrough block, the audio session steps, and the order in
+which init refuses formats, sets up the session, creates the queue and
+opens a sink.
+
+Audio session: with manage-audio-session on (the default), init sets the
+category and mode and activates the session, and uninit and a failed init
+deactivate it, notifying other apps. With it off, the output never sets
+the category or mode, activates or deactivates. Either way it declares
+multichannel content for spdif formats and for more than two channels,
+and sets the preferred output channel count for PCM. A PCM init clears the
+passthrough block first; an spdif format with accept-compressed off is
+refused before any session call.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the mpv files it adds or changes, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser General
+Public License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version
+(LGPL-2.1-or-later).
+---
+diff --git a/audio/out/ao_avfoundation_core.c b/audio/out/ao_avfoundation_core.c
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_core.c
+@@ -0,0 +1,203 @@
++/*
++ * AVFoundation audio output: shared centre used by every sink.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <math.h>
++#include <stdatomic.h>
++
++#include "ao_avfoundation_core.h"
++
++void avfao_log(const struct avfao_host *host, enum avfao_level level,
++               const char *fmt, ...)
++{
++    va_list va;
++    va_start(va, fmt);
++    host->ops->log(host->ctx, level, fmt, va);
++    va_end(va);
++}
++
++int64_t avfao_now(const struct avfao_host *host)
++{
++    return host->ops->now(host->ctx);
++}
++
++double avfao_output_latency(const struct avfao_host *host)
++{
++    double latency = host->ops->output_latency(host->ctx);
++    return isfinite(latency) ? latency : 0;
++}
++
++int64_t avfao_frames_to_ns(int64_t frames, int rate)
++{
++    if (rate <= 0)
++        return 0;
++    // value * 10^9 / rate, rounded half away from zero, in 128 bits so a
++    // whole film's frame count cannot overflow the intermediate product.
++    __int128 num = (__int128)frames * AVFAO_NS_PER_S;
++    __int128 den = rate;
++    __int128 q;
++    if (num >= 0) {
++        q = (2 * num + den) / (2 * den);
++    } else {
++        q = -((-2 * num + den) / (2 * den));
++    }
++    return (int64_t)q;
++}
++
++int64_t avfao_seconds_to_ns(double seconds)
++{
++    return (int64_t)(seconds * (double)AVFAO_NS_PER_S);
++}
++
++double avfao_ns_to_seconds(int64_t ns)
++{
++    return (double)ns / (double)AVFAO_NS_PER_S;
++}
++
++void avfao_trace_edge(const struct avfao_host *host, struct avfao_trace *trace,
++                      const char *edge, int64_t clock_ns, int64_t fed_ns)
++{
++    avfao_log(host, AVFAO_V, "trace edge %s: clock %.3f, fed %.3f, latency %.3f\n",
++              edge, avfao_ns_to_seconds(clock_ns), avfao_ns_to_seconds(fed_ns),
++              avfao_output_latency(host));
++    trace->detail_set = true;
++    trace->detail_end_ns = avfao_now(host) + AVFAO_DETAIL_WINDOW_NS;
++}
++
++bool avfao_in_detail_window(const struct avfao_host *host,
++                            const struct avfao_trace *trace)
++{
++    return trace->detail_set && avfao_now(host) < trace->detail_end_ns;
++}
++
++bool avfao_prefetch_skip(int64_t reserve_ns, int64_t queued_frames,
++                         int64_t planned_frames)
++{
++    return reserve_ns >= AVFAO_PREFETCH_RESERVE_NS && queued_frames < planned_frames;
++}
++
++static atomic_bool blocked_ac3;
++static atomic_bool blocked_eac3;
++
++void avfao_block_set(enum avfao_codec codec)
++{
++    atomic_store(codec == AVFAO_CODEC_EAC3 ? &blocked_eac3 : &blocked_ac3, true);
++}
++
++bool avfao_blocked(enum avfao_codec codec)
++{
++    return atomic_load(codec == AVFAO_CODEC_EAC3 ? &blocked_eac3 : &blocked_ac3);
++}
++
++void avfao_block_clear(void)
++{
++    atomic_store(&blocked_ac3, false);
++    atomic_store(&blocked_eac3, false);
++}
++
++void avfao_session_begin(const struct avfao_session_ops *ops, void *ctx,
++                         bool manage, bool spdif, int channels)
++{
++    if (!ops)
++        return;
++    // Category, mode and the multichannel declaration must be in place
++    // before activation; the maximum is read from the session as activated.
++    if (manage)
++        ops->set_category_and_mode(ctx);
++    if (spdif || channels > 2)
++        ops->declare_multichannel(ctx);
++    if (manage)
++        ops->activate(ctx);
++    long max_channels = ops->max_output_channels(ctx);
++    if (spdif) {
++        ops->log_route(ctx, max_channels);
++    } else {
++        long preferred = channels < max_channels ? channels : max_channels;
++        ops->set_preferred_output_channels(ctx, preferred);
++    }
++}
++
++void avfao_session_end(const struct avfao_session_ops *ops, void *ctx,
++                       bool manage)
++{
++    if (ops && manage)
++        ops->deactivate(ctx);
++}
++
++bool avfao_open(const struct avfao_host *host,
++                const struct avfao_session_ops *session,
++                const struct avfao_open_ops *ops, void *ctx,
++                const struct avfao_open_args *args)
++{
++    bool spdif = args->kind != AVFAO_KIND_PCM;
++
++    if (spdif && !args->accept_compressed) {
++        avfao_log(host, AVFAO_V, "compressed format %s not accepted by option\n",
++                  args->format_name);
++        return false;
++    }
++
++    // Decoded audio lets every later load try passthrough again. This comes
++    // before anything that can fail.
++    if (!spdif)
++        avfao_block_clear();
++
++    avfao_session_begin(session, ctx, args->manage_session, spdif, args->channels);
++
++    if (!ops->create_queue(ctx)) {
++        avfao_log(host, AVFAO_FATAL, "failed to create dispatch queue\n");
++        avfao_log(host, AVFAO_V, "dispatch_queue_create failed\n");
++        goto error;
++    }
++
++    switch (args->kind) {
++    case AVFAO_KIND_PCM:
++        if (!ops->open_pcm(ctx))
++            goto error;
++        break;
++    case AVFAO_KIND_AC3:
++    case AVFAO_KIND_EAC3: {
++        enum avfao_codec codec =
++            args->kind == AVFAO_KIND_EAC3 ? AVFAO_CODEC_EAC3 : AVFAO_CODEC_AC3;
++        if (avfao_blocked(codec)) {
++            avfao_log(host, AVFAO_FATAL, "not opening %s: passthrough of this "
++                      "format already failed once in this process\n",
++                      args->format_name);
++            goto error;
++        }
++        if (!ops->open_compressed(ctx, codec))
++            goto error;
++        break;
++    }
++    default:
++        avfao_log(host, AVFAO_FATAL, "compressed format %s is not supported\n",
++                  args->format_name);
++        if (args->suggest_exclusive)
++            avfao_log(host, AVFAO_FATAL, "please use coreaudio_exclusive instead\n");
++        goto error;
++    }
++
++    return true;
++
++error:
++    ops->discard(ctx);
++    avfao_session_end(session, ctx, args->manage_session);
++    return false;
++}
+diff --git a/audio/out/ao_avfoundation_core.h b/audio/out/ao_avfoundation_core.h
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_core.h
+@@ -0,0 +1,167 @@
++/*
++ * AVFoundation audio output: shared centre used by every sink.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef MP_AO_AVFOUNDATION_CORE_H
++#define MP_AO_AVFOUNDATION_CORE_H
++
++// The AVFoundation output keeps its decisions in plain C (this header and
++// the ao_avfoundation_*.c files) and its Apple framework calls in the
++// Objective-C files. The C side reaches mpv, AVFoundation and the audio
++// session only through the operation tables declared in these headers, so
++// the same code can be driven by test fakes on any host.
++
++#include <stdarg.h>
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#define AVFAO_NS_PER_S  INT64_C(1000000000)
++#define AVFAO_NS_PER_MS INT64_C(1000000)
++
++#define AVFAO_PRINTF(a, b) __attribute__((format(printf, a, b)))
++
++// Message levels. The glue maps each one to the matching mpv level.
++enum avfao_level {
++    AVFAO_FATAL,
++    AVFAO_ERR,
++    AVFAO_WARN,
++    AVFAO_INFO,
++    AVFAO_V,
++    AVFAO_TRACE,
++};
++
++// Everything the C side needs from mpv. All calls take ctx.
++struct avfao_host_ops {
++    // mpv's monotonic clock, mp_time_ns().
++    int64_t (*now)(void *ctx);
++    void (*log)(void *ctx, enum avfao_level level, const char *fmt, va_list va);
++    // Blocking ao_read_data() into one interleaved plane, never padding
++    // with silence. Returns the frames read.
++    int (*read)(void *ctx, void *data, int frames, int64_t end_ns, bool *eof);
++    // Frames waiting in mpv's AO input queue.
++    int64_t (*queued_frames)(void *ctx);
++    void (*stop_streaming)(void *ctx);
++    void (*request_reload)(void *ctx);
++    // AVAudioSession outputLatency in seconds, or 0 without a session.
++    double (*output_latency)(void *ctx);
++};
++
++struct avfao_host {
++    const struct avfao_host_ops *ops;
++    void *ctx;
++};
++
++void avfao_log(const struct avfao_host *host, enum avfao_level level,
++               const char *fmt, ...) AVFAO_PRINTF(3, 4);
++int64_t avfao_now(const struct avfao_host *host);
++// The session's output latency in seconds, always finite.
++double avfao_output_latency(const struct avfao_host *host);
++
++// Frames to nanoseconds with CoreMedia's default rounding (half away from
++// zero) at a nanosecond timescale, as CMTimeConvertScale() gives it.
++int64_t avfao_frames_to_ns(int64_t frames, int rate);
++// Option seconds to nanoseconds, truncated.
++int64_t avfao_seconds_to_ns(double seconds);
++double avfao_ns_to_seconds(int64_t ns);
++
++// Trace edges and the detail window that follows each of them.
++#define AVFAO_DETAIL_WINDOW_NS (8 * AVFAO_NS_PER_S)
++
++struct avfao_trace {
++    bool detail_set;
++    int64_t detail_end_ns;
++};
++
++void avfao_trace_edge(const struct avfao_host *host, struct avfao_trace *trace,
++                      const char *edge, int64_t clock_ns, int64_t fed_ns);
++bool avfao_in_detail_window(const struct avfao_host *host,
++                            const struct avfao_trace *trace);
++
++// Prefetch guard shared by both sinks: skip a read that would come back
++// short while at least a second of audio is still queued downstream.
++#define AVFAO_PREFETCH_RESERVE_NS AVFAO_NS_PER_S
++
++bool avfao_prefetch_skip(int64_t reserve_ns, int64_t queued_frames,
++                         int64_t planned_frames);
++
++// Process-wide record of compressed formats that fell back to PCM.
++enum avfao_codec {
++    AVFAO_CODEC_AC3,
++    AVFAO_CODEC_EAC3,
++};
++
++void avfao_block_set(enum avfao_codec codec);
++bool avfao_blocked(enum avfao_codec codec);
++void avfao_block_clear(void);
++
++// The shared AVAudioSession. Every call is optional: a NULL table (no
++// session on this platform) skips all of them.
++struct avfao_session_ops {
++    void (*set_category_and_mode)(void *ctx);
++    // setSupportsMultichannelContent:YES where the OS has it (15 and later).
++    void (*declare_multichannel)(void *ctx);
++    void (*activate)(void *ctx);
++    void (*deactivate)(void *ctx);
++    long (*max_output_channels)(void *ctx);
++    // The info line naming the route's first output port and the maximum.
++    void (*log_route)(void *ctx, long max_channels);
++    void (*set_preferred_output_channels)(void *ctx, long channels);
++};
++
++void avfao_session_begin(const struct avfao_session_ops *ops, void *ctx,
++                         bool manage, bool spdif, int channels);
++void avfao_session_end(const struct avfao_session_ops *ops, void *ctx,
++                       bool manage);
++
++// Opening the output: the order of refusals, session steps, the queue and
++// the sink is decided here; the glue does the work.
++enum avfao_kind {
++    AVFAO_KIND_PCM,
++    AVFAO_KIND_AC3,
++    AVFAO_KIND_EAC3,
++    AVFAO_KIND_OTHER_SPDIF,
++};
++
++struct avfao_open_ops {
++    bool (*create_queue)(void *ctx);
++    bool (*open_pcm)(void *ctx);
++    bool (*open_compressed)(void *ctx, enum avfao_codec codec);
++    // Releases whatever the failed open created, timers and the loader
++    // first.
++    void (*discard)(void *ctx);
++};
++
++struct avfao_open_args {
++    enum avfao_kind kind;
++    const char *format_name;
++    int channels;
++    bool accept_compressed;
++    bool manage_session;
++    // Name the CoreAudio exclusive output when refusing a format.
++    bool suggest_exclusive;
++};
++
++bool avfao_open(const struct avfao_host *host,
++                const struct avfao_session_ops *session,
++                const struct avfao_open_ops *ops, void *ctx,
++                const struct avfao_open_args *args);
++
++#endif
+diff --git a/meson.build b/meson.build
+index 0000000000..0000000000 100644
+--- a/meson.build
++++ b/meson.build
+@@ -821,6 +821,7 @@
+ if features['avfoundation']
+     dependencies += avfoundation
+     sources += files('audio/out/ao_avfoundation.m')
++    sources += files('audio/out/ao_avfoundation_core.c')
+     # The AVFoundation output uses the CoreFoundation string helpers in
+     # osdep/utils-mac.c, which the cocoa block above only builds on macOS.
+     if not features['cocoa']

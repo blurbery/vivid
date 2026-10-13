@@ -1,0 +1,10 @@
+# Command-line variables for MoltenVK 1.4.1's Makefile target (facts 3.7 and
+# D7). The Makefile passes command-line variables to the compiler as
+# preprocessor definitions. MoltenVK defines MVK_XCODE_16 and MVK_XCODE_26
+# only when they are not already defined, from the SDK version; today's
+# binary was compiled against SDK 17.5, where both are 0, so its residency
+# set, Metal math-mode, Metal 4 and Apple10 paths are not compiled. Setting
+# both to 0 keeps that with the pipeline's newer SDK.
+
+MVK_XCODE_16=0
+MVK_XCODE_26=0

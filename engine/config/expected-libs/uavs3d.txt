@@ -1,0 +1,337 @@
+# uavs3d 1.2: what today's interim build ships, recorded by automated
+# comparison of its xcframework and archives (nm -m -g -U and nm -u on the arm64
+# archive of each slice, the slice's file list and the pkg-config files), for
+# `lucid.py check`. Docs: docs/cores/lucid-engine-build.md.
+
+[framework]
+Libuavs3d
+
+# Files under the framework's Headers/ folder.
+[headers]
+uavs3d.h
+
+# Defined global symbols (identical on all four slices), by visibility.
+
+[default]
+_align_free
+_align_malloc
+_clean_ref_cnt
+_com_alf_init_map
+_com_alf_lcu_row
+_com_core_free
+_com_core_init
+_com_dct_coef_init
+_com_deblock_lcu_row
+_com_deblock_set_edge
+_com_get_nbr_c
+_com_get_nbr_l
+_com_ipred_c
+_com_ipred_l
+_com_itrans
+_com_lbac_ctx_init
+_com_mc
+_com_mc_affine
+_com_md5_image
+_com_pic_alloc
+_com_pic_free
+_com_picbuf_alloc
+_com_picman_free
+_com_picman_get_active_refp
+_com_picman_get_empty_pic
+_com_picman_init
+_com_picman_mark_refp
+_com_picman_out_pic
+_com_recon_c
+_com_recon_l
+_com_sao_lcu_row
+_dct2_butterfly_h16_arm64
+_dct2_butterfly_h32_arm64
+_dct2_butterfly_h4_arm64
+_dct2_butterfly_h64_arm64
+_dct2_butterfly_h8_arm64
+_deblock_edge_chro_hor
+_deblock_edge_chro_ver
+_deblock_edge_luma_hor
+_deblock_edge_luma_ver
+_dec_all_loopfilter
+_dec_bs_demulate
+_dec_bs_get_one_unit
+_dec_bs_init
+_dec_bs_next
+_dec_bs_read
+_dec_bs_read1
+_dec_bs_read_se
+_dec_bs_read_ue
+_dec_check_pic_md5
+_dec_cons_allow
+_dec_derive_mvp
+_dec_derive_skip_mv
+_dec_derive_skip_mv_affine
+_dec_derive_skip_mv_umve
+_dec_dt_allow
+_dec_get_part_info
+_dec_get_pb_idx_by_tb
+_dec_get_split_available
+_dec_get_split_struct
+_dec_get_tb_start_pos
+_dec_get_tb_width_height
+_dec_is_separate_tree
+_dec_parse_alf_enable
+_dec_parse_cons_pred_mode_child
+_dec_parse_cu_header
+_dec_parse_cu_header_chroma
+_dec_parse_ext_and_usr_data
+_dec_parse_ipcm
+_dec_parse_ipcm_start
+_dec_parse_lcu_delta_qp
+_dec_parse_patch_end
+_dec_parse_patch_header
+_dec_parse_pic_header
+_dec_parse_run_length_cc
+_dec_parse_sao_param
+_dec_parse_split_mode
+_dec_parse_sqh
+_dec_pic
+_dec_scale_affine_mvp
+_dec_update_map
+_dec_update_map_for_intra
+_down_sample_uv
+_g_tbl_ai_tscpm_div
+_g_tbl_itrans
+_g_tbl_itrans_c4
+_g_tbl_itrans_c8
+_g_tbl_itrans_coeffs
+_g_tbl_log2
+_g_tbl_mc_coeff_chroma
+_g_tbl_mc_coeff_chroma_hp
+_g_tbl_mc_coeff_luma
+_g_tbl_mc_coeff_luma_hp
+_g_tbl_part_num
+_g_tbl_qp_chroma_adjust
+_g_tbl_scan
+_g_tbl_scan_blkpos
+_g_tbl_tb_part
+_g_tbl_wq_default_matrix_4x4
+_g_tbl_wq_default_matrix_8x8
+_g_tbl_wq_default_param
+_g_tbl_wq_model_4x4
+_g_tbl_wq_model_8x8
+_get_tscpm_params
+_init_core_by_frm
+_init_dec_frm
+_ipred_bi
+_ipred_bi_ipf
+_ipred_bi_uv
+_ipred_dc
+_ipred_dc_uv
+_ipred_hor
+_ipred_hor_uv
+_ipred_ipf_core
+_ipred_ipf_core_s16
+_ipred_plane
+_ipred_plane_ipf
+_ipred_plane_uv
+_ipred_tscpm
+_ipred_vert
+_itx_dct8_pb16
+_itx_dct8_pb32
+_itx_dct8_pb4
+_itx_dct8_pb8
+_itx_dst7_pb16
+_itx_dst7_pb32
+_itx_dst7_pb4
+_itx_dst7_pb8
+_lbac_dec_bin_trm
+_lbac_init
+_reset_map_scu
+_tbl_plps_base
+_tscpm_linear_transform
+_uavs3d_alf_one_lcu_arm64
+_uavs3d_alf_one_lcu_chroma_arm64
+_uavs3d_alf_one_lcu_one_chroma_arm64
+_uavs3d_avg_pel_w128_arm64
+_uavs3d_avg_pel_w16_arm64
+_uavs3d_avg_pel_w32_arm64
+_uavs3d_avg_pel_w4_arm64
+_uavs3d_avg_pel_w64_arm64
+_uavs3d_avg_pel_w8_arm64
+_uavs3d_conv_fmt_16bit_arm64
+_uavs3d_conv_fmt_8bit_arm64
+_uavs3d_create
+_uavs3d_deblock_hor_chroma_arm64
+_uavs3d_deblock_hor_luma_arm64
+_uavs3d_deblock_ver_chroma_arm64
+_uavs3d_deblock_ver_luma_arm64
+_uavs3d_decode
+_uavs3d_delete
+_uavs3d_flush
+_uavs3d_frame_delete
+_uavs3d_frame_delete_list
+_uavs3d_frame_shift
+_uavs3d_funs_handle
+_uavs3d_funs_init_alf_c
+_uavs3d_funs_init_arm64
+_uavs3d_funs_init_c
+_uavs3d_funs_init_deblock_c
+_uavs3d_funs_init_intra_pred_c
+_uavs3d_funs_init_itrans_c
+_uavs3d_funs_init_mc_c
+_uavs3d_funs_init_pixel_opt_c
+_uavs3d_funs_init_recon_c
+_uavs3d_funs_init_sao_c
+_uavs3d_if_cpy
+_uavs3d_if_cpy_w128_arm64
+_uavs3d_if_cpy_w16_arm64
+_uavs3d_if_cpy_w32_arm64
+_uavs3d_if_cpy_w4_arm64
+_uavs3d_if_cpy_w64_arm64
+_uavs3d_if_cpy_w8_arm64
+_uavs3d_if_hor_chroma_w16_arm64
+_uavs3d_if_hor_chroma_w16x_arm64
+_uavs3d_if_hor_chroma_w8_arm64
+_uavs3d_if_hor_luma_w16_arm64
+_uavs3d_if_hor_luma_w16x_arm64
+_uavs3d_if_hor_luma_w4_arm64
+_uavs3d_if_hor_luma_w8_arm64
+_uavs3d_if_hor_ver_chroma_w16_arm64
+_uavs3d_if_hor_ver_chroma_w32_arm64
+_uavs3d_if_hor_ver_chroma_w32x_arm64
+_uavs3d_if_hor_ver_chroma_w8_arm64
+_uavs3d_if_hor_ver_luma_w16_arm64
+_uavs3d_if_hor_ver_luma_w32_arm64
+_uavs3d_if_hor_ver_luma_w32x_arm64
+_uavs3d_if_hor_ver_luma_w4_arm64
+_uavs3d_if_hor_ver_luma_w8_arm64
+_uavs3d_if_ver_chroma_w16_arm64
+_uavs3d_if_ver_chroma_w32_arm64
+_uavs3d_if_ver_chroma_w32x_arm64
+_uavs3d_if_ver_chroma_w8_arm64
+_uavs3d_if_ver_luma_w16_arm64
+_uavs3d_if_ver_luma_w16x_arm64
+_uavs3d_if_ver_luma_w4_arm64
+_uavs3d_if_ver_luma_w8_arm64
+_uavs3d_img_cpy_cvt
+_uavs3d_intra_pred_bi_arm64
+_uavs3d_intra_pred_bi_ipf_arm64
+_uavs3d_intra_pred_dc_arm64
+_uavs3d_intra_pred_dc_uv_arm64
+_uavs3d_intra_pred_hor_arm64
+_uavs3d_intra_pred_hor_uv_arm64
+_uavs3d_intra_pred_ipf_arm64
+_uavs3d_intra_pred_plane_arm64
+_uavs3d_intra_pred_plane_ipf_arm64
+_uavs3d_intra_pred_plane_uv_arm64
+_uavs3d_intra_pred_ver_arm64
+_uavs3d_itrans_dct2_h16_w16_arm64
+_uavs3d_itrans_dct2_h16_w32_arm64
+_uavs3d_itrans_dct2_h16_w4_arm64
+_uavs3d_itrans_dct2_h16_w64_arm64
+_uavs3d_itrans_dct2_h16_w8_arm64
+_uavs3d_itrans_dct2_h32_w16_arm64
+_uavs3d_itrans_dct2_h32_w32_arm64
+_uavs3d_itrans_dct2_h32_w4_arm64
+_uavs3d_itrans_dct2_h32_w64_arm64
+_uavs3d_itrans_dct2_h32_w8_arm64
+_uavs3d_itrans_dct2_h4_w16_arm64
+_uavs3d_itrans_dct2_h4_w32_arm64
+_uavs3d_itrans_dct2_h4_w4_arm64
+_uavs3d_itrans_dct2_h4_w64_arm64
+_uavs3d_itrans_dct2_h4_w8_arm64
+_uavs3d_itrans_dct2_h64_w16_arm64
+_uavs3d_itrans_dct2_h64_w32_arm64
+_uavs3d_itrans_dct2_h64_w64_arm64
+_uavs3d_itrans_dct2_h64_w8_arm64
+_uavs3d_itrans_dct2_h8_w16_arm64
+_uavs3d_itrans_dct2_h8_w32_arm64
+_uavs3d_itrans_dct2_h8_w4_arm64
+_uavs3d_itrans_dct2_h8_w64_arm64
+_uavs3d_itrans_dct2_h8_w8_arm64
+_uavs3d_itrans_dct8_pb16_arm64
+_uavs3d_itrans_dct8_pb4_arm64
+_uavs3d_itrans_dct8_pb8_arm64
+_uavs3d_output_frame
+_uavs3d_padding_rows_chroma_lr_arm64
+_uavs3d_padding_rows_lr_arm64
+_uavs3d_reset
+_uavs3d_sao_bo_arm64
+_uavs3d_sao_bo_chroma_arm64
+_uavs3d_sao_eo_0_arm64
+_uavs3d_sao_eo_0_chroma_arm64
+_uavs3d_sao_eo_135_arm64
+_uavs3d_sao_eo_135_chroma_arm64
+_uavs3d_sao_eo_45_arm64
+_uavs3d_sao_eo_45_chroma_arm64
+_uavs3d_sao_eo_90_arm64
+_uavs3d_sao_eo_90_chroma_arm64
+_uavs3d_sao_mask
+_uavs3d_sao_on_lcu_arm64
+_uavs3d_sao_on_lcu_chroma_arm64
+_uavs3d_sync_frame_list_delete
+_uavs3d_sync_frame_list_init
+_uavs3d_sync_frame_list_pop
+_uavs3d_sync_frame_list_pop_try
+_uavs3d_sync_frame_list_push
+_uavs3d_threadpool_delete
+_uavs3d_threadpool_init
+_uavs3d_threadpool_run
+_uavs3d_threadpool_run_try
+_uavs3d_threadpool_wait
+_uavs3d_threadpool_wait_try
+_update_hmvp_candidates
+_xGetLumaBorderPixel
+
+[hidden]
+
+# Weak definitions (inline functions and template instances the compiler
+# chose to emit): count, then the SHA-256 of the sorted names, one per line.
+
+[weak-default]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+[weak-hidden]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+# Symbols each slice's archive needs from outside itself.
+
+[imports-ios-arm64]
+___chkstk_darwin ___stack_chk_fail ___stack_chk_guard ___stderrp _bzero _calloc _cos _exit _free
+_fwrite _malloc _memcpy _memset _memset_pattern16 _printf _pthread_cond_broadcast
+_pthread_cond_destroy _pthread_cond_init _pthread_cond_wait _pthread_create _pthread_exit
+_pthread_join _pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock
+_puts _sin
+
+[imports-ios-arm64-simulator]
+___stack_chk_fail ___stack_chk_guard ___stderrp _bzero _calloc _cos _exit _free _fwrite _malloc
+_memcpy _memset _memset_pattern16 _printf _pthread_cond_broadcast _pthread_cond_destroy
+_pthread_cond_init _pthread_cond_wait _pthread_create _pthread_exit _pthread_join
+_pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock _puts _sin
+
+[imports-tvos-arm64]
+___chkstk_darwin ___stack_chk_fail ___stack_chk_guard ___stderrp _bzero _calloc _cos _exit _free
+_fwrite _malloc _memcpy _memset _memset_pattern16 _printf _pthread_cond_broadcast
+_pthread_cond_destroy _pthread_cond_init _pthread_cond_wait _pthread_create _pthread_exit
+_pthread_join _pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock
+_puts _sin
+
+[imports-tvos-arm64-simulator]
+___stack_chk_fail ___stack_chk_guard ___stderrp _bzero _calloc _cos _exit _free _fwrite _malloc
+_memcpy _memset _memset_pattern16 _printf _pthread_cond_broadcast _pthread_cond_destroy
+_pthread_cond_init _pthread_cond_wait _pthread_create _pthread_exit _pthread_join
+_pthread_mutex_destroy _pthread_mutex_init _pthread_mutex_lock _pthread_mutex_unlock _puts _sin
+
+# LC_BUILD_VERSION minimum OS of each slice's archive.
+[minos-ios-arm64]
+15.0
+[minos-ios-arm64-simulator]
+15.0
+[minos-tvos-arm64]
+15.0
+[minos-tvos-arm64-simulator]
+15.0
+
+# Imports that differ from today's on every slice because of the pipeline's
+# toolchain (Xcode 26.6) and nothing else: its compiler or SDK headers make the code call strlen, where today's build had none.
+# All come from libSystem or libc++, which today's build already links.
+[imports-toolchain-added]
+_strlen
+[imports-toolchain-removed]

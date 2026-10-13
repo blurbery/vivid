@@ -1,0 +1,6 @@
+# libass 0.17.5 patch series, applied in order to the pristine source.
+# 0001 and 0002 are upstream libass changes, unchanged; 0010 is Vivid's own.
+# Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
+72a48370bd9283462590bb9edb097751842024db004098a5383aded4bf2a5092  0001-ass_font-improve-symbol-font-base-offset.patch
+4454187e3b9b65a23b32b1c87d7ec1d9109689582f93bdb72c8f6bfdab04b8c1  0002-render-cache-rendered-events.patch
+cf81655d77b8a0800e05d05f023817cb595b5b135116dd911b50b853ca21b70c  0010-render-keep-unresolved-glyphs-per-event.patch

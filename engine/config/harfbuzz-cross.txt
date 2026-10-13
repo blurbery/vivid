@@ -1,0 +1,9 @@
+# HarfBuzz 8.1.1 cross-file properties: meson's own override of a
+# has_function check. HarfBuzz uses sincosf when meson finds it. Apple's
+# libraries and headers have no sincosf, and with Xcode 15.4 the check found
+# none, so today's HarfBuzz calls sinf and cosf (which clang turns into
+# __sincosf_stret). Xcode 26.6's clang has a __builtin_sincosf, which meson
+# takes as the function being present; the code then fails to compile,
+# because math.h declares no sincosf. This keeps today's result.
+
+has_function_sincosf = false
