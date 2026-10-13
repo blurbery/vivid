@@ -3,4 +3,4 @@
 # Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
 72a48370bd9283462590bb9edb097751842024db004098a5383aded4bf2a5092  0001-ass_font-improve-symbol-font-base-offset.patch
 4454187e3b9b65a23b32b1c87d7ec1d9109689582f93bdb72c8f6bfdab04b8c1  0002-render-cache-rendered-events.patch
-ad0b5b48c6fcbe6f3bf31a8cb4e1cc5823f2f37390ad9a34d1bb64fc33f1e628  0010-render-keep-unresolved-glyphs-per-event.patch
+4528cf2d044bd1b08f1e6b6862a47a261d2a4e4a7752c92c5d59727ab44ea830  0010-render-keep-unresolved-glyphs-per-event.patch
