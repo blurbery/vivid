@@ -15,6 +15,7 @@ engine links comes from the interim prebuilt binaries pinned in pins.ini.
     python3 engine/lucid.py test-vo --slice tvos-arm64
     python3 engine/lucid.py package --input DIR --out DIR
     python3 engine/lucid.py test-libdovi
+    python3 engine/lucid.py test-libass
 
 Needs Python 3.9 or later (standard library only), the Xcode command-line
 tools and pkg-config. Building is meant for CI; see
@@ -66,13 +67,17 @@ FETCH_ALLOWED = (
     "https://github.com/mpvkit/",  # interim prebuilt release assets only
     "https://github.com/quietvoid/",  # libdovi (dovi_tool) source
     "https://github.com/lu-zero/",  # cargo-c release binary
+    "https://github.com/freetype/",  # FreeType, for the libass host test only
+    "https://github.com/fribidi/",  # FriBidi, for the libass host test only
+    "https://github.com/harfbuzz/",  # HarfBuzz, for the libass host test only
     "https://static.rust-lang.org/dist/",  # Rust toolchain components
     "https://static.crates.io/crates/",  # crates in libdovi's Cargo.lock
 )
 # Hosts that may appear in references (upstream homes, patch descriptions,
-# and the GNU licence address in the licence header of new source files).
+# the GNU licence address in the licence header of new source files, and
+# Microsoft's typography documentation, which upstream libass code cites).
 REFERENCE_HOSTS = {"github.com", "code.videolan.org", "gitlab.freedesktop.org", "trac.ffmpeg.org",
-                   "www.gnu.org"}
+                   "www.gnu.org", "learn.microsoft.com"}
 # Projects nothing here may reference. Split so this file does not match itself.
 DENIED = ("edde" "746",)
 FETCH_WORDS = re.compile(r"\b(curl|wget|urlopen|urlretrieve|git clone|git fetch)\b")
@@ -709,7 +714,7 @@ def cmd_fetch(args) -> None:
             continue
         dest = args.downloads / download_name(section, pin["url"])
         download(pin["url"], pin["sha256"], dest)
-        if section.startswith("source:"):
+        if section.startswith(("source:", "test:")):
             commit = archive_commit(dest)
             if commit != pin["commit"]:
                 raise Failure(f"{dest.name}: archive commit {commit}, pinned {pin['commit']}")
@@ -2494,6 +2499,205 @@ def cmd_test_libdovi(args) -> None:
     log(f"All {len(c.results)} libdovi test checks passed.")
 
 
+# -------------------------------------------------------------- libass test
+
+LIBASS_TEST = ENGINE / "tests" / "libass"
+# FreeType, FriBidi and HarfBuzz for the build host ([test:*] in pins.ini),
+# built in this order with only what libass needs, so nothing else on the
+# build host is detected or linked.
+LIBASS_TEST_DEPS = {
+    "freetype": ("-Dzlib=internal", "-Dbzip2=disabled", "-Dpng=disabled", "-Dharfbuzz=disabled",
+                 "-Dbrotli=disabled", "-Dtests=disabled"),
+    "fribidi": ("-Ddocs=false", "-Dbin=false", "-Dtests=false"),
+    "harfbuzz": ("-Dglib=disabled", "-Dgobject=disabled", "-Dcairo=disabled", "-Dchafa=disabled",
+                 "-Dicu=disabled", "-Dgraphite=disabled", "-Dfreetype=disabled", "-Dgdi=disabled",
+                 "-Ddirectwrite=disabled", "-Dcoretext=disabled", "-Dwasm=disabled",
+                 "-Dtests=disabled", "-Dintrospection=disabled", "-Ddocs=disabled",
+                 "-Dutilities=disabled", "-Dbenchmark=disabled"),
+}
+# HarfBuzz 8.1.1's configure finds sincosf in macOS's libm, but the SDK's
+# math.h declares it only as __sincosf, so its C++ sources use that name.
+LIBASS_TEST_DEP_CXXFLAGS = {"harfbuzz": "-Dsincosf=__sincosf"}
+
+
+def load_test_module(name: str):
+    path = ENGINE / "tests" / name / f"{name}_test.py"
+    spec = importlib.util.spec_from_file_location(f"{name}_test", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[f"{name}_test"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def verified_archive(pins, downloads: Path, section: str) -> Path:
+    pin = pins[section]
+    archive = downloads / download_name(section, pin["url"])
+    if not archive.exists() or sha256_file(archive) != pin["sha256"] or \
+            archive_commit(archive) != pin["commit"]:
+        raise Failure(f"{archive.name} does not match pins.ini; run fetch first")
+    return archive
+
+
+def host_meson(meson: list[str], ninja: str, src: Path, build: Path, prefix: Path,
+               options: list[str], env: dict, logfile: Path) -> None:
+    run(meson + ["setup", build, src, f"--prefix={prefix}", "--libdir=lib",
+                 "--default-library=static", "--buildtype=release", "-Db_ndebug=true"] + options,
+        env=env, logfile=logfile)
+    run([ninja, "-C", build], env=env, logfile=logfile)
+    run(meson + ["install", "-C", build, "--no-rebuild"], env=env, logfile=logfile)
+
+
+def cmd_test_libass(args) -> None:
+    """Build libass for the host from the pinned source several times
+    (upstream, each upstream patch of the series added in turn, the whole
+    series, and the whole series under AddressSanitizer) against FreeType,
+    FriBidi and HarfBuzz built here from pinned upstream sources, and run the
+    scenario corpus of engine/tests/libass through each build."""
+    t = load_test_module("libass")
+    pins = load_pins()
+    base = args.work.resolve()
+    if " " in str(base):
+        raise Failure(f"work directory {base} contains a space, which pkg-config cannot handle")
+    if base.exists():
+        shutil.rmtree(base)
+    out = base / "out"
+    (out / "logs").mkdir(parents=True)
+    (out / "frames").mkdir()
+    meson, ninja, pkg_config, bindir = prepare_tools(pins, args.downloads, base)
+    sdk = sdk_path("macosx")
+    flags = " ".join(["-target", HOST_TEST_TARGET, "-isysroot", str(sdk)])
+    deps = base / "deps"
+    env = {k: os.environ[k] for k in ("HOME", "USER", "LOGNAME", "TMPDIR", "DEVELOPER_DIR")
+           if k in os.environ}
+    env.update({"PATH": os.pathsep.join([str(bindir), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
+                "LC_ALL": "C", "CC": "/usr/bin/clang", "CXX": "/usr/bin/clang++",
+                "CFLAGS": flags, "CXXFLAGS": flags, "OBJCFLAGS": flags, "LDFLAGS": flags,
+                "PKG_CONFIG_LIBDIR": str(deps / "lib" / "pkgconfig"),
+                "GIT_CEILING_DIRECTORIES": str(base.parent)})
+    report = {"started": now(), "repository_commit": repo_commit(),
+              "pins_sha256": sha256_file(ENGINE / "pins.ini"), "target": HOST_TEST_TARGET,
+              "toolchain": {"clang": run(["/usr/bin/clang", "--version"], capture=True)
+                            .splitlines()[0], "sdk": str(sdk)},
+              "dependencies": {}, "variants": {}}
+
+    for name, options in LIBASS_TEST_DEPS.items():
+        log(f"\n==== {name} for the build host")
+        section = f"test:{name}"
+        archive = verified_archive(pins, args.downloads, section)
+        src = base / "src" / name
+        extract_tar(archive, src)
+        dep_env = dict(env)
+        if name in LIBASS_TEST_DEP_CXXFLAGS:
+            dep_env["CXXFLAGS"] += " " + LIBASS_TEST_DEP_CXXFLAGS[name]
+        host_meson(meson, ninja, src, base / "build" / name, deps, list(options), dep_env,
+                   out / "logs" / f"{name}.log")
+        report["dependencies"][name] = {"version": pins[section]["version"],
+                                        "commit": pins[section]["commit"],
+                                        "sha256": pins[section]["sha256"], "options": options}
+
+    archive = verified_archive(pins, args.downloads, "source:libass")
+    series = read_series("libass")
+    configured = read_list(CONFIG / "libass-meson.txt")
+    if "-Dlibunibreak=enabled" not in configured:
+        raise Failure("libass-meson.txt no longer enables libunibreak; update test-libass")
+    # libunibreak is not built for the host; it only changes where lines wrap.
+    options = [o.replace("-Dlibunibreak=enabled", "-Dlibunibreak=disabled") for o in configured]
+    harnesses = {}
+    for variant, count in t.VARIANTS.items():
+        log(f"\n==== libass, {variant} ({count} of {len(series)} patches)")
+        work = base / variant
+        src = work / "src"
+        extract_tar(archive, src)
+        pristine = tree_digest(tree_files(src))
+        applied = []
+        for digest, patch in series[:count]:
+            run(["patch", "-p1", "-F0", "-N", "-t", "-i", patch], cwd=src,
+                logfile=out / "logs" / f"{variant}-patch.log")
+            applied.append({"file": f"libass/{patch.name}", "sha256": digest})
+        if list(src.rglob("*.rej")) or list(src.rglob("*.orig")):
+            raise Failure(f"libass {variant}: the series left .rej or .orig files")
+        asan = variant.endswith("-asan")
+        install = work / "install"
+        host_meson(meson, ninja, src, work / "build", install,
+                   options + (["-Db_sanitize=address", "-Db_lundef=false"] if asan else []),
+                   env, out / "logs" / f"{variant}.log")
+        lib_env = dict(env, PKG_CONFIG_LIBDIR=os.pathsep.join(
+            [str(install / "lib" / "pkgconfig"), str(deps / "lib" / "pkgconfig")]))
+        cflags = run([pkg_config, "--cflags", "freetype2", "fribidi", "harfbuzz"], env=lib_env,
+                     capture=True).split()
+        libs = run([pkg_config, "--static", "--libs", "libass"], env=lib_env, capture=True).split()
+        harness = work / "harness"
+        run(["/usr/bin/clang", "-isysroot", sdk, "-target", HOST_TEST_TARGET, "-O2", "-g",
+             "-Wall", "-Werror", "-Wno-deprecated-declarations", "-I", src / "libass",
+             "-I", work / "build"]
+            + (["-DVIVID_PROBE"] if variant in t.PROBED else [])
+            + (["-fsanitize=address"] if asan else []) + cflags
+            + [LIBASS_TEST / "harness.c"] + libs + ["-lc++", "-o", harness],
+            logfile=out / "logs" / f"{variant}.log")
+        harnesses[variant] = harness
+        report["variants"][variant] = {
+            "patches": applied, "pristine_tree": pristine, "tree": tree_digest(tree_files(src)),
+            "library_sha256": sha256_file(install / "lib" / "libass.a"),
+            "address_sanitizer": asan, "event_cache_probe": variant in t.PROBED}
+
+    corpus = base / "corpus"
+    corpus.mkdir()
+    scenarios = t.build_corpus(base)
+    commands = {s.name: t.write_inputs(s, corpus) for s in scenarios}
+    results: dict = {}
+    crashed = []
+    for variant, harness in harnesses.items():
+        log(f"\n==== {len(scenarios)} scenarios through the {variant} build")
+        results[variant] = {}
+        frames_dir = out / "frames" / variant
+        frames_dir.mkdir()
+        for s in scenarios:
+            for path in s.cleanup:
+                path.unlink(missing_ok=True)
+            with open(commands[s.name]) as stdin, \
+                    open(out / "logs" / f"{variant}-harness.log", "a") as err:
+                err.write(f"harness: scenario {s.name}\n")
+                err.flush()
+                res = subprocess.run([str(harness)], stdin=stdin, stdout=subprocess.PIPE,
+                                     stderr=err, text=True, timeout=900)
+            (frames_dir / f"{s.name}.txt").write_text(res.stdout)
+            if res.returncode != 0:
+                crashed.append(f"{variant}/{s.name} (exit {res.returncode})")
+            results[variant][s.name] = t.parse_output(res.stdout)
+        log(f"{variant}: {sum(len(r['frames']) for r in results[variant].values())} frames")
+
+    c = Checks()
+    c.expect("every harness run finished", not crashed, ", ".join(crashed))
+    c.equal("series: upstream patches first, then Vivid's",
+            [p.name[:5] for _, p in series], list(t.SERIES_PREFIXES))
+    c.expect("patched tree differs from upstream",
+             report["variants"]["patched"]["tree"] != report["variants"]["upstream"]["tree"])
+    verdict = t.evaluate(scenarios, results)
+    c.expect(f"corpus: {verdict['checks']} scenario checks", not verdict["failures"],
+             "; ".join(verdict["failures"][:20]))
+    report["corpus"] = {k: verdict[k] for k in ("checks", "groups", "totals", "failures")}
+    report["scenarios"] = len(scenarios)
+    report["frames"] = {variant: sum(len(r["frames"]) for r in res.values())
+                        for variant, res in results.items()}
+    report["checks"] = c.results
+    report["finished"] = now()
+    write_json(out / "libass-test.json", report)
+    summary = t.summary_markdown(scenarios, verdict, results) + "\n" + "\n".join(
+        f"- {'PASS' if r['ok'] else 'FAIL'}: {r['check']}" for r in c.results) + "\n" + (
+        f"\nHost dependencies: FreeType {pins['test:freetype']['version']}, FriBidi "
+        f"{pins['test:fribidi']['version']}, HarfBuzz {pins['test:harfbuzz']['version']}; "
+        f"patched tree `{report['variants']['patched']['tree'][:16]}...`.\n")
+    (out / "libass-test.md").write_text(summary)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write(summary)
+    log("\n" + summary)
+    failed = [r for r in c.results if not r["ok"]]
+    if failed:
+        raise Failure(f"{len(failed)} of {len(c.results)} libass test checks failed")
+    log(f"All {len(c.results)} libass test checks passed ({verdict['checks']} scenario checks).")
+
+
 # --------------------------------------------------------------------- main
 
 def main(argv=None) -> int:
@@ -2515,6 +2719,13 @@ def main(argv=None) -> int:
                        "unpatched libdovi on the host")
     p.add_argument("--work", type=Path,
                    default=default_dir("LUCID_LIBDOVI_TEST", "lucid-libdovi-test"),
+                   help="work directory for the test (replaced on each run)")
+    p.add_argument("--downloads", type=Path,
+                   default=default_dir("LUCID_DOWNLOADS", "lucid-downloads"), help="download cache")
+    p = sub.add_parser("test-libass", help="run the libass scenario corpus against upstream, "
+                       "partly patched and patched libass on the host")
+    p.add_argument("--work", type=Path,
+                   default=default_dir("LUCID_LIBASS_TEST", "lucid-libass-test"),
                    help="work directory for the test (replaced on each run)")
     p.add_argument("--downloads", type=Path,
                    default=default_dir("LUCID_DOWNLOADS", "lucid-downloads"), help="download cache")
@@ -2544,7 +2755,7 @@ def main(argv=None) -> int:
     handlers = {"check-allowlist": cmd_check_allowlist, "fetch": cmd_fetch, "build": cmd_build,
                 "test-audio": cmd_test_audio, "check": cmd_check, "test": cmd_test,
                 "test-vo": cmd_test_vo, "package": cmd_package,
-                "test-libdovi": cmd_test_libdovi}
+                "test-libdovi": cmd_test_libdovi, "test-libass": cmd_test_libass}
     try:
         handlers[args.command](args)
     except Failure as e:

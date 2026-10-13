@@ -4,8 +4,10 @@ name: Lucid Engine build
 # pinned upstream sources and Vivid's patch series in engine/, checks every
 # slice against the recorded build facts, runs the audio output, video
 # output and decoder tests built on the runner from the patched trees, runs
-# the malformed RPU corpus against the patched and unpatched libdovi, and
-# packages static xcframeworks. See docs/cores/lucid-engine-build.md.
+# the malformed RPU corpus against the patched and unpatched libdovi and the
+# libass scenario corpus against upstream, partly patched and patched libass
+# built for the runner, and packages static xcframeworks. See
+# docs/cores/lucid-engine-build.md.
 
 # Runs on the pipeline branch and on every engine implementer's branch
 # (experiment/lucid-engine-*). Each branch has its own concurrency group, so
@@ -160,9 +162,55 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+  libass-test:
+    name: libass host tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that every fetch is pinned and allowlisted
+        run: python3 engine/lucid.py check-allowlist
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Restore pinned downloads
+        id: downloads
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libass-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Fetch and verify meson, ninja, libass, FreeType, FriBidi and HarfBuzz
+        run: |
+          python3 engine/lucid.py fetch --only tool:meson,tool:ninja,source:libass,test: \
+            --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Save pinned downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-libass-test-downloads-${{ hashFiles('engine/pins.ini') }}
+      # Upstream 0.17.5, each upstream patch of the series added in turn, the
+      # whole series, and the whole series under AddressSanitizer, all built
+      # for the runner and run through the same scenarios.
+      - name: libass scenarios through upstream, partly patched and patched builds
+        run: |
+          python3 engine/lucid.py test-libass \
+            --work "$RUNNER_TEMP/lucid-libass-test" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Upload the libass test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-libass-test
+          path: |
+            ${{ runner.temp }}/lucid-libass-test/out
+          if-no-files-found: ignore
+          retention-days: 3
+
   package:
     name: Package xcframeworks
-    needs: [build, libdovi-test]
+    needs: [build, libdovi-test, libass-test]
     runs-on: macos-26
     timeout-minutes: 20
     steps:
