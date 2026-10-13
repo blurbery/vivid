@@ -1,9 +1,14 @@
 name: Lucid native audio driver
 
+# Builds Lucid's FFmpeg and libmpv for Apple devices as LGPL-2.1-or-later with
+# Vivid's patches (patches/mpv-build, patches/ffmpeg and patches/mpv), checks
+# the licence, TLS and audio-driver markers in the binaries, and uploads the
+# eight frameworks scripts/release/use-patched-libmpv.sh installs.
+
 on:
   push:
     branches: [experiment-2.0]
-    paths: ['patches/mpv/**', '.github/workflows/mpv-audio-driver.yml']
+    paths: ['patches/**', '.github/workflows/mpv-audio-driver.yml']
   workflow_dispatch:
     inputs:
       platform:
@@ -38,17 +43,22 @@ jobs:
           ref: c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
           path: native-build
           persist-credentials: false
-      - name: Apply Vivid audio restart patch
+      - name: Apply Vivid LGPL build, TLS and audio restart patches
         run: |
+          git -C native-build apply "$GITHUB_WORKSPACE/patches/mpv-build/0001-build-mpv-and-ffmpeg-as-lgpl.patch"
+          cp patches/ffmpeg/0001-securetransport-without-private-identity-api.patch native-build/patches/ffmpeg/pool/0901-vivid-securetransport-without-private-identity-api.patch
+          printf '\n0901-vivid-securetransport-without-private-identity-api.patch\n' >> native-build/patches/ffmpeg/series.apple
           cp patches/mpv/0001-avfoundation-resume-after-audio-eof.patch native-build/patches/mpv/pool/0901-vivid-audio-eof.patch
           printf '\n0901-vivid-audio-eof.patch\n' >> native-build/patches/mpv/series.apple
       - name: Install build tools
         run: |
           brew install autoconf automake libtool ninja
           python -m pip install meson==1.4.2
-      - name: Rebuild libmpv for ${{ matrix.platform }}
+      # FFmpeg must be listed: anything outside libs= is restored from the
+      # published GPL builds, which would silently link the GPL FFmpeg.
+      - name: Rebuild FFmpeg and libmpv for ${{ matrix.platform }}
         working-directory: native-build
-        run: make build use-prebuilt libs=libmpv platform=${{ matrix.platform }}
+        run: make build use-prebuilt libs=FFmpeg,libmpv platform=${{ matrix.platform }}
       - name: Verify restart gate and binary
         run: |
           python3 - <<'PY'
@@ -71,10 +81,35 @@ jobs:
               assert b'compressed-anchor-start\x00' in path.read_bytes()
               assert b'first start recovery after' in path.read_bytes()
           print('Verified compiled EOF restart patch')
+
+          ffmpeg = ['Libavcodec', 'Libavdevice', 'Libavfilter', 'Libavformat', 'Libavutil', 'Libswresample', 'Libswscale']
+          def symbols(path, *flags):
+              out = subprocess.run(['nm', *flags, str(path)], capture_output=True, text=True, check=True).stdout
+              return {line.split()[-1] for line in out.splitlines() if line.strip() and not line.endswith(':')}
+          for name in ffmpeg + ['Libmpv']:
+              found = list(Path('native-build/dist').glob(f'**/{name}.framework/{name}'))
+              assert found, f'Missing rebuilt {name}'
+              for path in found:
+                  data = path.read_bytes()
+                  undefined = symbols(path, '-u')
+                  assert not [s for s in undefined if s.startswith(('_SSL_', '_OPENSSL_', '_ERR_', '_EVP_'))], f'{path} still references OpenSSL'
+                  assert '_SecIdentityCreate' not in undefined, f'{path} references the private SecIdentityCreate'
+                  if name == 'Libmpv':
+                      assert b'-Dgpl=false' in data, f'{path} was not built with -Dgpl=false'
+                  else:
+                      assert b'LGPL version 2.1 or later' in data and b'GPL version 3 or later' not in data, f'{path} is not an LGPL-2.1 build'
+                  if name == 'Libavfilter':
+                      assert '_ff_vf_delogo' not in symbols(path, '-g'), f'{path} still contains the GPL delogo filter'
+                  if name == 'Libavformat':
+                      assert b'--enable-securetransport' in data, f'{path} was not built with Secure Transport'
+          print('Verified LGPL FFmpeg and libmpv with Secure Transport and no OpenSSL')
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: mpv-${{ matrix.platform }}-audio-driver
-          path: native-build/dist/release/Libmpv*.zip
+          path: |
+            native-build/dist/release/Libmpv*.zip
+            native-build/dist/release/Libav*.zip
+            native-build/dist/release/Libsw*.zip
           if-no-files-found: error
           retention-days: 3

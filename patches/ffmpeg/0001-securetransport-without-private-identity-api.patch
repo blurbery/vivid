@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] securetransport: drop the private identity API on iOS and tvOS
+
+Client certificates need PEM import (SecItemImport) and the private
+SecIdentityCreate, neither of which iOS or tvOS apps can use. Compile the
+client-certificate path out when PEM import is unavailable, so the Secure
+Transport backend has no private API reference. Server certificates are
+still checked against the system trust store when verification is on.
+Applies after mpv-build's 0011-securetransport-disable-pem-import-for-catalyst.
+---
+diff --git a/libavformat/tls_securetransport.c b/libavformat/tls_securetransport.c
+index 0000000000..0000000000 100644
+--- a/libavformat/tls_securetransport.c
++++ b/libavformat/tls_securetransport.c
+@@ -43,8 +43,10 @@
+ #define TARGET_OS_MACCATALYST 0
+ #endif
+ 
++#if HAVE_SECITEMIMPORT && !TARGET_OS_MACCATALYST
+ // We use a private API call here; it's good enough for WebKit.
+ SecIdentityRef SecIdentityCreate(CFAllocatorRef allocator, SecCertificateRef certificate, SecKeyRef privateKey);
++#endif
+ #define ioErr -36
+ 
+ typedef struct TLSContext {
+@@ -158,6 +160,11 @@ end:
+ 
+ static int load_cert(URLContext *h)
+ {
++#if !HAVE_SECITEMIMPORT || TARGET_OS_MACCATALYST
++    // Client certificates need PEM import and the private SecIdentityCreate,
++    // which iOS and tvOS apps can't use. Server trust still uses the system.
++    return AVERROR_PATCHWELCOME;
++#else
+     TLSContext *c = h->priv_data;
+     int ret = 0;
+     CFArrayRef certArray = NULL;
+@@ -197,6 +204,7 @@ end:
+     if (id)
+         CFRelease(id);
+     return ret;
++#endif
+ }
+ 
+ static OSStatus tls_read_cb(SSLConnectionRef connection, void *data, size_t *dataLength)
