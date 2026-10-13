@@ -9,6 +9,9 @@ AudioToolbox CoreAudio Security Metal QuartzCore CoreText CoreGraphics UIKit
 # Needed by the link set as well (the symbol closure check shows why):
 # OpenGLES for mpv's ios-gl interop (EAGLContext) and IOSurface for MoltenVK.
 OpenGLES IOSurface
+# CoreImage for the video output's Picture in Picture composite (patch spec
+# 4.14.7).
+CoreImage
 
 [libraries]
 c++ z bz2 iconv xml2

@@ -2,9 +2,10 @@ name: Lucid Engine build
 
 # Builds Lucid Engine's libdovi, dav1d, libass, FFmpeg and libmpv from the
 # pinned upstream sources and Vivid's patch series in engine/, checks every
-# slice against the recorded build facts, runs the malformed RPU corpus
-# against the patched and unpatched libdovi, and packages static
-# xcframeworks. See docs/cores/lucid-engine-build.md.
+# slice against the recorded build facts, runs the audio output, video
+# output and decoder tests built on the runner from the patched trees, runs
+# the malformed RPU corpus against the patched and unpatched libdovi, and
+# packages static xcframeworks. See docs/cores/lucid-engine-build.md.
 
 # Runs on the pipeline branch and on every engine implementer's branch
 # (experiment/lucid-engine-*). Each branch has its own concurrency group, so
@@ -73,10 +74,22 @@ jobs:
           python3 engine/lucid.py test-audio --slice "$SLICE" \
             --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Provenance, licence, TLS and link checks
+        id: check
         env:
           SLICE: ${{ matrix.slice }}
         run: |
           python3 engine/lucid.py check --slice "$SLICE" --strict \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      # Host-side tests compiled from the patched mpv tree (patch spec 8.6, 9.4).
+      # They run on the build host, so one slice's job runs them for the whole
+      # workflow run. They also run when the checks failed, so one run reports
+      # both.
+      - name: Video output tests
+        if: matrix.slice == 'ios-arm64-simulator' && (success() || steps.check.outcome == 'failure')
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py test-vo --slice "$SLICE" \
             --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
       # Host-side decoder tests compiled from the slice's patched FFmpeg tree.
       - name: Decoder tests from the patched trees

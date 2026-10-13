@@ -8,7 +8,7 @@
 Vivid's own build pipeline for Lucid Engine's media libraries. It builds libmpv, FFmpeg, libass, dav1d and libdovi from their upstream sources with Vivid's patch series, and checks every result against the recorded configuration of today's binaries. Nothing comes from a third-party build repository: the scripts, pins and patches all live in [`engine/`](../../engine).
 
 > [!IMPORTANT]
-> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on `experiment/lucid-engine-build` and the engine implementers' `experiment/lucid-engine-*` branches. Upstream mpv has no `avfoundation` video output, so these builds cannot replace today's engine until the rest of Vivid's own engine patches land: video output and Dolby Vision. The audio output patches (mpv `0010` to `0016`) still need the device checks of the patch specification.
+> These binaries are interim. The app still links the pinned package described in [Lucid Engine](player-engine.md#builds-and-native-audio-patch), and the pipeline runs only on `experiment/lucid-engine-build` and the engine implementers' `experiment/lucid-engine-*` branches. Upstream mpv has no `avfoundation` video output. Vivid's own engine patches are now all in the series: the audio output (mpv `0010` to `0016`), the video output (mpv `0020` to `0025`) and the decoder work (FFmpeg `0010` to `0012`, mpv `0040`). These builds still cannot replace today's engine until those patches have passed the device checks of the patch specification.
 
 ## What it builds
 
@@ -45,9 +45,10 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
 2. restores or downloads the pinned inputs and verifies each SHA-256;
 3. builds libdovi, dav1d, libass, FFmpeg and libmpv for the slice;
 4. builds and runs the audio output's test vectors on the runner, from the mpv tree it has just patched;
-5. runs the provenance, licence, TLS, libdovi, decoder, audio output, reproducibility and link checks below;
-6. builds and runs the decoder tests from the slice's patched FFmpeg and libdovi trees on the build host, including an end-to-end test of FFmpeg's VideoToolbox glue against a fake VideoToolbox;
-7. uploads the slice's frameworks, provenance report and logs.
+5. runs the provenance, licence, TLS, libdovi, decoder, audio output, video output, reproducibility and link checks below;
+6. builds and runs the video output tests for the build host, from the patched mpv tree (in the `ios-arm64-simulator` job only, so once per run, and also when the checks failed);
+7. builds and runs the decoder tests from the slice's patched FFmpeg and libdovi trees on the build host, including an end-to-end test of FFmpeg's VideoToolbox glue against a fake VideoToolbox;
+8. uploads the slice's frameworks, provenance report and logs.
 
 Alongside them, the libdovi C API test job builds libdovi for the runner itself, unpatched and patched, and runs the malformed RPU corpus through both (see [libdovi](#libdovi)). A final job, which waits for every slice and the libdovi test, turns the slices into xcframeworks. Artefacts are kept for three days. Each branch has its own concurrency group, so a newer push cancels only that branch's running build.
 
@@ -60,6 +61,7 @@ python3 engine/lucid.py build --slice tvos-arm64 --work /path/to/work --download
 python3 engine/lucid.py test-audio --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py check --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py test --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
+python3 engine/lucid.py test-vo --slice tvos-arm64 --work /path/to/work --downloads /path/to/downloads
 python3 engine/lucid.py package --input /path/to/work/out --out /path/to/release
 python3 engine/lucid.py test-libdovi --work /path/to/libdovi-test --downloads /path/to/downloads
 ```
@@ -100,6 +102,9 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | --- | --- | --- |
 | FFmpeg | `0001-securetransport-without-private-identity-api.patch` | Compiles the client-certificate path, which needs the private `SecIdentityCreate`, out of Secure Transport on iOS and tvOS. Server certificates are still checked against the system trust store. |
 | FFmpeg | `0002-videotoolbox-request-metal-compatible-pixel-buffers.patch` | Asks VideoToolbox for Metal-compatible pixel buffers instead of the OpenGL ES or OpenGL compatibility flags, matching today's binaries. LGPL-2.1-or-later. |
+| FFmpeg | `0010-videotoolbox-give-every-sample-an-explicit-size.patch` | Creates every sample handed to VideoToolbox with an explicit sample size, for every codec. VideoToolbox's Dolby Vision HEVC decoder fails samples without one. LGPL-2.1-or-later. |
+| FFmpeg | `0011-videotoolbox-decode-dolby-vision-profiles-5-7-and-8-natively.patch` | Decodes HEVC with a usable Dolby Vision record of profile 5, 7 or 8 through VideoToolbox's Dolby Vision HEVC (`dvh1`) decoder. Profile 7 is presented as profile 8.1: rewritten record, RPUs converted by libdovi 3.3.2 (mode 2), no enhancement layer, and empty or truncated RPUs skipped before libdovi sees them. Profile 7 and 8 retry once as plain HEVC when VideoToolbox refuses the session. Adds the per-frame HDR metadata session properties. Decoded frames get FFmpeg's usual attachments from the stream's colour signalling, as before, at any thread count. The logic lives in its own file, `libavcodec/videotoolbox_dovi.c`. LGPL-2.1-or-later. |
+| FFmpeg | `0012-hevcdec-log-repeated-dolby-vision-rpus-and-skipped-nal-units-at-verbose.patch` | Logs `Multiple Dolby Vision RPUs found in one AU. Skipping previous.` and `Skipping NAL unit %d` at verbose level instead of warning and info. LGPL-2.1-or-later. |
 | mpv | `0001-ad_spdif-recreate-spdif-muxer-on-reset.patch` | Upstream mpv commit `1388a453`, unchanged, with its upstream attribution: recreates the S/PDIF muxer after a seek and waits for a TrueHD major sync. |
 | mpv | `0002-ao_avfoundation-build-for-ios-and-tvos.patch` | Lets upstream's AVFoundation audio output (`-Davfoundation=enabled`) compile for iOS and tvOS by keeping the macOS-only CoreAudio device code out of those builds, and builds the CoreFoundation string helpers it calls (`osdep/utils-mac.c`), which upstream builds only with the macOS `cocoa` feature. The output's `notification name:` log line is unchanged. macOS builds with `cocoa` are unchanged. LGPL-2.1-or-later. |
 | mpv | `0010-ad_spdif-derive-the-e-ac-3-carrier-rate-from-the-stream.patch` | Opens E-AC-3 passthrough at four times the stream's codec rate (4 x 48000 when unknown) instead of 192000 Hz for every stream, so 44.1 kHz E-AC-3 keeps its timing. AC-3 is unchanged. LGPL-2.1-or-later. |
@@ -109,19 +114,24 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | mpv | `0014-ao_avfoundation-start-up-supervision-and-clock-anchoring.patch` | Passthrough start-up: rate 1 once primed, engagement, one recovery seek with the first-start grace, slow-source extensions, fallback, and the start and resume anchoring that keeps video waiting for AirPlay audio. LGPL-2.1-or-later. |
 | mpv | `0015-ao_avfoundation-ac-3-and-e-ac-3-passthrough.patch` | The passthrough sink's decisions: IEC 61937 unwrapping, the stream window and serving, filling, clocks, diagnostics, end-of-file resume and the fallback to PCM. LGPL-2.1-or-later. |
 | mpv | `0016-ao_avfoundation-avfoundation-bindings-for-both-sinks.patch` | Replaces upstream's driver with the Objective-C bindings: driver and `ao-avfoundation-*` options (`max-lookahead` on tvOS only), the output's queue, `AVAudioSession`, the renderer and synchroniser, and `AVPlayer` with its resource loader. LGPL-2.1-or-later. |
-| libdovi | `0001-capi-return-an-error-instead-of-aborting-on-any-input.patch` | Makes every C API function return its normal error result instead of aborting the process, for any input (see [libdovi](#libdovi)). Valid input gives the same results. MIT, like libdovi. |
-| FFmpeg | `0010-videotoolbox-give-every-sample-an-explicit-size.patch` | Creates every sample handed to VideoToolbox with an explicit sample size, for every codec. VideoToolbox's Dolby Vision HEVC decoder fails samples without one. LGPL-2.1-or-later. |
-| FFmpeg | `0011-videotoolbox-decode-dolby-vision-profiles-5-7-and-8-natively.patch` | Decodes HEVC with a usable Dolby Vision record of profile 5, 7 or 8 through VideoToolbox's Dolby Vision HEVC (`dvh1`) decoder. Profile 7 is presented as profile 8.1: rewritten record, RPUs converted by libdovi 3.3.2 (mode 2), no enhancement layer, and empty or truncated RPUs skipped before libdovi sees them. Profile 7 and 8 retry once as plain HEVC when VideoToolbox refuses the session. Adds the per-frame HDR metadata session properties. Decoded frames get FFmpeg's usual attachments from the stream's colour signalling, as before, at any thread count. The logic lives in its own file, `libavcodec/videotoolbox_dovi.c`. LGPL-2.1-or-later. |
-| FFmpeg | `0012-hevcdec-log-repeated-dolby-vision-rpus-and-skipped-nal-units-at-verbose.patch` | Logs `Multiple Dolby Vision RPUs found in one AU. Skipping previous.` and `Skipping NAL unit %d` at verbose level instead of warning and info. LGPL-2.1-or-later. |
+| mpv | `0020-vo_avfoundation-presentation-timing-and-pacing.patch` | Video output, part 1: the playback rate estimator, the media-mode timebase servo, the CoreMedia timebase and frame pacing (readiness wait, deadline drops, recovery throttle). LGPL-2.1-or-later. |
+| mpv | `0021-vo_avfoundation-pixel-kernels-geometry-and-pools.patch` | Video output, part 2: upload copies and the direct subtitle blends (vectorised with NEON on arm64, bit for bit equal to their scalar forms), the YUV subtitle composite in a fixed evaluation order, host layer pixel size and frame-space geometry, and the CoreVideo pools. LGPL-2.1-or-later. |
+| mpv | `0022-vo_avfoundation-frame-path.patch` | Video output, part 3: software uploads and colour tags, pixel aspect, the Dolby Vision transfer repair, samples, and Picture in Picture composites that blend into the decoder's buffer and keep the changed rows, so each presented image carries its subtitle exactly once. A buffer that may be on screen is written only when it is presented again: a redraw's rows are prepared elsewhere and each changed row is written once, so the picture never passes through a state without its cue, and switching compositing off changes nothing on screen. LGPL-2.1-or-later. |
+| mpv | `0023-vo_avfoundation-subtitles.patch` | Video output, part 4: every subtitle object drawn into one canvas (primary and secondary together), change tracking, dirty tracking and timed subtitle samples. LGPL-2.1-or-later. |
+| mpv | `0024-vo_avfoundation-layers-and-observers.patch` | Video output, part 5: the host and subtitle layers, their renderers and timebase, the main-thread hops, the resize and app-state observers, and the layers' last release on the main thread. LGPL-2.1-or-later. |
+| mpv | `0025-vo_avfoundation-add-the-video-output.patch` | Adds `vo=avfoundation` (meson feature `vo-avfoundation`, first in the video output list) with its `avfoundation-*` options and the VideoToolbox device it registers. LGPL-2.1-or-later. |
 | mpv | `0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch` | Once hardware decoding has output a frame, a run of decoding errors ends it only after two keyframes fail to recover it or after 240 errors, instead of at the first error with `hwdec-software-fallback=yes`. Probing still falls back at once. LGPL-2.1-or-later. |
+| libdovi | `0001-capi-return-an-error-instead-of-aborting-on-any-input.patch` | Makes every C API function return its normal error result instead of aborting the process, for any input (see [libdovi](#libdovi)). Valid input gives the same results. MIT, like libdovi. |
 
-The audio output patches add one module each, with the pure C decisions first and the Objective-C bindings last (`0016`), and each adds its own files to `meson.build`, so every stage of the series builds. Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019 (0010 to 0016 so far, including the E-AC-3 carrier rate and the output-chain wake), video output mpv 0020 to 0039, decoder work mpv 0040 to 0049 and FFmpeg 0010 to 0029.
+The audio output patches add one module each, with the pure C decisions first and the Objective-C bindings last (`0016`), and each adds its own files to `meson.build`, so every stage of the series builds. The video output patches add their modules first (`0020` to `0024`, which `meson.build` does not build yet) and the output itself last (`0025`), which adds them all to `meson.build`. Vivid's own patches for the AVFoundation video and audio outputs, Dolby Vision and the other kept behaviour are written from the [patch specification](../playback/lucid-engine-patch-spec.md), in these number ranges: audio output mpv 0010 to 0019 (0010 to 0016 so far, including the E-AC-3 carrier rate and the output-chain wake), video output mpv 0020 to 0039 (0020 to 0025 so far), decoder work mpv 0040 to 0049 (0040 so far) and FFmpeg 0010 to 0029 (0010 to 0012 so far).
+
+Each part was written on its own implementer branch, against the pristine source with the patches already on the pipeline branch, and the three were then merged into one series per library. Only one hunk needed regenerating: the `meson.build` hunk of `0025`, which follows the audio output's `meson.build` additions in the merged series and so moved from line 1525 to line 1532. Its content is unchanged, and the merged tree is identical to applying the original `0025` after the audio output patches. Every prefix of every series applies to the pristine source with `patch -p1 -F0` without offsets, fuzz or leftover files, and changes exactly the files its patches name.
 
 To add a patch, write it against the pristine source (or the previous patch in the series), add its SHA-256 and file name to the end of the `series` file, and push. The build fails if the files a series changes differ from the files its patches name.
 
 ## libdovi
 
-libdovi is the C API of the `dolby_vision` crate (Rust, MIT). Two callers in the engine hand it Dolby Vision RPUs taken straight from the media: libplacebo, which mpv calls for every frame that carries an RPU, and FFmpeg's profile 7 conversion once Vivid's Dolby Vision patch lands. The [patch specification](../playback/lucid-engine-patch-spec.md) (5.13) sets the requirements.
+libdovi is the C API of the `dolby_vision` crate (Rust, MIT). Two callers in the engine hand it Dolby Vision RPUs taken straight from the media: libplacebo, which mpv calls for every frame that carries an RPU, and FFmpeg's profile 7 conversion in Vivid's Dolby Vision patch (FFmpeg `0011`). The [patch specification](../playback/lucid-engine-patch-spec.md) (5.13) sets the requirements.
 
 ### Built from source
 
@@ -130,7 +140,7 @@ libdovi is the C API of the `dolby_vision` crate (Rust, MIT). Two callers in the
 - **Form:** framework `Libdovi`, module `Libdovi`, with `Headers/rpu_parser.h`, as today. The header, the pkg-config name `dovi` and the 21 exported `dovi_*` functions are unchanged; `check` compares them with today's prebuilt for every slice.
 - **Minimum OS:** the crate's own objects carry 14.0. Rust's prebuilt standard library keeps Rust's own minimums: `LC_VERSION_MIN_IPHONEOS` or `LC_VERSION_MIN_TVOS` 10.0 on the devices and 14.0 on the simulators, the same as today's prebuilt.
 - **Embedded bitcode removed:** Rust's prebuilt standard library objects carry LLVM bitcode for cross-crate LTO, written by a newer LLVM (22) than Xcode 26.6's `nm` and linker read. The build removes the `__LLVM` sections with the toolchain's own `rust-objcopy`; the machine code is unchanged, and `check` requires no `__LLVM` segment.
-- **Callers:** `check` records the `dovi_*` functions the pinned libplacebo archive imports (parse, the header and display management queries, and their frees) and those the built FFmpeg imports (none until the Dolby Vision patch), and requires each to be exported.
+- **Callers:** `check` records the `dovi_*` functions the pinned libplacebo archive imports (parse, the header and display management queries, and their frees) and those the built FFmpeg imports (the ones its Dolby Vision patch calls), and requires each to be exported.
 
 ### Crash-proof patch
 
@@ -198,8 +208,8 @@ Compilers come from the selected Xcode (`/usr/bin/clang`). Every library gets th
 | --- | --- | --- | --- |
 | Slices | arm64 plus arm64e (tvOS device) and x86_64 (simulators); also Catalyst, macOS and visionOS | arm64 only, iOS and tvOS | Vivid links only arm64 on iPhone, iPad and Apple TV |
 | mpv licence | `-Dgpl=true` | `-Dgpl=false` | Decided: LGPL-2.1-or-later libmpv |
-| mpv options | `-Dmoltenvk=enabled -Dvo-avfoundation=enabled` | left out | Both exist only with third-party mpv patches, and upstream meson rejects them |
-| mpv features | include `gpl`, `moltenvk` and `vo-avfoundation` | without those three | Follows from the two rows above |
+| mpv options | `-Dmoltenvk=enabled -Dvo-avfoundation=enabled` | `-Dvo-avfoundation=enabled` only | `moltenvk` exists only with a third-party mpv patch, and upstream meson rejects it; `vo-avfoundation` comes from Vivid's own patch `0025` |
+| mpv features | include `gpl`, `moltenvk` and `vo-avfoundation` | without `gpl` and `moltenvk` | Follows from the two rows above |
 | FFmpeg licence | `--enable-gpl --enable-version3` (GPL version 3 or later) | neither (LGPL version 2.1 or later) | Decided |
 | FFmpeg TLS | OpenSSL 3.3.5 | Secure Transport, with the patch above | Decided |
 | FFmpeg components | as listed in the facts | without the `delogo` filter, the `whip` muxer and the `dtls`, `ffrtmpcrypt`, `rtmpe` and `rtmpte` protocols | GPL-only filter; the others need OpenSSL |
@@ -228,8 +238,10 @@ Kept as today, for parity:
 Each slice job uploads `lucid-engine-slice-<slice>` with:
 
 - `frameworks/<Name>.framework`: static archive, `Headers/`, `Modules/module.modulemap` and `Info.plist`;
-- `provenance.json` and `provenance.md`;
-- `logs/`: the build output of each library, plus FFmpeg's `config.log` and meson's logs.
+- `provenance.json` and `provenance.md`, including the decoder test results;
+- `audio-tests.json`: the audio output test vectors' result and the hashes it was checked against;
+- `vo-tests.txt`: the video output tests' output (`ios-arm64-simulator` only);
+- `logs/`: the build output of each library, plus FFmpeg's `config.log`, meson's logs and the decoder tests' host libdovi and FFmpeg builds.
 
 The libdovi C API test job uploads `lucid-engine-libdovi-test` with its report (`libdovi-test.json` and `.md`), the per-case results of both builds and their logs.
 
@@ -281,6 +293,8 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
   - The option names `manage-audio-session` and `compressed-anchor-start` (each followed by a NUL) and `compressed-lead`, and Vivid's markers `first start recovery after` and `trace edge %s`. `max-lookahead` (followed by a NUL) is in both tvOS slices and absent from both iOS slices.
   - `Libmpv` references `_AVSampleBufferAudioRendererOutputConfigurationDidChangeNotification` and contains the selectors `setDelaysRateChangeUntilHasSufficientMediaData:` and `setSupportsMultichannelContent:error:`.
   - `lucid.py test-audio` builds [`engine/tests/ao_avfoundation_vectors.c`](../../engine/tests/ao_avfoundation_vectors.c) on the runner against the audio output's C files in the slice's patched mpv tree, with address and undefined-behaviour sanitisers, and runs every vector of the specification's section 9.3 through fakes of mpv, the session, the renderer and `AVPlayer`. It writes `audio-tests.json` with the SHA-256 of each source and of the test file, and `check` fails unless the vectors ran and all passed and those hashes match the slice's tree.
+- **Video output:** `Libmpv` defines the `avfoundation` video output and registers it first in `vo.c`, ahead of `gpu-next`; `HAVE_VO_AVFOUNDATION` is 1; the option names `composite-osd`, `pip-composite-osd`, `queue-lead-ms` and `presentation` are present and `osd-max-height` and `osd-video-res` are not; and the binary references the CoreMedia, CoreVideo, AVFoundation, Core Image, Metal and UIKit symbols and selectors the output needs, and carries the `DolbyVisionRPUData` key.
+- **Video output tests** (`lucid.py test-vo`, once per run, in the `ios-arm64-simulator` job): the output's modules are compiled from the patched tree for the build host and run against the patch specification's acceptance properties and vectors (sections 4 and 9.4): estimator vectors, servo properties checked by simulation and against an independent reference model, readiness and recovery with a fake renderer, the CoreMedia timebase, frame-space geometry, uploads and colour tags, bit-exact blends and composites, the vectorised kernels against their scalar forms (with timings per 4K frame in the run summary), Picture in Picture composites that blend each image once, restore the decoder's rows only when that buffer is presented again and never leave a redrawn picture without its cue, and several subtitle objects drawn together. The centre (`vo_avfoundation.m`) is built twice, the second time with the tvOS conditionals on, and driven through scripted frames against a fake layers module that logs every call in order. The layers module runs on the build host behind a small UIKit shim, against real display layers. The step fails if any case fails or none runs.
 
 The summary of each slice also appears on the workflow run page.
 
@@ -303,7 +317,7 @@ Each suite counts its checks, and the step fails on any failed check or when a s
 
 ## Still to do
 
-- Vivid's own `avfoundation` video output. Until it exists, these builds cannot be linked into a shipping app. The audio output patches and the Dolby Vision decoder patches are in the series but still need the device checks of the patch specification.
+- The device checks of the patch specification (9.5) for Vivid's own engine patches: the audio output (mpv `0010` to `0016`), the video output (mpv `0020` to `0025`) and the decoder work (FFmpeg `0010` to `0012`, mpv `0040`). All are in the series and pass the host tests, but none has been checked on a device, so these builds cannot yet be linked into a shipping app.
 - Building the remaining dependencies from source, starting with the ones that carry the most code (libplacebo, shaderc and MoltenVK).
 - An end-to-end host test of mpv patch `0040`: a host libmpv needs host builds of libplacebo and libass (with FreeType, FriBidi and HarfBuzz), which the pipeline pins only as iOS and tvOS binaries.
 - A Swift package that serves these xcframeworks, updating `use-patched-libmpv.sh` for the new slice identifiers, and deciding the bundle identifiers.

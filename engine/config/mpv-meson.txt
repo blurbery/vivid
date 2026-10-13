@@ -25,6 +25,7 @@
 -Dswift-build=disabled
 -Daudiounit=enabled
 -Davfoundation=enabled
-# removed -Dvo-avfoundation=enabled: only exists with a third-party mpv patch (facts 3.4)
+# -Dvo-avfoundation=enabled: Vivid's own video output (mpv patches 0020 to 0025)
+-Dvo-avfoundation=enabled
 -Dlua=disabled
 -Dios-gl=enabled
