@@ -18,7 +18,6 @@ Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-E
 | DifferenceKit (CollectionHStack dependency) | 1.3.0, `073b9671ce2b9b5b96398611427a1f929927e428` | Apache-2.0 |
 | ThumbHash decoder (adapted) | `a652ce6ed691242f459f468f0a8756cda3b90a82` | MIT |
 | tvOS media catalog sample code (adapted, Apple) | 2024 sample | Apple sample code licence (MIT-style) |
-| Go Noto Current font | 2.012, `go-noto-universal` `0f4be64` | SIL Open Font License 1.1 |
 
 This file is the full inventory of third-party components in both apps. The [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt) and the unchanged upstream licence texts beside it are shown in Settings → About → Open Source Licences; keep them matched to this list.
 
@@ -38,11 +37,7 @@ The logos identify their respective projects and are not presented as Vivid-owne
 
 ## Server and service names
 
-Silo, Emby, Jellyfin, Plex, Kodi, Trakt, MDBList, OpenSubtitles and TMDB are trademarks of their respective owners. Vivid shows the Silo, Emby and Jellyfin names and logos to identify the servers it connects to, the MDBList, OpenSubtitles and TMDB names (and the TMDB logo, as its attribution requires) to identify the services it connects to, and the Plex, Kodi, Trakt, Emby and Jellyfin logos on the MDBList plugin page to show apps that MDBList works with (Vivid does not connect to Plex, Kodi or Trakt). Studios & Networks shows studio and network logos supplied by TMDb at runtime; none are bundled with the app. All of these names and logos belong to their owners, and Vivid is an independent app that is not endorsed by any of them. The Jellyfin project publishes its logo artwork under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The Silo wordmark is covered by the Silo brand-asset notice in `iosApp/iosApp/Assets.xcassets/NOTICE`.
-
-## Fonts
-
-Both apps bundle the Go Noto Current font (version 2.012, from the go-noto-universal project), copyright The Noto Project Authors and licensed under the SIL Open Font License 1.1. Noto is a trademark of Google LLC.
+Silo, Emby, Jellyfin, MDBList, OpenSubtitles and TMDB are trademarks of their respective owners. Vivid shows the Silo, Emby and Jellyfin names and logos to identify the servers it connects to (including on the MDBList plugin page, which shows that MDBList works with Emby and Jellyfin), and the MDBList, OpenSubtitles and TMDB names (and the TMDB logo, as its attribution requires) to identify the services it connects to. Studios & Networks shows studio and network logos supplied by TMDb at runtime; none are bundled with the app. All of these names and logos belong to their owners, and Vivid is an independent app that is not endorsed by any of them. The Jellyfin project publishes its logo artwork under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The Silo wordmark appears only on the server picker to identify the Silo choice, a referential “works with Silo” use that [Silo’s trademark policy](https://github.com/Silo-Server/siloserver.org/blob/main/TRADEMARK.md#uses-that-are-always-fine--no-permission-needed) allows without permission; its brand-asset notice is in `iosApp/iosApp/Assets.xcassets/NOTICE`.
 
 ## Lucid Engine dependencies (iOS and tvOS)
 

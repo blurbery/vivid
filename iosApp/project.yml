@@ -49,6 +49,12 @@ targets:
           APS_ENVIRONMENT: development
         Release:
           APS_ENVIRONMENT: production
+    # Records the source commit as VividSourceRevision for About and Open
+    # Source Licences. Runs after Info.plist processing, before signing.
+    postBuildScripts:
+      - name: Stamp source revision
+        script: '"$SRCROOT/../scripts/xcode/stamp-source-revision.sh"'
+        basedOnDependencyAnalysis: false
     dependencies:
       - package: MPVKit
         product: MPVKit

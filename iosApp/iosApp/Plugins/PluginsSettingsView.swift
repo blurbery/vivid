@@ -144,11 +144,7 @@ struct MDBListSettingsView: View {
     }
 
     private var integrationLogos: some View {
-        let logos = [
-            ("Kodi", "MDBListKodi"), ("Plex", "MDBListPlex"),
-            ("Trakt", "MDBListTrakt"),
-            ("Jellyfin", "MDBListJellyfin"), ("Emby", "MDBListEmby")
-        ]
+        let logos = [("Jellyfin", "MDBListJellyfin"), ("Emby", "MDBListEmby")]
         #if os(tvOS)
         let size: CGFloat = 48
         let spacing: CGFloat = 16
@@ -169,7 +165,7 @@ struct MDBListSettingsView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Apps available through MDBList: Kodi, Plex, Trakt, Jellyfin and Emby")
+        .accessibilityLabel("Apps available through MDBList: Jellyfin and Emby")
     }
 
     private var privacy: String { "Your key is stored in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Sync shares media identifiers, watched dates and watchlist changes, never server login details. Disconnecting keeps existing history and watchlists." }

@@ -17,5 +17,8 @@ modified or redistributed version, and you may not publish a Silo-branded app to
 any app store without written permission from Silo Media L.L.C.
 
 Vivid uses SiloWordmark.imageset only to identify the supported Silo media
-server on its server-selection screens. Vivid app icons and branding are
-separate from this provider asset.
+server on its server-selection screens. That is a referential "works with
+Silo" use, which Silo's trademark policy allows without permission:
+https://github.com/Silo-Server/siloserver.org/blob/main/TRADEMARK.md
+Vivid is not Silo-branded, and its app icons and branding are separate from
+this provider asset.

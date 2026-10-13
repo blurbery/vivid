@@ -34,7 +34,7 @@ GitHub lists Vivid’s source releases from `v0.1.0`. Tags `v0.1.0` to `v0.12.10
 
 ## Version shown in the app
 
-Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build). The Apple marketing version and GitHub source-release version are independent. Record the exact pushed source commit for each TestFlight upload; do not change the Apple marketing version to match a GitHub tag.
+Settings → About displays `CFBundleShortVersionString` and `CFBundleVersion` as version (build), with the source commit underneath. `scripts/xcode/stamp-source-revision.sh` runs as the last build phase of both app targets and records the commit as `VividSourceRevision` in the built Info.plist, adding `-modified` when tracked files had uncommitted changes (`Package.resolved` is ignored). Open Source Licences starts with the same commit and its GitHub link. The Apple marketing version and GitHub source-release version are independent. Record the exact pushed source commit for each TestFlight upload; do not change the Apple marketing version to match a GitHub tag.
 
 TestFlight marketing version stays `0.14.3` until blurbery explicitly approves changing it before archiving or uploading. Each authorised update uses that platform's latest uploaded App Store Connect build number plus exactly 1. iOS/iPadOS and tvOS advance independently, including paired uploads; never skip numbers just to make them match. App Store Connect is the current upload history. The [recorded Apple builds](#recorded-apple-builds) below are historical evidence, not a maintained upload ledger.
 

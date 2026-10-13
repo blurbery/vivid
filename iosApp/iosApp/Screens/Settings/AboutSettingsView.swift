@@ -20,6 +20,33 @@ enum VividAbout {
         guard let build = info?["CFBundleVersion"] as? String else { return version }
         return "\(version) (\(build))"
     }
+    /// The source commit this build was made from, stamped into Info.plist by
+    /// scripts/xcode/stamp-source-revision.sh. Nil when the build recorded none.
+    static let sourceCommit: String? = {
+        guard let value = Bundle.main.infoDictionary?["VividSourceRevision"] as? String else { return nil }
+        let commit = value.hasSuffix("-modified") ? String(value.dropLast("-modified".count)) : value
+        return commit.count == 40 && commit.allSatisfy(\.isHexDigit) ? commit : nil
+    }()
+    /// True when the build had uncommitted changes, so its exact source isn't on GitHub.
+    static let sourceModified = (Bundle.main.infoDictionary?["VividSourceRevision"] as? String)?.hasSuffix("-modified") == true
+    static let sourceRepository = URL(string: "https://github.com/blurbery/vivid")!
+    static var sourceURL: URL? {
+        sourceCommit.map { sourceRepository.appendingPathComponent("tree").appendingPathComponent($0) }
+    }
+    /// Short commit for display, such as "Source 1a2b3c4" or "Source 1a2b3c4 (modified)".
+    static var sourceLabel: String? {
+        sourceCommit.map { "Source \($0.prefix(7))" + (sourceModified ? " (modified)" : "") }
+    }
+    /// The first Open Source Licences section: where this build's corresponding source is.
+    static var sourceNotice: String {
+        guard let commit = sourceCommit, let url = sourceURL else {
+            return "This build doesn't record its source commit. Vivid's source code, build instructions and third-party notices are at \(sourceRepository.absoluteString)."
+        }
+        if sourceModified {
+            return "This build (\(version)) was made from source commit \(commit) with local changes that haven't been published, so its exact source isn't on GitHub. The commit it started from is at \(url.absoluteString)."
+        }
+        return "This build (\(version)) was made from source commit \(commit). Its complete corresponding source, including the project specs, patches, build instructions and THIRD_PARTY_NOTICES.md, is at \(url.absoluteString)."
+    }
     static func mailURL(subject: String, message: String, to recipient: String = email) -> URL? {
         var url = URLComponents()
         url.scheme = "mailto"
@@ -90,6 +117,17 @@ struct AboutSettingsView: View {
             VividMarkView(width: 112)
             Text("Vivid").font(.system(size: 36, weight: .semibold, design: .rounded))
             Text(VividAbout.version).foregroundStyle(.secondary)
+            if let label = VividAbout.sourceLabel {
+                #if os(tvOS)
+                Text(label).font(.caption).foregroundStyle(.secondary)
+                #else
+                if let url = VividAbout.sourceURL {
+                    // Borderless keeps the rest of the brand row from opening the link.
+                    Link(label, destination: url).font(.footnote).foregroundStyle(.secondary)
+                        .buttonStyle(.borderless)
+                }
+                #endif
+            }
         }.frame(maxWidth: .infinity).padding(.vertical, 20)
     }
 

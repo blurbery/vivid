@@ -25,7 +25,9 @@ enum OpenSourceAcknowledgements {
         Resource(title: "ThumbHash decoder: MIT", name: "ThumbHash-MIT"),
     ]
 
-    static let text: String = resources.map { resource in
+    static let sourceTitle = "Source for this build"
+
+    static let text: String = (["\(sourceTitle)\n\(String(repeating: "=", count: sourceTitle.count))\n\n\(VividAbout.sourceNotice)"] + resources.map { resource in
         let body: String
         if let url = resourceURL(named: resource.name),
            let contents = try? String(contentsOf: url, encoding: .utf8) {
@@ -35,7 +37,7 @@ enum OpenSourceAcknowledgements {
         }
 
         return "\(resource.title)\n\(String(repeating: "=", count: resource.title.count))\n\n\(body)"
-    }
+    })
     .joined(separator: "\n\n\n")
 
     struct Block: Identifiable, Sendable {
@@ -46,7 +48,7 @@ enum OpenSourceAcknowledgements {
 
     // Cached once, and first accessed from a utility task by the TV page.
     static let blocks: [Block] = {
-        var result: [Block] = []
+        var result = [Block(id: 0, title: sourceTitle, text: VividAbout.sourceNotice)]
         for resource in resources {
             let contents = resourceURL(named: resource.name)
                 .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
