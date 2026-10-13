@@ -197,7 +197,7 @@ index 0000000000..0000000000 100644
          break;
  #if CONFIG_VP9_VIDEOTOOLBOX_HWACCEL
      case kCMVideoCodecType_VP9 :
-@@ -899,15 +936,110 @@
+@@ -899,15 +936,116 @@
  
      CFRelease(avc_info);
      return config_info;
@@ -218,9 +218,9 @@ index 0000000000..0000000000 100644
 +    if (!vtctx)
 +        return 0;
 +
++    // The frame flags are published once the session exists (or has
++    // failed), so frames output meanwhile keep the previous session's.
 +    vtctx->dovi_session = false;
-+    if (vtctx->dovi_frame_state)
-+        atomic_store(&vtctx->dovi_frame_state->flags, 0);
 +
 +    if (avctx->codec_id != AV_CODEC_ID_HEVC) {
 +        ff_vt_dovi_classify(&vtctx->dovi, NULL, 0);
@@ -268,6 +268,12 @@ index 0000000000..0000000000 100644
 +           "VideoToolbox refused the Dolby Vision HEVC session (status %d); "
 +           "trying a plain HEVC session\n", (int)status);
 +
++    if (videotoolbox->session) {
++        VTDecompressionSessionInvalidate(videotoolbox->session);
++        CFRelease(videotoolbox->session);
++        videotoolbox->session = NULL;
++    }
++
 +    decoder_spec = videotoolbox_decoder_config_create(kCMVideoCodecType_HEVC, avctx, NULL);
 +    if (!decoder_spec)
 +        return status;
@@ -308,7 +314,7 @@ index 0000000000..0000000000 100644
  
      if (!videotoolbox) {
          av_log(avctx, AV_LOG_ERROR, "hwaccel context is not set\n");
-@@ -958,6 +1090,9 @@
+@@ -958,6 +1096,9 @@
          break;
      }
  
@@ -318,7 +324,7 @@ index 0000000000..0000000000 100644
  #if defined(MAC_OS_X_VERSION_10_9) && !TARGET_OS_IPHONE && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_9) && AV_HAS_BUILTIN(__builtin_available)
      if (avctx->codec_id == AV_CODEC_ID_PRORES) {
          if (__builtin_available(macOS 10.9, *)) {
-@@ -972,7 +1107,8 @@
+@@ -972,7 +1113,8 @@
      }
  #endif
  
@@ -328,7 +334,7 @@ index 0000000000..0000000000 100644
  
      if (!decoder_spec) {
          av_log(avctx, AV_LOG_ERROR, "decoder specification creation failed\n");
-@@ -1005,10 +1141,24 @@
+@@ -1005,11 +1147,25 @@
                                            &decoder_cb,               // outputCallback
                                            &videotoolbox->session);   // decompressionSessionOut
  
@@ -341,7 +347,7 @@ index 0000000000..0000000000 100644
          CFRelease(decoder_spec);
      if (buf_attr)
          CFRelease(buf_attr);
-+
+ 
 +    if (vtctx && status == 0 &&
 +        videotoolbox->cm_codec_type == FF_VT_DOVI_CODEC_TYPE) {
 +        vtctx->dovi_session = true;
@@ -350,10 +356,11 @@ index 0000000000..0000000000 100644
 +    if (vtctx && vtctx->dovi_frame_state)
 +        atomic_store(&vtctx->dovi_frame_state->flags,
 +                     ff_vt_dovi_frame_flags(&vtctx->dovi, vtctx->dovi_session));
- 
++
      switch (status) {
      case kVTVideoDecoderNotAvailableNowErr:
-@@ -1109,6 +1259,13 @@
+         av_log(avctx, AV_LOG_VERBOSE, "VideoToolbox session not available.\n");
+@@ -1109,6 +1265,13 @@
                                            const uint8_t *buffer,
                                            uint32_t size)
  {
@@ -367,7 +374,7 @@ index 0000000000..0000000000 100644
      return videotoolbox_common_decode_slice(avctx, buffer, size);
  }
  
-@@ -1118,7 +1275,48 @@
+@@ -1118,9 +1281,50 @@
                                             const uint8_t *buffer,
                                             uint32_t size)
  {
@@ -377,8 +384,8 @@ index 0000000000..0000000000 100644
 +        return 0;
 +
      return videotoolbox_common_decode_slice(avctx, buffer, size);
-+}
-+
+ }
+ 
 +static int videotoolbox_dovi_append(void *opaque, const uint8_t *nal, size_t size)
 +{
 +    AVCodecContext *avctx = opaque;
@@ -413,10 +420,12 @@ index 0000000000..0000000000 100644
 +                                   nal->raw_size, videotoolbox_dovi_append,
 +                                   avctx);
 +    }
- }
- 
++}
++
  static int videotoolbox_hevc_end_frame(AVCodecContext *avctx)
-@@ -1128,6 +1326,10 @@
+ {
+     HEVCContext *h = avctx->priv_data;
+@@ -1128,6 +1332,10 @@
      VTContext *vtctx = avctx->internal->hwaccel_priv_data;
      int ret;
  

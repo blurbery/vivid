@@ -1332,6 +1332,8 @@ def summarise(report: dict) -> str:
         lines.append(f"| {item['name']} | `{item['archive']}` | `{item['sha256'][:16]}...` |")
     lines += ["", f"FFmpeg `avformat_configuration()`: `{report['ffmpeg']['configuration']}`", "",
               f"FFmpeg licence: {', '.join(report['ffmpeg']['licences'])}", "",
+              "FFmpeg libdovi flags (CFLAGS and LDFLAGS only): `"
+              + " ".join(sum(report.get("ffmpeg_libdovi_flags", {}).values(), [])) + "`", "",
               f"mpv configuration: `{report['mpv']['configuration']}`", "",
               f"mpv features: `{' '.join(report['mpv']['features'])}`", "",
               f"Test link ({report['link']['target']}, dead-stripped): "
