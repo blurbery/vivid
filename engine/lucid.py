@@ -2631,6 +2631,7 @@ def cmd_test_libass(args) -> None:
              "-Wall", "-Werror", "-Wno-deprecated-declarations", "-I", src / "libass",
              "-I", work / "build"]
             + (["-DVIVID_PROBE"] if variant in t.PROBED else [])
+            + (["-DVIVID_COUNTERS"] if variant in t.COUNTED else [])
             + (["-fsanitize=address"] if asan else []) + cflags
             + [LIBASS_TEST / "harness.c"] + libs + ["-lc++", "-o", harness],
             logfile=out / "logs" / f"{variant}.log")
@@ -2638,7 +2639,8 @@ def cmd_test_libass(args) -> None:
         report["variants"][variant] = {
             "patches": applied, "pristine_tree": pristine, "tree": tree_digest(tree_files(src)),
             "library_sha256": sha256_file(install / "lib" / "libass.a"),
-            "address_sanitizer": asan, "event_cache_probe": variant in t.PROBED}
+            "address_sanitizer": asan, "event_cache_probe": variant in t.PROBED,
+            "patch_0010_counters": variant in t.COUNTED}
 
     corpus = base / "corpus"
     corpus.mkdir()
