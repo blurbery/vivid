@@ -12,6 +12,7 @@ on:
       - 'scripts/tests/native-profile-restoration-tests.py'
       - 'scripts/tests/jellyfin-replacement-tests.py'
       - 'scripts/tests/topshelf-native-tests.py'
+      - 'scripts/tests/mpv-track-tests.py'
       - 'iosApp/TopShelf/**'
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
@@ -30,6 +31,7 @@ on:
       - 'scripts/tests/native-profile-restoration-tests.py'
       - 'scripts/tests/jellyfin-replacement-tests.py'
       - 'scripts/tests/topshelf-native-tests.py'
+      - 'scripts/tests/mpv-track-tests.py'
       - 'iosApp/TopShelf/**'
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
@@ -52,6 +54,10 @@ on:
         description: Also run the iOS suite compiled with the Release optimiser
         type: boolean
         default: false
+      device_builds:
+        description: Also build both apps unsigned for generic devices
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,9 +76,10 @@ jobs:
     outputs:
       tvos: ${{ steps.filter.outputs.tvos }}
       ios: ${{ steps.matrix.outputs.ios }}
+      device_builds: ${{ steps.devices.outputs.device_builds }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'workflow_dispatch'
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -135,6 +142,39 @@ jobs:
             break
           done < <(git diff --name-only "$BASE...$HEAD")
           echo "tvos=$tvos" >> "$GITHUB_OUTPUT"
+      - name: Detect project and engine pin changes
+        id: devices
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          REQUESTED: ${{ inputs.device_builds }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Unsigned device builds of both apps run when the project specs or
+          # Package.resolved change, which is where the engine pins live.
+          # Manual runs build them only when asked.
+          if [ "$EVENT" = workflow_dispatch ]; then
+            if [ "$REQUESTED" = true ]; then device_builds=true; else device_builds=false; fi
+            echo "device_builds=$device_builds" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No comparable base commit; building for devices"
+            echo "device_builds=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          device_builds=false
+          while IFS= read -r file; do
+            case "$file" in
+              iosApp/project.yml|iosApp/project-ios.yml|iosApp/project-common.yml|iosApp/*Package.resolved)
+                echo "Device build trigger: $file"
+                device_builds=true
+                break ;;
+            esac
+          done < <(git diff --name-only "$BASE...$HEAD")
+          echo "device_builds=$device_builds" >> "$GITHUB_OUTPUT"
 
   validate:
     needs: changes
@@ -167,6 +207,9 @@ jobs:
       - name: Verify unexpected stream endings preserve the current episode
         if: matrix.action == 'test'
         run: python3 scripts/tests/playback-end-recovery-tests.py
+      - name: Verify the adapter's track ID translation and teardown
+        if: matrix.action == 'test'
+        run: python3 scripts/tests/mpv-track-tests.py
       - name: Verify playback survives credential refresh
         if: matrix.action == 'test'
         run: |
@@ -293,6 +336,59 @@ jobs:
             /tmp/player-validation.xcresult
             /tmp/preview-transition.mp4
             /tmp/preview-recording.xcresult
+          retention-days: 7
+
+  device-builds:
+    needs: changes
+    if: needs.changes.outputs.device_builds == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iOS
+            scheme: Vivid
+            spec: project-ios.yml
+          - platform: tvOS
+            scheme: VividTV
+            spec: project.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.baseline_ref || github.sha }}
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.3'
+      - name: Generate Xcode project
+        env:
+          SPEC: ${{ matrix.spec }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/xcodegen.zip https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          # Pin the official 2.43.0 release asset before unpacking/executing it.
+          echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  /tmp/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
+          /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec "iosApp/$SPEC"
+      - name: Build unsigned for generic ${{ matrix.platform }} devices
+        env:
+          SCHEME: ${{ matrix.scheme }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -o pipefail
+          # The Release configuration that ships, for real hardware rather
+          # than the simulator. It also proves the Debug-only test hooks
+          # compile out. No certificate or release secret is used.
+          xcodebuild build -project iosApp/Vivid.xcodeproj -scheme "$SCHEME" \
+            -configuration Release -destination "generic/platform=$PLATFORM" \
+            -derivedDataPath /tmp/vivid-device CODE_SIGNING_ALLOWED=NO | tee /tmp/device-build.log
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: device-build-${{ matrix.scheme }}
+          path: /tmp/device-build.log
           retention-days: 7
 
   tvos-tests:
