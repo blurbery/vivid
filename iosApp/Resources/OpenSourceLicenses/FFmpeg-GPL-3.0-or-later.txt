@@ -820,7 +820,7 @@ Public License instead of this License.  But first, please read
 <http://www.gnu.org/philosophy/why-not-lgpl.html>.
 
 --------------------------------------------------------------------------------
-File: libavcodec/jfdctfst.c, IJG notice (lines 2-36, verbatim)
+File: libavcodec/jfdctfst.c, IJG notice (lines 2-37, verbatim)
 https://github.com/FFmpeg/FFmpeg/blob/894da5ca7d742e4429ffb2af534fcda0103ef593/libavcodec/jfdctfst.c
 --------------------------------------------------------------------------------
 
@@ -859,9 +859,10 @@ https://github.com/FFmpeg/FFmpeg/blob/894da5ca7d742e4429ffb2af534fcda0103ef593/l
  *
  * We specifically permit and encourage the use of this software as the basis
  * of commercial products, provided that all warranty or liability claims are
+ * assumed by the product vendor.
 
 --------------------------------------------------------------------------------
-File: libavcodec/jfdctint_template.c, IJG notice (lines 2-36, verbatim)
+File: libavcodec/jfdctint_template.c, IJG notice (lines 2-37, verbatim)
 https://github.com/FFmpeg/FFmpeg/blob/894da5ca7d742e4429ffb2af534fcda0103ef593/libavcodec/jfdctint_template.c
 --------------------------------------------------------------------------------
 
@@ -900,9 +901,10 @@ https://github.com/FFmpeg/FFmpeg/blob/894da5ca7d742e4429ffb2af534fcda0103ef593/l
  *
  * We specifically permit and encourage the use of this software as the basis
  * of commercial products, provided that all warranty or liability claims are
+ * assumed by the product vendor.
 
 --------------------------------------------------------------------------------
-File: libavcodec/jrevdct.c, IJG notice (lines 2-36, verbatim)
+File: libavcodec/jrevdct.c, IJG notice (lines 2-37, verbatim)
 https://github.com/FFmpeg/FFmpeg/blob/894da5ca7d742e4429ffb2af534fcda0103ef593/libavcodec/jrevdct.c
 --------------------------------------------------------------------------------
 
@@ -941,3 +943,4 @@ https://github.com/FFmpeg/FFmpeg/blob/894da5ca7d742e4429ffb2af534fcda0103ef593/l
  *
  * We specifically permit and encourage the use of this software as the basis
  * of commercial products, provided that all warranty or liability claims are
+ * assumed by the product vendor.
