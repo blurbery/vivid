@@ -25,11 +25,11 @@ display routes and extended episode chaining remain unverified.
 
 The iOS adapter exposes its sample-buffer layer to the Picture in Picture coordinator and honours background-playback preferences. Native AVAsset frame extraction supplies iOS scrub previews for formats Apple can read. Sources AVFoundation cannot play are excluded from image generation; timeline scrubbing remains available. Apple TV scrubbing does not start thumbnail extraction.
 
-## Vivid-written bridge
+## Player bridge
 
-Vivid also includes its own Swift bridge between `VividMPVPlayer` and libmpv, written from the [player bridge specification](../playback/player-bridge-spec.md) to behave exactly like the current bridge. With it switched on, local iOS and tvOS simulator builds and the focused iOS simulator playback tests pass; device behaviour has not been tested yet. `VividPlayerCoreBase` and `VividPlayerCore` own the mpv context, event loop, requests and ordered delivery. The video surface, Match Content and EDR, external displays and lifecycle observation are separate components beside them in `iosApp/iosApp/Playback/MPV/`.
+Vivid's own Swift bridge connects `VividMPVPlayer` to libmpv. It was written from the [player bridge specification](../playback/player-bridge-spec.md), and it is the only bridge the app uses. `VividPlayerCoreBase` and `VividPlayerCore` own the mpv context, event loop, requests and ordered delivery. The video surface, Match Content and EDR, external displays and lifecycle observation are separate components beside them in `iosApp/iosApp/Playback/MPV/`. Console lines from the bridge start with `[VividPlayerCore]`.
 
-Both bridges are compiled into every build, and `VividBridgeSelection.swift` picks one with the `VIVID_OWN_BRIDGE` compilation condition. It is off by default, so the shipped app still uses the current bridge. To try the Vivid-written bridge in a local or device build, add `SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) VIVID_OWN_BRIDGE` to the ignored `iosApp/Signing/Local.xcconfig`. Every target xcconfig includes that file, and the tvOS Debug configuration's own conditions (`DEBUG VIVID_P8_TRIAL`) inherit it. For a single command-line build, pass `'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) VIVID_OWN_BRIDGE'` to `xcodebuild` instead. A manual run of the [player regression workflow](../../.github/workflows/player-regression.yml) with its `own_bridge` input passes that setting to every build it makes and fails unless it reached the compiler. Console lines from the bridge start with `[VividPlayerCore]` rather than `[MpvPlayerCore]`, which shows which bridge a build is running.
+With this bridge, the complete iOS simulator suite (as a normal and as an optimised build) and the Apple TV simulator suite pass in CI. Playback on physical devices has not been tested with it yet.
 
 ## Audio support
 

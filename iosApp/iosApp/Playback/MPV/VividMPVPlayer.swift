@@ -1155,7 +1155,7 @@ enum LucidSubtitleStyle {
     }
 }
 
-private final class VividMPVCore: VividBridgeCore {
+private final class VividMPVCore: VividPlayerCore {
     var headers: [String: String] = [:]
     var registersManagedStreams = false
     private(set) var managedStreamsRegistered = false
@@ -1247,7 +1247,7 @@ enum VividMPVHeaders {
     }
 }
 
-private final class VividMPVDelegate: VividBridgeCoreDelegate {
+private final class VividMPVDelegate: VividPlayerCoreDelegate {
     weak var owner: VividMPVPlayer?
     let generation: UInt64
     init(owner: VividMPVPlayer, generation: UInt64) { self.owner = owner; self.generation = generation }
@@ -1264,7 +1264,7 @@ private final class VividMPVDelegate: VividBridgeCoreDelegate {
 }
 
 final class VividMPVHostView: UIView {
-    fileprivate weak var core: VividBridgeCore?
+    fileprivate weak var core: VividPlayerCore?
     override func layoutSubviews() { super.layoutSubviews(); core?.updateFrame() }
 }
 struct VividMPVSurface: UIViewRepresentable {

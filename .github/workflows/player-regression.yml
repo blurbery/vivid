@@ -60,18 +60,12 @@ on:
         description: Also build both apps unsigned for generic devices
         type: boolean
         default: false
-      own_bridge:
-        description: Compile with VIVID_OWN_BRIDGE, so every build uses the Vivid-written bridge
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  # A manual run with the Vivid-written bridge has its own group, so it can
-  # run beside a normal manual run of the same branch.
-  group: player-regression-${{ github.event_name }}-${{ github.ref }}-${{ inputs.baseline_ref || 'head' }}${{ inputs.own_bridge && '-own-bridge' || '' }}
+  group: player-regression-${{ github.event_name }}-${{ github.ref }}-${{ inputs.baseline_ref || 'head' }}
   # Runs on main are not cancelled mid-build: a newer merge queues behind the
   # current run, and only the newest queued run is kept. Pull requests still
   # cancel superseded runs.
@@ -268,17 +262,8 @@ jobs:
         id: build
         env:
           BUILD: ${{ matrix.build }}
-          OWN_BRIDGE: ${{ inputs.own_bridge }}
         run: |
           set -o pipefail
-          # A manual run can compile in the Vivid-written bridge without
-          # changing the default (docs/cores/player-engine.md).
-          bridge=()
-          if [ "$OWN_BRIDGE" = true ]; then
-            # Xcode expands $(inherited), not the shell.
-            # shellcheck disable=SC2016
-            bridge=('SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) VIVID_OWN_BRIDGE')
-          fi
           # The optimised entry compiles the same Debug test build with the
           # Release optimiser, so bugs that only appear in TestFlight and App
           # Store builds fail here. Debug keeps the test-only hooks available.
@@ -290,10 +275,7 @@ jobs:
           # required by Keychain. No certificate or release secret is used.
           xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme Vivid \
             -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "${optimisation[@]}" "${bridge[@]}" | tee /tmp/player-build.log
-      - name: Confirm the Vivid-written bridge was compiled in
-        if: inputs.own_bridge
-        run: grep -q -E 'swiftc -module-name (Vivid|VividTV) .*-DVIVID_OWN_BRIDGE( |$)' /tmp/player-build.log
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "${optimisation[@]}" | tee /tmp/player-build.log
       - name: Package simulator tests for focused visual verification
         if: matrix.action == 'test' && matrix.build != 'optimised' && !inputs.baseline_ref
         run: ditto -c -k --keepParent /tmp/vivid-derived/Build/Products /tmp/Vivid-simulator-tests.zip
@@ -398,26 +380,14 @@ jobs:
         env:
           SCHEME: ${{ matrix.scheme }}
           PLATFORM: ${{ matrix.platform }}
-          OWN_BRIDGE: ${{ inputs.own_bridge }}
         run: |
           set -o pipefail
-          # A manual run can compile in the Vivid-written bridge without
-          # changing the default (docs/cores/player-engine.md).
-          bridge=()
-          if [ "$OWN_BRIDGE" = true ]; then
-            # Xcode expands $(inherited), not the shell.
-            # shellcheck disable=SC2016
-            bridge=('SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) VIVID_OWN_BRIDGE')
-          fi
           # The Release configuration that ships, for real hardware rather
           # than the simulator. It also proves the Debug-only test hooks
           # compile out. No certificate or release secret is used.
           xcodebuild build -project iosApp/Vivid.xcodeproj -scheme "$SCHEME" \
             -configuration Release -destination "generic/platform=$PLATFORM" \
-            -derivedDataPath /tmp/vivid-device CODE_SIGNING_ALLOWED=NO "${bridge[@]}" | tee /tmp/device-build.log
-      - name: Confirm the Vivid-written bridge was compiled in
-        if: inputs.own_bridge
-        run: grep -q -E 'swiftc -module-name (Vivid|VividTV) .*-DVIVID_OWN_BRIDGE( |$)' /tmp/device-build.log
+            -derivedDataPath /tmp/vivid-device CODE_SIGNING_ALLOWED=NO | tee /tmp/device-build.log
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -475,26 +445,13 @@ jobs:
           unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen-dist
           /tmp/xcodegen-dist/xcodegen/bin/xcodegen generate --spec iosApp/project.yml
       - name: Build Apple TV player and tests
-        env:
-          OWN_BRIDGE: ${{ inputs.own_bridge }}
         run: |
           set -o pipefail
-          # A manual run can compile in the Vivid-written bridge without
-          # changing the default (docs/cores/player-engine.md).
-          bridge=()
-          if [ "$OWN_BRIDGE" = true ]; then
-            # Xcode expands $(inherited), not the shell.
-            # shellcheck disable=SC2016
-            bridge=('SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) VIVID_OWN_BRIDGE')
-          fi
           # Simulator-only ad-hoc signing, as in the iOS job. No certificate or
           # release secret is used.
           xcodebuild build-for-testing -project iosApp/Vivid.xcodeproj -scheme VividTV \
             -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- "${bridge[@]}" | tee /tmp/player-build.log
-      - name: Confirm the Vivid-written bridge was compiled in
-        if: inputs.own_bridge
-        run: grep -q -E 'swiftc -module-name (Vivid|VividTV) .*-DVIVID_OWN_BRIDGE( |$)' /tmp/player-build.log
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-build.log
       - name: Run tvOS suite
         timeout-minutes: 12
         run: |

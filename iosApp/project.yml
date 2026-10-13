@@ -112,8 +112,7 @@ targets:
       - path: Tests/VividSubtitleCueCursorTests.swift
       - path: Tests/TVDetailScrollMaterialMaskTests.swift
       - path: Tests/TVCatalogGridIndexTests.swift
-      # The Vivid-written player bridge, tested directly so CI covers it
-      # whichever bridge VIVID_OWN_BRIDGE selects.
+      # Vivid's player bridge, tested on Apple TV as well as iOS.
       - path: Tests/VividPlayerConversionTests.swift
       - path: Tests/VividPlayerCoreTests.swift
       - path: Tests/VividPlayerDisplayCriteriaTests.swift
