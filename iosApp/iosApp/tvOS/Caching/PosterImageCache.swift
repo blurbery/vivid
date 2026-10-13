@@ -11,7 +11,7 @@ import UIKit
 /// gives us:
 ///
 /// - A decoded memory cache sized for the platform's playback headroom
-/// - 1 GB on-disk data cache keyed by URL
+/// - An on-disk data cache keyed by URL, up to 256 MiB per account scope
 /// - ImageIO thumbnail decoding straight to the render size, so a w780
 ///   poster is never decoded at full resolution just to draw a 176 pt card
 /// - A prefetcher the grid can use to warm posters N rows ahead
