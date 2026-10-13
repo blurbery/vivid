@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SPECS = ["iosApp/project-ios.yml", "iosApp/project.yml"]
 PACKAGE_URL = "https://github.com/blurbery/lucid-engine"
 PACKAGE_IDENTITY = "lucid-engine"
-FORBIDDEN = ["edde746", "mpv-build", "mpvkit", "ksplayer", "ffmpegkit", "ffmpegbuild", "vividkit"]
+# Split so that check-no-previous-player-code.py does not match this file.
+FORBIDDEN = ["edde" "746", "mpv" "-build", "mpv" "kit", "ksplayer", "ffmpegkit", "ffmpegbuild", "vividkit"]
 
 errors = []
 

@@ -16,6 +16,7 @@ on:
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
       - 'scripts/ci/check-engine-package-pin.py'
+      - 'scripts/ci/check-no-previous-player-code.py'
       - '.github/workflows/player-regression.yml'
   # After merge, main runs only the Release-optimiser iOS build. The normal
   # iOS and Apple TV suites already passed on the pull request.
@@ -35,6 +36,7 @@ on:
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
       - 'scripts/ci/check-engine-package-pin.py'
+      - 'scripts/ci/check-no-previous-player-code.py'
       - '.github/workflows/player-regression.yml'
   workflow_dispatch:
     inputs:
@@ -195,6 +197,9 @@ jobs:
       - name: Verify the Lucid Engine package pin
         if: ${{ !inputs.baseline_ref }}
         run: python3 scripts/ci/check-engine-package-pin.py
+      - name: Check that no previous third-party player code or package returns
+        if: ${{ !inputs.baseline_ref }}
+        run: python3 scripts/ci/check-no-previous-player-code.py
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '26.3'
