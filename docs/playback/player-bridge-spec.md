@@ -797,17 +797,17 @@ The bridge sets no audio option, never touches `AVAudioSession`, and must never 
 | --- | --- | --- |
 | `ao` | `avfoundation` | The engine's AVFoundation audio output. At normal speed, AC-3 and E-AC-3 that `audio-spdif` allows are passed through compressed via an `AVPlayer` resource loader; everything else is decoded to PCM and played through sample-buffer audio. The audio output schedules audio and drives mpv's audio clock, and video follows that clock. |
 | `audio-spdif` | `ac3,eac3` at rate 1, otherwise empty | Which codecs may be passed through compressed. The adapter changes it with the playback speed (seeking in place first on AC-3 and E-AC-3, so queued audio for the old output is dropped). |
-| `audio-exclusive` | `yes` | Upstream mpv option. |
+| `audio-exclusive` | `yes` | Upstream mpv option. It has no effect on this audio output. |
 | `audio-channels` | `7.1,5.1,stereo` on tvOS when the route is AirPlay at load time, otherwise `auto-safe` | The PCM layouts the output may use. |
-| `ao-avfoundation-manage-audio-session` | `no` | The output neither activates nor deactivates the shared `AVAudioSession`. Vivid does, and waits for the `dispose` completions of retired cores before deactivating. |
+| `ao-avfoundation-manage-audio-session` | `no` | The output neither activates nor deactivates the shared `AVAudioSession` and sets no category or mode. It still declares multichannel content (passthrough, or more than two channels) and sets the preferred output channel count for decoded audio. Vivid activates the session and waits for the `dispose` completions of retired cores before deactivating. |
 | `ao-avfoundation-max-lookahead` | `4` (tvOS, AirPlay route only) | Limits PCM read-ahead to four seconds. |
 | `ao-avfoundation-compressed-anchor-start` | `yes` (tvOS, AirPlay route only) | On AirPlay, `AVPlayer`'s clock stays parked at start-up until the output's seek-to-start recovery runs. With this on, video stays anchored to the parked audio clock, so it waits for the audio instead of running ahead. |
-| `ao-avfoundation-compressed-start-grace` | `1` (tvOS, AirPlay route only) | Seconds after the rate is applied before that recovery runs (one instead of two). Seeks and resumes engage sooner than this, so they do not trigger it. |
-| `ao-avfoundation-compressed-first-start-grace` | `0.25` (tvOS, AirPlay route only) | For a title's first start, which never engages without the recovery, run it this soon after the item is ready. Later seeks and resumes keep the one-second grace. |
+| `ao-avfoundation-compressed-start-grace` | `1` (tvOS, AirPlay route only) | Seconds after the rate is applied before that recovery runs (one instead of two), then before falling back to decoded audio if the clock still has not moved, extended by the same amount each time a slow source delivers more. Seeks and resumes engage sooner than this, so they do not trigger it. |
+| `ao-avfoundation-compressed-first-start-grace` | `0.25` (tvOS, AirPlay route only) | For the first start of each audio output instance (until its clock first moves; every speed change across 1x creates a new instance), run the recovery this soon after the item is ready, capped at `ao-avfoundation-compressed-start-grace`. Later seeks and resumes on the same instance use that grace. |
 | `ao-avfoundation-compressed-anchor-resume` | `yes` (tvOS, AirPlay route only) | After a pause, anchor mpv to AirPlay's clock as at start-up, so video waits for the audio instead of running ahead and then stopping to resynchronise. |
 | `ao-avfoundation-compressed-buffer` | `1.25` (tvOS, AirPlay route only) | Seconds of compressed audio queued before starting (instead of two), kept above the output's one-second priming reserve. |
 
-`ao-avfoundation-manage-audio-session` and the five `ao-avfoundation-compressed-*` options exist only in an engine rebuilt with Vivid's audio-driver patch (`docs/cores/player-engine.md` describes the rebuild). The package as resolved rejects them and playback continues without those fixes. The console then shows, through the error check (section 10.2), one `MPV error: option not found option=ao-avfoundation-manage-audio-session at <module>/VividMPVPlayer.swift:<line>` line on every load (the module is `Vivid` on iOS and `VividTV` on tvOS) and, on tvOS with an AirPlay route, five more `MPV error: option not found at ...` lines with no `option=` detail, because the adapter does not pass the name for those. CI builds use the package as resolved, so these lines are expected there.
+These options belong to Vivid's own engine (the Lucid Engine patch specification). A build that still links the third-party package without the old driver rebuild rejects them; the console then shows, through the error check (section 10.2), one `MPV error: option not found option=ao-avfoundation-manage-audio-session at <module>/VividMPVPlayer.swift:<line>` line on every load (the module is `Vivid` on iOS and `VividTV` on tvOS) and, on tvOS with an AirPlay route, five more `MPV error: option not found at ...` lines with no `option=` detail, because the adapter does not pass the name for those. Playback continues without the options' effects.
 
 ## 7. Video surface and the video-output contract
 
@@ -826,11 +826,11 @@ What the bridge guarantees:
 | Guarantee | Reason |
 | --- | --- |
 | `wid` is the address of the core's `AVSampleBufferDisplayLayer` subclass, passed as a 64-bit integer with `mpv_set_option` and `MPV_FORMAT_INT64` before `mpv_initialize`, without the bridge retaining the layer for it. Any other object, or a released layer, crashes the engine; a retain taken for `wid` would leak the layer. | The engine reads the value as a pointer to the display layer and draws into it. |
-| The layer is in its final parent (the container's layer) before any file loads and every time the engine creates its video output, and only the parent ever moves, never the layer on its own. | The engine creates its video output when a file first selects video, and again whenever video is selected after `vid=no` (section 6.18). Each time, it adds its own subtitle layer next to the video layer, in the same parent. |
+| The layer is in its final parent (the container's layer) before any file loads and every time the engine creates its video output, and only the parent ever moves, never the layer on its own. | The engine creates its video output when a file first selects video, and again whenever video is selected after `vid=no` (section 6.18). This includes audio-only loads with embedded cover art, which get a video output whenever `vid=auto` selects the artwork. Each time, it adds its own subtitle layer next to the video layer, in the same parent. |
 | One new layer per core, never shared between two mpv contexts. | The engine takes control of the layer's contents and timing for its context. |
 | After creation, `bounds` and `contentsScale` are written only with their exact final values, with implicit animations disabled, and `bounds` and `position` are always set together (section 7.5). | The engine sizes its output, including subtitle resolution, from `bounds` and `contentsScale` only, and it visibly re-lays out separate-layer subtitles whenever either changes. It does not follow `position` on its own. |
-| The main thread never blocks waiting on mpv, and a stored context is never destroyed from main (section 5.3). | The engine waits synchronously for the main thread while creating, reconfiguring and tearing down the video output (creation happens at load and at every `vid=auto`), when reading geometry and when recovering the layer, so a main thread blocked on mpv deadlocks playback. |
-| The bridge never sets `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`. | The engine ignores these options, so setting them would have no effect; the rule keeps parity with the current bridge. |
+| The main thread never blocks waiting on mpv, and a stored context is never destroyed from main (section 5.3). | The engine waits synchronously for the main thread while creating, reconfiguring and tearing down the video output (creation happens at load and at every `vid=auto`), when reading geometry (including on the first frame after any subtitle-layer resynchronisation) and when recovering the layer, so a main thread blocked on mpv deadlocks playback. |
+| The bridge never sets `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`. | The engine never re-renders, scales or moves the picture for these options, so they have no effect on it. mpv still applies them to the rectangle that separate-layer subtitles are placed against, so subtitles would move away from the picture. Vivid has no viewer zoom (section 13), so nothing needs them. |
 | The bridge never sets `panscan` or `video-aspect-override`. | The engine handles these without re-rendering, but fitting the picture belongs to the adapter's `videoGravity` on the layer (section 7.4), and the current bridge never sets them. |
 | The bridge never touches the layer's `controlTimebase`. | The engine creates and drives it. |
 | The bridge may remove the layer from its parent before mpv is destroyed (section 6.17.2). | The engine keeps its own reference to the layer from creating its video output until tearing it down. |
@@ -891,7 +891,7 @@ On iOS, EDR is then applied with the cached signal peak (section 8.15), after th
 | Option | Why it stays at the engine default |
 | --- | --- |
 | `video-sync` | Not set; engine default. |
-| `interpolation`, `tscale` and other `vo_gpu` options | Not applicable to this video output. |
+| `interpolation`, `tscale` and other options of mpv's `gpu` video output | Not applicable to this video output. |
 | `display-fps`, `override-display-fps` | Never set. The adapter only reads `display-fps` for diagnostics. |
 | `tone-mapping`, `target-peak`, `target-trc`, `target-prim`, `hdr-compute-peak` | The video output passes decoded pixels through with colour tags and does not tone map. HDR is handled by the display (tvOS) or EDR (iOS). |
 | `gpu-api`, `gpu-context` | Not used by this video output. |
@@ -1900,7 +1900,7 @@ Lifecycle:
 - [ ] `initialize` returns true; the `wid` layer is `sampleBufferDisplayLayer`; the layer's grandparent layer is the host view's layer; on iOS the container is hidden until `setVisible(true)`.
 - [ ] `dispose` calls its completion exactly once, off main, after the context is destroyed; a second `dispose` is a no-op; `dispose` after a failed set-up still calls its completion.
 - [ ] Two cores (one disposing, one loading) run side by side with independent queues, requests and caches; a preserving dispose followed by an identical commit from the new core does not write again.
-- [ ] Console output in normal playback is empty except, when the engine lacks Vivid's audio-driver patch, the `MPV error: option not found` lines described in section 6.19.
+- [ ] Console output in normal playback is empty except, in a build that still links the third-party package without the old driver rebuild, the `MPV error: option not found` lines described in section 6.19.
 - [ ] The app binary does not contain `first start recovery after` or `trace edge %s` from Swift sources (search the built product when the engine slice is unpatched).
 
 ### 16.3 Device tests
@@ -1979,3 +1979,25 @@ The bridge's own start-up checks (the log level request, `wid`, each bridge opti
 ### 17.6 Registration order of the internal observations
 
 The ten internal observations (section 6.7) are registered in this order: `video-params/sig-peak`, `width`, `height`, `current-tracks/video/dolby-vision-profile`, `current-tracks/video/dolby-vision-level`, `container-fps`, `deinterlace-active`, `video-params/gamma`, `video-params/primaries`, `video-params/colormatrix`. This replaces the statement in section 6.7 that the order is not significant.
+
+### 17.7 Audio-output option meanings
+
+Corrections from the engine specification, applied to the section 6.19 table and its closing paragraph:
+
+- `ao-avfoundation-compressed-first-start-grace` applies to the first start of each audio output instance, until that instance's clock first moves, not only to a title's first start. Every speed change across 1x creates a new instance, so the shorter grace applies again after each one. It is capped at `ao-avfoundation-compressed-start-grace`.
+- With `ao-avfoundation-manage-audio-session=no`, the output sets no category or mode and never activates or deactivates the session, but it still declares multichannel content (passthrough, or more than two channels) and still sets the preferred output channel count for decoded audio. Vivid's session recorder reads both.
+- `ao-avfoundation-compressed-start-grace` is also the deadline between the recovery and the fallback to decoded audio, extended by the same amount each time a slow source delivers more.
+- `audio-exclusive` has no effect on this audio output.
+- Every `ao-avfoundation-*` option belongs to Vivid's own engine and is accepted by every build that links it. Only a build that still links the third-party package without the old driver rebuild rejects them, with the console lines described in section 6.19.
+
+### 17.8 Zoom, pan and scale options and subtitles
+
+The engine never re-renders, scales or moves the picture for `video-zoom`, `video-pan-x`, `video-pan-y`, `video-scale-x` or `video-scale-y`, but mpv still applies them to the rectangle that separate-layer subtitles are placed against, so setting them would move subtitles away from the picture. The rule that the bridge never sets them is unchanged; the reason in section 7.2 is corrected.
+
+### 17.9 Main-thread wait after a subtitle-layer resynchronisation
+
+The engine also waits synchronously for the main thread on the first frame it draws after any subtitle-layer resynchronisation (after a reconfiguration, an option or `panscan` change, a real resize, or a switch of subtitle compositing), when it re-reads the layer geometry. This is added to the list in section 7.2. The bridge rule is unchanged: the main thread never blocks waiting on mpv.
+
+### 17.10 Video output for cover art
+
+An audio-only load also gets a video output whenever `vid=auto` selects embedded cover art (mpv's default `audio-display` is `embedded-first`). The bridge writes `vid=auto` on every return to the foreground and every iOS activation, with no audio-only check (section 14.3), so this can happen at those moments. The layer must be in its parent then too, which the guarantee in section 7.2 already requires; its reason now says so.
