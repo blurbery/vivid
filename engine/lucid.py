@@ -1352,13 +1352,16 @@ def build_moltenvk(ctx: Ctx) -> dict:
         cwd=tree, env=env, logfile=logfile)
     shutil.rmtree(tree / "External" / "SPIRV-Tools" / "__MACOSX", ignore_errors=True)
     platform = ctx.sl.mvk_platform
+    # fetchDependencies exports KEEP_CACHE="" and SKIP_PACKAGING=Y around
+    # this build, so the scheme's own packaging phases do nothing; it
+    # packages afterwards, below.
     run(["xcodebuild", "-project", "ExternalDependencies.xcodeproj",
          "-scheme", f"ExternalDependencies-{ctx.sl.cmake_system}",
          "-destination", f"generic/platform={platform}", "-configuration", "Release",
          "-enableAddressSanitizer", "NO", "-enableThreadSanitizer", "NO",
          "-enableUndefinedBehaviorSanitizer", "NO",
          "-derivedDataPath", f"External/build/Intermediates/{platform}", "-quiet", "build"],
-        cwd=tree, env=env, logfile=logfile)
+        cwd=tree, env={**env, "KEEP_CACHE": "", "SKIP_PACKAGING": "Y"}, logfile=logfile)
     run(["bash", "-c", ". ./Scripts/create_ext_lib_xcframeworks.sh && "
                        ". ./Scripts/package_ext_libs_finish.sh"],
         cwd=tree, env={**env, "PROJECT_DIR": ".", "CONFIGURATION": "Release", "SKIP_PACKAGING": "",
@@ -1668,6 +1671,9 @@ def cmd_build(args) -> None:
         # `complete` holds the key once every dependency is in the cache;
         # `new` lists the dependencies this run built and stored.
         (cache / sl.name).mkdir(parents=True, exist_ok=True)
+        for other in cache.iterdir():
+            if other.name != sl.name:  # only this slice's builds belong here
+                shutil.rmtree(other) if other.is_dir() else other.unlink()
         (cache / sl.name / "complete").unlink(missing_ok=True)
         (cache / sl.name / "new").write_text("")
     report["sources"], report["deps"] = {}, {}

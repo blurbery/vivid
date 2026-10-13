@@ -77,8 +77,8 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/lucid-deps-cache
-          key: lucid-engine-deps-${{ matrix.slice }}-${{ steps.depkey.outputs.key }}
-          restore-keys: lucid-engine-deps-${{ matrix.slice }}-
+          key: lucid-engine-deps-${{ matrix.slice }}-key-${{ steps.depkey.outputs.key }}
+          restore-keys: lucid-engine-deps-${{ matrix.slice }}-key-
       - name: Build ${{ matrix.slice }}
         env:
           SLICE: ${{ matrix.slice }}
@@ -101,9 +101,9 @@ jobs:
           cache="$RUNNER_TEMP/lucid-deps-cache/$SLICE"
           if [ -s "$cache/new" ]; then
             if [ "$(cat "$cache/complete" 2>/dev/null)" = "$KEY" ]; then
-              echo "key=lucid-engine-deps-$SLICE-$KEY" >> "$GITHUB_OUTPUT"
+              echo "key=lucid-engine-deps-$SLICE-key-$KEY" >> "$GITHUB_OUTPUT"
             else
-              echo "key=lucid-engine-deps-$SLICE-partial-$RUN" >> "$GITHUB_OUTPUT"
+              echo "key=lucid-engine-deps-$SLICE-key-partial-$RUN" >> "$GITHUB_OUTPUT"
             fi
           fi
       - name: Save dependency builds
