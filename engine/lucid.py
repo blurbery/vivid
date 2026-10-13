@@ -1647,6 +1647,11 @@ def package_xcframeworks(inputs: dict[str, Path], names: list[str], out: Path) -
         ids = sorted(lib["LibraryIdentifier"] for lib in info["AvailableLibraries"])
         if ids != sorted(inputs):
             raise Failure(f"{name}: xcframework slices {ids}, expected {sorted(inputs)}")
+        # xcodebuild lists the slices in a different order from run to run;
+        # sort them so identical frameworks give an identical Info.plist.
+        info["AvailableLibraries"].sort(key=lambda lib: lib["LibraryIdentifier"])
+        with open(xcf / "Info.plist", "wb") as f:
+            plistlib.dump(info, f, sort_keys=True)
         archive = out / f"{name}.xcframework.zip"
         zip_tree(xcf, archive)
         with zipfile.ZipFile(archive) as z:

@@ -154,6 +154,7 @@ The test fails on any abort, crash or hang (20 s per case) of the patched build,
 - `ZERO_AR_DATE=1` is set for every build, so `ar`, `ranlib` and `libtool` write zero timestamps; Rust and `rust-objcopy` write zero timestamps themselves. `check` requires every member of every archive to carry a zero timestamp.
 - `SOURCE_DATE_EPOCH` is `1766344100` (2025-12-21 19:08:20 UTC, mpv v0.41.0's commit), which clang uses for `__DATE__` and `__TIME__`. mpv's build date is therefore fixed, and `check` requires it in `Libmpv`.
 - Source trees are extracted fresh into the same runner paths, and build paths are stable on GitHub's runners, so unchanged inputs give unchanged binaries.
+- `xcodebuild -create-xcframework` lists the slices in its `Info.plist` in a different order from run to run, so `package` rewrites that file with the slices sorted by identifier.
 - The packaging job packages the same slices twice and fails unless the two sets of zips are identical.
 
 ## Configuration
