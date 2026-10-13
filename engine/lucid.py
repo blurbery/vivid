@@ -323,7 +323,7 @@ def compile_flags(sl: Slice, sdk: Path, minimum_os: str) -> list[str]:
 
 
 def nm_symbols(archive: Path, undefined: bool) -> set[str]:
-    args = ["nm", "-u", "-j"] if undefined else ["nm", "-g", "-U", "-j"]
+    args = ["nm", "-arch", "arm64", "-u", "-j"] if undefined else ["nm", "-arch", "arm64", "-g", "-U", "-j"]
     out = run(args + [archive], capture=True)
     return {s.strip() for s in out.splitlines() if s.strip().startswith("_")}
 
@@ -878,6 +878,190 @@ def check_binary_form(c: Checks, sl: Slice, fw: Path, name: str, minimum_os: str
              .startswith(f"framework module {name} [system] {{"))
 
 
+# ------------------------------------------------------------- link checks
+
+# Symbols the linker itself provides to every link. Objective-C selector
+# stubs (_objc_msgSend$<selector>, emitted by current clang) are also
+# synthesised by the linker, as calls to objc_msgSend in libobjc.
+LINKER_PROVIDED = {"___dso_handle"}
+SELECTOR_STUB = "_objc_msgSend$"
+TBD_KINDS = {
+    "symbols": ("{}",), "weak-symbols": ("{}",), "thread-local-symbols": ("{}",),
+    "global": ("{}",), "weak": ("{}",), "thread_local": ("{}",),
+    "objc-classes": ("_OBJC_CLASS_$_{}", "_OBJC_METACLASS_$_{}"),
+    "objc_class": ("_OBJC_CLASS_$_{}", "_OBJC_METACLASS_$_{}"),
+    "objc-eh-types": ("_OBJC_EHTYPE_$_{}",), "objc_eh_type": ("_OBJC_EHTYPE_$_{}",),
+    "objc-ivars": ("_OBJC_IVAR_$_{}",), "objc_ivar": ("_OBJC_IVAR_$_{}",),
+}
+LINK_TEST_SOURCE = """\
+#include <Libmpv/mpv/client.h>
+
+const char *avformat_configuration(void);
+
+int main(void)
+{
+    mpv_handle *mpv = mpv_create();
+    if (mpv) {
+        mpv_initialize(mpv);
+        mpv_terminate_destroy(mpv);
+    }
+    return avformat_configuration()[0] == '\\0';
+}
+"""
+
+
+def parse_tbd(text: str) -> tuple[set[str], set[str]]:
+    """The symbols a text-based stub (.tbd, version 4 YAML or 5 JSON) exports,
+    including those of the libraries it describes inline, and the install
+    names of the libraries it re-exports."""
+    names: list[tuple[str, str]] = []
+    reexported: set[str] = set()
+    if text.lstrip().startswith("{"):
+        doc = json.loads(text)
+        for lib in [doc.get("main_library", {})] + doc.get("libraries", []):
+            for entry in lib.get("exported_symbols", []) + lib.get("reexported_symbols", []):
+                for section in ("data", "text"):
+                    for kind, items in entry.get(section, {}).items():
+                        names += [(kind, i) for i in items]
+            for entry in lib.get("reexported_libraries", []):
+                reexported.update(entry.get("names", []))
+    else:
+        for doc in re.split(r"^---.*$", text, flags=re.M):
+            for block in re.finditer(r"^(exports|reexports|reexported-libraries):\n(.*?)(?=^\S|\Z)",
+                                     doc, re.M | re.S):
+                for kind, items in re.findall(r"([a-z-]+):\s*\[(.*?)\]", block.group(2), re.S):
+                    items = [i.strip().strip("'\"") for i in items.split(",") if i.strip()]
+                    if block.group(1) == "reexported-libraries":
+                        if kind == "libraries":
+                            reexported.update(items)
+                    else:
+                        names += [(kind, i) for i in items]
+    symbols = {form.format(name) for kind, name in names for form in TBD_KINDS.get(kind, ())}
+    return symbols, reexported
+
+
+def link_name(path: str) -> str | None:
+    """How an app links a library, from its SDK path or install name:
+    framework:X or lib:x. None for private frameworks and Swift libraries."""
+    path = path.lstrip("/")
+    parts = path.split("/")
+    if path.startswith("System/Library/Frameworks/"):
+        return "framework:" + parts[3].split(".framework")[0]
+    if path.startswith("usr/lib/system/"):
+        return "lib:System"
+    if path.startswith("usr/lib/") and not path.startswith("usr/lib/swift/"):
+        return "lib:" + re.sub(r"^lib", "", parts[-1]).split(".")[0]
+    return None
+
+
+def sdk_exports(sdk: Path) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Every symbol the SDK's public .tbd stubs export, with the libraries
+    that export it, and which libraries each library re-exports."""
+    exports: dict[str, set[str]] = {}
+    reexports: dict[str, set[str]] = {}
+    for root in (sdk / "usr" / "lib", sdk / "System" / "Library" / "Frameworks"):
+        for tbd in sorted(root.rglob("*.tbd")):
+            link = link_name(tbd.relative_to(sdk).as_posix())
+            if tbd.is_symlink() or link is None:
+                continue
+            symbols, reexported = parse_tbd(tbd.read_text(errors="replace"))
+            for symbol in symbols:
+                exports.setdefault(symbol, set()).add(link)
+            reexports.setdefault(link, set()).update(
+                n for n in map(link_name, reexported) if n and n != link)
+    return exports, reexports
+
+
+def with_reexports(links: set[str], reexports: dict[str, set[str]]) -> set[str]:
+    """The libraries these links provide, following re-exports."""
+    result, todo = set(), list(links)
+    while todo:
+        link = todo.pop()
+        if link not in result:
+            result.add(link)
+            todo.extend(reexports.get(link, ()))
+    return result
+
+
+def prebuilt_archives(pins, work: Path) -> dict[str, Path]:
+    """The staged archive behind each pinned prebuilt framework."""
+    archives = {}
+    for section in pin_sections(pins, "prebuilt"):
+        for fw in pins[section]["frameworks"].split():
+            lib = "lib" + (fw[3:] if fw.startswith("Lib") else fw) + ".a"
+            archives[fw] = work / "deps" / section.split(":", 1)[1] / "lib" / lib
+    return archives
+
+
+def app_link_flags(app_link: dict[str, list[str]]) -> tuple[list[str], set[str]]:
+    flags = [f for name in app_link["frameworks"] for f in ("-framework", name)]
+    flags += [f"-l{name}" for name in app_link["libraries"]]
+    names = {f"framework:{n}" for n in app_link["frameworks"]} | {f"lib:{n}" for n in app_link["libraries"]}
+    # libSystem is always linked, and Foundation re-exports libobjc.
+    return flags, names | {"lib:System", "lib:objc"}
+
+
+def check_link(c: Checks, sl: Slice, pins, work: Path, fws: Path, sdk: Path) -> dict:
+    """Symbol closure over the whole link set, then a dead-stripped test link
+    of a small program, as an app would link these frameworks."""
+    app_min = pins["toolchain"]["app_minimum_tvos" if sl.tvos else "app_minimum_ios"]
+    target = sl.target.format(v=app_min)
+    built = {p.stem: p / p.stem for p in sorted(fws.glob("*.framework"))}
+    prebuilt = prebuilt_archives(pins, work)
+    c.expect("pinned prebuilt archives staged", all(p.exists() for p in prebuilt.values()),
+             str([str(p) for p in prebuilt.values() if not p.exists()]))
+    archives = {**built, **prebuilt}
+    runtime = Path(run(["xcrun", "--sdk", sl.sdk, "clang", "-target", target,
+                        "-print-libgcc-file-name"], capture=True).strip())
+    defined = set().union(*(nm_symbols(p, False) for p in archives.values()))
+    runtime_defined = nm_symbols(runtime, False)
+    exports, reexports = sdk_exports(sdk)
+    app_link = read_sections(CONFIG / "app-link.txt")
+    link_flags, link_names = app_link_flags(app_link)
+    link_names = with_reexports(link_names, reexports)
+    missing, outside, needed, stubs = {}, {}, set(), 0
+    for name, path in archives.items():
+        for symbol in sorted(nm_symbols(path, True) - defined - LINKER_PROVIDED):
+            if symbol.startswith(SELECTOR_STUB):
+                stubs += 1
+                continue
+            providers = exports.get(symbol)
+            if providers:
+                needed |= providers
+                if not providers & link_names:
+                    outside[symbol] = sorted(providers)
+            elif symbol not in runtime_defined:
+                missing.setdefault(name, []).append(symbol)
+    c.expect("symbol closure: every undefined symbol is defined in the link set or the SDK",
+             not missing, json.dumps(missing))
+    c.expect("symbol closure: SDK symbols come from the app's frameworks and libraries",
+             not outside, json.dumps(outside))
+
+    test = work / "linktest"
+    if test.exists():
+        shutil.rmtree(test)
+    test.mkdir()
+    (test / "main.c").write_text(LINK_TEST_SOURCE)
+    cmd = ["xcrun", "--sdk", sl.sdk, "clang", "-target", target, "-isysroot", str(sdk),
+           "-F", str(fws), str(test / "main.c"), "-o", str(test / "linktest"), "-Wl,-dead_strip"]
+    cmd += [f for name in built for f in ("-framework", name)]
+    cmd += [str(p) for p in prebuilt.values()]
+    cmd += link_flags
+    log(f"$ {shlex.join(cmd)}")
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if res.stdout:
+        log(res.stdout)
+    linked = res.returncode == 0
+    c.expect("dead-stripped test link of mpv_create, mpv_initialize, mpv_terminate_destroy "
+             "and avformat_configuration", linked, res.stdout[-2000:])
+    if linked:
+        symbols = nm_symbols(test / "linktest", False)
+        c.expect("test link contains libmpv and libavformat",
+                 {"_mpv_create", "_avformat_configuration"} <= symbols)
+    return {"target": target, "system_libraries_needed": sorted(needed),
+            "selector_stub_references": stubs, "linked": linked}
+
+
 def cmd_check(args) -> None:
     sl = SLICES[args.slice]
     pins = load_pins()
@@ -991,6 +1175,9 @@ def cmd_check(args) -> None:
     c.expect("Libmpv carries -Dgpl=false", b"-Dgpl=false" in libmpv)
     c.expect("Libmpv has no -Dgpl=true", b"-Dgpl=true" not in libmpv)
     c.expect("Libmpv contains mpv patch 0001", MPV_PATCH_MARKER in libmpv)
+    # Vivid's adapter reads the AVFoundation output's restart log line.
+    c.expect("Libmpv keeps the AVFoundation 'notification name' log line",
+             b"notification name: %s" in libmpv)
     client_h = fws / "Libmpv.framework" / "Headers" / "mpv" / "client.h"
     c.equal("MPV_CLIENT_API_VERSION", define(client_h, "MPV_CLIENT_API_VERSION"), "MPV_MAKE_VERSION(2, 5)")
     c.sets("Libmpv headers", {p.name for p in client_h.parent.iterdir()},
@@ -1005,6 +1192,9 @@ def cmd_check(args) -> None:
     for name in ("Libass", "Libdav1d"):
         asm = [m for m in archive_members(fws / f"{name}.framework" / name) if m.endswith(".S.o")]
         c.expect(f"{name}: arm64 assembly built", bool(asm), "no .S objects in the archive")
+
+    # Linkability: symbol closure and a dead-stripped test link.
+    report["link"] = check_link(c, sl, pins, work, fws, sdk_path(sl.sdk))
 
     report["ffmpeg"] = {"configuration": binary_conf, "licences": sorted(licences),
                         "components": {k: len(v) for k, v in sorted(components.items())}}
@@ -1041,7 +1231,10 @@ def summarise(report: dict) -> str:
     lines += ["", f"FFmpeg `avformat_configuration()`: `{report['ffmpeg']['configuration']}`", "",
               f"FFmpeg licence: {', '.join(report['ffmpeg']['licences'])}", "",
               f"mpv configuration: `{report['mpv']['configuration']}`", "",
-              f"mpv features: `{' '.join(report['mpv']['features'])}`", ""]
+              f"mpv features: `{' '.join(report['mpv']['features'])}`", "",
+              f"Test link ({report['link']['target']}, dead-stripped): "
+              f"{'linked' if report['link']['linked'] else 'FAILED'}. System libraries the "
+              f"link set needs: {', '.join(report['link']['system_libraries_needed'])}", ""]
     failed = [r for r in report["checks"] if not r["ok"]]
     if failed:
         lines += ["### Failed checks", ""] + [f"- {r['check']}: {r['detail']}" for r in failed] + [""]

@@ -58,7 +58,7 @@ jobs:
         run: |
           python3 engine/lucid.py build --slice "$SLICE" \
             --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
-      - name: Provenance, licence and TLS checks
+      - name: Provenance, licence, TLS and link checks
         env:
           SLICE: ${{ matrix.slice }}
         run: |

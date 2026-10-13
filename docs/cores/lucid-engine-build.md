@@ -44,7 +44,7 @@ The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs
 1. checks that every fetch is pinned and on the allowlist;
 2. restores or downloads the pinned inputs and verifies each SHA-256;
 3. builds dav1d, libass, FFmpeg and libmpv for the slice;
-4. runs the provenance, licence and TLS checks below;
+4. runs the provenance, licence, TLS and link checks below;
 5. uploads the slice's frameworks, provenance report and logs.
 
 A final job turns the slices into xcframeworks. Artefacts are kept for three days. A newer push cancels a running build.
@@ -79,7 +79,7 @@ Vivid links only arm64, so the pipeline builds no arm64e or x86_64 code. This ch
 - `[source:*]`: the four upstream source archives. `lucid.py fetch` also reads the commit id GitHub embeds in each archive and compares it with the pinned commit.
 - `[tool:*]`: meson 1.4.2 and ninja 1.12.1. pkg-config comes from the runner image.
 - `[prebuilt:*]`: the interim release assets. `url` is the build input (headers, thin static libraries and pkg-config files for every slice). `xcframework_url` is the matching SwiftPM binary, for a package to use until the library is built here.
-- `[toolchain]`: the Xcode version CI must use and the minimum OS (14.0) for every slice.
+- `[toolchain]`: the Xcode version CI must use, the minimum OS (14.0) for every slice, and Vivid's own deployment targets (iOS 18.0, tvOS 26.0) for the test link.
 
 `lucid.py check-allowlist` fails the run if any file in `engine/` or the workflow mentions a blocked project, if a URL points at a host that is not allowlisted, if a download is not one of the allowlisted upstream projects, if anything fetches outside `lucid.py`'s single download function, or if a workflow action is not pinned by commit SHA.
 
@@ -92,7 +92,7 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | FFmpeg | `0001-securetransport-without-private-identity-api.patch` | Compiles the client-certificate path, which needs the private `SecIdentityCreate`, out of Secure Transport on iOS and tvOS. Server certificates are still checked against the system trust store. |
 | FFmpeg | `0002-videotoolbox-request-metal-compatible-pixel-buffers.patch` | Asks VideoToolbox for Metal-compatible pixel buffers instead of the OpenGL ES or OpenGL compatibility flags, matching today's binaries. LGPL-2.1-or-later. |
 | mpv | `0001-ad_spdif-recreate-spdif-muxer-on-reset.patch` | Upstream mpv commit `1388a453`, unchanged, with its upstream attribution: recreates the S/PDIF muxer after a seek and waits for a TrueHD major sync. |
-| mpv | `0002-ao_avfoundation-build-for-ios-and-tvos.patch` | Lets upstream's AVFoundation audio output (`-Davfoundation=enabled`) compile for iOS and tvOS by keeping the macOS-only CoreAudio device code out of those builds. macOS builds are unchanged. LGPL-2.1-or-later. |
+| mpv | `0002-ao_avfoundation-build-for-ios-and-tvos.patch` | Lets upstream's AVFoundation audio output (`-Davfoundation=enabled`) compile for iOS and tvOS by keeping the macOS-only CoreAudio device code out of those builds, and builds the CoreFoundation string helpers it calls (`osdep/utils-mac.c`), which upstream builds only with the macOS `cocoa` feature. The output's `notification name:` log line is unchanged. macOS builds with `cocoa` are unchanged. LGPL-2.1-or-later. |
 
 To add a patch, write it against the pristine source (or the previous patch in the series), add its SHA-256 and file name to the end of the `series` file, and push. The build fails if the files a series changes differ from the files its patches name.
 
@@ -108,6 +108,7 @@ The configuration lives in [`engine/config/`](../../engine/config) as plain list
 | `expected-mpv-features.txt` | the mpv feature list every slice must report |
 | `expected-ffmpeg-components.txt` | every FFmpeg decoder, encoder, demuxer, muxer, parser, bitstream filter, hwaccel, protocol and filter every slice must enable, and no others |
 | `expected-ffmpeg-config.txt` | external libraries FFmpeg must enable or disable |
+| `app-link.txt` | the system frameworks and libraries the link checks use, as Vivid's app targets link them |
 
 Compilers come from the selected Xcode (`/usr/bin/clang`). Every library gets the same flags: `-arch arm64 -isysroot <SDK> -target <triple> <version-min flag>`, plus `-DHAVE_FORK=0` on tvOS and `-lc++` when linking. Meson projects get them through a generated cross file. FFmpeg gets them through `CFLAGS`, `CPPFLAGS` and `LDFLAGS`, as today. Libraries install under the prefix `/lucid-engine` and are staged with `DESTDIR`, so no build-machine path appears in the configuration strings.
 
@@ -173,6 +174,10 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
   - The client API version is 2.5, with the four expected headers.
 - **libass and dav1d:** the versions are 0.17.5 (`0x01705000`) and API 7.0.0, and both archives contain their arm64 assembly.
 - **Form:** every framework binary is arm64 only, built for the slice's platform with minimum OS 14.0. Info.plist values and module maps match, and the FFmpeg header counts match today's (26, 3, 5, 6, 109, 3 and 3).
+- **Linkability:**
+  - Symbol closure: every undefined symbol in every built and pinned archive is defined by another archive in the link set, by the compiler runtime, or by a public `.tbd` stub in the SDK. Only `___dso_handle` and the Objective-C selector stubs (`_objc_msgSend$<selector>`), which the linker synthesises, are exempt. Every SDK symbol must come from a framework or library in `app-link.txt`, following re-exports, or from libSystem or libobjc.
+  - Test link: a small C program that calls `mpv_create`, `mpv_initialize`, `mpv_terminate_destroy` and `avformat_configuration` links, dead-stripped and without forced whole-archive loading, against the ten new frameworks, the twelve pinned prebuilt archives and `app-link.txt`, at Vivid's own deployment targets (iOS 18.0, tvOS 26.0).
+  - `Libmpv` keeps the AVFoundation output's `notification name:` log line, which Vivid's adapter reads.
 
 The summary of each slice also appears on the workflow run page.
 

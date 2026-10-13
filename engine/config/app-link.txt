@@ -1,0 +1,14 @@
+# System frameworks and libraries the link checks use, as Vivid's app targets
+# link them. `lucid.py check` requires every undefined symbol in the built and
+# pinned archives that the SDK provides to come from one of these (libSystem
+# and libobjc are implicit), and links a small test program against them.
+
+[frameworks]
+Foundation CoreFoundation CoreMedia CoreVideo VideoToolbox AVFoundation
+AudioToolbox CoreAudio Security Metal QuartzCore CoreText CoreGraphics UIKit
+# Needed by the link set as well (the symbol closure check shows why):
+# OpenGLES for mpv's ios-gl interop (EAGLContext) and IOSurface for MoltenVK.
+OpenGLES IOSurface
+
+[libraries]
+c++ z bz2 iconv xml2
