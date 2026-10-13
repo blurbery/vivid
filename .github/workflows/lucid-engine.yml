@@ -1,0 +1,109 @@
+name: Lucid Engine build
+
+# Builds Lucid Engine's dav1d, libass, FFmpeg and libmpv from the pinned
+# upstream sources and Vivid's patch series in engine/, checks every slice
+# against the recorded build facts and packages static xcframeworks.
+# See docs/cores/lucid-engine-build.md.
+
+on:
+  push:
+    branches: [experiment/lucid-engine-build]
+    paths:
+      - 'engine/**'
+      - '.github/workflows/lucid-engine.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lucid-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.slice }}
+    runs-on: macos-26
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [tvos-arm64]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that every fetch is pinned and allowlisted
+        run: python3 engine/lucid.py check-allowlist
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Restore pinned downloads
+        id: downloads
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Fetch and verify pinned inputs
+        run: python3 engine/lucid.py fetch --downloads "$RUNNER_TEMP/lucid-downloads"
+      # Saved straight after fetching, so a failed build does not lose them.
+      - name: Save pinned downloads
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/lucid-downloads
+          key: lucid-engine-downloads-${{ hashFiles('engine/pins.ini') }}
+      - name: Build ${{ matrix.slice }}
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py build --slice "$SLICE" \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Provenance, licence and TLS checks
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py check --slice "$SLICE" --strict \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      - name: Upload ${{ matrix.slice }} frameworks and provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-slice-${{ matrix.slice }}
+          path: ${{ runner.temp }}/lucid-engine/out/${{ matrix.slice }}
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-logs-${{ matrix.slice }}
+          path: ${{ runner.temp }}/lucid-engine/out/${{ matrix.slice }}
+          if-no-files-found: ignore
+          retention-days: 3
+
+  package:
+    name: Package xcframeworks
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: lucid-engine-slice-*
+          path: ${{ runner.temp }}/lucid-slices
+      - name: Create xcframeworks and checksums
+        run: |
+          python3 engine/lucid.py package \
+            --input "$RUNNER_TEMP/lucid-slices" --out "$RUNNER_TEMP/lucid-engine-release"
+      - name: Upload xcframeworks
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lucid-engine-xcframeworks
+          path: ${{ runner.temp }}/lucid-engine-release
+          if-no-files-found: error
+          retention-days: 3
