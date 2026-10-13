@@ -659,7 +659,8 @@ def build_meson(ctx: Ctx, lib: str, options: list[str], ndebug: bool) -> None:
         # Relative cross file, so mpv's recorded configuration has no machine path.
         run(ctx.meson + ["setup", build, ctx.src(lib), f"--cross-file={cross.name}"] + options,
             cwd=ctx.work, env=env, logfile=logfile)
-        run([ctx.ninja, "-C", build], env=env, logfile=logfile)
+        # -k 0 reports every failing file in one run, not just the first.
+        run([ctx.ninja, "-C", build, "-k", "0"], env=env, logfile=logfile)
         run(ctx.meson + ["install", "-C", build, "--destdir", ctx.install, "--no-rebuild"],
             env=env, logfile=logfile)
     finally:

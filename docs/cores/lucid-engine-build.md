@@ -92,6 +92,7 @@ Each library has `engine/patches/<library>/series`, listing its patches in order
 | FFmpeg | `0001-securetransport-without-private-identity-api.patch` | Compiles the client-certificate path, which needs the private `SecIdentityCreate`, out of Secure Transport on iOS and tvOS. Server certificates are still checked against the system trust store. |
 | FFmpeg | `0002-videotoolbox-request-metal-compatible-pixel-buffers.patch` | Asks VideoToolbox for Metal-compatible pixel buffers instead of the OpenGL ES or OpenGL compatibility flags, matching today's binaries. LGPL-2.1-or-later. |
 | mpv | `0001-ad_spdif-recreate-spdif-muxer-on-reset.patch` | Upstream mpv commit `1388a453`, unchanged, with its upstream attribution: recreates the S/PDIF muxer after a seek and waits for a TrueHD major sync. |
+| mpv | `0002-ao_avfoundation-build-for-ios-and-tvos.patch` | Lets upstream's AVFoundation audio output (`-Davfoundation=enabled`) compile for iOS and tvOS by keeping the macOS-only CoreAudio device code out of those builds. macOS builds are unchanged. LGPL-2.1-or-later. |
 
 To add a patch, write it against the pristine source (or the previous patch in the series), add its SHA-256 and file name to the end of the `series` file, and push. The build fails if the files a series changes differ from the files its patches name.
 
