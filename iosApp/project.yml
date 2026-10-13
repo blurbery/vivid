@@ -110,6 +110,12 @@ targets:
       - path: Tests/VividSubtitleCueCursorTests.swift
       - path: Tests/TVDetailScrollMaterialMaskTests.swift
       - path: Tests/TVCatalogGridIndexTests.swift
+      # The Vivid-written player bridge, tested directly so CI covers it
+      # whichever bridge VIVID_OWN_BRIDGE selects.
+      - path: Tests/VividPlayerConversionTests.swift
+      - path: Tests/VividPlayerCoreTests.swift
+      - path: Tests/VividPlayerDisplayCriteriaTests.swift
+      - path: Tests/VividPlayerEngineTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:
