@@ -34,6 +34,7 @@ import plistlib
 import re
 import shlex
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -2114,6 +2115,33 @@ def vo_driver_list(vo_c: str) -> list[str]:
     return re.findall(r"&(video_out_\w+)", m.group(1)) if m else []
 
 
+def defining_member(archive: Path, symbol: str) -> str | None:
+    """The archive member that defines a global symbol, if exactly one does."""
+    owners = [l for l in run(["nm", "-A", "-g", "-U", archive], capture=True).splitlines()
+              if l.endswith(" " + symbol)]
+    return owners[0].rsplit(": ", 1)[0].split(":")[-1] if len(owners) == 1 else None
+
+
+def macho_cstrings(obj: bytes) -> list[bytes]:
+    """The C strings in a 64-bit Mach-O object's (__TEXT,__cstring) section."""
+    magic, ncmds = struct.unpack_from("<I", obj, 0)[0], struct.unpack_from("<I", obj, 16)[0]
+    if magic != 0xFEEDFACF:
+        raise Failure("not a 64-bit Mach-O object")
+    strings, off = [], 32
+    for _ in range(ncmds):
+        cmd, size = struct.unpack_from("<II", obj, off)
+        if cmd == 0x19:  # LC_SEGMENT_64: 72 bytes, then 80 bytes per section
+            for i in range(struct.unpack_from("<I", obj, off + 64)[0]):
+                s = off + 72 + 80 * i
+                if (obj[s + 16:s + 32].rstrip(b"\0"), obj[s:s + 16].rstrip(b"\0")) == \
+                        (b"__TEXT", b"__cstring"):
+                    length, start = struct.unpack_from("<Q", obj, s + 40)[0], \
+                        struct.unpack_from("<I", obj, s + 48)[0]
+                    strings += obj[start:start + length].split(b"\0")[:-1]
+        off += size
+    return strings
+
+
 def check_video_output(c: Checks, fws: Path, work: Path) -> None:
     libmpv = fws / "Libmpv.framework" / "Libmpv"
     data = libmpv.read_bytes()
@@ -2124,8 +2152,17 @@ def check_video_output(c: Checks, fws: Path, work: Path) -> None:
             ["video_out_avfoundation", "video_out_gpu_next"])
     config_h = work / "build" / "mpv" / "config.h"
     c.equal("HAVE_VO_AVFOUNDATION", define(config_h, "HAVE_VO_AVFOUNDATION"), "1")
+    # The driver name, option prefix and device name are one string literal
+    # in the object that defines the output. Read it from that object's
+    # C string section: the literal can be the first string of the section,
+    # with no NUL in front of it in the archive.
+    member, cstrings = defining_member(libmpv, "_video_out_avfoundation"), []
+    if member:
+        cstrings = macho_cstrings(subprocess.run(["ar", "-p", str(libmpv), member],
+                                                 stdout=subprocess.PIPE, check=True).stdout)
     c.expect("Libmpv has the avfoundation driver, option prefix and device name",
-             b"\x00avfoundation\x00" in data)
+             b"avfoundation" in cstrings,
+             f"no C string 'avfoundation' in {member or 'the member defining _video_out_avfoundation'}")
     for name in VO_OPTION_NAMES:
         c.expect(f"Libmpv has the video output option {name.decode()}",
                  b"\x00" + name + b"\x00" in data)
