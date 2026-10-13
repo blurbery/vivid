@@ -6,7 +6,7 @@ import SwiftUI
 /// source (library browse, collection detail, filter result).
 ///
 /// - Pagination: `onNearEnd(currentIndex)` fires when a cell in the last 8
-///   rows of items appears. That's a generous lead time on a 100-item page,
+///   rows of items appears (4 rows for fixed-column grids). That's a generous lead time on a 100-item page,
 ///   which gives
 ///   the network room to complete before the user reaches the bottom.
 /// - Prefetch: row visibility reports let the caller cancel stale work and
@@ -48,7 +48,8 @@ struct TVCatalogGrid: View {
     private let rowSpacing: CGFloat = 60
 
     /// Trigger prefetch/pagination when a cell within this many rows of
-    /// the end appears. 8 rows of lead time — larger buffer means fast
+    /// the end appears. 8 rows of lead time for adaptive grids and 4 for
+    /// fixed-column ones — a larger buffer means fast
     /// scrolls that skip `.onAppear` events still hit the trigger
     /// before the user reaches the bottom.
     private var prefetchRowsRemaining: Int { fixedColumnCount == nil ? 8 : 4 }
