@@ -27,8 +27,10 @@
  *  - with VT_DOVI_TEST_FAKE_LIBDOVI, against a scripted stand-in for the six
  *    libdovi functions the module calls, to drive every outcome of FFmpeg's
  *    call sequence (including the ones that make unpatched libdovi abort);
- *  - without it, against libdovi 3.3.2 itself, for the byte-identity and
- *    guard tests. argv[1] is then the folder holding the RPU vectors.
+ *  - without it, against Vivid's patched libdovi 3.3.2 built for the host,
+ *    for the byte-identity, guard and corpus tests. argv[1] is then the
+ *    assets/tests folder of the libdovi source, and argv[2] the corpus file
+ *    `lucid.py test` writes from the libdovi test corpus (engine/tests/libdovi).
  *
  * Every check is counted; the run fails on any failed check or when no
  * check ran.
@@ -142,16 +144,18 @@ static int warn_events(void)
     return n;
 }
 
+#ifdef VT_DOVI_TEST_FAKE_LIBDOVI
 static const char *log_text(int i)
 {
     return i < nb_log && i < MAX_LOG ? log_lines[i].text : "";
 }
+#endif
 
 /* ---------------------------------------------------------- sample sink */
 
 /* Collects what the module appends, length-prefixed as VideoToolbox gets it. */
 static struct {
-    uint8_t buf[16384];
+    uint8_t buf[1 << 20];
     size_t  len;
     int     calls;
     int     fail;
@@ -159,7 +163,9 @@ static struct {
 
 static void sink_reset(void)
 {
-    memset(&sink, 0, sizeof(sink));
+    sink.len   = 0;
+    sink.calls = 0;
+    sink.fail  = 0;
 }
 
 static int sink_append(void *opaque, const uint8_t *nal, size_t size)
@@ -168,8 +174,10 @@ static int sink_append(void *opaque, const uint8_t *nal, size_t size)
     sink.calls++;
     if (sink.fail)
         return -12;
-    if (sink.len + 4 + size > sizeof(sink.buf))
-        return -12;
+    if (sink.len + 4 + size > sizeof(sink.buf)) {
+        fprintf(stderr, "sample larger than the test's buffer\n");
+        exit(1);
+    }
     sink.buf[sink.len + 0] = size >> 24;
     sink.buf[sink.len + 1] = size >> 16;
     sink.buf[sink.len + 2] = size >> 8;
@@ -997,6 +1005,123 @@ static void test_native_identity(const char *dir)
     }
 }
 
+/* Warn events mpv delivers for a stage line that carries this error text,
+ * plus the stripped line. */
+static int expected_events(const char *error)
+{
+    int n = 2;
+    for (const char *p = error; *p; p++)
+        n += *p == '\n';
+    return n;
+}
+
+static uint32_t be32(const uint8_t *p)
+{
+    return (uint32_t)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3];
+}
+
+/* Every RPU of the libdovi corpus, as an HEVC NAL unit, through FFmpeg's
+ * profile 7 conversion. What FFmpeg appends must be exactly what libdovi's
+ * own parse, mode 2 conversion and write give; anything libdovi cannot
+ * parse, convert or write is skipped with the stage and stripped warnings;
+ * every abort class entry is skipped (patch spec 5.13, 9.4). Reaching the
+ * end at all shows nothing aborted. */
+static void test_corpus(const char *path)
+{
+    FFVTDoviStream p7 = stream(7, 6, 1, 1, 1, 6, 0);
+    size_t size, pos = 8;
+    uint8_t *file;
+    uint32_t count, ran = 0, appended = 0, skipped = 0, class_entries = 0;
+    char dir[4096], *slash;
+
+    snprintf(dir, sizeof(dir), "%s", path);
+    slash = strrchr(dir, '/');
+    if (!slash) {
+        fprintf(stderr, "corpus path needs a folder\n");
+        exit(1);
+    }
+    *slash = 0;
+    file = read_file(dir, slash + 1, &size);
+    if (size < 8 || memcmp(file, "VTDC", 4)) {
+        fprintf(stderr, "%s: not a corpus file\n", path);
+        exit(1);
+    }
+    count = be32(file + 4);
+
+    for (uint32_t i = 0; i < count; i++) {
+        char name[256];
+        unsigned name_len, flags;
+        uint32_t len;
+        const uint8_t *nal;
+        int expect_append = 0, expect_warn_events = 2, ret;
+        const DoviData *expected = NULL;
+        DoviRpuOpaque *rpu = NULL;
+
+        if (pos + 2 > size)
+            break;
+        name_len = file[pos] << 8 | file[pos + 1];
+        pos += 2;
+        if (pos + name_len + 5 > size)
+            break;
+        snprintf(name, sizeof(name), "%.*s", (int)name_len, (const char *)file + pos);
+        pos  += name_len;
+        flags = file[pos++];
+        len   = be32(file + pos);
+        pos  += 4;
+        if (pos + len > size)
+            break;
+        nal  = file + pos;
+        pos += len;
+        ran++;
+
+        /* libdovi's own answer, unless the guard keeps it from libdovi. */
+        if (!ff_vt_dovi_rpu_is_empty(nal, len)) {
+            const char *error;
+            rpu = dovi_parse_unspec62_nalu(nal, len);
+            error = dovi_rpu_get_error(rpu);
+            if (!error && dovi_convert_rpu_with_mode(rpu, 2) == 0) {
+                expected = dovi_write_unspec62_nalu(rpu);
+                error = expected ? NULL : dovi_rpu_get_error(rpu);
+            } else if (!error) {
+                error = dovi_rpu_get_error(rpu);
+            }
+            expect_append = expected != NULL;
+            expect_warn_events = expected_events(error ? error : "unknown error");
+        }
+
+        sink_reset();
+        log_reset();
+        ret = ff_vt_dovi_forward_rpu(NULL, &p7, nal, len, sink_append, NULL);
+        if (expect_append) {
+            appended++;
+            CHECK(ret == 1 && nb_log == 0 && sink.len == 4 + expected->len &&
+                  !memcmp(sink.buf + 4, expected->data, expected->len),
+                  "%s: FFmpeg appends libdovi's mode 2 output", name);
+        } else {
+            skipped++;
+            CHECK(ret == 0 && sink.len == 0 && log_calls(AV_LOG_WARNING) == 2 && nb_log == 2 &&
+                  warn_events() == expect_warn_events,
+                  "%s: skipped with the stage and stripped warnings (%d calls, %d events, "
+                  "expected %d)", name, nb_log, warn_events(), expect_warn_events);
+        }
+        if (flags & 1) {
+            class_entries++;
+            if (flags & 2)
+                CHECK(ret == 1, "%s: FFmpeg's conversion succeeds", name);
+            else
+                CHECK(ret == 0, "%s: abort class entry skipped", name);
+        }
+        if (expected)
+            dovi_data_free(expected);
+        dovi_rpu_free(rpu);
+    }
+    CHECK(ran == count && pos == size, "corpus read completely (%u of %u)", ran, count);
+    CHECK(ran > 0 && class_entries > 0, "corpus has abort class entries");
+    printf("corpus: %u RPUs, %u appended, %u skipped, %u abort class entries\n",
+           ran, appended, skipped, class_entries);
+    free(file);
+}
+
 static void test_guard_real(void)
 {
     FFVTDoviStream p7 = stream(7, 6, 1, 1, 1, 6, 0);
@@ -1031,13 +1156,14 @@ int main(int argc, char **argv)
     test_forwarding();
     printf("VideoToolbox Dolby Vision tests (scripted libdovi): ");
 #else
-    if (argc < 2) {
-        fprintf(stderr, "usage: %s <vector folder>\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s <libdovi assets/tests folder> <corpus file>\n", argv[0]);
         return 2;
     }
     test_conversion_identity(argv[1]);
     test_native_identity(argv[1]);
     test_guard_real();
+    test_corpus(argv[2]);
     printf("VideoToolbox Dolby Vision tests (libdovi 3.3.2): ");
 #endif
     printf("%d checks, %d failed, %d messages logged\n", checks, failures, all_log);
