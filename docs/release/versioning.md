@@ -89,9 +89,10 @@ feat: add a new browsing feature
 Release-Notes:
 - Add the new browsing feature.
 - Improve keyboard navigation in the picker.
+- This release will be available on TestFlight soon.
 ```
 
-Put `Release-Notes:` on its own line. Directly after it, start each bullet with `- ` at the beginning of the line and keep it to one line. A blank line or any other line ends the list. The last bullet of every app release is “This release will be available on TestFlight soon.” Write specific changes in plain language; do not describe planned integrations as delivered. Internal commit bodies and AI attribution trailers are not copied into release notes.
+Put `Release-Notes:` on its own line. Directly after it, start each bullet with `- ` at the beginning of the line and keep it to one line. A blank line or any other line ends the list. By convention, the releasing commit's block ends with “This release will be available on TestFlight soon.” The release tooling doesn't add it: it joins the bullets of every releasing commit in the release and keeps only the first copy of a repeated bullet. Each push to `main` normally releases one commit, so put it in that commit's block; when changes are batched with `[skip release]`, list them all in the final commit's block and end it with this bullet. Write specific changes in plain language; do not describe planned integrations as delivered. Internal commit bodies and AI attribution trailers are not copied into release notes.
 
 ## Validation
 
