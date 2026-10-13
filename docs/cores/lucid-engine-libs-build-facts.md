@@ -1,8 +1,11 @@
 # Lucid Engine interim libraries: facts for building them from upstream source
 
-Facts for the eleven libraries that Vivid's pipeline (`engine/pins.ini`, `[prebuilt:*]`) still takes as interim prebuilt binaries: FreeType, FriBidi, HarfBuzz, libunibreak, libplacebo, Little CMS (lcms2), MoltenVK, shaderc, uavs3d, libbluray and uchardet. It records versions, upstream source URLs with SHA-256 hashes, option values, flags, features, pkg-config contracts, binary observations and the observable effect of every source modification in today's binaries.
+Facts for the eleven libraries that Vivid's pipeline (`engine/pins.ini`, `[prebuilt:*]`) took as interim prebuilt binaries until 14 October 2026: FreeType, FriBidi, HarfBuzz, libunibreak, libplacebo, Little CMS (lcms2), MoltenVK, shaderc, uavs3d, libbluray and uchardet. It records versions, upstream source URLs with SHA-256 hashes, option values, flags, features, pkg-config contracts, binary observations and the observable effect of every source modification in today's binaries.
 
 Prepared 13 October 2026. It extends `docs/cores/lucid-engine-build-facts.md` (on `experiment/lucid-engine-build`), sections 2.4 to 2.13, and corrects it where section 8 says so.
+
+> [!NOTE]
+> **Status, 14 October 2026:** all eleven libraries are now built from these upstream sources by Vivid's own pipeline (`experiment/lucid-engine-libs`), and the interim assets of 1.2 are no longer downloaded. How each is built, and what still differs from today's binaries, is in [Lucid Engine build](lucid-engine-build.md#dependencies). The facts below are unchanged: they describe today's binaries, which `lucid.py check` compares the new builds with.
 
 ## 0. Evidence and conventions
 
@@ -145,7 +148,7 @@ Each item gives today's fact and the way to keep it. Details are in section 3.
 
 ### 1.2 Today's interim assets (the inputs being replaced) [cfg] [dl]
 
-Each row's archive is the `url` of its `[prebuilt:*]` section in `engine/pins.ini` (SHA-256 = that section's `sha256`), and the xcframework zip is its `xcframework_url` (SHA-256 = `xcframework_sha256`). The four text libraries come from one interim release.
+Each row's archive was the `url` of its `[prebuilt:*]` section in `engine/pins.ini` (SHA-256 = that section's `sha256`), and the xcframework zip its `xcframework_url` (SHA-256 = `xcframework_sha256`); both sections are gone now. The four text libraries come from one interim release.
 
 | Library | Interim archive (pipeline input), SHA-256 | Xcframework zip (linked by today's package), SHA-256 |
 | --- | --- | --- |
@@ -647,7 +650,7 @@ All downloaded on 13 October 2026. "Commit" is the id GitHub or GitLab embeds in
 | uchardet (release) | `https://www.freedesktop.org/software/uchardet/releases/uchardet-0.0.8.tar.xz` | `e97a60cfc00a1c147a674b097bb1422abd9fa78a2d9ce3f3fdcc2e78a34ac5f0` | |
 | uchardet (tag) | `https://gitlab.freedesktop.org/uchardet/uchardet/-/archive/v0.0.8/uchardet-v0.0.8.tar.gz` | `5aa402a1b5b1dbb8d81096f141ff1224e079f4d3a1db0f79ecca782756d3a416` | `ae6302a016088ad07177f86d417b20010053632b` |
 
-Hosts outside `github.com` that these sources need: `download.savannah.gnu.org` (FreeType release tarball only; the GitHub mirror suffices), `download.videolan.org` and `code.videolan.org` (libbluray, libudfread) and `www.freedesktop.org` and `gitlab.freedesktop.org` (uchardet). The pipeline's fetch allowlist (`FETCH_ALLOWED` in `engine/lucid.py`) currently names only `github.com` prefixes; its reference-host list already includes `code.videolan.org` and `gitlab.freedesktop.org` [vivid].
+Hosts outside `github.com` that these sources need: `download.savannah.gnu.org` (FreeType release tarball only; the GitHub mirror suffices), `download.videolan.org` and `code.videolan.org` (libbluray, libudfread) and `www.freedesktop.org` and `gitlab.freedesktop.org` (uchardet). When this was written, the pipeline's fetch allowlist (`FETCH_ALLOWED` in `engine/lucid.py`) named only `github.com` prefixes, and its reference-host list already included `code.videolan.org` and `gitlab.freedesktop.org` [vivid]. It now also names the libbluray and uchardet release folders on `download.videolan.org` and `www.freedesktop.org`.
 
 ---
 
