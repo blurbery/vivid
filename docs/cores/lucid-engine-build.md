@@ -267,7 +267,7 @@ In every scenario, every build must finish; the AddressSanitizer build must give
 
 Results at `01908dc` (run 38433199206, `macos-26`, about five minutes): 72 scenarios through the five builds, 8,862 frames each (44,310 in all), and 9,532 checks, all passed. On static output, upstream reported a change on all 239 frames after the first for the background box, both vector clips and the combined scenario, at both sizes, and on none for the other steady scenarios; the patched build reported none. The patched build searched for an unresolved glyph once where upstream searched on all 100 frames, and twice where upstream searched 21 to 40 times in the other fallback scenarios. The `event-cache` build drew something different from upstream (from the `symbol-font` build for symbol fonts) in 13 scenarios: the same text with different effects (33 frames), all five symbol font scenarios (19 frames each: CJK characters whose suggested font could not be opened, which a face added for a later character covers) and seven fallback scenarios; the patched build differed only where a font file appeared, within the allowed window. Patch `0001` changed all 20 frames of the Webdings and Wingdings scenarios and none of Symbol's. The event render cache peaked at 37.3 MB over the long run, the patched build used 11.7 to 13.2 MB more memory than upstream at each checkpoint without growing, and the cache was empty after every reset and settings change, while the `event-cache` build kept entries after the shaper, line spacing, margin use and style changes.
 
-The test fails on any failed check, crash or AddressSanitizer report. The summary appears on the workflow run page, and the report is uploaded as `lucid-engine-libass-test`.
+The test fails on any failed check, crash or AddressSanitizer report. The summary appears on the workflow run page, and the report is uploaded as `lucid-engine-libass-test`. With the host FreeType, FriBidi and HarfBuzz taken from the `[source:*]` pins, the integrated pipeline gave the same counts (see [Results](#results)).
 
 ## Reproducible builds
 
@@ -282,7 +282,7 @@ Results: runs 38367673194 and 38368890048 built every framework of all four slic
 For the dependencies built from source:
 
 - Runs 38412603172 and 38425539055 each built all eleven from source on all four slices, on different runners, and gave byte-identical `libMoltenVK.a` and dependency framework binaries on every slice.
-- With the dependencies built here, run 38425539055's `Libmpv`, `Libass`, `Libdav1d`, `Libdovi` and seven FFmpeg frameworks are byte for byte the same, on all four slices, as those of run 38400124717, which built them against today's interim binaries. Swapping the eleven dependencies changed nothing in the libraries built against them. (This needs each dependency installed in its own `deps/<name>` folder, as the interim binaries were staged: libplacebo's `libav_internal.h` puts its header path into an assertion text in FFmpeg's `vf_libplacebo`.)
+- With the dependencies built here, run 38425539055's `Libmpv`, `Libass`, `Libdav1d`, `Libdovi` and seven FFmpeg frameworks are byte for byte the same, on all four slices, as those of run 38400124717, which built them against today's interim binaries. Swapping the eleven dependencies changed nothing in the libraries built against them. Both runs built libass unpatched, before its series was merged, which changes `Libass`. (This needs each dependency installed in its own `deps/<name>` folder, as the interim binaries were staged: libplacebo's `libav_internal.h` puts its header path into an assertion text in FFmpeg's `vf_libplacebo`.)
 
 ## Configuration
 
@@ -447,6 +447,18 @@ Every suite compiles against the patched FFmpeg source and the host build's gene
 | `vt_glue_tests` | the host FFmpeg libraries, the host libdovi and a fake VideoToolbox, under AddressSanitizer | [`vt_glue_tests.m`](../../engine/tests/ffmpeg/vt_glue_tests.m) defines `VTDecompressionSessionCreate`, `VTDecompressionSessionDecodeFrame`, `VTDecompressionSessionWaitForAsynchronousFrames`, `VTSessionSetProperty` and `VTDecompressionSessionInvalidate`, so the linker binds `libavcodec`'s calls to them while VideoToolbox stays linked for its constants. It decodes [`main10-64x64.hevc`](../../engine/tests/ffmpeg/main10-64x64.hevc) (eight 10-bit 64×64 frames made with x265, command in the test) with RPUs from libdovi's test assets and, for profile 7, a type 63 NAL unit added to every access unit, and the record in the codec context's coded side data. For profiles 5, 7 and 8 (8.1 and 8.4), plain HEVC, a refused profile 8 or 7 session (one ordered plain HEVC retry), a refused profile 5 session (software decoding), a restart and refused session properties, at `thread_count` 1 and 4 with frame threading, it checks the codec type, Enable-hardware key, atoms and colour extensions passed to each session, the session properties (only for a final `dvh1` session), each sample's 4-byte length prefixes, slices before RPUs, no type 63 NAL unit, RPU bytes (libdovi's own conversion for profile 7), the sample size against the block length, that a guard-class RPU still submits its frame, and that every decoded frame's attachments equal what libavutil's unpatched `av_vt_pixbuf_set_attachments` makes of the same buffer |
 
 Each suite counts its checks, and the step fails on any failed check or when a suite ran none.
+
+### Results
+
+Run 38438440651 (`macos-26`, Xcode 26.6) at `dee336d`, the pipeline with the dependencies built from source and the libass series merged, passed every job. This branch had no dependency cache yet, so each slice built all eleven dependencies from source; the slice jobs took 21 to 27 minutes.
+
+| Job | Result |
+| --- | --- |
+| Each of the four slices (`ios-arm64`, `ios-arm64-simulator`, `tvos-arm64`, `tvos-arm64-simulator`) | 683 of 683 checks; 140 audio output vectors, none failed; decoder tests: `vt_dovi_tests_scripted_libdovi` 534 checks, `vt_dovi_tests_libdovi` 199,060 and `vt_glue_tests` 3,921, none failed |
+| Video output tests (`ios-arm64-simulator`) | 1,920 cases, all passed |
+| libdovi C API test | 19,381 cases through the patched and unpatched builds; 14 of 14 checks |
+| libass host tests | 72 scenarios through the five builds, 8,862 frames each; 9,532 scenario checks and 4 of 4 test checks |
+| Packaging | 22 xcframework zips (the 21 frameworks and MoltenVK), identical when packaged twice |
 
 ## Still to do
 
