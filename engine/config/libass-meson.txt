@@ -1,0 +1,13 @@
+# libass 0.17.5 meson options (facts 2.3), upstream and unpatched (facts 3.5).
+# -Dasm=enabled is the arm64 value; an x86_64 slice would need -Dasm=disabled.
+
+-Dasm=enabled
+-Dlibunibreak=enabled
+-Dcoretext=enabled
+-Dfontconfig=disabled
+-Ddirectwrite=disabled
+-Dcheckasm=disabled
+-Dtest=disabled
+-Dprofile=disabled
+-Dcompare=disabled
+-Dfuzz=disabled

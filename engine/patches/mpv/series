@@ -1,0 +1,3 @@
+# mpv v0.41.0 patch series, applied in order to the pristine source.
+# Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
+9a8c970f0e900a359936990e90ca6288c572b1ee798d876252ef31d10f5a7a88  0001-ad_spdif-recreate-spdif-muxer-on-reset.patch

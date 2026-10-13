@@ -1,0 +1,7 @@
+# dav1d 1.5.3 meson options (facts 2.10), with arm64 NEON assembly enabled.
+
+-Denable_asm=true
+-Denable_tests=false
+-Denable_tools=false
+-Denable_examples=false
+-Dxxhash_muxer=disabled
