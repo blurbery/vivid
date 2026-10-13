@@ -161,7 +161,7 @@ The packaging job uploads `lucid-engine-xcframeworks` with:
   - The configuration in `config.h` and the string `avformat_configuration()` returns (read from the `Libavformat` object that defines it) both equal the configured arguments.
   - The configuration contains `--enable-securetransport` and none of `--enable-gpl`, `--enable-version3`, `--enable-openssl` or `delogo`.
   - Every library's licence string is `LGPL version 2.1 or later`, and `CONFIG_GPL`, `CONFIG_VERSION3` and `CONFIG_OPENSSL` are 0.
-  - The enabled components match `expected-ffmpeg-components.txt` exactly.
+  - The enabled components match `expected-ffmpeg-components.txt` exactly, and so do the filter registry symbols `Libavfilter` defines, which is the form the build facts record. (`scale2ref` appears only as a symbol: `vf_scale.o` defines it, but the configure line has never enabled it.)
 - **Symbols:**
   - No framework has OpenSSL symbols, references `_SecIdentityCreate` or defines the `delogo` filter.
   - `Libavformat` defines `_avformat_configuration`.

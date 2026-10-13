@@ -953,7 +953,9 @@ def cmd_check(args) -> None:
     for m in re.finditer(r"^#define CONFIG_(\w+?)_(" + "|".join(kinds) + r") 1$",
                          (build / "config_components.h").read_text(), re.M):
         components.setdefault(kinds[m.group(2)], set()).add(m.group(1).lower())
-    for kind, names in read_sections(CONFIG / "expected-ffmpeg-components.txt").items():
+    expected_components = read_sections(CONFIG / "expected-ffmpeg-components.txt")
+    filter_symbols = set(expected_components.pop("filter-symbols"))
+    for kind, names in expected_components.items():
         c.sets(f"FFmpeg {kind} components", components.get(kind, set()), set(names))
 
     # Symbols across every framework binary.
@@ -967,6 +969,9 @@ def cmd_check(args) -> None:
     c.expect("_SecIdentityCreate not referenced",
              not any("_SecIdentityCreate" in undefined[n] for n in expected_names))
     c.expect("delogo filter absent", not any("_ff_vf_delogo" in defined[n] for n in expected_names))
+    registry = {m.group(1) for s in defined["Libavfilter"]
+                for m in [re.match(r"^_ff_((?:af|vf|asrc|asink|vsrc|vsink|avf|avsrc)_\w+)$", s)] if m}
+    c.sets("Libavfilter filter registry symbols", registry, filter_symbols)
     c.expect("Libavcodec uses kCVPixelBufferMetalCompatibilityKey",
              "_kCVPixelBufferMetalCompatibilityKey" in undefined["Libavcodec"])
     for key in ("_kCVPixelBufferOpenGLESCompatibilityKey",

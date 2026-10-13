@@ -1,10 +1,17 @@
 # Expected FFmpeg components, identical on every slice. Generated once from
 # Appendix A of docs/cores/lucid-engine-build-facts.md (today's binaries), less
 # the decided removals: the whip muxer, the dtls, ffrtmpcrypt, rtmpe and
-# rtmpte protocols (no OpenSSL) and the GPL-only delogo filter. Filters use
-# filter names; the four buffer source and sink filters are always built and
-# have no CONFIG_ switch, so they are not listed. `lucid.py check` compares
-# these sets with config_components.h of each build.
+# rtmpte protocols (no OpenSSL) and the GPL-only delogo filter.
+#
+# `lucid.py check` compares each section with the CONFIG_*_<KIND> switches
+# in the build's config_components.h, except [filter-symbols].
+#
+# Appendix A lists filters as the registry symbols Libavfilter defines.
+# [filter-symbols] keeps that form and is compared with the ff_af_*, ff_vf_*
+# and buffer symbols the Libavfilter binary defines. [filter] holds the
+# enabled filter names: it leaves out the four buffer filters, which are
+# always built and have no CONFIG_ switch, and scale2ref, whose symbol comes
+# from vf_scale.o but which the configure line never enables.
 
 [decoder]  # 519
 aac aac_at aac_fixed aac_latm aasc ac3 ac3_at ac3_fixed acelp_kelvin adpcm_4xm
@@ -164,15 +171,26 @@ async cache concat concatf crypto data fd ffrtmphttp file ftp gopher gophers
 hls http httpproxy https icecast ipfs_gateway ipns_gateway md5 mmsh mmst pipe
 prompeg rtmp rtmps rtmpt rtmpts rtp srtp subfile tcp tee tls udp udplite unix
 
-[filter]  # 59
+[filter]  # 58
 aformat amix anull aresample areverse asetrate atempo atrim equalizer
 firequalizer loudnorm pan superequalizer volume ass avgblur_vulkan
 blend_vulkan bwdif bwdif_vulkan chromaber_vulkan crop estdif flip_vulkan
 format fps gblur_vulkan hflip hflip_vulkan hwdownload hwmap hwupload idet
 lenscorrection libplacebo lut lut1d lut2 lut3d lutrgb lutyuv negate
 nlmeans_vulkan null overlay overlay_vulkan palettegen paletteuse rotate scale
-scale2ref setpts subtitles transpose trim vflip vflip_vulkan w3fdif
-xfade_vulkan yadif
+setpts subtitles transpose trim vflip vflip_vulkan w3fdif xfade_vulkan yadif
+
+[filter-symbols]  # 63
+af_aformat af_amix af_anull af_aresample af_areverse af_asetrate af_atempo
+af_atrim af_equalizer af_firequalizer af_loudnorm af_pan af_superequalizer
+af_volume asink_abuffer asrc_abuffer vf_ass vf_avgblur_vulkan vf_blend_vulkan
+vf_bwdif vf_bwdif_vulkan vf_chromaber_vulkan vf_crop vf_estdif vf_flip_vulkan
+vf_format vf_fps vf_gblur_vulkan vf_hflip vf_hflip_vulkan vf_hwdownload
+vf_hwmap vf_hwupload vf_idet vf_lenscorrection vf_libplacebo vf_lut vf_lut1d
+vf_lut2 vf_lut3d vf_lutrgb vf_lutyuv vf_negate vf_nlmeans_vulkan vf_null
+vf_overlay vf_overlay_vulkan vf_palettegen vf_paletteuse vf_rotate vf_scale
+vf_scale2ref vf_setpts vf_subtitles vf_transpose vf_trim vf_vflip
+vf_vflip_vulkan vf_w3fdif vf_xfade_vulkan vf_yadif vsink_buffer vsrc_buffer
 
 [indev]  # 0
 
