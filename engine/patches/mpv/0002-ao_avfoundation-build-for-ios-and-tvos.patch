@@ -5,13 +5,17 @@ Subject: [PATCH] ao_avfoundation: build for iOS and tvOS
 
 The AVFoundation audio output already sets up AVAudioSession on iOS and
 tvOS, but it does not compile there: with HAVE_AVFOUNDATION the CoreAudio
-helpers declare and build the macOS-only HAL functions (AudioDeviceID,
-AudioStreamID, AudioObject), and init() selects an output device through
-setAudioOutputDeviceUniqueID:, which iOS and tvOS do not have.
+utility and channel-map helpers declare and build the macOS-only HAL
+functions (AudioDeviceID, AudioStreamID, AudioObject), and init() selects
+an output device through setAudioOutputDeviceUniqueID:, which iOS and
+tvOS do not have. The AudioUnit output fails too, because it includes the
+same channel-map header.
 
 Add CA_HAVE_HAL, true for the CoreAudio output and for AVFoundation on
-macOS, and use it in place of HAVE_COREAUDIO || HAVE_AVFOUNDATION. On iOS
-and tvOS the AVFoundation output then has no device list or device
+macOS, and use it in place of HAVE_COREAUDIO || HAVE_AVFOUNDATION wherever
+the code needs the HAL. The channel-layout helpers AVFoundation uses
+(ca_get_acl, ca_find_standard_layout, ca_log_layout) stay available. On
+iOS and tvOS the AVFoundation output then has no device list or device
 selection and uses the shared AVAudioSession route, as the AudioUnit
 output does. macOS builds are unchanged. Applies to mpv v0.41.0.
 
@@ -48,6 +52,46 @@ index 0000000000..0000000000 100644
 +#endif
      .priv_size      = sizeof(struct priv),
  };
+diff --git a/audio/out/ao_coreaudio_chmap.c b/audio/out/ao_coreaudio_chmap.c
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_coreaudio_chmap.c
++++ b/audio/out/ao_coreaudio_chmap.c
+@@ -338,6 +338,11 @@
+     return layout;
+ }
+ 
++#endif
++
++// Everything below queries the output device through the CoreAudio HAL,
++// which only exists on macOS (see CA_HAVE_HAL in ao_coreaudio_utils.h).
++#if CA_HAVE_HAL
+ 
+ #define CHMAP(n, ...) &(struct mp_chmap) MP_CONCAT(MP_CHMAP, n) (__VA_ARGS__)
+ 
+diff --git a/audio/out/ao_coreaudio_chmap.h b/audio/out/ao_coreaudio_chmap.h
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_coreaudio_chmap.h
++++ b/audio/out/ao_coreaudio_chmap.h
+@@ -21,6 +21,8 @@
+ #include "config.h"
+ #include <AudioToolbox/AudioToolbox.h>
+ 
++#include "audio/out/ao_coreaudio_utils.h"
++
+ struct mp_chmap;
+ 
+ int ca_label_to_mp_speaker_id(AudioChannelLabel label);
+@@ -30,6 +32,10 @@
+ AudioChannelLayout *ca_find_standard_layout(void *talloc_ctx, AudioChannelLayout *l);
+ AudioChannelLayout *ca_get_acl(struct ao *ao, size_t *out_layout_size);
+ void ca_log_layout(struct ao *ao, int l, AudioChannelLayout *layout);
++#endif
++
++// These query the output device through the macOS-only CoreAudio HAL.
++#if CA_HAVE_HAL
+ bool ca_init_chmap(struct ao *ao, AudioDeviceID device);
+ void ca_get_active_chmap(struct ao *ao, AudioDeviceID device, int channel_count,
+                          struct mp_chmap *out_map);
 diff --git a/audio/out/ao_coreaudio_properties.c b/audio/out/ao_coreaudio_properties.c
 index 0000000000..0000000000 100644
 --- a/audio/out/ao_coreaudio_properties.c
