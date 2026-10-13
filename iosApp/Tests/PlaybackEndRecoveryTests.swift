@@ -580,9 +580,15 @@ final class PlaybackEndRecoveryTests: XCTestCase {
         let model = PlayerViewModel()
         let recorder = PlayerTestRecorder()
         model.testRecorder = recorder
+        let retained = TeardownBox(model)
         addTeardownBlock { @MainActor in
-            model.cleanup()
-            await model.waitForCleanupCompletion()
+            if let model = retained.object {
+                model.cleanup()
+                await model.waitForCleanupCompletion()
+            }
+            // The model's deinit needs the main actor, so its last release
+            // happens here rather than wherever XCTest finishes this block.
+            retained.object = nil
             settings.setAutoPlayNextEpisode(savedAutoPlay)
             settings.setNextUpPromptSeconds(savedPromptSeconds)
         }
@@ -802,6 +808,18 @@ final class PlaybackEndRecoveryTests: XCTestCase {
 
     private func progressWrites(_ entries: [PlayerTestRecorder.Entry]) -> Int {
         progressReports(entries).count + offlineWrites(entries).count
+    }
+}
+
+/// Holds an object for a teardown block, so the block can release it on the
+/// main actor. XCTest finishes async teardown blocks off the main thread,
+/// and the player view model and UIKit objects must not be freed there.
+/// Only touched on the main actor.
+final class TeardownBox<Object: AnyObject>: @unchecked Sendable {
+    var object: Object?
+
+    init(_ object: Object) {
+        self.object = object
     }
 }
 

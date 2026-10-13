@@ -227,7 +227,11 @@ final class VividEndOfStreamConfirmationTests: XCTestCase {
     private func makePlayer(fileLoaded: Bool = true, firstFrame: Bool = true) -> (VividMPVPlayer, EndLog) {
         let player = VividMPVPlayer()
         let log = observeEnds(player)
-        addTeardownBlock { @MainActor in player.stop() }
+        let retained = TeardownBox(player)
+        addTeardownBlock { @MainActor in
+            retained.object?.stop()
+            retained.object = nil
+        }
         if fileLoaded { player.debugReceiveEvent("file-loaded") }
         if firstFrame { player.debugReceiveEvent("playback-restart") }
         return (player, log)
@@ -260,11 +264,15 @@ final class VividEndOfStreamConfirmationTests: XCTestCase {
         controller.engine.surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
+        let retainedController = TeardownBox(controller)
+        let retainedWindow = TeardownBox(window)
         addTeardownBlock { @MainActor in
-            controller.onEvent = nil
-            controller.stop()
-            window.isHidden = true
-            window.rootViewController = nil
+            retainedController.object?.onEvent = nil
+            retainedController.object?.stop()
+            retainedWindow.object?.isHidden = true
+            retainedWindow.object?.rootViewController = nil
+            retainedController.object = nil
+            retainedWindow.object = nil
         }
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "v3_h264_aac", withExtension: "mp4"))
         return (controller, url)
