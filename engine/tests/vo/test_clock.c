@@ -868,42 +868,86 @@ static void test_deterministic_trace(void)
     }
 }
 
-// The pacing summary's largest phase error: sampled on every frame that keeps
-// its nominal rate, anchoring or not, and never on a frame whose estimate
-// changed the nominal rate.
+// One frame at media time media_ns whose phase error is error_ns: its target
+// is now, so the error is the media time less the timebase time.
+static void step_with_error(struct avf_clock *c, int64_t media_ns, int64_t error_ns,
+                            bool has_estimate, double estimate, struct avf_clock_result *res)
+{
+    struct avf_clock_frame in = { .media_ns = media_ns, .target_ns = 0, .now_ns = 0,
+                                  .timebase_ns = media_ns - error_ns,
+                                  .has_estimate = has_estimate, .estimate = estimate };
+    avf_clock_step(c, &in, res);
+    CHECK_EQ_I(res->error_ns, error_ns);
+}
+
+// The pacing summary's largest phase error (12.2): sampled only on frames that
+// reach the phase-error test, which have a valid anchor, are playing (neither
+// playback nor the timebase paused) and keep their nominal rate. Frames after
+// creation, a seek, a resume or a recovery, paused frames and a frame whose
+// estimate changes the nominal rate are not sampled; a frame beyond the
+// re-anchor limit, after a valid anchor and playing at an unchanged rate, is.
 static void test_phase_error_sampling(void)
 {
     CASE("phase-error-sampling");
     struct avf_clock c;
     avf_clock_init(&c);
     struct avf_clock_result res;
-    // No valid anchor yet: the frame anchors, and its error still counts.
-    struct avf_clock_frame in = { .media_ns = 7 * SEC, .target_ns = 0, .now_ns = 0,
-                                  .timebase_ns = 0 };
-    avf_clock_step(&c, &in, &res);
-    CHECK(res.op == AVF_CLOCK_ANCHOR, "no anchor");
-    CHECK_EQ_I(c.max_abs_error_ns, 7 * SEC);
-    c.max_abs_error_ns = 0;
-    // An estimate that becomes the nominal rate: the error is not sampled.
-    in = (struct avf_clock_frame){ .media_ns = 9 * SEC, .target_ns = 0, .now_ns = 0,
-                                   .timebase_ns = 0, .has_estimate = true, .estimate = 2.0 };
-    avf_clock_step(&c, &in, &res);
-    CHECK(res.nominal_changed, "estimate not adopted");
+
+    // After creation: no valid anchor, so the frame anchors and is not sampled.
+    step_with_error(&c, 7 * SEC, 7 * SEC, false, 0, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR, "first frame did not anchor");
     CHECK_EQ_I(c.max_abs_error_ns, 0);
-    // Paused: the frame anchors at rate 0, and its error counts.
+    // Anchored and playing: a small error is sampled.
+    step_with_error(&c, 7 * SEC + 40 * MS, 2 * MS, false, 0, &res);
+    CHECK(res.op != AVF_CLOCK_ANCHOR, "a small error anchored");
+    CHECK_EQ_I(c.max_abs_error_ns, 2 * MS);
+    // Beyond the re-anchor limit: the frame anchors, and its error counts.
+    step_with_error(&c, 7 * SEC + 80 * MS, 60 * MS, false, 0, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR && res.error_anchor, "no re-anchor at 60 ms");
+    CHECK_EQ_I(c.max_abs_error_ns, 60 * MS);
+    c.max_abs_error_ns = 0;
+
+    // A seek to 300 s: the first frame after it is not sampled.
+    avf_clock_reset(&c);
+    step_with_error(&c, 300 * SEC, 300 * SEC - 127 * MS, false, 0, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR, "no anchor after the seek");
+    CHECK_EQ_I(c.max_abs_error_ns, 0);
+
+    // Paused redraws, with or without an estimate, are not sampled.
     avf_clock_pause(&c);
-    in = (struct avf_clock_frame){ .media_ns = 3 * MS, .target_ns = 0, .now_ns = 0,
-                                   .timebase_ns = 0 };
-    avf_clock_step(&c, &in, &res);
+    step_with_error(&c, 300 * SEC, 58 * MS, false, 0, &res);
     CHECK(res.op == AVF_CLOCK_ANCHOR && res.rate == 0, "paused frame did not anchor at 0");
-    CHECK_EQ_I(c.max_abs_error_ns, 3 * MS);
-    // A paused frame with an estimate keeps the nominal rate, so it counts.
-    in.has_estimate = true;
-    in.estimate = 4.0;
-    in.media_ns = 5 * MS;
-    avf_clock_step(&c, &in, &res);
+    step_with_error(&c, 300 * SEC, 108 * MS, true, 4.0, &res);
     CHECK(!res.nominal_changed, "estimate adopted while paused");
-    CHECK_EQ_I(c.max_abs_error_ns, 5 * MS);
+    CHECK_EQ_I(c.max_abs_error_ns, 0);
+
+    // The first frame after a resume has no valid anchor.
+    avf_clock_resume(&c);
+    step_with_error(&c, 300 * SEC + 40 * MS, 41700000, false, 0, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR && res.rate == 1.0, "no anchor after the resume");
+    CHECK_EQ_I(c.max_abs_error_ns, 0);
+
+    // Nor has the first frame after a display layer recovery.
+    avf_clock_invalidate(&c);
+    step_with_error(&c, 300 * SEC + 80 * MS, 20 * MS, false, 0, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR, "no anchor after the recovery");
+    CHECK_EQ_I(c.max_abs_error_ns, 0);
+
+    // A timebase marked paused counts as paused.
+    c.timebase_paused = true;
+    step_with_error(&c, 300 * SEC + 120 * MS, 10 * MS, false, 0, &res);
+    CHECK(res.op == AVF_CLOCK_ANCHOR && res.rate == 0, "paused timebase did not anchor at 0");
+    CHECK_EQ_I(c.max_abs_error_ns, 0);
+
+    // An estimate that becomes the nominal rate: the frame anchors unsampled.
+    step_with_error(&c, 300 * SEC + 160 * MS, 5 * MS, true, 2.0, &res);
+    CHECK(res.nominal_changed && res.op == AVF_CLOCK_ANCHOR, "estimate not adopted");
+    CHECK_EQ_I(c.max_abs_error_ns, 0);
+
+    // Playing again at an unchanged rate after a valid anchor: sampled.
+    step_with_error(&c, 300 * SEC + 200 * MS, -3 * MS, false, 0, &res);
+    CHECK(res.op != AVF_CLOCK_ANCHOR && !res.nominal_changed, "a small error anchored");
+    CHECK_EQ_I(c.max_abs_error_ns, 3 * MS);
 }
 
 void avf_test_clock(void)

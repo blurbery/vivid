@@ -88,6 +88,44 @@ static CVPixelBufferRef new_buffer(int w, int h)
     return buf;
 }
 
+// A copy of both planes of a test frame's buffer (320x180, 420v), row by row.
+static uint8_t *buffer_bytes(CVPixelBufferRef b)
+{
+    CVPixelBufferLockBaseAddress(b, kCVPixelBufferLock_ReadOnly);
+    uint8_t *copy = malloc(320 * 180 * 3 / 2), *p = copy;
+    for (size_t n = 0; n < 2; n++) {
+        const uint8_t *base = CVPixelBufferGetBaseAddressOfPlane(b, n);
+        size_t stride = CVPixelBufferGetBytesPerRowOfPlane(b, n);
+        for (size_t y = 0; y < CVPixelBufferGetHeightOfPlane(b, n); y++, p += 320)
+            memcpy(p, base + y * stride, 320);
+    }
+    CVPixelBufferUnlockBaseAddress(b, kCVPixelBufferLock_ReadOnly);
+    return copy;
+}
+
+static bool buffer_is(CVPixelBufferRef b, const uint8_t *bytes)
+{
+    uint8_t *now = buffer_bytes(b);
+    bool same = !memcmp(now, bytes, 320 * 180 * 3 / 2);
+    free(now);
+    return same;
+}
+
+// A decoded picture: a fixed pattern in both planes.
+static void fill_pattern(CVPixelBufferRef b)
+{
+    CVPixelBufferLockBaseAddress(b, 0);
+    for (size_t n = 0; n < 2; n++) {
+        uint8_t *base = CVPixelBufferGetBaseAddressOfPlane(b, n);
+        size_t stride = CVPixelBufferGetBytesPerRowOfPlane(b, n);
+        for (size_t y = 0; y < CVPixelBufferGetHeightOfPlane(b, n); y++) {
+            for (size_t x = 0; x < 320; x++)
+                base[y * stride + x] = (uint8_t)(40 + (x * 3 + y * 5 + n * 17) % 160);
+        }
+    }
+    CVPixelBufferUnlockBaseAddress(b, 0);
+}
+
 // A VideoToolbox frame at pts seconds (a NULL buffer when `broken`).
 static void make_image(struct test_image *t, double pts, bool broken)
 {
@@ -470,16 +508,20 @@ static void test_geometry_and_options(void)
           CMSampleBufferGetImageBuffer(fake_layers.last_host) == a.buf,
           "the decoder buffer was not presented");
     CHECK(avf_frame_kept_buffer(privof(&h)->frame, NULL) == a.buf, "no rows kept");
+    uint8_t *shown = buffer_bytes(a.buf);
     pending->pip_composite_osd = false;
     stubs.options_changed = true;
     ev_reset();
     request(&h, VOCTRL_CHECK_EVENTS);
     CHECK(IN_ORDER(0, "flush_subtitles remove=1", "read_geometry", "copy_frame_async"),
           "composite off steps");
-    size_t kept = 1;
-    CHECK(!avf_frame_kept_buffer(privof(&h)->frame, &kept) && kept == 0,
-          "rows still kept with compositing off");
+    // The displayed buffer is left as it is; its rows go back when it is
+    // presented again.
+    CHECK(buffer_is(a.buf, shown), "switching compositing off changed the displayed buffer");
+    CHECK(avf_frame_kept_buffer(privof(&h)->frame, NULL) == a.buf,
+          "rows let go when compositing was switched off");
     CHECK(!privof(&h)->composite, "compositing still on");
+    free(shown);
     stubs.osd_list = NULL;
 
     CASE("resync-and-resize");
@@ -509,6 +551,105 @@ static void test_geometry_and_options(void)
     request(&h, VOCTRL_CHECK_EVENTS);
     CHECK(ev_count() == 0 && !h.vo.want_redraw, "a resize while compositing did something");
     close_vo(&h);
+    free_image(&a);
+}
+
+// ---- Picture in Picture composites and the compositing switch ----------------------
+
+static void count_write(void *ctx, const struct avf_yuv *frame)
+{
+    *(int *)ctx += 1;
+}
+
+static void switch_composite(struct harness_vo *h, bool on)
+{
+    ((struct avf_opts *)stubs.pending_opts)->pip_composite_osd = on;
+    stubs.options_changed = true;
+    request(h, VOCTRL_CHECK_EVENTS);
+}
+
+static void test_composite_switch(void)
+{
+    struct harness_vo h;
+    struct test_image a, b;
+    struct cue cue;
+
+    // Compositing switched off while paused (7.3, 9.2 V15): the displayed
+    // buffer keeps every byte, cue included, until it is presented again,
+    // and that sample carries no cue.
+    CASE("composite-off-while-paused");
+    CHECK(open_vo(&h, false, true) == 0, "creation failed");
+    make_image(&a, 5.0, false);
+    fill_pattern(a.buf);
+    uint8_t *decoded = buffer_bytes(a.buf);
+    make_cue(&cue, 4);
+    stubs.osd_list = &cue.list;
+    show(&h, &a.img, mp_time_ns() + 30 * MS, false);
+    CHECK(!buffer_is(a.buf, decoded), "no cue composited");
+    CHECK(avf_frame_kept_buffer(privof(&h)->frame, NULL) == a.buf, "no rows kept");
+    uint8_t *composited = buffer_bytes(a.buf);
+    request(&h, VOCTRL_PAUSE);
+    // A redraw with the cue unchanged writes nothing into the shown buffer.
+    int writes = 0;
+    avf_frame_set_row_observer(privof(&h)->frame, count_write, &writes);
+    request(&h, VOCTRL_REDRAW);
+    show(&h, &a.img, 0, true);
+    CHECK(writes == 0 && buffer_is(a.buf, composited),
+          "a redraw of an unchanged cue rewrote %d rows", writes);
+    avf_frame_set_row_observer(privof(&h)->frame, NULL, NULL);
+    switch_composite(&h, false);
+    CHECK(buffer_is(a.buf, composited), "switching off changed the displayed buffer");
+    CHECK(avf_frame_kept_buffer(privof(&h)->frame, NULL) == a.buf, "rows let go at the switch");
+    int enqueues = fake_layers.host_enqueues;
+    show(&h, &a.img, 0, true);
+    CHECK(fake_layers.host_enqueues == enqueues + 1 && fake_layers.last_host &&
+          CMSampleBufferGetImageBuffer(fake_layers.last_host) == a.buf,
+          "the same buffer was not presented again");
+    CHECK(buffer_is(a.buf, decoded), "the sample after the switch carries the cue");
+    CHECK(!avf_frame_kept_buffer(privof(&h)->frame, NULL), "rows kept after the restore");
+
+    // Off, on again, and a redraw of the same buffer while paused: the cue
+    // blended once on the decoded picture.
+    CASE("composite-off-on-redraw");
+    switch_composite(&h, true);
+    show(&h, &a.img, 0, true);
+    CHECK(buffer_is(a.buf, composited), "composite after switching on");
+    switch_composite(&h, false);
+    switch_composite(&h, true);
+    CHECK(buffer_is(a.buf, composited), "the switches changed the displayed buffer");
+    show(&h, &a.img, 0, true);
+    CHECK(buffer_is(a.buf, composited), "the cue was blended twice after off and on");
+    CHECK(avf_frame_kept_buffer(privof(&h)->frame, NULL) == a.buf, "no rows kept");
+
+    // Switched off, and a different buffer comes next: the composited one is
+    // let go as it is.
+    CASE("composite-off-then-new-frame");
+    switch_composite(&h, false);
+    make_image(&b, 5.04, false);
+    fill_pattern(b.buf);
+    show(&h, &b.img, mp_time_ns() + 30 * MS, false);
+    CHECK(CMSampleBufferGetImageBuffer(fake_layers.last_host) == b.buf, "new frame not shown");
+    CHECK(buffer_is(a.buf, composited), "the old frame was rewritten");
+    CHECK(!avf_frame_kept_buffer(privof(&h)->frame, NULL), "rows of an old frame kept");
+    close_vo(&h);
+    free_image(&b);
+
+    // Teardown lets kept rows go without writing them back.
+    CASE("composite-teardown");
+    CHECK(open_vo(&h, false, true) == 0, "creation failed");
+    stubs.osd_list = &cue.list;
+    fill_pattern(a.buf);
+    show(&h, &a.img, mp_time_ns() + 30 * MS, false);
+    CHECK(buffer_is(a.buf, composited), "composite on a new output");
+    CHECK(avf_frame_kept_buffer(privof(&h)->frame, NULL) == a.buf, "no rows kept");
+    CFIndex retains = CFGetRetainCount(a.buf);
+    close_vo(&h);
+    CHECK(buffer_is(a.buf, composited), "teardown rewrote the displayed buffer");
+    CHECK(CFGetRetainCount(a.buf) == retains - 1, "teardown kept the buffer");
+
+    stubs.osd_list = NULL;
+    free(decoded);
+    free(composited);
     free_image(&a);
 }
 
@@ -553,6 +694,48 @@ static void test_pacing_summary(void)
     show(&h, NULL, 0, false);
     CHECK(!stubs.last_message[0], "a quiet window was reported: \"%s\"", stubs.last_message);
     close_vo(&h);
+
+    // Host mode (tvOS): a window whose only event is the forced recovery
+    // after the app becomes active logs nothing (12.2). With one deadline
+    // drop as well, the line is logged, recoveries included.
+    CASE("pacing-summary-not-on-recovery-alone");
+    CHECK(open_vo(&h, true, false) == 0, "creation failed");
+    show(&h, NULL, 0, false);
+    pc = &privof(&h)->pacing;
+    c = &privof(&h)->clock;
+    for (int with_drop = 0; with_drop < 2; with_drop++) {
+        avf_pacing_window_restart(pc, mp_time_ns());
+        c->anchors = c->rate_writes = 0;
+        c->max_abs_error_ns = 0;
+        int recoveries = fake_layers.recoveries;
+        fake_layers.resync = true;
+        request(&h, VOCTRL_CHECK_EVENTS);
+        CHECK(fake_layers.recoveries == recoveries + 1 && pc->recoveries == 1,
+              "no forced recovery");
+        if (with_drop) {
+            struct test_image a;
+            make_image(&a, 2.0, false);
+            fake_layers.host_ready = false;
+            show(&h, &a.img, 0, true);
+            fake_layers.host_ready = true;
+            free_image(&a);
+            CHECK(pc->drops == 1 && pc->waits == 0, "drops %u, waits %u", pc->drops, pc->waits);
+        }
+        CHECK(c->anchors == 0 && c->rate_writes == 0 && !c->max_abs_error_ns,
+              "host mode moved the clock");
+        end_window(&h);
+        stubs.last_message[0] = '\0';
+        show(&h, NULL, 0, false);
+        bool logged = !strncmp(stubs.last_message, "Pacing:", 7);
+        if (with_drop) {
+            CASE("pacing-summary-recovery-and-drop");
+            CHECK(logged && strstr(stubs.last_message, "1 deadline drops, 1 recoveries"),
+                  "no summary for a drop: \"%s\"", stubs.last_message);
+        } else {
+            CHECK(!logged, "a recovery alone was reported: \"%s\"", stubs.last_message);
+        }
+    }
+    close_vo(&h);
 }
 
 void avf_test_centre(void)
@@ -562,6 +745,7 @@ void avf_test_centre(void)
         test_frame_order();
         test_reset_and_pause();
         test_geometry_and_options();
+        test_composite_switch();
         test_pacing_summary();
     }
 }

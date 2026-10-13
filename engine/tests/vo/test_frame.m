@@ -17,14 +17,17 @@
 #import <CoreVideo/CoreVideo.h>
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#import <objc/runtime.h>
 
 #include <stdlib.h>
 #include <string.h>
 
+#include "common/msg.h"
 #include "video/mp_image.h"
 #include "video/out/avfoundation/frame.h"
 #include "video/out/avfoundation/pixels.h"
 
+#include "fakes.h"
 #include "harness.h"
 
 static CVPixelBufferRef make_buffer(int w, int h, OSType fmt)
@@ -86,11 +89,10 @@ static bool same_pixels(CVPixelBufferRef a, CVPixelBufferRef b)
     return same;
 }
 
-static CVPixelBufferRef clone_pixels(CVPixelBufferRef src)
+// Writes the pixels of src into dst (same size and format), as a decoder
+// refilling a buffer would.
+static void overwrite_pixels(CVPixelBufferRef dst, CVPixelBufferRef src)
 {
-    CVPixelBufferRef dst = make_buffer((int)CVPixelBufferGetWidth(src),
-                                       (int)CVPixelBufferGetHeight(src),
-                                       CVPixelBufferGetPixelFormatType(src));
     CVPixelBufferLockBaseAddress(src, kCVPixelBufferLock_ReadOnly);
     CVPixelBufferLockBaseAddress(dst, 0);
     for (size_t n = 0; n < CVPixelBufferGetPlaneCount(src); n++) {
@@ -102,6 +104,14 @@ static CVPixelBufferRef clone_pixels(CVPixelBufferRef src)
     }
     CVPixelBufferUnlockBaseAddress(dst, 0);
     CVPixelBufferUnlockBaseAddress(src, kCVPixelBufferLock_ReadOnly);
+}
+
+static CVPixelBufferRef clone_pixels(CVPixelBufferRef src)
+{
+    CVPixelBufferRef dst = make_buffer((int)CVPixelBufferGetWidth(src),
+                                       (int)CVPixelBufferGetHeight(src),
+                                       CVPixelBufferGetPixelFormatType(src));
+    overwrite_pixels(dst, src);
     return dst;
 }
 
@@ -523,16 +533,25 @@ static struct avf_overlay frame_overlay(CVPixelBufferRef cue, struct avf_irect b
     };
 }
 
-// What the output does with a hardware frame before it is enqueued while
-// compositing is on: earlier rows back, then the composite.
+// What the output does with a hardware frame just before its sample is built
+// while compositing is on and a cue shows: the composite (+1).
 static CVPixelBufferRef present_composite(struct avf_frame *f, CVPixelBufferRef decoder,
                                           CVPixelBufferRef cue, struct avf_irect box,
                                           enum avf_composite_kind *kind)
 {
     int w = (int)CVPixelBufferGetWidth(decoder), h = (int)CVPixelBufferGetHeight(decoder);
-    avf_frame_restore(f, decoder);
     struct avf_overlay ov = frame_overlay(cue, box, w, h);
-    return avf_frame_composite(f, decoder, false, &ov, kind);
+    return avf_frame_prepare(f, decoder, false, &ov, kind);
+}
+
+// The same without a composite (compositing off, or no cue showing): the
+// buffer itself goes out.
+static void present_plain(struct avf_frame *f, CVPixelBufferRef decoder, const char *name)
+{
+    enum avf_composite_kind kind;
+    CVPixelBufferRef out = avf_frame_prepare(f, decoder, false, NULL, &kind);
+    CHECK(out == decoder && kind == AVF_COMPOSITE_NONE, "%s: plain frame kind %d", name, kind);
+    CVPixelBufferRelease(out);
 }
 
 // The original picture with one cue blended once, through a writable copy.
@@ -551,6 +570,83 @@ static CVPixelBufferRef blended_once(CVPixelBufferRef original, CVPixelBufferRef
         CVPixelBufferRelease(out);
     avf_frame_destroy(g);
     return fresh;
+}
+
+// The visible bytes of a biplanar 4:2:0 buffer, plane by plane, row by row.
+struct plane_rows {
+    uint8_t *data[2];
+    size_t row_bytes[2];
+    int rows[2];
+};
+
+static struct plane_rows copy_rows(CVPixelBufferRef b)
+{
+    struct plane_rows r = {0};
+    OSType f = CVPixelBufferGetPixelFormatType(b);
+    int bps = (f == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
+               f == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange) ? 2 : 1;
+    CVPixelBufferLockBaseAddress(b, kCVPixelBufferLock_ReadOnly);
+    for (int n = 0; n < 2; n++) {
+        r.row_bytes[n] = CVPixelBufferGetWidthOfPlane(b, n) * bps * (n ? 2 : 1);
+        r.rows[n] = (int)CVPixelBufferGetHeightOfPlane(b, n);
+        r.data[n] = malloc(r.row_bytes[n] * r.rows[n]);
+        const uint8_t *base = CVPixelBufferGetBaseAddressOfPlane(b, n);
+        size_t stride = CVPixelBufferGetBytesPerRowOfPlane(b, n);
+        for (int y = 0; y < r.rows[n]; y++)
+            memcpy(r.data[n] + y * r.row_bytes[n], base + y * stride, r.row_bytes[n]);
+    }
+    CVPixelBufferUnlockBaseAddress(b, kCVPixelBufferLock_ReadOnly);
+    return r;
+}
+
+static void free_rows(struct plane_rows *r)
+{
+    free(r->data[0]);
+    free(r->data[1]);
+    *r = (struct plane_rows){0};
+}
+
+// How many rows, in both planes, differ between two copies.
+static int changed_rows(const struct plane_rows *a, const struct plane_rows *b)
+{
+    int n = 0;
+    for (int p = 0; p < 2; p++) {
+        for (int y = 0; y < a->rows[p]; y++) {
+            size_t off = y * a->row_bytes[p];
+            n += memcmp(a->data[p] + off, b->data[p] + off, a->row_bytes[p]) != 0;
+        }
+    }
+    return n;
+}
+
+// Watches each row a repeated composite writes into the displayed buffer.
+struct write_watch {
+    struct plane_rows original, before, after;
+    int writes;
+    int stray_rows;     // rows seen as neither their old nor their final bytes
+    int cueless;        // writes after which a plane showed no cue
+};
+
+static void watch_write(void *ctx, const struct avf_yuv *frame)
+{
+    struct write_watch *w = ctx;
+    w->writes++;
+    for (int p = 0; p < 2; p++) {
+        const uint8_t *base = p ? frame->chroma : frame->luma;
+        ptrdiff_t stride = p ? frame->chroma_stride : frame->luma_stride;
+        size_t bytes = w->original.row_bytes[p];
+        bool cue = false;
+        for (int y = 0; y < w->original.rows[p]; y++) {
+            const uint8_t *row = base + y * stride;
+            size_t off = y * bytes;
+            if (memcmp(row, w->before.data[p] + off, bytes) &&
+                memcmp(row, w->after.data[p] + off, bytes))
+                w->stray_rows++;
+            cue |= memcmp(row, w->original.data[p] + off, bytes) != 0;
+        }
+        // Both planes carry some cue at every step, old or new.
+        w->cueless += !cue;
+    }
 }
 
 static void test_blend_once(void)
@@ -601,49 +697,122 @@ static void test_blend_once(void)
             CVPixelBufferRelease(s1);
 
         // A redraw of the same image with the same cue: blended once, not
-        // twice.
+        // twice, and not one row written, so the displayed cue never goes.
+        struct write_watch watch = { .original = copy_rows(original) };
+        watch.before = copy_rows(want_a);
+        watch.after = copy_rows(want_a);
+        avf_frame_set_row_observer(f, watch_write, &watch);
         CVPixelBufferRef s2 = present_composite(f, decoder, cue_a, box_a, &k2);
         CHECK(s2 == decoder && k2 == AVF_COMPOSITE_DECODER, "%s: redraw kind %d", name, k2);
         CHECK(same_pixels(decoder, want_a), "%s: the redraw blended the cue twice", name);
-        if (s2)
-            CVPixelBufferRelease(s2);
+        CHECK(watch.writes == 0, "%s: an unchanged cue rewrote %d rows", name, watch.writes);
+        CVPixelBufferRelease(s2);
 
-        // A redraw with another cue: only the new one, no trace of the old.
-        CVPixelBufferRef s3 = present_composite(f, decoder, cue_b, box_b, &k3);
-        CHECK(s3 == decoder && k3 == AVF_COMPOSITE_DECODER, "%s: new cue kind %d", name, k3);
-        CHECK(same_pixels(decoder, want_b), "%s: a stale cue under the new one", name);
-        if (s3)
+        // Redraws with other cues: above the old one, back below it, then two
+        // that overlap each other and whose blends start at odd pixels and
+        // rows. Each shows only the new cue, with no trace of the old. After
+        // every row written both planes still show a cue, every row is
+        // either as it was or as it ends, and each changed row is written
+        // once.
+        struct avf_irect box_c, box_d;
+        CVPixelBufferRef cue_c = make_cue(w, h, 52, 60, 120, 30, 120, &box_c);
+        CVPixelBufferRef cue_d = make_cue(w, h, 70, 80, 151, 41, 180, &box_d);
+        CVPixelBufferRef want_c = blended_once(original, cue_c, box_c);
+        CVPixelBufferRef want_d = blended_once(original, cue_d, box_d);
+        const struct { CVPixelBufferRef cue, want; struct avf_irect box; } steps[] = {
+            { cue_b, want_b, box_b }, { cue_a, want_a, box_a }, { cue_c, want_c, box_c },
+            { cue_d, want_d, box_d }, { cue_a, want_a, box_a },
+        };
+        CVPixelBufferRef from = want_a;
+        for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+            free_rows(&watch.before);
+            free_rows(&watch.after);
+            watch.before = copy_rows(from);
+            watch.after = copy_rows(steps[i].want);
+            watch.writes = watch.stray_rows = watch.cueless = 0;
+            CVPixelBufferRef s3 = present_composite(f, decoder, steps[i].cue, steps[i].box, &k3);
+            CHECK(s3 == decoder && k3 == AVF_COMPOSITE_DECODER,
+                  "%s, step %zu: new cue kind %d", name, i, k3);
+            CHECK(same_pixels(decoder, steps[i].want),
+                  "%s, step %zu: a stale cue under the new one", name, i);
+            int changed = changed_rows(&watch.before, &watch.after);
+            CHECK(changed > 0 && watch.writes == changed,
+                  "%s, step %zu: %d row writes for %d changed rows", name, i, watch.writes,
+                  changed);
+            CHECK(!watch.stray_rows, "%s, step %zu: %d rows neither old nor new", name, i,
+                  watch.stray_rows);
+            CHECK(!watch.cueless, "%s, step %zu: %d writes left a plane without a cue", name,
+                  i, watch.cueless);
             CVPixelBufferRelease(s3);
+            from = steps[i].want;
+        }
+        avf_frame_set_row_observer(f, NULL, NULL);
+        free_rows(&watch.original);
+        free_rows(&watch.before);
+        free_rows(&watch.after);
+        CVPixelBufferRelease(cue_c);
+        CVPixelBufferRelease(cue_d);
+        CVPixelBufferRelease(want_c);
+        CVPixelBufferRelease(want_d);
 
         // A redraw after the cue ended, compositing still on: the picture
         // alone, and nothing kept any more.
-        avf_frame_restore(f, decoder);
+        present_plain(f, decoder, name);
         CHECK(same_pixels(decoder, original), "%s: the ended cue stayed in the picture", name);
-        CHECK(!avf_frame_kept_buffer(f, NULL), "%s: rows kept after the restore", name);
+        CHECK(!avf_frame_kept_buffer(f, &kept_bytes) && kept_bytes == 0,
+              "%s: rows kept after the restore", name);
         CHECK(CFGetRetainCount(decoder) == base_retains, "%s: decoder buffer still retained", name);
 
-        // Compositing switched off: the rows go back and nothing stays held.
+        // Compositing switched off while paused (the output only releases
+        // Core Image): not a byte of the displayed buffer changes and its
+        // rows stay kept. Presented again, it carries no cue.
         CVPixelBufferRef s4 = present_composite(f, decoder, cue_a, box_a, &k1);
-        if (s4)
-            CVPixelBufferRelease(s4);
-        avf_frame_end_composites(f);
+        CVPixelBufferRelease(s4);
+        avf_frame_release_core_image(f);
+        CHECK(same_pixels(decoder, want_a), "%s: switching off changed the displayed buffer",
+              name);
+        CHECK(avf_frame_kept_buffer(f, NULL) == decoder, "%s: rows let go at the switch", name);
+        present_plain(f, decoder, name);
         CHECK(same_pixels(decoder, original), "%s: burned-in cue after compositing off", name);
         CHECK(!avf_frame_kept_buffer(f, &kept_bytes) && kept_bytes == 0,
               "%s: %zu bytes still held with compositing off", name, kept_bytes);
         CHECK(CFGetRetainCount(decoder) == base_retains,
               "%s: decoder buffer retained with compositing off", name);
 
-        // The next frame is another buffer: the composited one is let go
-        // untouched (mpv never presents it again).
-        CVPixelBufferRef s5 = present_composite(f, decoder, cue_b, box_b, &k1);
-        if (s5)
-            CVPixelBufferRelease(s5);
+        // Off, on again and a redraw of the same buffer while paused: the cue
+        // blended once on the original picture, never over the earlier one.
+        s4 = present_composite(f, decoder, cue_a, box_a, &k1);
+        CVPixelBufferRelease(s4);
+        avf_frame_release_core_image(f);
+        s4 = present_composite(f, decoder, cue_a, box_a, &k1);
+        CHECK(s4 == decoder && k1 == AVF_COMPOSITE_DECODER, "%s: kind %d after off and on",
+              name, k1);
+        CHECK(same_pixels(decoder, want_a), "%s: blended twice after off and on", name);
+        CVPixelBufferRelease(s4);
+
+        // Switched off, and the next frame is another buffer: the composited
+        // one is let go untouched (mpv never presents it again).
+        avf_frame_release_core_image(f);
         CVPixelBufferRef next = make_buffer(w, h, fmt);
-        avf_frame_restore(f, next);
+        fill_random(next, &rng, ten);
+        set_decoder_attachments(next);
+        present_plain(f, next, name);
         CHECK(!avf_frame_kept_buffer(f, NULL), "%s: rows of an old frame kept", name);
+        CHECK(same_pixels(decoder, want_a), "%s: an old frame was rewritten", name);
+        CHECK(CFGetRetainCount(decoder) == base_retains, "%s: old frame still retained", name);
+
+        // The same with compositing on: the old buffer is let go untouched
+        // and the new one keeps its rows. The decoder buffer gets a freshly
+        // decoded picture first, as when the decoder reuses it.
+        overwrite_pixels(decoder, original);
+        CVPixelBufferRef s5 = present_composite(f, decoder, cue_b, box_b, &k1);
+        CVPixelBufferRelease(s5);
+        s5 = present_composite(f, next, cue_a, box_a, &k1);
+        CHECK(s5 == next && k1 == AVF_COMPOSITE_DECODER, "%s: next frame kind %d", name, k1);
+        CVPixelBufferRelease(s5);
+        CHECK(avf_frame_kept_buffer(f, NULL) == next, "%s: the new frame's rows not kept", name);
         CHECK(same_pixels(decoder, want_b), "%s: an old frame was rewritten", name);
         CHECK(CFGetRetainCount(decoder) == base_retains, "%s: old frame still retained", name);
-        CVPixelBufferRelease(next);
 
         // The decoder's attachments are still exactly its own; the pixel
         // aspect and the Dolby Vision repair act on the same buffer.
@@ -657,13 +826,21 @@ static void test_blend_once(void)
         CHECK(CVPixelBufferGetWidth(decoder) == (size_t)w &&
               CVPixelBufferGetHeight(decoder) == (size_t)h, "%s: size changed", name);
 
+        // Teardown lets the kept rows go without writing them back.
+        CVPixelBufferRef next_shown = clone_pixels(next);
+        CFIndex next_retains = CFGetRetainCount(next);
+        avf_frame_destroy(f);
+        CHECK(same_pixels(next, next_shown), "%s: teardown rewrote the displayed buffer", name);
+        CHECK(CFGetRetainCount(next) == next_retains - 1, "%s: teardown kept a retain", name);
+
         release_snapshot(&before);
+        CVPixelBufferRelease(next_shown);
+        CVPixelBufferRelease(next);
         CVPixelBufferRelease(cue_a);
         CVPixelBufferRelease(cue_b);
         CVPixelBufferRelease(want_a);
         CVPixelBufferRelease(want_b);
         CVPixelBufferRelease(original);
-        avf_frame_destroy(f);
         CHECK(CFGetRetainCount(decoder) == 1, "%s: destroy left a retain", name);
         CVPixelBufferRelease(decoder);
     }
@@ -747,6 +924,65 @@ static CGImageRef make_cue_image(int w, int h)
     CGContextRelease(ctx);
     CGColorSpaceRelease(rgb);
     return img;
+}
+
+static CIContext *no_context(id self, SEL cmd, id<MTLDevice> device, NSDictionary *options)
+{
+    return nil;
+}
+
+// A Core Image context that cannot be made (12.3, 4.18): an error line on
+// every attempt, the frame out without the subtitle, and the Metal device
+// dropped with the context, so both are made again once that works. Core
+// Image's own factory is swapped for one that fails; the output is unchanged.
+static void test_core_image_context_failure(void)
+{
+    CASE("core-image-context-failure");
+    Method factory = class_getClassMethod([CIContext class],
+                                          @selector(contextWithMTLDevice:options:));
+    CHECK(factory != NULL, "no Core Image context factory");
+    if (!factory)
+        return;
+    int w = 64, h = 36;
+    struct avf_frame *f = avf_frame_create(NULL);
+    CVPixelBufferRef video = make_buffer(w, h, kCVPixelFormatType_32BGRA);
+    struct avf_rng rng = { 99 };
+    fill_random(video, &rng, false);
+    CVPixelBufferRef original = clone_pixels(video);
+    CGImageRef img = make_cue_image(w, h);
+    struct avf_overlay ov = { .image = img, .canvas_w = w, .canvas_h = h,
+                              .src = { 0, 0, w, h }, .dst = { 0, 0, w, h } };
+    enum avf_composite_kind k;
+    bool device, context;
+
+    IMP real = method_setImplementation(factory, (IMP)no_context);
+    for (int attempt = 0; attempt < 3; attempt++) {
+        stubs.last_level = -1;
+        stubs.last_message[0] = '\0';
+        CVPixelBufferRef out = avf_frame_prepare(f, video, false, &ov, &k);
+        CHECK(out == video && k == AVF_COMPOSITE_NONE,
+              "attempt %d: kind %d without a context", attempt, k);
+        CHECK(same_pixels(video, original), "attempt %d: the frame changed", attempt);
+        CVPixelBufferRelease(out);
+        CHECK(stubs.last_level == MSGL_ERR && strstr(stubs.last_message, "Core Image context"),
+              "attempt %d: no error line (\"%s\")", attempt, stubs.last_message);
+        avf_frame_core_image_state(f, &device, &context);
+        CHECK(!device && !context, "attempt %d: device %d and context %d kept",
+              attempt, device, context);
+    }
+    method_setImplementation(factory, real);
+
+    CVPixelBufferRef out = avf_frame_prepare(f, video, false, &ov, &k);
+    CHECK(out && out != video && k == AVF_COMPOSITE_CORE_IMAGE,
+          "no composite once the context can be made (kind %d)", k);
+    CVPixelBufferRelease(out);
+    avf_frame_core_image_state(f, &device, &context);
+    CHECK(device && context, "device %d and context %d not made again", device, context);
+
+    CGImageRelease(img);
+    CVPixelBufferRelease(original);
+    CVPixelBufferRelease(video);
+    avf_frame_destroy(f);
 }
 
 static void test_core_image(void)
@@ -854,6 +1090,8 @@ static void test_core_image(void)
     }
     CGImageRelease(img);
     avf_frame_destroy(f);
+
+    test_core_image_context_failure();
 }
 
 void avf_test_frame(void)

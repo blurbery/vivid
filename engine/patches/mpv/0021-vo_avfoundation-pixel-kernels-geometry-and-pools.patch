@@ -583,7 +583,7 @@ new file mode 100644
 +            continue;
 +        }
 +        uint8x16x4_t dp = vld4q_u8(p);
-+        uint8x16_t keep = vceqzq_u8(sa);
++        uint8x16_t src_transparent = vceqzq_u8(sa);
 +        uint8x16_t any = vorrq_u8(vorrq_u8(dp.val[0], dp.val[1]),
 +                                  vorrq_u8(dp.val[2], dp.val[3]));
 +        uint8x16x4_t out;
@@ -591,12 +591,12 @@ new file mode 100644
 +            // An empty destination block (a freshly cleared canvas): the
 +            // source where it has alpha, nothing elsewhere.
 +            for (int c = 0; c < 4; c++)
-+                out.val[c] = vbicq_u8(sp.val[c], keep);
++                out.val[c] = vbicq_u8(sp.val[c], src_transparent);
 +        } else {
 +            uint8x16_t inv = vmvnq_u8(sa);
 +            for (int c = 0; c < 4; c++) {
 +                uint8x16_t q = rdiv255_mul(dp.val[c], inv);
-+                out.val[c] = vbslq_u8(keep, dp.val[c], vqaddq_u8(sp.val[c], q));
++                out.val[c] = vbslq_u8(src_transparent, dp.val[c], vqaddq_u8(sp.val[c], q));
 +            }
 +        }
 +        vst4q_u8(p, out);

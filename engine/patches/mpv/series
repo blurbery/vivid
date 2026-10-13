@@ -2,9 +2,9 @@
 # Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
 9a8c970f0e900a359936990e90ca6288c572b1ee798d876252ef31d10f5a7a88  0001-ad_spdif-recreate-spdif-muxer-on-reset.patch
 964f2f00526cd41d921e14a0a8a72729a63fcedc125114fd0bf63588ddfb1b7b  0002-ao_avfoundation-build-for-ios-and-tvos.patch
-51b0f0e8aca7d6d2f663777db568ef5b51079622c17a029ab5f92511ef666501  0020-vo_avfoundation-presentation-timing-and-pacing.patch
-1e10490940db6a82e1c00b19a4c95952c081491a12c03c9a221dc768a6103cd3  0021-vo_avfoundation-pixel-kernels-geometry-and-pools.patch
-f88a5285138ae63b5e8fe1c14e2d230859682e65c6c649214a16cca710a554e2  0022-vo_avfoundation-frame-path.patch
+56502aad24093a4db84dd38110be04fdf718a0e33becad32efc9fcf2fc10b1e4  0020-vo_avfoundation-presentation-timing-and-pacing.patch
+49815fa615fae0aa6c68a26461ad0a8f3848fad2e11ba8794a1d1c7d05b89f8d  0021-vo_avfoundation-pixel-kernels-geometry-and-pools.patch
+81304587468a1182169c19753b1912b9d71c5e347b6becde2a2fda167923404c  0022-vo_avfoundation-frame-path.patch
 b5c90a0e8868a7945088cf5df494ea3feaa282afb205e78b586d1b9788751895  0023-vo_avfoundation-subtitles.patch
 364d5dc81ef320ae3879e79ea30eb7bc61f264a0b10be07a666da9fe895a27b8  0024-vo_avfoundation-layers-and-observers.patch
-7e4c2ae4edd5f7e62264b4f543c10b6c0ea0019b21a8859f096753da93c2b27d  0025-vo_avfoundation-add-the-video-output.patch
+e616c7d62c0744e7cca3e37445e661f8e694fc2e61f776386f2919c216e2c036  0025-vo_avfoundation-add-the-video-output.patch

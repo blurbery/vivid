@@ -45,7 +45,7 @@ diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
 new file mode 100644
 --- /dev/null
 +++ b/video/out/vo_avfoundation.m
-@@ -0,0 +1,863 @@
+@@ -0,0 +1,860 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -344,9 +344,9 @@ new file mode 100644
 +        return;
 +    struct avf_pacing *pc = &p->pacing;
 +    struct avf_clock *c = &p->clock;
-+    if (pc->waits || pc->drops || pc->recoveries || c->anchors || c->rate_writes ||
-+        c->max_abs_error_ns)
-+    {
++    // Recoveries are reported with the rest, but a window whose only event
++    // is a recovery logs nothing.
++    if (pc->waits || pc->drops || c->anchors || c->rate_writes || c->max_abs_error_ns) {
 +        double nominal = avf_clock_nominal(c);
 +        double applied = c->applied_valid ? c->applied : nominal;
 +        MP_VERBOSE(vo, "Pacing: %u waits (%.2f ms total, %.2f ms longest), %u "
@@ -379,10 +379,10 @@ new file mode 100644
 +        MP_VERBOSE(vo, "Picture in Picture subtitle compositing %s.\n",
 +                   p->composite ? "on" : "off");
 +        avf_subs_clear(p->subs);
-+        if (!p->composite) {
-+            avf_frame_end_composites(p->frame);
++        // No buffer is touched here: a composite on screen keeps its cue
++        // until the next frame or redraw (hazard V15).
++        if (!p->composite)
 +            avf_frame_release_core_image(p->frame);
-+        }
 +        avf_layers_flush_subtitles(p->layers, true);
 +        sync_subtitle_layer(vo);
 +    }
@@ -520,26 +520,23 @@ new file mode 100644
 +            avf_subs_reset_tracking(p->subs);
 +        return;
 +    }
-+    // A decoder buffer that carries an earlier composite gets its rows back.
-+    avf_frame_restore(p->frame, buf);
-+
-+    bool repairable = hardware;
-+    if (p->composite && avf_subs_present(p->subs)) {
-+        struct avf_overlay ov = {0};
++    // The Picture in Picture composite, or, without one, the original rows
++    // of a decoder buffer that carries an earlier composite.
++    bool composite = p->composite && avf_subs_present(p->subs);
++    struct avf_overlay ov = {0};
++    if (composite) {
 +        avf_subs_overlay(p->subs, &ov);
 +        ov.canvas_w = p->canvas.w;
 +        ov.canvas_h = p->canvas.h;
 +        ov.src = p->canvas.src;
 +        ov.dst = p->canvas.dst;
-+        enum avf_composite_kind kind;
-+        CVPixelBufferRef out = avf_frame_composite(p->frame, buf, !hardware, &ov, &kind);
-+        if (out) {
-+            CVPixelBufferRelease(buf);
-+            buf = out;
-+            if (kind == AVF_COMPOSITE_CORE_IMAGE)
-+                repairable = false;
-+        }
 +    }
++    enum avf_composite_kind kind;
++    CVPixelBufferRef out = avf_frame_prepare(p->frame, buf, !hardware,
++                                             composite ? &ov : NULL, &kind);
++    CVPixelBufferRelease(buf);
++    buf = out;
++    bool repairable = hardware && kind != AVF_COMPOSITE_CORE_IMAGE;
 +    avf_frame_pixel_aspect(buf, vo->params);
 +    // Whether the repair fired changes nothing further here.
 +    if (repairable)

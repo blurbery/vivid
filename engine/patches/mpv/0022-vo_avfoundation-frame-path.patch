@@ -17,15 +17,20 @@ cached format description and nanosecond presentation times.
 
 For Picture in Picture the subtitles are composited into the picture.
 Biplanar 4:2:0 frames get the integer YUV blend in place. Before blending
-into a decoder buffer, the rows the blend will change are kept, and they
-are written back before that buffer is presented again (a redraw, with or
-without a cue) and when compositing stops. Unlike the engine Vivid ships
-today, every presented image therefore carries its current subtitle
-exactly once, with no stale cue under a new one and no burned-in cue after
-compositing ends, while the decoder's buffer keeps exactly its own
-attachments. Nothing frame-sized is copied: only the last composited
-buffer is held, and nothing at all once compositing stops. Other formats,
-and a blend that produces nothing, go through Core Image, which renders to
+into a decoder buffer, the rows the blend will change are kept. That buffer
+may be on screen, so nothing writes to it until it is presented again:
+without a cue its rows are written back first, and with one (a redraw) the
+final rows are prepared elsewhere from the kept original pixels and each
+changed row is written once, those gaining the new cue before those that
+only lose the old one. An unchanged cue writes nothing, and the picture
+never passes through a state without a cue. Switching compositing off
+touches no buffer, and kept rows for a buffer that is not presented again
+are let go unwritten. Unlike the engine Vivid ships today, every presented
+image therefore carries its current subtitle exactly once, with no stale
+cue under a new one and no burned-in cue after compositing ends, while the
+decoder's buffer keeps exactly its own attachments. No second video buffer
+is made, and only the last composited buffer is held. Other formats, and a
+blend that produces nothing, go through Core Image, which renders to
 half-float RGBA for 10-bit 4:2:0 sources and to BGRA for everything else;
 a frame Core Image cannot read goes out without the subtitle. A composite
 that would change the frame's size is discarded.
@@ -42,7 +47,7 @@ diff --git a/video/out/avfoundation/frame.h b/video/out/avfoundation/frame.h
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/frame.h
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,155 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -144,28 +149,44 @@ new file mode 100644
 +
 +// Composites the subtitles into the picture. A biplanar 4:2:0 buffer is
 +// blended in place: an upload buffer (writable) as it is, a decoder buffer
-+// after the rows the blend changes have been kept, so they can be put back
-+// (avf_frame_restore). Other formats, and a blend that produces nothing, go
-+// through Core Image into a new buffer; a format Core Image cannot read gets
-+// no composite. Returns the buffer to enqueue (+1), or NULL when the frame
-+// goes out without the subtitle.
++// after the rows the blend will change have been kept. A decoder buffer that
++// the last composite changed, presented again, is composited again from its
++// original rows: the final rows are prepared elsewhere and each changed row
++// is written once, so the cue is blended exactly once and the picture never
++// passes through a state without a cue. Rows kept for another buffer are let
++// go unwritten. Other formats, and a blend that produces nothing, go through
++// Core Image into a new buffer (a buffer the last composite changed first
++// gets its original rows back, as Core Image reads the decoded picture); a
++// format Core Image cannot read gets no composite. Returns the buffer to
++// enqueue (+1), or NULL when the frame goes out without the subtitle.
 +CVPixelBufferRef avf_frame_composite(struct avf_frame *f, CVPixelBufferRef video,
 +                                     bool writable, const struct avf_overlay *ov,
 +                                     enum avf_composite_kind *kind);
 +
-+// Called for every buffer about to be presented: if an earlier composite
-+// changed this buffer, its original rows are put back, so each sample carries
-+// its current subtitle exactly once. Any other kept buffer is let go
-+// untouched, since mpv only presents its current image again.
-+void avf_frame_restore(struct avf_frame *f, CVPixelBufferRef buf);
-+
-+// Compositing has stopped: puts back the rows of a kept decoder buffer and
-+// frees everything kept for it.
-+void avf_frame_end_composites(struct avf_frame *f);
++// What happens to every video buffer just before its sample is built. With
++// ov (compositing on and a subtitle showing) it is composited as above.
++// Without, a buffer that the last composite changed gets its original rows
++// back, since its sample carries no cue, and rows kept for any other buffer
++// are let go unwritten. Switching compositing off touches no buffer: the
++// displayed one keeps its cue until it is presented again. Returns the
++// buffer to enqueue (+1): the composite, or video itself.
++CVPixelBufferRef avf_frame_prepare(struct avf_frame *f, CVPixelBufferRef video,
++                                   bool writable, const struct avf_overlay *ov,
++                                   enum avf_composite_kind *kind);
 +
 +// The decoder buffer a composite changed (NULL if none) and how many bytes
 +// of rows are held for restores. For the host tests.
 +CVPixelBufferRef avf_frame_kept_buffer(const struct avf_frame *f, size_t *saved_bytes);
++
++// Called after each row that a repeated composite writes into a decoder
++// buffer that may be on screen, with that buffer locked. For the host tests;
++// the output sets none.
++typedef void (*avf_frame_row_observer)(void *ctx, const struct avf_yuv *frame);
++void avf_frame_set_row_observer(struct avf_frame *f, avf_frame_row_observer cb, void *ctx);
++
++// Whether the Metal device and the Core Image context exist. For the host
++// tests.
++void avf_frame_core_image_state(const struct avf_frame *f, bool *device, bool *context);
 +
 +// The 60-flip maintenance: flushes excess buffers in the frame pools.
 +void avf_frame_maintain(struct avf_frame *f);
@@ -186,7 +207,7 @@ diff --git a/video/out/avfoundation/frame.m b/video/out/avfoundation/frame.m
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/frame.m
-@@ -0,0 +1,722 @@
+@@ -0,0 +1,879 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -228,9 +249,11 @@ new file mode 100644
 +#define AVF_NEEDS_OS15 API_AVAILABLE(ios(15.0), tvos(15.0), macos(12.0))
 +
 +// The original pixels of the rows that a composite into a decoder buffer
-+// changed. They are written back before that buffer is presented again (a
-+// redraw, with or without a cue) and when compositing stops, so every sample
-+// carries its current subtitle exactly once.
++// changed. That buffer may still be on screen, so nothing writes them back
++// until the same buffer is presented again: without a cue they go straight
++// back, and with one they are the picture its new composite starts from. So
++// every sample carries its current subtitle exactly once. If another buffer
++// is presented first, or the output ends, they are let go unwritten.
 +struct saved_rows {
 +    CVPixelBufferRef buf;       // the decoder buffer (retained), or NULL
 +    struct avf_irect rect;      // the blend rectangle, frame pixels
@@ -248,6 +271,8 @@ new file mode 100644
 +    CIContext *ci;
 +    bool size_warned;
 +    struct saved_rows saved;
++    avf_frame_row_observer row_observer;    // host tests only
++    void *row_observer_ctx;
 +};
 +
 +struct avf_frame *avf_frame_create(struct mp_log *log)
@@ -642,23 +667,19 @@ new file mode 100644
 +    return ok;
 +}
 +
-+void avf_frame_restore(struct avf_frame *f, CVPixelBufferRef buf)
++// A buffer about to be presented without a composite. If the last composite
++// changed it, its sample must carry no cue, so the original rows go back now.
++// Rows kept for any other buffer are let go unwritten: mpv only presents its
++// current image again, so that buffer is not shown any more.
++static void restore_or_let_go(struct avf_frame *f, CVPixelBufferRef buf)
 +{
 +    if (!f->saved.buf)
 +        return;
-+    // Another buffer means the composited one is not presented again (mpv
-+    // only redraws its current image), so it goes back untouched.
-+    if (buf != f->saved.buf) {
-+        drop_saved(&f->saved);
-+        return;
-+    }
-+    put_back(f);
-+}
-+
-+void avf_frame_end_composites(struct avf_frame *f)
-+{
-+    if (f->saved.buf)
++    if (buf == f->saved.buf) {
 +        put_back(f);
++    } else {
++        drop_saved(&f->saved);
++    }
 +    free_saved(&f->saved);
 +}
 +
@@ -669,21 +690,40 @@ new file mode 100644
 +    return f->saved.buf;
 +}
 +
++void avf_frame_set_row_observer(struct avf_frame *f, avf_frame_row_observer cb, void *ctx)
++{
++    f->row_observer = cb;
++    f->row_observer_ctx = ctx;
++}
++
++// Grows a reusable allocation to at least size bytes, keeping its contents.
++static bool reserve(uint8_t **data, size_t *capacity, size_t size)
++{
++    if (size <= *capacity)
++        return true;
++    uint8_t *p = realloc(*data, size);
++    if (!p)
++        return false;
++    *data = p;
++    *capacity = size;
++    return true;
++}
++
++static size_t extent_size(const struct avf_yuv_extent *e)
++{
++    return e->luma_bytes * e->luma_rows + e->chroma_bytes * e->chroma_rows;
++}
++
 +// Keeps the original rows of rect from a locked decoder buffer.
 +static bool save_rows(struct avf_frame *f, CVPixelBufferRef buf,
 +                      const struct avf_yuv *yuv, struct avf_irect rect)
 +{
 +    struct avf_yuv_extent e;
 +    avf_yuv_rect_extent(yuv, rect, &e);
-+    size_t size = e.luma_bytes * e.luma_rows + e.chroma_bytes * e.chroma_rows;
++    size_t size = extent_size(&e);
 +    struct saved_rows *s = &f->saved;
-+    if (size > s->capacity) {
-+        uint8_t *data = realloc(s->data, size);
-+        if (!data)
-+            return false;
-+        s->data = data;
-+        s->capacity = size;
-+    }
++    if (!reserve(&s->data, &s->capacity, size))
++        return false;
 +    move_rows(yuv, &rect, &e, s->data, false);
 +    s->buf = CVPixelBufferRetain(buf);
 +    s->rect = rect;
@@ -692,8 +732,111 @@ new file mode 100644
 +    return true;
 +}
 +
++static struct avf_irect shift_rect(struct avf_irect r, int dx, int dy)
++{
++    return (struct avf_irect){ r.x0 + dx, r.y0 + dy, r.x1 + dx, r.y1 + dy };
++}
++
++// Rows of area packed as move_rows() lays them out (the luma rows, then the
++// chroma rows), seen as a frame whose origin is the corner (x0, y0) of area.
++// With that corner even, a rectangle moved by (-x0, -y0) covers the same
++// samples, chroma pairs and chroma rows here as it does in the frame.
++static struct avf_yuv packed_frame(const struct avf_yuv *frame, struct avf_irect area,
++                                   const struct avf_yuv_extent *e, uint8_t *data)
++{
++    struct avf_yuv v = *frame;
++    v.luma = data;
++    v.luma_stride = e->luma_bytes;
++    v.chroma = data + e->luma_bytes * e->luma_rows;
++    v.chroma_stride = e->chroma_bytes;
++    v.w = area.x1 - area.x0;
++    v.h = area.y1 - area.y0;
++    return v;
++}
++
++// Writes the rows of one plane whose final bytes differ from the buffer's,
++// either those that carry the new cue (their final bytes are not the
++// original ones) or those that return to the original.
++static void write_plane_rows(struct avf_frame *f, const struct avf_yuv *yuv, uint8_t *plane,
++                             ptrdiff_t stride, int row0, int rows, ptrdiff_t offset,
++                             size_t bytes, const uint8_t *orig, const uint8_t *final,
++                             bool cue_rows)
++{
++    for (int y = 0; y < rows; y++, orig += bytes, final += bytes) {
++        uint8_t *row = plane + (ptrdiff_t)(row0 + y) * stride + offset;
++        if ((memcmp(final, orig, bytes) != 0) != cue_rows || !memcmp(row, final, bytes))
++            continue;
++        memcpy(row, final, bytes);
++        if (f->row_observer)
++            f->row_observer(f->row_observer_ctx, yuv);
++    }
++}
++
++// A new composite into the decoder buffer that the last composite changed,
++// which may be on screen. The final rows are built away from the buffer,
++// over the area both blends cover (from an even corner): the buffer's rows,
++// with the kept original rows put back over the old cue, give the original
++// picture; its rows under the new blend become the kept rows; and the cue is
++// blended once into a copy. Only rows that change are then written, each
++// once, first those that gain the new cue and then those that only lose the
++// old one. So the picture never passes through a state without a cue, and an
++// unchanged cue writes nothing.
++static bool recomposite(struct avf_frame *f, const struct avf_yuv *yuv,
++                        const struct avf_bgra *canvas, struct avf_irect rect,
++                        struct avf_irect src, struct avf_irect dst)
++{
++    struct saved_rows *s = &f->saved;
++    struct avf_irect area = avf_irect_union(s->rect, rect);
++    area.x0 &= ~1;
++    area.y0 &= ~1;
++    struct avf_yuv_extent ae, ne;
++    avf_yuv_rect_extent(yuv, area, &ae);
++    avf_yuv_rect_extent(yuv, rect, &ne);
++    size_t area_size = extent_size(&ae);
++    // Everything is allocated before anything changes, so a failure leaves
++    // the buffer and the kept rows as they were.
++    uint8_t *orig = malloc(2 * area_size);
++    if (!orig || !reserve(&s->data, &s->capacity, extent_size(&ne))) {
++        free(orig);
++        return false;
++    }
++    uint8_t *final = orig + area_size;
++    int dx = -area.x0, dy = -area.y0;
++
++    move_rows(yuv, &area, &ae, orig, false);
++    struct avf_yuv orig_frame = packed_frame(yuv, area, &ae, orig);
++    struct avf_irect old_rect = shift_rect(s->rect, dx, dy);
++    struct avf_yuv_extent e;
++    avf_yuv_rect_extent(&orig_frame, old_rect, &e);
++    move_rows(&orig_frame, &old_rect, &e, s->data, true);
++
++    struct avf_irect new_rect = shift_rect(rect, dx, dy);
++    avf_yuv_rect_extent(&orig_frame, new_rect, &e);
++    move_rows(&orig_frame, &new_rect, &e, s->data, false);
++    s->rect = rect;
++    s->ext = ne;
++    s->size = extent_size(&ne);
++
++    memcpy(final, orig, area_size);
++    struct avf_yuv final_frame = packed_frame(yuv, area, &ae, final);
++    avf_yuv_blend(&final_frame, canvas, new_rect, shift_rect(src, dx, dy), dst);
++
++    size_t luma_size = ae.luma_bytes * ae.luma_rows;
++    for (int pass = 0; pass < 2; pass++) {
++        bool cue_rows = pass == 0;
++        write_plane_rows(f, yuv, yuv->luma, yuv->luma_stride, area.y0, ae.luma_rows,
++                         ae.luma_offset, ae.luma_bytes, orig, final, cue_rows);
++        write_plane_rows(f, yuv, yuv->chroma, yuv->chroma_stride, ae.chroma_row0,
++                         ae.chroma_rows, ae.chroma_offset, ae.chroma_bytes,
++                         orig + luma_size, final + luma_size, cue_rows);
++    }
++    free(orig);
++    return true;
++}
++
 +// The integer YUV blend, into the buffer itself. A decoder buffer first has
-+// the rows it is about to change saved, so they can be put back later.
++// the rows it is about to change kept, so they can be put back later; one
++// that the last composite changed is composited again from those rows.
 +AVF_NEEDS_OS15
 +static CVPixelBufferRef yuv_composite(struct avf_frame *f, CVPixelBufferRef video,
 +                                      bool writable, const struct avf_overlay *ov)
@@ -724,9 +867,17 @@ new file mode 100644
 +        .w = cw,
 +        .h = ch,
 +    };
-+    bool ok = writable || save_rows(f, video, &yuv, rect);
-+    if (ok)
++    bool ok;
++    if (writable) {
 +        avf_yuv_blend(&yuv, &canvas, rect, ov->src, ov->dst);
++        ok = true;
++    } else if (f->saved.buf == video) {
++        ok = recomposite(f, &yuv, &canvas, rect, ov->src, ov->dst);
++    } else {
++        ok = save_rows(f, video, &yuv, rect);
++        if (ok)
++            avf_yuv_blend(&yuv, &canvas, rect, ov->src, ov->dst);
++    }
 +
 +    CVPixelBufferUnlockBaseAddress(ov->bgra, kCVPixelBufferLock_ReadOnly);
 +    CVPixelBufferUnlockBaseAddress(video, 0);
@@ -874,8 +1025,10 @@ new file mode 100644
 +                                     enum avf_composite_kind *kind)
 +{
 +    *kind = AVF_COMPOSITE_NONE;
-+    // An earlier composite into this very buffer comes out first.
-+    avf_frame_restore(f, video);
++    // Rows kept for another buffer are let go unwritten: that buffer is not
++    // presented again.
++    if (f->saved.buf && f->saved.buf != video)
++        drop_saved(&f->saved);
 +    CVPixelBufferRef out = NULL;
 +    if (is_biplanar_420(CVPixelBufferGetPixelFormatType(video))) {
 +        out = yuv_composite(f, video, writable, ov);
@@ -883,6 +1036,10 @@ new file mode 100644
 +            *kind = writable ? AVF_COMPOSITE_IN_PLACE : AVF_COMPOSITE_DECODER;
 +    }
 +    if (!out) {
++        // Core Image reads the decoded picture, so a buffer that the last
++        // composite changed gets its original rows back first.
++        if (f->saved.buf)
++            put_back(f);
 +        out = core_image_composite(f, video, ov);
 +        if (out)
 +            *kind = AVF_COMPOSITE_CORE_IMAGE;
@@ -908,4 +1065,25 @@ new file mode 100644
 +        return NULL;
 +    }
 +    return out;
++}
++
++AVF_NEEDS_OS15
++CVPixelBufferRef avf_frame_prepare(struct avf_frame *f, CVPixelBufferRef video,
++                                   bool writable, const struct avf_overlay *ov,
++                                   enum avf_composite_kind *kind)
++{
++    *kind = AVF_COMPOSITE_NONE;
++    CVPixelBufferRef out = NULL;
++    if (ov) {
++        out = avf_frame_composite(f, video, writable, ov, kind);
++    } else {
++        restore_or_let_go(f, video);
++    }
++    return out ? out : CVPixelBufferRetain(video);
++}
++
++void avf_frame_core_image_state(const struct avf_frame *f, bool *device, bool *context)
++{
++    *device = f->device != nil;
++    *context = f->ci != nil;
 +}

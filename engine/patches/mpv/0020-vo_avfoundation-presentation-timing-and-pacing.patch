@@ -188,7 +188,7 @@ diff --git a/video/out/avfoundation/clock.c b/video/out/avfoundation/clock.c
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/clock.c
-@@ -0,0 +1,305 @@
+@@ -0,0 +1,308 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -422,9 +422,12 @@ new file mode 100644
 +    bool too_far = abs_e > AVF_REANCHOR_NS;
 +    bool paused = c->playback_paused || c->timebase_paused;
 +
-+    // The pacing summary samples the phase error on every frame that keeps
-+    // its nominal rate.
-+    if (!out->nominal_changed && abs_e > c->max_abs_error_ns)
++    // The pacing summary samples the phase error only on frames that reach
++    // the phase-error test: a valid anchor, neither playback nor the
++    // timebase paused, and the nominal rate unchanged on this frame. A frame
++    // that re-anchors because its error is too large still counts.
++    if (c->anchor_valid && !paused && !out->nominal_changed &&
++        abs_e > c->max_abs_error_ns)
 +        c->max_abs_error_ns = abs_e;
 +
 +    if (!c->anchor_valid || paused || out->nominal_changed || too_far) {
@@ -640,7 +643,7 @@ diff --git a/video/out/avfoundation/pacing.h b/video/out/avfoundation/pacing.h
 new file mode 100644
 --- /dev/null
 +++ b/video/out/avfoundation/pacing.h
-@@ -0,0 +1,110 @@
+@@ -0,0 +1,111 @@
 +/*
 + * This file is part of mpv.
 + *
@@ -746,7 +749,8 @@ new file mode 100644
 +void avf_pacing_window_open(struct avf_pacing *p, int64_t now_ns);
 +
 +// Returns true when the summary window has ended; the caller then logs the
-+// counters (if any is non-zero) and calls avf_pacing_window_restart().
++// counters (if any of them other than the recoveries is non-zero) and calls
++// avf_pacing_window_restart().
 +bool avf_pacing_window_due(struct avf_pacing *p, int64_t now_ns);
 +void avf_pacing_window_restart(struct avf_pacing *p, int64_t now_ns);
 +
