@@ -23,6 +23,7 @@ Contents:
 9. [Constants, parity hazards, tests and device checklist](#9-constants-parity-hazards-tests-and-device-checklist)
 10. [Harness rewrites](#10-harness-rewrites)
 11. [Decisions, open items and documents to update](#11-decisions-open-items-and-documents-to-update)
+12. [Amendments after implementation](#12-amendments-after-implementation)
 
 ## 1. Purpose, status, licence and reading rules
 
@@ -48,9 +49,9 @@ Section 7 lists what is not carried over, what is omitted and what deliberately 
 | FFmpeg | Upstream tag `n8.0.1`, commit `894da5ca7d742e4429ffb2af534fcda0103ef593` |
 | libass | Upstream tag `0.17.5`, commit `4a05d8127f525943ebf45fdc6497c9e665947f0d`, built unpatched |
 | dav1d | Upstream tag `1.5.3`, commit `b546257f770768b2c88258c533da38b91a06f737`, built unpatched |
-| libdovi | `dolby_vision` crate 3.3.2 (tag `libdovi-3.3.2` of `quietvoid/dovi_tool`, MIT). Linked today as the prebuilt pinned in `engine/pins.ini`; Vivid's pipeline is to build it from source with Vivid's own patch instead (5.13, 8.3) |
+| libdovi | `dolby_vision` crate 3.3.2 (tag `libdovi-3.3.2` of `quietvoid/dovi_tool`, MIT). Vivid's pipeline now builds it from source with Vivid's own patch, in place of the prebuilt it used to pin (5.13, 8.3, 12.6) |
 | Build | Vivid's pipeline: `engine/lucid.py`, `engine/pins.ini`, `engine/patches/<library>/series`, `.github/workflows/lucid-engine.yml`; Xcode 26.6; minimum OS 14.0; four arm64 slices (2.11) |
-| Target behaviour | The engine in Vivid device builds today: upstream plus the third-party common and Apple series plus Vivid's three old patches. blurbery describes playback as perfect, so any observable difference not listed in section 7 is a regression. |
+| Target behaviour | The engine in Vivid device builds today: upstream plus the third-party common and Apple series plus Vivid's three old patches. blurbery describes playback as perfect, so any observable difference not listed in section 7 or 12 is a regression. |
 
 Upstream behaviour that this document does not mention must stay exactly as upstream has it.
 
@@ -338,7 +339,7 @@ Vivid also calls FFmpeg's public `avformat_configuration()` by symbol name and t
 
 All lines in this table come from the AO and carry the prefix `ao/avfoundation`. Each row is one log line: do not merge or split lines.
 
-**Number formats are part of the interface.** Every `%.3f` must print digits, a point and digits, whatever the locale, and no consumed value may print `inf` or `-nan`. Lowercase `nan` is accepted only in the flush-time line. Negative values such as `-0.000` and `-1.000` occur and are accepted. The heartbeat's `status` and `tc`, and `anchors` in the engaged and resumed lines, must be non-negative. `seeked` and `current` print exactly 0 or 1. A line that fails its pattern is then checked against the fault substrings.
+**Number formats are part of the interface.** Every `%.3f` must print digits, a point and digits, whatever the locale, and no consumed value may print `inf` or `-nan`. Lowercase `nan` is accepted only in the flush-time line. That line's flush time is also the one value allowed to print `inf` or `-inf`, for an infinite flush time, as today; the line then fails its pattern and is dropped (12.1). Negative values such as `-0.000` and `-1.000` occur and are accepted. The heartbeat's `status` and `tc`, and `anchors` in the engaged and resumed lines, must be non-negative. `seeked` and `current` print exactly 0 or 1. A line that fails its pattern is then checked against the fault substrings.
 
 | Exact format | Level | Consumer |
 | --- | --- | --- |
@@ -550,7 +551,7 @@ Purpose: a short, timer-driven renderer queue (mpv applies volume as samples lea
 
 **Restart notifications in this mode**, handled on the AO queue:
 
-1. Log the verbose line `notification name: %s`. If the notification's user info has `AVSampleBufferAudioRendererFlushTimeKey`, also log the verbose line `notification flush time %.3f, current %d` (the time through `CMTimeGetSeconds`, which may print `nan`; current = whether the notification came from the current renderer).
+1. Log the verbose line `notification name: %s`. If the notification's user info has `AVSampleBufferAudioRendererFlushTimeKey`, also log the verbose line `notification flush time %.3f, current %d` (the time through `CMTimeGetSeconds`, unchanged, so it prints `inf` or `-inf` for an infinite time and `nan` for an invalid or indefinite one, 12.1; current = whether the notification came from the current renderer).
 2. Nothing more happens if it came from a renderer other than the current one, or if a fresh sink is pending.
 3. Otherwise log trace edge `restart`, then the warning `restarting due to system notification; this will cause desync`, then run `reset` and `start` inline, which continues the log with trace edge `reset`, `pcm fresh sink after reset` and trace edge `start-fresh`.
 
@@ -584,9 +585,9 @@ The divide-by-4 must agree with the carrier rate set in 6.4.
 
 **Created at `init`:** one `AVPlayer` (plain initialiser) with `automaticallyWaitsToMinimizeStalling` NO, so that start-up is decided by 3.4.10 alone, and `allowsExternalPlayback` NO, so that AirPlay audio stays on the system route; the loader delegate; the feed timer, idle and resumed; the carry-over buffer and the stream window (3.4.6); `ao->device_buffer` from `compressed-buffer`; initial-start mode on; no pending resume.
 
-**Nothing else is configured.** No other `AVPlayer` property is set. The asset is an `AVURLAsset` with options nil, the item is created from it with no automatically loaded keys, and the item's only property set is `canUseNetworkResourcesForLiveStreamingWhilePaused` YES. The content-information request gets exactly the three values in 3.4.4. Everything else keeps AVFoundation's default.
+**Nothing else is configured.** No other `AVPlayer` property is set. The asset is an `AVURLAsset` with options nil, the item is created from it with AVFoundation's plain initialiser, so the default automatically loaded keys (`duration`) apply (12.1), and the item's only property set is `canUseNetworkResourcesForLiveStreamingWhilePaused` YES. The content-information request gets exactly the three values in 3.4.4. Everything else keeps AVFoundation's default.
 
-**Item creation.** A new asset and item are made on `start` whenever there is no current item: the first start, and every start after a `reset`. Each item's stream begins at byte 0 and time 0; an item is never reused across a reset. The asset's URL uses a custom, non-network scheme, so AVFoundation must ask the delegate for its bytes, and its path ends in the per-format extension; the scheme and host are the implementer's choice. The order is: create the asset; attach the delegate on the AO queue; create the item; set its property; make it current with `replaceCurrentItemWithPlayerItem:`. The delegate must be attached before the item exists, so that AVFoundation's first loading request reaches it, and the property is set before the item becomes current, so that it applies from the first load.
+**Item creation.** A new asset and item are made on `start` whenever there is no current item: the first start, and every start after a `reset`. Each item's stream begins at byte 0 and time 0; an item is never reused across a reset. The asset's URL uses a custom, non-network scheme, so AVFoundation must ask the delegate for its bytes, and its path ends in the per-format extension; the scheme and host are the implementer's choice, and every item of a format uses the same URL (12.1). The order is: create the asset; attach the delegate on the AO queue; create the item; set its property; make it current with `replaceCurrentItemWithPlayerItem:`. The delegate must be attached before the item exists, so that AVFoundation's first loading request reaches it, and the property is set before the item becomes current, so that it applies from the first load.
 
 **State lifetimes:**
 
@@ -727,7 +728,7 @@ Supervision runs at the end of each feed step, and only while the desired state 
 
 Here "ordinary grace" is `compressed-start-grace` and "initial grace" is the smaller of `compressed-first-start-grace` and `compressed-start-grace`. The fill watermark starts at 0 for each item and is not changed by the seek. An unpause also moves the deadline (3.4.12).
 
-**The recovery seek** has these effects, as a set: the seek is marked attempted; the deadline becomes now + ordinary grace; the item is sought to `kCMTimeZero` with `seekToTime:` and no completion handler; rate 1 is requested again. Its log lines come in this order: in initial-start mode only, the verbose `first start recovery after %.3f s` (time since the rate-1 time); then the warning `playback did not engage; seeking to the stream start`.
+**The recovery seek** has these effects, as a set: the seek is marked attempted; the deadline becomes now + ordinary grace; the item is sought to `kCMTimeZero` with `seekToTime:completionHandler:` and a nil handler (12.1); rate 1 is requested again. Its log lines come in this order: in initial-start mode only, the verbose `first start recovery after %.3f s` (time since the rate-1 time); then the warning `playback did not engage; seeking to the stream start`.
 
 **No other player or item calls.** Apart from reading the item's status and the clock, supervision requests rate 1 (once at row 2 and again at the seek, so at most two requests per item), makes the one seek, and the fallback sets rate 0. It makes no other call on the player or the item.
 
@@ -770,10 +771,10 @@ All of these run on the AO queue (inline when already there).
 
 | Call | Effect |
 | --- | --- |
-| `start` | Desired state playing. If end of file had been reached, log the verbose line `resuming compressed feed after audio EOF`. Clear the end-of-file state before anything can read from mpv: mpv calls `start` again, with no reset, when audio arrives after the AO reported end of file. Then, with no item, create one (3.4.3); with an item whose rate 1 was already requested, request rate 1 again (same item, same stream). Log trace edge `start`, arm the feed timer, run one feed step. |
+| `start` | Desired state playing. If end of file had been reached, log the verbose line `resuming compressed feed after audio EOF`. Clear the end-of-file state before anything can read from mpv: mpv calls `start` again, with no reset, when audio arrives after the AO reported end of file. Then, with no item, create one (3.4.3); with an item whose rate 1 was already requested, request rate 1 again (same item, same stream). Log trace edge `start`, arm the feed timer, run one feed step. All of this also happens after a fallback was requested (12.1). |
 | `reset` | Log trace edge `reset`, desired state not playing, idle the feed timer, tear the item down (3.4.4). |
 | `set_pause(true)` | Desired state not playing; trace edge `pause`; idle the feed timer; player rate 0; clear any pending resume. The item, the window and supervision are kept. Returns true. |
-| `set_pause(false)` | Desired state playing; trace edge `resume`. If rate 1 was already requested: request it again; if the deadline is not cleared, deadline = now + ordinary grace (in initial-start mode too); record the pending resume (the compressed clock and the time); reset the anchor pacing time to mpv's clock origin and the count to 0. The rate-1 time is not changed. If rate 1 was not yet requested, nothing more (today's engine also sets an item-ready deadline here, omitted under 7.2). Then arm the feed timer and run one feed step. Returns true. |
+| `set_pause(false)` | Desired state playing; trace edge `resume`. If rate 1 was already requested: request it again; if the deadline is not cleared, deadline = now + ordinary grace (in initial-start mode too); record the pending resume (the compressed clock, read again after the rate-1 request, and the time; 12.1); reset the anchor pacing time to mpv's clock origin and the count to 0. The rate-1 time is not changed. If rate 1 was not yet requested, nothing more (today's engine also sets an item-ready deadline here, omitted under 7.2). Then arm the feed timer and run one feed step. All of this also happens after a fallback was requested (12.1). Returns true. |
 
 **End of file from mpv:** the end-of-file state stops filling and anchoring and counts as primed. The timer keeps running, so loader requests are still served and supervision continues, and `AVPlayer` plays out what was written.
 
@@ -783,7 +784,7 @@ Trace-edge lines in this sink report the compressed clock as `clock` and the fed
 
 - Triggers: item failure or player error (3.4.7), window overflow or lost sync (3.4.5, neither reachable today), and supervision row 9 (3.4.10).
 - At most once per AO.
-- It sets the passthrough block for the current format, sets the player's rate to 0, idles the feed timer and calls `ao_request_reload`. Every later feed step does nothing, so supervision stops.
+- It sets the passthrough block for the current format, sets the player's rate to 0, idles the feed timer and calls `ao_request_reload`. Every later feed step does nothing, so supervision stops; `start` and unpause still act as 3.4.12 says until the reload (12.1).
 - mpv's `reload_audio_output` reruns `init`, which fails for the blocked format, and mpv continues with decoded PCM through its existing "Falling back to PCM output" path. 6.2 keeps the audio chain from stalling after that reload.
 
 #### 3.4.14 Volume and mute
@@ -899,7 +900,7 @@ The video-range codes are used even for full-range sources. Keep this (hazard V1
 2. the buffer carries `DolbyVisionRPUData`;
 3. the buffer has no `kCVImageBufferTransferFunctionKey`.
 
-Then set the transfer function from the image's transfer value with the table in 4.3 (PQ for Dolby Vision), or nothing if the value has no mapping. Primaries and matrix are never touched here. The repair comes after the pixel-aspect step and before the format description is chosen. In practice it is the only PQ tag profile 5 frames receive, since FFmpeg adds none to them (5.7).
+Then set the transfer function from the image's transfer value with the table in 4.3 (PQ for Dolby Vision), or nothing if the value has no mapping. Primaries and matrix are never touched here. The repair comes after the pixel-aspect step and before the format description is chosen. In practice it is the only PQ tag profile 5 frames keep, since FFmpeg's attachment step removes the transfer VideoToolbox gave them when their VUI leaves it unspecified (5.7, 12.4).
 
 ### 4.5 Pixel aspect
 
@@ -941,10 +942,10 @@ Without the attachment the layer shows non-square pixels as square. Removing it 
 #### 4.8.2 Media mode (iOS)
 
 - At creation and at every reset, the timebase time is set to 0 and its rate to 0.
-- Each sample's presentation time is the frame's media time in nanoseconds, when `pts` is valid (not `MP_NOPTS_VALUE` and finite): `pts` × 1,000,000,000 plus 0.5 (minus 0.5 when `pts` is negative), evaluated in double precision as one fused multiply-add, rounded once, and then truncated towards zero. Otherwise the best earlier media time: the last media time the VO anchored or followed; else the timebase's current time; else 0.
+- Each sample's presentation time is the frame's media time in nanoseconds, when `pts` is valid (not `MP_NOPTS_VALUE` and finite): `pts` × 1,000,000,000 plus 0.5 (minus 0.5 when `pts` is negative), evaluated in double precision as one fused multiply-add, rounded once, and then truncated towards zero. A finite value outside the int64 range is still valid and saturates to the int64 limits (12.2). Otherwise the best earlier media time: the last media time the VO anchored or followed; else the timebase's current time; else 0.
 - Media mode exists for Picture in Picture, which reads the layer's timebase; Vivid's source there reports a range of 0 to the duration in seconds.
 
-**Anchoring** is `CMTimebaseSetRateAndAnchorTime` with the rate, the frame's media time, and a source time equal to the timebase source clock's current time plus (target host time minus `mp_time_ns()` now). The source clock's time comes from `CMTimebaseCopySource` and `CMSyncGetTime`, or from the host time clock with `CMClockGetTime` if that is not numeric. If the call fails, log a warning.
+**Anchoring** is `CMTimebaseSetRateAndAnchorTime` with the rate, the frame's media time, and a source time equal to the timebase source clock's current time plus (target host time minus `mp_time_ns()` now), where that `mp_time_ns()` reading is taken straight after the source clock is read (12.2). The source clock's time comes from `CMTimebaseCopySource` and `CMSyncGetTime`, or from the host time clock with `CMClockGetTime` if that is not numeric. If the call fails, log a warning.
 
 **Per enqueued frame**, after the readiness wait succeeds and before the samples go to the layers, the VO either anchors or adjusts the rate. Frames without a valid media time leave the timebase alone.
 
@@ -964,7 +965,7 @@ Without the attachment the layer shows non-square pixels as square. Removing it 
 *Slewing.* With horizon *H* = 2 s, integral time *Ti* = 8 s and limit *L* = 0.015:
 
 - *P* = clamp(*e* ÷ *H*, −*L*, +*L*);
-- the integral gains *P* × Δ ÷ *Ti* and is clamped to ±*L*, where Δ is the host-clock interval back to the previous evaluation, only when 0 < Δ ≤ 500 ms (the first evaluation after an anchor adds nothing);
+- the integral gains *P* × Δ ÷ *Ti* (Δ and *Ti* in nanoseconds, multiplied before dividing, 12.2) and is clamped to ±*L*, where Δ is the host-clock interval back to the previous evaluation, only when 0 < Δ ≤ 500 ms (the first evaluation after an anchor adds nothing);
 - *R* = nominal × (1 + clamp(*P* + integral, −*L*, +*L*)).
 
 *Rate writes.* `CMTimebaseSetRate` with *R* only when |*R* − *A*| > 0.0001 × nominal and at least 200 ms have passed since the last rate write or anchor; *R* then becomes the applied rate and counts as a rate update. Otherwise the rate stays, though the integral has been updated.
@@ -979,7 +980,7 @@ In every case, the frame's media time becomes the last media time.
 
 The estimator divides how far media time advanced by how long mpv says those frames last at the current speed. It runs in `draw_frame` in both modes; only media mode uses the result.
 
-**Inputs per frame with a valid media time:** the media time *m* in nanoseconds; a duration *d*, which is `ideal_frame_duration` × 10⁹ truncated towards zero when the frame is display-synced and that value is positive, otherwise `vo_frame.duration` rounded to the nearest nanosecond with ties to even when positive, otherwise 0; and the nominal rate *n* (1.0 if 0 or below).
+**Inputs per frame with a valid media time:** the media time *m* in nanoseconds; a duration *d*, which is `ideal_frame_duration` × 10⁹ truncated towards zero when the frame is display-synced and `ideal_frame_duration` is positive (a result of 0 is then an unusable duration, 12.2), otherwise `vo_frame.duration` rounded to the nearest nanosecond with ties to even when positive, otherwise 0; and the nominal rate *n* (1.0 if 0 or below).
 
 **State:** the previous sample (*m₀*, *d₀*), a fast window (media and duration sums, and a count), and an averaging window (media and duration sums). Let Δ = *m* − *m₀* and *r* = Δ ÷ *d₀*.
 
@@ -992,7 +993,7 @@ The estimator divides how far media time advanced by how long mpv says those fra
 | No media step | Δ = 0 | unchanged | unchanged | none |
 | Discontinuity | Δ < 0; or \|*d* − *d₀*\| > max(250 µs, \|*d₀*\| div 100) with integer division; or *r* outside 0.05 to 8.0 | becomes this frame | both emptied | none |
 | Near nominal | \|*r* − *n*\| ≤ 4% of *n* | becomes this frame | fast emptied; averaging gains (Δ, *d₀*) | when the averaging duration sum reaches 500 ms: averaging media sum ÷ duration sum, and only the averaging window is emptied |
-| Far from nominal | \|*r* − *n*\| > 4% of *n* | becomes this frame | if the fast window already holds samples whose ratio differs from *r* by more than 4% of that ratio, it is emptied first; then the fast window gains (Δ, *d₀*) | if the fast window now holds 2 or more samples: fast media sum ÷ fast duration sum, and both windows are emptied. Otherwise the averaging window also gains (Δ, *d₀*) and may complete as in the row above |
+| Far from nominal | \|*r* − *n*\| > 4% of *n* | becomes this frame | if the fast window already holds samples whose ratio differs from *r* by more than 4% of the window's own ratio (12.2), it is emptied first; then the fast window gains (Δ, *d₀*) | if the fast window now holds 2 or more samples: fast media sum ÷ fast duration sum, and both windows are emptied. Otherwise the averaging window also gains (Δ, *d₀*) and may complete as in the row above |
 
 Any estimate outside 0.05 to 8.0 counts as none. Every reset (4.13) clears the estimator completely, previous sample included.
 
@@ -1010,7 +1011,7 @@ Upstream background, unchanged: without display sync (Vivid keeps mpv's default 
 2. With an image held, subtitles are rendered for that image (4.14.4) before the video sample is built, and the subtitle sample (if one is due on the separate layer) is enqueued immediately before the video sample, with the same presentation time, which keeps every cue on its own frame.
 3. The video sample is built as: upload or pass-through; the Picture in Picture composite if it applies; pixel aspect; Dolby Vision repair; format description; sample.
 4. The readiness wait (4.10) comes before the timebase step (media mode, 4.8.2), which comes before the enqueues. On a drop nothing is enqueued and the timebase is not touched.
-5. If the subtitle layer's renderer is not ready, the subtitle sample is dropped (verbose line, counted for statistics) and the video sample is still enqueued. If a subtitle sample was due but not enqueued, change tracking is reset so the next frame renders again; the pending mark stays.
+5. If the subtitle layer's renderer is not ready, the subtitle sample is dropped (verbose line, counted for statistics) and the video sample is still enqueued. If a subtitle sample was due but not enqueued, change tracking is reset so the next frame renders again; the pending mark stays. This holds whatever the reason, including a video sample that could not be built and a deadline drop (12.2).
 
 Also in every `flip_page`, in any order: the pacing summary is updated (4.18); every 60th call (whether or not an image was held) flushes excess buffers (`kCVPixelBufferPoolFlushExcessBuffers`) in the composite output, subtitle and upload pools and forgets dirty-tracking entries idle for more than 2 s (4.14.5); the subtitle performance summary is emitted when due; the samples and the held image are released.
 
@@ -1020,7 +1021,7 @@ Also in every `flip_page`, in any order: the pacing summary is updated (4.18); e
 
 - If the host layer's renderer needs recovery (`status` failed, or `requiresFlushToResumeDecoding`), run a throttled recovery with the reason "layer recovery request".
 - If the renderer is ready, the not-ready run is cleared and the frame proceeds.
-- Otherwise the frame may wait until 4 ms before its target host time. If that moment is now or already past, the frame is dropped (verbose line with the remaining milliseconds). Otherwise the VO polls every 1 ms until the renderer is ready (proceed, and record the wait for the pacing summary), the moment arrives (drop), or the renderer needs recovery (run a throttled recovery with the reason "not-ready wait"; if the renderer still needs recovery afterwards, whether the recovery ran or the throttle suppressed it, drop; otherwise keep polling). A redraw's target is now, so a redraw with the renderer not ready is dropped at once.
+- Otherwise the frame may wait until 4 ms before its target host time. If that moment is now or already past, the frame is dropped (verbose line with the remaining milliseconds). Otherwise the VO polls every 1 ms (the order of the checks in each round, and where the sleep falls, are in 12.2) until the renderer is ready (proceed, and record the wait for the pacing summary), the moment arrives (drop), or the renderer needs recovery (run a throttled recovery with the reason "not-ready wait"; if the renderer still needs recovery afterwards, whether the recovery ran or the throttle suppressed it, drop; otherwise keep polling). A redraw's target is now, so a redraw with the renderer not ready is dropped at once.
 
 **A drop** adds exactly 1 to mpv's VO drop count (`vo_increment_drop_count`), counts in the pacing summary and in the not-ready run, and enqueues nothing (neither subtitle nor video sample).
 
@@ -1028,8 +1029,8 @@ Also in every `flip_page`, in any order: the pacing summary is updated (4.18); e
 
 **Speed changes and high speed.** Host mode needs nothing special. In media mode, when a new speed is adopted follows from the table in 4.8.3 and the 1% rule of 4.8.2:
 
-- a change of more than 4% is adopted on the third frame at the new frame duration: the first of those frames is a discontinuity, and the next two fill the fast window;
-- a change of more than 1% and at most 4% is adopted when an averaging window of 500 ms of frame duration completes. For example, that takes about 520 to 580 ms of frame time when the change in frame duration restarts the window, and about 710 ms at 59.94 fps for changes of 1.1% to 1.5%, whose duration step stays inside the 250 µs gate, so the window does not restart;
+- a change of more than 4% is adopted on the third frame at the new frame duration when that duration is under 500 ms: the first of those frames is a discontinuity, and the next two fill the fast window. At 500 ms or more it is adopted on the second frame (12.2);
+- a change of more than 1% and at most 4% is adopted when an averaging window of 500 ms of frame duration completes. For example, with frames under 500 ms, that takes about 520 to 580 ms of frame time when the change in frame duration restarts the window, and about 710 ms at 59.94 fps for changes of 1.1% to 1.5%, whose duration step stays inside the 250 µs gate, so the window does not restart. A frame of 500 ms or more completes the window on its own, so such a change is adopted on the second frame (12.2);
 - a change of less than 1% is never adopted: the nominal rate stays, and the servo slews to absorb it. At exactly 1%, rounding in the estimate decides.
 
 Until a change is adopted, the old rate stays applied, so after a slow-down to less than about half the old speed each widely spaced frame can be more than 50 ms out and re-anchor at the old rate; such a change can take three anchors in all.
@@ -1116,7 +1117,7 @@ For every held image, redraws included, on the VO thread inside `flip_page` (4.9
 
 **The BGRA buffer.** From the subtitle pool: `kCVPixelFormatType_32BGRA` at the canvas size, with the pool attributes of 4.3. The pool is recreated when the canvas size changes, and all dirty-tracking entries are dropped then. Before drawing, the buffer is cleared using dirty tracking (below).
 
-**Path per object.** An object is drawn on the direct path when its format is `SUBBITMAP_LIBASS` or `SUBBITMAP_BGRA` and every part is drawn at its own size (`dw` and `dh` equal `w` and `h`, a `dw` or `dh` of 0 or below counting as `w` or `h`); otherwise on the CoreGraphics path. Both paths write into the same buffer, object after object. Parts with no bitmap, or a width or height of 0 or below, are skipped on both paths.
+**Path per object.** An object is drawn on the direct path when its format is `SUBBITMAP_LIBASS` or `SUBBITMAP_BGRA` and every part that is not skipped (below; 12.3) is drawn at its own size (`dw` and `dh` equal `w` and `h`, a `dw` or `dh` of 0 or below counting as `w` or `h`); otherwise on the CoreGraphics path. Both paths write into the same buffer, object after object. Parts with no bitmap, or a width or height of 0 or below, are skipped on both paths.
 
 **Direct libass blend**, for each part at its (`x`, `y`) position, clipped to the buffer:
 
@@ -1129,11 +1130,11 @@ For every held image, redraws included, on the VO thread inside `flip_page` (4.9
 **CoreGraphics path.**
 
 - A bitmap context over the buffer's memory: device RGB, `kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little`, the buffer's stride. Nothing else is set on the context: interpolation quality, antialiasing and blend mode keep their defaults.
-- Each part is drawn in the rectangle with origin (`x`, canvas height − `y` − `dh`) and size `dw` × `dh` (y flipped), using the part's own `dw` and `dh`.
+- Each part is drawn in the rectangle with origin (`x`, canvas height − `y` − `dh`) and size `dw` × `dh` (y flipped), using the part's own `dw` and `dh` as they are, with no defaulting (12.3).
 - BGRA parts are drawn as images made with `CGImageCreate` (8 bits per component, 32 per pixel, the part's stride, device RGB, premultiplied first, 32-bit little-endian, a null decode array, `shouldInterpolate` false, default rendering intent).
 - libass parts are drawn as masks made with `CGImageMaskCreate` (8 bits, the part's stride, an inverted decode so that 255 paints, `shouldInterpolate` false). The rectangle is clipped to the mask and filled with the colour R ÷ 255, G ÷ 255, B ÷ 255, alpha 1 − TT ÷ 255, inside a saved and restored graphics state.
 
-**Bounding box.** The union, over every object drawn, of every drawn part's destination rectangle from (`x`, `y`) to (`x` + `dw`, `y` + `dh`) with the same defaulting rule, clamped to the canvas. If no part qualifies, the box is empty (x0 = canvas width, y0 = canvas height, x1 = y1 = 0). Any box with x1 ≤ x0 or y1 ≤ y0 is empty and behaves the same, whichever form an empty box is given (all zeros after a clear, or the form above).
+**Bounding box.** The union, over every object drawn, of every drawn part's destination rectangle from (`x`, `y`) to (`x` + `dw`, `y` + `dh`) with the same defaulting rule, each of its four edges clamped to the canvas separately before the union is taken (12.3). If no part qualifies, the box is empty (x0 = canvas width, y0 = canvas height, x1 = y1 = 0). Any box with x1 ≤ x0 or y1 ≤ y0 is empty and behaves the same, whichever form an empty box is given (all zeros after a clear, or the form above).
 
 **Dirty tracking:**
 
@@ -1196,8 +1197,8 @@ Evaluating every operation separately instead gives a result one code value diff
 
 **Core Image fallback** (non-biplanar sources such as 4:2:2 or 4:4:4 hardware buffers, or when the YUV blend produced nothing):
 
-- Needs the cached CoreGraphics image and a Core Image context.
-- Output size: the canvas size (in frame space, the frame size). Output format: `kCVPixelFormatType_64RGBAHalf` for 10-bit biplanar sources, otherwise `kCVPixelFormatType_32BGRA`, from the composite output pool, which is recreated on any size or format change.
+- Needs the cached CoreGraphics image, a Core Image context and a video buffer that Core Image can wrap as an image; when it cannot, there is no composite and the frame goes out without the subtitle (12.3).
+- Output size: the canvas size (in frame space, the frame size). Output format: `kCVPixelFormatType_64RGBAHalf` for `x420` and `xf20` sources only, otherwise `kCVPixelFormatType_32BGRA` (12.3), from the composite output pool, which is recreated on any size or format change.
 - Steps: copy the metadata (below); wrap the video buffer as a `CIImage` with its own colour space (`CVImageBufferGetColorSpace`), or sRGB if it has none; crop it to the source rectangle (y flipped: origin at frame height − src.y1), move it to the origin, scale it to the destination size, move it to (dst.x0, output height − dst.y1); composite it over opaque black cropped to the output; scale the subtitle image to the output size if it differs and composite it over; render into the output buffer with bounds equal to the output and the video buffer's colour space (or none). All inside an autorelease pool.
 
 **Metadata copy** (YUV copies and the Core Image output):
@@ -1210,7 +1211,7 @@ Evaluating every operation separately instead gives a result one code value diff
 
 **Frame-space size guard.** If a composite's width or height differs from the original frame's, the composite is discarded and the frame shown without the subtitle, with a warning once per VO lifetime.
 
-**Core Image context.** Created on demand on `MTLCreateSystemDefaultDevice()`, with `kCIContextHighQualityDownsample` NO and `kCIContextUseSoftwareRenderer` NO. If the device or context cannot be made, an error is logged and the frame goes out without the subtitle; creation is tried again, and the error logged again, each time the fallback is reached. Released when an option refresh finds `avfoundation-pip-composite-osd` off, and at teardown.
+**Core Image context.** Created on demand on `MTLCreateSystemDefaultDevice()`, with `kCIContextHighQualityDownsample` NO and `kCIContextUseSoftwareRenderer` NO. If the device or context cannot be made, an error is logged and the frame goes out without the subtitle; a failed context drops the device too (12.3), and creation of both is tried again, and the error logged again, each time the fallback is reached. Released when an option refresh finds `avfoundation-pip-composite-osd` off, and at teardown.
 
 #### 4.14.8 Frame-space requirements
 
@@ -1320,7 +1321,7 @@ Orderings that must hold:
 - The subtitle layer is removed from its superlayer on main, synchronously, before it is released.
 - The VideoToolbox entry is removed from `vo->hwdec_devs` (`hwdec_devices_remove`) and its device reference released before the list itself is destroyed (`hwdec_devices_destroy`, 7.3).
 
-Teardown must also, in any order consistent with the above: emit the subtitle performance summary (verbose, if any renders happened); release the held image; release the cached subtitle image and buffer; release the three pools (dropping every dirty-tracking entry and its surface retain); release the cached format description; release the Core Image context and the Metal device; drop the host layer reference (the host layer is never removed from its superlayer); free the option cache.
+Teardown must also, in any order consistent with the above: emit the subtitle performance summary (verbose, if any renders happened); release the held image; release the cached subtitle image and buffer; release the three pools (dropping every dirty-tracking entry and its surface retain); release the cached format description; release the Core Image context and the Metal device; drop the host layer reference (the host layer is never removed from its superlayer); free the option cache. The final releases of both layers happen on main (12.3).
 
 #### 4.16.6 Thread map
 
@@ -1328,7 +1329,7 @@ Teardown must also, in any order consistent with the above: emit the subtitle pe
 | --- | --- |
 | `preinit`, `reconfig`, `control`, `draw_frame`, `flip_page`, `uninit` | mpv's VO thread |
 | Synchronous main hops | Creation: setting `controlTimebase`, the geometry read, subtitle layer creation, registering each kind of observer. Every geometry read: reconfiguration, option or `panscan` changes, a consumed resize, a composite-mode change, and the first `flip_page` with an image after creation and after any subtitle-layer sync (4.14.3). Every recovery: status reads and both non-removing flushes. Teardown: removing both kinds of observer, clearing `controlTimebase`, removing the subtitle layer. |
-| Asynchronous main hops | The subtitle layer frame copy (4.14.2); the subtitle-layer flush with removal queued at reset and reconfiguration. |
+| Asynchronous main hops | The subtitle layer frame copy (4.14.2); the subtitle-layer flush with removal queued at reset and reconfiguration; the final release of both layers at teardown (12.3). |
 | Directly on the VO thread | Every enqueue to both layers; readiness polls; the reset and teardown flushes; the subtitle-layer flushes with removal for a consumed resize and a composite-mode change; every timebase time, rate and anchor change; all pixel work and Core Image renders. |
 | Key-value observer callback | The thread that changed the layer (main in Vivid); only sets an atomic flag and calls `vo_wakeup`. |
 | App-state notification blocks | The main operation queue; only set a flag (and, on becoming active, an atomic flag plus `vo_wakeup`). |
@@ -1358,7 +1359,7 @@ A synchronous hop runs inline if already on main, otherwise with `dispatch_sync`
 
 ### 4.17 What the VO relies on from FFmpeg
 
-- VideoToolbox buffers arrive untouched by mpv; the VO adds the pixel aspect itself because FFmpeg does not set it on Dolby Vision sessions (5.7).
+- VideoToolbox buffers arrive untouched by mpv; the VO sets or removes the pixel aspect itself (4.5), whatever FFmpeg's attachment step did (5.7, 12.4).
 - `DolbyVisionRPUData` exists only if FFmpeg opens `dvh1` sessions, forwards RPUs in-band and enables per-frame HDR metadata propagation (5.2 to 5.5). If any of the three regresses, the repair silently stops firing and profile 5 loses its PQ tag.
 - Profile 7: mpv's frame parameters describe the source profile 7 RPU (no Dolby Vision mapping, because its `disable_residual_flag` is 0), while VideoToolbox renders the converted 8.1 RPU. The VO must not try to reconcile them.
 - VideoToolbox destination buffers request Metal compatibility (5.10), as the VO's own pools do (4.3).
@@ -1376,12 +1377,12 @@ Nothing in Vivid parses `vo/avfoundation` lines. Wording is free; keep each mess
 
 The two summaries should keep their cadence, so trial traces stay comparable:
 
-- **Pacing summary,** when a 5 s window ends with any non-zero count: how often and how long frames waited for readiness, deadline drops, anchors, rate writes and the resulting offset from nominal in ppm (applied ÷ nominal − 1, × 10⁶), and the largest phase error in ms.
+- **Pacing summary,** when a 5 s window ends with any non-zero count (12.2 gives the exact condition, which frames the phase error is sampled on, and when the first window opens): how often and how long frames waited for readiness, deadline drops, anchors, rate writes and the resulting offset from nominal in ppm (applied ÷ nominal − 1, × 10⁶), and the largest phase error in ms.
 - **Subtitle performance summary,** when at least 32 renders have accumulated, or at least 1 render and 300 frames, and at teardown: canvas size, render count with average and maximum render time and the split between clearing, blending, CoreGraphics and the bounding box, skipped and empty renders, enqueue time, video sample and wait time per frame, subtitle enqueue margin (average and minimum), and subtitle sample drops. Counters always accumulate; the text is built only when verbose logging is on. Exactly what the skipped and empty counters count is free.
 
 ## 5. Dolby Vision and FFmpeg VideoToolbox
 
-Summary: for HEVC streams with a usable Dolby Vision configuration of profile 5, 7 or 8, FFmpeg opens a `dvh1` decode session (Apple's Dolby Vision HEVC decoder) instead of an HEVC one. Profile 7 is presented to VideoToolbox as profile 8.1: a rewritten configuration record, RPUs converted per frame by libdovi, and no enhancement layer. Per-frame RPUs are sent in-band. The session asks VideoToolbox for per-frame HDR metadata. Decoded buffers keep VideoToolbox's own attachments, with missing HDR colour tags filled in. When VideoToolbox refuses the Dolby Vision session and the stream has an HDR-compatible base (5.1), FFmpeg makes one more attempt with an ordinary HEVC session. Every other path is pristine, apart from the explicit sample size in 5.5, which applies to all codecs.
+Summary: for HEVC streams with a usable Dolby Vision configuration of profile 5, 7 or 8, FFmpeg opens a `dvh1` decode session (Apple's Dolby Vision HEVC decoder) instead of an HEVC one. Profile 7 is presented to VideoToolbox as profile 8.1: a rewritten configuration record, RPUs converted per frame by libdovi, and no enhancement layer. Per-frame RPUs are sent in-band. The session asks VideoToolbox for per-frame HDR metadata. Decoded buffers get pristine FFmpeg's attachments, as they do in today's shipped engine (5.7, 12.4). When VideoToolbox refuses the Dolby Vision session and the stream has an HDR-compatible base (5.1), FFmpeg makes one more attempt with an ordinary HEVC session. Every other path is pristine, apart from the explicit sample size in 5.5, which applies to all codecs.
 
 All of this apart from 5.13, which patches libdovi, lives in `libavcodec/videotoolbox.c` (and, if needed, `libavcodec/vt_internal.h`) and is written to apply on top of Vivid's existing FFmpeg series (8.2), whose `0002` already makes the destination buffers Metal-compatible (5.10). Nothing reads a new option, user default or environment variable: the behaviour below is unconditional.
 
@@ -1433,7 +1434,7 @@ The format description extensions and the decoder specification are the same dic
 - The session is created as pristine does it, with the Dolby Vision description.
 - **One retry.** If creation fails with any non-zero status, the session was `dvh1` and the stream has an HDR-compatible base: log a warning with the status and make exactly one more attempt with a plain HEVC description (codec type `kCMVideoCodecType_HEVC`, `hvcC` only, no Dolby Vision atom, no colour extensions, the Enable-hardware key), the same destination buffer attributes and the same callback. The status that reaches pristine's status-to-error mapping is the retry's, or the original one if the plain description could not be built.
 - Profile 5 never retries. A refused profile 5 session returns the pristine error and mpv's software fallback takes over (`hwdec-current` becomes `no`).
-- After a retry, the session counts as plain HEVC for every per-frame decision (5.5 item 2, 5.7); only the profile 7 NAL filter (5.5 item 1) follows the stream class instead.
+- After a retry, the session counts as plain HEVC for every per-frame decision (5.5 item 2); only the profile 7 NAL filter (5.5 item 1) follows the stream class instead.
 
 ### 5.4 Session properties
 
@@ -1451,7 +1452,8 @@ Pristine HEVC sample assembly is unchanged: parameter-set and slice NALs are eac
 1. **Profile 7 NAL filter.** For converted profile 7 streams (by stream class, retry or not), a NAL reaching the slice submission path is dropped instead of appended when its type is 62 (`HEVC_NAL_UNSPEC62`, RPU) or 63 (`HEVC_NAL_UNSPEC63`, enhancement layer). The type is the 6 bits after the first bit of the first header byte. NALs shorter than 2 bytes pass through unchanged. hevcdec never routes these types to the slice path in practice, and it skips type 63 itself, so no enhancement layer reaches VideoToolbox either way.
 2. **RPU forwarding.** At the end of every HEVC frame, before the sample is submitted, when the session is `dvh1` and the stream is native or converted Dolby Vision:
    - every NAL of type 62 in the current input packet whose escaped size, header included, is more than 2 bytes is appended in packet order, after the slices: unchanged (2-byte header included) for native profiles 5 and 8, or converted (5.6) for profile 7;
-   - a NAL whose append or conversion fails is skipped with the warnings of 5.9, and the frame is still submitted; RPU handling never makes a frame fail;
+   - a NAL whose append or conversion fails is skipped with the warnings of 5.9, and the frame is still submitted; RPU handling never makes FFmpeg fail a frame (how VideoToolbox answers a frame without its RPU is in 12.4);
+   - when the frame's bitstream is still empty at frame end, no RPU is appended and nothing is submitted (an accepted difference, 12.4);
    - after submission, the bitstream buffer is reset as in pristine FFmpeg;
    - the "session is `dvh1`" test uses the session as it stands at frame end, before pristine's pending-restart check runs. So the frame that triggers a restart carries RPUs according to the session that is being replaced.
    - This forwards every type-62 NAL; it does not use hevcdec's own choice of RPU (last NAL, layer 0, temporal id 0).
@@ -1468,7 +1470,7 @@ Contract:
 - **Transformation:** libdovi 3.3.2 conversion mode 2 ("To81").
 - **Output:** the escaped NAL that libdovi writes for the converted RPU, appended length-prefixed like any other NAL. It begins with `0x7C 0x01`. The bytes must be identical to libdovi 3.3.2's for every RPU.
 - **Failure:** if parsing, conversion or writing fails for any reason (including an output longer than a 32-bit length can describe, and the guard above), that RPU is skipped (5.5). With Vivid's patched libdovi, every input that unpatched libdovi 3.3.2 aborts on fails here instead and is skipped the same way (deliberate difference 4, 7.3).
-- **What "skipped" means.** The RPU's NAL is not appended to the sample. Any other type-62 NAL in the same packet is still handled separately, and the frame is still submitted, with the slices and whichever RPUs succeeded. The log gets the warnings of 5.9 for that RPU: the stage line (with libdovi's error text, or the guard's own text), then the stripped line. Nothing else changes: the session, the next frames and hevcdec's frame side data are untouched.
+- **What "skipped" means.** The RPU's NAL is not appended to the sample. Any other type-62 NAL in the same packet is still handled separately, and the frame is still submitted, with the slices and whichever RPUs succeeded. The log gets the warnings of 5.9 for that RPU: the stage line (with libdovi's error text, or the guard's own text), then the stripped line. Nothing else changes in FFmpeg: the session, the next frames and hevcdec's frame side data are untouched (VideoToolbox's own response is in 12.4).
 
 What mode 2 does in libdovi 3.3.2, as a parity reference. It follows the RPU's own header, not the container record: an RPU whose header says profile 7 or 8 is changed as below; one whose header says profile 5 gets libdovi's profile 5 to 8.1 conversion; a header profile of 0 or 4 fails conversion, which is a failure as above. For profile 7: the header's enhancement-layer spatial resampling filter flag is cleared and `disable_residual_flag` is set; the mapping's NLQ method, pivots and NLQ data are removed and the partition fields become 0, which means one partition; only when the source enhancement layer is FEL are the luma and chroma reshaping curves replaced by libdovi's identity ("empty 8.1") mapping, while MEL keeps its curves; in display management the Y'CbCr-to-RGB and RGB-to-LMS coefficient sets, their offsets included, become libdovi's fixed profile 8.1 values and `signal_color_space` becomes 0; the input's trailing zero bytes are kept; the CRC is recomputed and the trailing `0x80` written. libdovi rejects inputs shorter than 25 bytes (header included) and inputs whose first bytes are not a recognised RPU start, and those count as failures.
 
@@ -1478,21 +1480,13 @@ Mode numbering and meaning differ between libdovi releases, so the version is pa
 
 ### 5.7 Decoded frame attachments
 
-Pristine frame post-processing calls `av_vt_pixbuf_set_attachments`, which sets or removes primaries, transfer, matrix, gamma, chroma location, pixel aspect ratio and a derived colour space from the `AVFrame` fields. The decision below is made at frame output, against the session current at that moment, not necessarily the one that decoded the frame; the two differ only for frames in flight across a restart that switches between `dvh1` and plain HEVC.
-
-- **Plain HEVC sessions** (including after a retry) and every other codec: unchanged.
-- **`dvh1` sessions:** `av_vt_pixbuf_set_attachments` is not called, so VideoToolbox's own attachments survive, `DolbyVisionRPUData` among them. Then, only for an HDR-compatible base (not profile 5):
-  - each of `kCVImageBufferColorPrimariesKey` (`kCVImageBufferColorPrimaries_ITU_R_2020`), `kCVImageBufferTransferFunctionKey` (`kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ`, or `kCVImageBufferTransferFunction_ITU_R_2100_HLG` for an HLG base) and `kCVImageBufferYCbCrMatrixKey` (`kCVImageBufferYCbCrMatrix_ITU_R_2020`) is set only when absent, in `kCVAttachmentMode_ShouldPropagate`;
-  - then, only when `kCVImageBufferCGColorSpaceKey` is absent, a colour space derived with `CVImageBufferCreateColorSpaceFromAttachments` from the buffer's propagatable attachments (read with `CVBufferCopyAttachments` on iOS and tvOS 15 and later, or by copying `CVBufferGetAttachments` before that) is attached in propagate mode; if either step fails, it stays absent;
-  - profile 5 buffers get nothing from FFmpeg, neither added nor removed (the VO's repair, 4.4, restores PQ).
-- So `dvh1` buffers get no pixel aspect, chroma location or gamma attachment from FFmpeg; the VO adds the pixel aspect (4.5).
-- Crop handling, `data[3]` and `hw_frames_ctx` are as pristine.
+Replaced after implementation (12.4). At frame output every VideoToolbox frame, from a `dvh1` session or any other, gets pristine FFmpeg's post-processing, including `av_vt_pixbuf_set_attachments`, which sets or removes primaries, transfer, matrix, gamma, chroma location, pixel aspect ratio and a derived colour space from the `AVFrame` fields. This holds at every decoder thread count, and nothing Dolby Vision specific happens at frame output. That is what today's shipped engine gives every frame, because Vivid decodes with mpv's default of 4 frame threads, under which today's engine never runs its Dolby Vision output step. Crop handling, `data[3]` and `hw_frames_ctx` are as pristine.
 
 ### 5.8 Restarts and reconfiguration
 
 - Classification, codec type, atoms and the retry all happen inside pristine session start, which runs on hwaccel init and again on every pristine restart: reconfiguration when the callback delivers no image for any reason other than a missing reference frame, after a malfunction or invalid-session decode status, and after parameter changes that reinitialise the hwaccel.
 - Each restart classifies again, tries `dvh1` first and may retry again.
-- Per-frame decisions follow the session as 5.5 and 5.7 say.
+- Per-frame decisions follow the session as 5.5 says. Frame attachments do not depend on the session (5.7).
 
 ### 5.9 FFmpeg log levels for this section
 
@@ -1534,6 +1528,8 @@ VideoToolbox's destination buffer attributes ask for `kCVPixelBufferMetalCompati
 | Profile 4, 9 (AVC), 10 (AV1) | pristine | pristine | pristine | its profile | |
 | HDR10 or SDR HEVC without Dolby Vision | plain HEVC | pristine | pristine | absent | |
 
+The "FFmpeg buffer tags" column is superseded by 5.7 and 12.4: every row gets pristine FFmpeg's attachments from the frame's own colour fields (so the tags follow the VUI, and on Apple TV no frame carries a colour space).
+
 ### 5.13 libdovi: errors instead of aborts
 
 This is a patch to libdovi 3.3.2 itself (Rust, MIT), not to FFmpeg. Vivid's pipeline builds libdovi from source with it and links that build in place of the prebuilt (8.3, 8.4).
@@ -1550,9 +1546,9 @@ This is a patch to libdovi 3.3.2 itself (Rust, MIT), not to FFmpeg. Vivid's pipe
    - conversion returns −1 and records the error; writing returns null and records the error;
    - the header query returns null if it cannot finish, and also whenever the display-management query for the same object would fail although the header says display-management data is present. libplacebo 7.351.0 checks the header for null but reads the display-management result without checking it (seen in its prebuilt's code), so after a header with `vdr_dm_metadata_present_flag` set, that query must never return null;
    - the free functions accept whatever the others returned, null included.
-3. Every input on which unpatched 3.3.2 does not abort gives the same result as before: the same success or failure, the same output bytes and the same structures. Error texts stay the same too, except where a check added by the patch fires before an existing error would.
+3. Every input on which unpatched 3.3.2 does not abort gives the same result as before: the same success or failure, the same output bytes and the same structures. Error texts stay the same too, except where a check added by the patch fires before an existing error would. The header rule in item 2 is the one exception, in a case neither caller reaches (12.5).
 4. Every error text the patch adds is a single line (no line break), contains none of the fault substrings of 2.8, and is otherwise free.
-5. Allocation failure ends a Rust program whatever its panic setting, so a count read from the RPU (an extension-block count, a pivot count, a piece count and the like) must be checked against what the rest of the input could hold, or against a fixed limit no valid RPU reaches, before memory is reserved for it. A count that fails the check is a parse error.
+5. Allocation failure ends a Rust program whatever its panic setting, so a count read from the RPU (an extension-block count, a pivot count, a piece count and the like) must be checked against what the rest of the input could hold, or against a fixed limit no valid RPU reaches, before memory is reserved for it. A count that fails the check is a parse error. 12.5 adds a related writing case.
 6. How is free: for example, catching a panic at each covered entry point (which needs the library built to unwind rather than abort), removing each panic site, or both. Whatever is chosen must satisfy 1 to 5.
 
 **What "skipped" means for each caller.** In FFmpeg's conversion the RPU is skipped as in 5.6: its NAL is left out of the sample, the frame is still submitted, and the stage and stripped warnings are logged (5.9). In libplacebo the header query returns null, and libplacebo then skips the RPU, so mpv fills nothing from it into the frame's HDR metadata and keeps whatever the stream's other metadata gave; nothing is logged.
@@ -1563,10 +1559,10 @@ This is a patch to libdovi 3.3.2 itself (Rust, MIT), not to FFmpeg. Vivid's pipe
 - the linear-interpolation flag set in a first-order polynomial piece;
 - the class FFmpeg's guard already skips (5.6), which unpatched libdovi aborts on when it computes the CRC range;
 - a CM v4.0 level 8, 9 or 10 extension block whose length libdovi does not know;
-- a very large Exp-Golomb count (the extension-block count, or a pivot or piece count) that overflows a capacity or fails an allocation;
+- a very large Exp-Golomb count (the extension-block count, or a pivot or piece count) that overflows a capacity or fails an allocation (which values abort depends on the platform, 12.5);
 - when writing, a reshaping curve whose pieces mix the polynomial and MMR methods, in an RPU whose curves the conversion keeps (any profile 7 or 8 header except FEL).
 
-The first three were found by reading libdovi's source; the other three come from a model of its parser and writer and have not been run. For every class, the tests first show that unpatched 3.3.2 aborts on the corpus entry (in a separate process), so that the corpus really reaches each abort site; if an entry does not abort there, report it to the spec editor (1.4) instead of dropping it. libdovi has other panic sites, such as unchecked unwraps of optional data, and rule 1 covers them all, listed or not.
+All six have since been confirmed by running unpatched 3.3.2 (12.5). For every class, the tests first show that unpatched 3.3.2 aborts on the corpus entry (in a separate process), so that the corpus really reaches each abort site; if an entry does not abort there, report it to the spec editor (1.4) instead of dropping it. libdovi has other panic sites, such as unchecked unwraps of optional data, and rule 1 covers them all, listed or not.
 
 ## 6. Other kept behaviour
 
@@ -1654,7 +1650,7 @@ Each item exists in today's engine but is unreached by Vivid or has no observabl
 
 ### 7.3 Deliberate differences
 
-These four changes are intentional. Everything else must match today's engine.
+These four changes are intentional. 12.3 records how item 1 is implemented, and 12.8 lists the differences accepted after implementation. Everything else must match today's engine.
 
 **1. Picture in Picture subtitles are blended exactly once per displayed image.**
 
@@ -1715,14 +1711,14 @@ Each library's `engine/patches/<library>/series` lists its patches in order, one
 | FFmpeg `n8.0.1` | `0001` Secure Transport without the private identity call (6.7); `0002` Metal-compatible VideoToolbox buffers (5.10) | the Dolby Vision VideoToolbox work (section 5); the hevcdec log levels (6.6) |
 | libass `0.17.5` | empty | nothing |
 | dav1d `1.5.3` | empty | nothing |
-| libdovi `3.3.2` | none yet: linked as a prebuilt (8.3) | built from source, with the patch of 5.13 (8.4) |
+| libdovi `3.3.2` | `0001`, the patch of 5.13, built from source (12.6) | nothing |
 
 The split of the new work into patch files, and their order within the "to add" column, are the implementer's choice, as long as each applies with zero fuzz in series order.
 
 ### 8.3 Inputs and what is built
 
 - Sources come from the release archives pinned in `engine/pins.ini` (URL, version, embedded commit and SHA-256), and `lucid.py fetch` refuses a file whose hash differs. Every source tree is extracted fresh for each build; only the hash-checked downloads are cached between runs.
-- Built from source for each of the four slices: dav1d, libass, FFmpeg (seven libraries) and libmpv, as ten static frameworks (`Libdav1d`, `Libass`, `Libmpv`, `Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample`, `Libswscale`), with Xcode 26.6 and minimum OS 14.0. Once 5.13 lands, libdovi is built from source too, as an eleventh framework, `Libdovi`, replacing the prebuilt of that name.
+- Built from source for each of the four slices: dav1d, libass, FFmpeg (seven libraries) and libmpv, as ten static frameworks (`Libdav1d`, `Libass`, `Libmpv`, `Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample`, `Libswscale`), with Xcode 26.6 and minimum OS 14.0. libdovi is now built from source too, as an eleventh framework, `Libdovi`, replacing the prebuilt of that name (12.6).
 - Still prebuilt, pinned in `engine/pins.ini` from `mpvkit` release assets:
 
 | Binary | Version | Licence | Notes |
@@ -1730,7 +1726,7 @@ The split of the new work into patch files, and their order within the "to add" 
 | FreeType, FriBidi, HarfBuzz, libunibreak | 2.12.1, 1.0.12, 8.1.1, 6.1 | FTL, LGPL-2.1-or-later, MIT, Zlib | libass dependencies |
 | libplacebo | 7.351.0 | LGPL-2.1-or-later | mpv dependency; requires libdovi |
 | Little CMS (lcms2) | 2.17 | MIT | |
-| libdovi | 3.3.2 | MIT | used by libplacebo and by the profile 7 conversion (5.6); prebuilt only until 5.13 lands |
+| libdovi | 3.3.2 | MIT | used by libplacebo and by the profile 7 conversion (5.6); no longer prebuilt, now built from source (12.6) |
 | MoltenVK | 1.4.1 | Apache-2.0 | linked because Vulkan stays enabled |
 | shaderc | 2025.5 | Apache-2.0 | |
 | uavs3d | 1.2 | BSD-3-Clause | |
@@ -1743,7 +1739,7 @@ Nothing links OpenSSL any more: FFmpeg uses Secure Transport.
 
 - **With the VO patch:** add `-Dvo-avfoundation=enabled` to `engine/config/mpv-meson.txt`, and `vo-avfoundation` to `engine/config/expected-mpv-features.txt`. The VO uses Core Image (4.14.7), which `engine/config/app-link.txt` does not list, so add `CoreImage` there too, plus any other framework the symbol closure check (8.5) then reports; otherwise the closure and test-link checks fail.
 - **With the Dolby Vision patch:** pass libdovi's include path and `-ldovi` to FFmpeg through its compiler and linker flags again (the libdovi prebuilt is already staged for libplacebo), and record those flags in the provenance report.
-- **With the libdovi patch (5.13):** replace `[prebuilt:libdovi]` in `engine/pins.ini` with a source entry for the `libdovi-3.3.2` release archive of `quietvoid/dovi_tool` (URL, embedded commit `4fd2b2235c9f93582dd4a00e65ee34a07800afd7` and SHA-256), and add `engine/patches/libdovi/series` with the patch. Pin the Rust toolchain version and every crate dependency: use the lock file in the archive's `dolby_vision` folder, fetch each crate by checksum, and resolve nothing at build time. Build libdovi's C API as a static library for the four slices; if the pinned toolchain ships no standard library for the tvOS targets, build that from source with the same toolchain. Keep the public header and the pkg-config name unchanged, and stage the result where the prebuilt was, so that libplacebo's pkg-config requirement and FFmpeg's flags find it. Record the source and patch hashes and the toolchain in the provenance report. Then bring the checks into line: the framework-set check expects `Libdovi` as an eleventh framework, libdovi leaves the prebuilt set that is staged and passed to the test link, and the fetch allowlist (`FETCH_ALLOWED` in `lucid.py`, enforced by `lucid.py check-allowlist`) gains the libdovi source project and the hosts the pinned Rust toolchain and crates come from, each still fetched only through `lucid.py` with its SHA-256.
+- **With the libdovi patch (5.13):** replace `[prebuilt:libdovi]` in `engine/pins.ini` with a source entry for the `libdovi-3.3.2` release archive of `quietvoid/dovi_tool` (URL, embedded commit `4fd2b2235c9f93582dd4a00e65ee34a07800afd7` and SHA-256), and add `engine/patches/libdovi/series` with the patch. Pin the Rust toolchain version and every crate dependency: use the lock file in the archive's `dolby_vision` folder, fetch each crate by checksum, and resolve nothing at build time. Build libdovi's C API as a static library for the four slices; if the pinned toolchain ships no standard library for the tvOS targets, build that from source with the same toolchain (the stable toolchain chosen ships one, 12.6). Keep the public header and the pkg-config name unchanged, and stage the result where the prebuilt was, so that libplacebo's pkg-config requirement and FFmpeg's flags find it. Record the source and patch hashes and the toolchain in the provenance report. Then bring the checks into line: the framework-set check expects `Libdovi` as an eleventh framework, libdovi leaves the prebuilt set that is staged and passed to the test link, and the fetch allowlist (`FETCH_ALLOWED` in `lucid.py`, enforced by `lucid.py check-allowlist`) gains the libdovi source project and the hosts the pinned Rust toolchain and crates come from, each still fetched only through `lucid.py` with its SHA-256.
 - Nothing else in the configuration changes: the FFmpeg configure line, its expected components and switches, and the libass and dav1d options stay as they are.
 
 ### 8.5 Checks the pipeline already makes
@@ -1751,7 +1747,7 @@ Nothing links OpenSSL any more: FFmpeg uses Secure Transport.
 `lucid.py check` already verifies, for every slice:
 
 - **Inputs and trees:** archive hashes and embedded commits match `pins.ini`; the applied patches match the series; each source tree was not changed by the build and equals a fresh extraction of the pristine archive with the series applied again.
-- **Form:** exactly the ten frameworks (eleven once libdovi is built from source, 8.4); arm64 only; the slice's platform and minimum OS 14.0; the Info.plist values and module maps; FFmpeg's header counts.
+- **Form:** exactly the frameworks built, now eleven with libdovi built from source (8.4, 12.6); arm64 only; the slice's platform and minimum OS 14.0; the Info.plist values and module maps; FFmpeg's header counts.
 - **FFmpeg:** the configuration in `config.h` and the string `avformat_configuration()` returns both equal the configured arguments; they contain `--enable-securetransport` and none of `--enable-gpl`, `--enable-version3`, `--enable-openssl`, `--enable-nonfree` or `delogo`; every library's licence string is `LGPL version 2.1 or later`; the expected `CONFIG_*` switches are on or off, and `HAVE_SECITEMIMPORT` is 0; the enabled components and the filter registry symbols match exactly.
 - **Symbols:** no OpenSSL symbols; no reference to `_SecIdentityCreate`; no `delogo` filter; `Libavformat` defines `_avformat_configuration`; `Libavcodec` references `_kCVPixelBufferMetalCompatibilityKey` and neither OpenGL compatibility key.
 - **mpv:** the recorded meson options; `-Dgpl=false` and no `-Dgpl=true` in the binary; the feature list matches `expected-mpv-features.txt` exactly (so `coreaudio` is absent and `macos-11-3-features` and `macos-12-features` are present, 2.11); the binary contains the text of `0001`; client API version 2.5 with the four expected headers.
@@ -1849,10 +1845,10 @@ Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt
 | Queue lead | 128 ms default, range 0 to 1000; `vo_set_queue_params` requested future frames 1 |
 | Default presentation mode | `host` on tvOS builds, `media` otherwise |
 | CMTime timescale for every sample and timebase time | 1,000,000,000 (nanoseconds) |
-| Media seconds to nanoseconds | `pts` × 10⁹ plus 0.5 (minus 0.5 when negative) as one fused multiply-add, truncated towards zero |
+| Media seconds to nanoseconds | `pts` × 10⁹ plus 0.5 (minus 0.5 when negative) as one fused multiply-add, truncated towards zero; finite values outside the int64 range saturate (12.2) |
 | Timebase reading | `CMTimeConvertScale` to nanoseconds with `kCMTimeRoundingMethod_Default`; not numeric reads as 0 |
 | Servo projection | (target − now) × applied rate in double precision, truncated towards zero |
-| Frame duration | display-synced `ideal_frame_duration` × 10⁹ truncated; otherwise `vo_frame.duration` rounded to nearest, ties to even |
+| Frame duration | display-synced `ideal_frame_duration` × 10⁹ truncated, when `ideal_frame_duration` is positive (a truncated 0 is unusable, 12.2); otherwise `vo_frame.duration` rounded to nearest, ties to even |
 | Re-anchor threshold | phase error above 50 ms |
 | Servo horizon *H*, integral time *Ti*, limit *L* | 2 s, 8 s, ±0.015 (on *P*, the integral and their sum) |
 | Smallest rate change written | above 0.0001 × nominal (100 ppm) |
@@ -1883,7 +1879,7 @@ Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt
 | Host layer pixel size | max(1, truncated fused multiply-add of size × scale + 0.5) (2.5) |
 | Blend rectangle slack | 1 pixel on each side |
 | Dolby Vision attachment key | `DolbyVisionRPUData` |
-| Formats | uploads `420v` and `x420`; subtitles `32BGRA`; Core Image composite output `64RGBAHalf` (10-bit biplanar sources) or `32BGRA` |
+| Formats | uploads `420v` and `x420`; subtitles `32BGRA`; Core Image composite output `64RGBAHalf` (`x420` and `xf20` sources only, 12.3) or `32BGRA` |
 
 **Dolby Vision and FFmpeg**
 
@@ -1902,7 +1898,7 @@ Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt
 | libdovi version and mode | 3.3.2, mode 2 ("To81") |
 | libdovi build | 3.3.2 from source with Vivid's patch: errors instead of aborts in the ten entry points FFmpeg and libplacebo use (5.13) |
 | Per-frame HDR metadata OS floors | propagate: iOS and tvOS 14; generate: iOS and tvOS 17 |
-| `CVBufferCopyAttachments` floor | iOS and tvOS 15 |
+| `CVBufferCopyAttachments` floor | iOS and tvOS 15; no longer needed by section 5, whose frame output is pristine (5.7, 12.4) |
 | Session retry trigger | any non-zero create status, `dvh1`, HDR-compatible base |
 | hevcdec message levels (6.6) | `AV_LOG_VERBOSE` for both |
 | Hardware decode error tolerance (6.1) | 2 keyframes, or 240 consecutive errors; not reset by flushes |
@@ -1936,7 +1932,7 @@ Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt
 - A22. The rate-1 time is set once per item and never moved by an unpause (3.4.3).
 - A23. Lost sync and window overflow stay where 3.4.5 puts them, unreachable; garbage is discarded silently.
 - A24. Burst tests run in the order type, length, completeness, and the AC-3 length rounds down (3.4.5).
-- A25. Nothing beyond 3.4.3's list is configured on the player, asset, item or content-information request.
+- A25. Nothing beyond 3.4.3's list is configured on the player, asset, item or content-information request, and the item keeps AVFoundation's default automatically loaded keys (`duration`) (12.1).
 - A26. Crossing 1x replaces the AO only on an AC-3 or E-AC-3 track. On a decoded track the same AO carries on through mpv's decoder rebuild, with no `reset`, no fresh sink and no `start-fresh` (1.7, 3.1).
 - A27. A rejection ends the feed step before resume detection; only a fallback raised by a read in the same step leaves resume detection running (3.4.7).
 - A28. The anchor pacing time starts at mpv's clock origin, the time 0, never at a minimum-value sentinel (3.4.3).
@@ -1978,16 +1974,16 @@ Update `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt
 
 - D1. The Enable-hardware key, never Require, for Dolby Vision sessions.
 - D2. The compression field is always written as 0.
-- D3. Every profile 8 compatibility id except 4 is tagged PQ and BT.2020, including 2 and 0. Keep this.
+- D3. Every profile 8 compatibility id except 4 is tagged PQ and BT.2020, including 2 and 0, in the session's colour extensions (5.2). Keep this. Frame tags follow 5.7 (12.4).
 - D4. `dvcC` or `dvvC` follows the effective profile (converted 7 uses `dvvC`).
 - D5. The plain HEVC retry is only for an HDR-compatible base; profile 5 goes to software.
-- D6. Per-frame Dolby Vision steps follow the live session (5.5, 5.7), except the profile 7 NAL filter, which follows the stream.
-- D7. The conversion is libdovi 3.3.2's mode 2; upgrading libdovi changes behaviour and needs device testing. Vivid's patch must leave every input that does not abort today unchanged, apart from the error texts 5.13 allows to change.
+- D6. Per-frame Dolby Vision steps follow the live session (5.5), except the profile 7 NAL filter, which follows the stream.
+- D7. The conversion is libdovi 3.3.2's mode 2; upgrading libdovi changes behaviour and needs device testing. Vivid's patch must leave every input that does not abort today unchanged, apart from the error texts 5.13 allows to change and the header case of 12.5, which neither caller reaches.
 - D8. Frame side data stays the unconverted profile 7 RPU.
 - D9. Every type-62 NAL in the packet is forwarded; a failed RPU drops only itself.
 - D10. The explicit sample size applies to every codec.
-- D11. `dvh1` sessions never call FFmpeg's own attachment setter.
-- D12. Colour tags and the colour space are added only when absent.
+- D11. Replaced (12.4): every VideoToolbox frame, `dvh1` included, gets FFmpeg's own attachment setter at frame output, at every decoder thread count; test at 4 threads as well as 1.
+- D12. Replaced (12.4): nothing Dolby Vision specific happens at frame output, so no colour tag or colour space is filled in there.
 - D13. Decisions use the stream-level record, never per-packet side data.
 - D14. A record smaller than the public struct is absent.
 - D15. No `dolby-vision-compatibility-id` anywhere; `dolby-vision-profile` stays the container value.
@@ -2203,9 +2199,9 @@ The clean side designs its own scenarios, sizes and durations. The tests must es
 
 1. **No needless re-anchors.** With presentation-time noise, or a clock offset between mpv's schedule and the host clock that is constant or varies slowly, so that the rate correction needed stays inside the ±1.5% slew limit, and with no schedule jump above 50 ms, no anchor follows the first one, and the phase error between anchors stays well below the 50 ms re-anchor threshold. As a number: with presentation-time noise within ±0.8 ms and an offset of at most 0.04%, constant or varying with a period of 5 minutes or more, the error stays under 1 ms from 30 s after the first anchor. The error is taken against the schedule the test generated before adding noise: the timebase's time at the host time a frame was due, compared with that frame's media time. (Today's servo stays under 0.5 ms there.)
 2. **One anchor per jump.** A schedule jump above 50 ms causes exactly one re-anchor, and leaves the nominal rate unchanged.
-3. **Speed changes.** A change of playback speed by more than 1%, to a speed strictly between 0.05× and 8×, ends with the nominal rate within 0.005 of the new speed for a change of at most 4%, and within 0.01 for a larger one (today's estimator gives the new speed exactly when frame durations are exact). It takes one or two anchors, or up to three for a slow-down to less than half the old speed (4.10), and the last of them comes within 5 s of the change. Adoption comes when 4.10 says: for a change above 4%, on the third frame at the new frame duration; for a change of more than 1% and at most 4%, when a 500 ms averaging window of frame duration completes. A change of less than 1% causes no anchor and leaves the nominal rate unchanged.
+3. **Speed changes.** A change of playback speed by more than 1%, to a speed strictly between 0.05× and 8×, ends with the nominal rate within 0.005 of the new speed for a change of at most 4%, and within 0.01 for a larger one (today's estimator gives the new speed exactly when frame durations are exact). It takes one or two anchors, or up to three for a slow-down to less than half the old speed (4.10), and the last of them comes within 5 s of the change. Adoption comes when 4.10 says: for a change above 4%, on the third frame at the new frame duration, or the second when that duration is 500 ms or more; for a change of more than 1% and at most 4%, when a 500 ms averaging window of frame duration completes, which a frame of 500 ms or more does on its own (12.2). A change of less than 1% causes no anchor and leaves the nominal rate unchanged.
 4. **Rate writes.** Between anchors the applied rate stays within ±1.5% of nominal, consecutive writes are at least 200 ms apart, no write changes the rate by 100 ppm of nominal or less, the integral stays within ±1.5%, and no step longer than 500 ms is integrated.
-5. **Deterministic trace.** For fixed sequences of media times, target times, host times and timebase readings, the implementation's anchors, rate writes and integral values equal those of an independent, straightforward reference implementation of 4.8.2 and 4.8.3, including every rounding rule of 4.8 and 4.8.3.
+5. **Deterministic trace.** For fixed sequences of media times, target times, host times and timebase readings, the implementation's anchors, rate writes and integral values equal those of an independent, straightforward reference implementation of 4.8.2 and 4.8.3, including every rounding rule of 4.8 and 4.8.3 and the integral's evaluation order in 12.2.
 6. **Estimator vectors** (nominal 1.0 unless stated; 40 ms = 40,000,000 ns):
 
 | Case | Frames (media time, duration) | Expected |
@@ -2244,14 +2240,14 @@ The clean side designs its own scenarios, sizes and durations. The tests must es
 
 - **Profile 7 conversion:** for real profile 7 FEL and MEL samples, every RPU NAL FFmpeg appends is byte-identical to libdovi 3.3.2's mode 2 output.
 - **libdovi guard:** a 25-byte RPU of 0x7C 0x01 0x19 0x08 0x09 followed by twenty 0x00 bytes, and one of 0x7C 0x01 0x19 0x08 0x09 0x80 0x80 followed by eighteen 0x00 bytes, are skipped without calling libdovi, with two warnings each, and the frame is still submitted; 0x7C 0x01 0x19 0x08 0x09 0x00 0x00 0x03 followed by seventeen 0x00 bytes is skipped the same way (the 0x03 is an emulation-prevention byte); 0x7C 0x01 0x19 0x08 0x09 0x01 0x02 0x80 followed by seventeen 0x00 bytes is not skipped by the guard (test the guard's decision on its own).
-- **libdovi abort classes** (5.13): one RPU of each class listed in 5.13, made from a valid RPU by changing that one field and recomputing the CRC, so that parsing reaches the field and, for the writing class, succeeds. Unpatched libdovi 3.3.2 aborts on each (run it in a separate process). With Vivid's patched libdovi, each RPU is skipped with exactly two warnings (the stage line, then the stripped line) and the frame is still submitted. In libplacebo's call sequence, every class except the writing class reports a parse error and the header query returns null. The writing class parses successfully in unpatched 3.3.2 and only aborts when written, so libplacebo's sequence handles it exactly as today (parse, header and display-management data unchanged, rule 3), and only the write in FFmpeg's conversion fails and is skipped.
+- **libdovi abort classes** (5.13): one RPU of each class listed in 5.13, made from a valid RPU by changing that one field and recomputing the CRC, so that parsing reaches the field and, for the writing class, succeeds. Unpatched libdovi 3.3.2 aborts on each (run it in a separate process; for the large-count class, see 12.5). With Vivid's patched libdovi, each RPU is skipped with exactly two warnings (the stage line, then the stripped line) and the frame is still submitted. In libplacebo's call sequence, every class except the writing class reports a parse error and the header query returns null. The writing class parses successfully in unpatched 3.3.2 and only aborts when written, so libplacebo's sequence handles it exactly as today (parse, header and display-management data unchanged, rule 3), and only the write in FFmpeg's conversion fails and is skipped.
 - **Never abort:** a corpus of malformed RPUs (every class above; the guard vectors; every truncation of a valid profile 5, profile 7 FEL, profile 7 MEL and profile 8 RPU; and random bytes, from a fixed seed, after each start pattern libdovi recognises) goes through every covered entry point of the patched libdovi, both in the order FFmpeg's conversion calls them and in the order libplacebo calls them (parse; the header query; when that returns a header with `vdr_dm_metadata_present_flag` set, the display-management query, which must then return a structure, never null; the frees). Nothing aborts or crashes, and every input either succeeds or reports an error. Where a runnable build of libplacebo is at hand, also pass the corpus through its `pl_hdr_metadata_from_dovi_rpu`.
-- **Unchanged elsewhere:** for real profile 5, 7 FEL, 7 MEL, 8.1 and 8.4 RPUs, and for every corpus RPU on which unpatched 3.3.2 does not abort, the patched and unpatched builds give the same results and output bytes, and the same error texts apart from those 5.13 allows to change.
+- **Unchanged elsewhere:** for real profile 5, 7 FEL, 7 MEL, 8.1 and 8.4 RPUs, and for every corpus RPU on which unpatched 3.3.2 does not abort, the patched and unpatched builds give the same results and output bytes, and the same error texts apart from those 5.13 allows to change. The header case of 12.5 is the one exception.
 - **Configuration record:** for profile 5, 8.1, 8.4 and converted 7 records, and for a record with compression 3, the 24-byte atom matches 5.2 exactly.
 
 ### 9.5 Device checklist
 
-Run on the rebuilt engine after the pipeline's checks (8.5, 8.6). Use a trial build (log level `v`) for trace-based checks and a Release build for fault recording, and compare the current engine and the rewrite side by side on the same hardware and titles. For each check record the device, OS, build revision and source (codec, profile, range, frame rate, container, resolution, pixel aspect), the route, and whether the result came from a person or a log. Simulator results count only once the app links the pipeline's simulator slices (8.7); until then run the software-decode checks on a device with a forced fallback.
+Run on the rebuilt engine after the pipeline's checks (8.5, 8.6). Use a trial build (log level `v`) for trace-based checks and a Release build for fault recording, and compare the current engine and the rewrite side by side on the same hardware and titles. For each check record the device, OS, build revision and source (codec, profile, range, frame rate, container, resolution, pixel aspect), the route, and whether the result came from a person or a log. Simulator results count only once the app links the pipeline's simulator slices (8.7); until then run the software-decode checks on a device with a forced fallback. 12.7 adds checks 59 to 64.
 
 **AirPlay, Apple TV 4K to a HomePod or HomePod stereo pair** (Vivid's AirPlay options apply)
 
@@ -2388,7 +2384,7 @@ Both depend on the old driver's names and layout, so they fail against any clean
 | Should switching Picture in Picture compositing while paused trigger a redraw? | No, as today (4.14.9). |
 | Should full-range software uploads be labelled full range? | No: the video-range codes stay (4.3). |
 | Should the VO declare capabilities or implement more control requests? | No (2.6). |
-| Should profile 8.2 keep PQ and BT.2020 tags? | Yes (D3). |
+| Should profile 8.2 keep PQ and BT.2020 tags? | Yes, in the session's colour extensions (D3). Frame tags follow 5.7 (12.4). |
 | Both per-frame HDR metadata session properties? | Yes (5.4). |
 | libdovi or a reimplementation? | libdovi 3.3.2 stays, built from source with Vivid's patch (5.6, 5.13). |
 | Vulkan and MoltenVK? | Stay linked for now (7.1). |
@@ -2414,6 +2410,132 @@ Both depend on the old driver's names and layout, so they fail against any clean
 
 ### 11.3 Documents to update
 
-- `docs/playback/player-bridge-spec.md`: the earlier corrections (the reason given for the `video-zoom` row in 7.2, the main-thread list and the cover-art case in 7.2, and three corrections to 6.19) landed in commit `8e87834`. One more has been written out for the bridge editor: in 6.19 and 17.7, `ao-avfoundation-compressed-first-start-grace` says every speed change across 1x creates a new audio output instance, which holds only on AC-3 and E-AC-3 tracks (1.7). The bridge spec says that the engine rewrite keeps its sections 6.19 and 7 true, so that correction should land before both specifications go to implementers.
+- `docs/playback/player-bridge-spec.md`: the earlier corrections (the reason given for the `video-zoom` row in 7.2, the main-thread list and the cover-art case in 7.2, and three corrections to 6.19) landed in commit `8e87834`. One more has been written out for the bridge editor: in 6.19 and 17.7, `ao-avfoundation-compressed-first-start-grace` says every speed change across 1x creates a new audio output instance, which holds only on AC-3 and E-AC-3 tracks (1.7). It is now applied there, with the explanation in the bridge spec's 17.11, and the bridge spec's 2.1 now lists this document.
 - `THIRD_PARTY_NOTICES.md`, `iosApp/Resources/OpenSourceLicenses/README.txt` and `docs/cores/player-engine.md`, when the app links the pipeline's builds (8.9).
 - `docs/cores/lucid-engine-build.md`: its patch table and "Still to do" list, as each new patch lands.
+
+## 12. Amendments after implementation
+
+Recorded after the first implementations of the audio output, the video output and the decoder work, from their behaviour reviews against today's engine and the coordinator's decisions, as behaviour only. Where this section differs from an earlier one, this section wins. Each implementer numbered its own questions, so the answers are given under the topic they concern.
+
+### 12.1 Audio output
+
+**Player item and asset (3.4.3, A25).**
+
+- Each compressed player item is created from its asset with AVFoundation's plain item initialiser, so AVFoundation's default automatically loaded asset keys apply; Apple documents the plain initialiser as loading `duration`. The earlier statement in 3.4.3 that the item has no automatically loaded keys was wrong. Loading that key can change which loader requests AVFoundation makes while it prerolls, and when the item reports ready, which supervision (3.4.10) depends on.
+- Every item of a format uses the same asset URL: one fixed custom-scheme URL per format, whose path ends in the format's extension, used again for each new item. Only the scheme and host are the implementer's choice.
+
+**Recovery seek (3.4.10).** The seek is the item's `seekToTime:completionHandler:` with a nil handler, on the AO queue, followed at once by the second rate-1 request on the player. The log lines come first, and the seek-attempted mark and the new deadline are set before the two calls.
+
+**After a fallback (3.4.12, 3.4.13; audio questions 1 and 2).** A requested fallback stops the feed steps, not the transport calls. Until mpv's reload tears the AO down:
+
+- `set_pause(false)` on an item whose rate 1 was requested asks for rate 1 again, moves the deadline to now plus the ordinary grace when it is not cleared, records a pending resume and resets the anchor pacing time and count, exactly as without a fallback;
+- `start` on an item whose rate 1 was requested asks for rate 1 again;
+- `start` with no item (after a `reset`) still creates a new asset and item, attaches the loader and makes the item current, but never requests its rate; the item's loader requests are queued, never served, and finished as cancelled when the output is torn down;
+- each of these logs its trace edge and arms the feed timer, and the feed step that follows does nothing.
+
+**When clocks are read (3.4.7 to 3.4.12; audio question 6).** Every reading is taken fresh where it is used, not shared across a feed step:
+
+- the feed position at the top of each fill iteration, and again inside each read for the prefetch guard;
+- the compressed clock inside each read (together with mpv's clock, for the end time of 3.4.8), at the start-anchor test, once for resume detection and the resume-anchor test together, at supervision's engagement test, and once each for the status line and the heartbeat;
+- mpv's clock inside each read; once after filling, shared by start anchoring, resume detection and resume anchoring for their tests and for the anchor pacing time they record; and once at the start of supervision, for every row;
+- on `set_pause(false)`, the compressed clock once for the `resume` trace edge and again, after the rate-1 request, for the recorded resume value, and mpv's clock separately for the deadline and for the recorded resume time.
+
+**Flush times (2.9, 3.3.3; audio question 7).** A restart notification's flush time is printed exactly as `CMTimeGetSeconds` returns it: `inf` or `-inf` for an infinite time, `nan` for an invalid or indefinite one. Vivid's adapter accepts only digits or `nan` in that line and the line holds no fault substring, so a line with `inf` is dropped, as today; the `notification name: ` line before it is still recorded.
+
+**Accepted difference: item creation fails (audio question 3).** If the asset or the item cannot be created at `start`, the AO logs a fatal line (wording free within the rules of 2.9, so it records no fault) and falls back to PCM as 3.4.13 says. Today's engine has no such check: the player is left with no current item, the `start` edge is logged, the timer is armed and every feed step does nothing until a later `reset` and `start`, so audio stalls. A valid custom-scheme URL and asset do not fail to create, so the case is unreachable in practice (12.8).
+
+**A hazard both engines share (device check 60).** The feed step at the end of `start` runs on the AO queue before AVFoundation's first loader request can arrive there. If that first step writes more than the 2 MiB of history kept below the write head (3.4.4), the first request, at offset 0, is already below the window and the item fails into a PCM fallback. Draining mpv's queue alone (2 s, or 1.25 s with Vivid's AirPlay setting) would need about 8.4 Mb/s, above E-AC-3's 6.144 Mb/s maximum. But mpv's core thread can refill the queue while the step reads, and with the step's cap of 64 reads (6.4 s) about 2.6 Mb/s is enough: a legal E-AC-3 rate, though above common streaming and disc rates. Today's engine behaves the same, so parity keeps it; device check 60 looks for it.
+
+### 12.2 Video output: timing
+
+- **Anchor offset (4.8.2).** The `mp_time_ns()` reading in the anchor's source time is taken immediately after the timebase source clock is read, inside the anchoring step. A reading taken earlier in the frame makes each anchor land late by the time in between, which can reach tens of microseconds when verbose lines are formatted in that interval. A pause anchor runs at rate 0, so its source time has no effect.
+- **Servo integral (4.8.2).** The integral gains (*P* × Δ) ÷ *Ti* with Δ and *Ti* both in nanoseconds: *P* times Δ first, then one division by 8,000,000,000. Converting Δ to seconds first, or dividing in another order, can change the last bit of a rate write. The reference servo of 9.4 item 5 uses the same order.
+- **Out-of-range media times (4.8.2; video question 9).** `MP_NOPTS_VALUE` and non-finite values are invalid. A finite `pts` whose nanosecond value does not fit in an int64 (|`pts`| above about 9.22 × 10⁹ s) is valid and saturates to the largest or smallest int64. Every value inside the range converts as 4.8.2 says, negative times included (−0.0 gives 0).
+- **Ideal frame duration below 1 ns (4.8.3).** The display-synced duration is used when `ideal_frame_duration` in seconds is positive. If it then truncates to 0 ns, *d* is 0 and the frame is an unusable duration: no estimate, the stored sample unchanged, and no fallback to `vo_frame.duration`.
+- **Fast-window tolerance (4.8.3; video question 2).** The test that empties the fast window compares *r* with the window's own ratio, its media-step sum divided by its duration sum before the new step is added. The tolerance is 4% of that ratio, not of *r* or of the nominal rate.
+- **Readiness wait (4.10).** The first readiness check and the give-up test run as 4.10 says. After that, each round of the wait checks, in this order: readiness (proceed); the give-up moment (drop); whether the renderer needs recovery (run the throttled recovery, and drop if it still needs one). Only then does it sleep 1 ms. After a recovery that leaves the renderer healthy, readiness is checked again at once, without a sleep. The wait recorded for the pacing summary lasts until the wait returns.
+- **Adoption of a speed change (4.10, 9.4 item 3; video question 1).** Frame *k* below is the *k*-th frame whose `vo_frame.duration` reflects the new speed.
+  - A change above 4% with a new frame duration under 500 ms is adopted on frame 3. Frame 1 is a discontinuity, or, when its duration step stays inside the 250 µs gate, a near-nominal step still measured against the old duration; frames 2 and 3 fill the fast window. The averaging window never produces a blended adoption here.
+  - With a new frame duration of 500 ms or more, a change above 4% is adopted on frame 2: the discontinuity at frame 1 has emptied both windows, and frame 2's single step, too few for the fast window, fills the averaging window on its own, which gives the estimate.
+  - A change of more than 1% and at most 4% with frames of 500 ms or more is also adopted on frame 2, since each such frame completes the averaging window by itself. The 520 to 580 ms and 710 ms figures in 4.10 apply to shorter frames.
+  - If the adoption frame does not reach the timebase step (dropped, or paused), its estimate is discarded (4.8.3). With frames under 500 ms both windows were emptied, so adoption moves to frame 5, or frame 7 after two such losses. With frames of 500 ms or more the fast window still holds frame 2's step, so frame 3 adopts, or frame 4 after two losses.
+- **Pacing summary (4.18).** A 5 s window's summary is emitted when at least one of these is non-zero: readiness waits, deadline drops, anchors, rate writes or the largest phase error. A window whose only event is a recovery emits nothing. The largest phase error is sampled only on frames that reach the phase-error test of 4.8.2 (a valid anchor, playback not paused, and no nominal-rate change on that frame), so a frame that anchors because the nominal rate has just changed does not count. The first window opens at the start of the first `flip_page`. Extra fields, such as a recovery count or the longest wait, are allowed.
+- **Subtitle sample due but not enqueued (4.9 step 5; video question 6).** A subtitle sample is due when subtitles are on the separate layer and the pending mark is set once that flip's subtitles have been rendered. Whenever a due sample is not enqueued, for any reason, change tracking is reset, so the next frame renders again, and the pending mark stays as it is. The reasons are: the subtitle sample could not be built (no canvas, no pool buffer, or a format description or sample failure); the video sample could not be built (a hardware frame without a buffer, an upload failure, or a format description or sample failure); the frame was dropped at the readiness deadline, by any of the three kinds of drop; or the subtitle layer was not ready, or is absent. Only the not-ready case logs its verbose line and counts a subtitle sample drop; a deadline drop counts only the video drop. The mark stays set unless a recovery in the same flip cleared it (next item).
+- **Pending mark after a recovery (4.11; video question 7).** A recovery that runs, forced or allowed by the throttle, resets change tracking and clears the pending mark; one the throttle suppresses changes nothing. If the recovery runs during the readiness wait, after this flip's subtitle sample was built, and the frame then proceeds, that sample is still enqueued. If the frame is dropped instead, nothing is enqueued and the mark stays cleared. A pending clear is then lost: nothing is cached, so nothing renders again, and because the recovery flush keeps the displayed image, the subtitle layer can go on showing a subtitle that has ended until the next subtitle change. A subtitle that is still showing is unaffected: tracking was reset, so it renders again on the next frame. Keep this.
+- **What a reset clears (4.13; video question 8).** `VOCTRL_RESET` clears the next frame's target host time (to 0), its media time (invalid) and its rate estimate (absent), and also the last media time, the anchor, the servo and the whole estimator, previous sample included, while leaving the nominal rate and the pause state as 4.13 says. No image is released, because none is held between flips. mpv runs `VOCTRL_RESET` at the top of the VO loop, never between `draw_frame` and `flip_page`, so before the next `draw_frame` the cleared values can show only in the media time of a recovery warning (which then falls back to the timebase, reading 0 after the media-mode reseed) and in the pause fallback for a non-numeric timebase, which never happens.
+
+### 12.3 Video output: picture path and teardown
+
+- **Core Image cannot wrap the frame (4.14.7).** When the Core Image fallback cannot wrap the video buffer as an image, it produces no composite and the frame goes out as decoded, without the subtitle, as today. It must never render the subtitle over an empty picture. On macOS, Core Image wraps none of `y416`, `v210`, `b64a`, `r408` and `v408`. FFmpeg asks VideoToolbox for `y416` for sources with alpha and more than 8 bits, such as ProRes 4444 with alpha, which Vivid decodes in hardware where the device can, so the case is reachable in Picture in Picture.
+- **Core Image output format (4.14.7; video question 4).** Half float (`kCVPixelFormatType_64RGBAHalf`) is used only for `x420` and `xf20` sources (`kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange` and `kCVPixelFormatType_420YpCbCr10BiPlanarFullRange`). Every other source gets `kCVPixelFormatType_32BGRA`, including the 10-bit 4:2:2 and 4:4:4 biplanar codes (`x422`, `xf22`, `x444`, `xf44`) and the 16-bit biplanar ones.
+- **Blending once, in place (7.3 item 1).** The Picture in Picture YUV composite of a hardware frame is blended into the decoder's own buffer, with no full-frame copy. Before blending, the VO keeps the original pixels of the frame rows that the blend rectangle spans, in both planes, and writes them back before the same buffer is blended again or enqueued again. So each displayed image carries the current cue exactly once, a sample enqueued with compositing off carries none, and the blend still runs once per image. This is the "keep the original pixels and restore them first" choice that 7.3 item 1 allows. All its guarantees hold, and its last bullet (a copy's buffer comes from a pool) no longer applies to these composites, because nothing is copied.
+- **Bounding box (4.14.5).** For each drawn part, the left (`x`), top (`y`), right (`x` + `dw`) and bottom (`y` + `dh`) edges, with the defaulting rule, are each clamped to the canvas on their own, and the union is then taken over the clamped rectangles, including any that came out empty. A part lying wholly outside the canvas therefore still pulls the box out to the canvas edge beyond which it lies. On the separate layer this only changes the area cleared next time. In frame space it matters when every drawn part lies off the frame, on different sides: the box is then not empty, the YUV blend runs and changes nothing, and the decoder's frame goes out untouched, Dolby Vision included, where a box built by intersection would be empty and send the frame to Core Image.
+- **CoreGraphics part sizes (4.14.5; video question 5).** The CoreGraphics path draws each part into the rectangle built from its raw `dw` and `dh`. A `dw` or `dh` of 0 gives an empty rectangle, so nothing is drawn, while the path choice and the bounding box still count that 0 as `w` or `h`, so the box covers an area left blank. A negative size is standardised by CoreGraphics, so the part is drawn at |`dw`| × |`dh`| in the box that ends at the part's (`x`, `y`) corner, above and to the left of its usual place: an 8 by 6 part at (10, 5) with `dw` −4 and `dh` −3 covers columns 6 to 9 and rows 2 to 4. This is unreachable in practice (libass parts always have `dw` equal to `w`), but keep it.
+- **Path choice (4.14.5).** Only parts that are drawn (with a bitmap and a positive width and height) count when choosing between the direct and CoreGraphics paths; a skipped part never sends its object to CoreGraphics.
+- **Core Image context and Metal device (4.14.7, 4.14.9; video question 10).** Both are created together, on demand, the first time the fallback is reached, and kept across resets, reconfigurations, resizes, failed composites and every other control. They are released only in an option refresh in which the Picture in Picture compositing flag changed and is now off (after the subtitle cache is cleared and before the subtitle layer is flushed and synced, as 4.14.9 step 3 orders it), and at teardown, after the pools, the cached format description and the subtitle layer are gone and before the host layer reference is dropped. If the context cannot be made, the Metal device is dropped with it, so both are created again at the next attempt.
+- **Pool buffer attachments (4.3, 4.6, 4.14.7; video question 3).** Buffers taken from any of the VO's pools are neither seeded nor cleared. The VO then adds exactly what earlier sections say: uploads add primaries, transfer, matrix and a derived colour space; the pixel-aspect step adds or removes its attachment on every enqueued buffer; YUV copies, where one is made, and Core Image outputs get the metadata copy of 4.14.7 (an RGB output also loses the matrix and gains a derived colour space if it has none); subtitle buffers get nothing from the VO, which is what 4.6 means. On macOS, CoreVideo hands out pool buffers, fresh or recycled, carrying one propagating attachment of its own (a horizontal disparity adjustment of 0), as VideoToolbox's buffers do, and nothing set on a buffer survives its return to the pool. iOS and tvOS are unverified (device check 59).
+- **Layers released on main at teardown (4.16.5, 4.16.6; coordinator decision).** The VO's last references to the host layer and the subtitle layer are released on main, which keeps either layer from being deallocated on another thread. The release is queued to main asynchronously after teardown's synchronous hops, and teardown does not wait for it, so the synchronous hops of 4.16.6 are unchanged.
+
+### 12.4 Decoder
+
+**Frame attachments (replaces 5.7; decoder questions 5, 6 and 9).** Vivid's decoder runs with frame threading: mpv opens VideoToolbox with `hwdec-threads` at its default of 4, and Vivid keeps that. Under frame threading, today's engine runs no Dolby Vision specific step at frame output, so every VideoToolbox frame, `dvh1` included, gets pristine FFmpeg's attachments. 5.7 now requires exactly that, at every thread count. From the frame's own colour fields, that step:
+
+- sets primaries, transfer and matrix from the VUI, or removes them where the VUI leaves them unspecified;
+- sets the chroma location from the frame (left by default for 4:2:0 HEVC, top-left when signalled);
+- sets the pixel aspect from the sample aspect ratio, or removes it when that is unknown;
+- removes gamma;
+- derives a colour space from the result on iOS, and removes any colour space on tvOS, where pristine FFmpeg compiles the derivation out.
+
+`DolbyVisionRPUData` and VideoToolbox's other keys are left alone. Consequences:
+
+- Profile 5 (VUI colour unspecified, the normal case): FFmpeg removes the PQ transfer VideoToolbox attached, and the VO's repair (4.4) puts it back, so the repair is load-bearing.
+- Profile 8 whose VUI disagrees with the session's colour extensions (8.2 with an SDR BT.709 base, compatibility 0, 8.x with no VUI colour description, or 8.4 whose VUI is not HLG): the frame tags follow the VUI, or are removed where it has none, and then only the VO's repair adds PQ. The colour extensions of 5.2 still describe the session; hazard D3 concerns them only.
+- On Apple TV no VideoToolbox frame carries a colour space: HDR10, HLG and Dolby Vision alike.
+- Nothing in Vivid reads a decoded buffer's attachments: Match Content, the display criteria and the format hint come from mpv properties. The attachments reach only the layer, through the buffer and the format description the VO builds from it (4.6).
+- Questions about which session's flags apply during a restart, to frames in flight across a hwaccel re-initialisation, or to deriving a colour space for `dvh1` frames on tvOS no longer arise, because the output step does not depend on the session.
+- Tests must cover 4 decoder threads as well as 1; a single-threaded test cannot show the difference.
+
+**Accepted difference: no sample of RPUs alone (5.5 item 2; decoder question 4).** When a frame ends with its bitstream still empty (none of its slices reached the hwaccel and the packet carried no parameter set or SEI, for example after a reference-list failure on a corrupt stream, or an allocation failure), no RPU is appended and nothing is submitted, so the frame fails through pristine FFmpeg's invalid-data path, with no session restart. Today's engine appends the RPUs anyway; VideoToolbox (measured on macOS) then reports bad data with no image, which flags a restart, and later frames fail with missing references until the next keyframe. mpv sees one error for the frame either way; the new behaviour fails fewer frames afterwards (12.8).
+
+**Other answers to the decoder implementer's questions.**
+
+- A `dvh1` format description that cannot be created (question 3): session start fails with pristine FFmpeg's format-description error before any session is attempted, and there is no plain HEVC retry, which follows only a refused session. At hwaccel initialisation the hwaccel fails to open and decoding continues in software. On a restart that frame fails, and every later frame fails for want of a session, with no further restart attempt, until mpv's tolerance (6.1) falls back to software after two keyframes in the error run or 240 errors.
+- The profile 7 NAL filter (question 7): today it filters only the slice path, by stream class, on `dvh1` and retried plain sessions alike. It never removes anything in practice, because hevcdec never routes type 62 or 63 NAL units to the hwaccel; RPUs reach VideoToolbox only through the end-of-frame forwarding, and the enhancement layer never does. Filtering the parameter-set path as well changes nothing.
+- The HLG base (question 8): profile 8 with a compatibility id of exactly 4, read unmasked. An id of 20 is not HLG for the colour extensions, even though the atom writes it as 4. Profile 7 is never HLG; it is presented as compatibility 1.
+
+**VideoToolbox facts for the device checks.** Measured on macOS, the same with both engines; iOS and tvOS may differ (device checks 62 and 63):
+
+- VideoToolbox fails a `dvh1` frame whose RPU was stripped (no image), and FFmpeg then restarts the session. So an RPU skipped under 5.6 makes its frame fail at VideoToolbox's level, today as well; FFmpeg still submits the frame.
+- VideoToolbox refuses a `dvh1` session for profile 8 with compatibility id 0 or 6 (bad data), so those streams take the plain HEVC retry. It accepts compatibility id 2, but then fails every frame (malfunction) when the RPUs carry 8.1 payloads.
+
+### 12.5 libdovi
+
+- **All six abort classes confirmed.** Each class in 5.13 was confirmed on CI by running unpatched 3.3.2 on its corpus entries, each in its own process.
+- **Large counts depend on the platform.** Which very large Exp-Golomb counts make unpatched 3.3.2 abort depends on the platform's allocation behaviour, so a count that aborts on one host may not abort on another. The corpus must still show the class aborting on the test host, but an individual count value need not abort there. The patched build refuses every such count as a parse error (rule 5) on every platform.
+- **A field holding the largest unsigned 64-bit value.** An Exp-Golomb code with 64 leading zeros parses to the largest unsigned 64-bit value, in a field that parsing only stores, so such an RPU parses. Unpatched 3.3.2's writer cannot encode that value: it first emits about 512 MiB of zero bits and then fails. Vivid's patch refuses to write such a field up front, before reserving anything. The result is the same write failure, so in FFmpeg's conversion the RPU is skipped with the stage and stripped warnings as today, only without the memory; the error text may differ (rule 3). libplacebo never writes, so its sequence is unchanged.
+- **The header rule and conversion mode 4.** The header rule of 5.13 item 2 (no header when the display-management query would fail although the header says that data is present) changes a result on input that does not abort in one case only: an RPU without display-management data that has been converted with mode 4. Neither caller does that: FFmpeg converts with mode 2, and libplacebo does not convert. So rule 3 holds for both callers, and the comparison tests of 9.4 leave that case out.
+
+### 12.6 Build and tests
+
+- libdovi is built from source as the eleventh framework, `Libdovi`, with a pinned stable Rust toolchain (1.98.0). That toolchain ships a standard library for every slice's target, tvOS included, so neither a nightly toolchain nor a standard-library build is needed (8.4). The header, the pkg-config name and the exported functions are unchanged.
+- The symbol closure and the app-style test link of 8.5 run on every slice. They found the missing CoreFoundation string helper that 2.11 describes, since fixed.
+- An end-to-end test of the hardware decode error tolerance (6.1) through mpv needs host builds of libplacebo and libass from source, which the pipeline does not make yet. It is deferred until it does; device check 36 covers the behaviour meanwhile.
+
+### 12.7 Device checks added to 9.5
+
+59. **Pool buffer attachments** (12.3): in a debug session on iPhone and Apple TV, print the attachments of an upload buffer, a Core Image composite output and a subtitle buffer, both fresh and recycled. Expect only what 12.3 lists, plus at most CoreVideo's own disparity attachment, and nothing left from a buffer's earlier use.
+60. **First feed against the loader** (12.1): high-bitrate E-AC-3 (near 6 Mb/s, with Atmos if available) from 0:00 and after seeks, over HDMI and over AirPlay, side by side with today's build: no `loader requested offset` error and no fallback at start. Compare the loader request lines, the `item status` lines and the `compressed clock engaged after` times with today's build.
+61. **Dolby Vision frame attachments** (12.4): in a debug session of today's app, read `hwdec-threads` (expect 4). Then, in both builds, on profile 5, 7 FEL, 7 MEL, 8.1 and 8.4 titles and an 8.x title with a missing or SDR VUI colour description, print a decoded buffer's attachments where the VO enqueues it. They must match, including the chroma location and, on Apple TV, the absence of a colour space.
+62. **Profile 8 sessions by compatibility id** (12.4): profile 8 with compatibility id 0, 2 and 6 on Apple TV and iPhone. Record whether the `dvh1` session is accepted, refused (one retry warning, then plain HEVC) or accepted with failing frames, and compare with today's build.
+63. **Frames without their RPU** (12.4, 5.6): if a profile 7 title with an RPU that libdovi rejects without aborting is available, record whether VideoToolbox fails that frame and the session restarts, and compare with today's build.
+64. **Picture in Picture on frames Core Image cannot wrap** (12.3): ProRes 4444 with alpha, with subtitles, in Picture in Picture on iPhone and iPad. The picture stays while a cue shows (the cue itself is missing, as today), and nothing else differs from today's build.
+
+### 12.8 Accepted differences found after implementation
+
+These are accepted in addition to 7.3. Everything else must still match today's engine.
+
+| Area | Today | Now | Why accepted |
+| --- | --- | --- | --- |
+| Audio output: the asset or item cannot be created at `start` (12.1) | No check: no item, every feed step does nothing, and audio stalls until a later `reset` and `start` | A fatal line and a fallback to PCM | Unreachable in practice, and the new path plays audio |
+| Decoder: the frame's bitstream is empty at frame end (12.4) | The RPUs are submitted alone; VideoToolbox reports bad data and the session restarts | Nothing is submitted; the frame fails without a restart | An error path only; mpv sees one error for the frame either way, and fewer frames fail afterwards |
