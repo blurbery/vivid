@@ -36,7 +36,7 @@ See [marker timing](../playback/architecture.md#introdb-marker-timing) for order
 - [Playback guide](../playback/README.md): controls, IntroDB behaviour and validation.
 - [PlayerViewModel](../../iosApp/iosApp/Screens/Player/PlayerViewModel.swift): shared playback state, with marker application in [PlayerViewModel+SkipMarkers](../../iosApp/iosApp/Screens/Player/PlayerViewModel+SkipMarkers.swift).
 - [PlayerSettings](../../iosApp/iosApp/Screens/Player/PlayerSettings.swift): settings and the current Vivid IntroDB client.
-- [Silo server core](silo.md): the implemented server connection.
+- [Silo server core](silo.md): the Silo server connection.
 - [Emby server core](emby.md): native integration and verification limits.
 - [Jellyfin server core](jellyfin.md): native integration and verification limits.
 

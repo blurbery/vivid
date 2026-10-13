@@ -42,7 +42,9 @@ Do not invent testing or claim another person’s checks as your own. -->
 
 ## Documentation impact
 
-<!-- Describe relevant documentation updates, or state “No documentation changes”. Separate documentation approval is not required. -->
+<!-- Every PR must keep the docs up to date. List each doc updated in this PR, or write “No documentation changes” and why. Check the README and docs/ guides for the area you changed; THIRD_PARTY_NOTICES.md and the in-app licences when dependencies change; the privacy policy and in-app privacy text when what the app sends or stores changes; release docs when the release process changes. Separate documentation approval is not required. -->
+
+- [ ] I checked the docs this change affects and updated them in this PR, or explained above why none needed changes.
 
 ## AI disclosure
 
