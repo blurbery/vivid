@@ -512,6 +512,49 @@ static void test_geometry_and_options(void)
     free_image(&a);
 }
 
+// ---- pacing summary -------------------------------------------------------------
+
+// Ends the summary window at once, so the next flip decides about the line.
+static void end_window(struct harness_vo *h)
+{
+    privof(h)->pacing.window_start_ns = mp_time_ns() - AVF_PACING_WINDOW_NS - MS;
+}
+
+static void test_pacing_summary(void)
+{
+    struct harness_vo h;
+
+    CASE("pacing-summary-window-opens-at-first-flip");
+    CHECK(open_vo(&h, false, false) == 0, "creation failed");
+    CHECK(!privof(&h)->pacing.window_started, "window open before any flip");
+    int64_t before = mp_time_ns();
+    show(&h, NULL, 0, false);
+    CHECK(privof(&h)->pacing.window_started &&
+          privof(&h)->pacing.window_start_ns >= before, "window not opened by the first flip");
+
+    // A window whose only non-zero figure is the largest phase error is
+    // still reported.
+    CASE("pacing-summary-on-phase-error-alone");
+    struct avf_pacing *pc = &privof(&h)->pacing;
+    struct avf_clock *c = &privof(&h)->clock;
+    pc->waits = pc->drops = pc->recoveries = 0;
+    c->anchors = c->rate_writes = 0;
+    c->max_abs_error_ns = 3 * MS;
+    end_window(&h);
+    stubs.last_message[0] = '\0';
+    show(&h, NULL, 0, false);
+    CHECK(!strncmp(stubs.last_message, "Pacing:", 7), "no summary: last line \"%s\"",
+          stubs.last_message);
+    CHECK(c->max_abs_error_ns == 0, "phase error not cleared with the window");
+
+    CASE("pacing-summary-quiet-window");
+    end_window(&h);
+    stubs.last_message[0] = '\0';
+    show(&h, NULL, 0, false);
+    CHECK(!stubs.last_message[0], "a quiet window was reported: \"%s\"", stubs.last_message);
+    close_vo(&h);
+}
+
 void avf_test_centre(void)
 {
     @autoreleasepool {
@@ -519,5 +562,6 @@ void avf_test_centre(void)
         test_frame_order();
         test_reset_and_pause();
         test_geometry_and_options();
+        test_pacing_summary();
     }
 }

@@ -34,6 +34,15 @@ static int64_t counted_host_ns(void)
     return host_ns();
 }
 
+// Takes the time, then stalls for 30 ms before handing it back.
+static int64_t stalled_host_ns(void)
+{
+    int64_t t = host_ns();
+    struct timespec ts = { 0, 30 * MS };
+    nanosleep(&ts, NULL);
+    return t;
+}
+
 void avf_test_timebase(void)
 {
     CASE("timebase-create-and-seed");
@@ -65,6 +74,20 @@ void avf_test_timebase(void)
     CHECK(llabs(t - expect) < 5 * MS, "anchored time %lld, expected about %lld",
           (long long)t, (long long)expect);
     CHECK(CMTimebaseGetRate(tb) == 1.0, "anchor rate");
+
+    // The host clock is read after the source clock. A host reading that
+    // stalls after taking its value shows the order: read first, the stall
+    // would land between the two readings and put the anchor that much late.
+    CASE("timebase-host-read-after-source");
+    target = host_ns() + 40 * MS;
+    CHECK(avf_timebase_anchor(tb, 1.0, 9000 * MS, target, stalled_host_ns) == noErr,
+          "anchor failed");
+    before = host_ns();
+    avf_timebase_read(tb, &t);
+    expect = 9000 * MS - (target - before);
+    CHECK(llabs(t - expect) < 8 * MS, "anchored time %lld, expected about %lld "
+          "(%lld ms late: the host clock was read before the source clock)",
+          (long long)t, (long long)expect, (long long)((expect - t) / MS));
 
     // Without a host clock the anchor is at the source clock's time itself
     // (the pause anchor), and rate 0 holds the time.
