@@ -12,7 +12,7 @@ Two specifications remain the contracts: the [player bridge specification](https
 > [!NOTE]
 > Until the two experiment branches are merged, the work sits in two places:
 > - **App side** (screens, adapter, bridge, app tests, the player regression workflow and its pin checks): `experiment/vivid-player-bridge` at `8a49188`. Links to these files point at that commit, because `experiment/lucid-engine-build` still carries an earlier copy of the bridge and of its specification, without the bridge specification's section 17 amendments.
-> - **Engine side** (`engine/`, its patches and host tests, and the [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml)): `experiment/lucid-engine-build` at `6a85f8b`, the branch this guide was written on.
+> - **Engine side** (`engine/`, its patches and host tests, and the [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml)): `experiment/lucid-engine-build` at `535bb95`, the branch this guide was written on.
 
 > [!IMPORTANT]
 > The bridge and the engine patches were written clean-room. Before changing either, read the reading rules in bridge section 2 and engine section 1.4 and keep to them. They list sources that must never be opened, including the previous bridge's files in Git history.
@@ -197,7 +197,7 @@ libass 0.17.5 renders text subtitles, on one thread, with FreeType, FriBidi, Har
 
 - `0001`: upstream libass commit `057a5334`, unchanged, with its upstream attribution. Symbol fonts given non-Latin text place their glyphs as before.
 - `0002`: upstream libass pull request #951 at `f96a521a`, unchanged, with its upstream attribution. The finished images of events that do not depend on time are cached within 32 MiB, so an unchanged sign or boxed line reports no change and repeats no font search.
-- `0010`: Vivid's own patch (ISC). Unresolved glyphs stay with their event, which finds its own cache entry first, so a static event searches for them once per appearance however full the cache is; a new fallback face renders such events once more, the event's Effect joins the cache key, the cache is emptied on every state change, and image clones keep their type.
+- `0010`: Vivid's own patch (ISC). Unresolved glyphs stay with their event, which finds its own cache entry first, and every entry a frame uses is kept until the next frame has been rendered, so a static event searches for them once per appearance however full the cache is, even when it draws nothing visible; a new fallback face renders such events once more, the event's Effect joins the cache key, the cache is emptied on every state change, and image clones keep their type.
 
 ### The libraries
 
