@@ -1,6 +1,17 @@
+Component: CollectionHStack (tvOS)
+Version: revision 15baaaa759a0e252addae08431c79a49a25e4afc
+Source: https://github.com/LePips/CollectionHStack/tree/15baaaa759a0e252addae08431c79a49a25e4afc
+SPDX: MIT
+================================================================================
+
+--------------------------------------------------------------------------------
+File: LICENSE
+https://github.com/LePips/CollectionHStack/blob/15baaaa759a0e252addae08431c79a49a25e4afc/LICENSE
+--------------------------------------------------------------------------------
+
 MIT License
 
-Copyright (c) 2026 Vincent Herbst (packaging, build scripts)
+Copyright (c) 2026 Ethan Pippin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,11 +30,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Third-party notice: Dovi.xcframework contains the compiled `dolby_vision`
-Rust crate (libdovi) from the dovi_tool project,
-Copyright (c) quietvoid and contributors,
-dual-licensed under MIT OR Apache-2.0 (https://github.com/quietvoid/dovi_tool).
-It is consumed here under the MIT option.

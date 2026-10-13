@@ -1,3 +1,15 @@
+Component: libass
+Version: 0.17.5 (tag 0.17.5, commit 4a05d8127f525943ebf45fdc6497c9e665947f0d)
+Source: https://github.com/libass/libass/tree/4a05d8127f525943ebf45fdc6497c9e665947f0d
+SPDX: ISC
+Note: Built from upstream 0.17.5 by edde746/mpv-build with its patches/libass series.
+================================================================================
+
+--------------------------------------------------------------------------------
+File: COPYING
+https://github.com/libass/libass/blob/4a05d8127f525943ebf45fdc6497c9e665947f0d/COPYING
+--------------------------------------------------------------------------------
+
 ISC License
 
 Copyright (C) 2006-2016 libass contributors

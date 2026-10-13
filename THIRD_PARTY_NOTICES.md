@@ -19,7 +19,7 @@ Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-E
 | ThumbHash decoder (adapted) | `a652ce6ed691242f459f468f0a8756cda3b90a82` | MIT |
 | tvOS media catalog sample code (adapted, Apple) | 2024 sample | Apple sample code licence (MIT-style) |
 
-This file is the full inventory of third-party components in both apps. The [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt) and the unchanged upstream licence texts beside it are shown in Settings → About → Open Source Licences; keep them matched to this list.
+This file is the full inventory of third-party components in both apps. The [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt) and the upstream licence text of every component, each with a header giving its version and source, are shown in Settings → About → Open Source Licences; keep both matched to this list.
 
 ## Timestamp services
 
@@ -58,19 +58,25 @@ The package supplies static libraries, which are linked into the app executable.
 | FriBidi | 1.0.12 | LGPL-2.1-or-later | `mpvkit/libass-build` 0.17.4 |
 | HarfBuzz | 8.1.1 | MIT | `mpvkit/libass-build` 0.17.4 |
 | libunibreak | 6.1 | zlib | `mpvkit/libass-build` 0.17.4 |
-| libplacebo | 7.351.0 | LGPL-2.1-or-later | `mpvkit/libplacebo-build` |
+| libplacebo, including fast_float and the glad OpenGL loader | 7.351.0 | LGPL-2.1-or-later; fast_float MIT; glad CC0-1.0 and Apache-2.0 | `mpvkit/libplacebo-build` |
 | Little CMS | 2.17 | MIT | `mpvkit/lcms2-build` |
-| libdovi (`dolby_vision` crate and its Rust dependencies) | 3.3.2 | MIT; dependencies MIT, Apache-2.0 or zlib | `mpvkit/libdovi-build` |
-| MoltenVK, including SPIRV-Cross, SPIRV-Tools and cereal | 1.4.1 | Apache-2.0; cereal BSD-3-Clause | `mpvkit/moltenvk-build` |
+| libdovi (`dolby_vision` crate, its 12 Rust crate dependencies and the Rust standard library) | 3.3.2 | MIT; crates MIT, Apache-2.0 or zlib (MIT used); Rust standard library MIT or Apache-2.0 | `mpvkit/libdovi-build` |
+| MoltenVK, including SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers and cereal | 1.4.1 | Apache-2.0; SPIRV-Headers and Vulkan-Headers MIT; cereal BSD-3-Clause | `mpvkit/moltenvk-build` |
 | shaderc, including glslang and SPIRV-Tools | 2025.5 | Apache-2.0; glslang BSD-3-Clause, BSD-2-Clause, MIT and Apache-2.0 | `mpvkit/libshaderc-build` |
 | dav1d | 1.5.3 | BSD-2-Clause | `edde746/libdav1d-build` |
 | uavs3d | upstream `master` at build time | BSD-3-Clause | `mpvkit/libuavs3d-build` 1.2.1-fix |
 | OpenSSL (libssl, libcrypto) | 3.3.5 | Apache-2.0 | `mpvkit/openssl-build` |
-| libbluray, including libudfread | 1.4.0 | LGPL-2.1-or-later | `mpvkit/libbluray-build` |
-| uchardet | 0.0.8 | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later | `mpvkit/libuchardet-build` |
+| libbluray, including libudfread 1.2.0 | 1.4.0 | LGPL-2.1-or-later | `mpvkit/libbluray-build` |
+| uchardet | 0.0.8 | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (used under LGPL-2.1-or-later) | `mpvkit/libuchardet-build` |
 
 LuaJIT is in the package for macOS only and is not part of either app. System
 libraries from Apple's SDKs are not redistributed.
+
+Settings → About → Open Source Licences shows the full licence text of every
+library above. FFmpeg and FreeType also ask for these credits: this software
+is based in part on the work of the Independent JPEG Group, and portions of
+this software are copyright © 2022 The FreeType Project (www.freetype.org).
+All rights reserved.
 
 `edde746/mpv-build` holds the build driver, upstream pins and patch series for
 mpv, FFmpeg and libass. The other libraries are prebuilt by the build

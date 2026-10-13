@@ -26,3 +26,5 @@ else
   /usr/libexec/PlistBuddy -c "Add :VividSourceRevision string $revision" "$plist"
 fi
 echo "VividSourceRevision: ${revision:-unknown}"
+# The declared output lets the build system order this phase.
+[ -z "${DERIVED_FILE_DIR:-}" ] || { mkdir -p "$DERIVED_FILE_DIR"; echo "$revision" > "$DERIVED_FILE_DIR/source-revision-stamp"; }
