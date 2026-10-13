@@ -756,6 +756,27 @@ final class InvalidProfileRecoveryTests: XCTestCase {
             HTTPError.http(statusCode: 404, body: nil)
         ))
     }
+
+    func testRemovedProfileAnswerOnlyPromptsAProfileListCheck() {
+        // What Silo sends for a removed profile on v1 and v2.
+        let removed = [
+            HTTPError.http(statusCode: 404, body: #"{"error":"not_found","message":"Profile not found"}"#),
+            HTTPError.http(statusCode: 404, body: #"{"type":"https://siloserver.org/docs/api/v2/problems/not_found","title":"Not found","status":404,"detail":"Profile not found","instance":"urn:silo:request:000000000000000000000001"}"#),
+        ]
+        for error in removed {
+            XCTAssertTrue(StartupContentPrefetcher.mayIndicateRemovedProfile(error))
+            XCTAssertFalse(StartupContentPrefetcher.indicatesInvalidProfile(error))
+        }
+        XCTAssertFalse(StartupContentPrefetcher.mayIndicateRemovedProfile(
+            HTTPError.http(statusCode: 404, body: nil)
+        ))
+        XCTAssertFalse(StartupContentPrefetcher.mayIndicateRemovedProfile(
+            HTTPError.http(statusCode: 404, body: #"{"error":"unknown_setting"}"#)
+        ))
+        XCTAssertFalse(StartupContentPrefetcher.mayIndicateRemovedProfile(
+            HTTPError.http(statusCode: 403, body: #"{"error":"not_found"}"#)
+        ))
+    }
 }
 
 @MainActor

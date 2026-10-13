@@ -22,6 +22,28 @@ final class SiloV2TransportTests: XCTestCase {
                        ["/api/v2/system/info", "/api/v2/home/sections"])
     }
 
+    func testProfileListLeavesOutTheActiveProfile() async throws {
+        let http = await makeClient()
+        SiloV2TransportStub.configure { request in
+            switch request.url!.path {
+            case "/api/v2/system/info": return (200, [:], #"{"api_major":2}"#)
+            case "/api/v2/profiles": return (200, [:], #"{"items":[]}"#)
+            case "/api/v2/home/sections": return (200, [:], #"{"sections":[]}"#)
+            default: throw URLError(.badURL)
+            }
+        }
+
+        _ = try await VividAPI(http: http).listProfiles()
+        let _: SectionsResponse = try await http.get("/api/v1/home/sections")
+
+        let requests = SiloV2TransportStub.requests()
+        let profiles = try XCTUnwrap(requests.first { $0.url!.path == "/api/v2/profiles" })
+        XCTAssertNotNil(profiles.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertNil(profiles.value(forHTTPHeaderField: "X-Profile-Id"))
+        let home = try XCTUnwrap(requests.first { $0.url!.path == "/api/v2/home/sections" })
+        XCTAssertEqual(home.value(forHTTPHeaderField: "X-Profile-Id"), "profile-a")
+    }
+
     func testDiscoveredDownloadsFollowCursorAndMergePages() async throws {
         let http = await makeClient()
         SiloV2TransportStub.configure { request in

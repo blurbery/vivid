@@ -188,6 +188,11 @@ enum StartupContentPrefetcher {
                 await AuthService.shared.recoverFromInvalidProfile(
                     expectedProfileID: requestProfileID
                 )
+            } else if requestProfileID != nil,
+                      Self.mayIndicateRemovedProfile(error) {
+                // Fetching the profile list reconciles it, which returns to
+                // Who's Watching only if the active profile really has gone.
+                _ = try? await fetchProfiles()
             }
             throw error
         }
@@ -196,6 +201,15 @@ enum StartupContentPrefetcher {
     nonisolated static func indicatesInvalidProfile(_ error: Error) -> Bool {
         guard let error = error as? HTTPError else { return false }
         return ["profile_unverified", "profile_not_found"].contains(error.serverErrorCode)
+    }
+
+    /// Silo answers a request naming a profile the account no longer has with
+    /// a plain 404 `not_found` on both API versions. Other missing resources
+    /// answer the same way, so this is a reason to check the profile list,
+    /// not proof the profile has gone.
+    nonisolated static func mayIndicateRemovedProfile(_ error: Error) -> Bool {
+        guard let error = error as? HTTPError else { return false }
+        return error.statusCode == 404 && error.serverErrorCode == "not_found"
     }
 
     #if os(iOS) || os(tvOS)

@@ -803,8 +803,11 @@ actor VividAPI {
 
     // --- Profiles ---
 
+    /// The list is account-level, so it goes without the active profile's
+    /// headers. Silo refuses every request that names a removed profile, and
+    /// this list is how `AuthService.reconcileAvailableProfiles` finds out.
     func listProfiles() async throws -> [UserProfile] {
-        let response: ProfilesResponse = try await http.get("/api/v1/profiles")
+        let response: ProfilesResponse = try await http.get("/api/v1/profiles", sendsProfile: false)
         return response.profiles.map(\.asUserProfile)
     }
 

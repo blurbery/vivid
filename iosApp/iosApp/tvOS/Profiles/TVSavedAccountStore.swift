@@ -693,7 +693,12 @@ final class TVSavedAccountStore {
         showsSelector = false
         if !AuthService.shared.hasProfile {
             let profiles = try? await StartupContentPrefetcher.fetchProfiles()
-            if let only = profiles?.first, profiles?.count == 1, !only.hasPin {
+            // A household member's saved profile never enters another
+            // profile, even the only one left. With no profile, profile
+            // selection below starts login preparation, which reports the
+            // bound profile as unavailable.
+            if let only = profiles?.first, profiles?.count == 1, !only.hasPin,
+               activeAccount.map({ SiloProfileBinding.accepts($0, profileID: only.id) }) ?? true {
                 try? await AuthService.shared.selectProfile(profileId: only.id)
             }
         }

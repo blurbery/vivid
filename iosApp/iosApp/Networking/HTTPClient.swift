@@ -238,12 +238,17 @@ actor HTTPClient {
 
     // MARK: - Public API
 
+    /// `sendsProfile: false` sends the account credential without
+    /// `X-Profile-Id` or `X-Profile-Token`, for an account-level read that
+    /// must still answer after the active profile has been removed.
     func get<T: Decodable>(
         _ path: String,
         query: [String: String] = [:],
-        expectedAuth: CapturedOrdinaryRequestAuth? = nil
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil,
+        sendsProfile: Bool = true
     ) async throws -> T {
-        return try await send(method: "GET", path: path, query: query, body: Optional<String>.none, expectedAuth: expectedAuth)
+        return try await send(method: "GET", path: path, query: query, body: Optional<String>.none,
+                              expectedAuth: expectedAuth, sendsProfile: sendsProfile)
     }
 
     /// Probe a candidate server without mutating global routing state or
@@ -790,9 +795,11 @@ actor HTTPClient {
         query: [String: String],
         body: (any Encodable)?,
         timeout: HTTPTimeout = .standard,
-        expectedAuth: CapturedOrdinaryRequestAuth? = nil
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil,
+        sendsProfile: Bool = true
     ) async throws -> T {
-        let data = try await sendRaw(method: method, path: path, query: query, body: body, timeout: timeout, expectedAuth: expectedAuth)
+        let data = try await sendRaw(method: method, path: path, query: query, body: body, timeout: timeout,
+                                     expectedAuth: expectedAuth, sendsProfile: sendsProfile)
         if data.isEmpty, let empty = EmptyResponse.empty as? T {
             return empty
         }
@@ -928,14 +935,16 @@ actor HTTPClient {
         body: (any Encodable)?,
         quietStatuses: Set<Int> = [],
         timeout: HTTPTimeout = .standard,
-        expectedAuth: CapturedOrdinaryRequestAuth? = nil
+        expectedAuth: CapturedOrdinaryRequestAuth? = nil,
+        sendsProfile: Bool = true
     ) async throws -> Data {
         try await performWithAuthRetry(
             method: method,
             path: path,
             quietStatuses: quietStatuses,
             timeout: timeout,
-            expectedAuth: expectedAuth
+            expectedAuth: expectedAuth,
+            sendsProfile: sendsProfile
         ) { serverUrl in
             try self.buildRequest(
                 serverUrl: serverUrl,
@@ -956,6 +965,7 @@ actor HTTPClient {
     /// `additionalHeaders` are applied after the auth/profile/device headers,
     /// so a caller can override the session default (e.g. address a specific
     /// profile) or add a per-request header the client doesn't know about.
+    /// `sendsProfile: false` leaves the profile headers off both attempts.
     private func performWithAuthRetry(
         method: String,
         path: String,
@@ -964,6 +974,7 @@ actor HTTPClient {
         timeout: HTTPTimeout,
         expectedAccount: RefreshAccountIdentity? = nil,
         expectedAuth: CapturedOrdinaryRequestAuth? = nil,
+        sendsProfile: Bool = true,
         makeRequest: (String) throws -> URLRequest
     ) async throws -> (Data, HTTPURLResponse) {
         let dispatchRevision = try captureRequestDispatchRevision()
@@ -1020,9 +1031,9 @@ actor HTTPClient {
         }
         var request = try makeRequest(serverUrl)
         if let capturedAuth {
-            attachOrdinaryAuthHeaders(&request, auth: capturedAuth)
+            attachOrdinaryAuthHeaders(&request, auth: capturedAuth, sendsProfile: sendsProfile)
         } else {
-            await attachLegacyAuthHeaders(&request)
+            await attachLegacyAuthHeaders(&request, sendsProfile: sendsProfile)
         }
         Self.apply(additionalHeaders, to: &request)
 
@@ -1046,7 +1057,7 @@ actor HTTPClient {
                 // those identities changed during the shared flight, keep the
                 // original 401 instead of sending mixed credentials.
                 var retry = try makeRequest(serverUrl)
-                attachOrdinaryAuthHeaders(&retry, auth: refreshedAuth)
+                attachOrdinaryAuthHeaders(&retry, auth: refreshedAuth, sendsProfile: sendsProfile)
                 Self.apply(additionalHeaders, to: &retry)
                 #if os(iOS) || os(tvOS)
                 Self.logRefreshRetry(
@@ -1144,7 +1155,7 @@ actor HTTPClient {
     /// Compatibility path for the pre-registry/no-active-server state. Normal
     /// authenticated requests use `attachOrdinaryAuthHeaders`, whose complete
     /// credential snapshot is captured in one TokenStore actor turn.
-    private func attachLegacyAuthHeaders(_ request: inout URLRequest) async {
+    private func attachLegacyAuthHeaders(_ request: inout URLRequest, sendsProfile: Bool = true) async {
         let path = request.url?.path ?? ""
         // Skip auth injection for /auth/refresh (avoid recursion) and
         // /auth/login (a prior expired token can't authorize a fresh login).
@@ -1157,11 +1168,11 @@ actor HTTPClient {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             attached.append("auth")
         }
-        if let profileId = await tokenStore.getProfileId() {
+        if sendsProfile, let profileId = await tokenStore.getProfileId() {
             request.setValue(profileId, forHTTPHeaderField: "X-Profile-Id")
             attached.append("profile")
         }
-        if let profileToken = await tokenStore.getProfileToken() {
+        if sendsProfile, let profileToken = await tokenStore.getProfileToken() {
             request.setValue(profileToken, forHTTPHeaderField: "X-Profile-Token")
             attached.append("profileToken")
         }
@@ -1173,7 +1184,8 @@ actor HTTPClient {
     /// headers, so temporary handoff or profile changes cannot mix identities.
     private func attachOrdinaryAuthHeaders(
         _ request: inout URLRequest,
-        auth: CapturedOrdinaryRequestAuth
+        auth: CapturedOrdinaryRequestAuth,
+        sendsProfile: Bool = true
     ) {
         let path = request.url?.path ?? ""
         if path.hasSuffix("/auth/refresh") || path.hasSuffix("/auth/login") {
@@ -1185,11 +1197,11 @@ actor HTTPClient {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             attached.append("auth")
         }
-        if let profileId = auth.profileId {
+        if sendsProfile, let profileId = auth.profileId {
             request.setValue(profileId, forHTTPHeaderField: "X-Profile-Id")
             attached.append("profile")
         }
-        if let profileToken = auth.profileToken {
+        if sendsProfile, let profileToken = auth.profileToken {
             request.setValue(profileToken, forHTTPHeaderField: "X-Profile-Token")
             attached.append("profileToken")
         }
