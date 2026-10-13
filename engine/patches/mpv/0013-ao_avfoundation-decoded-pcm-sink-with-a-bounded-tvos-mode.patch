@@ -1,0 +1,463 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] ao_avfoundation: decoded PCM sink with a bounded tvOS mode
+
+Adds ao_avfoundation_pcm.h and .c, the decisions of the output's decoded
+PCM sink. Patch 0016 binds them to AVSampleBufferAudioRenderer and
+AVSampleBufferRenderSynchronizer.
+
+On iOS, and on tvOS while ao-avfoundation-max-lookahead is 0, the sink
+behaves as upstream's: 100 ms reads driven by readiness callbacks, the
+renderer's end time handed to mpv as its audio clock, and a restart on
+WasFlushedAutomatically and OutputConfigurationDidChange. The only change
+is a "trace edge reset" line at every reset.
+
+On tvOS with max-lookahead above 0 (Vivid sets 4 on AirPlay routes), the
+renderer queue is bounded to the larger of max-lookahead and audio-buffer
+and filled from a 50 ms timer, with up to four reads per tick, each behind
+the prefetch guard, so volume changes are heard promptly. Every reset
+installs a new renderer and synchroniser at the next start, carrying the
+volume and mute across and moving the restart observers to the new
+renderer; notifications from a replaced renderer are ignored. This mode
+logs trace edges, a periodic "pcm:" transport line and the fresh-sink,
+renderer-failure and restart lines Vivid reads, and asks for an audio
+reload when the renderer fails or cannot be replaced.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the mpv files it adds or changes, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser General
+Public License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version
+(LGPL-2.1-or-later).
+---
+diff --git a/audio/out/ao_avfoundation_pcm.c b/audio/out/ao_avfoundation_pcm.c
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_pcm.c
+@@ -0,0 +1,281 @@
++/*
++ * AVFoundation audio output: decoded PCM sink.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "ao_avfoundation_pcm.h"
++
++void avfao_pcm_init(struct avfao_pcm *pcm, const struct avfao_host *host,
++                    const struct avfao_pcm_ops *ops, void *ctx,
++                    struct avfao_trace *trace, int rate, int frame_bytes)
++{
++    *pcm = (struct avfao_pcm){
++        .host = host,
++        .ops = ops,
++        .ctx = ctx,
++        .trace = trace,
++        .rate = rate,
++        .frame_bytes = frame_bytes,
++        // The last enqueued end starts at 0; the transport line's previous
++        // time starts at mpv's clock origin.
++        .end_ns = 0,
++        .line_ns = 0,
++    };
++}
++
++void avfao_pcm_choose_mode(struct avfao_pcm *pcm, double max_lookahead,
++                           double audio_buffer, bool timer_ok)
++{
++    pcm->bounded = false;
++    pcm->bound_ns = 0;
++    if (!(max_lookahead > 0))
++        return;
++    if (!timer_ok) {
++        avfao_log(pcm->host, AVFAO_WARN, "could not create the PCM feed timer; "
++                  "feeding the renderer without a bound\n");
++        return;
++    }
++    // mpv's audio-buffer can only raise the bound.
++    double bound = max_lookahead > audio_buffer ? max_lookahead : audio_buffer;
++    pcm->bounded = true;
++    pcm->bound_ns = avfao_seconds_to_ns(bound);
++}
++
++static int request_frames(const struct avfao_pcm *pcm)
++{
++    return pcm->rate / 10;
++}
++
++static int64_t sync_time(const struct avfao_pcm *pcm)
++{
++    return pcm->ops->sync_time(pcm->ctx, pcm->sync);
++}
++
++void avfao_pcm_set_feeding(struct avfao_pcm *pcm, bool on)
++{
++    // Either way: no outstanding readiness request and an idle timer.
++    pcm->ops->stop_requesting(pcm->ctx, pcm->renderer);
++    pcm->ops->timer(pcm->ctx, false);
++    pcm->feeding = on;
++    if (on)
++        pcm->ops->timer(pcm->ctx, true);
++}
++
++void avfao_pcm_feed(struct avfao_pcm *pcm)
++{
++    const struct avfao_pcm_ops *ops = pcm->ops;
++    int frames = request_frames(pcm);
++    size_t bytes = (size_t)frames * pcm->frame_bytes;
++
++    void *buffer = ops->buffer_new(pcm->ctx, bytes);
++    if (!buffer)
++        return;
++
++    int64_t now_av = sync_time(pcm);
++    int64_t now_mp = avfao_now(pcm->host);
++    int64_t position = pcm->end_ns > now_av ? pcm->end_ns : now_av;
++    int64_t request_ns = avfao_frames_to_ns(frames, pcm->rate);
++
++    bool eof = false;
++    int got = pcm->host->ops->read(pcm->host->ctx, buffer, frames,
++                                   position - now_av + now_mp + request_ns, &eof);
++    if (eof) {
++        ops->stop_requesting(pcm->ctx, pcm->renderer);
++        pcm->host->ops->stop_streaming(pcm->host->ctx);
++        // The renderer, synchroniser and enqueued end are kept.
++        if (pcm->bounded)
++            avfao_pcm_set_feeding(pcm, false);
++    }
++    if (got <= 0) {
++        ops->buffer_free(pcm->ctx, buffer);
++        return;
++    }
++
++    if (!ops->enqueue(pcm->ctx, pcm->renderer, buffer, bytes, got, position)) {
++        pcm->host->ops->request_reload(pcm->host->ctx);
++        return;
++    }
++
++    pcm->end_ns = position + avfao_frames_to_ns(got, pcm->rate);
++}
++
++static void transport_line(struct avfao_pcm *pcm)
++{
++    int64_t now = avfao_now(pcm->host);
++    int64_t interval = avfao_in_detail_window(pcm->host, pcm->trace)
++                       ? AVFAO_PCM_LINE_DETAIL_NS : AVFAO_PCM_LINE_INTERVAL_NS;
++    if (now - pcm->line_ns < interval)
++        return;
++    pcm->line_ns = now;
++
++    int64_t clock = sync_time(pcm);
++    double rate = pcm->ops->sync_rate(pcm->ctx, pcm->sync);
++    if (!(rate >= -1e6 && rate <= 1e6))
++        rate = 0;
++    avfao_log(pcm->host, AVFAO_V, "pcm: clock %.3f, fed %.3f, ahead %.3f, rate %.3f, "
++              "status %d, latency %.3f, sufficient %d\n",
++              avfao_ns_to_seconds(clock), avfao_ns_to_seconds(pcm->end_ns),
++              avfao_ns_to_seconds(pcm->end_ns - clock), rate,
++              pcm->ops->status(pcm->ctx, pcm->renderer),
++              avfao_output_latency(pcm->host),
++              pcm->ops->sufficient(pcm->ctx, pcm->renderer));
++}
++
++void avfao_pcm_tick(struct avfao_pcm *pcm)
++{
++    const struct avfao_pcm_ops *ops = pcm->ops;
++    if (!pcm->feeding)
++        return;
++
++    // The transport line comes first, so a failed status still shows in it.
++    transport_line(pcm);
++
++    if (ops->status(pcm->ctx, pcm->renderer) == AVFAO_RENDERER_FAILED) {
++        avfao_log(pcm->host, AVFAO_WARN,
++                  "pcm renderer failed; requesting audio reload\n");
++        avfao_pcm_set_feeding(pcm, false);
++        pcm->host->ops->request_reload(pcm->host->ctx);
++        return;
++    }
++
++    for (int n = 0; n < AVFAO_PCM_TICK_READS; n++) {
++        if (!pcm->feeding || !ops->ready(pcm->ctx, pcm->renderer))
++            break;
++        int64_t ahead = pcm->end_ns - sync_time(pcm);
++        if (ahead >= pcm->bound_ns)
++            break;
++        int64_t queued = pcm->host->ops->queued_frames(pcm->host->ctx);
++        if (avfao_prefetch_skip(ahead, queued, request_frames(pcm)))
++            break;
++        int64_t before = pcm->end_ns;
++        avfao_pcm_feed(pcm);
++        if (pcm->end_ns <= before)
++            break;
++    }
++}
++
++void avfao_pcm_reset(struct avfao_pcm *pcm)
++{
++    const struct avfao_pcm_ops *ops = pcm->ops;
++    avfao_trace_edge(pcm->host, pcm->trace, "reset", sync_time(pcm), pcm->end_ns);
++    ops->stop_requesting(pcm->ctx, pcm->renderer);
++    ops->flush(pcm->ctx, pcm->renderer);
++    ops->set_rate(pcm->ctx, pcm->sync, 0);
++    if (pcm->bounded) {
++        pcm->end_ns = -1;
++        pcm->fresh_pending = true;
++        avfao_pcm_set_feeding(pcm, false);
++    }
++}
++
++// Replaces the renderer and synchroniser after a reset. On failure the old
++// objects stay installed and the replacement stays pending.
++static bool fresh_sink(struct avfao_pcm *pcm)
++{
++    const struct avfao_pcm_ops *ops = pcm->ops;
++    void *renderer = ops->renderer_new(pcm->ctx);
++    void *sync = renderer ? ops->synchroniser_new(pcm->ctx, renderer) : NULL;
++    if (!renderer || !sync) {
++        ops->release(pcm->ctx, renderer, sync);
++        avfao_log(pcm->host, AVFAO_WARN,
++                  "pcm fresh sink failed; requesting audio reload\n");
++        pcm->host->ops->request_reload(pcm->host->ctx);
++        return false;
++    }
++
++    ops->set_volume(pcm->ctx, renderer, ops->volume(pcm->ctx, pcm->renderer));
++    ops->set_muted(pcm->ctx, renderer, ops->muted(pcm->ctx, pcm->renderer));
++
++    // No observer may outlive the renderer it watches.
++    ops->observe(pcm->ctx, pcm->renderer, false);
++    ops->observe(pcm->ctx, renderer, true);
++    ops->release(pcm->ctx, pcm->renderer, pcm->sync);
++
++    pcm->renderer = renderer;
++    pcm->sync = sync;
++    pcm->end_ns = -1;
++    pcm->line_ns = 0;
++    pcm->fresh_pending = false;
++    avfao_log(pcm->host, AVFAO_V, "pcm fresh sink after reset\n");
++    return true;
++}
++
++void avfao_pcm_start(struct avfao_pcm *pcm)
++{
++    const struct avfao_pcm_ops *ops = pcm->ops;
++    if (!pcm->bounded) {
++        pcm->end_ns = -1;
++        ops->set_rate(pcm->ctx, pcm->sync, 1);
++        ops->request_when_ready(pcm->ctx, pcm->renderer);
++        return;
++    }
++
++    bool fresh = false;
++    if (pcm->fresh_pending) {
++        if (!fresh_sink(pcm))
++            return;
++        fresh = true;
++    }
++    avfao_trace_edge(pcm->host, pcm->trace, fresh ? "start-fresh" : "start",
++                     sync_time(pcm), pcm->end_ns);
++    ops->set_rate(pcm->ctx, pcm->sync, 1);
++    avfao_pcm_set_feeding(pcm, true);
++}
++
++void avfao_pcm_pause(struct avfao_pcm *pcm, bool paused)
++{
++    const struct avfao_pcm_ops *ops = pcm->ops;
++    if (!pcm->bounded) {
++        ops->set_rate(pcm->ctx, pcm->sync, paused ? 0 : 1);
++        return;
++    }
++    // Nothing reaches the renderer while a replacement is pending.
++    if (pcm->fresh_pending)
++        return;
++    avfao_trace_edge(pcm->host, pcm->trace, paused ? "pause" : "resume",
++                     sync_time(pcm), pcm->end_ns);
++    ops->set_rate(pcm->ctx, pcm->sync, paused ? 0 : 1);
++    avfao_pcm_set_feeding(pcm, !paused);
++}
++
++void avfao_pcm_notification(struct avfao_pcm *pcm, const char *name,
++                            bool has_flush_time, double flush_time,
++                            void *object)
++{
++    if (!pcm->bounded) {
++        avfao_log(pcm->host, AVFAO_WARN,
++                  "restarting due to system notification; this will cause desync\n");
++        avfao_log(pcm->host, AVFAO_V, "notification name: %s\n", name);
++        pcm->ops->restart(pcm->ctx);
++        return;
++    }
++
++    bool current = object == pcm->renderer;
++    avfao_log(pcm->host, AVFAO_V, "notification name: %s\n", name);
++    if (has_flush_time) {
++        avfao_log(pcm->host, AVFAO_V, "notification flush time %.3f, current %d\n",
++                  flush_time, current ? 1 : 0);
++    }
++    if (!current || pcm->fresh_pending)
++        return;
++    avfao_trace_edge(pcm->host, pcm->trace, "restart", sync_time(pcm), pcm->end_ns);
++    avfao_log(pcm->host, AVFAO_WARN,
++              "restarting due to system notification; this will cause desync\n");
++    pcm->ops->restart(pcm->ctx);
++}
+diff --git a/audio/out/ao_avfoundation_pcm.h b/audio/out/ao_avfoundation_pcm.h
+new file mode 100644
+index 0000000000..0000000000
+--- /dev/null
++++ b/audio/out/ao_avfoundation_pcm.h
+@@ -0,0 +1,125 @@
++/*
++ * AVFoundation audio output: decoded PCM sink.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * This file is part of mpv.
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef MP_AO_AVFOUNDATION_PCM_H
++#define MP_AO_AVFOUNDATION_PCM_H
++
++#include "ao_avfoundation_core.h"
++
++// The renderer and synchroniser are opaque handles here; the glue owns the
++// AVSampleBufferAudioRenderer and AVSampleBufferRenderSynchronizer objects.
++struct avfao_pcm_ops {
++    int64_t (*sync_time)(void *ctx, void *sync);
++    double (*sync_rate)(void *ctx, void *sync);
++    void (*set_rate)(void *ctx, void *sync, double rate);
++    bool (*ready)(void *ctx, void *renderer);
++    // AVQueuedSampleBufferRenderingStatus as an integer.
++    int (*status)(void *ctx, void *renderer);
++    // hasSufficientMediaDataForReliablePlaybackStart as 0 or 1, or -1 where
++    // the OS does not have it.
++    int (*sufficient)(void *ctx, void *renderer);
++    void (*flush)(void *ctx, void *renderer);
++    void (*stop_requesting)(void *ctx, void *renderer);
++    // Unbounded mode: feed from readiness callbacks on the AO queue.
++    void (*request_when_ready)(void *ctx, void *renderer);
++    void *(*buffer_new)(void *ctx, size_t bytes);
++    void (*buffer_free)(void *ctx, void *buffer);
++    // Wraps the buffer in a block buffer and a ready sample buffer at pts_ns
++    // and enqueues it. Always takes ownership of the buffer. Returns false
++    // (after logging) when either CoreMedia buffer cannot be created.
++    bool (*enqueue)(void *ctx, void *renderer, void *buffer, size_t bytes,
++                    int frames, int64_t pts_ns);
++    // Bounded mode feed timer: on = fire now, then every 50 ms (5 ms
++    // leeway); off = fire never.
++    void (*timer)(void *ctx, bool on);
++    // Fresh sink pieces. synchroniser_new adds the renderer and turns off
++    // the delayed rate change where the OS has it.
++    void *(*renderer_new)(void *ctx);
++    void *(*synchroniser_new)(void *ctx, void *renderer);
++    float (*volume)(void *ctx, void *renderer);
++    void (*set_volume)(void *ctx, void *renderer, float volume);
++    bool (*muted)(void *ctx, void *renderer);
++    void (*set_muted)(void *ctx, void *renderer, bool muted);
++    // Registers (on) or removes (off) the two restart notifications.
++    void (*observe)(void *ctx, void *renderer, bool on);
++    // Releases either handle (each may be NULL).
++    void (*release)(void *ctx, void *renderer, void *sync);
++    // The driver's reset then start, as a restart notification asks.
++    void (*restart)(void *ctx);
++};
++
++// AVQueuedSampleBufferRenderingStatusFailed.
++#define AVFAO_RENDERER_FAILED 2
++
++#define AVFAO_PCM_TICK_READS 4
++#define AVFAO_PCM_LINE_INTERVAL_NS (2 * AVFAO_NS_PER_S)
++#define AVFAO_PCM_LINE_DETAIL_NS (250 * AVFAO_NS_PER_MS)
++
++struct avfao_pcm {
++    const struct avfao_host *host;
++    const struct avfao_pcm_ops *ops;
++    void *ctx;
++    struct avfao_trace *trace;
++
++    void *renderer;
++    void *sync;
++
++    int rate;
++    int frame_bytes;
++
++    // Bounded mode (tvOS with max-lookahead above 0).
++    bool bounded;
++    int64_t bound_ns;
++    bool feeding;
++    bool fresh_pending;
++    int64_t line_ns;
++
++    // End of the last enqueued buffer on the renderer timeline.
++    int64_t end_ns;
++};
++
++void avfao_pcm_init(struct avfao_pcm *pcm, const struct avfao_host *host,
++                    const struct avfao_pcm_ops *ops, void *ctx,
++                    struct avfao_trace *trace, int rate, int frame_bytes);
++
++// Decides the mode at init. max_lookahead is 0 where the option does not
++// exist. timer_ok says whether the bounded feed timer could be created.
++void avfao_pcm_choose_mode(struct avfao_pcm *pcm, double max_lookahead,
++                           double audio_buffer, bool timer_ok);
++
++// One 100 ms read from mpv onto the renderer (both modes).
++void avfao_pcm_feed(struct avfao_pcm *pcm);
++// Bounded mode timer tick.
++void avfao_pcm_tick(struct avfao_pcm *pcm);
++void avfao_pcm_set_feeding(struct avfao_pcm *pcm, bool on);
++
++// Transport. In bounded mode all of these run on the AO queue.
++void avfao_pcm_reset(struct avfao_pcm *pcm);
++void avfao_pcm_start(struct avfao_pcm *pcm);
++void avfao_pcm_pause(struct avfao_pcm *pcm, bool paused);
++
++// A WasFlushedAutomatically or OutputConfigurationDidChange notification.
++// object is the renderer that posted it.
++void avfao_pcm_notification(struct avfao_pcm *pcm, const char *name,
++                            bool has_flush_time, double flush_time,
++                            void *object);
++
++#endif
+diff --git a/meson.build b/meson.build
+index 0000000000..0000000000 100644
+--- a/meson.build
++++ b/meson.build
+@@ -822,6 +822,7 @@
+     dependencies += avfoundation
+     sources += files('audio/out/ao_avfoundation.m')
+     sources += files('audio/out/ao_avfoundation_core.c')
++    sources += files('audio/out/ao_avfoundation_pcm.c')
+     # The AVFoundation output uses the CoreFoundation string helpers in
+     # osdep/utils-mac.c, which the cocoa block above only builds on macOS.
+     if not features['cocoa']

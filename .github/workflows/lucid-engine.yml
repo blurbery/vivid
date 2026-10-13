@@ -64,6 +64,14 @@ jobs:
         run: |
           python3 engine/lucid.py build --slice "$SLICE" \
             --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
+      # Built on the runner from the audio output files of the mpv tree this
+      # slice just patched; check then requires its result.
+      - name: Audio output test vectors
+        env:
+          SLICE: ${{ matrix.slice }}
+        run: |
+          python3 engine/lucid.py test-audio --slice "$SLICE" \
+            --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Provenance, licence, TLS and link checks
         env:
           SLICE: ${{ matrix.slice }}
