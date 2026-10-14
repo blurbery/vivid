@@ -35,8 +35,9 @@ import Foundation
 ///   ("DV P8.1", "DV P8.2", "DV P8.4"), taken from the compatibility ID, a
 ///   "Profile 8.1" style label, or the `DOVIWith…` range type. Other profiles
 ///   show the profile number only ("DV P5", "DV P7"), even though Emby and
-///   Jellyfin name profile 7 as 7.6. Profile 7 stays "DV P7" although Lucid
-///   Engine plays it as 8.1; the player's stats show that output. Jellyfin's
+///   Jellyfin name profile 7 as 7.6. Profile 7 stays "DV P7" although Vivid
+///   plays it as 8.1 on a Dolby Vision display and as its HDR10 base layer on
+///   other displays; the player's stats show the actual output. Jellyfin's
 ///   `DOVIInvalid` (Dolby Vision signalling outside the spec, played as its
 ///   base layer) isn't shown as DV.
 /// - Otherwise "HDR10+", "HDR10" or "HLG" from the range type, the video
