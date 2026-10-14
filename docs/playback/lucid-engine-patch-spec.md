@@ -1736,7 +1736,7 @@ The split of the new work into patch files, and their order within the "to add" 
 - Built from source for each of the four slices, with Xcode 26.6:
   - dav1d, libass, FFmpeg (seven libraries), libmpv and libdovi, at minimum OS 14.0 (libdovi's Rust standard library objects as 12.6 says), as eleven static frameworks (`Libdav1d`, `Libass`, `Libmpv`, `Libavcodec`, `Libavdevice`, `Libavfilter`, `Libavformat`, `Libavutil`, `Libswresample`, `Libswscale`, `Libdovi`);
   - the other eleven libraries in the table below, which today come from the previous third-party build of these libraries, at today's versions, options and per-library deployment targets (13.5), as ten more static frameworks (`Libfreetype`, `Libfribidi`, `Libharfbuzz`, `Libunibreak`, `lcms2`, `Libuavs3d`, `Libbluray`, `Libuchardet`, `Libshaderc_combined`, `Libplacebo`) and MoltenVK's bare static library, `libMoltenVK.a`, as today.
-- No library comes as a prebuilt binary any more.
+- No library comes as a prebuilt binary any more, apart from the Rust standard library inside libdovi, from the Rust project's pinned `rust-std` archives.
 
 | Library | Version | Licence | Notes |
 | --- | --- | --- | --- |
