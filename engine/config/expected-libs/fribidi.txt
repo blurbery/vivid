@@ -1,0 +1,131 @@
+# FriBidi 1.0.12: what today's interim build ships, recorded by automated
+# comparison of its xcframework and archives (nm -m -g -U and nm -u on the arm64
+# archive of each slice, the slice's file list and the pkg-config files), for
+# `lucid.py check`. Docs: docs/cores/lucid-engine-build.md.
+
+[framework]
+Libfribidi
+
+# Files under the framework's Headers/ folder.
+[headers]
+fribidi/fribidi-arabic.h
+fribidi/fribidi-begindecls.h
+fribidi/fribidi-bidi-types-list.h
+fribidi/fribidi-bidi-types.h
+fribidi/fribidi-bidi.h
+fribidi/fribidi-brackets.h
+fribidi/fribidi-char-sets-list.h
+fribidi/fribidi-char-sets.h
+fribidi/fribidi-common.h
+fribidi/fribidi-config.h
+fribidi/fribidi-deprecated.h
+fribidi/fribidi-enddecls.h
+fribidi/fribidi-flags.h
+fribidi/fribidi-joining-types-list.h
+fribidi/fribidi-joining-types.h
+fribidi/fribidi-joining.h
+fribidi/fribidi-mirroring.h
+fribidi/fribidi-shape.h
+fribidi/fribidi-types.h
+fribidi/fribidi-unicode-version.h
+fribidi/fribidi-unicode.h
+fribidi/fribidi.h
+
+# Defined global symbols (identical on all four slices), by visibility.
+
+[default]
+_fribidi_char_set_desc
+_fribidi_char_set_name
+_fribidi_char_set_title
+_fribidi_charset_to_unicode
+_fribidi_debug_status
+_fribidi_get_bidi_type
+_fribidi_get_bidi_type_name
+_fribidi_get_bidi_types
+_fribidi_get_bracket
+_fribidi_get_bracket_types
+_fribidi_get_joining_type
+_fribidi_get_joining_type_name
+_fribidi_get_joining_types
+_fribidi_get_mirror_char
+_fribidi_get_par_direction
+_fribidi_get_par_embedding_levels
+_fribidi_get_par_embedding_levels_ex
+_fribidi_get_type
+_fribidi_get_type_internal
+_fribidi_join_arabic
+_fribidi_log2vis
+_fribidi_log2vis_get_embedding_levels
+_fribidi_mirroring_status
+_fribidi_parse_charset
+_fribidi_remove_bidi_marks
+_fribidi_reorder_line
+_fribidi_reorder_nsm_status
+_fribidi_set_debug
+_fribidi_set_mirroring
+_fribidi_set_reorder_nsm
+_fribidi_shape
+_fribidi_shape_arabic
+_fribidi_shape_mirroring
+_fribidi_unicode_to_charset
+_fribidi_unicode_version
+_fribidi_version_info
+
+[hidden]
+_console_liga_table
+_free_run_list
+_fribidi_cap_rtl_to_unicode
+_fribidi_char_set_desc_cap_rtl
+_fribidi_cp1255_to_unicode_c
+_fribidi_cp1256_to_unicode_c
+_fribidi_iso8859_6_to_unicode_c
+_fribidi_iso8859_8_to_unicode_c
+_fribidi_unicode_to_cap_rtl
+_fribidi_unicode_to_cp1255_c
+_fribidi_unicode_to_cp1256_c
+_fribidi_unicode_to_iso8859_6_c
+_fribidi_unicode_to_iso8859_8_c
+_fribidi_unicode_to_utf8
+_fribidi_utf8_to_unicode
+_mandatory_liga_table
+_new_run
+_new_run_list
+_run_list_encode_bidi_types
+_shadow_run_list
+
+# Weak definitions (inline functions and template instances the compiler
+# chose to emit): count, then the SHA-256 of the sorted names, one per line.
+
+[weak-default]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+[weak-hidden]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+# Symbols each slice's archive needs from outside itself.
+
+[imports-ios-arm64]
+___chkstk_darwin ___memset_chk ___sprintf_chk ___stack_chk_fail ___stack_chk_guard _bzero _free
+_malloc _memcpy _memset _sprintf
+
+[imports-ios-arm64-simulator]
+___memset_chk ___sprintf_chk ___stack_chk_fail ___stack_chk_guard _bzero _free _malloc _memcpy
+_memset _sprintf
+
+[imports-tvos-arm64]
+___chkstk_darwin ___memset_chk ___sprintf_chk ___stack_chk_fail ___stack_chk_guard _bzero _free
+_malloc _memcpy _memset _sprintf
+
+[imports-tvos-arm64-simulator]
+___memset_chk ___sprintf_chk ___stack_chk_fail ___stack_chk_guard _bzero _free _malloc _memcpy
+_memset _sprintf
+
+# LC_BUILD_VERSION minimum OS of each slice's archive.
+[minos-ios-arm64]
+13.0
+[minos-ios-arm64-simulator]
+14.0
+[minos-tvos-arm64]
+13.0
+[minos-tvos-arm64-simulator]
+14.0

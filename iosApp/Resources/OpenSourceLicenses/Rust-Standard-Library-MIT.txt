@@ -1,13 +1,13 @@
-Component: Rust standard library (compiled into libdovi via -Zbuild-std=std,panic_abort)
-Version: Unpinned nightly used by the mpvkit/libdovi-build 3.3.2 release run on 2025-12-22 (log expired); texts taken from rust-lang/rust main at commit 91dec8008c130254efec7e43931e826b01baf2c3 (2025-12-21), byte-identical to tag 1.92.0
-Source: https://github.com/rust-lang/rust/tree/91dec8008c130254efec7e43931e826b01baf2c3
+Component: Rust standard library (compiled into libdovi)
+Version: 1.98.0 (tag 1.98.0, commit 88d9e12ae178fab0fb5cc050a94da85685d449ea)
+Source: https://github.com/rust-lang/rust/tree/88d9e12ae178fab0fb5cc050a94da85685d449ea
 SPDX: MIT OR Apache-2.0 (text included: MIT)
-Note: Version is approximate. std's own crates.io dependencies are attributed in the toolchain's COPYRIGHT-library.html and are not listed separately here.
+Note: std's own crates.io dependencies are attributed in the toolchain's COPYRIGHT-library.html and are not listed separately here.
 ================================================================================
 
 --------------------------------------------------------------------------------
 File: COPYRIGHT
-https://github.com/rust-lang/rust/blob/91dec8008c130254efec7e43931e826b01baf2c3/COPYRIGHT
+https://github.com/rust-lang/rust/blob/88d9e12ae178fab0fb5cc050a94da85685d449ea/COPYRIGHT
 --------------------------------------------------------------------------------
 
 Short version for non-lawyers:
@@ -47,7 +47,7 @@ to the toolchain as a whole.
 
 --------------------------------------------------------------------------------
 File: LICENSE-MIT
-https://github.com/rust-lang/rust/blob/91dec8008c130254efec7e43931e826b01baf2c3/LICENSE-MIT
+https://github.com/rust-lang/rust/blob/88d9e12ae178fab0fb5cc050a94da85685d449ea/LICENSE-MIT
 --------------------------------------------------------------------------------
 
 Copyright (c) The Rust Project Contributors

@@ -4,9 +4,12 @@ packages:
   CollectionHStack:
     url: https://github.com/LePips/CollectionHStack
     revision: 15baaaa759a0e252addae08431c79a49a25e4afc
-  MPVKit:
-    url: https://github.com/edde746/mpv-build
-    revision: c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
+  # Lucid Engine 0.1.0: the commit of tag v0.1.0 of Vivid's own package,
+  # every library built from upstream source by Vivid's pipeline in engine/.
+  # Its README and NOTICE list what the release contains.
+  LucidEngine:
+    url: https://github.com/blurbery/lucid-engine
+    revision: 53ebeac793f251df987a8d80b997e7fe8064d1b7
 
 targets:
   VividTV:
@@ -61,8 +64,8 @@ targets:
           - $(DERIVED_FILE_DIR)/source-revision-stamp
         basedOnDependencyAnalysis: false
     dependencies:
-      - package: MPVKit
-        product: MPVKit
+      - package: LucidEngine
+        product: LucidEngine
       - package: CollectionHStack
         product: CollectionHStack
       - target: VividTVTopShelf
@@ -110,6 +113,14 @@ targets:
       - path: Tests/VividSubtitleCueCursorTests.swift
       - path: Tests/TVDetailScrollMaterialMaskTests.swift
       - path: Tests/TVCatalogGridIndexTests.swift
+      # Vivid's player bridge, tested on Apple TV as well as iOS.
+      - path: Tests/VividPlayerConversionTests.swift
+      - path: Tests/VividPlayerCoreTests.swift
+      - path: Tests/VividPlayerDisplayCriteriaTests.swift
+      - path: Tests/VividPlayerEngineTests.swift
+      # Playback-end recovery, Next Up guards and end-of-stream confirmation.
+      - path: Tests/PlaybackEndRecoveryTests.swift
+      - path: Tests/VividEndOfStreamConfirmationTests.swift
       - path: Tests/PlayerStreamBadgesTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources

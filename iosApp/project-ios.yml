@@ -1,9 +1,12 @@
 include: project-common.yml
 
 packages:
-  MPVKit:
-    url: https://github.com/edde746/mpv-build
-    revision: c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6
+  # Lucid Engine 0.1.0: the commit of tag v0.1.0 of Vivid's own package,
+  # every library built from upstream source by Vivid's pipeline in engine/.
+  # Its README and NOTICE list what the release contains.
+  LucidEngine:
+    url: https://github.com/blurbery/lucid-engine
+    revision: 53ebeac793f251df987a8d80b997e7fe8064d1b7
 
 targets:
   Vivid:
@@ -50,8 +53,8 @@ targets:
           - $(DERIVED_FILE_DIR)/source-revision-stamp
         basedOnDependencyAnalysis: false
     dependencies:
-      - package: MPVKit
-        product: MPVKit
+      - package: LucidEngine
+        product: LucidEngine
       - target: VividDownloadsActivity
         embed: true
 

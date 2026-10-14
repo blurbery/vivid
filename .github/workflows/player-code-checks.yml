@@ -1,0 +1,33 @@
+name: Player code checks
+
+# Cheap checks that run on every pull request and every push, whatever it
+# changes, because the player regression workflow only runs when the app or
+# its scripts change. They read the checkout only: no build, no Xcode.
+# - check-no-previous-player-code.py fails if any tracked path or file names
+#   the previous third-party player bridge or engine package.
+# - check-engine-package-pin.py fails unless both platform specs and every
+#   tracked Package.resolved pin blurbery/lucid-engine at the same commit.
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: player-code-checks-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: No previous player code, engine pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that no previous third-party player code or package returns
+        run: python3 scripts/ci/check-no-previous-player-code.py
+      - name: Verify the Lucid Engine package pin
+        run: python3 scripts/ci/check-engine-package-pin.py

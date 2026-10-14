@@ -1,5 +1,5 @@
 Component: Little CMS (lcms2)
-Version: 2.17 (tag lcms2.17, commit 5176347635785e53ee5cee92328f76fda766ecc6), via mpvkit/lcms2-build 2.17.0
+Version: 2.17 (tag lcms2.17, commit 5176347635785e53ee5cee92328f76fda766ecc6), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0
 Source: https://github.com/mm2/Little-CMS/tree/5176347635785e53ee5cee92328f76fda766ecc6
 SPDX: MIT
 ================================================================================

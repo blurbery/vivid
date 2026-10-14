@@ -1,0 +1,908 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] vo_avfoundation: presentation timing and frame pacing
+
+First part of the AVFoundation video output for iOS and tvOS (the output
+itself arrives in 0025). These modules decide when and how frames are
+presented; they make no layer calls.
+
+clock.c holds the playback rate estimator and the media-mode timebase
+servo. The estimator divides how far media time advanced by how long mpv
+says those frames last, with a fast window for large speed changes and a
+500 ms averaging window for small ones; a display-synced frame whose ideal
+duration is below 1 ns gives it nothing. The servo anchors the timebase on
+the first frame, after a reset, recovery or resume, while paused, when the
+nominal rate changes and when the phase error exceeds 50 ms; otherwise it
+slews the rate with a proportional and integral term limited to 1.5% (the
+integral accumulated over nanosecond steps), writing a new rate at most
+every 200 ms and only for a change above 100 ppm. Media times convert to
+nanoseconds with one fused multiply-add, saturating beyond the int64 range.
+
+timebase.c wraps the CoreMedia timebase on the host time clock: seeding for
+host mode (host time at rate 1) and media mode (time 0 at rate 0), reading
+in nanoseconds and anchoring against the source clock, with the host clock
+read after the source clock for the offset to the target time.
+
+pacing.c holds the readiness wait before each enqueue (each pass checks
+readiness, then the give-up moment 4 ms before the target, then whether the
+layer needs recovery, and only then polls again after 1 ms), deadline
+drops, the not-ready run and the 500 ms throttle on display layer recovery.
+The renderer and the clock are reached through callbacks so the rules can
+be tested with a fake renderer.
+
+Applies to mpv v0.41.0 with Vivid's earlier patches.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the files it modifies, it is free software; you can redistribute it
+and/or modify it under the terms of the GNU Lesser General Public License
+as published by the Free Software Foundation; either version 2.1 of the
+License, or (at your option) any later version (LGPL-2.1-or-later).
+---
+diff --git a/video/out/avfoundation/clock.h b/video/out/avfoundation/clock.h
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/clock.h
+@@ -0,0 +1,140 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// Presentation timing for the AVFoundation video output: the playback rate
++// estimator and the media-mode timebase servo. Pure arithmetic with no
++// framework calls, so the decisions can be tested on their own. The caller
++// reads the timebase, passes the readings in and applies what comes back.
++
++#ifndef MP_AVFOUNDATION_CLOCK_H
++#define MP_AVFOUNDATION_CLOCK_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#define AVF_NS_PER_SEC 1000000000LL
++#define AVF_NS_PER_MS 1000000LL
++
++// Servo and estimator constants.
++#define AVF_REANCHOR_NS (50 * AVF_NS_PER_MS)    // phase error that re-anchors
++#define AVF_SERVO_HORIZON 2.0                   // seconds
++#define AVF_SERVO_INTEGRAL_TIME_NS 8e9          // Ti, in nanoseconds
++#define AVF_SERVO_LIMIT 0.015                   // on P, the integral and their sum
++#define AVF_SERVO_MIN_CHANGE 0.0001             // of nominal
++#define AVF_SERVO_WRITE_GAP_NS (200 * AVF_NS_PER_MS)
++#define AVF_SERVO_MAX_STEP_NS (500 * AVF_NS_PER_MS)
++#define AVF_RATE_ADOPT 0.01                     // nominal change threshold
++#define AVF_EST_WINDOW_NS (500 * AVF_NS_PER_MS)
++#define AVF_EST_NEAR 0.04
++#define AVF_EST_MIN_RATE 0.05
++#define AVF_EST_MAX_RATE 8.0
++#define AVF_EST_STEP_FLOOR_NS 250000LL          // 250 us
++
++// Media seconds to nanoseconds: pts * 1e9 + 0.5 (or - 0.5 for negative pts)
++// as one fused multiply-add, truncated towards zero, saturating at the int64
++// limits. Returns false when pts is not a usable media time (mpv's "no pts"
++// value, or not finite).
++bool avf_media_seconds_to_ns(double pts, int64_t *out_ns);
++
++// The frame duration the estimator uses: a display-synced frame with a
++// positive ideal_frame_duration (seconds) uses it * 1e9 truncated (0, so
++// unusable, below 1 ns); otherwise vo_frame.duration (nanoseconds) rounded to
++// nearest with ties to even when positive; otherwise 0.
++int64_t avf_frame_duration_ns(bool display_synced, double ideal_frame_duration,
++                              double duration_ns);
++
++struct avf_estimator {
++    bool has_prev;
++    int64_t prev_media, prev_duration;
++    int64_t fast_media, fast_duration;
++    int fast_count;
++    int64_t avg_media, avg_duration;
++};
++
++void avf_estimator_reset(struct avf_estimator *e);
++
++// Feed one frame with a valid media time. nominal is the current nominal
++// playback rate (0 or below counts as 1.0). Returns true and sets *rate when
++// this frame produced an estimate inside the accepted range.
++bool avf_estimator_push(struct avf_estimator *e, int64_t media_ns,
++                        int64_t duration_ns, double nominal, double *rate);
++
++struct avf_clock {
++    struct avf_estimator est;
++    double nominal;             // as stored; 0 or below reads as 1.0
++    bool applied_valid;
++    double applied;             // rate currently applied to the timebase
++    bool anchor_valid;
++    bool playback_paused;
++    bool timebase_paused;
++    double integral;
++    bool have_eval;
++    int64_t last_eval_ns;
++    int64_t last_rate_write_ns;
++    bool have_last_media;
++    int64_t last_media_ns;
++
++    // Pacing summary counters, cleared by the caller.
++    unsigned anchors;
++    unsigned rate_writes;
++    int64_t max_abs_error_ns;
++};
++
++// What the caller must do to the timebase for this frame.
++enum avf_clock_op {
++    AVF_CLOCK_KEEP,     // leave the timebase alone (servo state updated)
++    AVF_CLOCK_ANCHOR,   // anchor: rate, frame media time, source time "target"
++    AVF_CLOCK_SET_RATE, // set the timebase rate to result.rate
++};
++
++struct avf_clock_frame {
++    int64_t media_ns;       // the frame's media time (valid)
++    int64_t target_ns;      // target host time
++    int64_t now_ns;         // host time now
++    int64_t timebase_ns;    // timebase time now (0 if not numeric)
++    bool has_estimate;      // this frame's rate estimate
++    double estimate;
++};
++
++struct avf_clock_result {
++    enum avf_clock_op op;
++    double rate;
++    bool nominal_changed;   // the estimate became the nominal rate
++    bool error_anchor;      // anchored because the phase error exceeded 50 ms
++    int64_t error_ns;       // phase error (positive: timebase behind)
++};
++
++double avf_clock_nominal(const struct avf_clock *c);
++
++// Media timing reset: creation (nominal 1.0) and every VOCTRL_RESET.
++void avf_clock_reset(struct avf_clock *c);
++void avf_clock_init(struct avf_clock *c);
++
++// Per enqueued frame with a valid media time, after the readiness wait.
++void avf_clock_step(struct avf_clock *c, const struct avf_clock_frame *in,
++                    struct avf_clock_result *out);
++
++// VOCTRL_PAUSE in media mode. The caller anchors the timebase at rate 0.
++void avf_clock_pause(struct avf_clock *c);
++// VOCTRL_RESUME in media mode.
++void avf_clock_resume(struct avf_clock *c);
++// After a display layer recovery: the next frame anchors again.
++void avf_clock_invalidate(struct avf_clock *c);
++
++#endif
+diff --git a/video/out/avfoundation/clock.c b/video/out/avfoundation/clock.c
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/clock.c
+@@ -0,0 +1,308 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <math.h>
++#include <string.h>
++
++#include "common/common.h"
++
++#include "clock.h"
++
++static double clampd(double v, double lo, double hi)
++{
++    return v < lo ? lo : (v > hi ? hi : v);
++}
++
++// Truncates towards zero, saturating at the int64 limits (infinities
++// included). Only NaN has no value.
++static bool to_int64(double v, int64_t *out)
++{
++    if (isnan(v))
++        return false;
++    if (v >= 0x1p63) {
++        *out = INT64_MAX;
++    } else if (v <= -0x1p63) {
++        *out = INT64_MIN;
++    } else {
++        *out = (int64_t)v;
++    }
++    return true;
++}
++
++bool avf_media_seconds_to_ns(double pts, int64_t *out_ns)
++{
++    if (pts == MP_NOPTS_VALUE || !isfinite(pts))
++        return false;
++    // One rounding for the product and the half-unit offset together. A
++    // finite time beyond the int64 range saturates rather than being lost.
++    double v = fma(pts, 1e9, pts < 0 ? -0.5 : 0.5);
++    return to_int64(v, out_ns);
++}
++
++int64_t avf_frame_duration_ns(bool display_synced, double ideal_frame_duration,
++                              double duration_ns)
++{
++    int64_t d = 0;
++    // A display-synced frame always takes the ideal duration, so one below
++    // 1 ns truncates to 0 and is unusable; vo_frame.duration is not tried.
++    if (display_synced && ideal_frame_duration > 0) {
++        to_int64(ideal_frame_duration * 1e9, &d);
++        return d;
++    }
++    // nearbyint rounds to nearest with ties to even in the default mode.
++    if (duration_ns > 0 && to_int64(nearbyint(duration_ns), &d))
++        return d;
++    return 0;
++}
++
++static void empty_fast(struct avf_estimator *e)
++{
++    e->fast_media = e->fast_duration = 0;
++    e->fast_count = 0;
++}
++
++static void empty_avg(struct avf_estimator *e)
++{
++    e->avg_media = e->avg_duration = 0;
++}
++
++void avf_estimator_reset(struct avf_estimator *e)
++{
++    memset(e, 0, sizeof(*e));
++}
++
++static bool accept_rate(double r)
++{
++    return r >= AVF_EST_MIN_RATE && r <= AVF_EST_MAX_RATE;
++}
++
++// Adds a step to the averaging window and returns its estimate once it holds
++// at least 500 ms of frame duration; only the averaging window is emptied.
++static bool feed_avg(struct avf_estimator *e, int64_t delta, int64_t dur,
++                     double *rate)
++{
++    e->avg_media += delta;
++    e->avg_duration += dur;
++    if (e->avg_duration < AVF_EST_WINDOW_NS)
++        return false;
++    double r = (double)e->avg_media / (double)e->avg_duration;
++    empty_avg(e);
++    if (!accept_rate(r))
++        return false;
++    *rate = r;
++    return true;
++}
++
++bool avf_estimator_push(struct avf_estimator *e, int64_t media_ns,
++                        int64_t duration_ns, double nominal, double *rate)
++{
++    double n = nominal > 0 ? nominal : 1.0;
++
++    // Unusable duration: nothing changes.
++    if (duration_ns <= 0)
++        return false;
++
++    // First sample: remember it.
++    if (!e->has_prev) {
++        e->has_prev = true;
++        e->prev_media = media_ns;
++        e->prev_duration = duration_ns;
++        return false;
++    }
++
++    int64_t delta = media_ns - e->prev_media;
++
++    // No media step: the stored sample stays as it is.
++    if (delta == 0)
++        return false;
++
++    int64_t d0 = e->prev_duration;
++    int64_t abs_d0 = d0 < 0 ? -d0 : d0;
++    int64_t gate = abs_d0 / 100;
++    if (gate < AVF_EST_STEP_FLOOR_NS)
++        gate = AVF_EST_STEP_FLOOR_NS;
++    int64_t step = duration_ns - d0;
++    if (step < 0)
++        step = -step;
++    double r = (double)delta / (double)d0;
++
++    e->prev_media = media_ns;
++    e->prev_duration = duration_ns;
++
++    // Discontinuity: both windows are emptied before any ratio is used.
++    if (delta < 0 || step > gate || !accept_rate(r)) {
++        empty_fast(e);
++        empty_avg(e);
++        return false;
++    }
++
++    if (fabs(r - n) <= AVF_EST_NEAR * n) {
++        // Near nominal.
++        empty_fast(e);
++        return feed_avg(e, delta, d0, rate);
++    }
++
++    // Far from nominal. A fast window whose ratio disagrees with this step by
++    // more than 4% of the window's own ratio starts again.
++    if (e->fast_count > 0) {
++        double fr = (double)e->fast_media / (double)e->fast_duration;
++        if (fabs(fr - r) > AVF_EST_NEAR * fr)
++            empty_fast(e);
++    }
++    e->fast_media += delta;
++    e->fast_duration += d0;
++    e->fast_count += 1;
++    if (e->fast_count >= 2) {
++        double fr = (double)e->fast_media / (double)e->fast_duration;
++        empty_fast(e);
++        empty_avg(e);
++        if (!accept_rate(fr))
++            return false;
++        *rate = fr;
++        return true;
++    }
++    return feed_avg(e, delta, d0, rate);
++}
++
++double avf_clock_nominal(const struct avf_clock *c)
++{
++    return c->nominal > 0 ? c->nominal : 1.0;
++}
++
++void avf_clock_reset(struct avf_clock *c)
++{
++    c->have_last_media = false;
++    c->last_media_ns = 0;
++    c->anchor_valid = false;
++    c->integral = 0;
++    c->have_eval = false;
++    c->last_eval_ns = 0;
++    c->last_rate_write_ns = 0;
++    avf_estimator_reset(&c->est);
++    c->nominal = avf_clock_nominal(c);
++    c->applied = c->nominal;
++    c->applied_valid = true;
++    c->timebase_paused = c->playback_paused;
++}
++
++void avf_clock_init(struct avf_clock *c)
++{
++    memset(c, 0, sizeof(*c));
++    c->nominal = 1.0;
++    avf_clock_reset(c);
++}
++
++void avf_clock_step(struct avf_clock *c, const struct avf_clock_frame *in,
++                    struct avf_clock_result *out)
++{
++    *out = (struct avf_clock_result){ .op = AVF_CLOCK_KEEP };
++
++    double nominal = avf_clock_nominal(c);
++    if (in->has_estimate && !c->playback_paused &&
++        fabs(in->estimate - nominal) > AVF_RATE_ADOPT * nominal)
++    {
++        c->nominal = in->estimate;
++        nominal = in->estimate;
++        out->nominal_changed = true;
++    }
++
++    double applied = c->applied_valid ? c->applied : nominal;
++    double lead = (double)(in->target_ns - in->now_ns);
++    int64_t projection = (int64_t)(lead * applied); // truncated to whole ns
++    int64_t e = in->media_ns - (in->timebase_ns + projection);
++    out->error_ns = e;
++    int64_t abs_e = e < 0 ? -e : e;
++    bool too_far = abs_e > AVF_REANCHOR_NS;
++    bool paused = c->playback_paused || c->timebase_paused;
++
++    // The pacing summary samples the phase error only on frames that reach
++    // the phase-error test: a valid anchor, neither playback nor the
++    // timebase paused, and the nominal rate unchanged on this frame. A frame
++    // that re-anchors because its error is too large still counts.
++    if (c->anchor_valid && !paused && !out->nominal_changed &&
++        abs_e > c->max_abs_error_ns)
++        c->max_abs_error_ns = abs_e;
++
++    if (!c->anchor_valid || paused || out->nominal_changed || too_far) {
++        out->error_anchor = too_far && c->anchor_valid && !paused &&
++                            !out->nominal_changed;
++        double rate = paused ? 0.0 : nominal;
++        out->op = AVF_CLOCK_ANCHOR;
++        out->rate = rate;
++        c->integral = 0;
++        c->have_eval = false;
++        c->last_rate_write_ns = in->now_ns;
++        c->nominal = rate;
++        c->applied = rate;
++        c->applied_valid = true;
++        c->anchor_valid = true;
++        c->timebase_paused = c->playback_paused;
++        c->anchors += 1;
++    } else {
++        double p = clampd(((double)e / 1e9) / AVF_SERVO_HORIZON,
++                          -AVF_SERVO_LIMIT, AVF_SERVO_LIMIT);
++        if (c->have_eval) {
++            int64_t dt = in->now_ns - c->last_eval_ns;
++            if (dt > 0 && dt <= AVF_SERVO_MAX_STEP_NS) {
++                // P times the step in nanoseconds, over Ti in nanoseconds.
++                c->integral += p * (double)dt / AVF_SERVO_INTEGRAL_TIME_NS;
++                c->integral = clampd(c->integral, -AVF_SERVO_LIMIT,
++                                     AVF_SERVO_LIMIT);
++            }
++        }
++        c->have_eval = true;
++        c->last_eval_ns = in->now_ns;
++        double r = nominal * (1.0 + clampd(p + c->integral, -AVF_SERVO_LIMIT,
++                                           AVF_SERVO_LIMIT));
++        if (fabs(r - applied) > AVF_SERVO_MIN_CHANGE * nominal &&
++            in->now_ns - c->last_rate_write_ns >= AVF_SERVO_WRITE_GAP_NS)
++        {
++            out->op = AVF_CLOCK_SET_RATE;
++            out->rate = r;
++            c->applied = r;
++            c->applied_valid = true;
++            c->last_rate_write_ns = in->now_ns;
++            c->rate_writes += 1;
++        }
++    }
++
++    c->have_last_media = true;
++    c->last_media_ns = in->media_ns;
++}
++
++void avf_clock_pause(struct avf_clock *c)
++{
++    c->playback_paused = true;
++    c->applied = 0;
++    c->applied_valid = true;
++    c->timebase_paused = true;
++}
++
++void avf_clock_resume(struct avf_clock *c)
++{
++    c->playback_paused = false;
++    c->timebase_paused = false;
++    c->anchor_valid = false;
++}
++
++void avf_clock_invalidate(struct avf_clock *c)
++{
++    c->anchor_valid = false;
++    c->timebase_paused = c->playback_paused;
++}
+diff --git a/video/out/avfoundation/timebase.h b/video/out/avfoundation/timebase.h
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/timebase.h
+@@ -0,0 +1,49 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// The presentation timebase of the AVFoundation video output: one CoreMedia
++// timebase on the host time clock, in nanoseconds throughout.
++
++#ifndef MP_AVFOUNDATION_TIMEBASE_H
++#define MP_AVFOUNDATION_TIMEBASE_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#include <CoreMedia/CoreMedia.h>
++
++// A timebase driven by CMClockGetHostTimeClock() (+1), or NULL.
++CMTimebaseRef avf_timebase_create(void);
++
++// Host mode: time = now_ns at rate 1. Media mode: time 0 at rate 0.
++void avf_timebase_seed(CMTimebaseRef tb, bool host_mode, int64_t now_ns);
++
++// The timebase time in nanoseconds (default rounding). Returns false, with
++// *ns set to 0, when the time is not numeric.
++bool avf_timebase_read(CMTimebaseRef tb, int64_t *ns);
++
++// Anchors media_ns at rate. The source time is the source clock's current
++// time plus (target_ns minus host_now()), with host_now() read after the
++// source clock; without host_now it is the source clock's time itself.
++OSStatus avf_timebase_anchor(CMTimebaseRef tb, double rate, int64_t media_ns,
++                             int64_t target_ns, int64_t (*host_now)(void));
++
++OSStatus avf_timebase_set_rate(CMTimebaseRef tb, double rate);
++
++#endif
+diff --git a/video/out/avfoundation/timebase.c b/video/out/avfoundation/timebase.c
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/timebase.c
+@@ -0,0 +1,83 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "timebase.h"
++
++#define NS 1000000000
++
++CMTimebaseRef avf_timebase_create(void)
++{
++    CMTimebaseRef tb = NULL;
++    if (CMTimebaseCreateWithSourceClock(NULL, CMClockGetHostTimeClock(), &tb) != noErr)
++        return NULL;
++    return tb;
++}
++
++void avf_timebase_seed(CMTimebaseRef tb, bool host_mode, int64_t now_ns)
++{
++    // A failed write leaves the timebase as it was; nothing retries it.
++    if (host_mode) {
++        CMTimebaseSetTime(tb, CMTimeMake(now_ns, NS));
++        CMTimebaseSetRate(tb, 1.0);
++    } else {
++        CMTimebaseSetRate(tb, 0.0);
++        CMTimebaseSetTime(tb, CMTimeMake(0, NS));
++    }
++}
++
++bool avf_timebase_read(CMTimebaseRef tb, int64_t *ns)
++{
++    CMTime t = CMTimeConvertScale(CMTimebaseGetTime(tb), NS,
++                                  kCMTimeRoundingMethod_Default);
++    if (!CMTIME_IS_NUMERIC(t)) {
++        *ns = 0;
++        return false;
++    }
++    *ns = t.value;
++    return true;
++}
++
++static CMTime source_now(CMTimebaseRef tb)
++{
++    CMTime t = kCMTimeInvalid;
++    CMClockOrTimebaseRef src = CMTimebaseCopySource(tb);
++    if (src) {
++        t = CMSyncGetTime(src);
++        CFRelease(src);
++    }
++    if (!CMTIME_IS_NUMERIC(t))
++        t = CMClockGetTime(CMClockGetHostTimeClock());
++    return t;
++}
++
++OSStatus avf_timebase_anchor(CMTimebaseRef tb, double rate, int64_t media_ns,
++                             int64_t target_ns, int64_t (*host_now)(void))
++{
++    CMTime source = source_now(tb);
++    // The host clock is read only now, after the source clock, so the offset
++    // to the target is as fresh as the source time it is added to.
++    if (host_now)
++        source = CMTimeAdd(source, CMTimeMake(target_ns - host_now(), NS));
++    return CMTimebaseSetRateAndAnchorTime(tb, rate, CMTimeMake(media_ns, NS), source);
++}
++
++OSStatus avf_timebase_set_rate(CMTimebaseRef tb, double rate)
++{
++    return CMTimebaseSetRate(tb, rate);
++}
+diff --git a/video/out/avfoundation/pacing.h b/video/out/avfoundation/pacing.h
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/pacing.h
+@@ -0,0 +1,111 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// Frame pacing for the AVFoundation video output: the readiness wait before
++// each enqueue, deadline drops, the not-ready run and the throttle on display
++// layer recovery. The renderer, the clock and the recovery work are reached
++// through callbacks, so the rules can be tested with a fake renderer.
++
++#ifndef MP_AVFOUNDATION_PACING_H
++#define MP_AVFOUNDATION_PACING_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#define AVF_READY_MARGIN_NS 4000000LL        // give up 4 ms before the target
++#define AVF_POLL_NS 1000000LL                // poll every 1 ms
++#define AVF_RECOVERY_THROTTLE_NS 500000000LL // at most one recovery per 500 ms
++#define AVF_RUN_GAP_NS 500000000LL           // a later drop restarts the run
++#define AVF_ENQUEUE_STALE_NS 500000000LL     // enqueue staleness for recovery
++#define AVF_RUN_RECOVERY 3                   // run length that tries recovery
++#define AVF_PACING_WINDOW_NS 5000000000LL    // pacing summary window
++
++enum avf_drop_kind {
++    AVF_DROP_PAST,          // the give-up moment had already passed
++    AVF_DROP_DEADLINE,      // reached while waiting
++    AVF_DROP_UNRECOVERED,   // the layer still needed recovery
++};
++
++struct avf_pacing_ops {
++    void *ctx;
++    int64_t (*now)(void *ctx);
++    void (*sleep)(void *ctx, int64_t ns);
++    bool (*ready)(void *ctx);
++    bool (*needs_recovery)(void *ctx);
++    // The recovery itself (flushes, logging and the state that follows a
++    // recovery outside this module). Called only when the throttle allows.
++    void (*recover)(void *ctx, const char *reason);
++    // One deadline drop: add 1 to mpv's drop count and log it.
++    void (*dropped)(void *ctx, enum avf_drop_kind kind, double remaining_ms);
++};
++
++struct avf_pacing {
++    int run;                    // not-ready run
++    bool have_last_drop;
++    int64_t last_drop_ns;
++    bool have_last_recovery;
++    int64_t last_recovery_ns;
++    bool have_last_enqueue;
++    int64_t last_enqueue_ns;
++
++    // Pacing summary window.
++    bool window_started;
++    int64_t window_start_ns;
++    unsigned waits;
++    int64_t wait_total_ns;
++    int64_t wait_max_ns;
++    unsigned drops;
++    unsigned recoveries;
++};
++
++enum avf_wait_result {
++    AVF_WAIT_PROCEED,
++    AVF_WAIT_DROP,
++};
++
++void avf_pacing_init(struct avf_pacing *p);
++
++// VOCTRL_RESET: clears the run, the last drop, recovery and enqueue times.
++void avf_pacing_reset(struct avf_pacing *p);
++
++// Waits until the renderer is ready for the frame due at target_ns, or drops
++// it. A drop counts once through ops->dropped.
++enum avf_wait_result avf_pacing_wait(struct avf_pacing *p,
++                                     const struct avf_pacing_ops *ops,
++                                     int64_t target_ns);
++
++// Runs a recovery unless the throttle suppresses it (forced recoveries are
++// never suppressed). Returns whether it ran.
++bool avf_pacing_recover(struct avf_pacing *p, const struct avf_pacing_ops *ops,
++                        const char *reason, bool forced);
++
++// Records a video enqueue at now_ns.
++void avf_pacing_enqueued(struct avf_pacing *p, int64_t now_ns);
++
++// Opens the first summary window (at the start of the first flip); later
++// calls do nothing.
++void avf_pacing_window_open(struct avf_pacing *p, int64_t now_ns);
++
++// Returns true when the summary window has ended; the caller then logs the
++// counters (if any of them other than the recoveries is non-zero) and calls
++// avf_pacing_window_restart().
++bool avf_pacing_window_due(struct avf_pacing *p, int64_t now_ns);
++void avf_pacing_window_restart(struct avf_pacing *p, int64_t now_ns);
++
++#endif
+diff --git a/video/out/avfoundation/pacing.c b/video/out/avfoundation/pacing.c
+new file mode 100644
+--- /dev/null
++++ b/video/out/avfoundation/pacing.c
+@@ -0,0 +1,146 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <string.h>
++
++#include "pacing.h"
++
++void avf_pacing_init(struct avf_pacing *p)
++{
++    memset(p, 0, sizeof(*p));
++}
++
++void avf_pacing_reset(struct avf_pacing *p)
++{
++    p->run = 0;
++    p->have_last_drop = false;
++    p->have_last_recovery = false;
++    p->have_last_enqueue = false;
++}
++
++bool avf_pacing_recover(struct avf_pacing *p, const struct avf_pacing_ops *ops,
++                        const char *reason, bool forced)
++{
++    int64_t now = ops->now(ops->ctx);
++    if (!forced && p->have_last_recovery &&
++        now - p->last_recovery_ns < AVF_RECOVERY_THROTTLE_NS)
++        return false;
++    ops->recover(ops->ctx, reason);
++    p->run = 0;
++    p->have_last_drop = false;
++    p->have_last_enqueue = false;
++    p->have_last_recovery = true;
++    p->last_recovery_ns = now;
++    p->recoveries += 1;
++    return true;
++}
++
++static enum avf_wait_result drop(struct avf_pacing *p,
++                                 const struct avf_pacing_ops *ops,
++                                 enum avf_drop_kind kind, int64_t now,
++                                 int64_t target_ns)
++{
++    ops->dropped(ops->ctx, kind, (target_ns - now) / 1e6);
++    p->drops += 1;
++    if (p->have_last_drop && now - p->last_drop_ns > AVF_RUN_GAP_NS)
++        p->run = 0;
++    p->run += 1;
++    p->have_last_drop = true;
++    p->last_drop_ns = now;
++    if (p->run >= AVF_RUN_RECOVERY &&
++        (!p->have_last_enqueue ||
++         now - p->last_enqueue_ns >= AVF_ENQUEUE_STALE_NS))
++        avf_pacing_recover(p, ops, "repeated not-ready drops", false);
++    return AVF_WAIT_DROP;
++}
++
++enum avf_wait_result avf_pacing_wait(struct avf_pacing *p,
++                                     const struct avf_pacing_ops *ops,
++                                     int64_t target_ns)
++{
++    if (ops->needs_recovery(ops->ctx))
++        avf_pacing_recover(p, ops, "layer recovery request", false);
++
++    int64_t deadline = target_ns - AVF_READY_MARGIN_NS;
++    int64_t entered = ops->now(ops->ctx);
++    bool polled = false;
++    // Each pass checks readiness, then the deadline, then whether the layer
++    // needs recovery, and only then sleeps for one poll.
++    while (1) {
++        if (ops->ready(ops->ctx)) {
++            p->run = 0;
++            if (polled) {
++                int64_t waited = ops->now(ops->ctx) - entered;
++                p->waits += 1;
++                p->wait_total_ns += waited;
++                if (waited > p->wait_max_ns)
++                    p->wait_max_ns = waited;
++            }
++            return AVF_WAIT_PROCEED;
++        }
++        int64_t now = ops->now(ops->ctx);
++        if (now >= deadline) {
++            return drop(p, ops, polled ? AVF_DROP_DEADLINE : AVF_DROP_PAST, now,
++                        target_ns);
++        }
++        if (ops->needs_recovery(ops->ctx)) {
++            avf_pacing_recover(p, ops, "not-ready wait", false);
++            // Whether it ran or the throttle suppressed it, a layer that still
++            // needs recovery cannot take the frame.
++            if (ops->needs_recovery(ops->ctx))
++                return drop(p, ops, AVF_DROP_UNRECOVERED, ops->now(ops->ctx),
++                            target_ns);
++            continue; // look at the recovered layer at once
++        }
++        ops->sleep(ops->ctx, AVF_POLL_NS);
++        polled = true;
++    }
++}
++
++void avf_pacing_enqueued(struct avf_pacing *p, int64_t now_ns)
++{
++    p->have_last_enqueue = true;
++    p->last_enqueue_ns = now_ns;
++}
++
++void avf_pacing_window_open(struct avf_pacing *p, int64_t now_ns)
++{
++    if (!p->window_started)
++        avf_pacing_window_restart(p, now_ns);
++}
++
++bool avf_pacing_window_due(struct avf_pacing *p, int64_t now_ns)
++{
++    if (!p->window_started) {
++        avf_pacing_window_restart(p, now_ns);
++        return false;
++    }
++    return now_ns - p->window_start_ns >= AVF_PACING_WINDOW_NS;
++}
++
++void avf_pacing_window_restart(struct avf_pacing *p, int64_t now_ns)
++{
++    p->window_started = true;
++    p->window_start_ns = now_ns;
++    p->waits = 0;
++    p->wait_total_ns = 0;
++    p->wait_max_ns = 0;
++    p->drops = 0;
++    p->recoveries = 0;
++}

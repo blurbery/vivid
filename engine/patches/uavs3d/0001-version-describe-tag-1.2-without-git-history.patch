@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 00:00:00 +0000
+Subject: [PATCH] version: describe tag 1.2 without git history
+
+uavs3d's CMake runs version.sh while configuring, and the script derives
+the build number and the commit id from git in the directory CMake runs
+it from. Built from an archive of tag 1.2 there is no git history, so the
+build number would be 0 (version 1.2.0) and the commit id empty; inside
+another repository's work tree, both would describe that repository.
+
+Use fixed values for tag 1.2 instead: build number 1, so version.h holds
+VER_BUILD 1, VERSION_STR "1.2.1" and VERSION_TYPE "release" and the
+pkg-config version stays 1.2.1, and the tag's commit
+0e20d2c291853f196c68922a264bcd8471d75b68 as VERSION_SHA1, the identifier
+uavs3d_create prints. Nothing else in the build changes.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for
+uavs3d and is distributed under the same three-clause BSD licence as
+uavs3d (BSD-3-Clause).
+---
+diff --git a/version.sh b/version.sh
+--- a/version.sh
++++ b/version.sh
+@@ -15,9 +15,12 @@
+     shell_dir=$1
+ fi
+ 
+-VER_R=`git rev-list origin/master | sort | wc -l | awk '{print $1}'`
+-VER_L=`git rev-list HEAD | sort | wc -l | awk '{print $1}'`
+-VER_SHA1=`git log -n 1 | head -n 1 | cut -d ' ' -f 2`
++# Built from an archive of tag 1.2, which has no git history to count, so
++# the build number and commit are fixed: version 1.2.1, and the tag's
++# commit as the identifier.
++VER_R=1
++VER_L=1
++VER_SHA1=0e20d2c291853f196c68922a264bcd8471d75b68
+ 
+ major_version="1"
+ minor_version="2"

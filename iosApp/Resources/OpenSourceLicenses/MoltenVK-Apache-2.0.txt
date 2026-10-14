@@ -1,5 +1,5 @@
 Component: MoltenVK
-Version: 1.4.1 (tag v1.4.1, commit db445ff2042d9ce348c439ad8451112f354b8d2a), via mpvkit/moltenvk-build 1.4.1
+Version: 1.4.1 (tag v1.4.1, commit db445ff2042d9ce348c439ad8451112f354b8d2a), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0
 Source: https://github.com/KhronosGroup/MoltenVK/tree/db445ff2042d9ce348c439ad8451112f354b8d2a
 SPDX: Apache-2.0
 Note: MoltenVK statically includes SPIRV-Cross, SPIRV-Tools (with SPIRV-Headers grammar data) and cereal at the revisions in ExternalRevisions/; each has its own entry. No NOTICE file at this revision.

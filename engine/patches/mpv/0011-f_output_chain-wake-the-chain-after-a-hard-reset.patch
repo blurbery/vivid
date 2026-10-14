@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] f_output_chain: wake the chain after a hard reset
+
+mp_output_chain_reset_harder() resets the chain's filters but never wakes
+the chain itself. A request from downstream can stay pending, and the
+reset chain then sits idle until some unrelated wakeup arrives.
+
+The hard reset runs on every reload of the audio output (the ao-reload
+command, an output's own reload request such as the AVFoundation output's
+fallback from passthrough to PCM, and audio option changes that reload the
+output), on the spdif-to-PCM fallback in reinit_audio_filters_and_output()
+and on video's hardware decoding fallback.
+
+At the end of the hard reset, after the existing reset work, call
+mp_filter_wakeup() on the chain's own filter. Applies to mpv v0.41.0.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the mpv files it adds or changes, it is free software; you can
+redistribute it and/or modify it under the terms of the GNU Lesser General
+Public License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version
+(LGPL-2.1-or-later).
+---
+diff --git a/filters/f_output_chain.c b/filters/f_output_chain.c
+index 0000000000..0000000000 100644
+--- a/filters/f_output_chain.c
++++ b/filters/f_output_chain.c
+@@ -339,6 +339,10 @@
+         p->ao = NULL;
+         mp_autoconvert_clear(p->convert);
+     }
++
++    // A request from downstream may still be pending; without a wakeup the
++    // reset chain could sit idle until something unrelated wakes it.
++    mp_filter_wakeup(p->f);
+ }
+ 
+ static void output_chain_destroy(struct mp_filter *f)
