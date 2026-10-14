@@ -66,7 +66,9 @@ Lucid media engine (iOS and tvOS)
   Vivid's engine pipeline built every library in it from upstream source:
   mpv 0.41.0, FFmpeg 8.0.1, libass, dav1d, libdovi, FreeType, FriBidi,
   HarfBuzz, libunibreak, Little CMS, shaderc, MoltenVK, libplacebo,
-  uavs3d, libbluray and uchardet.
+  uavs3d, libbluray and uchardet. The one prebuilt part is the Rust
+  standard library inside libdovi, from the Rust project's pinned
+  rust-std archives (Rust 1.98.0).
   Source: the pipeline, the pinned upstream sources (engine/pins.ini, by
   URL, commit and SHA-256) and every patch are in engine/ at the commit
   this release was built from:
