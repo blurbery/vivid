@@ -7,8 +7,8 @@ import Foundation
 /// the file's video tracks shows the same one: the detail pages and version
 /// pickers (`DetailPlaybackFormatting`, `TVHeroMetadata`, `PhoneHeroMetadata`),
 /// the phone's Video range fact and Continue Watching in the Home focus info
-/// (`TVFocusMarquee`). Card overlays, catalogue summaries and downloads have
-/// no video tracks, so they keep their own DV and HDR marks.
+/// (`TVFocusMarquee`). Card overlays keep their own DV and HDR marks, and
+/// catalogue summaries and downloads have no video tracks to read.
 ///
 /// Where each provider's dynamic-range facts come from:
 ///
@@ -47,18 +47,14 @@ import Foundation
 ///   badge for SDR.
 enum PlayerStreamBadges {
     static func dynamicRange(_ version: FileVersion) -> String? {
-        dynamicRange(tracks: version.videoTracks ?? [], hdr: version.hdr)
-    }
-
-    /// The same label for chosen video tracks of a file whose HDR flag is `hdr`.
-    static func dynamicRange(tracks: [VideoTrack], hdr: Bool?) -> String? {
+        let tracks = version.videoTracks ?? []
         if let dolbyVision = tracks.first(where: isDolbyVision) {
             return dolbyVisionProfile(dolbyVision).map { "DV P\($0)" } ?? "DV"
         }
         if let type = tracks.lazy.compactMap(hdrType).first {
             return type
         }
-        return hdr == true ? "HDR" : nil
+        return version.hdr == true ? "HDR" : nil
     }
 
     /// The codec the Info panel's Audio row shows for this track ("AC3",

@@ -367,8 +367,9 @@ struct EmbyAdapter {
     /// compatibility ID, always two digits ("DoviProfile02" to
     /// "DoviProfile92"), so "DoviProfile81" is profile 8 with ID 1 and
     /// "DoviProfile76" is profile 7 with ID 6. `videoRange` and `dolbyVision`
-    /// stay empty so the card overlays and the phone's Dolby Vision fact,
-    /// which read them, show what they did before.
+    /// stay empty because the phone's Dolby Vision fact and the Continue
+    /// Watching card overlays on Apple TV (`TVFocusMarquee`) read them; other
+    /// cards use `OverlaySummary`.
     static func dynamicRange(_ raw: [String: Any]) -> [String: Any] {
         var value: [String: Any] = [:]
         let rangeType: String?
