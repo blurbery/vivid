@@ -182,9 +182,7 @@ enum PhoneHeroMetadata {
         guard let version = selectedVersion ?? preferredVersion(from: detail) else { return [] }
         var tokens: [PhoneHeroFactToken] = []
         if let res = resolutionLabel(version.resolution) { tokens.append(.chip(res)) }
-        if version.hdr == true {
-            tokens.append(.chip(dolbyVisionLabel(version: version) ?? "HDR"))
-        }
+        if let range = PlayerStreamBadges.dynamicRange(version) { tokens.append(.chip(range)) }
         if let audio = primaryAudioLabel(version: version) { tokens.append(.chip(audio)) }
         if hasSubtitles(version: version) { tokens.append(.chip("CC")) }
         return tokens
@@ -205,14 +203,6 @@ enum PhoneHeroMetadata {
         if raw.contains("1080") { return "HD" }
         if raw.contains("720") { return "HD" }
         if raw.contains("480") { return "SD" }
-        return nil
-    }
-
-    private static func dolbyVisionLabel(version: FileVersion) -> String? {
-        let videoTracks = version.videoTracks ?? []
-        if videoTracks.contains(where: { ($0.dolbyVision ?? "").isEmpty == false }) {
-            return "DOLBY VISION"
-        }
         return nil
     }
 

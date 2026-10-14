@@ -839,27 +839,10 @@ enum TVHeroMetadata {
         return [resolution, video, audio].compactMap { $0 }.filter { !$0.isEmpty }
     }
 
+    /// The file's dynamic range as one label ("DV P8.1", "HDR10", the same as
+    /// the player's Stream pill), or its video codec for SDR.
     static func sourceVideoLabel(_ version: FileVersion) -> String? {
-        let tracks = version.videoTracks ?? []
-        let dvTags = tracks.compactMap(\.dolbyVision).map { $0.lowercased() }
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let ranges = tracks.compactMap(\.videoRange).map { $0.uppercased() }
-        let dv = !dvTags.isEmpty || ranges.contains { $0.contains("DOVI") || $0.contains("DOLBY VISION") || $0 == "DV" }
-        let transfers = tracks.compactMap(\.colorTransfer).map { $0.lowercased().replacingOccurrences(of: "-", with: "") }
-        let hlg = ranges.contains { $0.contains("HLG") } || transfers.contains { $0.contains("hlg") || $0.contains("arib") }
-        // Profile 5 has no HDR10-compatible base layer. Generic DV or HDR
-        // flags alone cannot tell us which compatibility layer a file has.
-        let profile5 = dvTags.contains { $0 == "5" || $0.contains("profile 5") || $0.contains("dvhe.05") || $0.contains("dvh1.05") }
-        let hdr10Base = dvTags.contains { $0 == "7" || $0 == "8.1" || $0.contains("profile 7") || $0.contains("profile 8.1") || $0.contains("hdr10") || $0.contains("dvhe.07") || $0.contains("dvh1.07") }
-        let pq = transfers.contains { $0 == "pq" || $0.contains("2084") }
-        let hdr10 = ranges.contains { $0.contains("HDR10") }
-            || (!profile5 && !hlg && (hdr10Base || pq))
-        var range: [String] = []
-        if dv { range.append("DV") }
-        if hdr10 { range.append(ranges.contains { $0.contains("HDR10+") } ? "HDR10+" : "HDR10") }
-        else if hlg { range.append("HLG") }
-        else if version.hdr == true && !dv { range.append("HDR") }
-        return range.isEmpty ? DetailPlaybackFormatting.normalizedVideoCodec(version.codecVideo) : range.joined(separator: " ")
+        PlayerStreamBadges.dynamicRange(version) ?? DetailPlaybackFormatting.normalizedVideoCodec(version.codecVideo)
     }
 
     static func sourceResolutionLabel(_ version: FileVersion) -> String? {
@@ -904,11 +887,11 @@ enum TVHeroMetadata {
                 : ["4320", "4320P", "8K"].contains(resolution) ? "8K" : resolution)
         }
         // Catalog/card summaries already contain rich dynamic-range metadata.
-        // Keep that information until detailed video tracks arrive.
-        let video = version?.videoTracks?.isEmpty == false
-            ? version.flatMap(sourceVideoLabel)
-            : summary?.hdr ?? version.flatMap(sourceVideoLabel) ?? summary?.videoCodec
-        if let video {
+        // Keep that information until detailed video tracks arrive. The
+        // file's own label stays one badge ("DV P8.1"); summary text is split.
+        if let version, version.videoTracks?.isEmpty == false {
+            if let video = sourceVideoLabel(version) { badges.append(video.uppercased()) }
+        } else if let video = summary?.hdr ?? version.flatMap(sourceVideoLabel) ?? summary?.videoCodec {
             badges.append(contentsOf: video.uppercased().split(separator: " ").map(String.init))
         }
         let tracks = version?.audioTracks ?? []

@@ -334,7 +334,7 @@ struct EmbyAdapter {
         var value: [String: Any] = ["fileId": Self.numberID(id), "duration": Self.seconds(raw["RunTimeTicks"]),
             "audioTracks": audios.enumerated().map { ordinal, stream in track(stream, index: ordinal) },
             "subtitleTracks": streams.filter { $0["Type"] as? String == "Subtitle" }.map { track($0, index: $0["Index"] as? Int ?? -1) },
-            "videoTracks": streams.filter { $0["Type"] as? String == "Video" }.map { track($0, index: $0["Index"] as? Int ?? 0) },
+            "videoTracks": streams.filter { $0["Type"] as? String == "Video" }.map { track($0, index: $0["Index"] as? Int ?? 0).merging(Self.dynamicRange($0)) { current, _ in current } },
             "chapters": chapters.enumerated().map { index, chapter in ["index": index, "startSeconds": Self.seconds(chapter["StartPositionTicks"]), "title": chapter["Name"] as? String ?? "Chapter \(index + 1)"] }]
         value["fileName"] = raw["Name"]
         value["container"] = raw["Container"]; value["fileSize"] = raw["Size"]; value["bitrate"] = raw["Bitrate"]
@@ -354,6 +354,45 @@ struct EmbyAdapter {
     func track(_ raw: [String: Any], index: Int) -> [String: Any] {
         var value: [String: Any] = ["index": index]
         for (source,target) in ["Codec":"codec", "Language":"language", "DisplayTitle":"title", "Title":"embeddedTitle", "IsDefault":"default", "IsForced":"forced", "IsHearingImpaired":"hearingImpaired", "IsExternal":"external", "Channels":"channels", "ChannelLayout":"layout", "SampleRate":"sampleRate", "BitRate":"bitrate", "Width":"width", "Height":"height"] { value[target] = raw[source] }
+        return value
+    }
+
+    /// A video stream's dynamic range for the player and detail labels, in the
+    /// words Silo and Jellyfin use (see `PlayerStreamBadges`).
+    /// `ExtendedVideoType` is DolbyVision, Hdr10, Hdr10Plus, HyperLogGamma or
+    /// None; servers that don't send it only have the display text in
+    /// `VideoRange` ("Dolby Vision", "HDR 10", "SDR"). `ExtendedVideoSubtype`
+    /// (spelt `ExtendedVideoSubType` in Emby's API reference) names Dolby
+    /// Vision as `DoviProfile` plus the profile and the base-layer
+    /// compatibility ID, always two digits ("DoviProfile02" to
+    /// "DoviProfile92"), so "DoviProfile81" is profile 8 with ID 1 and
+    /// "DoviProfile76" is profile 7 with ID 6. `videoRange` and `dolbyVision`
+    /// stay empty because the phone's Dolby Vision fact and the Continue
+    /// Watching card overlays on Apple TV (`TVFocusMarquee`) read them; other
+    /// cards use `OverlaySummary`.
+    static func dynamicRange(_ raw: [String: Any]) -> [String: Any] {
+        var value: [String: Any] = [:]
+        let rangeType: String?
+        switch (raw["ExtendedVideoType"] as? String ?? "").lowercased() {
+        case "dolbyvision": rangeType = "DOVI"
+        case "hdr10plus": rangeType = "HDR10Plus"
+        case "hdr10": rangeType = "HDR10"
+        case "hyperloggamma": rangeType = "HLG"
+        default:
+            let range = (raw["VideoRange"] as? String ?? "").lowercased().filter { !$0.isWhitespace }
+            rangeType = range.contains("dolbyvision") || range.contains("dovi") ? "DOVI"
+                : range.contains("hdr10+") || range.contains("hdr10plus") ? "HDR10Plus"
+                : range == "hdr10" ? "HDR10"
+                : range == "hlg" ? "HLG"
+                : nil
+        }
+        value["videoRangeType"] = rangeType
+        let subtype = raw["ExtendedVideoSubtype"] as? String ?? raw["ExtendedVideoSubType"] as? String ?? ""
+        let digits = subtype.hasPrefix("DoviProfile") ? subtype.dropFirst("DoviProfile".count) : ""
+        if digits.count == 2, let profile = digits.first?.wholeNumberValue, let compatibility = digits.last?.wholeNumberValue {
+            value["dvProfile"] = profile
+            value["dvBlCompatId"] = compatibility
+        }
         return value
     }
 

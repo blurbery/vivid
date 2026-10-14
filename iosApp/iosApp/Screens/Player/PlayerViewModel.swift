@@ -412,6 +412,12 @@ class PlayerViewModel {
     /// resolves. Empty until then; the overlay hides the corresponding rows.
     var metadata: PlayerMetadata = .empty
 
+    /// The Info panel's Stream pills. The audio pill reads the selected
+    /// track, so it changes with the Audio row when the viewer switches audio.
+    var streamBadges: [String] {
+        metadata.streamBadges(playingAudio: audioTracks.first { $0.trackId == selectedAudioId })
+    }
+
     /// True while the tvOS floating options HUD is presented. Single source
     /// of truth so both `TVPlayerControls` (presentation) and `PlayerView`
     /// (shell-level Menu / exit handling) can agree on state without relying

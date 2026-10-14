@@ -435,8 +435,9 @@ final class TVContinueWatchingPlaybackMetadataStore {
         if let resolution = prettyResolution(version.resolution) {
             badges.append(resolution)
         }
-        if let hdr {
-            badges.append(hdr.localizedCaseInsensitiveContains("dv") ? "DOLBY VISION" : hdr.uppercased())
+        // The file's own label ("DV P8.1", "HDR10"); the card overlays keep `hdr`.
+        if let range = PlayerStreamBadges.dynamicRange(version) {
+            badges.append(range)
         }
         if isAtmos {
             badges.append("ATMOS")
@@ -492,6 +493,8 @@ final class TVContinueWatchingPlaybackMetadataStore {
         }
     }
 
+    /// The card overlays' dynamic-range value, which their DV and HDR marks
+    /// read, so it stays as before.
     private static func dynamicRangeLabel(_ version: FileVersion) -> String? {
         let tracks = version.videoTracks ?? []
         if tracks.contains(where: {

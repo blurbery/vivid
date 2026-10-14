@@ -56,7 +56,7 @@ final class DetailVersionSelectionTests: XCTestCase {
         )
     }
 
-    func testVersionSelectorUsesDVForDolbyVisionMetadata() {
+    func testVersionSelectorUsesTheDolbyVisionProfile() {
         let version = decodedVersions("""
         [
           {
@@ -74,15 +74,15 @@ final class DetailVersionSelectionTests: XCTestCase {
 
         XCTAssertEqual(
             DetailPlaybackFormatting.versionShortLabel(version),
-            "2160p · HEVC · DV · EAC3"
+            "2160p · HEVC · DV P8.1 · EAC3"
         )
         XCTAssertEqual(
             DetailPlaybackFormatting.versionCompactLabel(version),
-            "2160p · DV"
+            "2160p · DV P8.1"
         )
         XCTAssertEqual(
             DetailPlaybackFormatting.versionPrimaryText(version),
-            "2160p · HEVC · DV · EAC3"
+            "2160p · HEVC · DV P8.1 · EAC3"
         )
         XCTAssertEqual(version.videoTracks?.first?.colorRange, "tv")
     }

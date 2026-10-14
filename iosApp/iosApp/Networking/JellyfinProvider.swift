@@ -481,7 +481,7 @@ struct JellyfinAdapter {
         var value: [String: Any] = ["fileId": Self.numberID(id), "duration": Self.seconds(raw["RunTimeTicks"]),
             "audioTracks": audios.enumerated().map { ordinal, stream in track(stream, index: ordinal) },
             "subtitleTracks": streams.filter { $0["Type"] as? String == "Subtitle" }.map { track($0, index: $0["Index"] as? Int ?? -1) },
-            "videoTracks": streams.filter { $0["Type"] as? String == "Video" }.map { track($0, index: $0["Index"] as? Int ?? 0) },
+            "videoTracks": streams.filter { $0["Type"] as? String == "Video" }.map { track($0, index: $0["Index"] as? Int ?? 0).merging(Self.dynamicRange($0)) { current, _ in current } },
             "chapters": chapters.enumerated().map { index, chapter in ["index": index, "startSeconds": Self.seconds(chapter["StartPositionTicks"]), "title": chapter["Name"] as? String ?? "Chapter \(index + 1)"] }]
         value["fileName"] = raw["Name"]
         value["container"] = raw["Container"]; value["fileSize"] = raw["Size"]; value["bitrate"] = raw["Bitrate"]
@@ -501,6 +501,26 @@ struct JellyfinAdapter {
     func track(_ raw: [String: Any], index: Int) -> [String: Any] {
         var value: [String: Any] = ["index": index]
         for (source,target) in ["Codec":"codec", "Language":"language", "DisplayTitle":"title", "Title":"embeddedTitle", "IsDefault":"default", "IsForced":"forced", "IsHearingImpaired":"hearingImpaired", "IsExternal":"external", "Channels":"channels", "ChannelLayout":"layout", "SampleRate":"sampleRate", "BitRate":"bitrate", "Width":"width", "Height":"height"] { value[target] = raw[source] }
+        return value
+    }
+
+    /// A video stream's dynamic range for the player and detail labels (see
+    /// `PlayerStreamBadges`). Jellyfin's `VideoRangeType` is the vocabulary
+    /// Silo shares (SDR, HDR10, HDR10Plus, HLG, DOVI, DOVIWithHDR10,
+    /// DOVIWithHDR10Plus, DOVIWithSDR, DOVIWithHLG, DOVIWithEL,
+    /// DOVIWithELHDR10Plus, DOVIInvalid, Unknown), `DvProfile` is the Dolby
+    /// Vision profile and `DvBlSignalCompatibilityId` its base-layer
+    /// compatibility ID (1 for HDR10, 2 for SDR, 4 for HLG, 6 for Blu-ray).
+    /// Values of the wrong type are skipped so they can't break decoding.
+    /// `videoRange` and `dolbyVision` stay empty because the phone's Dolby
+    /// Vision fact and the Continue Watching card overlays on Apple TV
+    /// (`TVFocusMarquee`) read them; other cards use `OverlaySummary`.
+    static func dynamicRange(_ raw: [String: Any]) -> [String: Any] {
+        var value: [String: Any] = [:]
+        value["videoRangeType"] = raw["VideoRangeType"] as? String
+        value["dvProfile"] = raw["DvProfile"] as? Int
+        value["dvBlCompatId"] = raw["DvBlSignalCompatibilityId"] as? Int
+        value["hdr10Plus"] = raw["Hdr10PlusPresentFlag"] as? Bool
         return value
     }
 
