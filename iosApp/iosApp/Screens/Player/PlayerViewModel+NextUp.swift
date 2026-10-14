@@ -287,6 +287,9 @@ extension PlayerViewModel {
         videoEnded: Bool,
         source: NextUpPresentationSource = .automatic
     ) {
+        #if DEBUG
+        testRecorder?.record(.postroll(videoEnded: videoEnded))
+        #endif
         let wasAlreadyShowing = showNextUpScreen
         let wasShowingBeforeEnd = showNextUpScreen && !nextUpScreenVideoEnded
         if !wasAlreadyShowing {
@@ -512,6 +515,9 @@ extension PlayerViewModel {
                 endedNaturally: endedNaturally) {
             completedPlaybackContentId = detail.contentId
             recordCurrentPlaybackMutation(markedCompleted: true)
+            #if DEBUG
+            testRecorder?.record(.watchedMutation(contentId: detail.contentId))
+            #endif
             newlyCompleted = true
         } else {
             newlyCompleted = false
@@ -528,6 +534,9 @@ extension PlayerViewModel {
         let paused = !isPlaying
         let eligible = newlyCompleted || progressIsEligible
         let refreshHome = refreshHomeAfterPlaybackWrite
+        #if DEBUG
+        testRecorder?.record(.progressReport(position: position, completedContentId: contentId))
+        #endif
         naturalEndProgressTask = Task { [sessionBridge] in
             await prior?.value
             let result = await sessionBridge.reportProgress(

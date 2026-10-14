@@ -1,0 +1,2 @@
+# Little CMS 2.17: no meson options, as today (facts 3.6). The defaults leave
+# out the utilities and the GPL-3.0 fast_float and threaded plug-ins.

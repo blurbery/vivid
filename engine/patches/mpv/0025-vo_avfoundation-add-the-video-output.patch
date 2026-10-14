@@ -1,0 +1,970 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] vo_avfoundation: add the AVFoundation video output
+
+Adds vo=avfoundation for iOS and tvOS. It presents decoded frames,
+VideoToolbox or software, on the AVSampleBufferDisplayLayer whose address
+is passed as --wid, as timed sample buffers. It never scales, tone-maps or
+re-renders the picture apart from the Picture in Picture subtitle
+composite. Creation fails cleanly without --wid (logged at verbose while
+mpv probes outputs), so autoprobing moves on.
+
+Formats: VideoToolbox, NV12, yuv420p, P010 and 10-bit and 12-bit planar
+4:2:0; mpv converts anything else. A VideoToolbox device registered as
+"avfoundation" lets hwdec=videotoolbox decode straight into frames the
+output accepts; it is removed and the device list destroyed at teardown.
+
+Timing: --avfoundation-presentation=host (the tvOS default) presents at
+mpv's target host times on a timebase that follows the host clock;
+media (the default elsewhere, needed by Picture in Picture) presents at
+media times on a timebase the output anchors and slews to mpv's schedule.
+Frames that cannot be enqueued by 4 ms before their target are dropped and
+counted. A seek keeps the last picture until a new one arrives; the layer
+is recovered after the app becomes active again and when the renderer
+fails. A subtitle sample that misses its frame for any reason is rendered
+again with the next one.
+
+Subtitles go to a separate layer laid out in display space, or, with
+--avfoundation-pip-composite-osd=yes, into the pictures in frame space.
+--avfoundation-queue-lead-ms sets how early frames are handed over
+(128 ms). --avfoundation-composite-osd is accepted and has no effect.
+
+The output is the meson feature vo-avfoundation and is registered first in
+the video output list. It needs iOS or tvOS 17 or later.
+
+Applies to mpv v0.41.0 with Vivid's earlier patches.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the files it modifies, it is free software; you can redistribute it
+and/or modify it under the terms of the GNU Lesser General Public License
+as published by the Free Software Foundation; either version 2.1 of the
+License, or (at your option) any later version (LGPL-2.1-or-later).
+---
+diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
+new file mode 100644
+--- /dev/null
++++ b/video/out/vo_avfoundation.m
+@@ -0,0 +1,860 @@
++/*
++ * This file is part of mpv.
++ *
++ * Copyright (C) 2026 blurbery
++ *
++ * mpv is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * mpv is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++// AVFoundation video output for iOS and tvOS.
++//
++// Decoded frames, VideoToolbox or software, go to an AVSampleBufferDisplayLayer
++// (passed by address through --wid) as timed sample buffers. The output owns
++// that layer's timebase and draws subtitles on a sibling layer, or into the
++// pictures themselves for Picture in Picture. It never scales, tone-maps or
++// re-renders the picture apart from that composite.
++//
++// This file is the centre: driver entry points, lifecycle and the per-frame
++// sequence. The work lives in video/out/avfoundation/:
++//   clock     playback rate estimator and media-mode timebase servo
++//   timebase  the CoreMedia timebase
++//   pacing    readiness wait, deadline drops and recovery throttle
++//   frame     uploads, colour tags, composites, samples
++//   subtitles subtitle rendering, caching and samples
++//   geometry, pixels, pool  shared helpers
++//   layers    the host and subtitle layers, main-thread hops, observers
++//
++// Manual reference counting, like the rest of mpv's Objective-C.
++
++#import <Foundation/Foundation.h>
++
++#include <TargetConditionals.h>
++
++#include <libavutil/hwcontext.h>
++#include <libavutil/pixfmt.h>
++
++#include "common/common.h"
++#include "common/msg.h"
++#include "options/m_config.h"
++#include "options/m_option.h"
++#include "options/options.h"
++#include "osdep/timer.h"
++#include "sub/osd.h"
++#include "video/fmt-conversion.h"
++#include "video/hwdec.h"
++#include "video/mp_image.h"
++#include "vo.h"
++
++#include "avfoundation/clock.h"
++#include "avfoundation/frame.h"
++#include "avfoundation/geometry.h"
++#include "avfoundation/layers.h"
++#include "avfoundation/pacing.h"
++#include "avfoundation/subtitles.h"
++#include "avfoundation/timebase.h"
++
++#define MAINTENANCE_FLIPS 60
++
++enum {
++    AVF_PRESENT_MEDIA = 0,
++    AVF_PRESENT_HOST = 1,
++};
++
++struct avf_opts {
++    bool composite_osd;     // accepted, no effect
++    bool pip_composite_osd;
++    int queue_lead_ms;
++    int presentation;
++};
++
++#define OPT_BASE_STRUCT struct avf_opts
++static const struct m_sub_options avf_conf = {
++    .prefix = "avfoundation",
++    .opts = (const struct m_option[]) {
++        {"composite-osd", OPT_BOOL(composite_osd)},
++        {"pip-composite-osd", OPT_BOOL(pip_composite_osd)},
++        {"queue-lead-ms", OPT_INT(queue_lead_ms), M_RANGE(0, 1000)},
++        {"presentation", OPT_CHOICE(presentation,
++            {"media", AVF_PRESENT_MEDIA}, {"host", AVF_PRESENT_HOST})},
++        {0}
++    },
++    .size = sizeof(struct avf_opts),
++    .defaults = &(const struct avf_opts){
++        .queue_lead_ms = 128,
++#if TARGET_OS_TV
++        .presentation = AVF_PRESENT_HOST,
++#else
++        .presentation = AVF_PRESENT_MEDIA,
++#endif
++    },
++};
++#undef OPT_BASE_STRUCT
++
++struct priv {
++    struct m_config_cache *opts_cache;
++    struct avf_opts *opts;
++    bool composite;             // subtitles go into the pictures (frame space)
++    int queue_lead_ms;
++    bool host_mode;             // presentation mode, latched at creation
++    int fmt_420p10, fmt_420p12;
++
++    struct avf_layers *layers;
++    CMTimebaseRef timebase;
++    struct avf_clock clock;
++    struct avf_pacing pacing;
++    struct avf_frame *frame;
++    struct avf_subs *subs;
++    struct mp_hwdec_ctx hwctx;
++
++    // The image held from draw_frame to flip_page.
++    struct mp_image *held;
++    int64_t target_ns;
++    bool media_valid;
++    int64_t media_ns;
++    bool has_estimate;
++    double estimate;
++
++    // Subtitle canvas.
++    bool canvas_valid;
++    struct avf_canvas canvas;
++    struct mp_osd_res osd_res;
++    bool have_render_res;
++    struct mp_osd_res render_res;
++
++    uint64_t flips;
++};
++
++// ---- helpers ---------------------------------------------------------------------
++
++static void wakeup_cb(void *ctx)
++{
++    vo_wakeup(ctx);
++}
++
++static void read_host_geometry(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    int w, h;
++    avf_layers_read_geometry(p->layers, &w, &h);
++    vo->dwidth = w;
++    vo->dheight = h;
++    vo->monitor_par = 1.0;
++}
++
++// Subtitle-layer sync (4.14.2): fresh geometry, the canvas recomputed on the
++// next frame and, on the separate layer, the layer's frame copied on main.
++static void sync_subtitle_layer(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    read_host_geometry(vo);
++    p->canvas_valid = false;
++    if (!p->composite)
++        avf_layers_copy_frame_async(p->layers);
++}
++
++static void update_canvas(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    read_host_geometry(vo);
++    if (p->composite) {
++        int w = 0, h = 0;
++        if (p->held) {
++            w = p->held->w;
++            h = p->held->h;
++        } else if (vo->params) {
++            w = vo->params->w;
++            h = vo->params->h;
++        }
++        int p_w = vo->params ? vo->params->p_w : 0;
++        int p_h = vo->params ? vo->params->p_h : 0;
++        avf_frame_space_canvas(w, h, p_w, p_h, &p->canvas);
++        p->osd_res = (struct mp_osd_res){
++            .w = p->canvas.w,
++            .h = p->canvas.h,
++            .display_par = p->canvas.display_par,
++        };
++    } else {
++        struct mp_rect src, dst;
++        struct mp_osd_res osd;
++        vo_get_src_dst_rects(vo, &src, &dst, &osd);
++        p->osd_res = osd;
++        p->canvas = (struct avf_canvas){
++            .w = osd.w, .h = osd.h,
++            .ml = osd.ml, .mt = osd.mt, .mr = osd.mr, .mb = osd.mb,
++            .display_par = osd.display_par,
++            .src = { src.x0, src.y0, src.x1, src.y1 },
++            .dst = { dst.x0, dst.y0, dst.x1, dst.y1 },
++        };
++    }
++    p->canvas_valid = true;
++}
++
++static enum avf_sw_format sw_format(struct priv *p, int imgfmt)
++{
++    if (imgfmt == IMGFMT_NV12)
++        return AVF_SW_NV12;
++    if (imgfmt == IMGFMT_420P)
++        return AVF_SW_420P;
++    if (imgfmt == IMGFMT_P010)
++        return AVF_SW_P010;
++    if (imgfmt && imgfmt == p->fmt_420p10)
++        return AVF_SW_420P10;
++    if (imgfmt && imgfmt == p->fmt_420p12)
++        return AVF_SW_420P12;
++    return AVF_SW_NONE;
++}
++
++// ---- recovery and pacing -------------------------------------------------------
++
++static int64_t ops_now(void *ctx)
++{
++    return mp_time_ns();
++}
++
++static void ops_sleep(void *ctx, int64_t ns)
++{
++    mp_sleep_ns(ns);
++}
++
++static bool ops_ready(void *ctx)
++{
++    struct vo *vo = ctx;
++    struct priv *p = vo->priv;
++    return avf_layers_host_ready(p->layers);
++}
++
++static bool ops_needs_recovery(void *ctx)
++{
++    struct vo *vo = ctx;
++    struct priv *p = vo->priv;
++    return avf_layers_host_needs_recovery(p->layers);
++}
++
++static void ops_recover(void *ctx, const char *reason)
++{
++    struct vo *vo = ctx;
++    struct priv *p = vo->priv;
++    struct avf_recovery_state st;
++    avf_layers_recover(p->layers, p->timebase, &st);
++    MP_WARN(vo, "Display layer recovery (%s): status %ld, requires flush %d, "
++            "ready %d, media time %.3f s, timebase %.3f s at rate %.3f.\n",
++            reason, st.status, st.requires_flush, st.ready,
++            p->media_valid ? p->media_ns / 1e9 : NAN, st.timebase_s,
++            st.timebase_rate);
++    avf_clock_invalidate(&p->clock);
++    avf_subs_reset_after_recovery(p->subs);
++}
++
++static void ops_dropped(void *ctx, enum avf_drop_kind kind, double remaining_ms)
++{
++    struct vo *vo = ctx;
++    vo_increment_drop_count(vo, 1);
++    static const char *const what[] = {
++        [AVF_DROP_PAST] = "the deadline had already passed",
++        [AVF_DROP_DEADLINE] = "the deadline was reached while waiting",
++        [AVF_DROP_UNRECOVERED] = "the layer still needs recovery",
++    };
++    MP_VERBOSE(vo, "Dropped a frame: %s (%.3f ms before its target).\n",
++               what[kind], remaining_ms);
++}
++
++static struct avf_pacing_ops pacing_ops(struct vo *vo)
++{
++    return (struct avf_pacing_ops){
++        .ctx = vo,
++        .now = ops_now,
++        .sleep = ops_sleep,
++        .ready = ops_ready,
++        .needs_recovery = ops_needs_recovery,
++        .recover = ops_recover,
++        .dropped = ops_dropped,
++    };
++}
++
++static void forced_recovery(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    struct avf_pacing_ops ops = pacing_ops(vo);
++    avf_pacing_recover(&p->pacing, &ops, "presentation resume", true);
++}
++
++static void pacing_summary(struct vo *vo, int64_t now)
++{
++    struct priv *p = vo->priv;
++    if (!avf_pacing_window_due(&p->pacing, now))
++        return;
++    struct avf_pacing *pc = &p->pacing;
++    struct avf_clock *c = &p->clock;
++    // Recoveries are reported with the rest, but a window whose only event
++    // is a recovery logs nothing.
++    if (pc->waits || pc->drops || c->anchors || c->rate_writes || c->max_abs_error_ns) {
++        double nominal = avf_clock_nominal(c);
++        double applied = c->applied_valid ? c->applied : nominal;
++        MP_VERBOSE(vo, "Pacing: %u waits (%.2f ms total, %.2f ms longest), %u "
++                   "deadline drops, %u recoveries, %u anchors, %u rate writes, "
++                   "rate offset %.0f ppm, largest phase error %.3f ms.\n",
++                   pc->waits, pc->wait_total_ns / 1e6, pc->wait_max_ns / 1e6,
++                   pc->drops, pc->recoveries, c->anchors, c->rate_writes,
++                   (applied / nominal - 1.0) * 1e6, c->max_abs_error_ns / 1e6);
++    }
++    c->anchors = 0;
++    c->rate_writes = 0;
++    c->max_abs_error_ns = 0;
++    avf_pacing_window_restart(pc, now);
++}
++
++// ---- options -------------------------------------------------------------------------
++
++// Option refresh (4.14.9 steps 1 to 3). Returns whether anything changed.
++static bool refresh_options(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (!m_config_cache_update(p->opts_cache))
++        return false;
++    if (p->opts->queue_lead_ms != p->queue_lead_ms) {
++        p->queue_lead_ms = p->opts->queue_lead_ms;
++        vo_set_queue_params(vo, p->queue_lead_ms * 1000000LL, 1);
++    }
++    if (p->opts->pip_composite_osd != p->composite) {
++        p->composite = p->opts->pip_composite_osd;
++        MP_VERBOSE(vo, "Picture in Picture subtitle compositing %s.\n",
++                   p->composite ? "on" : "off");
++        avf_subs_clear(p->subs);
++        // No buffer is touched here: a composite on screen keeps its cue
++        // until the next frame or redraw (hazard V15).
++        if (!p->composite)
++            avf_frame_release_core_image(p->frame);
++        avf_layers_flush_subtitles(p->layers, true);
++        sync_subtitle_layer(vo);
++    }
++    return true;
++}
++
++// A host resize seen by the key-value observer (4.15.2).
++static void handle_resize(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (p->composite)
++        return; // composited subtitles travel inside the samples
++    MP_VERBOSE(vo, "The host layer changed size, so subtitles get a new layout.\n");
++    avf_subs_clear(p->subs);
++    avf_layers_flush_subtitles(p->layers, true);
++    sync_subtitle_layer(vo);
++    vo->want_redraw = true;
++}
++
++// ---- per frame -------------------------------------------------------------------------
++
++static void render_subtitles(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (!vo->osd)
++        return;
++    if (!p->composite && !avf_layers_has_subtitle_layer(p->layers))
++        return;
++    if (avf_canvas_empty(&p->canvas))
++        return;
++    if (p->have_render_res && !osd_res_equals(p->render_res, p->osd_res))
++        avf_subs_reset_tracking(p->subs);
++    p->render_res = p->osd_res;
++    p->have_render_res = true;
++
++    static const bool formats[SUBBITMAP_COUNT] = {
++        [SUBBITMAP_LIBASS] = true,
++        [SUBBITMAP_BGRA] = true,
++    };
++    struct sub_bitmap_list *list = osd_render(vo->osd, p->osd_res, p->held->pts,
++                                              0, formats);
++    avf_subs_render(p->subs, list, p->canvas.w, p->canvas.h, p->composite);
++    talloc_free(list);
++}
++
++// The video buffer for the held image (+1): the decoder's own buffer, or a
++// tagged upload of a software frame.
++static CVPixelBufferRef frame_buffer(struct vo *vo, bool *hardware)
++{
++    struct priv *p = vo->priv;
++    struct mp_image *img = p->held;
++    *hardware = img->imgfmt == IMGFMT_VIDEOTOOLBOX;
++    if (*hardware) {
++        CVPixelBufferRef buf = (CVPixelBufferRef)img->planes[3];
++        if (!buf) {
++            MP_ERR(vo, "VideoToolbox frame without a pixel buffer.\n");
++            return NULL;
++        }
++        return CVPixelBufferRetain(buf);
++    }
++    CVPixelBufferRef buf = avf_frame_upload(p->frame, sw_format(p, img->imgfmt), img);
++    if (buf)
++        avf_frame_tag_software(buf, &img->params);
++    return buf;
++}
++
++static int64_t presentation_time(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (p->host_mode)
++        return p->target_ns;
++    if (p->media_valid)
++        return p->media_ns;
++    if (p->clock.have_last_media)
++        return p->clock.last_media_ns;
++    int64_t t;
++    avf_timebase_read(p->timebase, &t); // 0 when not numeric
++    return t;
++}
++
++static void timebase_step(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    int64_t now = mp_time_ns();
++    int64_t tb_now;
++    avf_timebase_read(p->timebase, &tb_now);
++    struct avf_clock_frame in = {
++        .media_ns = p->media_ns,
++        .target_ns = p->target_ns,
++        .now_ns = now,
++        .timebase_ns = tb_now,
++        .has_estimate = p->has_estimate,
++        .estimate = p->estimate,
++    };
++    struct avf_clock_result res;
++    avf_clock_step(&p->clock, &in, &res);
++    if (res.nominal_changed)
++        MP_VERBOSE(vo, "Playback rate is now %.6f.\n", res.rate);
++    if (res.error_anchor)
++        MP_VERBOSE(vo, "Re-anchoring: phase error %.3f ms.\n", res.error_ns / 1e6);
++    if (res.op == AVF_CLOCK_ANCHOR) {
++        OSStatus err = avf_timebase_anchor(p->timebase, res.rate, p->media_ns,
++                                           p->target_ns, mp_time_ns);
++        if (err != noErr)
++            MP_WARN(vo, "Could not anchor the timebase (%d).\n", (int)err);
++    } else if (res.op == AVF_CLOCK_SET_RATE) {
++        // A failed rate write is neither logged nor retried: the servo has
++        // already taken the new rate as applied, and its next write or anchor
++        // sets the timebase again.
++        (void)avf_timebase_set_rate(p->timebase, res.rate);
++    }
++}
++
++static void present(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    struct mp_image *img = p->held;
++    struct avf_subs_perf *perf = avf_subs_perf(p->subs);
++    perf->frames += 1;
++
++    if (!p->canvas_valid)
++        update_canvas(vo);
++    render_subtitles(vo);
++    // A subtitle sample due on the separate layer. Whenever it does not reach
++    // the layer, for whatever reason, change tracking is reset so the next
++    // frame renders it again (the pending mark stays).
++    bool sub_due = !p->composite && avf_subs_pending(p->subs);
++
++    int64_t build_start = mp_time_ns();
++    bool hardware;
++    CVPixelBufferRef buf = frame_buffer(vo, &hardware);
++    if (!buf) {
++        // Skipped: nothing enqueued, no drop counted.
++        if (sub_due)
++            avf_subs_reset_tracking(p->subs);
++        return;
++    }
++    // The Picture in Picture composite, or, without one, the original rows
++    // of a decoder buffer that carries an earlier composite.
++    bool composite = p->composite && avf_subs_present(p->subs);
++    struct avf_overlay ov = {0};
++    if (composite) {
++        avf_subs_overlay(p->subs, &ov);
++        ov.canvas_w = p->canvas.w;
++        ov.canvas_h = p->canvas.h;
++        ov.src = p->canvas.src;
++        ov.dst = p->canvas.dst;
++    }
++    enum avf_composite_kind kind;
++    CVPixelBufferRef out = avf_frame_prepare(p->frame, buf, !hardware,
++                                             composite ? &ov : NULL, &kind);
++    CVPixelBufferRelease(buf);
++    buf = out;
++    bool repairable = hardware && kind != AVF_COMPOSITE_CORE_IMAGE;
++    avf_frame_pixel_aspect(buf, vo->params);
++    // Whether the repair fired changes nothing further here.
++    if (repairable)
++        (void)avf_frame_dolby_vision_repair(buf, &img->params);
++
++    int64_t pts = presentation_time(vo);
++    CMSampleBufferRef sample = avf_frame_sample(p->frame, buf, pts);
++    CVPixelBufferRelease(buf);
++    if (!sample) {
++        if (sub_due)
++            avf_subs_reset_tracking(p->subs);
++        return;
++    }
++
++    CMSampleBufferRef sub = sub_due ? avf_subs_sample(p->subs, p->canvas.w,
++                                                      p->canvas.h, pts) : NULL;
++    perf->video_sample_ns += mp_time_ns() - build_start;
++
++    int64_t wait_start = mp_time_ns();
++    struct avf_pacing_ops ops = pacing_ops(vo);
++    enum avf_wait_result wait = avf_pacing_wait(&p->pacing, &ops, p->target_ns);
++    perf->wait_ns += mp_time_ns() - wait_start;
++    if (wait == AVF_WAIT_DROP) {
++        if (sub_due)
++            avf_subs_reset_tracking(p->subs);
++        goto done;
++    }
++
++    if (!p->host_mode && p->media_valid)
++        timebase_step(vo);
++
++    if (sub) {
++        if (avf_layers_subtitles_ready(p->layers)) {
++            int64_t t0 = mp_time_ns();
++            avf_layers_enqueue_subtitles(p->layers, sub);
++            avf_subs_sample_enqueued(p->subs);
++            perf->sub_enqueue_ns += mp_time_ns() - t0;
++            perf->sub_enqueues += 1;
++            int64_t tb_now;
++            if (avf_timebase_read(p->timebase, &tb_now)) {
++                int64_t margin = pts - tb_now;
++                perf->margins += 1;
++                perf->margin_total_ns += margin;
++                if (margin < perf->margin_min_ns)
++                    perf->margin_min_ns = margin;
++            }
++        } else {
++            MP_VERBOSE(vo, "Dropped a subtitle sample: its layer is not ready.\n");
++            perf->sample_drops += 1;
++            avf_subs_reset_tracking(p->subs);
++        }
++    } else if (sub_due) {
++        avf_subs_reset_tracking(p->subs);
++    }
++
++    avf_layers_enqueue_host(p->layers, sample);
++    avf_pacing_enqueued(&p->pacing, mp_time_ns());
++
++done:
++    if (sub)
++        CFRelease(sub);
++    CFRelease(sample);
++}
++
++// ---- driver --------------------------------------------------------------------------
++
++static int query_format(struct vo *vo, int format)
++{
++    struct priv *p = vo->priv;
++    return format == IMGFMT_VIDEOTOOLBOX || format == IMGFMT_NV12 ||
++           format == IMGFMT_420P || format == IMGFMT_P010 ||
++           (format && (format == p->fmt_420p10 || format == p->fmt_420p12));
++}
++
++static bool draw_frame(struct vo *vo, struct vo_frame *frame)
++{
++    struct priv *p = vo->priv;
++    mp_image_unrefp(&p->held);
++    p->media_valid = false;
++    p->has_estimate = false;
++
++    if (!frame->current || (frame->repeat && !frame->redraw)) {
++        p->target_ns = mp_time_ns();
++        return true;
++    }
++    p->held = mp_image_new_ref(frame->current);
++    if (!p->held)
++        return false;
++
++    double pts = p->held->pts != MP_NOPTS_VALUE ? p->held->pts : frame->current->pts;
++    p->media_valid = avf_media_seconds_to_ns(pts, &p->media_ns);
++    p->target_ns = frame->pts > 0 ? frame->pts : mp_time_ns();
++    if (p->media_valid) {
++        int64_t d = avf_frame_duration_ns(frame->display_synced,
++                                          frame->ideal_frame_duration,
++                                          frame->duration);
++        double est;
++        if (avf_estimator_push(&p->clock.est, p->media_ns, d,
++                               avf_clock_nominal(&p->clock), &est))
++        {
++            p->has_estimate = true;
++            p->estimate = est;
++        }
++    }
++    return true;
++}
++
++static void flip_page(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    @autoreleasepool {
++        p->flips += 1;
++        avf_pacing_window_open(&p->pacing, mp_time_ns());
++        if (avf_layers_take_resync(p->layers))
++            forced_recovery(vo);
++        if (p->held)
++            present(vo);
++        pacing_summary(vo, mp_time_ns());
++        if (p->flips % MAINTENANCE_FLIPS == 0) {
++            avf_frame_maintain(p->frame);
++            avf_subs_maintain(p->subs);
++        }
++        if (avf_subs_perf_due(p->subs))
++            avf_subs_perf_emit(p->subs, p->canvas.w, p->canvas.h);
++    }
++    mp_image_unrefp(&p->held);
++    p->media_valid = false;
++    p->has_estimate = false;
++}
++
++static int reconfig(struct vo *vo, struct mp_image_params *params)
++{
++    struct priv *p = vo->priv;
++    @autoreleasepool {
++        MP_VERBOSE(vo, "Reconfigured for %dx%d.\n", params->w, params->h);
++        avf_subs_clear(p->subs);
++        avf_layers_flush_subtitles_async(p->layers);
++        sync_subtitle_layer(vo);
++    }
++    return 0;
++}
++
++static void pause_timebase(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    int64_t t;
++    if (!avf_timebase_read(p->timebase, &t)) {
++        if (p->held && p->media_valid)
++            t = p->media_ns;
++        else if (p->clock.have_last_media)
++            t = p->clock.last_media_ns;
++        else
++            t = 0;
++    }
++    OSStatus err = avf_timebase_anchor(p->timebase, 0.0, t, 0, NULL);
++    if (err != noErr)
++        MP_WARN(vo, "Could not pause the timebase (%d).\n", (int)err);
++    avf_clock_pause(&p->clock);
++}
++
++static void reset(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    // Subtitles vanish; the picture stays until a new frame replaces it.
++    avf_subs_clear(p->subs);
++    avf_layers_flush_subtitles_async(p->layers);
++    avf_pacing_reset(&p->pacing);
++    p->media_valid = false;
++    p->has_estimate = false;
++    avf_clock_reset(&p->clock);
++    avf_layers_flush_host(p->layers, false);
++    avf_layers_flush_subtitles(p->layers, true);
++    avf_timebase_seed(p->timebase, p->host_mode, mp_time_ns());
++}
++
++static int control(struct vo *vo, uint32_t request, void *data)
++{
++    struct priv *p = vo->priv;
++    int ret = VO_NOTIMPL;
++    @autoreleasepool {
++        switch (request) {
++        case VOCTRL_CHECK_EVENTS:
++            if (avf_layers_take_resync(p->layers))
++                forced_recovery(vo);
++            if (avf_layers_take_resize(p->layers))
++                handle_resize(vo);
++            refresh_options(vo);
++            ret = VO_TRUE;
++            break;
++        case VOCTRL_PAUSE:
++            if (!p->host_mode)
++                pause_timebase(vo);
++            ret = VO_TRUE;
++            break;
++        case VOCTRL_RESUME:
++            if (!p->host_mode)
++                avf_clock_resume(&p->clock);
++            ret = VO_TRUE;
++            break;
++        case VOCTRL_REDRAW:
++            avf_subs_reset_tracking(p->subs);
++            ret = VO_TRUE;
++            break;
++        case VOCTRL_RESET:
++            reset(vo);
++            ret = VO_TRUE;
++            break;
++        case VOCTRL_SET_PANSCAN:
++            avf_subs_clear(p->subs);
++            sync_subtitle_layer(vo);
++            ret = VO_TRUE;
++            break;
++        case VOCTRL_UPDATE_WINDOW_TITLE:
++            ret = VO_TRUE;
++            break;
++        case VOCTRL_VO_OPTS_CHANGED:
++            refresh_options(vo);
++            avf_subs_clear(p->subs);
++            sync_subtitle_layer(vo);
++            ret = VO_TRUE;
++            break;
++        }
++    }
++    return ret;
++}
++
++static AVBufferRef *create_videotoolbox_device(struct vo *vo)
++{
++    AVBufferRef *ref = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_VIDEOTOOLBOX);
++    if (!ref) {
++        MP_ERR(vo, "Could not allocate the VideoToolbox device.\n");
++        return NULL;
++    }
++    if (av_hwdevice_ctx_init(ref) < 0) {
++        MP_ERR(vo, "Could not initialise the VideoToolbox device.\n");
++        av_buffer_unref(&ref);
++        return NULL;
++    }
++    return ref;
++}
++
++static int create(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++
++    p->opts_cache = m_config_cache_alloc(p, vo->global, &avf_conf);
++    m_config_cache_set_wakeup_cb(p->opts_cache, wakeup_cb, vo);
++    p->opts = p->opts_cache->opts;
++    p->composite = p->opts->pip_composite_osd;
++    p->queue_lead_ms = p->opts->queue_lead_ms;
++    p->fmt_420p10 = pixfmt2imgfmt(AV_PIX_FMT_YUV420P10);
++    p->fmt_420p12 = pixfmt2imgfmt(AV_PIX_FMT_YUV420P12);
++
++    p->frame = avf_frame_create(vo->log);
++    p->subs = avf_subs_create(vo->log);
++    p->layers = avf_layers_create(vo->log, (void *)(intptr_t)vo->opts->WinID);
++    if (!p->frame || !p->subs || !p->layers) {
++        MP_ERR(vo, "Out of memory.\n");
++        goto fail;
++    }
++
++    p->timebase = avf_timebase_create();
++    if (!p->timebase) {
++        MP_ERR(vo, "Could not create the presentation timebase.\n");
++        goto fail;
++    }
++
++    p->host_mode = p->opts->presentation == AVF_PRESENT_HOST;
++    avf_clock_init(&p->clock);
++    avf_pacing_init(&p->pacing);
++    avf_timebase_seed(p->timebase, p->host_mode, mp_time_ns());
++    avf_layers_attach_timebase(p->layers, p->timebase);
++
++    MP_VERBOSE(vo, "Presenting on layer %p (%s timing, composite-osd %s, "
++               "pip-composite-osd %s).\n", (void *)(intptr_t)vo->opts->WinID,
++               p->host_mode ? "host" : "media",
++               p->opts->composite_osd ? "yes" : "no", p->composite ? "yes" : "no");
++    vo_set_queue_params(vo, p->queue_lead_ms * 1000000LL, 1);
++
++    read_host_geometry(vo);
++    avf_layers_create_subtitle_layer(p->layers, p->timebase);
++
++    vo->hwdec_devs = hwdec_devices_create();
++    p->hwctx = (struct mp_hwdec_ctx){
++        .driver_name = "avfoundation",
++        .av_device_ref = create_videotoolbox_device(vo),
++        .hw_imgfmt = IMGFMT_VIDEOTOOLBOX,
++    };
++    hwdec_devices_add(vo->hwdec_devs, &p->hwctx);
++
++    avf_layers_observe_app_state(p->layers, vo);
++    avf_layers_observe_geometry(p->layers, vo);
++    return 0;
++
++fail:
++    avf_layers_destroy(p->layers);
++    p->layers = NULL;
++    avf_subs_destroy(p->subs);
++    p->subs = NULL;
++    avf_frame_destroy(p->frame);
++    p->frame = NULL;
++    talloc_free(p->opts_cache);
++    p->opts_cache = NULL;
++    return -1;
++}
++
++static int preinit(struct vo *vo)
++{
++    if (vo->opts->WinID == -1) {
++        // While mpv probes outputs this is the expected way to decline.
++        MP_MSG(vo, vo->probing ? MSGL_V : MSGL_ERR,
++               "No layer given: set --wid to an AVSampleBufferDisplayLayer.\n");
++        return -1;
++    }
++    if (@available(iOS 17.0, tvOS 17.0, *)) {
++        int ret;
++        @autoreleasepool {
++            ret = create(vo);
++        }
++        return ret;
++    }
++    MP_ERR(vo, "This video output needs iOS or tvOS 17 or later.\n");
++    return -1;
++}
++
++static void uninit(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    @autoreleasepool {
++        avf_layers_remove_observers(p->layers);
++        avf_layers_flush_for_teardown(p->layers);
++        avf_layers_detach_timebase(p->layers);
++        CFRelease(p->timebase);
++        p->timebase = NULL;
++        avf_layers_remove_subtitle_layer(p->layers);
++
++        hwdec_devices_remove(vo->hwdec_devs, &p->hwctx);
++        av_buffer_unref(&p->hwctx.av_device_ref);
++        hwdec_devices_destroy(vo->hwdec_devs);
++        vo->hwdec_devs = NULL;
++
++        if (avf_subs_perf(p->subs)->renders)
++            avf_subs_perf_emit(p->subs, p->canvas.w, p->canvas.h);
++        mp_image_unrefp(&p->held);
++        avf_subs_destroy(p->subs);
++        p->subs = NULL;
++        avf_frame_destroy(p->frame);
++        p->frame = NULL;
++        avf_layers_destroy(p->layers);
++        p->layers = NULL;
++        talloc_free(p->opts_cache);
++        p->opts_cache = NULL;
++    }
++}
++
++const struct vo_driver video_out_avfoundation = {
++    .description = "AVFoundation sample buffer display layer (iOS, tvOS)",
++    .name = "avfoundation",
++    .caps = 0,
++    .preinit = preinit,
++    .query_format = query_format,
++    .reconfig = reconfig,
++    .control = control,
++    .draw_frame = draw_frame,
++    .flip_page = flip_page,
++    .uninit = uninit,
++    .priv_size = sizeof(struct priv),
++    .global_opts = &avf_conf,
++};
+diff --git a/meson.options b/meson.options
+--- a/meson.options
++++ b/meson.options
+@@ -88,6 +88,7 @@
+ option('vaapi-wayland', type: 'feature', value: 'auto', description: 'VAAPI (Wayland support)')
+ option('vaapi-win32', type: 'feature', value: 'auto', description: 'VAAPI (Windows support)')
+ option('vaapi-x11', type: 'feature', value: 'auto', description: 'VAAPI (X11 support)')
++option('vo-avfoundation', type: 'feature', value: 'auto', description: 'AVFoundation sample buffer video output (iOS, tvOS)')
+ option('vulkan', type: 'feature', value: 'auto', description: 'Vulkan context support')
+ option('wayland', type: 'feature', value: 'auto', description: 'Wayland')
+ option('x11', type: 'feature', value: 'auto', description: 'X11')
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -1532,6 +1532,26 @@
+ if features['videotoolbox-pl']
+     dependencies += corevideo
+     sources += files('video/out/hwdec/hwdec_vt_pl.m')
++endif
++
++# AVFoundation sample buffer video output (iOS and tvOS)
++vo_avfoundation = dependency('appleframeworks',
++    modules: ['AVFoundation', 'CoreGraphics', 'CoreImage', 'CoreMedia',
++              'CoreVideo', 'IOSurface', 'Metal', 'QuartzCore', 'UIKit'],
++    required: get_option('vo-avfoundation').require(darwin))
++features += {'vo-avfoundation': vo_avfoundation.found()}
++if features['vo-avfoundation']
++    dependencies += vo_avfoundation
++    sources += files('video/out/vo_avfoundation.m',
++                     'video/out/avfoundation/clock.c',
++                     'video/out/avfoundation/frame.m',
++                     'video/out/avfoundation/geometry.c',
++                     'video/out/avfoundation/layers.m',
++                     'video/out/avfoundation/pacing.c',
++                     'video/out/avfoundation/pixels.c',
++                     'video/out/avfoundation/pool.c',
++                     'video/out/avfoundation/subtitles.c',
++                     'video/out/avfoundation/timebase.c')
+ endif
+ 
+ 
+diff --git a/video/out/vo.c b/video/out/vo.c
+--- a/video/out/vo.c
++++ b/video/out/vo.c
+@@ -46,6 +46,7 @@
+ #include "osdep/io.h"
+ #include "osdep/threads.h"
+ 
++extern const struct vo_driver video_out_avfoundation;
+ extern const struct vo_driver video_out_mediacodec_embed;
+ extern const struct vo_driver video_out_x11;
+ extern const struct vo_driver video_out_vdpau;
+@@ -70,6 +71,9 @@
+ static const struct vo_driver *const video_out_drivers[] =
+ {
+     // high-quality and well-supported VOs first:
++#if HAVE_VO_AVFOUNDATION
++    &video_out_avfoundation,
++#endif
+     &video_out_gpu_next,
+     &video_out_gpu,
+ 

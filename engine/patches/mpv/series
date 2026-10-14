@@ -1,0 +1,18 @@
+# mpv v0.41.0 patch series, applied in order to the pristine source.
+# Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
+9a8c970f0e900a359936990e90ca6288c572b1ee798d876252ef31d10f5a7a88  0001-ad_spdif-recreate-spdif-muxer-on-reset.patch
+964f2f00526cd41d921e14a0a8a72729a63fcedc125114fd0bf63588ddfb1b7b  0002-ao_avfoundation-build-for-ios-and-tvos.patch
+e04395babbf75fff99f6ad8fc1a7d8923df79bb9be3285c57008ae427643e5cd  0010-ad_spdif-derive-the-e-ac-3-carrier-rate-from-the-stream.patch
+5f9a8762969b9180268a85fa118bd4cbb40e1e5b4764e899b6887dbffad8cd44  0011-f_output_chain-wake-the-chain-after-a-hard-reset.patch
+7ff93ef08d3adcf851d1608390a0e1120b9b27d98983dceba71fba10399fb99c  0012-ao_avfoundation-shared-centre-of-the-rebuilt-output.patch
+5a5accfaed30404908e262da77dd7defa310328ea37641f96792510afbef1d5d  0013-ao_avfoundation-decoded-pcm-sink-with-a-bounded-tvos-mode.patch
+4caee6634b9d9abc6953cbab5a9d38a72d427a2bf5aa94ad2d48a48c78bf360a  0014-ao_avfoundation-start-up-supervision-and-clock-anchoring.patch
+64f008ec95ce6fdec627f46996d4c86df7252d05d59214ebd7d4e80c71f36ec9  0015-ao_avfoundation-ac-3-and-e-ac-3-passthrough.patch
+c0a5cce1c9be707f0dd38b52233005495fd10630707c5a9e21457d432b3a907f  0016-ao_avfoundation-avfoundation-bindings-for-both-sinks.patch
+56502aad24093a4db84dd38110be04fdf718a0e33becad32efc9fcf2fc10b1e4  0020-vo_avfoundation-presentation-timing-and-pacing.patch
+49815fa615fae0aa6c68a26461ad0a8f3848fad2e11ba8794a1d1c7d05b89f8d  0021-vo_avfoundation-pixel-kernels-geometry-and-pools.patch
+81304587468a1182169c19753b1912b9d71c5e347b6becde2a2fda167923404c  0022-vo_avfoundation-frame-path.patch
+b5c90a0e8868a7945088cf5df494ea3feaa282afb205e78b586d1b9788751895  0023-vo_avfoundation-subtitles.patch
+364d5dc81ef320ae3879e79ea30eb7bc61f264a0b10be07a666da9fe895a27b8  0024-vo_avfoundation-layers-and-observers.patch
+153bd1b83411e8447d0dcadcd5bfabc23a73e58c5b982778ae9fecd4bbef1c46  0025-vo_avfoundation-add-the-video-output.patch
+103a3651057fe7f37ede0daa985994c3dba2f7c80aa630d330005d8d27cefcd5  0040-vd_lavc-tolerate-a-short-burst-of-hardware-decoding-errors.patch

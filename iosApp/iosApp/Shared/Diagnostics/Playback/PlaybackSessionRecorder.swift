@@ -286,7 +286,7 @@ final class PlaybackSessionRecorder {
                 #if os(iOS)
                 // The same test the player uses to move video to a TV.
                 setup.externalScreen = UIApplication.shared.connectedScenes.contains {
-                    ExternalDisplayManager.isExternalDisplayRole($0.session.role)
+                    VividExternalDisplay.isExternalDisplayRole($0.session.role)
                 }
                 #endif
                 if let screen {

@@ -1,9 +1,9 @@
 Component: FreeType
-Version: 2.12.1 (tag VER-2-12-1, commit e8ebfe988b5f57bfb9a3ecb13c70d9791bce9ecf), via mpvkit/libass-build 0.17.4
+Version: 2.12.1 (tag VER-2-12-1, commit e8ebfe988b5f57bfb9a3ecb13c70d9791bce9ecf), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0
 Source: https://github.com/freetype/freetype/tree/e8ebfe988b5f57bfb9a3ecb13c70d9791bce9ecf
 SPDX: FTL (FreeType is FTL OR GPL-2.0-or-later; FTL elected). Bundled BDF/PCF drivers and fthash.c are MIT-style (X11).
 Note: FTL section 2 requires binary distributions to state in their documentation that the software is based in part on the work of the FreeType Team. FTL's preferred credit text (Introduction), with <year> = 2022 for FreeType 2.12.1: Portions of this software are copyright (c) 2022 The FreeType Project (www.freetype.org). All rights reserved.
-Note: Built with -Dzlib=enabled (resolves to the system zlib when found).
+Note: Built with -Dzlib=system, so it uses the system zlib.
 ================================================================================
 
 --------------------------------------------------------------------------------

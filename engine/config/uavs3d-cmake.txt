@@ -1,0 +1,5 @@
+# uavs3d 1.2 CMake options (facts 3.9); lucid.py adds the common values of
+# facts 1.4, among them CMAKE_SYSTEM_PROCESSOR=arm64, which selects the arm64
+# NEON assembly.
+
+-DCOMPILE_10BIT=1

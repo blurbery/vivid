@@ -1,0 +1,13 @@
+# libbluray 1.4.0 meson options (facts 3.10). FreeType comes from this
+# slice's build and libxml2 from the SDK (the pipeline's libxml-2.0.pc).
+
+-Dbdj_jar=disabled
+-Dembed_udfread=true
+-Denable_devtools=false
+-Denable_docs=false
+-Denable_examples=false
+-Denable_tools=false
+-Dfontconfig=disabled
+-Dfreetype=enabled
+-Djava9=false
+-Dlibxml2=enabled

@@ -1,0 +1,4 @@
+# libdovi 3.3.2 (dovi_tool tag libdovi-3.3.2) patch series, applied in order
+# to the pristine source. Format: <SHA-256>  <patch file>. lucid.py refuses a
+# patch whose hash differs.
+4b314664fa52fe21da4a4e0fcd280187cd8e1a47cb9262668795c40c65ec35d9  0001-capi-return-an-error-instead-of-aborting-on-any-input.patch

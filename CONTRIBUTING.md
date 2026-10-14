@@ -10,7 +10,7 @@ Preserve the working browsing, focus and playback behaviour. Validate changes wi
 
 ## Local setup
 
-Use an Apple Silicon Mac, Xcode 26.3 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen). CI uses Xcode 26.3 with XcodeGen 2.43.0; recent signed releases use Xcode 27.0. The pinned media packages provide arm64 simulator slices. Generate the project for the platform you are building:
+Use an Apple Silicon Mac, Xcode 26.3 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen). CI uses Xcode 26.3 with XcodeGen 2.43.0; recent signed releases use Xcode 27.0. The pinned Lucid Engine package provides arm64 simulator slices. Generate the project for the platform you are building:
 
 ```sh
 cd iosApp
@@ -21,7 +21,7 @@ open Vivid.xcodeproj
 
 For Apple TV, run `xcodegen generate --spec project.yml` instead. Both specs write `Vivid.xcodeproj`, so regenerate when switching platforms; a generated project does not contain both app schemes.
 
-Lucid Engine provides iPhone, iPad and Apple TV playback with the same pinned media dependencies. Keep package pins, the native audio recovery patch and third-party notices together. Follow the [Lucid build instructions](docs/cores/player-engine.md#builds-and-native-audio-patch) to reproduce the device-tested media binary. Source changes do not authorise an Apple binary release. Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
+Lucid Engine provides iPhone, iPad and Apple TV playback with the same pinned package. Keep the package pin and the third-party notices together. The [Lucid Engine guide](docs/cores/player-engine.md#builds) describes the package and how its libraries are built. The engine's build pipeline, its upstream pins and Vivid's engine patches live in `engine/`: read the [Lucid Engine build guide](docs/cores/lucid-engine-build.md), the [Lucid Engine architecture](docs/cores/lucid-engine-architecture.md) and the [patch specification](docs/playback/lucid-engine-patch-spec.md) before changing them. The Lucid Engine build workflow builds and checks every pull request that changes `engine/`; a package release and the app's pin change are separate steps. Source changes do not authorise an Apple binary release. Generate `iosApp/project.yml` for tvOS or `iosApp/project-ios.yml` for iOS; their package graphs must stay separate.
 
 Use the `Vivid` scheme for iPhone/iPad and `VividTV` for Apple TV. These are the current build identifiers. Choose an installed simulator in Xcode, or generate and build the TV target without signing from `iosApp/`:
 

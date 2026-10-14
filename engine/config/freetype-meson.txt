@@ -1,0 +1,12 @@
+# FreeType 2.12.1 meson options (facts 3.1 and D2). zlib=system is the value
+# that gives today's ftoption.h (FT_CONFIG_OPTION_USE_ZLIB and
+# FT_CONFIG_OPTION_SYSTEM_ZLIB) and fails rather than building the bundled
+# zlib subproject; today's `enabled` (an alias of `auto`) resolved to the
+# system zlib the same way. tests stays at its default, disabled.
+
+-Dbrotli=disabled
+-Dbzip2=disabled
+-Dharfbuzz=disabled
+-Dmmap=disabled
+-Dpng=disabled
+-Dzlib=system

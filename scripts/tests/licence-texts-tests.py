@@ -8,9 +8,14 @@ in place of the marker must reproduce the original file byte for byte.
 
 ORIGINALS holds the SHA-256 and size of each file as bundled before the split
 (the 35 files in iosApp/Resources/OpenSourceLicenses at the commit that first
-listed every shipped library). The mpv, FFmpeg, Plezy and ThumbHash entries
-record those files after their Vivid-written header lines were corrected; the
-upstream texts in them are unchanged. README.txt is Vivid's own overview, which
+listed every shipped library). The ThumbHash entry records that file after its
+Vivid-written header lines were corrected. When Lucid Engine replaced the
+previous engine package, the OpenSSL entry was removed, mpv and FFmpeg moved to
+their LGPL texts, and the other engine libraries' Vivid-written header lines
+were updated; their upstream texts are unchanged. When the app moved to Lucid
+Engine 0.1.0, which builds every library from upstream source, only the
+engine libraries' Vivid-written header lines changed again (how each is built,
+its patches and the pipeline commit). README.txt is Vivid's own overview, which
 changes with the docs, so it is only checked for presence. When a licence
 file changes deliberately (for example a library update), update its entry
 here with the hash this script prints for the reconstructed file.
@@ -31,15 +36,13 @@ manifest_path = folder / 'licences.json'
 ORIGINALS = {
     "CollectionHStack-MIT.txt": ("15b4a276eedf002db591914c38370c999d6ff705001a0f6dcb76d605395d5637", 1626),
     "DifferenceKit-Apache-2.0.txt": ("b68a29426b9fc7ec32083b034ed6536ac00bb05dabc2a65f87a628e53f33270b", 12048),
-    "FFmpeg-GPL-3.0-or-later.txt": ("bf53c3b10c2cf2db88ccb7b882262d37f7cc3ec2ec0cf18166230c74d0af3d21", 47870),
-    "FreeType-FTL.txt": ("a0a88ce5d8b60f5b65e4e1dd126d04f05a12860defc1595732a689ea4ae44b18", 15634),
-    "FriBidi-LGPL-2.1.txt": ("bc49e3817305aebeb5cae9fcbda5d25496edba30567290e027eabe0ae9e3485f", 27035),
-    "HarfBuzz-MIT.txt": ("9292bc854de0b74c7c68d600d6ae13f27b60f420440283a191087d14da10606d", 4154),
-    "LittleCMS-MIT.txt": ("51c6e5ceac95d51abfbaeabc7112c32737f805f82dedf42032fe6ce3d5c4810f", 1664),
-    "MoltenVK-Apache-2.0.txt": ("eb118319a0c21de2ff35e1239be628d9004aff578ee1229fe43cdd16a9f35f4e", 12156),
-    "OpenSSL-Apache-2.0.txt": ("345f1e1a3f8faf9aec81cc317c669773fee85dd5a1ccd66a5eda6460f2f9afbb", 10831),
-    "Plezy-GPL-3.0.txt": ("0b42f7a097ec756e8a2a62c7d61da8c81d5dd5f08ae16d9d5572fe207a196ba4", 35973),
-    "Rust-Standard-Library-MIT.txt": ("4768b5b4d43bebe22c12e23aa4ed28f795416b3180bea43180ae22a248a6a9da", 3879),
+    "FFmpeg-LGPL-2.1-or-later.txt": ("09def22db086c05e6886e0609c5192d64310a5c3fb53e2419734b50ce635c0ac", 39271),
+    "FreeType-FTL.txt": ("1896a2775dbc981b7e4b5fe49aad4266f520b0a25cb303fbb86a7d4222d440d9", 15666),
+    "FriBidi-LGPL-2.1.txt": ("5c1e6a8f3fcfe67f42ad71ddd3d442c2a96f5c6c3c213aa82b8f2204db39111d", 27081),
+    "HarfBuzz-MIT.txt": ("bab90809a4b4c1880913755acb1601e3de94e0613a4ebb9157cb154f4c17a889", 4200),
+    "LittleCMS-MIT.txt": ("a0bb4110b8ec064afdd3ec5074a7974312865b1c808e00152ed8127b83f91ee9", 1711),
+    "MoltenVK-Apache-2.0.txt": ("b1b93fb781f8351460a69d4441e8b3629a47da2b7c3e872ec1c82cb13cd6b822", 12201),
+    "Rust-Standard-Library-MIT.txt": ("4e33a8e97437d3dbf459cb4adc16d14cb8300685f7b956c3c82c3768d6d6f6cb", 3664),
     "SPIRV-Cross-Apache-2.0.txt": ("fb9b07689f16dd2f26bb823b304f866c3510b26cbf9882be78f115e473e16de2", 13751),
     "SPIRV-Headers-MIT.txt": ("53f637fa9add95006c58844267eeda7cb3ec8afda9b57ba27235a571e0292ee8", 24230),
     "SPIRV-Tools-Apache-2.0.txt": ("b03185cd87802fe40144ff4e75251c20a8c1dce90c4a2e27911f2a0a1f1fd223", 12065),
@@ -49,20 +52,20 @@ ORIGINALS = {
     "Vivid-GPL-3.0.txt": ("3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986", 35149),
     "Vulkan-Headers-MIT.txt": ("a3132705aff09e9570975cd6d786ed523ba3cc8b00202f87e52660354273d0f6", 2611),
     "cereal-BSD-3-Clause.txt": ("04fd5dc52f69175e833cd041b0937e82fd6e0e21d79d233fd7059081210ad6ae", 2340),
-    "dav1d-BSD-2-Clause.txt": ("f50a03872cfac7a7df6e6501001fd1552611a39449947341bea07f90c39732bf", 2032),
+    "dav1d-BSD-2-Clause.txt": ("77e2969e188c9a730459c62a8e1ffd540927af15a64b79259a318cc8f1674812", 2088),
     "fast_float-MIT.txt": ("73aef326ccc5d476ab7d216ccbbac70040303b8ff83379224c2d56f5142f9bf1", 1759),
     "glad-CC0-1.0-Apache-2.0.txt": ("6c1aa2ce2fc8b2182a193dd7733ddfc23a5b3c971cd1041e0ce6637c0cf022af", 3978),
     "glslang-Multiple.txt": ("38a495842535d9fc839bf0e2506bba2234b932f13c22f07c05c9c892c037ed6d", 55653),
-    "libass-ISC.txt": ("0c0ecfd31af3075fe953b53b61476dd96cf02b92c5578f339c8ed491357cc51c", 1380),
-    "libbluray-LGPL-2.1.txt": ("884aaacb887f685971d546f1422f9f04530cc559c70fc6cbe1d5bbf95adf5ce9", 25209),
-    "libdovi-MIT.txt": ("2ac7bd44cfc1c9cd26c093a22ee046b3b77b6084faf85f3bc660f62788f708ad", 20284),
-    "libplacebo-LGPL-2.1.txt": ("5668d3f00936677e272f723dcc068801af2688d5a81e13e6491ae08ad493656c", 25195),
+    "libass-ISC.txt": ("8fbf6eaac5939cf46ed69c7b3585659ea6ba76e52ee6511bc5552e6ca013a60e", 1662),
+    "libbluray-LGPL-2.1.txt": ("d2768131265b95a4bb15d9480b226389d27db70b7480975082eeb502d5a6bb87", 25401),
+    "libdovi-MIT.txt": ("a8d1cdf179b7ab421fa1b6fba7e3e32083a1dc37e927dc32ac8072e5d2aa1a63", 20428),
+    "libplacebo-LGPL-2.1.txt": ("fa8a9f3de639c85dd5784a29a0b97e9ff2dfc9e6363ee52b035662abb11cce01", 25231),
     "libudfread-LGPL-2.1.txt": ("a62ba659972196d4302bf2eb610de0c49d887edf3b8dd98b4aa52ed4b706821a", 27174),
-    "libunibreak-Zlib.txt": ("0fd3236dc8ae59edfebe2e09e315ba6336eb104594bfdf89bd603b330c401101", 1642),
-    "mpv-GPL-2.0-or-later.txt": ("9bdbdbc62baf2ffd61e705ea1cea13aa459fb6da31e52c2e79f80424df1dbc10", 50034),
-    "shaderc-Apache-2.0.txt": ("2e6e7b9a7b8c85dc6e1753baad991192fdfc43b8773b7506088c1b714b869743", 12241),
-    "uavs3d-BSD-3-Clause.txt": ("92987241ce896e958db7ef187d8b9bf95a7ead2593847ea875aec7cd1bb311d1", 2331),
-    "uchardet-MPL-1.1.txt": ("7c2910b9704f9cf35b3524aed78a479bf64233ed9caa6663d082d1c296c0c1e6", 71244),
+    "libunibreak-Zlib.txt": ("ebc3dd591fbfd5f36c4db8044691d06672034f0fcf811bcfde87aa44e4a26ba6", 1688),
+    "mpv-LGPL-2.1-or-later.txt": ("b3588cc6fcf3858937f5ba0e4fb40b848cdace4f2c364e70003e362e9b66b28b", 31854),
+    "shaderc-Apache-2.0.txt": ("3a13ca2c36384ab1eb7517b36bf085eb75a95ff7625edb93f4dc9809cdee659c", 12281),
+    "uavs3d-BSD-3-Clause.txt": ("ff9fa66aa7201706327a0e6a830281448f1e8b9f5cbce45941c3c8d4d6d675b8", 2442),
+    "uchardet-MPL-1.1.txt": ("f4609df78ec01fd8599c41f8ad9e9e852510663d0cc8ee75002cbce0c761af5a", 71280),
 }
 OVERVIEW = 'README.txt'
 

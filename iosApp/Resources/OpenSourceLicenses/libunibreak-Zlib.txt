@@ -1,5 +1,5 @@
 Component: libunibreak
-Version: 6.1 (tag libunibreak_6_1, commit 304585d8e2d63187507368d612c3d5fff1486368), via mpvkit/libass-build 0.17.4
+Version: 6.1 (tag libunibreak_6_1, commit 304585d8e2d63187507368d612c3d5fff1486368), built from upstream source by Vivid's engine pipeline for Lucid Engine 0.1.0
 Source: https://github.com/adah1972/libunibreak/tree/304585d8e2d63187507368d612c3d5fff1486368
 SPDX: Zlib
 ================================================================================

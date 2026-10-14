@@ -1,0 +1,3 @@
+# uavs3d 1.2 patch series, applied in order to the pristine source.
+# Format: <SHA-256>  <patch file>. lucid.py refuses a patch whose hash differs.
+eb4f68bd659aff954e2f49146526d0be3e8e8029aecb73dbd440b093691b9426  0001-version-describe-tag-1.2-without-git-history.patch

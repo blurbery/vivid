@@ -1,0 +1,213 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: blurbery <271863866+blurbery@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 00:00:00 +0000
+Subject: [PATCH] ao_avfoundation: build for iOS and tvOS
+
+The AVFoundation audio output already sets up AVAudioSession on iOS and
+tvOS, but it does not compile there: with HAVE_AVFOUNDATION the CoreAudio
+utility and channel-map helpers declare and build the macOS-only HAL
+functions (AudioDeviceID, AudioStreamID, AudioObject), and init() selects
+an output device through setAudioOutputDeviceUniqueID:, which iOS and
+tvOS do not have. The AudioUnit output fails too, because it includes the
+same channel-map header.
+
+Add CA_HAVE_HAL, true for the CoreAudio output and for AVFoundation on
+macOS, and use it in place of HAVE_COREAUDIO || HAVE_AVFOUNDATION wherever
+the code needs the HAL. The channel-layout helpers AVFoundation uses
+(ca_get_acl, ca_find_standard_layout, ca_log_layout) stay available. On
+iOS and tvOS the AVFoundation output then has no device list or device
+selection and uses the shared AVAudioSession route, as the AudioUnit
+output does.
+
+The output also calls cfstr_get_cstr() from osdep/utils-mac.c, which
+meson only builds with the macOS cocoa feature, so a static libmpv for
+iOS or tvOS could not be linked into an app. Build utils-mac.c with the
+AVFoundation output whenever cocoa is off. macOS builds with cocoa are
+unchanged. Applies to mpv v0.41.0.
+
+Licence: this patch is part of Vivid's Lucid Engine patch series for mpv.
+Like the files it modifies, it is free software; you can redistribute it
+and/or modify it under the terms of the GNU Lesser General Public License
+as published by the Free Software Foundation; either version 2.1 of the
+License, or (at your option) any later version (LGPL-2.1-or-later).
+---
+diff --git a/audio/out/ao_avfoundation.m b/audio/out/ao_avfoundation.m
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_avfoundation.m
++++ b/audio/out/ao_avfoundation.m
+@@ -249,9 +249,13 @@
+         goto error;
+     }
+ 
++#if TARGET_OS_OSX
++    // Output device selection only exists on macOS. iOS and tvOS route audio
++    // through the shared AVAudioSession instead.
+     if (ao->device && ao->device[0]) {
+         [p->renderer setAudioOutputDeviceUniqueID:(NSString*)cfstr_from_cstr(ao->device)];
+     }
++#endif
+ 
+     [p->synchronizer addRenderer:p->renderer];
+ #if HAVE_MACOS_11_3_FEATURES
+@@ -362,6 +366,8 @@
+     .reset          = stop,
+     .start          = start,
+     .set_pause      = set_pause,
++#if CA_HAVE_HAL
+     .list_devs      = ca_get_device_list,
++#endif
+     .priv_size      = sizeof(struct priv),
+ };
+diff --git a/audio/out/ao_coreaudio_chmap.c b/audio/out/ao_coreaudio_chmap.c
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_coreaudio_chmap.c
++++ b/audio/out/ao_coreaudio_chmap.c
+@@ -338,6 +338,11 @@
+     return layout;
+ }
+ 
++#endif
++
++// Everything below queries the output device through the CoreAudio HAL,
++// which only exists on macOS (see CA_HAVE_HAL in ao_coreaudio_utils.h).
++#if CA_HAVE_HAL
+ 
+ #define CHMAP(n, ...) &(struct mp_chmap) MP_CONCAT(MP_CHMAP, n) (__VA_ARGS__)
+ 
+diff --git a/audio/out/ao_coreaudio_chmap.h b/audio/out/ao_coreaudio_chmap.h
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_coreaudio_chmap.h
++++ b/audio/out/ao_coreaudio_chmap.h
+@@ -21,6 +21,8 @@
+ #include "config.h"
+ #include <AudioToolbox/AudioToolbox.h>
+ 
++#include "audio/out/ao_coreaudio_utils.h"
++
+ struct mp_chmap;
+ 
+ int ca_label_to_mp_speaker_id(AudioChannelLabel label);
+@@ -30,6 +32,10 @@
+ AudioChannelLayout *ca_find_standard_layout(void *talloc_ctx, AudioChannelLayout *l);
+ AudioChannelLayout *ca_get_acl(struct ao *ao, size_t *out_layout_size);
+ void ca_log_layout(struct ao *ao, int l, AudioChannelLayout *layout);
++#endif
++
++// These query the output device through the macOS-only CoreAudio HAL.
++#if CA_HAVE_HAL
+ bool ca_init_chmap(struct ao *ao, AudioDeviceID device);
+ void ca_get_active_chmap(struct ao *ao, AudioDeviceID device, int channel_count,
+                          struct mp_chmap *out_map);
+diff --git a/audio/out/ao_coreaudio_properties.c b/audio/out/ao_coreaudio_properties.c
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_coreaudio_properties.c
++++ b/audio/out/ao_coreaudio_properties.c
+@@ -18,6 +18,11 @@
+ /*
+  * Abstractions on the CoreAudio API to make property setting/getting suck less
+ */
++
++#include "audio/out/ao_coreaudio_utils.h"
++
++// These helpers wrap the CoreAudio HAL, which only exists on macOS.
++#if CA_HAVE_HAL
+ 
+ #include "audio/out/ao_coreaudio_properties.h"
+ #include "audio/out/ao_coreaudio_utils.h"
+@@ -101,3 +106,5 @@
+ 
+     return AudioObjectIsPropertySettable(id, &p_addr, data);
+ }
++
++#endif /* CA_HAVE_HAL */
+diff --git a/audio/out/ao_coreaudio_utils.c b/audio/out/ao_coreaudio_utils.c
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_coreaudio_utils.c
++++ b/audio/out/ao_coreaudio_utils.c
+@@ -28,14 +28,14 @@
+ #include "audio/format.h"
+ #include "osdep/mac/compat.h"
+ 
+-#if HAVE_COREAUDIO || HAVE_AVFOUNDATION
++#if CA_HAVE_HAL
+ #include "audio/out/ao_coreaudio_properties.h"
+ #include <CoreAudio/HostTime.h>
+ #else
+ #include <mach/mach_time.h>
+ #endif
+ 
+-#if HAVE_COREAUDIO || HAVE_AVFOUNDATION
++#if CA_HAVE_HAL
+ static bool ca_is_output_device(struct ao *ao, AudioDeviceID dev)
+ {
+     size_t n_buffers;
+@@ -300,7 +300,7 @@
+ 
+ int64_t ca_get_latency(const AudioTimeStamp *ts)
+ {
+-#if HAVE_COREAUDIO || HAVE_AVFOUNDATION
++#if CA_HAVE_HAL
+     uint64_t out = AudioConvertHostTimeToNanos(ts->mHostTime);
+     uint64_t now = AudioConvertHostTimeToNanos(AudioGetCurrentHostTime());
+ 
+@@ -323,7 +323,7 @@
+ #endif
+ }
+ 
+-#if HAVE_COREAUDIO || HAVE_AVFOUNDATION
++#if CA_HAVE_HAL
+ bool ca_stream_supports_compressed(struct ao *ao, AudioStreamID stream)
+ {
+     AudioStreamRangedDescription *formats = NULL;
+diff --git a/audio/out/ao_coreaudio_utils.h b/audio/out/ao_coreaudio_utils.h
+index 0000000000..0000000000 100644
+--- a/audio/out/ao_coreaudio_utils.h
++++ b/audio/out/ao_coreaudio_utils.h
+@@ -30,6 +30,13 @@
+ #include "osdep/utils-mac.h"
+ #include "osdep/threads.h"
+ 
++#include <TargetConditionals.h>
++
++// The CoreAudio HAL (AudioObject, AudioDeviceID, AudioStreamID) only exists
++// on macOS. The AVFoundation output also builds for iOS and tvOS, where it
++// has no device list and none of the HAL helpers below.
++#define CA_HAVE_HAL (HAVE_COREAUDIO || (HAVE_AVFOUNDATION && TARGET_OS_OSX))
++
+ struct coreaudio_cb_sem {
+     mp_mutex mutex;
+     mp_cond cond;
+@@ -53,7 +60,7 @@
+     } while (0)
+ 
+ void ca_get_device_list(struct ao *ao, struct ao_device_list *list);
+-#if HAVE_COREAUDIO || HAVE_AVFOUNDATION
++#if CA_HAVE_HAL
+ OSStatus ca_select_device(struct ao *ao, char* name, AudioDeviceID *device);
+ #endif
+ 
+@@ -71,7 +78,7 @@
+ int64_t ca_frames_to_ns(struct ao *ao, uint32_t frames);
+ int64_t ca_get_latency(const AudioTimeStamp *ts);
+ 
+-#if HAVE_COREAUDIO || HAVE_AVFOUNDATION
++#if CA_HAVE_HAL
+ bool ca_stream_supports_compressed(struct ao *ao, AudioStreamID stream);
+ OSStatus ca_lock_device(AudioDeviceID device, pid_t *pid);
+ OSStatus ca_unlock_device(AudioDeviceID device, pid_t *pid);
+diff --git a/meson.build b/meson.build
+index 0000000000..0000000000 100644
+--- a/meson.build
++++ b/meson.build
+@@ -821,6 +821,11 @@
+ if features['avfoundation']
+     dependencies += avfoundation
+     sources += files('audio/out/ao_avfoundation.m')
++    # The AVFoundation output uses the CoreFoundation string helpers in
++    # osdep/utils-mac.c, which the cocoa block above only builds on macOS.
++    if not features['cocoa']
++        sources += files('osdep/utils-mac.c')
++    endif
+ endif
+ 
+ coreaudio = dependency('appleframeworks', modules: ['CoreFoundation', 'CoreAudio',

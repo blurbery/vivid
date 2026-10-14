@@ -124,6 +124,7 @@ private enum LucidSubtitleProbe {
                 "cache":"no", "network-timeout":"10", "demuxer-max-bytes":"4194304"] {
                 guard mpv_set_option_string(mpv, name, value) >= 0 else { throw OpenSubtitlesError.file }
             }
+            guard LucidTLS.apply(to: mpv) >= 0 else { throw OpenSubtitlesError.file }
             VividMPVHeaders.apply(request.headers, to: mpv)
             guard mpv_initialize(mpv) >= 0 else { throw OpenSubtitlesError.file }
             let status = "loadfile".withCString { command in
@@ -143,7 +144,7 @@ private enum LucidSubtitleProbe {
                     var node = mpv_node()
                     guard mpv_get_property(mpv, "track-list", MPV_FORMAT_NODE, &node) >= 0 else { throw OpenSubtitlesError.file }
                     defer { mpv_free_node_contents(&node) }
-                    let raw = MpvPlayerCoreBase().convertNode(node) as? [[String: Any]] ?? []
+                    let raw = VividPlayerCoreBase().convertNode(node) as? [[String: Any]] ?? []
                     return raw.filter { $0["type"] as? String == "sub" && $0["external"] as? Bool != true }
                         .map(VividMPVPlayer.trackInfo)
                 }

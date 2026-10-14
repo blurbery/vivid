@@ -1,0 +1,86 @@
+# libunibreak 6.1: what today's interim build ships, recorded by automated
+# comparison of its xcframework and archives (nm -m -g -U and nm -u on the arm64
+# archive of each slice, the slice's file list and the pkg-config files), for
+# `lucid.py check`. Docs: docs/cores/lucid-engine-build.md.
+
+[framework]
+Libunibreak
+
+# Files under the framework's Headers/ folder.
+[headers]
+eastasianwidthdef.h
+graphemebreak.h
+linebreak.h
+linebreakdef.h
+unibreakbase.h
+unibreakdef.h
+wordbreak.h
+
+# Defined global symbols (identical on all four slices), by visibility.
+
+[default]
+_init_graphemebreak
+_init_linebreak
+_init_wordbreak
+_is_line_breakable
+_lb_get_char_class
+_lb_init_break_context
+_lb_process_next_char
+_lb_prop_bmp
+_lb_prop_lang_map
+_lb_prop_supplementary
+_lb_prop_supplementary_len
+_set_graphemebreaks_utf16
+_set_graphemebreaks_utf32
+_set_graphemebreaks_utf8
+_set_linebreaks
+_set_linebreaks_utf16
+_set_linebreaks_utf16_per_code_point
+_set_linebreaks_utf32
+_set_linebreaks_utf8
+_set_linebreaks_utf8_per_code_point
+_set_wordbreaks_utf16
+_set_wordbreaks_utf32
+_set_wordbreaks_utf8
+_ub_bsearch
+_ub_get_char_eaw_class
+_ub_get_next_char_utf16
+_ub_get_next_char_utf32
+_ub_get_next_char_utf8
+_ub_is_extended_pictographic
+_unibreak_version
+
+[hidden]
+
+# Weak definitions (inline functions and template instances the compiler
+# chose to emit): count, then the SHA-256 of the sorted names, one per line.
+
+[weak-default]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+[weak-hidden]
+0 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+# Symbols each slice's archive needs from outside itself.
+
+[imports-ios-arm64]
+___assert_rtn ___memset_chk ___stack_chk_fail ___stack_chk_guard _memcmp _strlen _strncmp
+
+[imports-ios-arm64-simulator]
+___assert_rtn ___memset_chk ___stack_chk_fail ___stack_chk_guard _memcmp _strlen _strncmp
+
+[imports-tvos-arm64]
+___assert_rtn ___memset_chk ___stack_chk_fail ___stack_chk_guard _memcmp _strlen _strncmp
+
+[imports-tvos-arm64-simulator]
+___assert_rtn ___memset_chk ___stack_chk_fail ___stack_chk_guard _memcmp _strlen _strncmp
+
+# LC_BUILD_VERSION minimum OS of each slice's archive.
+[minos-ios-arm64]
+13.0
+[minos-ios-arm64-simulator]
+14.0
+[minos-tvos-arm64]
+13.0
+[minos-tvos-arm64-simulator]
+14.0

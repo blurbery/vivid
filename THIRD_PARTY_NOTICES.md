@@ -12,14 +12,13 @@ Vivid uses GPL-3.0-only with the [Apple distribution permission](LICENSE-APPLE-E
 
 | Component | Version / revision | Licence |
 | --- | --- | --- |
-| Apple media bridge (adapted from `edde746/plezy`) | `8ad17ad38f2ba63576cd7b37b460a4362adb738e` | GPL-3.0; bundled upstream licence. Vivid's Apple distribution permission does not apply |
-| Lucid media engine package (`edde746/mpv-build`, product `MPVKit`) | `c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` | GPLv3 as built; component licences [below](#lucid-engine-dependencies-ios-and-tvos) |
+| Lucid media engine package (`blurbery/lucid-engine`, product `LucidEngine`, release `0.1.0`) | `53ebeac793f251df987a8d80b997e7fe8064d1b7` | mpv and FFmpeg LGPL-2.1-or-later as built; every library's licence in the package's [NOTICE](https://github.com/blurbery/lucid-engine/blob/53ebeac793f251df987a8d80b997e7fe8064d1b7/NOTICE) |
 | CollectionHStack (tvOS Home rows) | `15baaaa759a0e252addae08431c79a49a25e4afc` | MIT |
 | DifferenceKit (CollectionHStack dependency) | 1.3.0, `073b9671ce2b9b5b96398611427a1f929927e428` | Apache-2.0 |
 | ThumbHash decoder (adapted) | `a652ce6ed691242f459f468f0a8756cda3b90a82` | MIT |
 | tvOS media catalog sample code (adapted, Apple) | 2024 sample | Apple sample code licence (MIT-style) |
 
-This file is the full inventory of third-party components in both apps. The [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt) and the upstream licence text of every component, each with a header giving its version and source, are shown in Settings → About → Open Source Licences and at [vividapp.co/licences](https://vividapp.co/licences); keep both matched to this list. [`licences.json`](iosApp/Resources/OpenSourceLicenses/licences.json) is the list both use. A licence body that several components share word for word (Apache 2.0, GPL 3.0 and LGPL 2.1) is stored once, and each of those components keeps its own notice with a marker line where the text was; `scripts/tests/licence-texts-tests.py` proves every original file still rebuilds byte for byte.
+This file is the full inventory of third-party components in both apps. The [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt) and the upstream licence text of every component, each with a header giving its version and source, are shown in Settings → About → Open Source Licences and at [vividapp.co/licences](https://vividapp.co/licences); keep both matched to this list. [`licences.json`](iosApp/Resources/OpenSourceLicenses/licences.json) is the list both use. A licence body that Vivid or several components use word for word (Apache 2.0, GPL 3.0 and LGPL 2.1) is stored once, and each component that uses it keeps its own notice with a marker line where the text was; `scripts/tests/licence-texts-tests.py` proves every original file still rebuilds byte for byte.
 
 ## Timestamp services
 
@@ -41,41 +40,61 @@ Silo, Emby, Jellyfin, MDBList, OpenSubtitles and TMDB are trademarks of their re
 
 ## Lucid Engine dependencies (iOS and tvOS)
 
-`iosApp/project-ios.yml` and `iosApp/project.yml` pin `edde746/mpv-build` at
-`c6f7e635c2c8681fa13c2c678f0e61ae46fe8bc6` and link its `MPVKit` product. This
-is not the separate `mpvkit/MPVKit` project. Its `Package.swift` records the URL
-and SHA-256 checksum of every binary, and `versions.json` records the upstream
-pins. The package builds mpv with `-Dgpl=true` and FFmpeg with `--enable-gpl`
-and `--enable-version3`, so the media frameworks are distributed under GPLv3.
-The package supplies static libraries, which are linked into the app executable.
-The pinned `edde746/mpv-build` package applies its own Apple patch series to
-mpv and FFmpeg. Its LICENSE is the GPL-3.0 text and its README says the
-packages ship as GPL builds, so the patched libraries are GPL-3.0 as built;
-most upstream mpv and FFmpeg files remain LGPL-2.1-or-later. mpv's own
-licence texts are bundled unchanged.
+`iosApp/project-ios.yml` and `iosApp/project.yml` pin [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) at
+`53ebeac793f251df987a8d80b997e7fe8064d1b7` (release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0), tag `v0.1.0`) and link its
+`LucidEngine` product. Its [`NOTICE`](https://github.com/blurbery/lucid-engine/blob/53ebeac793f251df987a8d80b997e7fe8064d1b7/NOTICE)
+and `LICENSES` folder list every library it contains, with version, upstream
+commit and licence text, its README describes the release, and its
+`Package.swift` records the URL and SHA-256 checksum of every binary. The
+package supplies static libraries, which are linked into the app executable.
 
-| Library | Version | Licence | Prebuilt by |
-| --- | --- | --- | --- |
-| mpv (libmpv) | 0.41.0 | GPL-3.0 as built; most files LGPL-2.1-or-later | `edde746/mpv-build` |
-| FFmpeg (libavcodec, libavdevice, libavfilter, libavformat, libavutil, libswresample, libswscale) | 8.0.1 | GPL-3.0 as built; most files LGPL-2.1-or-later | `edde746/mpv-build` |
-| libass | 0.17.5 | ISC | `edde746/mpv-build` |
-| FreeType | 2.12.1 | FreeType Licence | `mpvkit/libass-build` 0.17.4 |
-| FriBidi | 1.0.12 | LGPL-2.1-or-later | `mpvkit/libass-build` 0.17.4 |
-| HarfBuzz | 8.1.1 | MIT | `mpvkit/libass-build` 0.17.4 |
-| libunibreak | 6.1 | zlib | `mpvkit/libass-build` 0.17.4 |
-| libplacebo, including fast_float and the glad OpenGL loader | 7.351.0 | LGPL-2.1-or-later; fast_float MIT; glad CC0-1.0 and Apache-2.0 | `mpvkit/libplacebo-build` |
-| Little CMS | 2.17 | MIT | `mpvkit/lcms2-build` |
-| libdovi (`dolby_vision` crate, its 12 Rust crate dependencies and the Rust standard library) | 3.3.2 | MIT; crates MIT, Apache-2.0 or zlib (MIT used); Rust standard library MIT or Apache-2.0 | `mpvkit/libdovi-build` |
-| MoltenVK, including SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers and cereal | 1.4.1 | Apache-2.0; SPIRV-Headers and Vulkan-Headers MIT; cereal BSD-3-Clause | `mpvkit/moltenvk-build` |
-| shaderc, including glslang and SPIRV-Tools | 2025.5 | Apache-2.0; glslang BSD-3-Clause, BSD-2-Clause, MIT and Apache-2.0 | `mpvkit/libshaderc-build` |
-| dav1d | 1.5.3 | BSD-2-Clause | `edde746/libdav1d-build` |
-| uavs3d | upstream `master` at build time | BSD-3-Clause | `mpvkit/libuavs3d-build` 1.2.1-fix |
-| OpenSSL (libssl, libcrypto) | 3.3.5 | Apache-2.0 | `mpvkit/openssl-build` |
-| libbluray, including libudfread 1.2.0 | 1.4.0 | LGPL-2.1-or-later | `mpvkit/libbluray-build` |
-| uchardet | 0.0.8 | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (used under LGPL-2.1-or-later) | `mpvkit/libuchardet-build` |
+Vivid's own engine pipeline built every library in this release from its
+pinned upstream source, applying Vivid's patch series where a library has
+one. The one part not compiled from source is the Rust 1.98.0 standard
+library linked into libdovi, which comes from the Rust project's prebuilt
+`rust-std` archive for each target, pinned by URL and SHA-256 in
+`engine/pins.ini`. The corresponding source is this repository's
+[`engine/`](engine) at
+[`fcb6782121e72c6ed755336be913c036f4679ddb`](https://github.com/blurbery/vivid/tree/fcb6782121e72c6ed755336be913c036f4679ddb/engine),
+the commit the release was built from: the pipeline (`engine/lucid.py`), the
+upstream sources pinned by URL, commit and SHA-256 (`engine/pins.ini`), the
+build configuration and every patch (`engine/patches`). The
+[Lucid Engine build guide](docs/cores/lucid-engine-build.md) explains how to
+run it. mpv is built with `-Dgpl=false` and FFmpeg without `--enable-gpl` or
+`--enable-version3`, so both are LGPL-2.1-or-later as built. FFmpeg uses
+Apple's Secure Transport for HTTPS, so there is no OpenSSL.
 
-LuaJIT is in the package for macOS only and is not part of either app. System
-libraries from Apple's SDKs are not redistributed.
+Each patch is licensed like the library it patches:
+
+| Library | Patches | Licence of the patches |
+| --- | --- | --- |
+| mpv | Vivid's `0002`, `0010` to `0016`, `0020` to `0025` and `0040`; `0001` is an unchanged upstream mpv commit | LGPL-2.1-or-later |
+| FFmpeg | Vivid's `0001`, `0002` and `0010` to `0012` | LGPL-2.1-or-later |
+| libass | `0001`, upstream libass commit `057a5334`, and `0002`, upstream libass pull request #951, both unchanged; Vivid's `0010` | ISC |
+| libdovi | Vivid's `0001` | MIT |
+| libbluray | Vivid's `0001` | LGPL-2.1-or-later |
+| uavs3d | Vivid's `0001` | BSD-3-Clause |
+
+| Library | Version | Licence |
+| --- | --- | --- |
+| mpv (libmpv) | 0.41.0 | LGPL-2.1-or-later as built (`-Dgpl=false`) |
+| FFmpeg (libavcodec, libavdevice, libavfilter, libavformat, libavutil, libswresample, libswscale) | 8.0.1 | LGPL-2.1-or-later as built |
+| libass | 0.17.5 | ISC |
+| dav1d | 1.5.3 | BSD-2-Clause |
+| libdovi (`dolby_vision` crate, its 12 Rust crate dependencies and the Rust 1.98.0 standard library) | 3.3.2 | MIT; crates MIT, Apache-2.0 or zlib (MIT used); Rust standard library MIT or Apache-2.0 |
+| FreeType | 2.12.1 | FreeType Licence |
+| FriBidi | 1.0.12 | LGPL-2.1-or-later |
+| HarfBuzz | 8.1.1 | MIT |
+| libunibreak | 6.1 | zlib |
+| libplacebo, including fast_float, the glad OpenGL loader and Vulkan-Headers | 7.351.0 | LGPL-2.1-or-later; fast_float MIT; glad CC0-1.0 and Apache-2.0; Vulkan-Headers MIT |
+| Little CMS | 2.17 | MIT |
+| MoltenVK, including SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers and cereal | 1.4.1 | Apache-2.0; SPIRV-Headers and Vulkan-Headers MIT; cereal BSD-3-Clause |
+| shaderc, including glslang and SPIRV-Tools | 2025.5 | Apache-2.0; glslang BSD-3-Clause, BSD-2-Clause, MIT and Apache-2.0 |
+| uavs3d | 1.2 | BSD-3-Clause |
+| libbluray, including libudfread 1.2.0 | 1.4.0 | LGPL-2.1-or-later |
+| uchardet | 0.0.8 | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (used under LGPL-2.1-or-later) |
+
+System libraries from Apple's SDKs are not redistributed.
 
 Settings → About → Open Source Licences lists every library above, and each
 library opens on its own page with its notice and full licence text. FFmpeg
@@ -83,12 +102,8 @@ and FreeType also ask for these credits: this software is based in part on
 the work of the Independent JPEG Group, and portions of this software are
 copyright © 2022 The FreeType Project (www.freetype.org). All rights reserved.
 
-`edde746/mpv-build` holds the build driver, upstream pins and patch series for
-mpv, FFmpeg and libass. The other libraries are prebuilt by the build
-repositories listed above from the upstream sources at those versions.
-
-The adapted Apple media bridge files carry provenance headers that name the upstream repository and revision; the upstream files had no individual notices. Plezy's GPL-3.0 licence text is bundled, and Vivid's adaptations are described in the [bundled acknowledgements](iosApp/Resources/OpenSourceLicenses/README.txt). Vivid’s additional Apple distribution permission does not extend to third-party code. `VividMPVPlayer` is Vivid-owned adapter code.
+Vivid's player bridge (`VividPlayerCoreBase`, `VividPlayerCore` and the components beside them in `iosApp/iosApp/Playback/MPV/`) and the `VividMPVPlayer` adapter are Vivid's own code. Vivid’s additional Apple distribution permission does not extend to third-party code.
 
 The retired package’s FFmpegBuild, standalone subtitle and Dolby Vision frameworks are no longer part of the source tree or either app target. Keep the notices matched to the pinned package rather than to the retired package’s inventory.
 
-The device-tested libmpv also includes Vivid’s [audio EOF recovery patch](patches/mpv/0001-avfoundation-resume-after-audio-eof.patch). The [Lucid guide](docs/cores/player-engine.md#builds-and-native-audio-patch) records its build procedure and the distinction from a fresh package resolution. Source cleanup and successful device builds do not establish Apple distribution approval.
+Source changes and successful device builds do not establish Apple distribution approval.

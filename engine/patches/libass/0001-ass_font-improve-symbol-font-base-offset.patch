@@ -1,0 +1,97 @@
+Lucid Engine libass patch series: upstream libass commit, unchanged.
+
+Origin: libass/libass commit 057a5334ba1d4219cf84239bd9208689d153442a
+("ass_font: improve symbol font base offset"), merged into libass master
+with pull request #946 ("ass_font: Better support for symbol cmaps").
+Source: https://github.com/libass/libass/commit/057a5334ba1d4219cf84239bd9208689d153442a.patch
+Pull request: https://github.com/libass/libass/pull/946
+Fetched from libass's own repository by that commit hash on 14 October
+2026. Everything from the "From 057a5334..." line down is libass's
+published patch, byte for byte, including its author attribution. libass
+0.17.5 does not contain this commit; it applies to the pristine 0.17.5
+source without fuzz or offsets. With it, symbol-encoded fonts (Webdings,
+Wingdings and similar) given non-Latin text place their glyphs as today's
+engine does. libass is licensed ISC, and so is this patch.
+
+From 057a5334ba1d4219cf84239bd9208689d153442a Mon Sep 17 00:00:00 2001
+From: moi15moi <moi15moismokerlolilol@gmail.com>
+Date: Sun, 9 Aug 2026 20:44:52 -0400
+Subject: [PATCH] ass_font: improve symbol font base offset
+
+Previously we always used an 0xF000 offset for symbol-encoded MS fonts.
+However, while this is the most common offset, different values are
+possible too and it is furthermore affected by some specific,
+non-obvious conditions.
+For example, the "Baoloc" font did not work with unconditional 0xF000.
+
+The new logic matches our current understanding of GDI behaviour
+_except_ for ignoring the system codepage/language.
+
+Note, due to this omission https://github.com/libass/libass/issues/319
+remains unresolved.
+---
+ libass/ass_font.c | 44 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 43 insertions(+), 1 deletion(-)
+
+diff --git a/libass/ass_font.c b/libass/ass_font.c
+index aa12ca11d..817be5ab3 100644
+--- a/libass/ass_font.c
++++ b/libass/ass_font.c
+@@ -261,6 +261,7 @@ uint32_t ass_font_index_magic(FT_Face face, uint32_t symbol)
+         switch (face->charmap->encoding) {
+         case FT_ENCODING_MS_SYMBOL: {
+             TT_OS2 *os2 = FT_Get_Sfnt_Table(face, FT_SFNT_OS2);
++
+             if (os2) {
+                 // See: https://learn.microsoft.com/en-us/typography/legacy/legacy_arabic_fonts
+                 int ARABIC_CHARSET_SIMPLIFIED  = 178;
+@@ -271,7 +272,48 @@ uint32_t ass_font_index_magic(FT_Face face, uint32_t symbol)
+                 if (charset == ARABIC_CHARSET_TRADITIONAL)
+                     return ass_font_charmap_arabic_traditional(symbol);
+             }
+-            return 0xF000 | symbol;
++
++            // GDI only supports cmap format 4 for symbol fonts
++            // GDI reads the cmap's first segment startCount and
++            // uses it to know what is the first character.
++            // FT_Get_First_Char() is NOT exactly equivalent,
++            // but for well-formatted cmap, it is.
++            FT_UInt gindex;
++            FT_ULong first_char = FT_Get_First_Char(face, &gindex);
++
++            uint32_t offset;
++            switch (first_char & 0xFF00) {
++                case 0xF000:
++                    offset = 0xF000;
++                    break;
++
++                case 0xE000: // EUDC fonts
++                case 0x0000:
++                    offset = 0;
++                    break;
++
++                default:
++                    offset = (uint32_t) first_char - 0x20;
++                    break;
++            }
++
++            bool is_symbol_glyph_set = (offset) || (os2 &&
++                            os2->panose[0] == 5 && /* PAN_FAMILY_PICTORIAL */ 
++                            (os2->fsSelection & 0xFF) == 0 /* ANSI_CHARSET */);
++
++            if (!is_symbol_glyph_set)
++                return symbol;
++
++            if (symbol <= 0xFF)
++                // TODO: Use the codepage of the language track: https://github.com/libass/libass/issues/319#issuecomment-1457223424
++                // GDI use the codepage of the system to get the glyph id.
++                // There is an exception to that.
++                // If the system code page is 932, 936, 949, or 950, it will actually use 1252.
++                return offset + symbol;
++            else if (symbol >= 0xF020 && symbol <= 0xF0FF)
++                return offset + (symbol & 0xFF);
++
++            return 0;
+         }
+         case FT_ENCODING_MS_SJIS:
+         case FT_ENCODING_MS_GB2312:
