@@ -14,14 +14,14 @@ Two specifications remain the contracts: the [player bridge specification](../pl
 
 ## The engine the app links
 
-Both app targets pin release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) (package commit `53ebeac`). It serves exactly what the pipeline built at `fcb6782` in run 38458337996, every library from upstream source. Before it, the app pinned the prerelease `0.1.0-interim.1` (since deleted), which had only some of the libraries built here. Keep the two apart when you read earlier results, notices or device reports.
+Both app targets pin release [`0.1.0`](https://github.com/blurbery/lucid-engine/releases/tag/v0.1.0) of [`blurbery/lucid-engine`](https://github.com/blurbery/lucid-engine) (package commit `53ebeac`). It serves exactly what the pipeline built at `fcb6782` in run 38458337996, every library from upstream source apart from the Rust standard library inside libdovi, which comes from the Rust project's pinned `rust-std` archives. Before it, the app pinned the prerelease `0.1.0-interim.1` (since deleted), which had only some of the libraries built here. Keep the two apart when you read earlier results, notices or device reports.
 
 <table width="100%">
   <thead>
     <tr><th align="left"></th><th align="left">Release <code>0.1.0</code> (commit <code>53ebeac</code>), which the app pins, built at <code>fcb6782</code></th><th align="left" width="10000">Earlier prerelease <code>0.1.0-interim.1</code> (commit <code>11d60dc</code>), since deleted</th></tr>
   </thead>
   <tbody>
-    <tr><td>Built from upstream source by Vivid's pipeline</td><td>All 16 libraries: 21 static frameworks and MoltenVK's <code>libMoltenVK.a</code>, built in run 38458337996</td><td>Eleven frameworks (<code>Libmpv</code>, the seven FFmpeg frameworks, <code>Libass</code>, <code>Libdav1d</code>, <code>Libdovi</code>), built at <code>10faa2a</code> in run 38400124717</td></tr>
+    <tr><td>Built from upstream source by Vivid's pipeline</td><td>All 16 libraries: 21 static frameworks and MoltenVK's <code>libMoltenVK.a</code>, built in run 38458337996 (apart from the Rust standard library inside libdovi, from the pinned <code>rust-std</code> archives)</td><td>Eleven frameworks (<code>Libmpv</code>, the seven FFmpeg frameworks, <code>Libass</code>, <code>Libdav1d</code>, <code>Libdovi</code>), built at <code>10faa2a</code> in run 38400124717</td></tr>
     <tr><td>mpv and FFmpeg patches</td><td>mpv <code>0001</code>, <code>0002</code>, <code>0010</code> to <code>0016</code>, <code>0020</code> to <code>0025</code>, <code>0040</code>; FFmpeg <code>0001</code>, <code>0002</code>, <code>0010</code> to <code>0012</code></td><td>The same patches. Only FFmpeg <code>0011</code>'s description has changed since (it now says two error lines are logged when the Dolby Vision configuration cannot be added); its code is the same</td></tr>
     <tr><td>libass</td><td>0.17.5 with <code>0001</code>, <code>0002</code> and <code>0010</code>, including its cache-pressure fixes</td><td>0.17.5 unpatched (the series was empty then)</td></tr>
     <tr><td>libdovi</td><td>3.3.2 with Vivid's <code>0001</code></td><td>The same</td></tr>
