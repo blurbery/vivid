@@ -10,11 +10,13 @@ with the options below:
 
 - Pull requests are squash-merged and the PR title becomes the commit subject
   that semantic-release reads, so the title must be a Conventional Commit.
-- A PR that changes nothing shipped in the app (only docs, CI, tooling,
-  tests, the website, the diagnostics relay or the engine pipeline) is
-  housekeeping and needs [skip release] in its title.
-- Branches in blurbery/vivid are named <type>/<short-description>. Branches
-  in forks belong to their contributors and are not checked.
+- A PR that changes nothing shipped in the app (nothing under iosApp/
+  outside iosApp/Tests/, and nothing under scripts/xcode/, the app targets'
+  build phases) is documentation or housekeeping and needs [skip release]
+  in its title.
+- Branches in blurbery/vivid are named <type>/<short-description>; GitHub's
+  own revert-<number>-... branches are accepted too. Branches in forks
+  belong to their contributors and are not checked.
 - The description must complete every section of the PR template. On a
   draft PR, missing sections are warnings until it is marked ready.
 - Bot PRs, such as Dependabot's, skip the branch and description checks.
@@ -70,7 +72,9 @@ FIELD = re.compile(r"^(?P<indent>\s*)(?:[-*+]|\d+[.)])\s+\*\*(?P<label>[^*]+?)\*
 TICKED = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\[[xX]\]\s+\S")
 HEADING = re.compile(r"^\s{0,3}##\s+(?P<name>.+?)\s*#*\s*$")
 TITLE_HEADING = re.compile(r"^\s{0,3}#\s")
-FENCE = re.compile(r"^\s{0,3}(```|~~~)")
+# A fence opens with three or more backticks or tildes and closes with at
+# least as many of the same character and nothing else on the line.
+FENCE = re.compile(r"^\s{0,3}(?P<run>`{3,}|~{3,})(?P<rest>.*)$")
 # Review bots that append their own block to the description.
 GENERATED = re.compile(r"<!--\s*This is an auto-generated.*?-->.*?<!--\s*End of auto-generated.*?-->",
                        re.DOTALL | re.IGNORECASE)
@@ -104,8 +108,9 @@ def check_title(title, files):
             f'The title type "{match["type"]}" is not one of: {", ".join(TYPES)}.{hint}')
     if files is not None and not any(ships_in_app(path) for path in files) and not SKIP_RELEASE.search(title):
         problems.append(
-            "Nothing in this PR ships in the app (every change is outside iosApp/ "
-            "or under iosApp/Tests/), so it is documentation or housekeeping. Add "
+            "Nothing in this PR ships in the app (nothing changes under iosApp/ "
+            "outside iosApp/Tests/, or under scripts/xcode/), so it is documentation "
+            "or housekeeping. Add "
             '"[skip release]" to the end of the title so merging it does not '
             "publish a release.")
     return problems
@@ -117,9 +122,16 @@ def check_branch(branch):
         return []
     return [
         f'The branch "{branch}" does not follow <type>/<short-description>, where '
-        f'<type> is one of: {", ".join(BRANCH_PREFIXES)}. Rename it on GitHub '
+        f'<type> is one of: {", ".join(BRANCH_PREFIXES)} (GitHub\'s revert-<number>- '
+        "branches are accepted too). Rename it on GitHub "
         "(the PR follows the rename) or locally with git branch -m, for example "
         "fix/row-focus."]
+
+
+def closes(marker, fence):
+    """Whether a fence line closes the block that the run `fence` opened."""
+    return (marker is not None and marker["run"][0] == fence[0]
+            and len(marker["run"]) >= len(fence) and not marker["rest"].strip())
 
 
 def protect_code(text):
@@ -128,10 +140,14 @@ def protect_code(text):
     fence = None
     for line in text.split("\n"):
         marker = FENCE.match(line)
-        if marker:
-            fence = marker[1] if fence is None else (None if line.strip().startswith(fence) else fence)
+        if marker and fence is None:
+            fence = marker["run"]
             lines.append(line)
         elif fence is not None:
+            if closes(marker, fence):
+                fence = None
+                lines.append(line)
+                continue
             lines.append(line.replace("<!--", "&lt;!--"))
         else:
             lines.append(INLINE_CODE.sub(lambda code: code[0].replace("<!--", "&lt;!--"), line))
@@ -163,9 +179,12 @@ def sections(text):
     fence = None
     for line in text.split("\n"):
         marker = FENCE.match(line)
-        if marker:
-            fence = marker[1] if fence is None else (None if line.strip().startswith(fence) else fence)
-        elif fence is None:
+        if fence is not None:
+            if closes(marker, fence):
+                fence = None
+        elif marker:
+            fence = marker["run"]
+        else:
             heading = HEADING.match(line)
             if heading:
                 current = section_key(heading["name"])
@@ -260,9 +279,10 @@ def check_description(body):
 def changed_files(base, head):
     # --no-renames lists both sides of a move, so moving a file out of
     # iosApp/ still counts as an app change.
-    result = subprocess.run(["git", "diff", "--name-only", "--no-renames", f"{base}...{head}"],
+    result = subprocess.run(["git", "-c", "core.quotePath=false", "diff", "-z", "--name-only",
+                             "--no-renames", f"{base}...{head}"],
                             cwd=ROOT, capture_output=True, text=True, check=True)
-    return [line for line in result.stdout.splitlines() if line]
+    return [name for name in result.stdout.split("\0") if name]
 
 
 def escape(message):

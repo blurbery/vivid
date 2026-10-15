@@ -231,6 +231,13 @@ class DescriptionTests(unittest.TestCase):
         comment = FILLED.replace("- No documentation changes", "```sh\n# regenerate\nxcodegen generate\n```\n- No documentation changes")
         self.assertEqual(check_pr.check_description(comment), [])
 
+    def test_longer_fences_hold_shorter_ones(self):
+        missing = FILLED.replace("## Performance\n\nNot applicable.\n", "")
+        nested = missing.replace("CI.\n", "CI.\n\n````md\n```\n## Performance\nNot applicable.\n```\n````\n")
+        problems = check_pr.check_description(nested)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("## Performance", problems[0])
+
     def test_unclosed_comment(self):
         body = FILLED.replace("## Validation", "<!-- draft notes\n\n## Validation")
         problems = check_pr.check_description(body)

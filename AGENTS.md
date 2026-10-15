@@ -144,7 +144,7 @@ follow-up work.
 
 - Keep each pull request focused on the authorised outcome. Related code, tests and documentation belong together when they address that outcome.
 - Pull requests are squash-merged only. The PR title becomes the commit subject on `main` and the squash body starts blank, so add the `Release-Notes:` block when merging an app change. GitHub deletes the head branch after the merge.
-- Name branches `<type>/<short-description>` with a Conventional Commit type (or `release/`, `experiment/`), never after a tool. PR checks fail a branch in this repository that doesn't follow this (fork and bot branches aren't checked), a title that isn't a Conventional Commit, a PR that changes nothing shipped in the app without `[skip release]` in its title, and a ready PR whose template sections aren't all filled in.
+- Name branches `<type>/<short-description>` with a Conventional Commit type (or `release/`, `experiment/`; GitHub's own `revert-<number>-` branches are accepted), never after a tool. PR checks fail a branch in this repository that doesn't follow this (fork and bot branches aren't checked), a title that isn't a Conventional Commit, a PR that changes nothing shipped in the app without `[skip release]` in its title, and a ready PR whose template sections aren't all filled in.
 - Include before-and-after images for UI changes. Include a short video when
   motion or timing matters.
 - Upload pull request evidence to GitHub. Never commit PR-only assets such as

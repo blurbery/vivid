@@ -15,7 +15,8 @@ name: PR checks
 # description". The second matters after an edit: a new title or description
 # doesn't change the commit, and the result job only reports once the jobs
 # it waits for finish, but the title job is queued at once, so the PR can't
-# be merged on the old pass in between. Jobs skip closed PRs.
+# be merged on the old pass in between. The checking jobs skip closed PRs;
+# the result job still runs there and passes.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
@@ -48,10 +49,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Listed first, so a failing git diff stops the job.
-          files=$(git diff --name-only --no-renames "$BASE...$HEAD")
+          # Listed to a file first, so a failing git diff stops the job.
+          # NUL-separated and unquoted, so unusual file names still match;
+          # --no-renames lists both sides of a move.
+          changed="$RUNNER_TEMP/changed-files"
+          git -c core.quotePath=false diff -z --name-only --no-renames "$BASE...$HEAD" > "$changed"
           tooling=false
-          while IFS= read -r file; do
+          while IFS= read -r -d '' file; do
             case "$file" in
               package.json|package-lock.json|release.config.mjs|scripts/release/*|\
               diagnostics-relay/*|scripts/ci/resolve-*|scripts/ci/check-pr.py|\
@@ -62,7 +66,7 @@ jobs:
                 tooling=true
                 break ;;
             esac
-          done <<< "$files"
+          done < "$changed"
           echo "tooling=$tooling" >> "$GITHUB_OUTPUT"
 
   pr:
