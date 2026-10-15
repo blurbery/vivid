@@ -14,6 +14,7 @@ import SwiftUI
 ///
 /// Tapping the video toggles the overlay. While playing, controls dismiss five
 /// seconds after interaction; button presses and open menus suspend dismissal.
+/// A background tap within 1.5 seconds of the controls appearing keeps them up.
 /// Presentation, screen brightness and system volume are owned here;
 /// playback state lives on `PlayerViewModel`.
 /// Invisible gestures (double-tap skip, hold-2× and pinch)
@@ -57,7 +58,7 @@ struct MobilePlayerControls: View {
                     ZStack {
                         Color.black.opacity(viewModel.isTimelineScrubbing ? 0.55 : 0.4)
                             .ignoresSafeArea()
-                            .onTapGesture { viewModel.toggleControls(cause: .backgroundTap) }
+                            .onTapGesture { viewModel.backgroundTapped() }
 
                         centerCluster
                             .opacity(recedingOpacity)

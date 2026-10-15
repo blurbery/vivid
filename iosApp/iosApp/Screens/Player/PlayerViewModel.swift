@@ -305,6 +305,9 @@ class PlayerViewModel {
             if showControls != oldValue, cause != .playbackEnded {
                 PlaybackSessionRecorder.shared.controlsChanged(visible: showControls, cause: cause.rawValue)
             }
+            if showControls && !oldValue {
+                controlsAppearedAt = ProcessInfo.processInfo.systemUptime
+            }
             #endif
             pendingControlsCause = nil
         }
@@ -313,6 +316,9 @@ class PlayerViewModel {
     /// report. Set only by `setControlsVisible` and cleared on every set.
     @ObservationIgnored var pendingControlsCause: PlayerControlsCause?
     #if os(iOS)
+    /// System uptime when the controls last went from hidden to visible.
+    /// Presses while they're already up don't move it.
+    @ObservationIgnored var controlsAppearedAt: TimeInterval?
     var shouldShowMobilePlayerChrome: Bool {
         // Loading and Next Up must not independently reveal player chrome.
         // Close and rotation follow the same tap/auto-hide state as transport.
