@@ -69,7 +69,7 @@ On iPhone and iPad, detail download actions show a live ring while the item is r
 
 Vivid reports the real playback position from the first frame and leaves partial resume rules to each server, as Silo, Emby and Jellyfin's own apps do. Each server decides how far in a position must be before it keeps a resume point. Completion is separate: 90%, a valid credits marker or verified natural end can mark even short content watched. See [reporting and completion](architecture.md#downloads-and-external-playback) for provider and offline behaviour.
 
-When playback closes, Vivid sends the final resume position before the remaining session teardown. Home and open detail state refresh as soon as that progress write completes, on mobile and Apple TV. The media server still owns the saved watch state and determines when Continue Watching advances or disappears.
+When playback that has reached its first frame (or, for audio-only playback, started playing) closes, Vivid sends the final resume position before the remaining session teardown. Home and open detail state refresh as soon as that progress write completes, on mobile and Apple TV. The media server still owns the saved watch state and determines when Continue Watching advances or disappears.
 
 ## Source entry points
 

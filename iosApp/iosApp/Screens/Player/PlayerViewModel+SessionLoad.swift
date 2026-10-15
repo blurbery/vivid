@@ -277,6 +277,10 @@ extension PlayerViewModel {
         if lastLoadRequest?.contentId != request.contentId {
             hasStartedPlayback = false
             completedPlaybackContentId = nil
+        } else if request.startFromBeginning {
+            // A restart's requested zero isn't a watched position until its
+            // first frame. Recovery reloads never start from the beginning.
+            hasStartedPlayback = false
         }
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil

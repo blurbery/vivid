@@ -887,7 +887,7 @@ class PlayerViewModel {
 
     static let autoplayStartSessionTimeout: TimeInterval = 15
     /// Latched at the current item's first startup milestone and kept across
-    /// recovery reloads of that item. Until then `currentTime` is only the
+    /// recovery reloads of that item; a new item or Play from Beginning clears it. Until then `currentTime` is only the
     /// requested start, not a position anyone watched. A failed or abandoned
     /// load reports nothing, so Emby and Jellyfin can't reset a saved resume
     /// point to a Play from Beginning start of zero.
