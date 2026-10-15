@@ -109,7 +109,7 @@ extension PlayerViewModel {
         let target = currentTime.isFinite ? max(0, currentTime) : 0
         isQualitySwitching = true
         qualitySwitchError = nil
-        showControls = true
+        setControlsVisible(true, cause: .qualitySwitch)
         hideControlsTask?.cancel()
 
         if activePreparedProtocolV3 != nil {

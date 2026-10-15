@@ -405,6 +405,31 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         XCTAssertTrue(report.summaryRows.contains { $0.label == "Controls hid early" && $0.value == "None" })
     }
 
+    #if os(iOS)
+    @MainActor
+    func testRecordTakesThePlayMethodAndSkipsTheEndOfVideoControls() throws {
+        let recorder = PlaybackSessionRecorder.shared
+        recorder.setPlayMethod("transcode") // set before the load starts the record
+        recorder.begin(matchContentEnabled: false)
+        defer { recorder.end(reason: "stopped") }
+        XCTAssertEqual(recorder.latest()?.setup.playMethod, "transcode")
+
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.setControlsVisible(true, cause: .playbackEnded)
+        model.setControlsVisible(false, cause: .nextUp)
+        let afterEnd = try XCTUnwrap(recorder.latest()).totals
+        XCTAssertNil(afterEnd.controlsShown)
+        XCTAssertNil(afterEnd.controlsHiddenEarly)
+
+        model.toggleControls(cause: .videoTap)
+        model.toggleControls(cause: .backgroundTap)
+        let afterTaps = try XCTUnwrap(recorder.latest()).totals
+        XCTAssertEqual(afterTaps.controlsShown, 1)
+        XCTAssertEqual(afterTaps.controlsHiddenEarly, ["video_tap>background_tap": 1])
+    }
+    #endif
+
     func testEarlyControlsHidesStayBoundedAndTokenised() {
         var session = playing()
         for index in 0..<40 {

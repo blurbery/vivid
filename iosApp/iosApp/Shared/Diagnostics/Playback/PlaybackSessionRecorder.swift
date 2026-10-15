@@ -81,6 +81,7 @@ final class PlaybackSessionRecorder {
         var setup = PlaybackSessionReport.Setup()
         setup.matchContentEnabled = matchContentEnabled
         setup.serverType = MediaServerProvider.active.rawValue
+        setup.playMethod = nextPlayMethod
         report = PlaybackSessionReport(
             startedAt: started, updatedAt: started, app: .current, setup: setup,
             media: .init(), totals: .init(), timeline: [], notMeasured: []
@@ -109,15 +110,23 @@ final class PlaybackSessionRecorder {
         change(&report!.media)
     }
 
+    /// The play method of the load about to start. It's set before the
+    /// load, so a stream that fails to open still has it: a new record takes
+    /// it in `begin`, and a continued one in `reloaded`.
+    private var nextPlayMethod: String?
+
     func setPlayMethod(_ method: String?) {
-        report?.setup.playMethod = AppHealthContextSnapshot.playMethodToken(method)
+        nextPlayMethod = AppHealthContextSnapshot.playMethodToken(method)
     }
 
     func setPlaying(_ playing: Bool) { accumulator?.setPlaying(playing, at: now) }
     func setBuffering(_ buffering: Bool) { accumulator?.setBuffering(buffering, at: now) }
     func seeked() { accumulator?.seeked(at: now) }
     func setSeeking(_ seeking: Bool) { accumulator?.setSeeking(seeking, at: now) }
-    func reloaded() { accumulator?.reloaded(at: now) }
+    func reloaded() {
+        accumulator?.reloaded(at: now)
+        if accumulator != nil, let nextPlayMethod { report?.setup.playMethod = nextPlayMethod }
+    }
     var isRecording: Bool { accumulator != nil }
     /// Starts a short warm-up for changes that briefly disturb playback:
     /// a display switch starting, a speed change or an audio track switch.

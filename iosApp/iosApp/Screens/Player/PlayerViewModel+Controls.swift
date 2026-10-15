@@ -19,6 +19,8 @@ enum PlayerControlsCause: String {
     case nextUpTap = "next_up_tap"
     case doubleTapPlayPause = "double_tap_play_pause"
     case control
+    case qualitySwitch = "quality_switch"
+    case playbackEnded = "playback_ended"
     case autoHide = "auto_hide"
     case dismissed
     case fileLoaded = "file_loaded"

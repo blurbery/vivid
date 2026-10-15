@@ -298,10 +298,12 @@ class PlayerViewModel {
     var showControls = false {
         didSet {
             #if os(iOS)
-            if showControls != oldValue {
-                PlaybackSessionRecorder.shared.controlsChanged(
-                    visible: showControls, cause: (pendingControlsCause ?? .other).rawValue
-                )
+            // The player shows the controls itself when a video ends, and
+            // Next Up hides them straight away. That isn't the viewer's
+            // doing, so it isn't recorded.
+            let cause = pendingControlsCause ?? .other
+            if showControls != oldValue, cause != .playbackEnded {
+                PlaybackSessionRecorder.shared.controlsChanged(visible: showControls, cause: cause.rawValue)
             }
             #endif
             pendingControlsCause = nil
