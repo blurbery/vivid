@@ -74,9 +74,10 @@ jobs:
           fetch-depth: 0
       # One list for the steps below: NUL-separated and unquoted, so unusual
       # file names still match, and --no-renames lists both sides of a move.
-      # A failing git diff stops the job. Without a comparable base (a new
-      # branch, or a force-push on main) the list is marked unknown and every
-      # step below builds.
+      # A failing git diff stops the job. Without a comparable base commit
+      # (after a force-push on main) the list is marked unknown and the app
+      # and device-build steps treat every file as changed; pushes to main
+      # still skip Apple TV.
       - name: List changed files
         if: github.event_name != 'workflow_dispatch'
         env:
@@ -153,8 +154,9 @@ jobs:
           # Pushes to main skip Apple TV because it passed on the pull request.
           # Manual runs always include it. Pull requests run it when an app
           # file other than an iOS-only one changes, so new shared paths are
-          # tested by default rather than silently skipped. Docs and other
-          # files outside the app don't count.
+          # tested by default rather than silently skipped. Docs, the check
+          # scripts and other files outside the app don't count; this
+          # workflow does.
           if [ "$EVENT" = push ]; then
             echo "tvos=false" >> "$GITHUB_OUTPUT"
             exit 0
