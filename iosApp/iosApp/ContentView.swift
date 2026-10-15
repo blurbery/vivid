@@ -718,6 +718,13 @@ struct ContentView: View {
         guard url.scheme?.lowercased() == "vivid",
               let host = url.host?.lowercased() else { return }
 
+        #if os(tvOS)
+        // Opening Search closes a playing video and replaces the open screens,
+        // so a search with nothing to search for is dropped before anything
+        // queues it as a launch intent.
+        if TVSiriSearchLink.term(from: url)?.isEmpty == true { return }
+        #endif
+
         // A content link received while the app is returning must not race the
         // timeout lock and briefly open data for the previous profile. The
         // authenticated-state task drains it after profile selection succeeds.
@@ -745,9 +752,6 @@ struct ContentView: View {
 
         #if os(tvOS)
         if let term = TVSiriSearchLink.term(from: url) {
-            // Opening Search closes a playing video and replaces the open
-            // screens, so a request with nothing to search for is ignored.
-            guard !term.isEmpty else { return }
             guard router.authState == .authenticated else {
                 pendingDeepLink = url
                 return

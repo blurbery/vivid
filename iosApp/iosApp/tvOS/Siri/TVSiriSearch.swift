@@ -11,6 +11,9 @@ import Foundation
 ///
 /// tvOS has no `.system.search` schema macro, so this conforms to the protocol
 /// directly. The protocol already runs the intent in the app's own process.
+///
+/// There's no `AppShortcutsProvider`: on an Apple TV, "Search Vivid" spoken to
+/// Siri did nothing, so the phrases were removed.
 struct SearchVividIntent: ShowInAppSearchResultsIntent {
     static let title: LocalizedStringResource = "Search Vivid"
     static let description = IntentDescription("Opens Search in Vivid with what you asked for.")
@@ -23,23 +26,6 @@ struct SearchVividIntent: ShowInAppSearchResultsIntent {
     func perform() async throws -> some IntentResult {
         TVSiriSearchLink.deliver(term: criteria.term)
         return .result()
-    }
-}
-
-/// Spoken phrases for the same search. Siri asks for the title afterwards,
-/// because App Shortcut phrases can't carry free text.
-struct VividAppShortcuts: AppShortcutsProvider {
-    static var appShortcuts: [AppShortcut] {
-        AppShortcut(
-            intent: SearchVividIntent(),
-            phrases: [
-                "Search \(.applicationName)",
-                "Search in \(.applicationName)",
-                "Find something to watch in \(.applicationName)",
-            ],
-            shortTitle: "Search",
-            systemImageName: "magnifyingglass"
-        )
     }
 }
 
