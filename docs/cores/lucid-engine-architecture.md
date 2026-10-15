@@ -408,7 +408,7 @@ XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests). `VividTests` (iOS) co
 
 ### App CI
 
-The [player regression workflow](../../.github/workflows/player-regression.yml) starts on every pull request, on pushes to `main` that change anything under `iosApp/` (the apps, their extensions, resources, entitlements and tests, the project specs and `Package.resolved`) or `scripts/xcode/`, the listed scripts or the workflow, and on manual runs. On a pull request its `changes` job skips the build and test jobs unless one of those paths changed, and `Player regression result` always runs and fails when any job failed or was cancelled. The build and test jobs use `macos-15` with Xcode 26.3.
+The [player regression workflow](../../.github/workflows/player-regression.yml) starts on every pull request, on pushes to `main` that change anything under `iosApp/` (the apps, their extensions, resources, entitlements and tests, the project specs and `Package.resolved`) or `scripts/xcode/`, the listed scripts or the workflow, and on manual runs. On a pull request its `changes` job skips the build and test jobs unless one of those paths changed or it can't compare the pull request with its base commit, and `Player regression result` always runs and fails when any job failed or was cancelled. The build and test jobs use `macos-15` with Xcode 26.3.
 
 <table width="100%">
   <thead>
@@ -428,7 +428,7 @@ The [player code checks workflow](../../.github/workflows/player-code-checks.yml
 
 ### Engine host tests and checks
 
-The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `main`, `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, and on every pull request. A `changes` job on `ubuntu-latest` skips the macOS jobs unless `engine/` or the workflow changed. Those jobs run on `macos-26` with Xcode 26.6: `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for the other three. `Lucid Engine result` always runs and fails when any job failed or was cancelled. The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
+The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `main`, `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, and on every pull request. A `changes` job on `ubuntu-latest` skips the macOS jobs unless `engine/` or the workflow changed, or it can't compare the pull request with its base commit. Those jobs run on `macos-26` with Xcode 26.6: `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for the other three. `Lucid Engine result` always runs and fails when any job failed or was cancelled. The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
 
 <table width="100%">
   <thead>

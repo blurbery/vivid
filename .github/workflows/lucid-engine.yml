@@ -16,7 +16,8 @@ name: Lucid Engine build
 # (experiment/lucid-engine-*), and on pull requests. Every pull request
 # starts the workflow so "Lucid Engine result", a required check on main,
 # always reports; the changes job skips the macOS jobs when neither engine/
-# nor this workflow changed. Each ref has its own concurrency group, so a
+# nor this workflow changed, and builds when it can't compare the pull
+# request with its base commit. Each ref has its own concurrency group, so a
 # newer push cancels only that ref's running build. Only GitHub's public
 # runners are used: macOS for the build, test and package jobs, Ubuntu for
 # the change check and the result. Nothing is published: package releases

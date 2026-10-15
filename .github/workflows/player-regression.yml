@@ -4,7 +4,8 @@ on:
   # Every pull request starts this workflow, so "Player regression result",
   # a required check on main, always reports. The changes job decides whether
   # anything needs building: only changes to the paths in the push filter
-  # below do.
+  # below do, and everything builds when it can't compare against the base
+  # commit.
   pull_request:
   # After merge, main runs only the Release-optimiser iOS build. The normal
   # iOS and Apple TV suites already passed on the pull request.
