@@ -133,6 +133,9 @@ final class PlaybackSessionRecorder {
     }
     func avSync(ms: Double?) { accumulator?.avSync(ms: ms, at: now) }
     func audioFault(_ token: String) { accumulator?.audioFault(token, at: now) }
+    func controlsChanged(visible: Bool, cause: String) {
+        accumulator?.controlsChanged(visible: visible, cause: cause, at: now)
+    }
 
     /// A once-a-second sample of the player's cumulative counters. Nil means
     /// the player didn't report that counter.

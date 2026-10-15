@@ -297,7 +297,7 @@ extension PlayerViewModel {
         }
         showNextUpScreen = true
         nextUpScreenVideoEnded = videoEnded
-        showControls = false
+        setControlsVisible(false, cause: .nextUp)
         activeNotice = nil
         isHUDPresented = false
         if !wasShowingBeforeEnd && !videoEnded {

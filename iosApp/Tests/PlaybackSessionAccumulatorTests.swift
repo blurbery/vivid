@@ -372,6 +372,52 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         XCTAssertNil(totals.pausedSeconds)
         XCTAssertNil(totals.waitSeconds)
         XCTAssertNil(totals.longestWaitSeconds)
+        XCTAssertNil(totals.controlsShown)
+        XCTAssertNil(totals.controlsHiddenEarly)
+    }
+
+    func testControlsHidingRightAfterAppearingIsRecordedWithCausesAndTime() {
+        var session = playing()
+        session.controlsChanged(visible: true, cause: "video_tap", at: 10)
+        session.controlsChanged(visible: false, cause: "background_tap", at: 10.12)
+        XCTAssertEqual(session.totals.controlsShown, 1)
+        XCTAssertEqual(session.totals.shortestControlsVisibleMs, 120)
+        XCTAssertEqual(session.totals.controlsHiddenEarly, ["video_tap>background_tap": 1])
+        XCTAssertEqual(session.totals.recentEarlyControlsHides, ["video_tap>background_tap 120 ms"])
+    }
+
+    @MainActor
+    func testNormalAutoHideIsNotAnEarlyHide() {
+        var session = playing()
+        session.controlsChanged(visible: true, cause: "video_tap", at: 10)
+        session.controlsChanged(visible: false, cause: "auto_hide", at: 15.1)
+        session.controlsChanged(visible: false, cause: "file_loaded", at: 20) // already hidden
+        XCTAssertEqual(session.totals.controlsShown, 1)
+        XCTAssertEqual(session.totals.shortestControlsVisibleMs, 5100)
+        XCTAssertNil(session.totals.controlsHiddenEarly)
+        XCTAssertNil(session.totals.recentEarlyControlsHides)
+        var report = PlaybackSessionReport(
+            startedAt: Date(timeIntervalSince1970: 1_790_000_000), updatedAt: Date(timeIntervalSince1970: 1_790_000_000),
+            app: AppHealthAppInfo(version: "0.14.3", build: "76", os: "iPadOS 27.2", device: "iPad13,18"),
+            setup: .init(), media: .init(), totals: .init(), timeline: [], notMeasured: [])
+        report.totals = session.totals
+        XCTAssertFalse(report.headline.contains("controls"))
+        XCTAssertTrue(report.summaryRows.contains { $0.label == "Controls hid early" && $0.value == "None" })
+    }
+
+    func testEarlyControlsHidesStayBoundedAndTokenised() {
+        var session = playing()
+        for index in 0..<40 {
+            let time = 10 + Double(index)
+            session.controlsChanged(visible: true, cause: "cause_\(index)", at: time)
+            session.controlsChanged(visible: false, cause: "https://server.example.com/x", at: time + 0.1)
+        }
+        let early = session.totals.controlsHiddenEarly ?? [:]
+        XCTAssertLessThanOrEqual(early.count, PlaybackSessionAccumulator.maxFaultKinds + 1)
+        XCTAssertEqual(early.values.reduce(0, +), 40)
+        XCTAssertEqual(session.totals.recentEarlyControlsHides?.count, PlaybackSessionAccumulator.maxRecentControlsHides)
+        XCTAssertFalse((session.totals.recentEarlyControlsHides ?? []).contains { $0.contains("example") })
+        XCTAssertFalse(early.keys.contains { $0.contains("example") })
     }
 
     @MainActor

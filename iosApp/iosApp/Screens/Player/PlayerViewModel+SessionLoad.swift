@@ -39,7 +39,7 @@ extension PlayerViewModel {
         scrubPreviewImageSourceTime = nil
         seekOriginTime = nil
         seekTargetTime = nil
-        showControls = false
+        setControlsVisible(false, cause: .newLoad)
         // The HUD belongs to the outgoing item. Replans deliberately bypass
         // this reset so the HUD survives them; a replacement load must close
         // it, both because its content is stale and because the tvOS controls
@@ -526,6 +526,10 @@ extension PlayerViewModel {
                     shouldPlayWhenReady: origin == .recovery
                         ? self.vividPlaybackController.shouldPlayWhenReady : true
                 )
+                #if os(iOS) || os(tvOS)
+                // After the load, which starts or continues the record.
+                PlaybackSessionRecorder.shared.setPlayMethod(session.playMethod)
+                #endif
                 await self.sessionBridge.reportNativePlaybackStarted(prepared)
                 if prepared.protocolV3 != nil {
                     guard await self.sessionBridge.commitPendingProtocolV3Transition(prepared) else {

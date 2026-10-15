@@ -295,7 +295,21 @@ class PlayerViewModel {
     /// when not buffering or when the active backend doesn't report it.
     var bufferingProgress: Double?
     var error: String?
-    var showControls = false
+    var showControls = false {
+        didSet {
+            #if os(iOS)
+            if showControls != oldValue {
+                PlaybackSessionRecorder.shared.controlsChanged(
+                    visible: showControls, cause: (pendingControlsCause ?? .other).rawValue
+                )
+            }
+            #endif
+            pendingControlsCause = nil
+        }
+    }
+    /// What is about to change `showControls`, for the Latest Playback
+    /// report. Set only by `setControlsVisible` and cleared on every set.
+    @ObservationIgnored var pendingControlsCause: PlayerControlsCause?
     #if os(iOS)
     var shouldShowMobilePlayerChrome: Bool {
         // Loading and Next Up must not independently reveal player chrome.
