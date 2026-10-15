@@ -6,9 +6,9 @@ name: PR checks
 # - scripts/ci/check-pr.py checks the PR title (a Conventional Commit, with
 #   [skip release] when nothing in the app changes), the branch name and the
 #   description. Editing the title or description runs it again.
-# - When release, relay, build-script or PR-check tooling changes, its tests
-#   run here before merge. The release workflow only runs the release tests
-#   after merge.
+# - When the release tooling, diagnostics relay, sideload resolvers or PR
+#   checker change, their tests run here before merge. The release workflow
+#   runs only the release tests, and only after merge.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
 # Branch protection on main is meant to require it and "PR title, branch and
@@ -16,10 +16,11 @@ name: PR checks
 # doesn't change the commit, and the result job only reports once the jobs
 # it waits for finish, but the title job is queued at once, so the PR can't
 # be merged on the old pass in between. The checking jobs skip closed PRs;
-# the result job still runs there and passes.
+# the result job still runs there and passes. A run cancelled by a newer one
+# reports a failed result until the newer run's result replaces it.
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
@@ -95,7 +96,7 @@ jobs:
         run: python3 scripts/ci/check-pr.py
 
   tooling:
-    name: Release, relay and build-script tests
+    name: Tooling tests
     needs: changes
     if: needs.changes.outputs.tooling == 'true'
     runs-on: ubuntu-latest

@@ -36,7 +36,7 @@ TEMPLATE = ROOT / ".github/PULL_REQUEST_TEMPLATE.md"
 # BREAKING CHANGE: footer bumps major, and everything else bumps patch.
 TYPES = ("feat", "fix", "perf", "docs", "style", "refactor", "test", "build",
          "ci", "chore", "revert")
-TITLE = re.compile(r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^()]*)\))?(?P<breaking>!)?: (?P<subject>\S.*)$")
+TITLE = re.compile(r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^()]+)\))?(?P<breaking>!)?: (?P<subject>\S.*)$")
 SKIP_RELEASE = re.compile(r"\[skip release\]", re.IGNORECASE)
 
 # Branch prefixes: the Conventional Commit types, plus release/ for an App
@@ -69,7 +69,10 @@ FIELDS_OPTIONAL = {"testing"}
 # A list item that starts with a bold label: "- **Design impact:** None".
 # The value can also sit on indented lines below it.
 FIELD = re.compile(r"^(?P<indent>\s*)(?:[-*+]|\d+[.)])\s+\*\*(?P<label>[^*]+?)\*\*\s*(?P<value>.*)$")
-TICKED = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\[[xX]\]\s+\S")
+# The template's documentation box, ticked.
+DOCS_BOX = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\[[xX]\]\s+I checked the docs", re.IGNORECASE)
+# A line that starts a new Markdown block rather than continuing a list item.
+NEW_BLOCK = re.compile(r"^\s{0,3}(?:[-*+>#]|\d+[.)]|`{3}|~{3})")
 HEADING = re.compile(r"^\s{0,3}##\s+(?P<name>.+?)\s*#*\s*$")
 TITLE_HEADING = re.compile(r"^\s{0,3}#\s")
 # A fence opens with three or more backticks or tildes and closes with at
@@ -78,8 +81,13 @@ FENCE = re.compile(r"^\s{0,3}(?P<run>`{3,}|~{3,})(?P<rest>.*)$")
 # Review bots that append their own block to the description.
 GENERATED = re.compile(r"<!--\s*This is an auto-generated.*?-->.*?<!--\s*End of auto-generated.*?-->",
                        re.DOTALL | re.IGNORECASE)
-COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
-CLOSED_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+# A <!-- that starts a line hides everything up to -->, or to the end when it
+# is never closed. In the middle of a line it is a comment only when --> closes
+# it within the same paragraph; otherwise GitHub shows it as text.
+COMMENT_BLOCK = re.compile(r"^ {0,3}<!--", re.MULTILINE)
+INLINE_COMMENT = r"<!--(?:(?!\n[ \t]*\n).)*?-->"
+COMMENT = re.compile(r"^ {0,3}<!--.*?(?:-->|\Z)|" + INLINE_COMMENT, re.DOTALL | re.MULTILINE)
+CLOSED_COMMENT = re.compile(r"^ {0,3}<!--.*?-->|" + INLINE_COMMENT, re.DOTALL | re.MULTILINE)
 INLINE_CODE = re.compile(r"(`+)(.+?)\1")
 
 
@@ -128,6 +136,12 @@ def check_branch(branch):
         "fix/row-focus."]
 
 
+def opens(marker):
+    """Whether a line opens a fence. A backtick fence's info string can't hold
+    a backtick, so ```code``` at the start of a line is inline code."""
+    return marker is not None and not (marker["run"][0] == "`" and "`" in marker["rest"])
+
+
 def closes(marker, fence):
     """Whether a fence line closes the block that the run `fence` opened."""
     return (marker is not None and marker["run"][0] == fence[0]
@@ -138,9 +152,15 @@ def protect_code(text):
     """Neutralise <!-- inside code spans and fenced blocks, which GitHub shows as text."""
     lines = []
     fence = None
+    comment = False
     for line in text.split("\n"):
+        if comment:
+            # A fence line inside a comment block doesn't open a fence.
+            lines.append(line)
+            comment = "-->" not in line
+            continue
         marker = FENCE.match(line)
-        if marker and fence is None:
+        if fence is None and opens(marker):
             fence = marker["run"]
             lines.append(line)
         elif fence is not None:
@@ -150,7 +170,10 @@ def protect_code(text):
                 continue
             lines.append(line.replace("<!--", "&lt;!--"))
         else:
-            lines.append(INLINE_CODE.sub(lambda code: code[0].replace("<!--", "&lt;!--"), line))
+            line = INLINE_CODE.sub(lambda code: code[0].replace("<!--", "&lt;!--"), line)
+            lines.append(line)
+            start = COMMENT_BLOCK.match(line)
+            comment = start is not None and "-->" not in line[start.end():]
     return "\n".join(lines)
 
 
@@ -182,7 +205,7 @@ def sections(text):
         if fence is not None:
             if closes(marker, fence):
                 fence = None
-        elif marker:
+        elif opens(marker):
             fence = marker["run"]
         else:
             heading = HEADING.match(line)
@@ -202,24 +225,28 @@ def sections(text):
 def fields_of(lines):
     """Map each bold field label to its value.
 
-    The value is the text after the label, or else the indented lines below
-    it, such as sub-bullets.
+    The value is the text after the label, or else the lines below it that
+    belong to the same list item: indented lines such as sub-bullets, or a
+    plain line straight after it.
     """
     fields = {}
     waiting = None
+    after_blank = False
     for line in lines:
         if not line.strip():
+            after_blank = True
             continue
         field = FIELD.match(line)
         if field and not field["indent"]:
             label = field["label"].strip().rstrip(":").strip()
             fields[label] = field["value"].lstrip(":").strip()
             waiting = None if fields[label] else label
-        elif waiting and line[:1] in (" ", "\t"):
+        elif waiting and (line[:1] in (" ", "\t") or not after_blank and not NEW_BLOCK.match(line)):
             fields[waiting] = line.strip()
             waiting = None
         else:
             waiting = None
+        after_blank = False
     return fields
 
 
@@ -239,7 +266,7 @@ def check_description(body):
     found = sections(clean(body))
     scaffolding = template_lines()
     problems = []
-    if "<!--" in CLOSED_COMMENT.sub("", normalise(body)):
+    if COMMENT_BLOCK.search(CLOSED_COMMENT.sub("", normalise(body))):
         problems.append("The description has a <!-- comment with no closing -->, which hides "
                         "everything after it. Close it or remove it.")
     for key, name in SECTIONS.items():
@@ -265,11 +292,11 @@ def check_description(body):
                     "AI disclosure leaves " + ", ".join(f"**{display(label)}**" for label in blank)
                     + " blank. Fill in every field, or replace them with one accurate sentence.")
         if key == "documentation":
-            if not any(TICKED.match(line) for line in lines):
+            if not any(DOCS_BOX.match(line) for line in lines):
                 problems.append(
                     'Documentation impact: tick "I checked the docs this change affects" '
                     "once you have checked them.")
-            elif not [line for line in content if not TICKED.match(line)]:
+            elif not [line for line in content if not DOCS_BOX.match(line)]:
                 problems.append(
                     "Documentation impact: list the docs this PR updates, or write "
                     '"No documentation changes" and why.')

@@ -63,7 +63,7 @@ class TitleTests(unittest.TestCase):
 
     def test_other_titles_fail(self):
         for title in ("Fix focus", "Fix: keep focus", "fix:keep focus", "feature: add Search",
-                      'Revert "fix: keep focus"', "fix : keep focus"):
+                      'Revert "fix: keep focus"', "fix : keep focus", "fix(): keep focus"):
             with self.subTest(title=title):
                 self.assertEqual(len(check_pr.check_title(title, APP)), 1)
 
@@ -237,6 +237,39 @@ class DescriptionTests(unittest.TestCase):
         problems = check_pr.check_description(nested)
         self.assertEqual(len(problems), 1)
         self.assertIn("## Performance", problems[0])
+
+    def test_inline_code_at_line_start_is_not_a_fence(self):
+        body = FILLED.replace("CI.\n", "```npm run test:release``` passes.\n")
+        self.assertEqual(check_pr.check_description(body), [])
+
+    def test_only_the_docs_box_counts(self):
+        other_box = FILLED.replace("- [x] I checked", "- [ ] I checked").replace(
+            "- No documentation changes", "- [x] Ran the link checker\n- No documentation changes")
+        problems = check_pr.check_description(other_box)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("tick", problems[0])
+        listed = FILLED.replace("- No documentation changes: focus behaviour is not described anywhere.",
+                                "- [x] README.md updated")
+        self.assertEqual(check_pr.check_description(listed), [])
+
+    def test_fence_inside_a_comment(self):
+        body = (FILLED.replace("CI.\n", "CI.\n\n<!--\n```\n-->\n")
+                .replace("Not applicable.\n", "<!-- only a comment -->\n"))
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn('"Performance" is empty', problems[0])
+
+    def test_stray_comment_marker_in_prose_is_text(self):
+        body = FILLED.replace("Keeps the focus on the last row.", "Treats a stray <!-- in prose as text.")
+        self.assertEqual(check_pr.check_description(body), [])
+        later = body.replace("- **Tested?** Yes", "- **Tested?** Yes <!-- note -->")
+        self.assertEqual(check_pr.check_description(later), [])
+
+    def test_field_value_on_the_next_line(self):
+        body = FILLED.replace("- **Design impact:** No design changes.", "- **Design impact:**\nNo design changes.")
+        self.assertEqual(check_pr.check_description(body), [])
+        blank = FILLED.replace("- **Design impact:** No design changes.", "- **Design impact:**\n\nNo design changes.")
+        self.assertEqual(len(check_pr.check_description(blank)), 1)
 
     def test_unclosed_comment(self):
         body = FILLED.replace("## Validation", "<!-- draft notes\n\n## Validation")
