@@ -153,10 +153,10 @@ jobs:
           set -euo pipefail
           # Pushes to main skip Apple TV because it passed on the pull request.
           # Manual runs always include it. Pull requests run it when an app
-          # file other than an iOS-only one changes, so new shared paths are
-          # tested by default rather than silently skipped. Docs, the check
-          # scripts and other files outside the app don't count; this
-          # workflow does.
+          # file other than an iOS-only one, a scripts/xcode/ build phase or
+          # this workflow changes, so new shared paths are tested by default
+          # rather than silently skipped. Docs, the check scripts and other
+          # files outside the app don't count.
           if [ "$EVENT" = push ]; then
             echo "tvos=false" >> "$GITHUB_OUTPUT"
             exit 0
