@@ -87,7 +87,8 @@ jobs:
         run: |
           set -euo pipefail
           changed="$RUNNER_TEMP/changed-files"
-          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null \
+              || ! git merge-base "$BASE" "$HEAD" > /dev/null 2>&1; then
             echo "No comparable base commit; treating every file as changed"
             touch "$RUNNER_TEMP/changed-files-unknown"
             : > "$changed"

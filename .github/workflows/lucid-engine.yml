@@ -66,9 +66,16 @@ jobs:
             echo "engine=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # NUL-separated and unquoted, so unusual file names still match;
-          # --no-renames lists both sides of a move. Listed to a file first,
-          # so a failing git diff stops the job.
+          # Without a comparable base commit, build the engine rather than
+          # guess. Otherwise list the changes NUL-separated and unquoted, so
+          # unusual file names still match; --no-renames lists both sides of
+          # a move. Listed to a file first, so a failing git diff stops the job.
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null \
+              || ! git merge-base "$BASE" "$HEAD" > /dev/null 2>&1; then
+            echo "No comparable base commit; building the engine"
+            echo "engine=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           changed="$RUNNER_TEMP/changed-files"
           git -c core.quotePath=false diff -z --name-only --no-renames "$BASE...$HEAD" > "$changed"
           engine=false
