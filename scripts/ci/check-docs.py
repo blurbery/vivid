@@ -29,7 +29,7 @@ but doesn't fail the change, and the change is also checked for:
   not Gemfile or a bare engine/). Ignored local files outside docs/ (for
   example iosApp/Signing/Local.xcconfig) are fine, and paths with wildcards
   or placeholders are not checked;
-- em dashes on added lines of Markdown and HTML files;
+- em dashes on added lines of Markdown and HTML files and the issue templates;
 - the doc map below: when a change touches code that a doc describes, that
   doc must change in the same PR. If nothing the doc says has changed, a
   maintainer adds the docs-not-needed label, which skips the map's rules but
@@ -156,7 +156,7 @@ DOC_MAP = [
 ]
 
 EM_DASH = re.compile(r"\u2014|&mdash;|&#8212;|&#x2014;", re.IGNORECASE)
-EM_DASH_FILES = ["**/*.md", "**/*.html"]
+EM_DASH_FILES = ["**/*.md", "**/*.html", ".github/ISSUE_TEMPLATE/**"]
 
 # A fence opens with three or more backticks or tildes and closes with at
 # least as many of the same character and nothing else on the line.

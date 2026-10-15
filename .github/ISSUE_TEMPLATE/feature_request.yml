@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest something new for Vivid, or a change to how something works.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Vivid's design is decided by blurbery, so a request is the start of a discussion rather than a promise. Please check the open issues first in case someone has already asked for it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would this help with?
+      description: The problem you have, or what you're trying to do. This matters more than the exact solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Vivid to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Devices
+      multiple: true
+      options:
+        - iPhone
+        - iPad
+        - Apple TV
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server
+      description: Whether it depends on a particular media server.
+      multiple: true
+      options:
+        - Silo
+        - Emby
+        - Jellyfin
+        - Not related to a server
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Optional. Examples from other apps, mock-ups or screenshots.
+  - type: input
+    id: ai
+    attributes:
+      label: AI assistance
+      description: Optional. If an AI tool helped you write this request, say which one and how.
