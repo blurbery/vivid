@@ -41,6 +41,8 @@ SKIP_RELEASE = re.compile(r"\[skip release\]", re.IGNORECASE)
 # Store hotfix branch and experiment/ for long-running engine work.
 BRANCH_PREFIXES = TYPES + ("release", "experiment")
 BRANCH = re.compile(r"^(?P<prefix>[^/]+)/[A-Za-z0-9][A-Za-z0-9._/-]*$")
+# The branch GitHub's Revert button creates, such as revert-148-fix/thing.
+REVERT_BRANCH = re.compile(r"^revert-\d+-")
 
 # Template sections, matched on the start of each "## " heading so a small
 # rewording still counts. Each value is the name used in messages.
@@ -59,29 +61,42 @@ SECTIONS = {
 # change."; once it uses any field, Tested? is required.
 REQUIRED_FIELDS = {
     "testing": ("Tested?",),
-    "design": ("Design impact:", "Approval from blurbery:"),
+    "design": ("Design impact", "Approval from blurbery"),
 }
 FIELDS_OPTIONAL = {"testing"}
-FIELD = re.compile(r"^[-*]\s*\*\*(?P<label>[^*]+)\*\*\s*(?P<value>.*)$")
-TICKED = re.compile(r"^[-*]\s*\[[xX]\]\s+\S")
+# A list item that starts with a bold label: "- **Design impact:** None".
+# The value can also sit on indented lines below it.
+FIELD = re.compile(r"^(?P<indent>\s*)(?:[-*+]|\d+[.)])\s+\*\*(?P<label>[^*]+?)\*\*\s*(?P<value>.*)$")
+TICKED = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\[[xX]\]\s+\S")
+HEADING = re.compile(r"^\s{0,3}##\s+(?P<name>.+?)\s*#*\s*$")
+TITLE_HEADING = re.compile(r"^\s{0,3}#\s")
+FENCE = re.compile(r"^\s{0,3}(```|~~~)")
 # Review bots that append their own block to the description.
-GENERATED = re.compile(r"<!--\s*This is an auto-generated.*?-->.*?<!--\s*End of auto-generated.*?-->", re.DOTALL)
+GENERATED = re.compile(r"<!--\s*This is an auto-generated.*?-->.*?<!--\s*End of auto-generated.*?-->",
+                       re.DOTALL | re.IGNORECASE)
 COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+CLOSED_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 def ships_in_app(path):
-    """Whether a changed path ends up in the iOS or tvOS app."""
-    return path.startswith("iosApp/") and not path.startswith("iosApp/Tests/")
+    """Whether a changed path ends up in the iOS or tvOS app.
+
+    scripts/xcode/ holds build phases of both app targets.
+    """
+    return (path.startswith(("iosApp/", "scripts/xcode/"))
+            and not path.startswith("iosApp/Tests/"))
 
 
 def check_title(title, files):
     problems = []
     match = TITLE.match(title)
     if not match:
+        hint = (' For a revert, retitle it "revert: <what the reverted PR did>".'
+                if title.startswith('Revert "') else "")
         problems.append(
             f'The title "{title}" is not a Conventional Commit. Use '
             '"<type>: <summary>" or "<type>(<scope>): <summary>", for example '
-            '"fix: keep focus on the last row". It becomes the commit subject on main.')
+            f'"fix: keep focus on the last row". It becomes the commit subject on main.{hint}')
     elif match["type"] not in TYPES:
         hint = " Types are lower case." if match["type"].lower() in TYPES else ""
         problems.append(
@@ -97,7 +112,7 @@ def check_title(title, files):
 
 def check_branch(branch):
     match = BRANCH.match(branch)
-    if match and match["prefix"] in BRANCH_PREFIXES:
+    if match and match["prefix"] in BRANCH_PREFIXES or REVERT_BRANCH.match(branch):
         return []
     return [
         f'The branch "{branch}" does not follow <type>/<short-description>, where '
@@ -112,23 +127,61 @@ def clean(body):
     return COMMENT.sub("", body)
 
 
+def section_key(heading):
+    """The template section a heading names, ignoring case, bold and emoji."""
+    name = re.sub(r"[^a-z0-9 ]+", "", heading.lower()).strip()
+    return next((key for key in SECTIONS if name.startswith(key)), None)
+
+
 def sections(text):
-    """Map each template section key to the lines under its heading."""
+    """Map each template section key to the lines under its heading.
+
+    Headings inside fenced code blocks don't start or end a section.
+    """
     found = {}
     current = None
+    fence = None
     for line in text.split("\n"):
-        heading = re.match(r"^##\s+(.+?)\s*#*\s*$", line)
-        if heading:
-            name = heading[1].strip().lower()
-            current = next((key for key in SECTIONS if name.startswith(key)), None)
-            if current is not None:
-                found.setdefault(current, [])
-            continue
-        if line.startswith("# "):
-            current = None
-        elif current is not None:
+        marker = FENCE.match(line)
+        if marker:
+            fence = marker[1] if fence is None else (None if line.strip().startswith(fence) else fence)
+        elif fence is None:
+            heading = HEADING.match(line)
+            if heading:
+                current = section_key(heading["name"])
+                if current is not None:
+                    found.setdefault(current, [])
+                continue
+            if TITLE_HEADING.match(line):
+                current = None
+                continue
+        if current is not None:
             found[current].append(line)
     return found
+
+
+def fields_of(lines):
+    """Map each bold field label to its value.
+
+    The value is the text after the label, or else the indented lines below
+    it, such as sub-bullets.
+    """
+    fields = {}
+    waiting = None
+    for line in lines:
+        if not line.strip():
+            continue
+        field = FIELD.match(line)
+        if field and not field["indent"]:
+            label = field["label"].strip().rstrip(":").strip()
+            fields[label] = field["value"].lstrip(":").strip()
+            waiting = None if fields[label] else label
+        elif waiting and line[:1] in (" ", "\t"):
+            fields[waiting] = line.strip()
+            waiting = None
+        else:
+            waiting = None
+    return fields
 
 
 def template_lines():
@@ -139,35 +192,38 @@ def template_lines():
             for key, lines in sections(clean(TEMPLATE.read_text())).items()}
 
 
+def display(label):
+    return label if label.endswith("?") else label + ":"
+
+
 def check_description(body):
     found = sections(clean(body or ""))
     scaffolding = template_lines()
     problems = []
+    if "<!--" in CLOSED_COMMENT.sub("", GENERATED.sub("", body or "")):
+        problems.append("The description has a <!-- comment with no closing -->, which hides "
+                        "everything after it. Close it or remove it.")
     for key, name in SECTIONS.items():
         if key not in found:
             problems.append(f'The description has no "## {name}" section. Use the PR template and complete every section.')
             continue
         lines = [line.strip() for line in found[key] if line.strip()]
         content = [line for line in lines if line not in scaffolding.get(key, set())]
-        fields = {}
-        for line in lines:
-            field = FIELD.match(line)
-            if field:
-                fields[field["label"].strip()] = field["value"].strip()
+        fields = fields_of(found[key])
         if not content:
             problems.append(f'"{name}" is empty. Fill it in, or say why it does not apply.')
             continue
         for label in REQUIRED_FIELDS.get(key, ()):
             if label not in fields:
                 if key not in FIELDS_OPTIONAL or fields:
-                    problems.append(f'"{name}" has no **{label}** line. Keep the template\'s field and fill it in.')
+                    problems.append(f'"{name}" has no **{display(label)}** line. Keep the template\'s field and fill it in.')
             elif not fields[label]:
-                problems.append(f'"{name}" leaves **{label}** blank.')
+                problems.append(f'"{name}" leaves **{display(label)}** blank.')
         if key == "ai disclosure":
             blank = [label for label, value in fields.items() if not value]
             if blank:
                 problems.append(
-                    "AI disclosure leaves " + ", ".join(f"**{label}**" for label in blank)
+                    "AI disclosure leaves " + ", ".join(f"**{display(label)}**" for label in blank)
                     + " blank. Fill in every field, or replace them with one accurate sentence.")
         if key == "documentation":
             if not any(TICKED.match(line) for line in lines):

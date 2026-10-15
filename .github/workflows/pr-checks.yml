@@ -11,9 +11,11 @@ name: PR checks
 #   after merge.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
-# It is the job for branch protection on main to require, rather than the
-# ones above, so this workflow can add or skip jobs without changing the
-# protection settings.
+# Branch protection on main is meant to require it and "PR title, branch and
+# description". The second matters after an edit: a new title or description
+# doesn't change the commit, and the result job only reports once the jobs
+# it waits for finish, but the title job is queued at once, so the PR can't
+# be merged on the old pass in between. Jobs skip closed PRs.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
@@ -28,6 +30,7 @@ concurrency:
 jobs:
   changes:
     name: Detect changed tooling
+    if: github.event.pull_request.state == 'open'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -45,6 +48,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Listed first, so a failing git diff stops the job.
+          files=$(git diff --name-only --no-renames "$BASE...$HEAD")
           tooling=false
           while IFS= read -r file; do
             case "$file" in
@@ -57,11 +62,12 @@ jobs:
                 tooling=true
                 break ;;
             esac
-          done < <(git diff --name-only --no-renames "$BASE...$HEAD")
+          done <<< "$files"
           echo "tooling=$tooling" >> "$GITHUB_OUTPUT"
 
   pr:
     name: PR title, branch and description
+    if: github.event.pull_request.state == 'open'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

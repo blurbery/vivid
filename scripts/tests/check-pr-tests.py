@@ -87,11 +87,20 @@ class TitleTests(unittest.TestCase):
     def test_unknown_files_skip_the_release_rule(self):
         self.assertEqual(check_pr.check_title("docs: fix a link", None), [])
 
+    def test_build_phase_scripts_ship(self):
+        self.assertEqual(check_pr.check_title("fix: stamp the source commit", ["scripts/xcode/stamp-source-revision.sh"]), [])
+
+    def test_revert_title_hint(self):
+        problems = check_pr.check_title('Revert "fix: keep focus on the last row"', APP)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("revert:", problems[0])
+
 
 class BranchTests(unittest.TestCase):
     def test_typed_branches_pass(self):
         for branch in ("fix/row-focus", "feat/tv-siri-search", "experiment/lucid-engine-build",
-                       "release/0.39", "ci/pr-checks", "docs/sync_final.features"):
+                       "release/0.39", "ci/pr-checks", "docs/sync_final.features",
+                       "revert-148-fix/trailer-alert"):
             with self.subTest(branch=branch):
                 self.assertEqual(check_pr.check_branch(branch), [])
 
@@ -195,6 +204,37 @@ class DescriptionTests(unittest.TestCase):
         problems = check_pr.check_description(body)
         self.assertEqual(len(problems), 1)
         self.assertIn("AI disclosure", problems[0])
+
+    def test_field_values_on_indented_lines(self):
+        body = FILLED.replace("- **Design impact:** No design changes.",
+                              "- **Design impact:**\n  - The Home row spacing, approved in #120.")
+        self.assertEqual(check_pr.check_description(body), [])
+        fields = ("- **Tools / assistants used:** GitHub Copilot\n"
+                  "- **Models used:** Label unavailable\n"
+                  "- **What AI helped with:**\n  - Code\n  - Tests\n"
+                  "- **My direction, review and validation:** I wrote and checked the fix.\n")
+        body = FILLED.replace("I implemented these changes and used Claude Opus as a tool.\n", fields)
+        self.assertEqual(check_pr.check_description(body), [])
+
+    def test_other_markdown_forms(self):
+        body = (FILLED.replace("## Validation", "## **Validation** ✅")
+                .replace("- [x] I checked", "+ [x] I checked")
+                .replace("- **Approval from blurbery:** Not applicable", "- **Approval from blurbery**: Not applicable")
+                .replace("## Performance", "  ## Performance"))
+        self.assertEqual(check_pr.check_description(body), [])
+        self.assertEqual(check_pr.check_description(FILLED.replace("- [x] I checked", "1. [x] I checked")), [])
+
+    def test_headings_inside_code_fences(self):
+        missing = FILLED.replace("## Performance\n\nNot applicable.\n", "")
+        fenced = missing.replace("CI.\n", "CI.\n\n```text\n## Performance\nNot applicable.\n```\n")
+        self.assertEqual(len(check_pr.check_description(fenced)), 1)
+        comment = FILLED.replace("- No documentation changes", "```sh\n# regenerate\nxcodegen generate\n```\n- No documentation changes")
+        self.assertEqual(check_pr.check_description(comment), [])
+
+    def test_unclosed_comment(self):
+        body = FILLED.replace("## Validation", "<!-- draft notes\n\n## Validation")
+        problems = check_pr.check_description(body)
+        self.assertIn("no closing -->", problems[0])
 
     def test_extra_sections_and_notes_are_allowed(self):
         body = ("> [!NOTE]\n> Follow-up is in another PR.\n\n" + FILLED
