@@ -924,7 +924,10 @@ struct EmbyAdapter {
             for item in payload["items"] as? [[String:Any]] ?? [] {
                 guard let id = item["media_item_id"] as? String,
                       let position = item["position_seconds"] as? Double ?? item["position"] as? Double else { throw EmbyError.invalidResponse }
-                _ = try await connection.request("POST", "/Users/\(userID)/Items/\(EmbyConnection.id(id))/UserData", body:["PlaybackPositionTicks":EmbyPlayback.ticks(position)])
+                // A stop report, unlike a user-data write, goes through Emby's
+                // resume settings. Without a PlaySessionId it can't end a
+                // transcode, and without a MediaSourceId it updates the item itself.
+                _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":EmbyConnection.id(id), "PositionTicks":EmbyPlayback.ticks(position)])
                 results.append(["mediaItemId":id,"status":"ok"])
             }
             return ["results":results]

@@ -127,6 +127,30 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(requests.count, 1)
     }
 
+    func testOfflineProgressSyncSendsAStopReportSoJellyfinAppliesItsResumeSettings() async throws {
+        let other = "44444444444444444444444444444444"
+        var requests: [String] = []
+        let adapter = adapter { request in
+            let body = try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: request.httpBody ?? Data()), options: [.sortedKeys])
+            requests.append("\(request.httpMethod ?? "") \(request.url!.path) \(String(decoding: body, as: UTF8.self))")
+            return (204, [:])
+        }
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: ["items": [
+            ["media_item_id": item, "position": 600.0, "duration": 2_600.0, "force_overwrite": false],
+            ["media_item_id": other, "position": 12.5, "duration": 2_600.0, "force_overwrite": false]
+        ]])
+        // No PlaySessionId (it could end a transcode on this device), no
+        // MediaSourceId and no Failed flag, which would skip the update.
+        XCTAssertEqual(requests, [
+            #"POST /jellyfin/Sessions/Playing/Stopped {"ItemId":"\#(item)","PositionTicks":6000000000}"#,
+            #"POST /jellyfin/Sessions/Playing/Stopped {"ItemId":"\#(other)","PositionTicks":125000000}"#
+        ])
+        let data = try JSONSerialization.data(withJSONObject: raw)
+        let results = try HTTPClient.makeJSONDecoder().decode(SyncProgressResultsResponse.self, from: data).results
+        XCTAssertEqual(results.map(\.mediaItemId), [item, other])
+        XCTAssertTrue(results.allSatisfy(\.isOK))
+    }
+
     func testPeopleNavigationRoundTripsNativeIDsAndKeepsAccountsSeparate() async throws {
         let nativeID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let adapter = adapter { request in
