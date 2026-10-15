@@ -1,0 +1,139 @@
+name: PR checks
+
+# Cheap checks for every pull request, on standard Ubuntu runners. They read
+# the event and the checkout only, and never see a secret, so pull requests
+# from forks run them too.
+# - scripts/ci/check-pr.py checks the PR title (a Conventional Commit, with
+#   [skip release] when nothing in the app changes), the branch name and the
+#   description. Editing the title or description runs it again.
+# - When the release tooling, diagnostics relay, sideload resolvers or PR
+#   checker change, their tests run here before merge. The release workflow
+#   runs only the release tests, and only after merge.
+# "PR checks result" always runs and fails when any job above failed or was
+# cancelled; a job skipped because its files did not change counts as passed.
+# Branch protection on main is meant to require it and "PR title, branch and
+# description". The second matters after an edit: a new title or description
+# doesn't change the commit, and the result job only reports once the jobs
+# it waits for finish, but the title job is queued at once, so the PR can't
+# be merged on the old pass in between. The checking jobs skip closed PRs;
+# the result job still runs there and passes. A run cancelled by a newer one
+# reports a failed result until the newer run's result replaces it.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed tooling
+    if: github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tooling: ${{ steps.filter.outputs.tooling }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Detect tooling changes
+        id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Listed to a file first, so a failing git diff stops the job.
+          # NUL-separated and unquoted, so unusual file names still match;
+          # --no-renames lists both sides of a move.
+          changed="$RUNNER_TEMP/changed-files"
+          git -c core.quotePath=false diff -z --name-only --no-renames "$BASE...$HEAD" > "$changed"
+          tooling=false
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              package.json|package-lock.json|release.config.mjs|scripts/release/*|\
+              diagnostics-relay/*|scripts/ci/resolve-*|scripts/ci/check-pr.py|\
+              scripts/tests/check-pr-tests.py|.github/PULL_REQUEST_TEMPLATE.md|\
+              .github/workflows/release.yml|.github/workflows/sideload-ipa.yml|\
+              .github/workflows/pr-checks.yml)
+                echo "Tooling change: $file"
+                tooling=true
+                break ;;
+            esac
+          done < "$changed"
+          echo "tooling=$tooling" >> "$GITHUB_OUTPUT"
+
+  pr:
+    name: PR title, branch and description
+    if: github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Everything from the event goes through environment variables, never
+      # straight into the script, so a title or description cannot inject
+      # shell commands.
+      - name: Check the title, branch and description
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci/check-pr.py
+
+  tooling:
+    name: Tooling tests
+    needs: changes
+    if: needs.changes.outputs.tooling == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.15.0'
+      - name: Install pinned release tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check version rules and release notes
+        run: npm run test:release
+      - name: Check the diagnostics relay
+        run: npm run test:relay
+      - name: Check the sideload version and platform resolvers
+        run: |
+          bash scripts/ci/resolve-marketing-version.test.sh
+          bash scripts/ci/resolve-platform.test.sh
+      - name: Check the PR checker
+        run: python3 scripts/tests/check-pr-tests.py
+
+  result:
+    name: PR checks result
+    if: always()
+    needs: [changes, pr, tooling]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail when any check failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<< "$NEEDS" > /dev/null; then
+            echo "::error::A PR check failed or was cancelled. See the jobs above."
+            exit 1
+          fi

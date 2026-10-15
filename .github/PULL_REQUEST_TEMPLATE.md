@@ -1,4 +1,4 @@
-<!-- Contributors may open PRs from their forks. Only blurbery controls merges, updates to main and branches in blurbery/vivid. Follow CONTRIBUTING.md and AGENTS.md. Complete every section, including AI disclosure. -->
+<!-- Contributors may open PRs from their forks. Only blurbery controls merges, updates to main and branches in blurbery/vivid. Follow CONTRIBUTING.md and AGENTS.md. Complete every section, including AI disclosure. The title becomes the commit subject on main, so write it as a Conventional Commit, for example "fix: keep focus on the last row". Once the PR is ready for review, PR checks fail until the title and every section are complete; on a draft, incomplete sections are warnings. -->
 
 ## Problem and reproduction
 
