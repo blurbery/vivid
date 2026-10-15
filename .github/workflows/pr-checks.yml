@@ -2,16 +2,17 @@ name: PR checks
 
 # Cheap checks for every pull request, on standard Ubuntu runners. They read
 # the event and the checkout only, and never see a secret, so pull requests
-# from forks run them too.
+# from forks run them too, once blurbery approves the run.
 # - scripts/ci/check-pr.py checks the PR title (a Conventional Commit, with
 #   [skip release] when nothing in the app changes), the branch name and the
 #   description. Editing the title or description runs it again.
-# - When the release tooling, diagnostics relay, sideload resolvers or PR
-#   checker change, their tests run here before merge. The release workflow
-#   runs only the release tests, and only after merge.
+# - When the release tooling, the release or sideload workflow, the
+#   diagnostics relay, the sideload resolvers, the PR checker, the PR
+#   template or this workflow change, their tests run here before merge.
+#   The release workflow runs only the release tests, and only after merge.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
-# Branch protection on main is meant to require it and "PR title, branch and
+# Branch protection on main requires it and "PR title, branch and
 # description". The second matters after an edit: a new title or description
 # doesn't change the commit, and the result job only reports once the jobs
 # it waits for finish, but the title job is queued at once, so the PR can't
