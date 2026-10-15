@@ -13,10 +13,18 @@ struct SearchView: View {
     #endif
     private let usesTVTopMenuInset: Bool
     private let blurRequest: Int
+    /// Words from a Siri search (Apple TV). Search puts them in the field
+    /// once, then clears the request so nothing applies it again.
+    @Binding private var seededQuery: AppRouter.SearchRequest?
 
-    init(usesTVTopMenuInset: Bool = true, blurRequest: Int = 0) {
+    init(
+        usesTVTopMenuInset: Bool = true,
+        blurRequest: Int = 0,
+        seededQuery: Binding<AppRouter.SearchRequest?> = .constant(nil)
+    ) {
         self.usesTVTopMenuInset = usesTVTopMenuInset
         self.blurRequest = blurRequest
+        self._seededQuery = seededQuery
     }
 
     var body: some View {
@@ -108,6 +116,14 @@ struct SearchView: View {
         .onChange(of: viewModel.query) { _, _ in
             viewModel.onQueryChanged()
             requestsViewModel.onQueryChanged(viewModel.query, mediaType: requestMediaType)
+        }
+        .task(id: seededQuery?.id) {
+            guard let seed = seededQuery else { return }
+            // A Movies or Series filter left from an earlier search could
+            // hide the title asked for.
+            viewModel.selectedMediaType = .all
+            viewModel.query = seed.query
+            seededQuery = nil
         }
         .onChange(of: viewModel.selectedMediaType) { _, _ in
             requestsViewModel.onQueryChanged(viewModel.query, mediaType: requestMediaType)

@@ -76,6 +76,15 @@ struct TVMainTabView: View {
     /// their pops emit `detailReturnFocusRequest` so the exact launch row/card
     /// explicitly reclaims focus.
     @State private var barOwnsFocusOnPopToRoot = false
+    /// The Siri search the pushed Search screen fills its field from. Search
+    /// clears it once applied.
+    @State private var siriSearchRequest: AppRouter.SearchRequest?
+    /// Set when a Siri search opens while the startup hand-off still disables
+    /// the app's content (a cold launch). The search field can't take focus
+    /// then, and tvOS doesn't resolve focus again by itself once the content
+    /// is enabled.
+    @State private var siriSearchNeedsFocusOnEnable = false
+    @Environment(\.isEnabled) private var isEnabled
     @State private var topMenuFocusRequest = 0
     /// Bumped by the focus watchdog to drop the bar's `@FocusState` when the
     /// engine has already dropped focus without telling it. Re-suppressing is
@@ -207,6 +216,22 @@ struct TVMainTabView: View {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) { selectRoot(.home) }
+            }
+        }
+        .onChange(of: router.requestedSearch) { _, _ in
+            openRequestedSearch()
+        }
+        // A Siri search queued behind sign-in or profile selection can arrive
+        // before this view exists to observe the change.
+        .onAppear { openRequestedSearch() }
+        .onChange(of: isEnabled) { _, enabled in
+            guard enabled, siriSearchNeedsFocusOnEnable else { return }
+            siriSearchNeedsFocusOnEnable = false
+            // One request for the engine to resolve focus, as the focus
+            // watchdog would after about four seconds. It lands on Search's
+            // own default, the search field; nothing is pinned here.
+            DispatchQueue.main.async {
+                TVFocusSystemProbe.requestFocusUpdate()
             }
         }
         .onChange(of: visibleRoots) { _, _ in
@@ -542,6 +567,27 @@ struct TVMainTabView: View {
         }
     }
 
+    /// Opens Search for a Siri request the way the bar's Search button does,
+    /// from wherever the user is: Search replaces every pushed screen
+    /// (including an open Search) and Back returns focus to the bar. A video
+    /// closes the way Menu closes it, so the player's own cleanup saves
+    /// progress. Focus inside Search stays with the native search field.
+    private func openRequestedSearch() {
+        guard let request = router.requestedSearch else { return }
+        router.requestedSearch = nil
+        siriSearchRequest = request
+        siriSearchNeedsFocusOnEnable = !isEnabled
+        router.presentedPlayer = nil
+        barOwnsFocusOnPopToRoot = true
+        // As with the bar's Search button, the native searchable interface
+        // manages its own presentation.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            router.showSearchReplacingStack()
+        }
+    }
+
     @ViewBuilder
     private func routeContent(for route: Route) -> some View {
         switch route {
@@ -593,7 +639,7 @@ struct TVMainTabView: View {
         case .myRequests:
             MyRequestsView()
         case .search:
-            SearchView(usesTVTopMenuInset: false)
+            SearchView(usesTVTopMenuInset: false, seededQuery: $siriSearchRequest)
         case .settings:
             TVSettingsView()
         case .recommendations:

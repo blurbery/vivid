@@ -60,6 +60,14 @@ For You has Watchlist, Favourites and Collections sub-tabs, with no Sort control
 
 Search uses seven posters across the available safe-area width, without the previous extra horizontal insets or width cap. The results sit closer to the Top Results, Movies and Series tabs.
 
+### Siri search
+
+A short press of the Siri Remote's Siri button anywhere in Vivid brings up Apple's dictation prompt. Say what you want to watch and Vivid opens Search with those words in the field and the results showing, on Silo, Emby and Jellyfin alike. Typing still works afterwards: the words can be edited in the search field like any other search. Holding the button still opens Siri.
+
+tvOS never gives apps the Siri button itself, so this uses App Intents' in-app search (`ShowInAppSearchResultsIntent`, tvOS 17.2 and later): tvOS runs `SearchVividIntent` with the spoken words, and Vivid hands them to its own `vivid://search?q=` link. That link waits behind sign-in, profile selection and the background profile lock like a Top Shelf link, then Search replaces whatever screens were open, exactly as if Search had been picked in the top bar. Back returns focus to the bar. A playing video closes the way Menu closes it, so its progress is saved first. Search resets to Top Results so an earlier Movies or Series filter can't hide the title.
+
+"Search Vivid", "Search in Vivid" and "Find something to watch in Vivid" are registered as App Shortcut phrases, after which Siri asks for the title. Phrases can't carry free text, so "Search Vivid for…" in one sentence isn't possible. The prompt and speech recognition are Apple's, and depend on Siri and Dictation being available for the Apple TV's language and region and on Settings → General → Dictation. Vivid receives only the resulting text. iPhone and iPad don't register the intent.
+
 Library requests load seventy items at a time. Artwork retention uses a moving ten-row window that follows visible rows, falling back to current focus before visibility is known. It keeps a small look-behind and releases earlier decoded image references as scrolling advances. Visible and upcoming posters are warmed before the look-behind, with two requests at a time; queue updates can refill evicted images. Visible or focused catalogue cards always remain eligible to load, and distant cards release their image through the same image view without replacing its subtree. Lightweight item metadata remains available for navigation; this is not a fixed total app-memory limit. Seven-column catalogue grids request the next page with four rows remaining and recheck when a row becomes visible or a page arrives. Native card controls, focus styling and layout are unchanged. The owner confirmed that the installed scrolling follow-up resolved the Movies and Series focus/artwork issue.
 
 Shared artwork loads retain a consumer for each visible image or prefetch request. Cancelling one consumer preserves work needed elsewhere; cancelling the last consumer stops the shared transfer and skips any decode still queued. Account changes continue to cancel outgoing work and prevent it from repopulating memory. The same cancellation behaviour applies on iPhone and iPad.
@@ -122,6 +130,7 @@ More Like This is independent of TMDb. Emby and Jellyfin use their native simila
     <tr><td>Local metadata</td><td><a href="../iosApp/iosApp/tvOS/Caching/TVHomeMetadataCache.swift">TVHomeMetadataCache</a></td></tr>
     <tr><td>Catalogue grids</td><td><a href="../iosApp/iosApp/tvOS/Screens/Components/TVCatalogGrid.swift">TVCatalogGrid and artwork window</a>, <a href="../iosApp/iosApp/tvOS/Screens/Libraries/TVLibraryGridViewModel.swift">Library paging</a></td></tr>
     <tr><td>Navigation and Settings</td><td><a href="../iosApp/iosApp/tvOS/Navigation/TVMainTabView.swift">TVMainTabView</a>, <a href="../iosApp/iosApp/tvOS/Screens/Settings/TVGeneralSettingsView.swift">General</a></td></tr>
+    <tr><td>Siri search</td><td><a href="../iosApp/iosApp/tvOS/Siri/TVSiriSearch.swift">SearchVividIntent and search link</a>, <a href="../iosApp/iosApp/Screens/Search/SearchView.swift">SearchView</a></td></tr>
     <tr><td>Startup</td><td><a href="../iosApp/iosApp/tvOS/Components/VividStartupView.swift">VividStartupView</a>, <a href="../iosApp/iosApp/Startup/StartupContentPrefetcher.swift">StartupContentPrefetcher</a></td></tr>
   </tbody>
 </table>

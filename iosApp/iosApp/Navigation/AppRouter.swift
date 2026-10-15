@@ -257,6 +257,33 @@ class AppRouter {
         requestedTab = tab
     }
 
+    // MARK: - Search Requests
+
+    /// Search opened with `query` already in the field. The fresh `id` makes
+    /// asking for the same words twice a new request.
+    struct SearchRequest: Equatable {
+        let id = UUID()
+        let query: String
+    }
+
+    #if os(tvOS)
+    /// One-shot Siri search, consumed (and cleared) by `TVMainTabView`, which
+    /// owns the navigation stack and the top bar's focus.
+    var requestedSearch: SearchRequest?
+
+    func requestSearch(query: String) {
+        requestedSearch = SearchRequest(query: query)
+    }
+
+    /// Replace every pushed screen with Search in one assignment. Popping and
+    /// then pushing would briefly empty the path and run the root's
+    /// pop-to-root focus handling for a screen that never shows.
+    func showSearchReplacingStack() {
+        recordScreenBreadcrumb(target: "search", action: "siri")
+        path = NavigationPath([Route.search])
+    }
+    #endif
+
     /// Present the player using the platform-appropriate path. iOS/iPadOS use
     /// a full-window cover; macOS pushes into the main navigation content so
     /// playback replaces the detail pane instead of opening in a sheet.
