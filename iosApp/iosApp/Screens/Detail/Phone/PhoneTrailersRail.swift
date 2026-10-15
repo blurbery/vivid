@@ -58,18 +58,33 @@ struct PhoneTrailersRail: View {
 /// Both phone detail screens embed this instead of `PhoneTrailersRail`
 /// directly: a remote trailer is handed to the YouTube app with the same
 /// deep link used on tvOS, or to the public watch page when the app isn't
-/// installed. That branch would otherwise be copied into
-/// `MovieDetailContent` and `SeriesDetailContent` verbatim. Local extras are
-/// ordinary playback targets, so those taps continue up to the detail view
-/// that owns the player presentation.
+/// installed, after Vivid's own alert confirms leaving the app. That branch
+/// would otherwise be copied into `MovieDetailContent` and
+/// `SeriesDetailContent` verbatim. Local extras are ordinary playback
+/// targets, so those taps continue up to the detail view that owns the
+/// player presentation.
 struct PhoneTrailersSection: View {
     let entries: [TrailerRailEntry]
     let onPlayExtra: (_ contentId: String) -> Void
 
     @Environment(\.openURL) private var openURL
+    @State private var pendingRemoteTrailer: PendingRemoteTrailer?
 
     var body: some View {
         PhoneTrailersRail(entries: entries, onSelect: handleSelection)
+            .alert(
+                "Open in YouTube?",
+                isPresented: Binding(
+                    get: { pendingRemoteTrailer != nil },
+                    set: { if !$0 { pendingRemoteTrailer = nil } }
+                ),
+                presenting: pendingRemoteTrailer
+            ) { trailer in
+                Button("Open") { openRemoteTrailer(siteKey: trailer.siteKey) }
+                Button("Cancel", role: .cancel) {}
+            } message: { trailer in
+                Text(trailer.title)
+            }
     }
 
     private func handleSelection(_ entry: TrailerRailEntry) {
@@ -77,15 +92,16 @@ struct PhoneTrailersSection: View {
         case .local(let extra):
             onPlayExtra(extra.contentId)
         case .remote(let video):
-            openRemoteTrailer(siteKey: video.siteKey)
+            pendingRemoteTrailer = PendingRemoteTrailer(siteKey: video.siteKey, title: entry.title)
         }
     }
 
-    /// Chooses the app or the web page up front instead of falling back when
-    /// the app link isn't accepted. Cancel on the iOS prompt asking to open
-    /// YouTube also comes back as not accepted, and the watch page is a
-    /// universal link that iOS hands straight to the YouTube app, so a
-    /// fallback would open YouTube anyway.
+    /// Runs only after Open in Vivid's alert, and chooses the app or the web
+    /// page up front instead of falling back when the app link isn't
+    /// accepted. If iOS shows its own prompt as well, Cancel there also comes
+    /// back as not accepted, and the watch page is a universal link that iOS
+    /// hands straight to the YouTube app, so a fallback would open YouTube
+    /// anyway.
     private func openRemoteTrailer(siteKey: String) {
         guard let appURL = TrailerRail.youtubeDeepLinkURL(siteKey: siteKey),
               let webURL = TrailerRail.youtubeWatchURL(siteKey: siteKey) else {
@@ -106,6 +122,12 @@ struct PhoneTrailersSection: View {
         guard let probe = URL(string: "youtube://") else { return false }
         return UIApplication.shared.canOpenURL(probe)
     }
+}
+
+/// The remote trailer waiting on the Open in YouTube alert.
+private struct PendingRemoteTrailer {
+    let siteKey: String
+    let title: String
 }
 
 // MARK: - Card
