@@ -57,7 +57,7 @@ struct MobilePlayerControls: View {
                     ZStack {
                         Color.black.opacity(viewModel.isTimelineScrubbing ? 0.55 : 0.4)
                             .ignoresSafeArea()
-                            .onTapGesture { viewModel.toggleControls() }
+                            .onTapGesture { viewModel.toggleControls(cause: .backgroundTap) }
 
                         centerCluster
                             .opacity(recedingOpacity)

@@ -9,9 +9,37 @@ import UIKit
 import AppKit
 #endif
 
+/// What showed or hid the player controls. On iPhone and iPad the Latest
+/// Playback report counts the controls going away soon after they appear,
+/// by what showed them and what hid them.
+enum PlayerControlsCause: String {
+    case videoTap = "video_tap"
+    case backgroundTap = "background_tap"
+    case loadingTap = "loading_tap"
+    case nextUpTap = "next_up_tap"
+    case doubleTapPlayPause = "double_tap_play_pause"
+    case control
+    case qualitySwitch = "quality_switch"
+    case playbackEnded = "playback_ended"
+    case autoHide = "auto_hide"
+    case dismissed
+    case fileLoaded = "file_loaded"
+    case newLoad = "new_load"
+    case nextUp = "next_up"
+    case other
+}
+
 extension PlayerViewModel {
-    func toggleControls() {
-        showControls.toggle()
+    /// Sets `showControls`, noting what changed it for the Latest Playback
+    /// report. The only way a cause is recorded, so none can carry over to a
+    /// later change.
+    func setControlsVisible(_ visible: Bool, cause: PlayerControlsCause) {
+        pendingControlsCause = cause
+        showControls = visible
+    }
+
+    func toggleControls(cause: PlayerControlsCause = .other) {
+        setControlsVisible(!showControls, cause: cause)
         if showControls {
             scheduleHideControls()
         }
@@ -39,7 +67,7 @@ extension PlayerViewModel {
             cancelHoldSeek()
         }
         hideControlsTask?.cancel()
-        withAnimation { showControls = false }
+        withAnimation { setControlsVisible(false, cause: .dismissed) }
     }
 
     /// Keep the controls overlay visible and cancel the pending auto-hide.
@@ -50,7 +78,7 @@ extension PlayerViewModel {
         touchControlsPinned = true
         #endif
         hideControlsTask?.cancel()
-        showControls = true
+        setControlsVisible(true, cause: .control)
     }
 
     /// Resume the standard auto-hide behavior after a pin.
@@ -99,7 +127,9 @@ extension PlayerViewModel {
     /// interaction before auto-hiding while playing.
     private static let autoHideSeconds: UInt64 = 5
 
-    func scheduleHideControls() {
+    /// `cause` is what showed the controls, when this call is the one that
+    /// shows them.
+    func scheduleHideControls(revealedBy cause: PlayerControlsCause = .control) {
         #if os(iOS)
         if touchControlPressed {
             hideControlsTask?.cancel()
@@ -122,7 +152,7 @@ extension PlayerViewModel {
             return
         }
         hideControlsTask?.cancel()
-        showControls = true
+        setControlsVisible(true, cause: cause)
         hideControlsTask = Task { @MainActor [weak self] in
             while true {
                 try? await Task.sleep(nanoseconds: Self.autoHideSeconds * 1_000_000_000)
@@ -131,7 +161,7 @@ extension PlayerViewModel {
             }
             guard let self, !self.isScrubbing else { return }
             guard self.isPlaying else { return }
-            withAnimation { self.showControls = false }
+            withAnimation { self.setControlsVisible(false, cause: .autoHide) }
         }
     }
 }

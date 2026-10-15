@@ -114,7 +114,7 @@ struct PlayerView: View {
                         // Loaded playback uses MobilePlayerGestureLayer.
                         // Keep tap-to-reveal available before it mounts too.
                         if viewModel.isLoading || viewModel.error != nil {
-                            viewModel.toggleControls()
+                            viewModel.toggleControls(cause: .loadingTap)
                         }
                     }
                     #endif
@@ -828,7 +828,7 @@ struct PlayerNextUpScreen: View {
                     #if os(iOS)
                     // A background tap reveals/dismisses the rotation pill
                     // without intercepting Play Now, Back, or Auto Play.
-                    .onTapGesture { viewModel.toggleControls() }
+                    .onTapGesture { viewModel.toggleControls(cause: .nextUpTap) }
                     #endif
                 #if os(tvOS)
                 tvNextUpContent

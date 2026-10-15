@@ -24,7 +24,7 @@ extension PlayerViewModel {
         )
     }
 
-    func togglePlayPause() {
+    func togglePlayPause(revealedBy cause: PlayerControlsCause = .control) {
         // `isPlaying` is driven by the backend's `onPauseChange` callback;
         // let that be the single writer so the UI can't drift out of sync
         // with the actual pipeline state on error paths.
@@ -33,7 +33,7 @@ extension PlayerViewModel {
         } else {
             vividPlaybackController.play()
         }
-        scheduleHideControls()
+        scheduleHideControls(revealedBy: cause)
     }
 
     #if os(tvOS)
@@ -109,7 +109,7 @@ extension PlayerViewModel {
         let target = currentTime.isFinite ? max(0, currentTime) : 0
         isQualitySwitching = true
         qualitySwitchError = nil
-        showControls = true
+        setControlsVisible(true, cause: .qualitySwitch)
         hideControlsTask?.cancel()
 
         if activePreparedProtocolV3 != nil {

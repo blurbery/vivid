@@ -19,6 +19,10 @@ struct PlaybackSessionAccumulator {
     /// Fault names come from a fixed list, but cap the distinct names anyway
     /// so the session can never grow with the length of the movie.
     static let maxFaultKinds = 16
+    /// Controls going away sooner than this after appearing count as an
+    /// early hide. They normally stay 5 seconds after the last interaction.
+    static let earlyControlsHideSeconds: TimeInterval = 1.5
+    static let maxRecentControlsHides = 10
     /// The playhead not moving this long in steady playback, without
     /// buffering, is a stall. On AirPlay this is how a parked speaker clock
     /// shows: video waits for it, so A/V sync stays near zero.
@@ -273,6 +277,36 @@ struct PlaybackSessionAccumulator {
         totals.audioFaults[token, default: 0] += 1
         let index = minuteIndex
         minutes[index, default: .init(minute: index)].faults[token, default: 0] += 1
+    }
+
+    /// When the controls last appeared and what showed them.
+    private var controlsShownAt: TimeInterval?
+    private var controlsShownBy = "other"
+
+    /// The player controls appearing or going away. Causes are fixed tokens
+    /// from the player, never free text.
+    mutating func controlsChanged(visible: Bool, cause: String, at now: TimeInterval) {
+        let cause = VividMPVPlayer.formatToken(cause) ?? "other"
+        guard !visible else {
+            totals.controlsShown = (totals.controlsShown ?? 0) + 1
+            controlsShownAt = now
+            controlsShownBy = cause
+            return
+        }
+        guard let shownAt = controlsShownAt else { return }
+        controlsShownAt = nil
+        let visibleSeconds = max(0, now - shownAt)
+        let visibleMs = Int((visibleSeconds * 1000).rounded())
+        totals.shortestControlsVisibleMs = min(totals.shortestControlsVisibleMs ?? visibleMs, visibleMs)
+        guard visibleSeconds < Self.earlyControlsHideSeconds else { return }
+        var early = totals.controlsHiddenEarly ?? [:]
+        var key = "\(controlsShownBy)>\(cause)"
+        if early[key] == nil, early.count >= Self.maxFaultKinds { key = "other" }
+        early[key, default: 0] += 1
+        totals.controlsHiddenEarly = early
+        var recent = totals.recentEarlyControlsHides ?? []
+        recent.append("\(key) \(visibleMs) ms")
+        totals.recentEarlyControlsHides = Array(recent.suffix(Self.maxRecentControlsHides))
     }
 
     mutating func networkKbps(_ kbps: Int?) {

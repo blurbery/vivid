@@ -215,6 +215,22 @@ final class DetailDismissalNavigationTests: XCTestCase {
         XCTAssertTrue(model.shouldShowMobilePlayerChrome, "A tap restores all touch controls together")
     }
 
+    func testControlsCauseNeverCarriesOverToALaterChange() {
+        let model = PlayerViewModel()
+        defer { model.cleanup() }
+        model.setControlsVisible(false, cause: .fileLoaded) // no change
+        XCTAssertNil(model.pendingControlsCause)
+        model.toggleControls(cause: .videoTap)
+        XCTAssertTrue(model.showControls)
+        XCTAssertNil(model.pendingControlsCause)
+        model.scheduleHideControls(revealedBy: .doubleTapPlayPause)
+        XCTAssertTrue(model.showControls)
+        XCTAssertNil(model.pendingControlsCause)
+        model.toggleControls(cause: .backgroundTap)
+        XCTAssertFalse(model.showControls)
+        XCTAssertNil(model.pendingControlsCause)
+    }
+
     func testContinueWatchingOpensTheExistingSeriesCardWithTheExactResumeContext() throws {
         let item = try JSONDecoder().decode(SectionItem.self, from: Data(
             #"{"contentId":"episode-s3e2","type":"episode","title":"Second chapter","seriesId":"series","seriesTitle":"A sample series","seasonNumber":3,"episodeNumber":2,"positionSeconds":450,"durationSeconds":2700}"#.utf8
