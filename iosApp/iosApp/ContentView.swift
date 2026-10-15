@@ -107,6 +107,8 @@ struct ContentView: View {
             guard let url = notification.userInfo?["url"] as? URL else { return }
             #if os(iOS)
             NotificationDeepLinkCoordinator.shared.clearPendingDeepLink(matching: url)
+            #elseif os(tvOS)
+            TVSiriSearchLink.clearPending(matching: url)
             #endif
             handleDeepLink(url)
         }
@@ -120,6 +122,10 @@ struct ContentView: View {
             #endif
             #if os(iOS)
             if let url = NotificationDeepLinkCoordinator.shared.consumePendingDeepLink() {
+                handleDeepLink(url)
+            }
+            #elseif os(tvOS)
+            if let url = TVSiriSearchLink.consumePending() {
                 handleDeepLink(url)
             }
             #endif
@@ -703,12 +709,21 @@ struct ContentView: View {
     ///   last known position)
     /// - `vivid://downloads` — select the Downloads tab (local
     ///   download notifications)
+    /// - `vivid://search?q={term}`: Apple TV only, open Search with `term`
+    ///   filled in (Siri searches; see `TVSiriSearchLink`)
     ///
     /// If the auth state isn't ready yet, the link is queued in
     /// `pendingDeepLink` until startup commits its initial route.
     private func handleDeepLink(_ url: URL) {
         guard url.scheme?.lowercased() == "vivid",
               let host = url.host?.lowercased() else { return }
+
+        #if os(tvOS)
+        // Opening Search closes a playing video and replaces the open screens,
+        // so a search with nothing to search for is dropped before anything
+        // queues it as a launch intent.
+        if TVSiriSearchLink.term(from: url)?.isEmpty == true { return }
+        #endif
 
         // A content link received while the app is returning must not race the
         // timeout lock and briefly open data for the previous profile. The
@@ -734,6 +749,17 @@ struct ContentView: View {
             router.switchTab(to: .downloads)
             return
         }
+
+        #if os(tvOS)
+        if let term = TVSiriSearchLink.term(from: url) {
+            guard router.authState == .authenticated else {
+                pendingDeepLink = url
+                return
+            }
+            router.requestSearch(query: term)
+            return
+        }
+        #endif
 
         guard !url.pathComponents.isEmpty else { return }
         let contentId = url.pathComponents
