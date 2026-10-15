@@ -893,16 +893,16 @@ final class EmbyAdapterTests: XCTestCase {
     func testQualityAndHDRPreferencesConstrainEmbyNegotiation() {
         let source: [String:Any] = ["MediaStreams":[["Type":"Video","Height":2160,"VideoRange":"HDR10"]]]
         var limited: [String:Any] = ["EnableDirectPlay":true,"DeviceProfile":["TranscodingProfiles":[["Type":"Video"]]]]
-        EmbyPlayback.applyPlaybackLimits(to:&limited,source:source,quality:"720p",hdr:true,dolbyVision:true)
+        EmbyPlayback.applyPlaybackLimits(to:&limited,source:source,quality:"720p",hdr:true,dolbyVision:true,device:.declared)
         XCTAssertEqual(limited["EnableDirectPlay"] as? Bool,false)
         XCTAssertEqual(limited["AllowVideoStreamCopy"] as? Bool,false)
         let profile = limited["DeviceProfile"] as? [String:Any]
         XCTAssertEqual((profile?["TranscodingProfiles"] as? [[String:Any]])?.first?["MaxHeight"] as? Int,720)
         var sdr: [String:Any] = ["EnableDirectPlay":true]
-        EmbyPlayback.applyPlaybackLimits(to:&sdr,source:source,quality:"auto",hdr:false,dolbyVision:true)
+        EmbyPlayback.applyPlaybackLimits(to:&sdr,source:source,quality:"auto",hdr:false,dolbyVision:true,device:.declared)
         XCTAssertEqual(sdr["EnableDirectPlay"] as? Bool,false)
         var original: [String:Any] = ["EnableDirectPlay":true]
-        EmbyPlayback.applyPlaybackLimits(to:&original,source:source,quality:"original",hdr:true,dolbyVision:true)
+        EmbyPlayback.applyPlaybackLimits(to:&original,source:source,quality:"original",hdr:true,dolbyVision:true,device:.declared)
         XCTAssertEqual(original["EnableDirectPlay"] as? Bool,true)
     }
 

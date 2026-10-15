@@ -424,7 +424,7 @@ extension PlayerViewModel {
             "[CMP-SUB] file loaded engine=VividEngine route=\(self.activeRouteLabel, privacy: .public) tracks=\(self.subtitleTracks.count, privacy: .public)"
         )
         hideControlsTask?.cancel()
-        showControls = false
+        setControlsVisible(false, cause: .fileLoaded)
         nowPlaying.update(
             title: title,
             duration: duration,

@@ -115,7 +115,7 @@ extension PlayerViewModel {
         isLoadingSubtitles = false
         bufferingProgress = nil
         isPlaying = false
-        showControls = true
+        setControlsVisible(true, cause: .playbackEnded)
         nowPlaying.update(
             title: title,
             duration: duration,

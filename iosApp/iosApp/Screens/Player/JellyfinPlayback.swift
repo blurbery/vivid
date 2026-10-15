@@ -28,27 +28,52 @@ final class JellyfinPlayback {
         return Int64(seconds * 10_000_000)
     }
 
-    nonisolated static func applyPlaybackLimits(to body: inout [String:Any], source: [String:Any], quality: String?, hdr: Bool, dolbyVision: Bool) {
+    nonisolated static func applyPlaybackLimits(to body: inout [String:Any], source: [String:Any], quality: String?, hdr: Bool, dolbyVision: Bool,
+                                                device: DeviceProfileVideoLimits) {
         let video = (source["MediaStreams"] as? [[String:Any]] ?? []).first { $0["Type"] as? String == "Video" } ?? [:]
         let range = ((video["VideoRangeType"] as? String ?? "") + " " + (video["VideoRange"] as? String ?? "")).lowercased()
         let isDV = (video["DvProfile"] as? Int ?? 0) > 0 || range.contains("dovi") || range.contains("dolby")
         let isHDR = isDV || range.contains("hdr") || range.contains("hlg")
-        let height = ApplePlaybackQuality.requestOptions.first { $0.id == quality }?.resolution
+        let qualityHeight = ApplePlaybackQuality.requestOptions.first { $0.id == quality }?.resolution
             .split(separator:"p").first.flatMap { Int($0) }
+        // The device ceiling and the selected quality merge; the lower one wins.
+        let height = device.effectiveMaxHeight(qualityHeight: qualityHeight)
+        let width = device.maxWidth
         var profile = body["DeviceProfile"] as? [String:Any] ?? [:]
+        let codecProfiles = device.codecProfiles(qualityHeight: qualityHeight)
+        if !codecProfiles.isEmpty { profile["CodecProfiles"] = codecProfiles }
         if let height {
-            profile["CodecProfiles"] = [["Type":"Video","Conditions":[["Condition":"LessThanEqual","Property":"Height","Value":String(height),"IsRequired":false]]]]
             var transcodes = profile["TranscodingProfiles"] as? [[String:Any]] ?? []
-            for index in transcodes.indices { transcodes[index]["MaxHeight"] = height }
+            for index in transcodes.indices {
+                transcodes[index]["MaxHeight"] = height
+                if let width { transcodes[index]["MaxWidth"] = width }
+            }
             profile["TranscodingProfiles"] = transcodes
         }
         let resize = height.map { (video["Height"] as? Int ?? 0) > $0 } ?? false
+            || width.map { (video["Width"] as? Int ?? 0) > $0 } ?? false
         if resize || (!hdr && isHDR) || (!dolbyVision && isDV) {
             body["EnableDirectPlay"] = false
             body["EnableDirectStream"] = false
             body["AllowVideoStreamCopy"] = false
         }
         body["DeviceProfile"] = profile
+    }
+
+    nonisolated static func playbackInfoBody(userID: String, sourceID: String, start: Double, audioIndex: Int?, subtitleIndex: Int?,
+                                             bitrateKbps: Int?, source: [String:Any], quality: String?,
+                                             device: DeviceProfileVideoLimits) -> [String:Any] {
+        var body: [String: Any] = ["UserId":userID, "MediaSourceId":sourceID, "StartTimeTicks":ticks(start),
+            "IsPlayback":true, "AutoOpenLiveStream":false, "EnableDirectPlay":true, "EnableDirectStream":true, "EnableTranscoding":true,
+            "SubtitleStreamIndex":subtitleIndex ?? -1,
+            "DeviceProfile": ["Name":"Vivid", "MaxStreamingBitrate": (bitrateKbps ?? 200_000) * 1000,
+                "DirectPlayProfiles":[["Type":"Video", "Container":"mkv,mp4,m4v,mov,avi,ts,m2ts,webm", "VideoCodec":device.videoCodecs.joined(separator:","), "AudioCodec":"aac,ac3,eac3,flac,alac,mp3,opus,vorbis,truehd,dts,pcm_s16le,pcm_s24le"]],
+                "TranscodingProfiles":[["Type":"Video", "Container":"ts", "Protocol":"hls", "VideoCodec":"h264", "AudioCodec":"aac", "Context":"Streaming", "MaxAudioChannels":"2", "MinSegments":2, "SegmentLength":6]],
+                "SubtitleProfiles":[["Format":"srt", "Method":"External"], ["Format":"ass", "Method":"External"], ["Format":"ssa", "Method":"External"], ["Format":"vtt", "Method":"External"], ["Format":"pgssub", "Method":"Embed"], ["Format":"dvdsub", "Method":"Embed"]]]]
+        if let bitrateKbps, bitrateKbps > 0 { body["MaxStreamingBitrate"] = bitrateKbps * 1000 }
+        if let audioIndex { body["AudioStreamIndex"] = audioIndex }
+        applyPlaybackLimits(to:&body,source:source,quality:quality,hdr:true,dolbyVision:true,device:device)
+        return body
     }
 
     struct Metadata {
@@ -77,16 +102,8 @@ final class JellyfinPlayback {
               let sourceID = source["Id"] as? String else { throw JellyfinError.playbackUnavailable }
         let audioStreams = (source["MediaStreams"] as? [[String: Any]] ?? []).filter { $0["Type"] as? String == "Audio" }
         let audioIndex = audioOrdinal.flatMap { audioStreams.indices.contains($0) ? audioStreams[$0]["Index"] as? Int : nil }
-        var body: [String: Any] = ["UserId":connection.userID!, "MediaSourceId":sourceID, "StartTimeTicks":ticks(start),
-            "IsPlayback":true, "AutoOpenLiveStream":false, "EnableDirectPlay":true, "EnableDirectStream":true, "EnableTranscoding":true,
-            "SubtitleStreamIndex":subtitleIndex ?? -1,
-            "DeviceProfile": ["Name":"Vivid", "MaxStreamingBitrate": (bitrateKbps ?? 200_000) * 1000,
-                "DirectPlayProfiles":[["Type":"Video", "Container":"mkv,mp4,m4v,mov,avi,ts,m2ts,webm", "VideoCodec":"h264,hevc,av1,mpeg2video,vp9", "AudioCodec":"aac,ac3,eac3,flac,alac,mp3,opus,vorbis,truehd,dts,pcm_s16le,pcm_s24le"]],
-                "TranscodingProfiles":[["Type":"Video", "Container":"ts", "Protocol":"hls", "VideoCodec":"h264", "AudioCodec":"aac", "Context":"Streaming", "MaxAudioChannels":"2", "MinSegments":2, "SegmentLength":6]],
-                "SubtitleProfiles":[["Format":"srt", "Method":"External"], ["Format":"ass", "Method":"External"], ["Format":"ssa", "Method":"External"], ["Format":"vtt", "Method":"External"], ["Format":"pgssub", "Method":"Embed"], ["Format":"dvdsub", "Method":"Embed"]]]]
-        if let bitrateKbps, bitrateKbps > 0 { body["MaxStreamingBitrate"] = bitrateKbps * 1000 }
-        if let audioIndex { body["AudioStreamIndex"] = audioIndex }
-        applyPlaybackLimits(to:&body,source:source,quality:quality,hdr:true,dolbyVision:true)
+        let body = playbackInfoBody(userID:connection.userID!, sourceID:sourceID, start:start, audioIndex:audioIndex,
+            subtitleIndex:subtitleIndex, bitrateKbps:bitrateKbps, source:source, quality:quality, device:.current)
         let info = try await connection.object("POST", "/Items/\(JellyfinConnection.id(detail.contentId))/PlaybackInfo", body: body)
         guard info["ErrorCode"] == nil || info["ErrorCode"] is NSNull,
               let playable = (info["MediaSources"] as? [[String: Any]])?.first(where: { $0["Id"] as? String == sourceID }),

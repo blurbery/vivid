@@ -39,7 +39,7 @@ extension PlayerViewModel {
         scrubPreviewImageSourceTime = nil
         seekOriginTime = nil
         seekTargetTime = nil
-        showControls = false
+        setControlsVisible(false, cause: .newLoad)
         // The HUD belongs to the outgoing item. Replans deliberately bypass
         // this reset so the HUD survives them; a replacement load must close
         // it, both because its content is stale and because the tvOS controls

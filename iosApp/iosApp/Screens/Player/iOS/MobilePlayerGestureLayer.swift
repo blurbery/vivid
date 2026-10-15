@@ -75,7 +75,7 @@ struct MobilePlayerGestureLayer: View {
     // MARK: - Gestures
 
     private var singleTapGesture: some Gesture {
-        TapGesture().onEnded { viewModel.toggleControls() }
+        TapGesture().onEnded { viewModel.toggleControls(cause: .videoTap) }
     }
 
     private func doubleTapGesture(in size: CGSize) -> some Gesture {
@@ -95,7 +95,7 @@ struct MobilePlayerGestureLayer: View {
                 viewModel.skipForward(10, revealingControls: false)
                 showSkipFlash(forward: true)
             } else {
-                viewModel.togglePlayPause()
+                viewModel.togglePlayPause(revealedBy: .doubleTapPlayPause)
             }
         }
     }

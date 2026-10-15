@@ -123,6 +123,17 @@ struct PlaybackSessionReport: Codable, Equatable {
         var waitSeconds: Double?
         /// The longest single wait of that kind.
         var longestWaitSeconds: Double?
+        /// iPhone and iPad only: how many times the player controls appeared,
+        /// and the shortest time they stayed. Optional so older records load.
+        var controlsShown: Int?
+        var shortestControlsVisibleMs: Int?
+        /// The controls going away within `earlyControlsHideSeconds` of
+        /// appearing, as "shown_by>hidden_by" → count, for example
+        /// "video_tap>background_tap".
+        var controlsHiddenEarly: [String: Int]?
+        /// The latest of those, oldest first, with how long the controls
+        /// stayed, for example "video_tap>background_tap 120 ms".
+        var recentEarlyControlsHides: [String]?
     }
 
     struct Minute: Codable, Equatable {
@@ -159,6 +170,8 @@ extension PlaybackSessionReport {
         if let wait = totals.longestWaitSeconds, wait >= Self.longWaitSeconds { parts.append("waited \(Int(wait)) s to load") }
         let faults = totals.audioFaults.values.reduce(0, +)
         if faults > 0 { parts.append("\(faults) audio faults") }
+        let earlyHides = totals.controlsHiddenEarly?.values.reduce(0, +) ?? 0
+        if earlyHides > 0 { parts.append("controls hid early \(earlyHides)×") }
         return parts.joined(separator: " · ")
     }
 
@@ -219,6 +232,12 @@ extension PlaybackSessionReport {
         rows.append(("Startup", startup.isEmpty ? missing : startup))
         let faults = totals.audioFaults.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }
         rows.append(("Audio faults", faults.isEmpty ? "None" : faults.joined(separator: ", ")))
+        if let shown = totals.controlsShown {
+            let shortest = totals.shortestControlsVisibleMs.map { ", shortest \($0) ms" } ?? ""
+            rows.append(("Player controls", "Shown \(shown) times\(shortest)"))
+            let early = totals.recentEarlyControlsHides ?? []
+            rows.append(("Controls hid early", early.isEmpty ? "None" : early.joined(separator: ", ")))
+        }
         if !notMeasured.isEmpty { rows.append(("Not measured", notMeasured.joined(separator: ", "))) }
         return rows
     }
