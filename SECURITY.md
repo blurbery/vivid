@@ -12,7 +12,7 @@ Please report security problems in Vivid privately, not in a public issue, pull 
 
 ## Reporting a vulnerability
 
-Use GitHub's private reporting: open the repository's **Security** tab and choose **Report a vulnerability**, or go straight to [the new advisory form](https://github.com/blurbery/vivid/security/advisories/new). Only you, blurbery and anyone blurbery adds to the advisory can see it.
+Use GitHub's private reporting: open the repository's **Security** tab and choose **Report a vulnerability**, or go straight to [the new advisory form](https://github.com/blurbery/vivid/security/advisories/new). The report is private: GitHub shows it only to you, people with admin or security manager access to the repository, and anyone blurbery adds to the advisory.
 
 Include enough detail to reproduce the problem:
 

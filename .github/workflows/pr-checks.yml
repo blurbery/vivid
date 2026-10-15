@@ -7,8 +7,9 @@ name: PR checks
 #   [skip release] when nothing in the app changes), the branch name and the
 #   description. Editing the title or description runs it again.
 # - When the release tooling, the release or sideload workflow, the
-#   diagnostics relay, the sideload resolvers, the PR or docs checker, the PR
-#   template or this workflow change, their tests run here before merge.
+#   diagnostics relay, the sideload resolvers, the PR, docs or action pin
+#   checker, the PR template or this workflow change, their tests run here
+#   before merge.
 #   The release workflow runs only the release tests, and only after merge.
 # - "Docs" runs scripts/ci/check-docs.py: every relative Markdown link and
 #   anchor (a broken one the base already had is only reported), repository
@@ -20,7 +21,7 @@ name: PR checks
 #   the workflow again.
 # - "Action pins" runs scripts/ci/check-action-pins.py, which fails any
 #   workflow that uses an action or reusable workflow by tag or branch rather
-#   than a full commit SHA.
+#   than a full commit SHA with its version in a trailing comment.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
 # Branch protection on main requires it, "PR title, branch and description"
@@ -73,7 +74,8 @@ jobs:
               package.json|package-lock.json|release.config.mjs|scripts/release/*|\
               diagnostics-relay/*|scripts/ci/resolve-*|scripts/ci/check-pr.py|\
               scripts/tests/check-pr-tests.py|scripts/ci/check-docs.py|\
-              scripts/tests/check-docs-tests.py|.github/PULL_REQUEST_TEMPLATE.md|\
+              scripts/tests/check-docs-tests.py|scripts/ci/check-action-pins.py|\
+              scripts/tests/check-action-pins-tests.py|.github/PULL_REQUEST_TEMPLATE.md|\
               .github/workflows/release.yml|.github/workflows/sideload-ipa.yml|\
               .github/workflows/pr-checks.yml)
                 echo "Tooling change: $file"
@@ -131,10 +133,11 @@ jobs:
         run: |
           bash scripts/ci/resolve-marketing-version.test.sh
           bash scripts/ci/resolve-platform.test.sh
-      - name: Check the PR and docs checkers
+      - name: Check the PR, docs and action pin checkers
         run: |
           python3 scripts/tests/check-pr-tests.py
           python3 scripts/tests/check-docs-tests.py
+          python3 scripts/tests/check-action-pins-tests.py
 
   docs:
     name: Docs
