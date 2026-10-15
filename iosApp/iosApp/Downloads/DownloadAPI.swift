@@ -260,17 +260,9 @@ extension VividAPI {
         let auth = await TokenStore.shared.captureOrdinaryRequestAuth()
         var results: [SyncProgressResult] = []
         for start in stride(from: 0, to: items.count, by: 100) {
-            let response: SyncProgressResultsResponse
-            do {
-                response = try await http.post(
-                    "/api/v1/sync/progress",
-                    body: SyncProgressRequest(items: Array(items[start..<min(start + 100, items.count)])), expectedAuth: auth)
-            } catch {
-                // Keep what earlier chunks acknowledged, so only the rest is
-                // sent again.
-                guard !results.isEmpty else { throw error }
-                break
-            }
+            let response: SyncProgressResultsResponse = try await http.post(
+                "/api/v1/sync/progress",
+                body: SyncProgressRequest(items: Array(items[start..<min(start + 100, items.count)])), expectedAuth: auth)
             results.append(contentsOf: response.results)
         }
         return results

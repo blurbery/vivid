@@ -40,10 +40,7 @@ extension DownloadManager {
         let scopeGeneration = registrationScopeGeneration
         let batch = file.progressQueue
         let completedIds = Set(batch.filter { file.localProgress[$0.mediaItemId]?.completed == true }.map { $0.mediaItemId })
-        // A position the server already acknowledged isn't sent again. On
-        // Emby and Jellyfin it is a playback stop report, and each one is
-        // another "finished playing" event for the server and its plugins.
-        let items = batch.filter { $0.positionSent != true }.map {
+        let items = batch.map {
             SyncProgressItem(
                 mediaItemId: $0.mediaItemId,
                 position: $0.position,
@@ -55,51 +52,32 @@ extension DownloadManager {
         do {
             let results = try await VividAPI.shared.syncProgressBatch(items: items)
             guard scopeGeneration == registrationScopeGeneration else { return }
-            let okItemIds = Set(results.filter { $0.isOK }.map { $0.mediaItemId })
-                .union(batch.filter { $0.positionSent == true }.map { $0.mediaItemId })
+            var okItemIds = Set(results.filter { $0.isOK }.map { $0.mediaItemId })
             // Position sync alone cannot express credits-based completion.
             // Keep the queued event if the separate watched write fails.
-            var watchedFailures: Set<String> = []
             for contentId in completedIds.intersection(okItemIds) {
                 do { try await VividAPI.shared.setWatched(contentId: contentId, played: true) }
-                catch { watchedFailures.insert(contentId) }
+                catch { okItemIds.remove(contentId) }
             }
+            // Match queue entries by identity, not media item — an entry
+            // appended while the POST was in flight carries a newer position
+            // the server never saw, so it must survive this batch with its
+            // full retry budget.
             guard scopeGeneration == registrationScopeGeneration else { return }
-            file.progressQueue = Self.progressQueue(file.progressQueue, afterSending: batch, results: results,
-                                                    watchedFailures: watchedFailures, completed: completedIds,
-                                                    maxRetries: Self.maxRetries)
+            let sentEntryIds = Set(batch.map { $0.id })
+            let okEntryIds = Set(batch.filter { okItemIds.contains($0.mediaItemId) }.map { $0.id })
+            file.progressQueue.removeAll {
+                okEntryIds.contains($0.id)
+                    || ($0.attempts >= Self.maxRetries && sentEntryIds.contains($0.id)
+                        && !completedIds.contains($0.mediaItemId))
+            }
+            for index in file.progressQueue.indices
+            where sentEntryIds.contains(file.progressQueue[index].id) {
+                file.progressQueue[index].attempts += 1
+            }
             persist()
         } catch {
             // Keep the queue for the next reconnect.
-        }
-    }
-
-    /// The queue after a flush. An acknowledged entry leaves it, unless it is
-    /// a completed item whose watched write failed: that stays, marked as
-    /// sent, so the next flush retries only the watched write. An entry the
-    /// server rejected uses up a retry (completed items are never dropped),
-    /// while one it didn't answer, because the batch failed part-way, keeps
-    /// its budget. Entries are matched by identity, not media item, so one
-    /// appended while the request was out, with a newer position the server
-    /// never saw, is kept as it is.
-    nonisolated static func progressQueue(_ queue: [QueuedProgress], afterSending batch: [QueuedProgress],
-                                          results: [SyncProgressResult], watchedFailures: Set<String>,
-                                          completed: Set<String>, maxRetries: Int) -> [QueuedProgress] {
-        let sentEntryIds = Set(batch.map(\.id))
-        var accepted: [String: Bool] = [:]
-        for result in results { accepted[result.mediaItemId] = result.isOK }
-        return queue.compactMap { entry in
-            guard sentEntryIds.contains(entry.id) else { return entry }
-            var entry = entry
-            if entry.positionSent == true || accepted[entry.mediaItemId] == true {
-                guard watchedFailures.contains(entry.mediaItemId) else { return nil }
-                entry.positionSent = true
-            } else {
-                guard accepted[entry.mediaItemId] != nil else { return entry }
-                if entry.attempts >= maxRetries && !completed.contains(entry.mediaItemId) { return nil }
-            }
-            entry.attempts += 1
-            return entry
         }
     }
 
