@@ -30,7 +30,8 @@ ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / ".github/PULL_REQUEST_TEMPLATE.md"
 
 # Conventional Commit types this repository uses. The release rules are in
-# docs/release/versioning.md: feat bumps minor, everything else patch.
+# docs/release/versioning.md: feat bumps minor, a ! after the type or a
+# BREAKING CHANGE: footer bumps major, and everything else bumps patch.
 TYPES = ("feat", "fix", "perf", "docs", "style", "refactor", "test", "build",
          "ci", "chore", "revert")
 TITLE = re.compile(r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^()]*)\))?(?P<breaking>!)?: (?P<subject>\S.*)$")
@@ -53,11 +54,14 @@ SECTIONS = {
     "documentation": "Documentation impact",
     "ai disclosure": "AI disclosure",
 }
-# Fields that must have a value when the PR keeps them.
+# Fields that must be present and filled in. Testing status may instead be
+# one sentence with no fields, such as "Not applicable, documentation-only
+# change."; once it uses any field, Tested? is required.
 REQUIRED_FIELDS = {
     "testing": ("Tested?",),
     "design": ("Design impact:", "Approval from blurbery:"),
 }
+FIELDS_OPTIONAL = {"testing"}
 FIELD = re.compile(r"^[-*]\s*\*\*(?P<label>[^*]+)\*\*\s*(?P<value>.*)$")
 TICKED = re.compile(r"^[-*]\s*\[[xX]\]\s+\S")
 # Review bots that append their own block to the description.
@@ -154,7 +158,10 @@ def check_description(body):
             problems.append(f'"{name}" is empty. Fill it in, or say why it does not apply.')
             continue
         for label in REQUIRED_FIELDS.get(key, ()):
-            if label in fields and not fields[label]:
+            if label not in fields:
+                if key not in FIELDS_OPTIONAL or fields:
+                    problems.append(f'"{name}" has no **{label}** line. Keep the template\'s field and fill it in.')
+            elif not fields[label]:
                 problems.append(f'"{name}" leaves **{label}** blank.')
         if key == "ai disclosure":
             blank = [label for label, value in fields.items() if not value]
@@ -175,7 +182,9 @@ def check_description(body):
 
 
 def changed_files(base, head):
-    result = subprocess.run(["git", "diff", "--name-only", f"{base}...{head}"],
+    # --no-renames lists both sides of a move, so moving a file out of
+    # iosApp/ still counts as an app change.
+    result = subprocess.run(["git", "diff", "--name-only", "--no-renames", f"{base}...{head}"],
                             cwd=ROOT, capture_output=True, text=True, check=True)
     return [line for line in result.stdout.splitlines() if line]
 

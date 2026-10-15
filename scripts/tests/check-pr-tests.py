@@ -148,6 +148,21 @@ class DescriptionTests(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("Approval from blurbery", problems[0])
 
+    def test_missing_design_field(self):
+        body = FILLED.replace("- **Approval from blurbery:** Not applicable, no design changes.\n", "")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("no **Approval from blurbery:** line", problems[0])
+
+    def test_testing_status_as_one_sentence(self):
+        body = FILLED.replace("- **Tested?** Yes\n- **Environment:** Apple TV 4K simulator\n",
+                              "Not applicable, documentation-only change.\n")
+        self.assertEqual(check_pr.check_description(body), [])
+        partly = FILLED.replace("- **Tested?** Yes\n", "")
+        problems = check_pr.check_description(partly)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("no **Tested?** line", problems[0])
+
     def test_blank_tested_field(self):
         body = FILLED.replace("- **Tested?** Yes", "- **Tested?** <!-- Yes / No / Partly -->")
         problems = check_pr.check_description(body)

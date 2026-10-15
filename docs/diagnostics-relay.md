@@ -70,4 +70,4 @@ Run the tests from the repository root, where `package.json` defines the script.
 npm run test:relay
 ```
 
-No GitHub workflow runs these tests or deploys the relay, so run them by hand before each `npx wrangler deploy`. The tests use the sample reports in `diagnostics-relay/fixtures/` and cover acceptance, validation, size limits, rate and daily limits, partial failures, reference format, subject safety, the accepted report kinds, and the note's limits, body placement and indentation. `npx wrangler deploy --dry-run` checks the configuration without deploying.
+The PR checks workflow runs these tests on every pull request that changes `diagnostics-relay/`. No workflow deploys the relay, so run them by hand again before each `npx wrangler deploy`. The tests use the sample reports in `diagnostics-relay/fixtures/` and cover acceptance, validation, size limits, rate and daily limits, partial failures, reference format, subject safety, the accepted report kinds, and the note's limits, body placement and indentation. `npx wrangler deploy --dry-run` checks the configuration without deploying.

@@ -11,8 +11,9 @@ name: PR checks
 #   after merge.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
-# Branch protection on main requires that job, not the ones above, so this
-# workflow can add or skip jobs without changing the protection settings.
+# It is the job for branch protection on main to require, rather than the
+# ones above, so this workflow can add or skip jobs without changing the
+# protection settings.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
@@ -56,7 +57,7 @@ jobs:
                 tooling=true
                 break ;;
             esac
-          done < <(git diff --name-only "$BASE...$HEAD")
+          done < <(git diff --name-only --no-renames "$BASE...$HEAD")
           echo "tooling=$tooling" >> "$GITHUB_OUTPUT"
 
   pr:
