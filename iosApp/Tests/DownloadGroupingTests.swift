@@ -301,6 +301,40 @@ final class DownloadGroupingTests: XCTestCase {
         XCTAssertNil(updates["untouched"])
     }
 
+    func testFlushNeverResendsAnAcknowledgedPosition() {
+        func entry(_ id: String, attempts: Int = 0, positionSent: Bool? = nil) -> QueuedProgress {
+            QueuedProgress(id: UUID(), mediaItemId: id, position: 600, duration: 2_600,
+                           updatedAt: Date(timeIntervalSince1970: 10), attempts: attempts, positionSent: positionSent)
+        }
+        func result(_ id: String, ok: Bool) -> SyncProgressResult {
+            SyncProgressResult(mediaItemId: id, status: ok ? "ok" : "error", error: nil)
+        }
+        let batch = [entry("done"), entry("watchedFailed"), entry("retried"), entry("lastTry", attempts: 4),
+                     entry("completedRejected", attempts: 4), entry("unanswered", attempts: 2),
+                     entry("sentEarlier", positionSent: true)]
+        let appended = entry("appended")
+        let queue = DownloadManager.progressQueue(
+            batch + [appended], afterSending: batch,
+            results: [result("done", ok: true), result("watchedFailed", ok: true), result("retried", ok: false),
+                      result("lastTry", ok: false), result("completedRejected", ok: false)],
+            watchedFailures: ["watchedFailed", "sentEarlier"], completed: ["watchedFailed", "completedRejected", "sentEarlier"],
+            maxRetries: 4)
+
+        XCTAssertEqual(queue.map(\.mediaItemId), ["watchedFailed", "retried", "completedRejected", "unanswered", "sentEarlier", "appended"])
+        let byID = Dictionary(uniqueKeysWithValues: queue.map { ($0.mediaItemId, $0) })
+        // An acknowledged position whose watched write failed is kept only
+        // for that write, so the next flush doesn't send the stop again.
+        XCTAssertEqual(byID["watchedFailed"]?.positionSent, true)
+        XCTAssertEqual(byID["sentEarlier"]?.positionSent, true)
+        XCTAssertNil(byID["retried"]?.positionSent)
+        XCTAssertEqual(byID["retried"]?.attempts, 1)
+        XCTAssertEqual(byID["completedRejected"]?.attempts, 5, "A completed item is never dropped")
+        // A batch that failed part-way leaves the items it didn't reach as
+        // they were, and an entry queued meanwhile is untouched.
+        XCTAssertEqual(byID["unanswered"]?.attempts, 2)
+        XCTAssertEqual(byID["appended"]?.attempts, 0)
+    }
+
     func testOnlyEmbyAndJellyfinReadCurrentProgress() {
         XCTAssertTrue(DownloadManager.readsCurrentProgress(.emby))
         XCTAssertTrue(DownloadManager.readsCurrentProgress(.jellyfin))

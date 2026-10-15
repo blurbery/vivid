@@ -936,8 +936,11 @@ struct JellyfinAdapter {
                 // A stop report, unlike a user-data write, goes through
                 // Jellyfin's resume settings and needs no prior start. Without
                 // a PlaySessionId it can't end a transcode, and without a
-                // MediaSourceId it updates the item itself.
-                _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":JellyfinConnection.id(id), "PositionTicks":JellyfinPlayback.ticks(position)])
+                // MediaSourceId it updates the item itself. A stop isn't safe
+                // to repeat, so a failure part-way returns the items already
+                // accepted rather than failing them all.
+                do { _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":JellyfinConnection.id(id), "PositionTicks":JellyfinPlayback.ticks(position)]) }
+                catch { guard !results.isEmpty else { throw error }; break }
                 results.append(["mediaItemId":id,"status":"ok"])
             }
             return ["results":results]

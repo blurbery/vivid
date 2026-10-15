@@ -927,7 +927,10 @@ struct EmbyAdapter {
                 // A stop report, unlike a user-data write, goes through Emby's
                 // resume settings. Without a PlaySessionId it can't end a
                 // transcode, and without a MediaSourceId it updates the item itself.
-                _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":EmbyConnection.id(id), "PositionTicks":EmbyPlayback.ticks(position)])
+                // A stop isn't safe to repeat, so a failure part-way returns
+                // the items already accepted rather than failing them all.
+                do { _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":EmbyConnection.id(id), "PositionTicks":EmbyPlayback.ticks(position)]) }
+                catch { guard !results.isEmpty else { throw error }; break }
                 results.append(["mediaItemId":id,"status":"ok"])
             }
             return ["results":results]

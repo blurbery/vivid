@@ -151,6 +151,27 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertTrue(results.allSatisfy(\.isOK))
     }
 
+    func testOfflineProgressSyncKeepsTheStopsAlreadyAcceptedWhenOneFails() async throws {
+        let other = "44444444444444444444444444444444"
+        var failing = other
+        let adapter = adapter { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            return body?["ItemId"] as? String == failing ? (500, [:]) : (204, [:])
+        }
+        let body: [String: Any] = ["items": [item, other].map { ["media_item_id": $0, "position": 600.0] as [String: Any] }]
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+        let results = try XCTUnwrap((raw as? [String: Any])?["results"] as? [[String: Any]])
+        XCTAssertEqual(results.compactMap { $0["mediaItemId"] as? String }, [item], "A stop isn't safe to repeat, so the accepted one is kept")
+
+        failing = item
+        do {
+            _ = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+            XCTFail("With nothing accepted the batch fails as a whole and stays queued")
+        } catch HTTPError.http(let status, _) {
+            XCTAssertEqual(status, 500)
+        }
+    }
+
     func testPeopleNavigationRoundTripsNativeIDsAndKeepsAccountsSeparate() async throws {
         let nativeID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let adapter = adapter { request in
