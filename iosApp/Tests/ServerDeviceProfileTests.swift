@@ -31,8 +31,6 @@ final class ServerDeviceProfileTests: XCTestCase {
 
     func testAppleTVHDRequestExcludesUHDDirectPlayAndUnattestedCodecs() throws {
         for (core, body) in bodies(source: uhdHEVC, quality: nil, device: appleTVHD) {
-            let json = try JSONSerialization.data(withJSONObject: body, options: [.prettyPrinted, .sortedKeys])
-            print("\(core) PlaybackInfo body for AppleTV5,3, 2160p HEVC source, Auto quality:\n\(String(decoding: json, as: UTF8.self))")
             XCTAssertEqual(body["EnableDirectPlay"] as? Bool, false, core)
             XCTAssertEqual(body["EnableDirectStream"] as? Bool, false, core)
             XCTAssertEqual(body["AllowVideoStreamCopy"] as? Bool, false, core)
@@ -46,9 +44,11 @@ final class ServerDeviceProfileTests: XCTestCase {
                            ["Width": "1920", "Height": "1080", "VideoFramerate": "60", "VideoBitDepth": "8"], core)
             XCTAssertEqual(limits(codecProfiles, codec: "av1"),
                            ["Width": "1920", "Height": "1080", "VideoFramerate": "30", "VideoBitDepth": "10",
-                            "VideoBitrate": "3000000"], core)
+                            "VideoBitrate": "3000000", "VideoProfile": "main"], core)
             XCTAssertEqual(limits(codecProfiles, codec: "vp9")?["VideoBitDepth"], "8", core)
+            XCTAssertEqual(limits(codecProfiles, codec: "vp9")?["VideoProfile"], "profile 0", core)
             XCTAssertEqual(limits(codecProfiles, codec: "mpeg2video")?["Height"], "480", core)
+            XCTAssertEqual(limits(codecProfiles, codec: "mpeg2video")?["VideoProfile"], "main", core)
             XCTAssertNil(limits(codecProfiles, codec: "hevc"), core)
             let transcode = try XCTUnwrap((profile["TranscodingProfiles"] as? [[String: Any]])?.first, core)
             XCTAssertEqual(transcode["VideoCodec"] as? String, "h264", core)
@@ -118,12 +118,13 @@ final class ServerDeviceProfileTests: XCTestCase {
 
     /// Each condition's property and value, for the profile with that codec
     /// (nil for the profile that applies to every codec). Every condition is
-    /// an optional upper bound.
+    /// optional, and all but the profile list are upper bounds.
     private func limits(_ profiles: [[String: Any]], codec: String?) -> [String: String]? {
         guard let profile = profiles.first(where: { $0["Codec"] as? String == codec }) else { return nil }
         let conditions = profile["Conditions"] as? [[String: Any]] ?? []
         for condition in conditions {
-            XCTAssertEqual(condition["Condition"] as? String, "LessThanEqual")
+            let isProfile = condition["Property"] as? String == "VideoProfile"
+            XCTAssertEqual(condition["Condition"] as? String, isProfile ? "EqualsAny" : "LessThanEqual")
             XCTAssertEqual(condition["IsRequired"] as? Bool, false)
         }
         return Dictionary(uniqueKeysWithValues: conditions.compactMap { condition in

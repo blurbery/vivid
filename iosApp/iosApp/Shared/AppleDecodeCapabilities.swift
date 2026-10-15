@@ -320,6 +320,9 @@ struct DeviceProfileVideoLimits: Equatable, Sendable {
         let maxHeight: Int
         let maxFrameRate: Double
         let maxBitDepth: Int
+        /// The attested profiles, empty when any profile is accepted.
+        /// Jellyfin matches profile names without regard to case.
+        let profiles: [String]
         /// Only software envelopes carry a bitrate ceiling. Hardware decode
         /// copes with ordinary remux bitrates, which the server already
         /// bounds through `MaxStreamingBitrate`.
@@ -370,6 +373,7 @@ struct DeviceProfileVideoLimits: Equatable, Sendable {
                 maxHeight: min(entry.maxHeight, maxHeight),
                 maxFrameRate: entry.maxFrameRate,
                 maxBitDepth: entry.bitDepths.max() ?? 8,
+                profiles: entry.profiles,
                 maxBitrate: entry.hardware ? nil : entry.maxBitrateKbps * 1_000
             )
         }
@@ -406,6 +410,10 @@ struct DeviceProfileVideoLimits: Equatable, Sendable {
             ]
             if let maxBitrate = envelope.maxBitrate {
                 conditions.append(Self.condition("VideoBitrate", maxBitrate))
+            }
+            if !envelope.profiles.isEmpty {
+                conditions.append(["Condition": "EqualsAny", "Property": "VideoProfile",
+                                   "Value": envelope.profiles.joined(separator: "|"), "IsRequired": false])
             }
             profiles.append(["Type": "Video", "Codec": envelope.codec, "Conditions": conditions])
         }
