@@ -1,5 +1,6 @@
 #if !os(tvOS)
 import SwiftUI
+import UIKit
 
 /// Horizontal rail of trailer / extra cards for the phone detail pages.
 ///
@@ -56,8 +57,8 @@ struct PhoneTrailersRail: View {
 ///
 /// Both phone detail screens embed this instead of `PhoneTrailersRail`
 /// directly: a remote trailer is handed to the YouTube app with the same
-/// deep link used on tvOS, then falls back to the public watch page when no
-/// app accepts it. That branch would otherwise be copied into
+/// deep link used on tvOS, or to the public watch page when the app isn't
+/// installed. That branch would otherwise be copied into
 /// `MovieDetailContent` and `SeriesDetailContent` verbatim. Local extras are
 /// ordinary playback targets, so those taps continue up to the detail view
 /// that owns the player presentation.
@@ -80,16 +81,30 @@ struct PhoneTrailersSection: View {
         }
     }
 
+    /// Chooses the app or the web page up front instead of falling back when
+    /// the app link isn't accepted. Cancel on the iOS prompt asking to open
+    /// YouTube also comes back as not accepted, and the watch page is a
+    /// universal link that iOS hands straight to the YouTube app, so a
+    /// fallback would open YouTube anyway.
     private func openRemoteTrailer(siteKey: String) {
         guard let appURL = TrailerRail.youtubeDeepLinkURL(siteKey: siteKey),
               let webURL = TrailerRail.youtubeWatchURL(siteKey: siteKey) else {
             return
         }
 
-        openURL(appURL) { accepted in
-            guard !accepted else { return }
+        if Self.isYouTubeAppInstalled() {
+            openURL(appURL)
+        } else {
             openURL(webURL)
         }
+    }
+
+    /// `canOpenURL` needs `youtube` listed in the iOS Info.plist's
+    /// `LSApplicationQueriesSchemes` or it returns false regardless of what
+    /// is installed.
+    private static func isYouTubeAppInstalled() -> Bool {
+        guard let probe = URL(string: "youtube://") else { return false }
+        return UIApplication.shared.canOpenURL(probe)
     }
 }
 

@@ -105,8 +105,8 @@ enum TrailerRail {
         URL(string: "youtube://www.youtube.com/watch?v=\(siteKey)")
     }
 
-    /// Public watch page used when no installed app accepts the YouTube
-    /// custom scheme. The system opens this in the default browser.
+    /// Public watch page used on iOS when the YouTube app isn't installed.
+    /// The system opens this in the default browser.
     static func youtubeWatchURL(siteKey: String) -> URL? {
         URL(string: "https://www.youtube.com/watch?v=\(siteKey)")
     }
