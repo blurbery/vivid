@@ -11,7 +11,7 @@ name: PR checks
 #   runs only the release tests, and only after merge.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
-# Branch protection on main is meant to require it and "PR title, branch and
+# Branch protection on main requires it and "PR title, branch and
 # description". The second matters after an edit: a new title or description
 # doesn't change the commit, and the result job only reports once the jobs
 # it waits for finish, but the title job is queued at once, so the PR can't

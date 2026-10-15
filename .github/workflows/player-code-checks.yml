@@ -1,8 +1,10 @@
 name: Player code checks
 
-# Cheap checks that run on every pull request and every push, whatever it
-# changes, because the player regression workflow only runs when the app or
-# its scripts change. They read the checkout only: no build, no Xcode.
+# Cheap checks that run on every pull request and every push to main,
+# whatever it changes, because the player regression workflow only builds
+# when the app or its scripts change. They read the checkout only: no build,
+# no Xcode. Pushes to other branches don't run them, so the required check
+# on a pull request always comes from its own run.
 # - check-no-previous-player-code.py fails if any tracked path or file names
 #   the previous third-party player bridge or engine package.
 # - check-engine-package-pin.py fails unless both platform specs and every
@@ -10,6 +12,7 @@ name: Player code checks
 on:
   pull_request:
   push:
+    branches: [main]
 
 permissions:
   contents: read

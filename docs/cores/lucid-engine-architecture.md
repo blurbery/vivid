@@ -408,27 +408,27 @@ XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests). `VividTests` (iOS) co
 
 ### App CI
 
-The [player regression workflow](../../.github/workflows/player-regression.yml) runs on pull requests and pushes to `main` that touch the app or its Top Shelf extension, its tests, the project specs, a `Package.resolved`, the listed scripts or the workflow, and on manual runs. It uses `macos-15` with Xcode 26.3.
+The [player regression workflow](../../.github/workflows/player-regression.yml) starts on every pull request, on pushes to `main` that change anything under `iosApp/` (the apps, their extensions, resources, entitlements and tests, the project specs and `Package.resolved`) or `scripts/xcode/`, the listed scripts or the workflow, and on manual runs. On a pull request its `changes` job skips the other jobs unless one of those paths changed, and `Player regression result` always runs and fails when any job failed or was cancelled. The build and test jobs use `macos-15` with Xcode 26.3.
 
 <table width="100%">
   <thead>
     <tr><th align="left">Check</th><th align="left">Job</th><th align="left" width="10000">What it proves, and when it runs</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>scripts/ci/check-engine-package-pin.py</code></td><td><code>validate</code></td><td>Both platform specs pin <code>LucidEngine</code> to the same full commit of <code>https://github.com/blurbery/lucid-engine</code> and depend on its <code>LucidEngine</code> product, and every tracked <code>Package.resolved</code> has exactly one <code>lucid-engine</code> pin at that revision and no previous engine package. Skipped only for a baseline comparison run.</td></tr>
-    <tr><td><code>scripts/ci/check-no-previous-player-code.py</code></td><td><code>validate</code></td><td>No tracked path or file content names the previous third-party bridge or engine package (Git history is not checked). Skipped only for a baseline comparison run.</td></tr>
+    <tr><td><code>scripts/ci/check-engine-package-pin.py</code></td><td><code>validate</code></td><td>Both platform specs pin <code>LucidEngine</code> to the same full commit of <code>https://github.com/blurbery/lucid-engine</code> and depend on its <code>LucidEngine</code> product, and every tracked <code>Package.resolved</code> has exactly one <code>lucid-engine</code> pin at that revision and no previous engine package. Skipped for a baseline comparison run, and with the job when a pull request changes nothing it covers (player code checks still runs it).</td></tr>
+    <tr><td><code>scripts/ci/check-no-previous-player-code.py</code></td><td><code>validate</code></td><td>No tracked path or file content names the previous third-party bridge or engine package (Git history is not checked). Skipped for a baseline comparison run, and with the job when a pull request changes nothing it covers (player code checks still runs it).</td></tr>
     <tr><td><code>scripts/tests/mpv-track-tests.py</code></td><td><code>validate</code></td><td>The adapter's track ID translation, and the text of <code>VividMPVPlayer.stop()</code>, which it runs against a stand-in.</td></tr>
-    <tr><td>Complete iOS suite (<code>VividTests</code>)</td><td><code>validate</code></td><td>Debug on pull requests; compiled with the Release optimiser (<code>-O</code>, whole module) on pushes to <code>main</code>; Debug on manual runs, plus the optimised build when asked.</td></tr>
-    <tr><td>tvOS suite (<code>VividTVTests</code>)</td><td><code>tvos-tests</code></td><td>Pull requests, unless every changed file is iOS-only, and manual runs not limited to iOS.</td></tr>
+    <tr><td>Complete iOS suite (<code>VividTests</code>)</td><td><code>validate</code></td><td>Debug on pull requests that change the paths above; compiled with the Release optimiser (<code>-O</code>, whole module) on pushes to <code>main</code>; Debug on manual runs, plus the optimised build when asked.</td></tr>
+    <tr><td>tvOS suite (<code>VividTVTests</code>)</td><td><code>tvos-tests</code></td><td>Pull requests that change the paths above, unless every changed app file is iOS-only, and manual runs not limited to iOS.</td></tr>
     <tr><td>Unsigned Release builds for generic iOS and tvOS devices</td><td><code>device-builds</code></td><td>When a project spec or a <code>Package.resolved</code> changes (where the engine pin lives), when no base commit can be compared, or when a manual run asks.</td></tr>
   </tbody>
 </table>
 
-The [player code checks workflow](../../.github/workflows/player-code-checks.yml) runs `check-no-previous-player-code.py` and `check-engine-package-pin.py` again on every pull request and every push, on `ubuntu-latest`, whatever the change, because the player regression workflow only runs for the paths above.
+The [player code checks workflow](../../.github/workflows/player-code-checks.yml) runs `check-no-previous-player-code.py` and `check-engine-package-pin.py` again on every pull request and every push to `main`, on `ubuntu-latest`, whatever the change, because the player regression workflow only builds for the paths above.
 
 ### Engine host tests and checks
 
-The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `main`, `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, and on pull requests that do, on `macos-26` with Xcode 26.6. Its jobs are `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for all of them. The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
+The [Lucid Engine build workflow](../../.github/workflows/lucid-engine.yml) runs on pushes to `main`, `experiment/lucid-engine-build` and `experiment/lucid-engine-*` that change `engine/` or the workflow, and on every pull request. A `changes` job on `ubuntu-latest` skips the macOS jobs unless `engine/` or the workflow changed. Those jobs run on `macos-26` with Xcode 26.6: `build` (one per slice), `libdovi-test`, `libass-test` and `package`, which waits for the other three. `Lucid Engine result` always runs and fails when any job failed or was cancelled. The commands are [`engine/lucid.py`](../../engine/lucid.py)'s; the results are those of run 38458337996 at `fcb6782` ([build guide](lucid-engine-build.md#results)), the run release `0.1.0` was published from.
 
 <table width="100%">
   <thead>

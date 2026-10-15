@@ -11,11 +11,14 @@ name: Lucid Engine build
 # runner, and packages static xcframeworks. See
 # docs/cores/lucid-engine-build.md.
 
-# Runs when engine/ or this workflow changes: on pushes to main, to the
+# Builds when engine/ or this workflow changes: on pushes to main, to the
 # pipeline branch and to every engine implementer's branch
-# (experiment/lucid-engine-*), and on pull requests. Each ref has its own
-# concurrency group, so a newer push cancels only that ref's running build.
-# Only GitHub's public macOS runners are used. Nothing is published: package
+# (experiment/lucid-engine-*), and on pull requests. Every pull request
+# starts the workflow so "Lucid Engine result", a required check on main,
+# always reports; the changes job skips the macOS jobs when neither engine/
+# nor this workflow changed. Each ref has its own concurrency group, so a newer push cancels
+# only that ref's running build.
+# The build and test jobs use only GitHub's public macOS runners. Nothing is published: package
 # releases are made by hand from a green run with engine/publish_package.py.
 on:
   push:
@@ -27,9 +30,6 @@ on:
       - 'engine/**'
       - '.github/workflows/lucid-engine.yml'
   pull_request:
-    paths:
-      - 'engine/**'
-      - '.github/workflows/lucid-engine.yml'
 
 permissions:
   contents: read
@@ -39,8 +39,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect engine changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Detect engine changes
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pushes are already filtered by the paths above.
+          if [ "$EVENT" != pull_request ]; then
+            echo "engine=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # NUL-separated and unquoted, so unusual file names still match;
+          # --no-renames lists both sides of a move. Listed to a file first,
+          # so a failing git diff stops the job.
+          changed="$RUNNER_TEMP/changed-files"
+          git -c core.quotePath=false diff -z --name-only --no-renames "$BASE...$HEAD" > "$changed"
+          engine=false
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              engine/*|.github/workflows/lucid-engine.yml)
+                echo "Engine change: $file"
+                engine=true
+                break ;;
+            esac
+          done < "$changed"
+          echo "engine=$engine" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.slice }}
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
     runs-on: macos-26
     # About 25 minutes when every dependency is built (no cached builds), about
     # 10 when they are reused.
@@ -173,6 +217,8 @@ jobs:
 
   libdovi-test:
     name: libdovi C API test
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -219,6 +265,8 @@ jobs:
 
   libass-test:
     name: libass host tests
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -293,3 +341,23 @@ jobs:
           path: ${{ runner.temp }}/lucid-engine-release
           if-no-files-found: error
           retention-days: 3
+
+  # The one job branch protection requires from this workflow. It always runs
+  # and fails when any job above failed or was cancelled; jobs skipped because
+  # the engine did not change count as passed.
+  result:
+    name: Lucid Engine result
+    if: always()
+    needs: [changes, build, libdovi-test, libass-test, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail when any job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<< "$NEEDS" > /dev/null; then
+            echo "::error::A Lucid Engine job failed or was cancelled. See the jobs above."
+            exit 1
+          fi

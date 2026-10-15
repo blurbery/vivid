@@ -1,38 +1,23 @@
 name: Player regression
 
 on:
+  # Every pull request starts this workflow, so "Player regression result",
+  # a required check on main, always reports. The changes job decides whether
+  # anything needs building: only changes to the paths in the push filter
+  # below do.
   pull_request:
-    paths:
-      - 'iosApp/iosApp/**'
-      - 'iosApp/Tests/**'
-      - 'iosApp/project*.yml'
-      - 'iosApp/**/Package.resolved'
-      - 'scripts/tests/playback-auth-refresh-tests.py'
-      - 'scripts/tests/native-profile-restoration-tests.py'
-      - 'scripts/tests/jellyfin-replacement-tests.py'
-      - 'scripts/tests/topshelf-native-tests.py'
-      - 'scripts/tests/mpv-track-tests.py'
-      - 'iosApp/TopShelf/**'
-      - 'scripts/ci/check-introdb-client.sh'
-      - 'scripts/ci/check-mdblist-sync.sh'
-      - 'scripts/ci/check-engine-package-pin.py'
-      - 'scripts/ci/check-no-previous-player-code.py'
-      - '.github/workflows/player-regression.yml'
   # After merge, main runs only the Release-optimiser iOS build. The normal
   # iOS and Apple TV suites already passed on the pull request.
   push:
     branches: [main]
     paths:
-      - 'iosApp/iosApp/**'
-      - 'iosApp/Tests/**'
-      - 'iosApp/project*.yml'
-      - 'iosApp/**/Package.resolved'
+      - 'iosApp/**'
+      - 'scripts/xcode/**'
       - 'scripts/tests/playback-auth-refresh-tests.py'
       - 'scripts/tests/native-profile-restoration-tests.py'
       - 'scripts/tests/jellyfin-replacement-tests.py'
       - 'scripts/tests/topshelf-native-tests.py'
       - 'scripts/tests/mpv-track-tests.py'
-      - 'iosApp/TopShelf/**'
       - 'scripts/ci/check-introdb-client.sh'
       - 'scripts/ci/check-mdblist-sync.sh'
       - 'scripts/ci/check-engine-package-pin.py'
@@ -73,9 +58,11 @@ concurrency:
 
 jobs:
   changes:
+    name: Detect app changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      app: ${{ steps.app.outputs.app }}
       tvos: ${{ steps.filter.outputs.tvos }}
       ios: ${{ steps.matrix.outputs.ios }}
       device_builds: ${{ steps.devices.outputs.device_builds }}
@@ -85,6 +72,56 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      # One list for the steps below: NUL-separated and unquoted, so unusual
+      # file names still match, and --no-renames lists both sides of a move.
+      # A failing git diff stops the job. Without a comparable base (a new
+      # branch, or a force-push on main) the list is marked unknown and every
+      # step below builds.
+      - name: List changed files
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$RUNNER_TEMP/changed-files"
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No comparable base commit; treating every file as changed"
+            touch "$RUNNER_TEMP/changed-files-unknown"
+            : > "$changed"
+            exit 0
+          fi
+          git -c core.quotePath=false diff -z --name-only --no-renames "$BASE...$HEAD" > "$changed"
+      - name: Detect app changes
+        id: app
+        env:
+          EVENT: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pull requests build and test only when they change a file the push
+          # filter above lists; keep the two lists the same. Pushes to main are
+          # already filtered by it, and manual runs always build.
+          if [ "$EVENT" != pull_request ] || [ -e "$RUNNER_TEMP/changed-files-unknown" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          app=false
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              iosApp/*|scripts/xcode/*|scripts/tests/playback-auth-refresh-tests.py|\
+              scripts/tests/native-profile-restoration-tests.py|\
+              scripts/tests/jellyfin-replacement-tests.py|scripts/tests/topshelf-native-tests.py|\
+              scripts/tests/mpv-track-tests.py|scripts/ci/check-introdb-client.sh|\
+              scripts/ci/check-mdblist-sync.sh|scripts/ci/check-engine-package-pin.py|\
+              scripts/ci/check-no-previous-player-code.py|.github/workflows/player-regression.yml)
+                echo "App change: $file"
+                app=true
+                break ;;
+            esac
+          done < "$RUNNER_TEMP/changed-files"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
       - name: Choose iOS builds
         id: matrix
         env:
@@ -110,20 +147,19 @@ jobs:
         id: filter
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
           # Pushes to main skip Apple TV because it passed on the pull request.
-          # Manual runs always include it. Pull requests skip it only when
-          # every changed file is iOS-only, so new shared paths are tested by
-          # default rather than silently skipped.
+          # Manual runs always include it. Pull requests run it when an app
+          # file other than an iOS-only one changes, so new shared paths are
+          # tested by default rather than silently skipped. Docs and other
+          # files outside the app don't count.
           if [ "$EVENT" = push ]; then
             echo "tvos=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$EVENT" != pull_request ]; then
+          if [ "$EVENT" != pull_request ] || [ -e "$RUNNER_TEMP/changed-files-unknown" ]; then
             echo "tvos=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -131,25 +167,26 @@ jobs:
           # this list cannot drift from the target.
           tv_tests=$(grep -oE 'path: Tests/[^[:space:]]+' iosApp/project.yml | sed 's|^path: |iosApp/|')
           tvos=false
-          while IFS= read -r file; do
+          while IFS= read -r -d '' file; do
             case "$file" in
               iosApp/project-ios.yml|iosApp/DownloadsActivity/*) continue ;;
+              iosApp/Vivid.entitlements|iosApp/Vivid.personal.entitlements) continue ;;
               iosApp/Signing/VividTV*.xcconfig) ;;
-              iosApp/Signing/*.xcconfig|scripts/*) continue ;;
+              iosApp/Signing/*.xcconfig|iosApp/Signing/*.sample) continue ;;
               iosApp/Tests/*)
                 grep -qxF "$file" <<< "$tv_tests" || continue ;;
+              iosApp/*|scripts/xcode/*|.github/workflows/player-regression.yml) ;;
+              *) continue ;;
             esac
             echo "tvOS-relevant: $file"
             tvos=true
             break
-          done < <(git diff --name-only "$BASE...$HEAD")
+          done < "$RUNNER_TEMP/changed-files"
           echo "tvos=$tvos" >> "$GITHUB_OUTPUT"
       - name: Detect project and engine pin changes
         id: devices
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           REQUESTED: ${{ inputs.device_builds }}
         shell: bash
         run: |
@@ -162,24 +199,24 @@ jobs:
             echo "device_builds=$device_builds" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            echo "No comparable base commit; building for devices"
+          if [ -e "$RUNNER_TEMP/changed-files-unknown" ]; then
             echo "device_builds=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           device_builds=false
-          while IFS= read -r file; do
+          while IFS= read -r -d '' file; do
             case "$file" in
               iosApp/project.yml|iosApp/project-ios.yml|iosApp/project-common.yml|iosApp/*Package.resolved)
                 echo "Device build trigger: $file"
                 device_builds=true
                 break ;;
             esac
-          done < <(git diff --name-only "$BASE...$HEAD")
+          done < "$RUNNER_TEMP/changed-files"
           echo "device_builds=$device_builds" >> "$GITHUB_OUTPUT"
 
   validate:
     needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: macos-15
     timeout-minutes: 40
     strategy:
@@ -345,7 +382,7 @@ jobs:
 
   device-builds:
     needs: changes
-    if: needs.changes.outputs.device_builds == 'true'
+    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.device_builds == 'true'
     runs-on: macos-15
     timeout-minutes: 45
     strategy:
@@ -398,7 +435,7 @@ jobs:
 
   tvos-tests:
     needs: changes
-    if: needs.changes.outputs.tvos == 'true' && !inputs.ios_only
+    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.tvos == 'true' && !inputs.ios_only
     runs-on: macos-15
     timeout-minutes: 40
     steps:
@@ -473,3 +510,23 @@ jobs:
             /tmp/player-validation.log
             /tmp/player-validation.xcresult
           retention-days: 7
+
+  # The one job branch protection requires from this workflow. It always runs
+  # and fails when any job above failed or was cancelled; a job skipped
+  # because nothing it covers changed counts as passed.
+  result:
+    name: Player regression result
+    if: always()
+    needs: [changes, validate, device-builds, tvos-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail when any job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<< "$NEEDS" > /dev/null; then
+            echo "::error::A player regression job failed or was cancelled. See the jobs above."
+            exit 1
+          fi

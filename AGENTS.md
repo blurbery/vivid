@@ -72,7 +72,7 @@ Ask whether the change has been tested if that is not already confirmed in the c
 
 Record the test environment, checks and results that are known. Clearly distinguish builds, automated tests, simulator/emulator checks and physical-device feedback. State failures or untested behaviour honestly, without inventing details or claiming another person’s testing as your own.
 
-Testing status is informational, not a draft or review gate. Missing, failed or simulator-only testing does not require a draft PR and must not prevent opening or marking a PR ready for review. Report failures and limitations so blurbery can decide whether to merge; do not automatically block or merge based on this rule. Update the recorded results after relevant follow-up changes.
+Testing status is informational, not a draft or review gate. Missing, failed or simulator-only testing does not require a draft PR and must not prevent opening or marking a PR ready for review. Report failures and limitations so blurbery can decide whether to merge; do not automatically block or merge based on this rule. Required CI checks are separate: branch protection still needs them to pass before a merge. Update the recorded results after relevant follow-up changes.
 
 Documentation-only changes may state “Not applicable, documentation-only change”.
 
@@ -145,6 +145,7 @@ follow-up work.
 - Keep each pull request focused on the authorised outcome. Related code, tests and documentation belong together when they address that outcome.
 - Pull requests are squash-merged only. The PR title becomes the commit subject on `main` and the squash body starts blank, so add the `Release-Notes:` block when merging an app change. GitHub deletes the head branch after the merge.
 - Name branches `<type>/<short-description>` with a Conventional Commit type (or `release/`, `experiment/`; GitHub's own `revert-<number>-` branches are accepted), never after a tool. PR checks fail a branch in this repository that doesn't follow this (branches in forks aren't checked, and bot PRs skip the branch and description checks), a title that isn't a Conventional Commit, a PR that changes nothing shipped in the app without `[skip release]` in its title, and a ready PR whose template sections aren't all filled in.
+- Branch protection on `main` requires `PR checks result`, `PR title, branch and description`, `No previous player code, engine pin`, `Player regression result` and `Lucid Engine result` to pass. Don't merge past a failing check unless blurbery explicitly asks.
 - Include before-and-after images for UI changes. Include a short video when
   motion or timing matters.
 - Upload pull request evidence to GitHub. Never commit PR-only assets such as
