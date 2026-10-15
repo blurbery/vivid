@@ -59,7 +59,6 @@ body:
       options:
         - TestFlight
         - Built from source
-        - Sideloaded
     validations:
       required: true
   - type: dropdown

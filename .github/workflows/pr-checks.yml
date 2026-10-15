@@ -6,10 +6,9 @@ name: PR checks
 # - scripts/ci/check-pr.py checks the PR title (a Conventional Commit, with
 #   [skip release] when nothing in the app changes), the branch name and the
 #   description. Editing the title or description runs it again.
-# - When the release tooling, the release or sideload workflow, the
-#   diagnostics relay, the sideload resolvers, the PR, docs or action pin
-#   checker, the PR template or this workflow change, their tests run here
-#   before merge.
+# - When the release tooling, the release workflow, the diagnostics relay,
+#   the PR, docs or action pin checker, the PR template or this workflow
+#   change, their tests run here before merge.
 #   The release workflow runs only the release tests, and only after merge.
 # - "Docs" runs scripts/ci/check-docs.py: every relative Markdown link and
 #   anchor (a broken one the base already had is only reported), repository
@@ -72,11 +71,11 @@ jobs:
           while IFS= read -r -d '' file; do
             case "$file" in
               package.json|package-lock.json|release.config.mjs|scripts/release/*|\
-              diagnostics-relay/*|scripts/ci/resolve-*|scripts/ci/check-pr.py|\
+              diagnostics-relay/*|scripts/ci/check-pr.py|\
               scripts/tests/check-pr-tests.py|scripts/ci/check-docs.py|\
               scripts/tests/check-docs-tests.py|scripts/ci/check-action-pins.py|\
               scripts/tests/check-action-pins-tests.py|.github/PULL_REQUEST_TEMPLATE.md|\
-              .github/workflows/release.yml|.github/workflows/sideload-ipa.yml|\
+              .github/workflows/release.yml|\
               .github/workflows/pr-checks.yml)
                 echo "Tooling change: $file"
                 tooling=true
@@ -129,10 +128,6 @@ jobs:
         run: npm run test:release
       - name: Check the diagnostics relay
         run: npm run test:relay
-      - name: Check the sideload version and platform resolvers
-        run: |
-          bash scripts/ci/resolve-marketing-version.test.sh
-          bash scripts/ci/resolve-platform.test.sh
       - name: Check the PR, docs and action pin checkers
         run: |
           python3 scripts/tests/check-pr-tests.py
