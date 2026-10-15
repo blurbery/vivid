@@ -803,7 +803,9 @@ extension PlayerViewModel {
         staleSessionRecoveryTask?.cancel()
         staleSessionRecoveryTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
-            if self.progressIsEligible {
+            // Silo's session reports ignore position 0; a forced overwrite
+            // would store it and clear the saved resume point.
+            if self.progressIsEligible, resumePosition > 0 {
             _ = await self.sessionBridge.syncProgress(
                 contentId: contentId,
                 position: resumePosition,
