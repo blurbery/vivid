@@ -50,6 +50,25 @@ extension PlayerViewModel {
     }
 
     #if os(iOS)
+    /// How long after the controls appear a tap on the dimmed background
+    /// keeps them up instead of hiding them. A finger that just misses a
+    /// centre button, or a quick second tap, landed there and hid the
+    /// controls within half a second on a tester's iPad, before play or
+    /// pause could be reached.
+    static let backgroundTapGraceSeconds: TimeInterval = 1.5
+
+    /// A tap on the dimmed background behind the controls. Hides them, unless
+    /// they appeared within `backgroundTapGraceSeconds`: then it counts as
+    /// interaction and restarts the auto-hide.
+    func backgroundTapped(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        if showControls, let appearedAt = controlsAppearedAt,
+           now - appearedAt < Self.backgroundTapGraceSeconds {
+            revealControls()
+            return
+        }
+        toggleControls(cause: .backgroundTap)
+    }
+
     func touchControlPressChanged(_ pressed: Bool) {
         guard showControls else { touchControlPressed = false; return }
         touchControlPressed = pressed

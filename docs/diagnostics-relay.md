@@ -37,6 +37,19 @@ The body must be `application/json` and match the app's format: a supported form
 
 Mail is sent through [Resend](https://resend.com) to `diagnostics@vividapp.co` only; the address is fixed in `worker.mjs`. It comes from `reports@diagnostics.vividapp.co`, so Resend's DNS records sit under the `diagnostics.vividapp.co` subdomain and the root domain's records, which deliver mail to iCloud+, are left alone. Set `RESEND_FROM` to use another verified sender. The subject carries the reference and a short summary, for example `Playback report VR-7K2M9Q · tvOS 26.0 · AppleTV14,1 · HDMI · 8 ch · 412 dropped frames`, plus `waited N s to load` when a playback report's longest wait reached 10 seconds, and the report is attached as JSON. A note appears in the plain-text body, under `What happened:` with each line indented, and in the attached JSON exactly as the app sent it, never in the subject. The wait in a playback subject is kept when the subject is cut to 200 characters; the parts before it are shortened instead. Replies can't reach the person who sent it; ask them for the reference instead.
 
+iCloud sometimes refuses these emails with `554 5.7.1 [CS01] Message rejected due to local policy`, which Resend shows as Bounced, Content Rejected. That's iCloud's spam filter rather than a setup fault: emails with the same subject format and attachment are delivered and refused on the same day. The stored copy is unaffected, so nothing is lost.
+
+### Finding a report by its reference
+
+Every report is kept in KV for 30 days under `reports/<UTC day received>/<reference>-<playback|problems>.json`, whether or not its email arrived. With only the reference a tester read out, run these from `diagnostics-relay/`:
+
+```sh
+npx wrangler kv key list --binding REPORTS --remote --prefix reports/ | grep VR-7K2M9Q
+npx wrangler kv key get --binding REPORTS --remote "reports/2026-10-15/VR-7K2M9Q-playback.json"
+```
+
+The first prints the full key, including the day; the second prints the report exactly as the app sent it.
+
 > [!WARNING]
 > Never enable Cloudflare Email Routing for vividapp.co. It replaces the root MX records and takes incoming mail away from iCloud+.
 
