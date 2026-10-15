@@ -1,0 +1,6 @@
+# GitHub adds its own security reporting link to the issue chooser.
+blank_issues_enabled: false
+contact_links:
+  - name: Get help or share feedback on Discord
+    url: https://discord.gg/3jcxk3vJ4X
+    about: Questions about setting up Vivid or your server are quickest there.

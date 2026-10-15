@@ -1,6 +1,6 @@
 # Contributing
 
-Vivid is an independent Apple media client developed in this repository. Open issues and pull requests against `blurbery/vivid`.
+Vivid is an independent Apple media client developed in this repository. Open issues, using the bug report or feature request form, and pull requests against `blurbery/vivid`. Report security problems privately as described in the [security policy](SECURITY.md), never in a public issue, and ask questions in the [Vivid Discord](https://discord.gg/3jcxk3vJ4X).
 
 ## Development
 

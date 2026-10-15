@@ -13,11 +13,14 @@ name: PR checks
 # - "Docs" runs scripts/ci/check-docs.py: every relative Markdown link and
 #   anchor (a broken one the base already had is only reported), repository
 #   paths a change makes stale or names on new lines without them existing,
-#   em dashes on added Markdown and HTML lines, the doc map's own paths, and
-#   the doc map, where code a doc describes must change with that doc unless
-#   a maintainer adds the docs-not-needed label.
+#   em dashes on added Markdown, HTML and issue template lines, the doc map's
+#   own paths, and the doc map, where code a doc describes must change with
+#   that doc unless a maintainer adds the docs-not-needed label.
 #   It also checks the bundled licence texts. Adding or removing a label runs
 #   the workflow again.
+# - "Action pins" runs scripts/ci/check-action-pins.py, which fails any
+#   workflow that uses an action or reusable workflow by tag or branch rather
+#   than a full commit SHA.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
 # Branch protection on main requires it, "PR title, branch and description"
@@ -153,10 +156,22 @@ jobs:
         if: ${{ !cancelled() }}
         run: python3 scripts/tests/licence-texts-tests.py
 
+  pins:
+    name: Action pins
+    if: github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check that every action is pinned to a commit SHA
+        run: python3 scripts/ci/check-action-pins.py
+
   result:
     name: PR checks result
     if: always()
-    needs: [changes, pr, tooling, docs]
+    needs: [changes, pr, tooling, docs, pins]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

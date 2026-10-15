@@ -1,0 +1,59 @@
+# Dependabot keeps the GitHub Actions pins and the release tooling current,
+# and opens security fixes for the sideload lanes' Ruby gems. Swift packages
+# get no version updates: the Lucid Engine pin moves only in its own reviewed
+# change (docs/cores/lucid-engine-build.md), and CollectionHStack stays on
+# the commit pinned in iosApp/project.yml, with its dependency DifferenceKit
+# on the version in Package.resolved. Dependabot alerts still cover them.
+#
+# Updates arrive once a month, each at least a week old: minor and patch
+# updates in one group per ecosystem, major updates in another. None of these
+# pull requests change what ships in the app, so their titles start with
+# "[skip release]" after the type, and they get the docs-not-needed label,
+# because a version bump doesn't change what the docs describe. The prefix
+# ends with a space so Dependabot doesn't add a colon after it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: [minor, patch]
+      actions-major:
+        patterns: ['*']
+        update-types: [major]
+    commit-message:
+      prefix: 'ci: [skip release] '
+    labels: [docs-not-needed]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      release-tools:
+        patterns: ['*']
+        update-types: [minor, patch]
+      release-tools-major:
+        patterns: ['*']
+        update-types: [major]
+    commit-message:
+      prefix: 'chore(deps): [skip release] '
+      prefix-development: 'chore(deps-dev): [skip release] '
+    labels: [docs-not-needed]
+
+  # Security fixes only: no routine version updates for the sideload lanes.
+  - package-ecosystem: bundler
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: 'chore(deps): [skip release] '
+    labels: [docs-not-needed]

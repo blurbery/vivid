@@ -1,0 +1,97 @@
+name: Bug report
+description: Something in Vivid doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. This is a public page, so leave out server addresses, usernames, passwords, access tokens, library names and anything else you'd rather keep private. Use placeholders such as `https://media.example.com` instead.
+
+        Security problems go through [private reporting](https://github.com/blurbery/vivid/security/advisories/new), not here.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: What went wrong, and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The steps that make it happen, starting from opening Vivid. Say whether it happens every time.
+      placeholder: |
+        1. Open a series from Home.
+        2. Play the first episode.
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Devices
+      multiple: true
+      options:
+        - iPhone
+        - iPad
+        - Apple TV
+    validations:
+      required: true
+  - type: input
+    id: device-details
+    attributes:
+      label: Model and OS version
+      placeholder: Apple TV 4K (3rd generation), tvOS 26.0
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Vivid version, build and source commit
+      description: Shown in Settings → About. Older builds may not show a source commit.
+      placeholder: 0.14.3 (21), a8d6d80
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Where did you install Vivid from?
+      options:
+        - TestFlight
+        - Built from source
+        - Sideloaded
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server
+      description: The media server you were using when it happened.
+      multiple: true
+      options:
+        - Silo
+        - Emby
+        - Jellyfin
+        - Not related to a server
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      description: Optional. Shown in the server's own dashboard.
+  - type: input
+    id: diagnostics
+    attributes:
+      label: Diagnostics reference
+      description: Optional. If you sent a report from Settings → Diagnostics, its reference (for example VR-7K2M9Q) lets blurbery find it.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Optional. Screenshots or a short screen recording help a lot, especially for layout, focus or playback problems. Check them for private details first.
+  - type: input
+    id: ai
+    attributes:
+      label: AI assistance
+      description: Optional. If an AI tool helped you investigate or write this report, say which one and how.
