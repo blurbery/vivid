@@ -135,7 +135,7 @@ final class EmbyPlayback {
             query: ["PlaySessionId": playSessionID])
     }
 
-    /// A preview shorter than a minute never starts a watch-progress session.
+    /// A load that never reached its first frame never starts a watch-progress session.
     func stopWithoutProgress() async throws {
         guard !stopped else { return }
         if method == "Transcode" {

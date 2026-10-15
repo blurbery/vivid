@@ -49,7 +49,7 @@ extension PlayerViewModel {
         markCompleted: Bool = false
     ) {
         let watched = markCompleted || completedPlaybackContentId != nil
-        guard watchTimeGate.isEligible || watched else { return }
+        guard hasStartedPlayback || watched else { return }
         let position = position ?? currentTime
         guard position.isFinite, position >= 0 else { return }
         let duration = duration.isFinite && duration > 0 ? duration : 0

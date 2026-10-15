@@ -275,10 +275,9 @@ extension PlayerViewModel {
         let priorProgressEligible = progressIsEligible
         let priorCompletedContentId = completedPlaybackContentId
         if lastLoadRequest?.contentId != request.contentId {
-            watchTimeGate = PlaybackWatchTimeGate()
+            hasStartedPlayback = false
             completedPlaybackContentId = nil
         }
-        watchTimeGate.interrupt()
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
         qualityFallbackTask?.cancel()

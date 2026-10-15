@@ -37,7 +37,6 @@ extension PlayerViewModel {
         guard !isDisposed, scopedEvent.epoch == activeVividLoadEpoch else { return }
         switch scopedEvent.event {
         case .state(let state):
-            if state != .playing { watchTimeGate.interrupt() }
             switch state {
             case .playing:
                 isPlaying = true
@@ -71,7 +70,6 @@ extension PlayerViewModel {
             switch phase {
             case .loading, .rebuffering, .stalled:
                 isLoading = true
-                watchTimeGate.interrupt()
             case .playing, .paused, .seeking, .ended, .idle, .error:
                 isLoading = false
             }
@@ -101,8 +99,6 @@ extension PlayerViewModel {
             }
             let isAdvancing = isPlaying && !isLoading && !isBuffering && seekTargetTime == nil
             let uptime = ProcessInfo.processInfo.systemUptime
-            watchTimeGate.observe(position: movieTime, uptime: uptime,
-                                  playing: isAdvancing, rate: settings.playbackSpeed)
             prematureEndRecoveryGate.observe(position: movieTime, uptime: uptime,
                                              playing: isAdvancing, rate: settings.playbackSpeed)
             currentTime = movieTime
@@ -127,7 +123,6 @@ extension PlayerViewModel {
             }
         case .buffering(let buffering):
             isBuffering = buffering
-            if buffering { watchTimeGate.interrupt() }
             refreshPlaybackStats(force: true)
         case .subtitleLoading(let loading):
             isLoadingSubtitles = loading
@@ -394,6 +389,7 @@ extension PlayerViewModel {
     private func handleVividStartupMilestone(epoch: VividPlaybackController.LoadEpoch) {
         guard startedVividLoadEpoch != epoch else { return }
         startedVividLoadEpoch = epoch
+        hasStartedPlayback = true
         handleFileLoaded()
         if isNextUpTransitioning {
             isNextUpTransitioning = false
