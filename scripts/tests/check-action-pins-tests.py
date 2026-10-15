@@ -55,6 +55,10 @@ class PinTests(unittest.TestCase):
                 "      - { name: 'x, uses: y@v1', run: echo }\n")
         self.assertEqual(lines(text), [])
 
+    def test_apostrophes_in_plain_values_are_text(self):
+        self.assertEqual(lines("      - { name: it's an action, uses: owner/repo@v4 }\n"), [1])
+        self.assertEqual(lines("      - { name: 'it''s, uses: x@v1', uses: owner/repo@v4 }\n"), [1])
+
     def test_block_scalars_are_skipped(self):
         text = ("      - name: script\n"
                 "        run: |2+\n"

@@ -58,8 +58,14 @@ def uses_values(line):
                 index += 2
                 continue
             if char == quote:
+                if quote == "'" and line[index + 1:index + 2] == "'":
+                    # '' is an escaped quote inside a single-quoted scalar.
+                    index += 2
+                    continue
                 quote = None
-        elif char in ("'", '"'):
+        elif char in ("'", '"') and (index == 0 or line[index - 1].isspace() or line[index - 1] in "{,:[?"):
+            # A quote only opens a scalar at the start of a value; one inside
+            # a plain scalar, such as it's, is just text.
             quote = char
         elif char == "#" and (index == 0 or line[index - 1].isspace()):
             break
