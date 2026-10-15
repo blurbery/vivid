@@ -171,6 +171,11 @@ final class DownloadManager {
     /// which would send the same Emby or Jellyfin stop report twice.
     var progressFlushInFlight = false
 
+    /// Set when a flush is asked for while one is already sending, so it
+    /// runs once more straight afterwards and progress recorded meanwhile
+    /// doesn't wait for the next foreground.
+    var progressFlushRequested = false
+
     private init() {
         // Drain background-session events for the lifetime of the app.
         Task { @MainActor [weak self] in
