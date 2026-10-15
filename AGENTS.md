@@ -31,7 +31,7 @@ This repository contains Vivid, an independent Apple media client. SwiftUI app c
 - Work only in `blurbery/vivid` for Vivid tasks. Changes here do not authorise changes to any other repository.
 - Read [the release docs](docs/release/versioning.md) before changing release tooling or publishing an update.
 - TestFlight marketing version stays `0.14.3` unless blurbery explicitly approves a change. Before each authorised upload, verify App Store Connect history and use that platform's latest uploaded build number plus exactly 1. iOS/iPadOS and tvOS advance independently, including paired uploads; do not skip numbers to make them match. Extensions match their containing app. Local test builds and GitHub releases do not advance TestFlight counters. If history cannot be verified or the next number is unavailable, report the conflict rather than guessing, resetting or silently skipping a number. Follow [Versioning & Releases](docs/release/versioning.md).
-- Updates pushed to `main` use the existing `semantic-release` workflow. Features bump minor; fixes bump patch; breaking changes bump major; any other commit without `[skip release]`, including `docs:`, still bumps patch. Documentation-only and housekeeping updates must use `[skip release]`, including the squash message, without skipping required CI. They must not create a release or version bump. No new commits means no release.
+- Updates pushed to `main` use the existing `semantic-release` workflow. Features bump minor; fixes bump patch; breaking changes bump major; any other commit without `[skip release]`, including `docs:`, still bumps patch. Documentation-only and housekeeping updates must use `[skip release]`, including the PR title, which becomes the squash commit subject, without skipping required CI. They must not create a release or version bump. No new commits means no release.
 - Logo, branding, artwork and small visual polish updates bump patch (`0.0.1` → `0.0.2`). Use `fix:` or `style:` for shipped visual changes; reserve `feat:` for new functionality. Pure documentation changes use `docs:` with `[skip release]`. Do not rewrite earlier releases to apply this policy.
 - GitHub release titles must contain only the version, for example `0.1.1`. No app name, `v` prefix or descriptive title. Git tags retain the `v` prefix.
 - Release bodies must contain only flat dot points describing what changed. No headings, dates, author lists, hashes, comparison links or automated footer. Use the documented `Release-Notes:` commit block for curated bullets.
@@ -143,6 +143,7 @@ Include repository-required issue links, validation evidence, risks, and
 follow-up work.
 
 - Keep each pull request focused on the authorised outcome. Related code, tests and documentation belong together when they address that outcome.
+- Pull requests are squash-merged only. The PR title becomes the commit subject on `main` and the squash body starts blank, so add the `Release-Notes:` block when merging an app change. GitHub deletes the head branch after the merge.
 - Include before-and-after images for UI changes. Include a short video when
   motion or timing matters.
 - Upload pull request evidence to GitHub. Never commit PR-only assets such as
