@@ -745,6 +745,9 @@ struct ContentView: View {
 
         #if os(tvOS)
         if let term = TVSiriSearchLink.term(from: url) {
+            // Opening Search closes a playing video and replaces the open
+            // screens, so a request with nothing to search for is ignored.
+            guard !term.isEmpty else { return }
             guard router.authState == .authenticated else {
                 pendingDeepLink = url
                 return
