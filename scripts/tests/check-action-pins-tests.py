@@ -74,6 +74,24 @@ class PinTests(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("version comment", found[0])
 
+    def test_problems_land_on_their_own_lines(self):
+        steps = ("      # actions/checkout@v4 is named here first\n"
+                 "      - uses: actions/checkout@v4\n"
+                 "      - run: echo\n"
+                 "      - uses: actions/checkout@v4\n")
+        text = workflow(steps)
+        lines = text.splitlines()
+        reported = [number for number, _ in check_action_pins.problems_in(text)]
+        self.assertEqual([lines[number - 1].strip() for number in reported],
+                         ["- uses: actions/checkout@v4", "- uses: actions/checkout@v4"])
+        self.assertEqual(len(set(reported)), 2)
+
+    def test_other_mentions_of_a_pin_need_no_comment(self):
+        steps = (f"      # Pinned to actions/checkout@{SHA} below.\n"
+                 f"      - uses: actions/checkout@{SHA} # v4\n"
+                 f"      - run: echo actions/checkout@{SHA}\n")
+        self.assertEqual(problems(workflow(steps)), [])
+
     def test_invalid_yaml_is_reported(self):
         found = problems("jobs: [unclosed\n")
         self.assertEqual(len(found), 1)

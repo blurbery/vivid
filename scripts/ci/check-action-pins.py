@@ -15,9 +15,10 @@ Each workflow in .github/workflows/ is parsed as YAML with Ruby's YAML
 library, which GitHub's Ubuntu and macOS runners include, so quoting, flow
 mappings, explicit keys and block scalars are read exactly as GitHub reads
 them. The places GitHub takes an action from are checked: jobs.<id>.uses (a
-reusable workflow) and jobs.<id>.steps[*].uses. YAML drops comments, so the
-version comment is checked on each line of the file that holds a pinned
-value. Run with no arguments.
+reusable workflow) and jobs.<id>.steps[*].uses. The parser gives each value's
+line and column, so problems are reported on the right line, and the version
+comment, which YAML drops, is read from the rest of the line the value ends
+on. Run with no arguments.
 """
 import json
 import os
@@ -28,65 +29,91 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 PINNED = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-TO_JSON = "require 'yaml'; require 'json'; puts JSON.generate(YAML.safe_load(STDIN.read, aliases: true) || {})"
+# Walks Psych's node tree, so each value comes with its own line and column:
+# jobs.<id>.uses, and uses in each mapping of jobs.<id>.steps.
+WALK = r"""
+require 'yaml'
+require 'json'
+
+def pairs(node)
+  node.is_a?(Psych::Nodes::Mapping) ? node.children.each_slice(2).to_a : []
+end
+
+def name(node)
+  node.is_a?(Psych::Nodes::Scalar) ? node.value : nil
+end
+
+def entry(where, node)
+  found = { where: where, line: node.start_line + 1 }
+  if node.is_a?(Psych::Nodes::Scalar)
+    found.merge(value: node.value, end_line: node.end_line, end_column: node.end_column)
+  else
+    found.merge(value: nil)
+  end
+end
+
+found = []
+document = YAML.parse(STDIN.read)
+root = document && document.root
+pairs(root).each do |key, jobs|
+  next unless name(key) == 'jobs'
+  pairs(jobs).each do |job_key, job|
+    id = name(job_key)
+    pairs(job).each do |field, value|
+      case name(field)
+      when 'uses'
+        found << entry("jobs.#{id}.uses", value)
+      when 'steps'
+        next unless value.is_a?(Psych::Nodes::Sequence)
+        value.children.each_with_index do |step, index|
+          pairs(step).each do |step_key, step_value|
+            found << entry("jobs.#{id}.steps[#{index}].uses", step_value) if name(step_key) == 'uses'
+          end
+        end
+      end
+    end
+  end
+end
+puts JSON.generate(found)
+"""
 
 
-def parse(text):
-    """The workflow as plain data, parsed by Ruby's YAML library."""
-    result = subprocess.run(["ruby", "-e", TO_JSON], input=text, capture_output=True, text=True)
+def uses_entries(text):
+    """Each uses: GitHub reads, with its value and position, from Ruby's YAML parser."""
+    result = subprocess.run(["ruby", "-e", WALK], input=text, capture_output=True, text=True)
     if result.returncode != 0:
-        raise ValueError(result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "not valid YAML")
+        lines = result.stderr.strip().splitlines()
+        raise ValueError(lines[-1] if lines else "not valid YAML")
     return json.loads(result.stdout)
-
-
-def uses_values(workflow):
-    """(where, value) for every uses: GitHub reads in a parsed workflow."""
-    found = []
-    jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
-    for job_id, job in (jobs or {}).items():
-        if not isinstance(job, dict):
-            continue
-        if "uses" in job:
-            found.append((f"jobs.{job_id}.uses", job["uses"]))
-        for index, step in enumerate(job.get("steps") or []):
-            if isinstance(step, dict) and "uses" in step:
-                found.append((f"jobs.{job_id}.steps[{index}].uses", step["uses"]))
-    return found
-
-
-def line_of(lines, value):
-    """The first line number holding value, or None."""
-    return next((number for number, line in enumerate(lines, 1) if value in line), None)
 
 
 def problems_in(text):
     """(line number or None, message) for each uses: that isn't pinned with a version comment."""
     try:
-        workflow = parse(text)
+        entries = uses_entries(text)
     except ValueError as error:
         return [(None, f"The workflow couldn't be read as YAML: {error}")]
     lines = text.splitlines()
     problems = []
-    pinned = set()
-    for where, value in uses_values(workflow):
+    for entry in entries:
+        where, value, line = entry["where"], entry["value"], entry["line"]
         if not isinstance(value, str) or not value.strip():
-            problems.append((None, f"{where} has no action."))
+            problems.append((line, f"{where} has no action."))
             continue
         action = value.strip()
         if action.startswith(("./", "docker://")):
             continue
-        if PINNED.match(action):
-            pinned.add(action)
-        else:
-            problems.append((line_of(lines, action), f"{action} ({where}) is not pinned to a commit SHA. "
-                                                     "Use the full SHA, with the version in a trailing comment."))
-    for action in sorted(pinned):
-        for number, line in enumerate(lines, 1):
-            at = line.find(action)
-            if at >= 0 and not re.search(r"\s#\s*\S", line[at + len(action):]):
-                problems.append((number, f"{action} has no version comment. "
-                                         "Add the version it was taken from, for example # v4."))
-    return sorted(problems, key=lambda problem: (problem[0] or 0, problem[1]))
+        if not PINNED.match(action):
+            problems.append((line, f"{action} ({where}) is not pinned to a commit SHA. "
+                                   "Use the full SHA, with the version in a trailing comment."))
+            continue
+        # YAML drops comments, so read the rest of the line the value ends on.
+        end_line, end_column = entry["end_line"], entry["end_column"]
+        rest = lines[end_line][end_column:] if end_line < len(lines) else ""
+        if not re.search(r"(^|\s)#\s*\S", rest):
+            problems.append((line, f"{action} ({where}) has no version comment on its line. "
+                                   "Add the version it was taken from, for example # v4."))
+    return problems
 
 
 def main():
