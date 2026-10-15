@@ -228,7 +228,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true'
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -335,7 +335,11 @@ jobs:
           retention-days: 3
       - name: Run complete iOS suite
         if: matrix.action == 'test'
-        timeout-minutes: 12
+        # The limit includes the simulator installing and launching the test
+        # host, which can take several minutes on a fresh runner before any
+        # test starts. Each test is still limited to 60 seconds below, so a
+        # hung test fails long before this.
+        timeout-minutes: 20
         run: |
           set -o pipefail
           xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme Vivid \
@@ -447,7 +451,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true' && needs.changes.outputs.tvos == 'true' && !inputs.ios_only
     runs-on: macos-15
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -500,7 +504,9 @@ jobs:
             -destination "$VIVID_TEST_DESTINATION" -derivedDataPath /tmp/vivid-derived \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- | tee /tmp/player-build.log
       - name: Run tvOS suite
-        timeout-minutes: 12
+        # As for the iOS suite: room for a slow simulator launch, with each
+        # test still limited to 60 seconds.
+        timeout-minutes: 20
         run: |
           set -o pipefail
           xcodebuild test-without-building -project iosApp/Vivid.xcodeproj -scheme VividTV \
