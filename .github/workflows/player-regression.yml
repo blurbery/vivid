@@ -9,8 +9,8 @@ on:
   pull_request:
   # After merge, main runs the iOS suite only with the Release optimiser, plus
   # the unsigned device builds when a project spec or Package.resolved
-  # changed. The normal iOS suite, and the Apple TV suite where relevant,
-  # already passed on the pull request.
+  # changed or the base commit can't be compared. The normal iOS suite, and
+  # the Apple TV suite where relevant, already passed on the pull request.
   push:
     branches: [main]
     paths:

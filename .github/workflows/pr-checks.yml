@@ -6,10 +6,10 @@ name: PR checks
 # - scripts/ci/check-pr.py checks the PR title (a Conventional Commit, with
 #   [skip release] when nothing in the app changes), the branch name and the
 #   description. Editing the title or description runs it again.
-# - When the release tooling, diagnostics relay, sideload resolvers or
-#   workflow, PR checker, PR template or this workflow change, their tests
-#   run here before merge. The release workflow runs only the release
-#   tests, and only after merge.
+# - When the release tooling, the release or sideload workflow, the
+#   diagnostics relay, the sideload resolvers, the PR checker, the PR
+#   template or this workflow change, their tests run here before merge.
+#   The release workflow runs only the release tests, and only after merge.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
 # Branch protection on main requires it and "PR title, branch and
