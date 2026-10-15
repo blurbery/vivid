@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Exercise scripts/ci/check-pr.py against titles, branches and descriptions."""
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+import unittest
+
+root = Path(__file__).resolve().parents[2]
+spec = spec_from_file_location("check_pr", root / "scripts/ci/check-pr.py")
+check_pr = module_from_spec(spec)
+spec.loader.exec_module(check_pr)
+
+APP = ["iosApp/iosApp/Views/HomeView.swift"]
+DOCS = ["docs/README.md", "CONTRIBUTING.md"]
+
+FILLED = """## Problem and reproduction
+
+Focus jumped to the top row.
+
+## Implementation and impact
+
+Keeps the focus on the last row.
+
+## Validation
+
+CI.
+
+## Performance
+
+Not applicable.
+
+## Testing status
+
+- **Tested?** Yes
+- **Environment:** Apple TV 4K simulator
+
+## Design impact and approval
+
+> [!IMPORTANT]
+> Only blurbery can approve design changes. Obtain prior, explicit approval and reference it here. Unapproved design changes must not be merged.
+
+- **Design impact:** No design changes.
+- **Approval from blurbery:** Not applicable, no design changes.
+
+## Documentation impact
+
+- No documentation changes: focus behaviour is not described anywhere.
+- [x] I checked the docs this change affects and updated them in this PR, or explained above why none needed changes.
+
+## AI disclosure
+
+I implemented these changes and used Claude Opus as a tool.
+"""
+
+
+class TitleTests(unittest.TestCase):
+    def test_conventional_titles_pass(self):
+        for title in ("fix: keep focus on the last row",
+                      "feat(tv): open Search from the Siri button",
+                      "refactor!: drop the old player bridge",
+                      "docs: fix a link [skip release]"):
+            with self.subTest(title=title):
+                self.assertEqual(check_pr.check_title(title, APP), [])
+
+    def test_other_titles_fail(self):
+        for title in ("Fix focus", "Fix: keep focus", "fix:keep focus", "feature: add Search",
+                      'Revert "fix: keep focus"', "fix : keep focus"):
+            with self.subTest(title=title):
+                self.assertEqual(len(check_pr.check_title(title, APP)), 1)
+
+    def test_upper_case_type_gets_a_hint(self):
+        self.assertIn("lower case", check_pr.check_title("Fix: keep focus", APP)[0])
+
+    def test_housekeeping_needs_skip_release(self):
+        for files in (DOCS, [".github/workflows/pr-checks.yml"], ["iosApp/Tests/HomeTests.swift"],
+                      ["engine/pins.ini"], ["website/public/privacy.html"], []):
+            with self.subTest(files=files):
+                problems = check_pr.check_title("docs: fix a link", files)
+                self.assertEqual(len(problems), 1)
+                self.assertIn("[skip release]", problems[0])
+                self.assertEqual(check_pr.check_title("docs: fix a link [Skip Release]", files), [])
+
+    def test_app_changes_may_release_or_skip(self):
+        files = DOCS + APP
+        self.assertEqual(check_pr.check_title("fix: keep focus", files), [])
+        self.assertEqual(check_pr.check_title("fix: keep focus [skip release]", files), [])
+
+    def test_unknown_files_skip_the_release_rule(self):
+        self.assertEqual(check_pr.check_title("docs: fix a link", None), [])
+
+
+class BranchTests(unittest.TestCase):
+    def test_typed_branches_pass(self):
+        for branch in ("fix/row-focus", "feat/tv-siri-search", "experiment/lucid-engine-build",
+                       "release/0.39", "ci/pr-checks", "docs/sync_final.features"):
+            with self.subTest(branch=branch):
+                self.assertEqual(check_pr.check_branch(branch), [])
+
+    def test_other_branches_fail(self):
+        for branch in ("claude/competent-thompson-54984c", "batch/playback", "experiment-2.0",
+                       "main", "fix/", "fix", "Fix/row-focus", "fix/-row"):
+            with self.subTest(branch=branch):
+                self.assertEqual(len(check_pr.check_branch(branch)), 1)
+
+
+class DescriptionTests(unittest.TestCase):
+    def test_filled_description_passes(self):
+        self.assertEqual(check_pr.check_description(FILLED), [])
+
+    def test_windows_line_endings_pass(self):
+        self.assertEqual(check_pr.check_description(FILLED.replace("\n", "\r\n")), [])
+
+    def test_untouched_template_fails_every_section(self):
+        problems = check_pr.check_description(check_pr.TEMPLATE.read_text())
+        self.assertEqual(len(problems), len(check_pr.SECTIONS))
+
+    def test_empty_description_fails(self):
+        self.assertEqual(len(check_pr.check_description("")), len(check_pr.SECTIONS))
+        self.assertEqual(len(check_pr.check_description(None)), len(check_pr.SECTIONS))
+
+    def test_missing_section(self):
+        body = FILLED.replace("## Performance\n\nNot applicable.\n", "")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("## Performance", problems[0])
+
+    def test_comment_only_section_is_empty(self):
+        body = FILLED.replace("Not applicable.\n", "<!-- Say why benchmarks do not apply. -->\n")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn('"Performance" is empty', problems[0])
+
+    def test_unticked_docs_box(self):
+        body = FILLED.replace("- [x] I checked", "- [ ] I checked")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("tick", problems[0])
+
+    def test_ticked_box_alone_is_not_enough(self):
+        body = FILLED.replace("- No documentation changes: focus behaviour is not described anywhere.\n", "")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("list the docs", problems[0])
+
+    def test_blank_design_field(self):
+        body = FILLED.replace("- **Approval from blurbery:** Not applicable, no design changes.",
+                              "- **Approval from blurbery:**")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("Approval from blurbery", problems[0])
+
+    def test_blank_tested_field(self):
+        body = FILLED.replace("- **Tested?** Yes", "- **Tested?** <!-- Yes / No / Partly -->")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("Tested?", problems[0])
+
+    def test_ai_disclosure_fields(self):
+        fields = ("- **Tools / assistants used:** GitHub Copilot\n"
+                  "- **Models used:** Label unavailable\n"
+                  "- **What AI helped with:** Tests\n"
+                  "- **My direction, review and validation:** I wrote and checked the fix.\n")
+        body = FILLED.replace("I implemented these changes and used Claude Opus as a tool.\n", fields)
+        self.assertEqual(check_pr.check_description(body), [])
+        partly = body.replace("- **Models used:** Label unavailable", "- **Models used:**")
+        problems = check_pr.check_description(partly)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("Models used", problems[0])
+
+    def test_blank_ai_disclosure(self):
+        body = FILLED.replace("I implemented these changes and used Claude Opus as a tool.\n", "")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("AI disclosure", problems[0])
+
+    def test_review_bot_block_does_not_fill_a_section(self):
+        body = FILLED.replace("I implemented these changes and used Claude Opus as a tool.\n", "") + (
+            "<!-- This is an auto-generated description by cubic. -->\n"
+            '<a href="https://example.com">View guided diff</a>\n'
+            "<!-- End of auto-generated description by cubic. -->\n")
+        problems = check_pr.check_description(body)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("AI disclosure", problems[0])
+
+    def test_extra_sections_and_notes_are_allowed(self):
+        body = ("> [!NOTE]\n> Follow-up is in another PR.\n\n" + FILLED
+                + "\n## Release notes\n\n```text\nRelease-Notes:\n- Fixed focus.\n```\n")
+        self.assertEqual(check_pr.check_description(body), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
