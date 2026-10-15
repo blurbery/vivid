@@ -36,8 +36,20 @@ extension DownloadManager {
     }
 
     func flushProgressQueue() async {
-        guard !file.progressQueue.isEmpty else { return }
+        guard !file.progressQueue.isEmpty, !progressFlushInFlight else { return }
+        progressFlushInFlight = true
         let scopeGeneration = registrationScopeGeneration
+        defer {
+            progressFlushInFlight = false
+            // A flush for a newly active scope returns early while this one
+            // holds the flag, so run it now rather than at the next foreground.
+            if scopeGeneration != registrationScopeGeneration, !scopeServerId.isEmpty {
+                Task {
+                    guard await self.activateScopeIfNeeded() else { return }
+                    await self.flushProgressQueue()
+                }
+            }
+        }
         let batch = file.progressQueue
         let completedIds = Set(batch.filter { file.localProgress[$0.mediaItemId]?.completed == true }.map { $0.mediaItemId })
         // A position the server already acknowledged isn't sent again. On

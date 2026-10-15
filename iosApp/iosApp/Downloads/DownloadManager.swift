@@ -165,6 +165,12 @@ final class DownloadManager {
 
     var progressBootstrapInFlight = false
 
+    /// Set while `flushProgressQueue` is sending. Its awaits let another
+    /// trigger (launch, a server change, foreground entry, a background
+    /// refresh, the Downloads tab) start a second flush of the same queue,
+    /// which would send the same Emby or Jellyfin stop report twice.
+    var progressFlushInFlight = false
+
     private init() {
         // Drain background-session events for the lifetime of the app.
         Task { @MainActor [weak self] in
