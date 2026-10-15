@@ -206,7 +206,7 @@ Everything in this section is depended on by Vivid's app code, scripts, CI or do
 - Driver name `avfoundation`, selected with `ao=avfoundation`. mpv derives the log prefix `ao/avfoundation` from it; Vivid filters log messages on that exact prefix.
 - Options prefix `ao-avfoundation` (upstream's `options_prefix` mechanism), so every option in 2.2 is `ao-avfoundation-<name>` and can be set with `mpv_set_option_string` before initialisation.
 - Pull-based driver with `init`, `uninit`, `control`, `reset`, `start` and `set_pause`, and no `write` or `get_state`. Because `set_pause` exists, mpv uses the hardware-pause branch of `ao_set_paused` for this driver, including its end-time bookkeeping across pause and resume. Every `set_pause` path returns true.
-- On iOS and tvOS the driver has no `list_devs`: Vivid's existing build patch (`engine/patches/mpv/0002`) leaves it out wherever the CoreAudio HAL is missing, and the AO patch must keep it that way. mpv then lists the driver itself as one device in `audio-device-list` (7.4). `audio-device` is ignored.
+- On iOS and tvOS the driver has no `list_devs`: Vivid's existing build patch (`engine/patches/mpv/0002-ao_avfoundation-build-for-ios-and-tvos.patch`) leaves it out wherever the CoreAudio HAL is missing, and the AO patch must keep it that way. mpv then lists the driver itself as one device in `audio-device-list` (7.4). `audio-device` is ignored.
 - The description string is free.
 
 **Video output.**

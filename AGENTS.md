@@ -110,6 +110,7 @@ Documentation changes do not require separate approval from blurbery. Keep relev
 > **Every pull request must keep the docs up to date.** Update each doc the change affects in the same PR: the README, guides under `docs/`, release docs, `THIRD_PARTY_NOTICES.md` and the in-app licences when dependencies change, and the privacy policy (`website/public/privacy.html`) with the in-app privacy text when what the app sends or stores changes. List the docs you updated under **Documentation impact**, or write “No documentation changes” with the reason. A PR that leaves docs saying something the code no longer does is not ready to merge.
 
 - Review factual claims, validation evidence, links, Australian English and the existing document structure.
+- The `Docs` job in [PR checks](docs/release/versioning.md#validation) fails a PR that breaks a relative link or anchor, leaves a doc naming in inline code a path it removed or renamed, names a missing path in inline code on a line it adds (only paths inside a top-level folder are checked), adds an em dash to a Markdown or HTML file, or changes a mapped area without its doc. If a mapped change needs no doc update, say why under **Documentation impact** and ask blurbery to add the `docs-not-needed` label.
 - Keep updates within the task scope and preserve applicable copyright and licence notices.
 - Design and publishing permissions still apply to their respective operations.
 
@@ -145,7 +146,7 @@ follow-up work.
 - Keep each pull request focused on the authorised outcome. Related code, tests and documentation belong together when they address that outcome.
 - Pull requests are squash-merged only. The PR title becomes the commit subject on `main` and the squash body starts blank, so add the `Release-Notes:` block when merging an app change. GitHub deletes the head branch after the merge.
 - Name branches `<type>/<short-description>` with a Conventional Commit type (or `release/`, `experiment/`; GitHub's own `revert-<number>-` branches are accepted), never after a tool. PR checks fail a branch in this repository that doesn't follow this (branches in forks aren't checked, and bot PRs skip the branch and description checks), a title that isn't a Conventional Commit, a PR that changes nothing shipped in the app without `[skip release]` in its title, and a ready PR whose template sections aren't all filled in.
-- Branch protection on `main` requires `PR checks result`, `PR title, branch and description`, `No previous player code, engine pin`, `Player regression result` and `Lucid Engine result` to pass. Don't merge past a failing check unless blurbery explicitly asks.
+- Branch protection on `main` requires `PR checks result`, `PR title, branch and description`, `Docs`, `No previous player code, engine pin`, `Player regression result` and `Lucid Engine result` to pass. Don't merge past a failing check unless blurbery explicitly asks.
 - Include before-and-after images for UI changes. Include a short video when
   motion or timing matters.
 - Upload pull request evidence to GitHub. Never commit PR-only assets such as
