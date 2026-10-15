@@ -925,31 +925,8 @@ actor VividIntroDBClient {
     }
 }
 
-/// Counts elapsed viewing time, never distance jumped along the media timeline.
-struct PlaybackWatchTimeGate {
-    private(set) var watchedSeconds: Double = 0
-    private var previous: (position: Double, uptime: Double)?
-    var isEligible: Bool { watchedSeconds >= 60 }
-
-    mutating func interrupt() { previous = nil }
-
-    mutating func observe(position: Double, uptime: Double, playing: Bool, rate: Double) {
-        guard !isEligible else { return }
-        guard playing, position.isFinite, uptime.isFinite, rate.isFinite, rate > 0 else {
-            interrupt()
-            return
-        }
-        defer { previous = (position, uptime) }
-        guard let previous else { return }
-        let elapsed = uptime - previous.uptime
-        let advanced = position - previous.position
-        guard elapsed > 0, elapsed <= 3, advanced > 0,
-              advanced <= elapsed * rate + 0.5 else { return }
-        watchedSeconds += min(elapsed, advanced / rate)
-    }
-}
-
-/// Completion is independent of the one-minute partial-progress gate.
+/// Vivid's own watched rule, applied on top of each server's resume rules.
+/// Partial progress has no Vivid threshold: the server decides what to keep.
 enum PlaybackCompletionPolicy {
     static func isComplete(position: Double, duration: Double, credits: TimeRange? = nil,
                            endedNaturally: Bool = false) -> Bool {

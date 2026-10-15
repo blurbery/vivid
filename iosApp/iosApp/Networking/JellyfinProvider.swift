@@ -207,9 +207,6 @@ struct JellyfinConnection: Sendable {
             if parts.count == 2, ["UserFavoriteItems","UserPlayedItems"].contains(parts[0]) {
                 return "/Users/\(userID)/\(parts[0].dropFirst(4))/\(parts[1])"
             }
-            if parts.count == 3, parts[0] == "UserItems", parts[2] == "UserData" {
-                return "/Users/\(userID)/Items/\(parts[1])/UserData"
-            }
             return nil
         }
     }
@@ -936,7 +933,21 @@ struct JellyfinAdapter {
             for item in payload["items"] as? [[String:Any]] ?? [] {
                 guard let id = item["media_item_id"] as? String,
                       let position = item["position_seconds"] as? Double ?? item["position"] as? Double else { throw JellyfinError.invalidResponse }
-                _ = try await connection.request("POST", "/UserItems/\(JellyfinConnection.id(id))/UserData", body:["PlaybackPositionTicks":JellyfinPlayback.ticks(position)])
+                // A stop report, unlike a user-data write, goes through
+                // Jellyfin's resume settings and needs no prior start. Without
+                // a PlaySessionId it can't end a transcode, and without a
+                // MediaSourceId it updates the item itself. A stop isn't safe
+                // to repeat, so a failure part-way returns the items already
+                // accepted rather than failing them all.
+                do { _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":JellyfinConnection.id(id), "PositionTicks":JellyfinPlayback.ticks(position)]) }
+                catch let error as HTTPError where error.isPermanentRejection {
+                    // Refused outright, for example an item the server no
+                    // longer has. Reporting it as an error lets the queue use
+                    // up that entry's retries instead of it holding up every
+                    // entry behind it.
+                    results.append(["mediaItemId":id,"status":"error"]); continue
+                }
+                catch { guard !results.isEmpty else { throw error }; break }
                 results.append(["mediaItemId":id,"status":"ok"])
             }
             return ["results":results]

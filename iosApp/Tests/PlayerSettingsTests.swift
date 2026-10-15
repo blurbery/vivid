@@ -3,9 +3,7 @@ import XCTest
 
 @MainActor
 final class PlayerSettingsTests: XCTestCase {
-    func testCompletionAtNinetyPercentIsIndependentOfPartialProgress() {
-        let gate = PlaybackWatchTimeGate()
-        XCTAssertFalse(gate.isEligible)
+    func testCompletionAtNinetyPercent() {
         for duration in [30.0, 60, 1_800, 7_200] {
             XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: duration * 0.899, duration: duration))
             XCTAssertTrue(PlaybackCompletionPolicy.isComplete(position: duration * 0.9, duration: duration))
@@ -35,43 +33,6 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: 0, duration: 0, endedNaturally: true))
         XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: .nan, duration: 100, endedNaturally: true))
         XCTAssertFalse(PlaybackCompletionPolicy.isComplete(position: -1, duration: 100, endedNaturally: true))
-    }
-
-    func testWatchProgressRequiresSixtySecondsOfViewing() {
-        var gate = PlaybackWatchTimeGate()
-        for second in 0...59 {
-            gate.observe(position: Double(second), uptime: Double(second), playing: true, rate: 1)
-        }
-        XCTAssertFalse(gate.isEligible)
-        gate.observe(position: 60, uptime: 60, playing: true, rate: 1)
-        XCTAssertTrue(gate.isEligible)
-    }
-
-    func testWatchTimeExcludesSeekingPausesBufferingAndBackgroundGaps() {
-        var gate = PlaybackWatchTimeGate()
-        gate.observe(position: 0, uptime: 0, playing: true, rate: 1)
-        gate.observe(position: 30, uptime: 1, playing: true, rate: 1)
-        XCTAssertEqual(gate.watchedSeconds, 0)
-        gate.interrupt()
-        gate.observe(position: 600, uptime: 2, playing: true, rate: 1)
-        gate.observe(position: 601, uptime: 3, playing: true, rate: 1)
-        gate.observe(position: 601, uptime: 4, playing: false, rate: 1)
-        gate.observe(position: 601, uptime: 80, playing: true, rate: 1)
-        gate.observe(position: 900, uptime: 400, playing: true, rate: 1)
-        XCTAssertEqual(gate.watchedSeconds, 1)
-        XCTAssertFalse(gate.isEligible)
-    }
-
-    func testPlaybackSpeedDoesNotShortenOneMinuteThreshold() {
-        for rate in [0.5, 1, 2.0] {
-            var gate = PlaybackWatchTimeGate()
-            for second in 0...59 {
-                gate.observe(position: Double(second) * rate, uptime: Double(second), playing: true, rate: rate)
-            }
-            XCTAssertFalse(gate.isEligible)
-            gate.observe(position: 60 * rate, uptime: 60, playing: true, rate: rate)
-            XCTAssertTrue(gate.isEligible)
-        }
     }
 
     func testRecapAndIntroRemainSeparatePrompts() {

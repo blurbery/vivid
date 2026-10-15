@@ -275,10 +275,14 @@ extension PlayerViewModel {
         let priorProgressEligible = progressIsEligible
         let priorCompletedContentId = completedPlaybackContentId
         if lastLoadRequest?.contentId != request.contentId {
-            watchTimeGate = PlaybackWatchTimeGate()
+            hasStartedPlayback = false
             completedPlaybackContentId = nil
+        } else if request.startFromBeginning {
+            // An explicit Play from Beginning of the same item restarts at 0,
+            // which isn't a watched position until its first frame. Reloads of
+            // an item that has played resume in place and keep the latch.
+            hasStartedPlayback = false
         }
-        watchTimeGate.interrupt()
         let pendingNaturalEndProgressTask = naturalEndProgressTask
         naturalEndProgressTask = nil
         qualityFallbackTask?.cancel()
@@ -804,7 +808,9 @@ extension PlayerViewModel {
         staleSessionRecoveryTask?.cancel()
         staleSessionRecoveryTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
-            if self.progressIsEligible {
+            // Silo's session reports ignore position 0; a forced overwrite
+            // would store it and clear the saved resume point.
+            if self.progressIsEligible, resumePosition > 0 {
             _ = await self.sessionBridge.syncProgress(
                 contentId: contentId,
                 position: resumePosition,

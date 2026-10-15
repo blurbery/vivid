@@ -16,8 +16,11 @@ extension PlayerViewModel {
     func retry() {
         guard let last = lastLoadRequest else { return }
         Self.logger.info("Retrying playback for contentId=\(last.contentId, privacy: .public)")
+        // A load that never opened is repeated as it was. Once the item has
+        // played, resume where it stopped rather than repeat a Play from
+        // Beginning, which would ignore `currentTime`.
         beginFreshLoad(
-            request: last,
+            request: hasStartedPlayback ? last.resumingInPlace() : last,
             progressPosition: currentTime,
             resumePositionOverride: currentTime,
             allowNearEndResume: true

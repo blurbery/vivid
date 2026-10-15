@@ -772,7 +772,7 @@ class PlayerViewModel {
         let preferredAudioTrackIndex: Int?
         let preferredSubtitleTrackIndex: Int?
         let preferredSidecarSubtitleTrackId: Int64?
-        let startFromBeginning: Bool
+        var startFromBeginning: Bool
         /// Authoritative protocol-v3 combined ordinal. Unlike
         /// `preferredSubtitleTrackIndex`, this also represents external,
         /// downloaded, and server-extracted subtitle rows.
@@ -792,6 +792,15 @@ class PlayerViewModel {
         /// Continue Watching only: select the server's last-used source file
         /// before applying the profile-wide automatic quality preference.
         var prefersLastUsedVersion = false
+
+        /// The same request, resuming at the reload's own position. A Play from
+        /// Beginning ignores any resume override, so a retry or seek reload of
+        /// an item that has already played must not repeat it.
+        func resumingInPlace() -> LoadRequest {
+            var request = self
+            request.startFromBeginning = false
+            return request
+        }
 
         /// Rebuild a request for the same playback session while retaining the
         /// user's temporary quality choice. Recovery must not fall back to the
@@ -902,9 +911,15 @@ class PlayerViewModel {
     }
 
     static let autoplayStartSessionTimeout: TimeInterval = 15
-    @ObservationIgnored var watchTimeGate = PlaybackWatchTimeGate()
+    /// Latched at the current item's first startup milestone and kept across
+    /// recovery reloads of that item; a new item or Play from Beginning
+    /// clears it. Until then `currentTime` is only the
+    /// requested start, not a position anyone watched. A failed or abandoned
+    /// load reports nothing, so Emby and Jellyfin can't reset a saved resume
+    /// point to a Play from Beginning start of zero.
+    @ObservationIgnored var hasStartedPlayback = false
     var completedPlaybackContentId: String?
-    var progressIsEligible: Bool { watchTimeGate.isEligible || completedPlaybackContentId != nil }
+    var progressIsEligible: Bool { hasStartedPlayback || completedPlaybackContentId != nil }
     var lastLoadRequest: LoadRequest?
     static let nextUpCountdownDefaultSeconds = 10
     static let nextUpHUDCountdownThresholdSeconds: Double = 100

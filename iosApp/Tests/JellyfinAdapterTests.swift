@@ -127,6 +127,66 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(requests.count, 1)
     }
 
+    func testOfflineProgressSyncSendsAStopReportSoJellyfinAppliesItsResumeSettings() async throws {
+        let other = "44444444444444444444444444444444"
+        var requests: [String] = []
+        let adapter = adapter { request in
+            let body = try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: request.httpBody ?? Data()), options: [.sortedKeys])
+            requests.append("\(request.httpMethod ?? "") \(request.url!.path) \(String(decoding: body, as: UTF8.self))")
+            return (204, [:])
+        }
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: ["items": [
+            ["media_item_id": item, "position": 600.0, "duration": 2_600.0, "force_overwrite": false],
+            ["media_item_id": other, "position": 12.5, "duration": 2_600.0, "force_overwrite": false]
+        ]])
+        // No PlaySessionId (it could end a transcode on this device), no
+        // MediaSourceId and no Failed flag, which would skip the update.
+        XCTAssertEqual(requests, [
+            #"POST /jellyfin/Sessions/Playing/Stopped {"ItemId":"\#(item)","PositionTicks":6000000000}"#,
+            #"POST /jellyfin/Sessions/Playing/Stopped {"ItemId":"\#(other)","PositionTicks":125000000}"#
+        ])
+        let data = try JSONSerialization.data(withJSONObject: raw)
+        let results = try HTTPClient.makeJSONDecoder().decode(SyncProgressResultsResponse.self, from: data).results
+        XCTAssertEqual(results.map(\.mediaItemId), [item, other])
+        XCTAssertTrue(results.allSatisfy(\.isOK))
+    }
+
+    func testOfflineProgressSyncKeepsTheStopsAlreadyAcceptedWhenOneFails() async throws {
+        let other = "44444444444444444444444444444444"
+        var failing = other
+        let adapter = adapter { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            return body?["ItemId"] as? String == failing ? (500, [:]) : (204, [:])
+        }
+        let body: [String: Any] = ["items": [item, other].map { ["media_item_id": $0, "position": 600.0] as [String: Any] }]
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+        let results = try XCTUnwrap((raw as? [String: Any])?["results"] as? [[String: Any]])
+        XCTAssertEqual(results.compactMap { $0["mediaItemId"] as? String }, [item], "A stop isn't safe to repeat, so the accepted one is kept")
+
+        failing = item
+        do {
+            _ = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+            XCTFail("With nothing accepted the batch fails as a whole and stays queued")
+        } catch HTTPError.http(let status, _) {
+            XCTAssertEqual(status, 500)
+        }
+    }
+
+    func testOfflineProgressSyncReportsARefusedStopAndCarriesOn() async throws {
+        let other = "44444444444444444444444444444444"
+        let refused = item
+        let adapter = adapter { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            return body?["ItemId"] as? String == refused ? (404, [:]) : (204, [:])
+        }
+        let body: [String: Any] = ["items": [item, other].map { ["media_item_id": $0, "position": 600.0] as [String: Any] }]
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+        let data = try JSONSerialization.data(withJSONObject: raw)
+        let results = try HTTPClient.makeJSONDecoder().decode(SyncProgressResultsResponse.self, from: data).results
+        XCTAssertEqual(results.map(\.mediaItemId), [item, other])
+        XCTAssertEqual(results.map(\.isOK), [false, true], "A refused stop is reported so its retries run out, and the rest still send")
+    }
+
     func testPeopleNavigationRoundTripsNativeIDsAndKeepsAccountsSeparate() async throws {
         let nativeID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let adapter = adapter { request in

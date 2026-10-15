@@ -152,11 +152,11 @@ final class JellyfinPlayback {
             query: ["PlaySessionId": playSessionID])
     }
 
-    /// A preview shorter than a minute never starts a watch-progress session.
+    /// A load that never reached its first frame never starts a watch-progress session.
     func stopWithoutProgress() async throws {
         guard !stopped else { return }
         // Jellyfin treats a missing stop position as completion. Failed
-        // retires an unqualified preview without saving its watch state.
+        // retires a session that never started without saving its watch state.
         _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body: [
             "ItemId":itemID, "MediaSourceId":sourceID,
             "PlaySessionId":playSessionID, "Failed":true
@@ -164,8 +164,8 @@ final class JellyfinPlayback {
         stopped = true
     }
 
-    /// Retire a replaced session at its last reported position. A preview
-    /// that never qualified for progress must not change watched state.
+    /// Retire a replaced session at its last reported position. A session
+    /// that never reported progress must not change watched state.
     func retireForReplacement() async throws {
         if started { try await report(position: lastPosition, isPaused: true, stopping: true) }
         else { try await stopWithoutProgress() }

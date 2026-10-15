@@ -212,7 +212,6 @@ extension PlayerViewModel {
     @discardableResult
     func commitSeek(to target: Double, source: String = "unspecified") -> Bool {
         pendingUnexpectedEndEpoch = nil
-        watchTimeGate.interrupt()
         let clampedTarget = duration > 0 ? min(max(0, target), duration) : max(0, target)
         let requiresReplan: Bool = {
             guard let timeline = vividPlaybackController.activeSpec?.timeline else { return true }
@@ -277,7 +276,7 @@ extension PlayerViewModel {
                     }
                 } else if let request = self.lastLoadRequest {
                     self.beginFreshLoad(
-                        request: request,
+                        request: request.resumingInPlace(),
                         progressPosition: self.seekOriginTime,
                         resumePositionOverride: sourceSeconds,
                         allowNearEndResume: true
