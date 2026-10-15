@@ -99,3 +99,6 @@ docs/playback/*
 
 # Wrangler local state (account details, build caches)
 .wrangler/
+
+# Pull request evidence is uploaded to GitHub, never committed.
+.github/pr-assets/

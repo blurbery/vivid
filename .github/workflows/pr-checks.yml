@@ -7,21 +7,29 @@ name: PR checks
 #   [skip release] when nothing in the app changes), the branch name and the
 #   description. Editing the title or description runs it again.
 # - When the release tooling, the release or sideload workflow, the
-#   diagnostics relay, the sideload resolvers, the PR checker, the PR
+#   diagnostics relay, the sideload resolvers, the PR or docs checker, the PR
 #   template or this workflow change, their tests run here before merge.
 #   The release workflow runs only the release tests, and only after merge.
+# - "Docs" runs scripts/ci/check-docs.py: every relative Markdown link and
+#   anchor (a broken one the base already had is only reported), repository
+#   paths a change makes stale or names on new lines without them existing,
+#   em dashes on added Markdown and HTML lines, the doc map's own paths, and
+#   the doc map, where code a doc describes must change with that doc unless
+#   a maintainer adds the docs-not-needed label.
+#   It also checks the bundled licence texts. Adding or removing a label runs
+#   the workflow again.
 # "PR checks result" always runs and fails when any job above failed or was
 # cancelled; a job skipped because its files did not change counts as passed.
-# Branch protection on main requires it and "PR title, branch and
-# description". The second matters after an edit: a new title or description
-# doesn't change the commit, and the result job only reports once the jobs
-# it waits for finish, but the title job is queued at once, so the PR can't
-# be merged on the old pass in between. The checking jobs skip closed PRs;
+# Branch protection on main requires it, "PR title, branch and description"
+# and "Docs". The last two matter after an edit or a label change: neither
+# changes the commit, and the result job only reports once the jobs it waits
+# for finish, but those two are queued at once, so the PR can't be merged on
+# the old pass in between. The checking jobs skip closed PRs;
 # the result job still runs there and passes. A run cancelled by a newer one
 # reports a failed result until the newer run's result replaces it.
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -61,7 +69,8 @@ jobs:
             case "$file" in
               package.json|package-lock.json|release.config.mjs|scripts/release/*|\
               diagnostics-relay/*|scripts/ci/resolve-*|scripts/ci/check-pr.py|\
-              scripts/tests/check-pr-tests.py|.github/PULL_REQUEST_TEMPLATE.md|\
+              scripts/tests/check-pr-tests.py|scripts/ci/check-docs.py|\
+              scripts/tests/check-docs-tests.py|.github/PULL_REQUEST_TEMPLATE.md|\
               .github/workflows/release.yml|.github/workflows/sideload-ipa.yml|\
               .github/workflows/pr-checks.yml)
                 echo "Tooling change: $file"
@@ -119,13 +128,35 @@ jobs:
         run: |
           bash scripts/ci/resolve-marketing-version.test.sh
           bash scripts/ci/resolve-platform.test.sh
-      - name: Check the PR checker
-        run: python3 scripts/tests/check-pr-tests.py
+      - name: Check the PR and docs checkers
+        run: |
+          python3 scripts/tests/check-pr-tests.py
+          python3 scripts/tests/check-docs-tests.py
+
+  docs:
+    name: Docs
+    if: github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The pull request's merge commit and its first parent, the base it
+      # merges into, so HEAD^1...HEAD is exactly what the PR changes.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check links, paths, em dashes and the doc map
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: python3 scripts/ci/check-docs.py --base HEAD^1
+      - name: Check the bundled licence texts
+        if: ${{ !cancelled() }}
+        run: python3 scripts/tests/licence-texts-tests.py
 
   result:
     name: PR checks result
     if: always()
-    needs: [changes, pr, tooling]
+    needs: [changes, pr, tooling, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
