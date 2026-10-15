@@ -42,9 +42,11 @@ Contributors are welcome to open pull requests from branches in their own forks.
 > [!IMPORTANT]
 > **Only blurbery controls merges, direct updates to `main`, and branch creation in `blurbery/vivid`.** A contribution or review does not grant permission to perform those actions. Owner approval for design changes is still required before implementation.
 
+Pull requests are squash-merged; merge commits and rebase merging are turned off. The PR title becomes the commit subject on `main`, so write it as a Conventional Commit and put `[skip release]` in it for documentation-only and housekeeping changes. The squash commit body starts blank: when merging an app change, add its `Release-Notes:` block there, following the [release notes format](docs/release/versioning.md#github-release-note-format). GitHub deletes the head branch after the merge. The release workflow creates the release tags (`v*`), and the `Release tags` repository ruleset stops them being moved or deleted.
+
 ## Commits and reviews
 
-Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). The workflow treats every commit without the marker, including `docs:` and `chore:`, as at least a patch release, so documentation-only and housekeeping commits must include `[skip release]`, including the final squash message. They must not create a version bump or source release. This marker does not skip required validation. Keep app release bullets factual and user-facing.
+Use Conventional Commits and follow the [release notes format](docs/release/versioning.md). The workflow treats every commit without the marker, including `docs:` and `chore:`, as at least a patch release, so documentation-only and housekeeping commits must include `[skip release]`, including the PR title, which becomes the squash commit subject. They must not create a version bump or source release. This marker does not skip required validation. Keep app release bullets factual and user-facing.
 
 For blurbery’s own Vivid work, write concise, natural Australian English in the owner’s voice. Use short change bullets for GitHub, App Store and TestFlight release notes. Avoid em dashes and unnecessary formal sections. Include only relevant evidence and limitations, and keep the required AI disclosure brief.
 

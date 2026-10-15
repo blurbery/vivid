@@ -26,7 +26,7 @@ Vivid uses `semantic-release` to publish a GitHub source release after updates r
   </tbody>
 </table>
 
-The largest change since the previous version determines the increment. Tags use `v0.1.0`; the release title is `0.1.0` with no prefix, product name or extra wording.
+The largest change since the previous version determines the increment. Tags use `v0.1.0`; the release title is `0.1.0` with no prefix, product name or extra wording. The release workflow creates each `v*` tag, and the `Release tags` repository ruleset stops it being moved or deleted.
 
 Shipped logo, branding, artwork and small visual polish updates are **patch changes**: increment the last number by one, for example `0.0.1` → `0.0.2`. Use `fix:` or `style:` as appropriate, not `feat:`. Documentation-only changes use `docs:` with `[skip release]` and must not increment the version. Reserve `feat:` for new functionality. Keep existing published versions; this policy applies to future releases.
 
@@ -72,7 +72,7 @@ This format applies to TestFlight notes only. GitHub release notes and App Store
 
 ### GitHub release note format
 
-Documentation-only and housekeeping commits must include `[skip release]`. Preserve the marker in the final squash message. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release: the release job does not run when the pushed head commit (the squash commit) contains the marker, and the release tooling drops every commit containing it, in any letter case. A skipped app change appears in release notes only if a later releasing commit lists it in its `Release-Notes:` block. An app change can carry the marker on purpose when it should ship together with a later change; that later commit's `Release-Notes:` block must then list both. Ordinary commits retain the normal versioning rules.
+Documentation-only and housekeeping commits must include `[skip release]`. Put the marker in the PR title: pull requests are squash-merged, and the PR title becomes the squash commit subject. Such commits neither trigger a release nor contribute to the version calculation or notes in a later release: the release job does not run when the pushed head commit (the squash commit) contains the marker, and the release tooling drops every commit containing it, in any letter case. A skipped app change appears in release notes only if a later releasing commit lists it in its `Release-Notes:` block. An app change can carry the marker on purpose when it should ship together with a later change; that later commit's `Release-Notes:` block must then list both. Ordinary commits retain the normal versioning rules.
 
 Keep this format for every app release. Do not publish a release for documentation-only work. Release bullets describe user-visible changes in plain language; implementation details and testing evidence belong in the contribution report.
 
@@ -81,7 +81,7 @@ Keep this format for every app release. Do not publish a release for documentati
 
 The default bullet is the commit subject with its Conventional Commit prefix removed. A squash-merge subject keeps its `(#123)` pull request suffix in that bullet, so app releases normally use curated bullets.
 
-For an update with several user-visible changes, add curated bullets to the commit message:
+For an update with several user-visible changes, add curated bullets to the commit message. The squash commit body starts blank, so add the block there when merging:
 
 ```text
 feat: add a new browsing feature
