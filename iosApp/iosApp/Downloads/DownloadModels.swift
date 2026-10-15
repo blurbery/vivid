@@ -896,6 +896,10 @@ struct QueuedProgress: Codable, Identifiable, Sendable {
     let duration: Double
     let updatedAt: Date
     var attempts: Int
+    /// The server acknowledged the position, but the separate watched write
+    /// for a completed item failed, so only that write is retried. Optional
+    /// so queues saved before it decode.
+    var positionSent: Bool?
 }
 
 /// Last-known resume point for a downloaded item, updated by offline

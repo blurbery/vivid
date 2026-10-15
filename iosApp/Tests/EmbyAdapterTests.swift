@@ -141,6 +141,49 @@ final class EmbyAdapterTests: XCTestCase {
         } catch EmbyError.unsupportedFeature {}
     }
 
+    func testOfflineProgressSyncSendsAStopReportSoEmbyAppliesItsResumeSettings() async throws {
+        let requests = LoadedRows()
+        let adapter = stubbedAdapter { request in
+            let body = try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: request.httpBody ?? Data()), options: [.sortedKeys])
+            requests.append("\(request.httpMethod ?? "") \(request.url!.path) \(String(decoding: body, as: UTF8.self))")
+            return (204, [:])
+        }
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: ["items": [
+            ["media_item_id": "episode-1", "position": 600.0, "duration": 2_600.0, "force_overwrite": false],
+            ["media_item_id": "episode-2", "position": 12.5, "duration": 2_600.0, "force_overwrite": false]
+        ]])
+        // No PlaySessionId (it could end a transcode on this device), no
+        // MediaSourceId and no Failed flag, which would skip the update.
+        XCTAssertEqual(requests.take(sorted: false), [
+            #"POST /emby/Sessions/Playing/Stopped {"ItemId":"episode-1","PositionTicks":6000000000}"#,
+            #"POST /emby/Sessions/Playing/Stopped {"ItemId":"episode-2","PositionTicks":125000000}"#
+        ])
+        let data = try JSONSerialization.data(withJSONObject: raw)
+        let results = try HTTPClient.makeJSONDecoder().decode(SyncProgressResultsResponse.self, from: data).results
+        XCTAssertEqual(results.map(\.mediaItemId), ["episode-1", "episode-2"])
+        XCTAssertTrue(results.allSatisfy(\.isOK))
+    }
+
+    func testOfflineProgressSyncKeepsTheStopsAlreadyAcceptedWhenOneFails() async throws {
+        var failing = "episode-2"
+        let adapter = stubbedAdapter { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            return body?["ItemId"] as? String == failing ? (500, [:]) : (204, [:])
+        }
+        let body: [String: Any] = ["items": ["episode-1", "episode-2"].map { ["media_item_id": $0, "position": 600.0] as [String: Any] }]
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+        let results = try XCTUnwrap((raw as? [String: Any])?["results"] as? [[String: Any]])
+        XCTAssertEqual(results.compactMap { $0["mediaItemId"] as? String }, ["episode-1"], "A stop isn't safe to repeat, so the accepted one is kept")
+
+        failing = "episode-1"
+        do {
+            _ = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+            XCTFail("With nothing accepted the batch fails as a whole and stays queued")
+        } catch HTTPError.http(let status, _) {
+            XCTAssertEqual(status, 500)
+        }
+    }
+
     func testBrowseAndHomeRequestLeanerFieldsThanDetail() async throws {
         let fields = LoadedRows()
         let adapter = stubbedAdapter { request in
@@ -951,6 +994,21 @@ private final class EmbyReviewRequestStub: URLProtocol {
     override func startLoading() {
         do {
             guard let handler = Self.handler else { throw URLError(.badServerResponse) }
+            // URLSession hands a POST body to the protocol as a stream.
+            var request = request
+            if request.httpBody == nil, let stream = request.httpBodyStream {
+                stream.open()
+                defer { stream.close() }
+                var data = Data()
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    guard count >= 0 else { throw URLError(.cannotDecodeContentData) }
+                    if count == 0 { break }
+                    data.append(contentsOf: buffer.prefix(count))
+                }
+                request.httpBody = data
+            }
             let (status, body) = try handler(request)
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
                                            headerFields: ["Content-Type": "application/json"])!
