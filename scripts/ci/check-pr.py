@@ -76,6 +76,7 @@ GENERATED = re.compile(r"<!--\s*This is an auto-generated.*?-->.*?<!--\s*End of 
                        re.DOTALL | re.IGNORECASE)
 COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
 CLOSED_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+INLINE_CODE = re.compile(r"(`+)(.+?)\1")
 
 
 def ships_in_app(path):
@@ -121,10 +122,29 @@ def check_branch(branch):
         "fix/row-focus."]
 
 
+def protect_code(text):
+    """Neutralise <!-- inside code spans and fenced blocks, which GitHub shows as text."""
+    lines = []
+    fence = None
+    for line in text.split("\n"):
+        marker = FENCE.match(line)
+        if marker:
+            fence = marker[1] if fence is None else (None if line.strip().startswith(fence) else fence)
+            lines.append(line)
+        elif fence is not None:
+            lines.append(line.replace("<!--", "&lt;!--"))
+        else:
+            lines.append(INLINE_CODE.sub(lambda code: code[0].replace("<!--", "&lt;!--"), line))
+    return "\n".join(lines)
+
+
+def normalise(body):
+    body = (body or "").replace("\r\n", "\n").replace("\r", "\n")
+    return protect_code(GENERATED.sub("", body))
+
+
 def clean(body):
-    body = body.replace("\r\n", "\n").replace("\r", "\n")
-    body = GENERATED.sub("", body)
-    return COMMENT.sub("", body)
+    return COMMENT.sub("", normalise(body))
 
 
 def section_key(heading):
@@ -197,10 +217,10 @@ def display(label):
 
 
 def check_description(body):
-    found = sections(clean(body or ""))
+    found = sections(clean(body))
     scaffolding = template_lines()
     problems = []
-    if "<!--" in CLOSED_COMMENT.sub("", GENERATED.sub("", body or "")):
+    if "<!--" in CLOSED_COMMENT.sub("", normalise(body)):
         problems.append("The description has a <!-- comment with no closing -->, which hides "
                         "everything after it. Close it or remove it.")
     for key, name in SECTIONS.items():

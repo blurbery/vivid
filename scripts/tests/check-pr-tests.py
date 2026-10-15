@@ -236,6 +236,11 @@ class DescriptionTests(unittest.TestCase):
         problems = check_pr.check_description(body)
         self.assertIn("no closing -->", problems[0])
 
+    def test_comment_markers_in_code_are_text(self):
+        body = FILLED.replace("Keeps the focus on the last row.",
+                              "An unclosed `<!--` now gets its own message.\n\n```html\n<!-- example\n```")
+        self.assertEqual(check_pr.check_description(body), [])
+
     def test_extra_sections_and_notes_are_allowed(self):
         body = ("> [!NOTE]\n> Follow-up is in another PR.\n\n" + FILLED
                 + "\n## Release notes\n\n```text\nRelease-Notes:\n- Fixed focus.\n```\n")
