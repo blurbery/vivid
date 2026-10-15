@@ -940,6 +940,13 @@ struct JellyfinAdapter {
                 // to repeat, so a failure part-way returns the items already
                 // accepted rather than failing them all.
                 do { _ = try await connection.request("POST", "/Sessions/Playing/Stopped", body:["ItemId":JellyfinConnection.id(id), "PositionTicks":JellyfinPlayback.ticks(position)]) }
+                catch let error as HTTPError where error.isPermanentRejection {
+                    // Refused outright, for example an item the server no
+                    // longer has. Reporting it as an error lets the queue use
+                    // up that entry's retries instead of it holding up every
+                    // entry behind it.
+                    results.append(["mediaItemId":id,"status":"error"]); continue
+                }
                 catch { guard !results.isEmpty else { throw error }; break }
                 results.append(["mediaItemId":id,"status":"ok"])
             }

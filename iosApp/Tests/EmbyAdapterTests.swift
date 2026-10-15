@@ -184,6 +184,19 @@ final class EmbyAdapterTests: XCTestCase {
         }
     }
 
+    func testOfflineProgressSyncReportsARefusedStopAndCarriesOn() async throws {
+        let adapter = stubbedAdapter { request in
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            return body?["ItemId"] as? String == "episode-1" ? (404, [:]) : (204, [:])
+        }
+        let body: [String: Any] = ["items": ["episode-1", "episode-2"].map { ["media_item_id": $0, "position": 600.0] as [String: Any] }]
+        let raw = try await adapter.route(method: "POST", path: "/api/v1/sync/progress", query: [:], body: body)
+        let data = try JSONSerialization.data(withJSONObject: raw)
+        let results = try HTTPClient.makeJSONDecoder().decode(SyncProgressResultsResponse.self, from: data).results
+        XCTAssertEqual(results.map(\.mediaItemId), ["episode-1", "episode-2"])
+        XCTAssertEqual(results.map(\.isOK), [false, true], "A refused stop is reported so its retries run out, and the rest still send")
+    }
+
     func testBrowseAndHomeRequestLeanerFieldsThanDetail() async throws {
         let fields = LoadedRows()
         let adapter = stubbedAdapter { request in

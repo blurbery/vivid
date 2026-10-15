@@ -2485,6 +2485,16 @@ enum HTTPError: LocalizedError, CustomStringConvertible {
     }
 }
 
+extension HTTPError {
+    /// The server answered and refused the request outright: a 4xx other
+    /// than an expired sign-in (401), a timeout (408) or rate limiting (429).
+    /// Sending the same request again won't change the answer.
+    var isPermanentRejection: Bool {
+        guard case .http(let statusCode, _) = self else { return false }
+        return (400..<500).contains(statusCode) && ![401, 408, 429].contains(statusCode)
+    }
+}
+
 // MARK: - Internal helpers
 
 /// Sentinel used to satisfy `send<T>` for generic calls that expect an
