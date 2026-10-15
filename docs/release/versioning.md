@@ -121,7 +121,7 @@ The `Docs` job in PR checks runs `scripts/ci/check-docs.py` and `scripts/tests/l
     <tr><td>A <code>Package.resolved</code></td><td><code>THIRD_PARTY_NOTICES.md</code> and the in-app licences in <code>iosApp/Resources/OpenSourceLicenses/</code></td></tr>
     <tr><td>The in-app licences</td><td><code>THIRD_PARTY_NOTICES.md</code></td></tr>
     <tr><td>What the app sends or stores: <code>Shared/Diagnostics/</code>, the MDBList, OpenSubtitles, TMDb and Seerr clients, the trailer rail (YouTube), the privacy manifests, the app entitlements or the relay's <code>worker.mjs</code></td><td>The <a href="../../website/public/privacy.html">privacy policy</a></td></tr>
-    <tr><td>The <a href="../../website/public/privacy.html">privacy policy</a></td><td>The in-app privacy text, in <code>IOSSettingsOverview.swift</code> or <code>TVSettingsComponents.swift</code></td></tr>
+    <tr><td>The <a href="../../website/public/privacy.html">privacy policy</a></td><td>The in-app privacy text on both platforms, in <code>IOSSettingsOverview.swift</code> and <code>TVSettingsComponents.swift</code></td></tr>
     <tr><td>Emby sources (<code>Emby*.swift</code>)</td><td><a href="../cores/emby.md">Emby</a></td></tr>
     <tr><td>Jellyfin sources (<code>Jellyfin*.swift</code>)</td><td><a href="../cores/jellyfin.md">Jellyfin</a></td></tr>
     <tr><td>Silo sources (<code>Silo*.swift</code>) or <code>Screens/Player/ProtocolV3/</code></td><td><a href="../cores/silo.md">Silo</a> or <a href="../server-connections.md">Server connections</a></td></tr>

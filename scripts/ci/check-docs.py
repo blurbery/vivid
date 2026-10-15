@@ -36,6 +36,7 @@ but doesn't fail the change, and the change is also checked for:
   not the check that its paths exist.
 """
 import argparse
+from collections import Counter
 from dataclasses import dataclass, field
 import html
 import json
@@ -95,8 +96,9 @@ DOC_MAP = [
          ["website/public/privacy.html"],
          ["iosApp/iosApp/Screens/Settings/IOSSettingsOverview.swift",
           "iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift"],
-         "The in-app privacy text (PhoneVividPrivacyView in IOSSettingsOverview.swift and "
-         "TVPrivacyPolicyPage in TVSettingsComponents.swift) has to match the privacy policy."),
+         "The in-app privacy text on both platforms (PhoneVividPrivacyView in IOSSettingsOverview.swift and "
+         "TVPrivacyPolicyPage in TVSettingsComponents.swift) has to match the privacy policy.",
+         all_docs=True),
     Rule("Emby core",
          ["iosApp/iosApp/**/Emby*.swift"],
          ["docs/cores/emby.md"],
@@ -162,7 +164,9 @@ FENCE = re.compile(r"^\s{0,3}(?P<run>`{3,}|~{3,})(?P<rest>.*)$")
 INLINE_CODE = re.compile(r"(`+)(.+?)\1")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 LINK_TITLE = r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?"""
-MD_LINK = re.compile(r"(?<!\\)!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(\s*(?:<([^<>]+)>|([^)\s]+))" + LINK_TITLE + r"\s*\)")
+# A plain destination may hold balanced parentheses, such as setup(v2).md.
+LINK_DEST = r"(?:[^()\s]|\([^()\s]*\))+"
+MD_LINK = re.compile(r"(?<!\\)!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(\s*(?:<([^<>]+)>|(" + LINK_DEST + r"))" + LINK_TITLE + r"\s*\)")
 REF_DEF = re.compile(r"^\s{0,3}\[(?!\^)[^\]]+\]:\s*(?:<([^<>]+)>|(\S+))")
 HTML_ATTR = re.compile(r"""\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", re.IGNORECASE)
 HTML_ID = re.compile(r"""<[a-z][^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
@@ -541,9 +545,17 @@ def main():
         base_files, base_folders = tree(base)
         # A broken link that's already on the base came from another change;
         # it's reported, but doesn't fail this one.
-        before = {(doc, message) for doc, _, message in check_links(base_files, base_folders, reader(base))}
-        inherited = [problem for problem in links if (problem[0], problem[2]) in before]
-        problems += [problem for problem in links if (problem[0], problem[2]) not in before]
+        # Counted, so adding another copy of a link that was already broken
+        # still fails.
+        before = Counter((doc, message) for doc, _, message in check_links(base_files, base_folders, reader(base)))
+        inherited = []
+        for problem in links:
+            key = (problem[0], problem[2])
+            if before[key]:
+                before[key] -= 1
+                inherited.append(problem)
+            else:
+                problems.append(problem)
         if inherited:
             notes.append(f"{len(inherited)} broken link(s) were already on the base branch, so they don't fail this change:")
             notes += [f"  {doc}:{number}: {message}" for doc, number, message in inherited]
