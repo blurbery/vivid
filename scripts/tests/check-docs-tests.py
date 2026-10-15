@@ -61,6 +61,7 @@ class LinkTests(unittest.TestCase):
                          "[Spaced](<docs/my guide.md> 'title') [Encoded](docs/my%20guide.md)\n",
             "docs/guide.md": "## Setup\n[Back](../README.md#top) [Root](/README.md)\n",
             "docs/my guide.md": "Text\n",
+            "docs/setup(v2).md": "[Back](../README.md) [Versioned](setup(v2).md)\n",
         }, others={"docs/logo.png"})
         self.assertEqual(check_docs.check_links(files, folders, read), [])
 
@@ -177,7 +178,11 @@ class ChangeTests(unittest.TestCase):
         self.assertIn("website/public/privacy.html", problems[0][2])
         problems, _ = check_docs.check_doc_map({"website/public/privacy.html": "M"}, set())
         self.assertIn("IOSSettingsOverview.swift", problems[0][2])
-        both = {"website/public/privacy.html": "M", "iosApp/iosApp/Screens/Settings/IOSSettingsOverview.swift": "M"}
+        one = {"website/public/privacy.html": "M", "iosApp/iosApp/Screens/Settings/IOSSettingsOverview.swift": "M"}
+        problems, _ = check_docs.check_doc_map(one, set())
+        self.assertEqual(len(problems), 1)
+        self.assertIn("TVSettingsComponents.swift", problems[0][2])
+        both = {**one, "iosApp/iosApp/tvOS/Screens/Settings/TVSettingsComponents.swift": "M"}
         self.assertEqual(check_docs.check_doc_map(both, set())[0], [])
 
     def test_doc_map_targets_exist(self):
@@ -263,6 +268,12 @@ class RepositoryTests(unittest.TestCase):
         code, output = self.run_main("--base", base, "--head", head, "--labels", "[]")
         self.assertEqual(code, 0, output)
         self.assertIn("already on the base branch", output)
+        self.write("README.md", "[Old](gone.md)\n[Again](gone.md)\n")
+        head = self.commit()
+        code, output = self.run_main("--base", base, "--head", head, "--labels", "[]")
+        self.assertEqual(code, 1, output)
+        self.assertIn("README.md:2:", output)
+        self.write("README.md", "[Old](gone.md)\n")
         self.write("docs/new.md", "[New](missing.md)\n")
         head = self.commit()
         code, output = self.run_main("--base", base, "--head", head, "--labels", "[]")
