@@ -7,8 +7,10 @@ on:
   # below do, and everything builds when it can't compare against the base
   # commit.
   pull_request:
-  # After merge, main runs only the Release-optimiser iOS build. The normal
-  # iOS and Apple TV suites already passed on the pull request.
+  # After merge, main runs the iOS suite only with the Release optimiser, plus
+  # the unsigned device builds when a project spec or Package.resolved
+  # changed. The normal iOS suite, and the Apple TV suite where relevant,
+  # already passed on the pull request.
   push:
     branches: [main]
     paths:
@@ -35,7 +37,7 @@ on:
         type: boolean
         default: false
       ios_only:
-        description: Build and validate only the iOS simulator app for an iOS-only change
+        description: Skip the Apple TV simulator suite for an iOS-only change (device builds still follow device_builds)
         type: boolean
         default: false
       optimised:
@@ -76,9 +78,10 @@ jobs:
       # One list for the steps below: NUL-separated and unquoted, so unusual
       # file names still match, and --no-renames lists both sides of a move.
       # A failing git diff stops the job. Without a comparable base commit
-      # (after a force-push on main) the list is marked unknown and the app
-      # and device-build steps treat every file as changed; pushes to main
-      # still skip Apple TV.
+      # (none recorded, or one sharing no history with the head, for example
+      # after a force-push on main) the list is marked unknown and the app,
+      # tvOS and device-build steps treat every file as changed; pushes to
+      # main still skip Apple TV.
       - name: List changed files
         if: github.event_name != 'workflow_dispatch'
         env:
@@ -104,8 +107,9 @@ jobs:
         run: |
           set -euo pipefail
           # Pull requests build and test only when they change a file the push
-          # filter above lists; keep the two lists the same. Pushes to main are
-          # already filtered by it, and manual runs always build.
+          # filter above lists, or when the base commit can't be compared; keep
+          # the two lists the same. Pushes to main are already filtered by it,
+          # and manual runs always build.
           if [ "$EVENT" != pull_request ] || [ -e "$RUNNER_TEMP/changed-files-unknown" ]; then
             echo "app=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -154,11 +158,12 @@ jobs:
         run: |
           set -euo pipefail
           # Pushes to main skip Apple TV because it passed on the pull request.
-          # Manual runs always include it. Pull requests run it when an app
-          # file other than an iOS-only one, a scripts/xcode/ build phase or
-          # this workflow changes, so new shared paths are tested by default
-          # rather than silently skipped. Docs, the check scripts and other
-          # files outside the app don't count.
+          # Manual runs include it unless ios_only is set (the tvos-tests job
+          # checks that). Pull requests run it when the base commit can't be
+          # compared, or when an app file other than an iOS-only one, a
+          # scripts/xcode/ build phase or this workflow changes, so new shared
+          # paths are tested by default rather than silently skipped. Docs, the
+          # check scripts and other files outside the app don't count.
           if [ "$EVENT" = push ]; then
             echo "tvos=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -195,8 +200,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Unsigned device builds of both apps run when the project specs or
-          # Package.resolved change, which is where the engine pins live.
+          # Unsigned device builds of both apps run when a project spec or
+          # Package.resolved changes (the platform specs and Package.resolved
+          # hold the engine pins), or when the base commit can't be compared.
           # Manual runs build them only when asked.
           if [ "$EVENT" = workflow_dispatch ]; then
             if [ "$REQUESTED" = true ]; then device_builds=true; else device_builds=false; fi
