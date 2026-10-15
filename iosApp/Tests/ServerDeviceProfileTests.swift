@@ -73,30 +73,89 @@ final class ServerDeviceProfileTests: XCTestCase {
         }
     }
 
-    func testAppleTV4KIPhoneAndIPadKeepTheDeclaredProfile() throws {
-        for (isTVOS, machine) in [(true, "AppleTV14,1"), (false, "iPhone17,1"), (false, "iPad16,3")] {
+    /// Apple TV 4K, iPhone and iPad must send exactly the request they sent
+    /// before Apple TV HD had its own limits. Every Apple TV 4K generation and
+    /// a range of iPhones and iPads are compared with `legacyBody`, across
+    /// sources, every quality choice and both bitrate paths.
+    func testAppleTV4KIPhoneAndIPadSendTheSameRequestAsBefore() {
+        let machines = [(true, "AppleTV6,2"), (true, "AppleTV11,1"), (true, "AppleTV14,1"),
+                        (false, "iPhone11,2"), (false, "iPhone17,1"), (false, "iPad8,1"), (false, "iPad16,3")]
+        let sources: [[String: Any]] = [
+            uhdHEVC, fullHDH264,
+            ["MediaStreams": [["Type": "Video", "Codec": "hevc", "Width": 3_840, "Height": 2_160, "DvProfile": 8,
+                               "VideoRangeType": "DOVIWithHDR10"]]],
+            ["MediaStreams": [["Type": "Video", "Codec": "av1", "Width": 3_840, "Height": 1_600, "BitDepth": 10]]],
+            ["MediaStreams": [["Type": "Video", "Codec": "mpeg2video", "Width": 720, "Height": 576]]],
+            ["MediaStreams": [["Type": "Audio", "Codec": "aac"]]],
+            [:],
+        ]
+        let qualities: [String?] = [nil, ApplePlaybackQuality.autoId, ApplePlaybackQuality.originalId]
+            + ApplePlaybackQuality.requestOptions.map(\.id)
+        for (isTVOS, machine) in machines {
             let mode = AppleDecodeCapabilities.streamingVideoCapabilityModeForDevice(
                 isTVOS: isTVOS, isSimulator: false, machineIdentifier: machine, usesLucid: true)
+            XCTAssertEqual(mode, .vividDeclared, machine)
             let device = DeviceProfileVideoLimits.make(
                 mode: mode, attestation: AppleDecodeCapabilities.videoDecodeAttestation(), maxWidth: 3_840, maxHeight: 2_160)
             XCTAssertEqual(device, .declared, machine)
-            for (core, body) in bodies(source: uhdHEVC, quality: nil, device: device) {
-                XCTAssertEqual(body["EnableDirectPlay"] as? Bool, true, "\(core) \(machine)")
-                let profile = try XCTUnwrap(body["DeviceProfile"] as? [String: Any])
-                XCTAssertEqual(try directPlayCodecs(profile), ["h264", "hevc", "av1", "mpeg2video", "vp9"], "\(core) \(machine)")
-                XCTAssertNil(profile["CodecProfiles"], "\(core) \(machine)")
-                XCTAssertNil((profile["TranscodingProfiles"] as? [[String: Any]])?.first?["MaxHeight"], "\(core) \(machine)")
-            }
-            for (core, body) in bodies(source: uhdHEVC, quality: "1080p", device: device) {
-                let profile = try XCTUnwrap(body["DeviceProfile"] as? [String: Any])
-                let codecProfiles = try XCTUnwrap(profile["CodecProfiles"] as? [[String: Any]])
-                XCTAssertEqual(codecProfiles.count, 1, "\(core) \(machine)")
-                XCTAssertEqual(limits(codecProfiles, codec: nil), ["Height": "1080"], "\(core) \(machine)")
-                let transcode = try XCTUnwrap((profile["TranscodingProfiles"] as? [[String: Any]])?.first)
-                XCTAssertEqual(transcode["MaxHeight"] as? Int, 1_080, "\(core) \(machine)")
-                XCTAssertNil(transcode["MaxWidth"], "\(core) \(machine)")
+            for source in sources {
+                for quality in qualities {
+                    for bitrate in [nil, 10_000] as [Int?] {
+                        let emby = EmbyPlayback.playbackInfoBody(
+                            userID: "user", sourceID: "source", start: 754.5, audioIndex: 2, subtitleIndex: 3,
+                            bitrateKbps: bitrate, source: source, quality: quality, device: device)
+                        let jellyfin = JellyfinPlayback.playbackInfoBody(
+                            userID: "user", sourceID: "source", start: 754.5, audioIndex: 2, subtitleIndex: 3,
+                            bitrateKbps: bitrate, source: source, quality: quality, device: device)
+                        let label = "\(machine) quality \(quality ?? "nil") bitrate \(bitrate.map(String.init) ?? "nil")"
+                        XCTAssertEqual(emby as NSDictionary, Self.legacyBody(
+                            name: "Vivid Vivid", start: 754.5, audioIndex: 2, subtitleIndex: 3, bitrateKbps: bitrate,
+                            source: source, quality: quality) as NSDictionary, "Emby \(label)")
+                        XCTAssertEqual(jellyfin as NSDictionary, Self.legacyBody(
+                            name: "Vivid", start: 754.5, audioIndex: 2, subtitleIndex: 3, bitrateKbps: bitrate,
+                            source: source, quality: quality) as NSDictionary, "Jellyfin \(label)")
+                    }
+                }
             }
         }
+    }
+
+    /// The Emby and Jellyfin PlaybackInfo body as `main` built it at 07ae0da,
+    /// before the device limits, kept verbatim apart from the profile name the
+    /// two cores used (and with `connection.userID` and `sourceID` inlined).
+    private static func legacyBody(name: String, start: Double, audioIndex: Int?, subtitleIndex: Int?,
+                                   bitrateKbps: Int?, source: [String: Any], quality: String?) -> [String: Any] {
+        var body: [String: Any] = ["UserId":"user", "MediaSourceId":"source", "StartTimeTicks":EmbyPlayback.ticks(start),
+            "IsPlayback":true, "AutoOpenLiveStream":false, "EnableDirectPlay":true, "EnableDirectStream":true, "EnableTranscoding":true,
+            "SubtitleStreamIndex":subtitleIndex ?? -1,
+            "DeviceProfile": ["Name":name, "MaxStreamingBitrate": (bitrateKbps ?? 200_000) * 1000,
+                "DirectPlayProfiles":[["Type":"Video", "Container":"mkv,mp4,m4v,mov,avi,ts,m2ts,webm", "VideoCodec":"h264,hevc,av1,mpeg2video,vp9", "AudioCodec":"aac,ac3,eac3,flac,alac,mp3,opus,vorbis,truehd,dts,pcm_s16le,pcm_s24le"]],
+                "TranscodingProfiles":[["Type":"Video", "Container":"ts", "Protocol":"hls", "VideoCodec":"h264", "AudioCodec":"aac", "Context":"Streaming", "MaxAudioChannels":"2", "MinSegments":2, "SegmentLength":6]],
+                "SubtitleProfiles":[["Format":"srt", "Method":"External"], ["Format":"ass", "Method":"External"], ["Format":"ssa", "Method":"External"], ["Format":"vtt", "Method":"External"], ["Format":"pgssub", "Method":"Embed"], ["Format":"dvdsub", "Method":"Embed"]]]]
+        if let bitrateKbps, bitrateKbps > 0 { body["MaxStreamingBitrate"] = bitrateKbps * 1000 }
+        if let audioIndex { body["AudioStreamIndex"] = audioIndex }
+        let hdr = true, dolbyVision = true
+        let video = (source["MediaStreams"] as? [[String:Any]] ?? []).first { $0["Type"] as? String == "Video" } ?? [:]
+        let range = ((video["VideoRangeType"] as? String ?? "") + " " + (video["VideoRange"] as? String ?? "")).lowercased()
+        let isDV = (video["DvProfile"] as? Int ?? 0) > 0 || range.contains("dovi") || range.contains("dolby")
+        let isHDR = isDV || range.contains("hdr") || range.contains("hlg")
+        let height = ApplePlaybackQuality.requestOptions.first { $0.id == quality }?.resolution
+            .split(separator:"p").first.flatMap { Int($0) }
+        var profile = body["DeviceProfile"] as? [String:Any] ?? [:]
+        if let height {
+            profile["CodecProfiles"] = [["Type":"Video","Conditions":[["Condition":"LessThanEqual","Property":"Height","Value":String(height),"IsRequired":false]]]]
+            var transcodes = profile["TranscodingProfiles"] as? [[String:Any]] ?? []
+            for index in transcodes.indices { transcodes[index]["MaxHeight"] = height }
+            profile["TranscodingProfiles"] = transcodes
+        }
+        let resize = height.map { (video["Height"] as? Int ?? 0) > $0 } ?? false
+        if resize || (!hdr && isHDR) || (!dolbyVision && isDV) {
+            body["EnableDirectPlay"] = false
+            body["EnableDirectStream"] = false
+            body["AllowVideoStreamCopy"] = false
+        }
+        body["DeviceProfile"] = profile
+        return body
     }
 
     private func bodies(source: [String: Any], quality: String?,
