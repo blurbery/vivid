@@ -169,7 +169,7 @@ LINK_DEST = r"(?:[^()\s]|\([^()\s]*\))+"
 MD_LINK = re.compile(r"(?<!\\)!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(\s*(?:<([^<>]+)>|(" + LINK_DEST + r"))" + LINK_TITLE + r"\s*\)")
 REF_DEF = re.compile(r"^\s{0,3}\[(?!\^)[^\]]+\]:\s*(?:<([^<>]+)>|(\S+))")
 HTML_ATTR = re.compile(r"""\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", re.IGNORECASE)
-HTML_ID = re.compile(r"""<[a-z][^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+HTML_ID = re.compile(r"""<[a-z][^>]*\b(?:id|name)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'>]+))""", re.IGNORECASE)
 HEADING = re.compile(r"^\s{0,3}(?:>\s?)*\s{0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$")
 SETEXT = re.compile(r"^\s{0,3}(=+|-+)\s*$")
 HTML_HEADING = re.compile(r"<h([1-6])\b[^>]*>(.*?)</h\1>", re.IGNORECASE | re.DOTALL)
@@ -265,7 +265,8 @@ def heading_text(raw):
             out += value
             continue
         value = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", value)
-        value = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", value)
+        # Inline [text](url) and reference [text][id] links render as their text.
+        value = re.sub(r"\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])", r"\1", value)
         value = re.sub(r"<[^>]+>", "", value)
         value = re.sub(r"(?<!\w)[_*]+|[_*]+(?!\w)", "", value)
         out += html.unescape(value)
@@ -320,7 +321,7 @@ def anchors(text):
                 heading = tag[2]
         if heading is not None:
             found.add(slugger.slug(heading_text(heading)))
-        found.update(name.lower() for name in HTML_ID.findall(line))
+        found.update((a or b or c).lower() for a, b, c in HTML_ID.findall(line))
         previous = "" if heading is not None else line
     return found
 

@@ -3,6 +3,7 @@
 import contextlib
 from importlib.util import module_from_spec, spec_from_file_location
 import io
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -37,12 +38,13 @@ class AnchorTests(unittest.TestCase):
         self.assertEqual(check_docs.slug("[Link](x.md) heading"), "link-heading")
         self.assertEqual(check_docs.slug("`Array<T>` and _emphasis_ in snake_case"), "arrayt-and-emphasis-in-snake_case")
         self.assertEqual(check_docs.slug("Logo ![mark](logo.png) guide"), "logo--guide")
+        self.assertEqual(check_docs.slug("[Guide][guide] notes"), "guide-notes")
 
     def test_repeats_ids_fences_and_setext(self):
         found = check_docs.anchors(
-            "# Notes\n## Notes\n## Notes 1\n<a id=\"Custom\"></a>\n```\n# Not a heading\n```\n"
+            "# Notes\n## Notes\n## Notes 1\n<a id=\"Custom\"></a>\n<a name=bare></a>\n```\n# Not a heading\n```\n"
             "<h1 align=\"center\">Vivid Guide</h1>\n\nSetext title\n===\n\n> ## Quoted\n")
-        self.assertEqual(found, {"notes", "notes-1", "notes-1-1", "custom", "vivid-guide", "setext-title", "quoted"})
+        self.assertEqual(found, {"notes", "notes-1", "notes-1-1", "custom", "bare", "vivid-guide", "setext-title", "quoted"})
 
     def test_rule_after_a_fence_is_not_a_heading(self):
         self.assertEqual(check_docs.anchors("Text\n```\nx\n```\n---\n"), set())
@@ -255,8 +257,12 @@ class RepositoryTests(unittest.TestCase):
     def run_main(self, *args):
         output = io.StringIO()
         # The scratch repository has none of the docs the real map names.
+        # Plain output, as a local run prints it, even when the tests run on
+        # GitHub Actions.
         with mock.patch.object(sys, "argv", ["check-docs.py", *args]), \
-                mock.patch.object(check_docs, "DOC_MAP", []), contextlib.redirect_stdout(output):
+                mock.patch.object(check_docs, "DOC_MAP", []), \
+                mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "", "GITHUB_STEP_SUMMARY": ""}), \
+                contextlib.redirect_stdout(output):
             code = check_docs.main()
         return code, output.getvalue()
 
