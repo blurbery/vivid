@@ -63,9 +63,10 @@ def uses_values(line):
                     index += 2
                     continue
                 quote = None
-        elif char in ("'", '"') and (index == 0 or line[index - 1].isspace() or line[index - 1] in "{,:[?"):
-            # A quote only opens a scalar at the start of a value; one inside
-            # a plain scalar, such as it's, is just text.
+        elif char in ("'", '"') and line[:index].rstrip()[-1:] in ("", "{", ",", ":", "[", "?", "-"):
+            # A quote only opens a scalar when it starts a value or key: at the
+            # start of the line, or after {, ",", :, [, ? or a dash. One inside
+            # a plain scalar, as in it's or the 'x, is just text.
             quote = char
         elif char == "#" and (index == 0 or line[index - 1].isspace()):
             break
