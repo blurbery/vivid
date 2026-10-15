@@ -35,7 +35,7 @@ Check [Apple’s submission requirements](https://developer.apple.com/app-store/
 
 Check that Production contains `VividAccountVault` with encrypted `payload`, separately from inspecting signed entitlements. Test restoration using an existing configured installation and another device. See [restore troubleshooting](../server-connections.md#restore-and-troubleshooting); do not uninstall the only populated copy to test sync.
 
-Uploads can use Xcode Organizer or the equivalent signed `xcodebuild -exportArchive` flow. New Fastlane upload automation is optional and must use Vivid’s registered app identity. Keep credentials and signing material out of this repository.
+Uploads can use Xcode Organizer or the equivalent signed `xcodebuild -exportArchive` flow. New upload automation is optional and must use Vivid’s registered app identity. Keep credentials and signing material out of this repository.
 
 ## Check the distribution archive
 
@@ -154,10 +154,8 @@ Start from this text and add the server details in App Store Connect:
 >
 > Diagnostics reports stay on the device unless the person chooses Send in Settings → Diagnostics, where they can see exactly what is sent.
 
-## GitHub and unsigned sideload builds
+## GitHub workflows
 
-The source-release workflow creates GitHub source releases only. The other workflows, listed under [release validation](versioning.md#validation), run checks or unsigned builds; an active workflow is not proof that Apple distribution has been configured or validated. Use the existing standard runners for approved regression validation, without enabling paid capacity.
+The source-release workflow creates GitHub source releases only. The other workflows, listed under [release validation](versioning.md#validation), run checks or unsigned device builds; an active workflow is not proof that Apple distribution has been configured or validated. Use the existing standard runners for approved regression validation, without enabling paid capacity.
 
-The retained Fastlane lanes are `ios ipa_ios_unsigned` and `ios ipa_tvos_unsigned`. They build unsigned IPAs for later re-signing; they do not manage Keychains, read Apple API credentials or upload to TestFlight. The root Ruby/Fastlane pins remain because those lanes use them; Dependabot opens pull requests for them only to fix security problems. An unsigned IPA is not directly installable and cannot be uploaded to TestFlight. Re-signing must handle embedded extensions and matching entitlements; missing App Groups prevent shared extension features such as Top Shelf from working.
-
-The sideload workflow still uses a separate build-tag and release-title format that does not match Vivid’s [source release rules](versioning.md). It starts on manual dispatch and on any pushed `v*` tag; for a tag that already has a release, it renames that release to `vX.Y.Z (Build N)` and attaches the IPAs. As of 13 October 2026, GitHub showed no runs of it. Adapt and validate that publishing step before dispatching it or pushing a `v*` tag by hand; it must not replace the version-only title and bullet-only source release notes.
+Vivid's Apple beta builds are distributed through TestFlight only. The unsigned sideload IPA builds and their Fastlane lanes were removed, along with the Ruby tooling they needed.

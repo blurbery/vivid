@@ -23,9 +23,8 @@ iosApp/Vivid.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
 iosApp/.spm-packages/
 iosApp/Pods/
 
-# Fastlane build outputs (IPAs, archives from the ipa_*_unsigned lanes)
+# Local build outputs
 build/
-fastlane/README.md
 
 # Local signing and secrets
 iosApp/Signing/Local.xcconfig
@@ -42,13 +41,6 @@ iosApp/Signing/Local.xcconfig
 *.dSYM/
 *.xcresult/
 *.ipa
-
-# Ruby / Fastlane
-vendor/bundle/
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots/
-fastlane/test_output/
 
 # Local agent/tooling state
 /.agents/

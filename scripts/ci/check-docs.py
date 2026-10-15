@@ -26,7 +26,7 @@ but doesn't fail the change, and the change is also checked for:
   already named and missing before the change, or the line reads as history
   ("the previous script, now removed").
   Only paths inside a top-level folder are checked (scripts/ci/check-pr.py,
-  not Gemfile or a bare engine/). Ignored local files outside docs/ (for
+  not package.json or a bare engine/). Ignored local files outside docs/ (for
   example iosApp/Signing/Local.xcconfig) are fine, and paths with wildcards
   or placeholders are not checked;
 - em dashes on added lines of Markdown and HTML files and the issue templates;
@@ -131,23 +131,16 @@ DOC_MAP = [
          ["docs/release/versioning.md"],
          "docs/release/versioning.md describes how releases and their notes are made.",
          exclude=["scripts/release/*.test.mjs"]),
-    Rule("Sideload builds",
-         ["fastlane/**", "Gemfile", "Gemfile.lock", ".ruby-version",
-          ".github/workflows/sideload-ipa.yml", "scripts/ci/resolve-*.sh"],
-         ["docs/release/distribution.md", "docs/release/versioning.md"],
-         "docs/release/distribution.md and docs/release/versioning.md describe the unsigned sideload builds.",
-         exclude=["scripts/ci/*.test.sh"]),
     Rule("CI workflows",
          [".github/workflows/**"],
          ["docs/release/versioning.md"],
          "The Validation section of docs/release/versioning.md describes each workflow's triggers and jobs, "
-         "or links to the guide that does.",
-         exclude=[".github/workflows/sideload-ipa.yml"]),
+         "or links to the guide that does."),
     Rule("CI scripts",
          ["scripts/ci/**"],
          ["docs/release/versioning.md"],
          "The Validation section of docs/release/versioning.md names every script in scripts/ci/.",
-         exclude=["scripts/ci/*.test.sh"], inventory=True),
+         inventory=True),
     Rule("Diagnostics relay",
          ["diagnostics-relay/**"],
          ["docs/diagnostics-relay.md"],

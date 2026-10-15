@@ -165,10 +165,6 @@ class ChangeTests(unittest.TestCase):
         # Workflow edits still need the Validation section.
         self.assertEqual(len(check_docs.check_doc_map({".github/workflows/player-regression.yml": "M"}, set())[0]), 1)
 
-    def test_sideload_workflow_takes_either_doc(self):
-        changed = {".github/workflows/sideload-ipa.yml": "M", "docs/release/distribution.md": "M"}
-        self.assertEqual(check_docs.check_doc_map(changed, set())[0], [])
-
     def test_player_bridge_files_need_the_architecture_guide(self):
         added = {"iosApp/iosApp/Playback/MPV/NewPart.swift": "A", "docs/cores/player-engine.md": "M"}
         problems, _ = check_docs.check_doc_map(added, set())

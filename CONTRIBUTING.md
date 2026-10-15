@@ -33,7 +33,7 @@ xcodebuild build -project Vivid.xcodeproj -scheme VividTV \
 
 For physical devices, use the ignored `iosApp/Signing/Local.xcconfig` override described in [the signing sample](iosApp/Signing/Local.xcconfig.sample). Keep credentials and personal signing details out of Git. Use `blurbery` and its GitHub noreply address for maintainer commits. Public reports should identify the relevant hardware, OS and revision without personal names, private device labels, server addresses, account identifiers or local upload times. Preserve third-party licence and copyright notices. Current-file edits do not remove disclosures from Git history; history changes need separate owner approval. Use a running server for the provider being checked: Silo, Emby or Jellyfin. Keep each provider's integration checks separate and consult its core guide for supported features and device-verification gaps. Generated media fixtures cover focused engine checks without a server.
 
-The release tooling in `package.json` needs Node.js 24.10 or later; its checks are listed under [release validation](docs/release/versioning.md#validation). The unsigned sideload lanes use the root `Gemfile` with Ruby 3.2 (pinned in `.ruby-version`) and are described in [App Distribution](docs/release/distribution.md#github-and-unsigned-sideload-builds).
+The release tooling in `package.json` needs Node.js 24.10 or later; its checks are listed under [release validation](docs/release/versioning.md#validation). The action pin check (`scripts/ci/check-action-pins.py`) parses workflows with the `ruby` command, which GitHub's runners include; to run it locally, have `ruby` on your `PATH`.
 
 ## Pull requests and repository control
 
