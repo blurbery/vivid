@@ -48,7 +48,7 @@ jobs:
     outputs:
       engine: ${{ steps.filter.outputs.engine }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'pull_request'
         with:
           persist-credentials: false
@@ -103,7 +103,7 @@ jobs:
       matrix:
         slice: [ios-arm64, ios-arm64-simulator, tvos-arm64, tvos-arm64-simulator]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Check that every fetch is pinned and allowlisted
@@ -113,7 +113,7 @@ jobs:
           xcode-version: '26.6'
       - name: Restore pinned downloads
         id: downloads
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-downloads
           key: lucid-engine-downloads-${{ hashFiles('engine/pins.ini') }}
@@ -122,7 +122,7 @@ jobs:
       # Saved straight after fetching, so a failed build does not lose them.
       - name: Save pinned downloads
         if: steps.downloads.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-downloads
           key: lucid-engine-downloads-${{ hashFiles('engine/pins.ini') }}
@@ -137,7 +137,7 @@ jobs:
       # own key is unchanged and builds the others.
       - name: Restore dependency builds
         id: depcache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-deps-cache
           key: lucid-engine-deps-${{ matrix.slice }}-key-${{ steps.depkey.outputs.key }}
@@ -171,7 +171,7 @@ jobs:
           fi
       - name: Save dependency builds
         if: always() && steps.depsave.outputs.key != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-deps-cache
           key: ${{ steps.depsave.outputs.key }}
@@ -209,7 +209,7 @@ jobs:
           python3 engine/lucid.py test --slice "$SLICE" \
             --work "$RUNNER_TEMP/lucid-engine" --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Upload ${{ matrix.slice }} frameworks and provenance
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lucid-engine-slice-${{ matrix.slice }}
           path: ${{ runner.temp }}/lucid-engine/out/${{ matrix.slice }}
@@ -217,7 +217,7 @@ jobs:
           retention-days: 3
       - name: Upload build logs
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lucid-engine-logs-${{ matrix.slice }}
           path: ${{ runner.temp }}/lucid-engine/out/${{ matrix.slice }}
@@ -231,7 +231,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Check that every fetch is pinned and allowlisted
@@ -241,7 +241,7 @@ jobs:
           xcode-version: '26.6'
       - name: Restore pinned downloads
         id: downloads
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-downloads
           key: lucid-engine-libdovi-test-downloads-${{ hashFiles('engine/pins.ini') }}
@@ -251,7 +251,7 @@ jobs:
             --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Save pinned downloads
         if: steps.downloads.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-downloads
           key: lucid-engine-libdovi-test-downloads-${{ hashFiles('engine/pins.ini') }}
@@ -261,7 +261,7 @@ jobs:
             --work "$RUNNER_TEMP/lucid-libdovi-test" --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Upload the libdovi test report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lucid-engine-libdovi-test
           path: |
@@ -279,7 +279,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Check that every fetch is pinned and allowlisted
@@ -289,7 +289,7 @@ jobs:
           xcode-version: '26.6'
       - name: Restore pinned downloads
         id: downloads
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-downloads
           key: lucid-engine-libass-test-downloads-${{ hashFiles('engine/pins.ini') }}
@@ -302,7 +302,7 @@ jobs:
             --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Save pinned downloads
         if: steps.downloads.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/lucid-downloads
           key: lucid-engine-libass-test-downloads-${{ hashFiles('engine/pins.ini') }}
@@ -315,7 +315,7 @@ jobs:
             --work "$RUNNER_TEMP/lucid-libass-test" --downloads "$RUNNER_TEMP/lucid-downloads"
       - name: Upload the libass test report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lucid-engine-libass-test
           path: |
@@ -329,13 +329,13 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: '26.6'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: lucid-engine-slice-*
           path: ${{ runner.temp }}/lucid-slices
@@ -344,7 +344,7 @@ jobs:
           python3 engine/lucid.py package \
             --input "$RUNNER_TEMP/lucid-slices" --out "$RUNNER_TEMP/lucid-engine-release"
       - name: Upload xcframeworks
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lucid-engine-xcframeworks
           path: ${{ runner.temp }}/lucid-engine-release
