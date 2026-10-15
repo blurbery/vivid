@@ -300,3 +300,134 @@ enum AppleDecodeCapabilities {
         #endif
     }
 }
+
+/// The video half of the `DeviceProfile` Emby and Jellyfin both read from a
+/// PlaybackInfo request. Each core still builds and sends its own request;
+/// this only states what this device can decode, in that shared vocabulary.
+///
+/// Devices on the Vivid declaration (Apple TV 4K, iPhone and iPad) keep the
+/// cores' existing direct-play list with no device ceiling, because Vivid's
+/// load-time probe picks native or software decode there. Platform-attested
+/// devices (Apple TV HD and the simulators) only claim what
+/// `AppleDecodeCapabilities.videoDecodeAttestation()` covers, each codec
+/// within its own envelope, under the device's decode ceiling, so the server
+/// transcodes anything larger to H.264 HLS instead of leaving a weak CPU to
+/// software-decode it.
+struct DeviceProfileVideoLimits: Equatable, Sendable {
+    struct CodecEnvelope: Equatable, Sendable {
+        let codec: String
+        let maxWidth: Int
+        let maxHeight: Int
+        let maxFrameRate: Double
+        let maxBitDepth: Int
+        /// The attested profiles, empty when any profile is accepted.
+        /// Jellyfin matches profile names without regard to case.
+        let profiles: [String]
+        /// Only software envelopes carry a bitrate ceiling. Hardware decode
+        /// copes with ordinary remux bitrates, which the server already
+        /// bounds through `MaxStreamingBitrate`.
+        let maxBitrate: Int?
+    }
+
+    let videoCodecs: [String]
+    let maxWidth: Int?
+    let maxHeight: Int?
+    let codecEnvelopes: [CodecEnvelope]
+
+    /// The Emby and Jellyfin direct-play vocabulary. It narrows
+    /// `AppleDecodeCapabilities.vividOriginalHTTPVideoCodecs`, and the
+    /// attested profile only narrows it further.
+    static let directPlayVideoCodecs = ["h264", "hevc", "av1", "mpeg2video", "vp9"]
+
+    static let declared = DeviceProfileVideoLimits(
+        videoCodecs: directPlayVideoCodecs,
+        maxWidth: nil,
+        maxHeight: nil,
+        codecEnvelopes: []
+    )
+
+    static let current = make(
+        mode: AppleDecodeCapabilities.streamingVideoCapabilityMode,
+        attestation: AppleDecodeCapabilities.videoDecodeAttestation(),
+        maxWidth: AppleDecodeCapabilities.maxDecodeWidth,
+        maxHeight: AppleDecodeCapabilities.maxDecodeHeight
+    )
+
+    static func make(
+        mode: AppleDecodeCapabilities.StreamingVideoCapabilityMode,
+        attestation: [AppleVideoDecodeCapability],
+        maxWidth: Int,
+        maxHeight: Int
+    ) -> DeviceProfileVideoLimits {
+        guard mode == .platformAttested else { return declared }
+        let envelopes: [CodecEnvelope] = directPlayVideoCodecs.compactMap { codec in
+            let entries = attestation.filter { $0.codec == codec }
+            // Conditions in one codec profile all have to hold, so a profile
+            // cannot also describe a narrower software envelope beside the
+            // hardware one. The hardware envelope wins and H.264 High 10
+            // transcodes.
+            guard let entry = entries.first(where: \.hardware) ?? entries.first else { return nil }
+            return CodecEnvelope(
+                codec: codec,
+                maxWidth: min(entry.maxWidth, maxWidth),
+                maxHeight: min(entry.maxHeight, maxHeight),
+                maxFrameRate: entry.maxFrameRate,
+                maxBitDepth: entry.bitDepths.max() ?? 8,
+                profiles: entry.profiles,
+                maxBitrate: entry.hardware ? nil : entry.maxBitrateKbps * 1_000
+            )
+        }
+        return DeviceProfileVideoLimits(
+            videoCodecs: envelopes.map(\.codec),
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+            codecEnvelopes: envelopes
+        )
+    }
+
+    /// The height a request may direct play or transcode to: the lower of the
+    /// device ceiling and the selected quality's resolution.
+    func effectiveMaxHeight(qualityHeight: Int?) -> Int? {
+        [maxHeight, qualityHeight].compactMap { $0 }.min()
+    }
+
+    /// `CodecProfiles` for the request. One profile without a codec carries
+    /// the overall ceiling, then each attested codec carries its envelope.
+    /// With no device ceiling and no quality cap this is empty.
+    func codecProfiles(qualityHeight: Int?) -> [[String: Any]] {
+        var overall: [[String: Any]] = []
+        if let maxWidth { overall.append(Self.condition("Width", maxWidth)) }
+        if let height = effectiveMaxHeight(qualityHeight: qualityHeight) {
+            overall.append(Self.condition("Height", height))
+        }
+        var profiles: [[String: Any]] = overall.isEmpty ? [] : [["Type": "Video", "Conditions": overall]]
+        for envelope in codecEnvelopes {
+            var conditions = [
+                Self.condition("Width", envelope.maxWidth),
+                Self.condition("Height", envelope.maxHeight),
+                Self.condition("VideoFramerate", envelope.maxFrameRate),
+                Self.condition("VideoBitDepth", envelope.maxBitDepth)
+            ]
+            if let maxBitrate = envelope.maxBitrate {
+                conditions.append(Self.condition("VideoBitrate", maxBitrate))
+            }
+            if !envelope.profiles.isEmpty {
+                conditions.append(["Condition": "EqualsAny", "Property": "VideoProfile",
+                                   "Value": envelope.profiles.joined(separator: "|"), "IsRequired": false])
+            }
+            profiles.append(["Type": "Video", "Codec": envelope.codec, "Conditions": conditions])
+        }
+        return profiles
+    }
+
+    /// Unknown stream values still pass (`IsRequired` false), as the quality
+    /// cap always has.
+    private static func condition(_ property: String, _ value: Int) -> [String: Any] {
+        ["Condition": "LessThanEqual", "Property": property, "Value": String(value), "IsRequired": false]
+    }
+
+    private static func condition(_ property: String, _ value: Double) -> [String: Any] {
+        let text = value.rounded() == value ? String(Int(value)) : String(value)
+        return ["Condition": "LessThanEqual", "Property": property, "Value": text, "IsRequired": false]
+    }
+}

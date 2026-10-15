@@ -193,7 +193,7 @@ final class JellyfinAdapterTests: XCTestCase {
             "DeviceProfile": ["TranscodingProfiles": [["Type": "Video"]]]]
         JellyfinPlayback.applyPlaybackLimits(to: &body,
             source: ["MediaStreams": [["Type": "Video", "Height": 2160]]],
-            quality: "1080p-high", hdr: true, dolbyVision: true)
+            quality: "1080p-high", hdr: true, dolbyVision: true, device: .declared)
         XCTAssertEqual(body["EnableDirectPlay"] as? Bool, false)
         XCTAssertEqual(body["AllowVideoStreamCopy"] as? Bool, false)
         let profile = try XCTUnwrap(body["DeviceProfile"] as? [String: Any])
