@@ -278,11 +278,9 @@ extension PlayerViewModel {
             hasStartedPlayback = false
             completedPlaybackContentId = nil
         } else if request.startFromBeginning {
-            // This load restarts at 0 whatever resume override it carries
-            // (a retry or seek reload can repeat a Play from Beginning), and
-            // that zero isn't a watched position until its first frame.
-            // `copyForRecovery` drops `startFromBeginning`, so recovery reloads
-            // keep the latch.
+            // An explicit Play from Beginning of the same item restarts at 0,
+            // which isn't a watched position until its first frame. Reloads of
+            // an item that has played resume in place and keep the latch.
             hasStartedPlayback = false
         }
         let pendingNaturalEndProgressTask = naturalEndProgressTask

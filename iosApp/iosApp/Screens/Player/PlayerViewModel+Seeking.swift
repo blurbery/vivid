@@ -276,7 +276,7 @@ extension PlayerViewModel {
                     }
                 } else if let request = self.lastLoadRequest {
                     self.beginFreshLoad(
-                        request: request,
+                        request: request.resumingInPlace(),
                         progressPosition: self.seekOriginTime,
                         resumePositionOverride: sourceSeconds,
                         allowNearEndResume: true
