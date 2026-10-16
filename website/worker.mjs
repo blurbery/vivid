@@ -50,7 +50,8 @@ export default {
       }
       response.headers.set('Accept-Ranges', 'bytes');
       for (const [name, value] of Object.entries(security)) response.headers.set(name, value);
-      if (response.status === 200 || response.status === 206) response.headers.set('Cache-Control', url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
+      // A 304 keeps the policy of the file it revalidates; only errors skip the cache.
+      if ([200, 206, 304].includes(response.status)) response.headers.set('Cache-Control', url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
       else response.headers.set('Cache-Control', 'no-store');
       return response;
     }
