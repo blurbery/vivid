@@ -74,21 +74,21 @@ struct ServiceAcknowledgementsView: View {
 
     private var pageSpacing: CGFloat {
         #if os(tvOS)
-        16
+        TVSettingsLayout.scaled(16)
         #else
         28
         #endif
     }
     private var cardSpacing: CGFloat {
         #if os(tvOS)
-        10
+        TVSettingsLayout.scaled(10)
         #else
         14
         #endif
     }
     private var cardPadding: CGFloat {
         #if os(tvOS)
-        16
+        TVSettingsLayout.scaled(16)
         #else
         24
         #endif

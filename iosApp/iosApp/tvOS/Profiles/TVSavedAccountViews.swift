@@ -550,18 +550,18 @@ struct TVSavedAccountEditor: View {
             case .results:
                 if !household.profiles.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 32) {
+                        HStack(alignment: .top, spacing: TVSettingsLayout.scaled(32)) {
                             ForEach(household.profiles) { profile in
                                 Button { Task { await household.choose(profile, for: account) } } label: {
                                     SiloHouseholdTile(profile: profile, account: account,
                                                       isAdding: household.addingID == profile.id,
-                                                      avatarSize: 108)
+                                                      avatarSize: TVSettingsLayout.scaled(108))
                                 }
-                                .buttonStyle(TVAccountCircleStyle())
+                                .buttonStyle(TVAccountCircleStyle(scale: TVSettingsLayout.scale))
                                 .disabled(household.addingID != nil)
                             }
                         }
-                        .padding(24)
+                        .padding(TVSettingsLayout.scaled(24))
                     }
                     .scrollClipDisabled()
                     .focusSection()
