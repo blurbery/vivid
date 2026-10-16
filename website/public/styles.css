@@ -37,8 +37,10 @@ img,video{display:block;max-width:100%}
 .nav-link{background:rgba(255,255,255,.08);color:var(--soft)}
 .nav-link:hover{background:rgba(255,255,255,.14)}
 
-/* Scroll stories: a tall section with a pinned stage. app.js writes --q, the
-   intro progress, and marks the active step. */
+/* Scroll stories: a tall section with a pinned stage. The intro motion runs
+   on a scroll timeline where supported (see the @supports block below);
+   otherwise app.js writes --q, the intro progress. app.js always marks the
+   active step. */
 .story{position:relative;--q:0;--qs:clamp(0,(var(--q) - .45) * 1.82,1)}
 .story-tv{height:560vh;height:560svh}
 .story-phone{height:540vh;height:540svh}
@@ -52,7 +54,7 @@ img,video{display:block;max-width:100%}
 .screen{position:relative;overflow:hidden;background:#000}
 .shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.025);transition:opacity .8s var(--ease),transform 1.6s var(--ease)}
 /* Screens get their own layers while their story is near, so a step change never builds one mid-fade. */
-.story.is-near .shot,.story.is-near .ambient,.tv-echo .tv{will-change:opacity,transform}
+.story.is-near .shot,.story.is-near .ambient,.story.is-near .tv-echo .tv{will-change:opacity,transform}
 .shot.was-active{z-index:1;opacity:1;transform:none;transition:none}
 .shot.is-active{z-index:2;opacity:1;transform:none}
 
@@ -161,16 +163,16 @@ body:not(.home){background:radial-gradient(70% 520px at 50% -120px,rgba(118,128,
   @media (prefers-reduced-motion:no-preference){
     .story-tv{view-timeline:--tv-story block}
     .story-phone{view-timeline:--phone-story block}
-    .story-tv .tv{animation:tv-intro linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
-    .story-tv .hero-copy{animation:hero-out linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
-    .story-tv .ambient{animation:glow-up linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
-    .story-tv .captions,.story-tv .progress{animation:fade-in linear both;animation-timeline:--tv-story;animation-range:contain 16% contain 20%}
+    .story-tv .tv{animation:tv-intro 1ms linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
+    .story-tv .hero-copy{animation:hero-out 1ms linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
+    .story-tv .ambient{animation:glow-up 1ms linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
+    .story-tv .captions,.story-tv .progress{animation:fade-in 1ms linear both;animation-timeline:--tv-story;animation-range:contain 16% contain 20%}
     .story-tv .ambient img.is-active{opacity:.48}
-    .phone{animation:phone-intro linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
-    .phone-copy{animation:phone-copy-out linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
-    .tv-echo .tv{animation:echo-out linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
-    .story-phone .ambient{animation:fade-in linear both;animation-timeline:--phone-story;animation-range:contain 11.7% contain 26%}
-    .story-phone .captions,.story-phone .progress{animation:fade-in linear both;animation-timeline:--phone-story;animation-range:contain 22% contain 26%}
+    .phone{animation:phone-intro 1ms linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
+    .phone-copy{animation:phone-copy-out 1ms linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
+    .tv-echo .tv{animation:echo-out 1ms linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
+    .story-phone .ambient{animation:fade-in 1ms linear both;animation-timeline:--phone-story;animation-range:contain 11.7% contain 26%}
+    .story-phone .captions,.story-phone .progress{animation:fade-in 1ms linear both;animation-timeline:--phone-story;animation-range:contain 22% contain 26%}
     .story-phone .ambient img.is-active{opacity:.42}
   }
 }

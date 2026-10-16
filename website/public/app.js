@@ -7,7 +7,8 @@
   const clamp = value => Math.min(1, Math.max(0, value));
 
   // Each story is a tall section with a pinned stage. Its first stretch is
-  // the intro (written to --q for the CSS transforms); the rest is split
+  // the intro, which runs on a CSS scroll timeline where supported and is
+  // otherwise written to --q for the CSS transforms; the rest is split
   // evenly between the steps, which swap screens and captions.
   const stories = [...document.querySelectorAll('.story')].map(section => {
     const steps = Number(section.dataset.steps) || 1;
