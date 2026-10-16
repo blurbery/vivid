@@ -1,16 +1,20 @@
 (() => {
   'use strict';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  // styles.css runs the intro motion on a scroll timeline where supported,
+  // so the script only writes --q for other browsers and for Reduce Motion.
+  const scrollTimelines = CSS.supports?.('animation-timeline: view()') ?? false;
   const clamp = value => Math.min(1, Math.max(0, value));
 
   // Each story is a tall section with a pinned stage. Its first stretch is
-  // the intro (written to --q for the CSS transforms); the rest is split
+  // the intro, which runs on a CSS scroll timeline where supported and is
+  // otherwise written to --q for the CSS transforms; the rest is split
   // evenly between the steps, which swap screens and captions.
   const stories = [...document.querySelectorAll('.story')].map(section => {
     const steps = Number(section.dataset.steps) || 1;
     const groups = ['.shot', '.captions li', '.ambient img', '.progress span'].map(selector => [...section.querySelectorAll(selector)]);
     const videos = [...section.querySelectorAll('video.shot')];
-    return {section, steps, groups, videos, step: 0, q: -1, visible: false};
+    return {section, steps, groups, videos, step: 0, q: 0, written: undefined, visible: false};
   });
 
   // The outgoing screen stays opaque underneath while the next one fades in on
@@ -52,8 +56,11 @@
       // With Reduce Motion, the intro cuts between its start and end layouts
       // halfway through instead of zooming and rising with the scroll.
       const q = reduced.matches ? (progress / intro >= .5 ? 1 : 0) : clamp(progress / intro);
-      if (Math.abs(q - story.q) > .0005) {
-        story.q = q;
+      story.q = q;
+      if (scrollTimelines && !reduced.matches) {
+        if (story.written !== undefined) { story.section.style.removeProperty('--q'); story.written = undefined; }
+      } else if (story.written === undefined || Math.abs(q - story.written) > .0005) {
+        story.written = q;
         story.section.style.setProperty('--q', q.toFixed(4));
       }
       const into = (progress - intro) / (1 - intro);
@@ -78,6 +85,7 @@
       const story = stories.find(item => item.section === entry.target);
       if (!story) return;
       story.visible = entry.isIntersecting;
+      story.section.classList.toggle('is-near', story.visible);
       // Decode every screen before the section arrives, not as each step starts.
       if (story.visible && !story.decoded) {
         story.decoded = true;
