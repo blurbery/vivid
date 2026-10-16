@@ -1,127 +1,143 @@
 (() => {
   'use strict';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const root = document.documentElement;
-  const hero = document.querySelector('.hero');
-  // One document entrance only; scroll-driven logo changes never reset it.
-  if (hero && !reduced.matches && scrollY < 1) root.classList.add('hero-intro-pending');
-  let introFallback;
-  function revealHero(animate = false) {
-    if (!root.classList.contains('hero-intro-pending')) return;
-    clearTimeout(introFallback);
-    root.classList.remove('hero-intro-pending');
-    if (animate && !reduced.matches) root.classList.add('hero-intro-ready');
-  }
-  // Keep the copy available if the artwork or graphics context cannot load.
-  introFallback = setTimeout(() => revealHero(), 5000);
-  hero?.addEventListener('focusin', () => revealHero());
-  addEventListener('scroll', () => { if (scrollY > 0) revealHero(); }, {passive:true});
-  reduced.addEventListener('change', () => { if (reduced.matches) revealHero(); });
-  const renderers = new Map();
-  const visibilityHandlers = new Map();
-  const visible = new Set();
-  let frame = 0;
-  let last = 0;
-  let time = 0;
+  const clamp = value => Math.min(1, Math.max(0, value));
 
-  // One shared, capped clock. Offscreen and background animations do no work.
-  function tick(now) {
-    frame = 0;
-    if (document.hidden || reduced.matches || !visible.size) return;
-    if (now - last >= 1000 / 30) {
-      time += Math.min((now - last) / 1000, 0.05);
-      last = now;
-      visible.forEach(element => renderers.get(element)?.(time));
-    }
-    frame = requestAnimationFrame(tick);
+  // Each story is a tall section with a pinned stage. Its first stretch is
+  // the intro (written to --q for the CSS transforms); the rest is split
+  // evenly between the steps, which swap screens and captions.
+  const stories = [...document.querySelectorAll('.story')].map(section => {
+    const steps = Number(section.dataset.steps) || 1;
+    const groups = ['.shot', '.captions li', '.ambient img', '.progress span'].map(selector => [...section.querySelectorAll(selector)]);
+    const videos = [...section.querySelectorAll('video.shot')];
+    return {section, steps, groups, videos, step: 0, q: -1, visible: false};
+  });
+
+  // The outgoing screen stays opaque underneath while the next one fades in on
+  // top, so nothing behind them ever shows through.
+  function setStep(story, step) {
+    if (story.step === step) return;
+    const previous = story.step;
+    story.step = step;
+    story.groups.forEach((group, kind) => group.forEach((element, index) => {
+      element.classList.toggle('is-active', index === step);
+      if (kind === 0) element.classList.toggle('was-active', index === previous);
+    }));
   }
-  function sync() {
-    cancelAnimationFrame(frame);
-    frame = 0;
-    last = performance.now();
-    if (reduced.matches) renderers.forEach(render => render(1.1));
-    else if (!document.hidden && visible.size) frame = requestAnimationFrame(tick);
-  }
-  const visibility = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-      entry.isIntersecting ? visible.add(entry.target) : visible.delete(entry.target);
-      visibilityHandlers.get(entry.target)?.(entry.isIntersecting);
+
+  function syncVideos(story) {
+    // The Apple TV clip is the hero, so it plays from the top of the page; the
+    // phone clip waits until the phone has risen into view.
+    const ready = story.section.classList.contains('story-tv') || story.q > .5;
+    const play = ready && story.visible && !document.hidden && !reduced.matches;
+    story.videos.forEach(video => {
+      const active = play && Number(video.dataset.step) === story.step;
+      if (active && video.paused) {
+        if (video.preload === 'none') video.preload = 'auto';
+        video.play().catch(() => {});
+      } else if (!active && !video.paused) {
+        video.pause();
+      }
     });
-    sync();
-  });
-  function register(element, render, onVisibility) {
-    renderers.set(element, render);
-    if (onVisibility) visibilityHandlers.set(element, onVisibility);
-    render(reduced.matches ? 1.1 : 0);
-    visibility.observe(element);
   }
-  document.addEventListener('visibilitychange', sync);
-  reduced.addEventListener('change', sync);
 
-  const running = new Set();
-  function settleLogos() {
-    running.forEach(animation => animation.cancel());
-    running.clear();
-    revealHero();
+  function update() {
+    frame = 0;
+    const height = innerHeight;
+    stories.forEach(story => {
+      const rect = story.section.getBoundingClientRect();
+      const distance = rect.height - height;
+      const progress = distance > 0 ? clamp(-rect.top / distance) : 0;
+      const intro = story.section.classList.contains('story-tv') ? .2 : .26;
+      const q = clamp(progress / intro);
+      if (Math.abs(q - story.q) > .0005) {
+        story.q = q;
+        story.section.style.setProperty('--q', q.toFixed(4));
+      }
+      const into = (progress - intro) / (1 - intro);
+      setStep(story, into <= 0 ? 0 : Math.min(story.steps - 1, Math.floor(into * story.steps * 1.12)));
+      syncVideos(story);
+    });
+    nav?.classList.toggle('is-scrolled', scrollY > 8);
   }
-  document.addEventListener('visibilitychange', () => { if (document.hidden) settleLogos(); });
-  reduced.addEventListener('change', () => { if (reduced.matches) settleLogos(); });
-  document.querySelectorAll('.logo-stage').forEach(async stage => {
-    const pieces = [...stage.querySelectorAll('.logo-piece')];
-    const opening = !!stage.closest('.hero');
-    try {
-      await Promise.all(pieces.map(piece => piece.decode()));
-      const observer = new IntersectionObserver(entries => {
-        if (!entries.some(entry => entry.isIntersecting)) return;
-        observer.disconnect();
-        if (reduced.matches || document.hidden || !pieces[0].animate) {
-          if (opening) revealHero();
-          return;
-        }
-        stage.classList.add('is-animated');
-        pieces.forEach((piece, index) => {
-          const animation = piece.animate([
-            {transform:`translate(${index ? 30 : -30}px,-20px)`, opacity:0},
-            {transform:'translate(0,0)', opacity:1}
-          ], {duration:1200, delay:index * 144, easing:'cubic-bezier(.22,.75,.18,1)', fill:'backwards'});
-          running.add(animation);
-          animation.finished.then(() => running.delete(animation), () => running.delete(animation));
+
+  let frame = 0;
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+  const nav = document.querySelector('.nav');
+  addEventListener('scroll', schedule, {passive:true});
+  addEventListener('resize', schedule);
+  document.addEventListener('visibilitychange', schedule);
+  reduced.addEventListener('change', schedule);
+
+  // Only stories near the viewport play video; the phone clip loads as its
+  // section approaches.
+  const nearby = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      const story = stories.find(item => item.section === entry.target);
+      if (!story) return;
+      story.visible = entry.isIntersecting;
+      // Decode every screen before the section arrives, not as each step starts.
+      if (story.visible && !story.decoded) {
+        story.decoded = true;
+        story.section.querySelectorAll('img').forEach(image => {
+          image.loading = 'eager';
+          image.decode?.().catch(() => {});
         });
-        if (opening) setTimeout(() => revealHero(true), 504);
-      }, {threshold:0.15});
-      observer.observe(stage);
-    } catch {
-      if (opening) revealHero();
-    }
-  });
+      }
+    });
+    schedule();
+  }, {rootMargin:'50% 0px'});
+  stories.forEach(story => nearby.observe(story.section));
+  update();
 
-  const canvas = document.querySelector('.stars');
-  const context = canvas?.getContext('2d');
-  if (context) {
-    const points = Array.from({length:420}, (_,i) => ({x:(i*.61803398875)%1,y:(i*.41421356237)%1,r:.35+(i%4)*.17,phase:i*.7}));
-    let width = 0, height = 0;
-    const draw = seconds => {
-      context.clearRect(0,0,width,height);
-      points.forEach(point => {
-        const y = (point.y * height + seconds * 1.3) % height;
-        const edge = Math.sin(Math.PI*y/height);
-        context.fillStyle = `rgba(210,216,229,${(.09+.12*(.5+.5*Math.sin(seconds*.35+point.phase)))*edge})`;
-        context.beginPath(); context.arc(point.x*width,y,point.r,0,Math.PI*2); context.fill();
-      });
-    };
-    new ResizeObserver(() => {
-      width=canvas.clientWidth; height=canvas.clientHeight;
-      const dpr=Math.min(devicePixelRatio,1.5);
-      canvas.width=Math.round(width*dpr); canvas.height=Math.round(height*dpr);
-      context.setTransform(dpr,0,0,dpr,0,0); draw(time);
-    }).observe(canvas);
-    register(canvas,draw);
+  // The Spotlight banners only drift while they're on screen.
+  const marquee = document.querySelector('.marquee');
+  if (marquee) {
+    marquee.classList.add('is-paused');
+    new IntersectionObserver(([entry]) => marquee.classList.toggle('is-paused', !entry.isIntersecting)).observe(marquee);
   }
-  if (!reduced.matches) {
+
+  // Sections rise into place once as they arrive.
+  if (!reduced.matches && 'IntersectionObserver' in window) {
     const reveals = new IntersectionObserver(entries => {
-      entries.forEach(entry => { if(entry.isIntersecting){ entry.target.classList.add('visible'); reveals.unobserve(entry.target); } });
-    }, {threshold:.1});
-    document.querySelectorAll('.reveal').forEach(element => reveals.observe(element));
+      entries.forEach(entry => { if (entry.isIntersecting) { entry.target.classList.add('visible'); reveals.unobserve(entry.target); } });
+    }, {threshold:.15});
+    document.querySelectorAll('.reveal').forEach(element => {
+      const siblings = [...element.parentElement.children].filter(child => child.classList.contains('reveal'));
+      const delay = siblings.indexOf(element) * 80;
+      if (delay) element.style.transitionDelay = `${delay}ms`;
+      reveals.observe(element);
+    });
     document.documentElement.classList.add('motion-ready');
   }
+
+  // The approved Glide entrance: the logo's two pieces slide into place once.
+  const running = new Set();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    running.forEach(animation => animation.finish());
+  });
+  document.querySelectorAll('.logo-stage').forEach(async stage => {
+    const pieces = [...stage.querySelectorAll('.logo-piece')];
+    try {
+      await Promise.all(pieces.map(piece => piece.decode()));
+    } catch {
+      return;
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      observer.disconnect();
+      if (reduced.matches || document.hidden || !pieces[0].animate) return;
+      stage.classList.add('is-animated');
+      pieces.forEach((piece, index) => {
+        const animation = piece.animate([
+          {transform:`translate(${index ? 30 : -30}px,-20px)`, opacity:0},
+          {transform:'translate(0,0)', opacity:1}
+        ], {duration:1200, delay:index * 144, easing:'cubic-bezier(.22,.75,.18,1)', fill:'backwards'});
+        running.add(animation);
+        animation.finished.then(() => running.delete(animation), () => running.delete(animation));
+      });
+    }, {threshold:.15});
+    observer.observe(stage);
+  });
 })();

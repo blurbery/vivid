@@ -1,0 +1,7 @@
+/* Without the script the stories lay out as plain sections. */
+.story{height:auto}
+.story .story-pin{position:relative;height:auto;overflow:visible;padding:calc(var(--nav-h) + 40px) 24px 60px;display:flex;flex-direction:column;align-items:center;gap:40px}
+.story .hero-copy,.story .phone-copy,.story .device{position:static;transform:none;opacity:1}
+.story .captions{position:static;transform:none;opacity:1;width:min(680px,100%);gap:28px;text-align:center}
+.story .captions li{grid-area:auto;opacity:1;transform:none}
+.story .tv-echo,.story .progress,.story .ambient{display:none}
