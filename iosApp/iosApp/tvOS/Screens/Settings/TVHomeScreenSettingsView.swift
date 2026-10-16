@@ -16,7 +16,7 @@ struct TVHomeScreenSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 TVSettingsPageHeader(
                     title: "Home Screen",
                     subtitle: "Choose up to 3 spotlight rows. \(selected.count) selected."
@@ -51,8 +51,8 @@ struct TVHomeScreenSettingsView: View {
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 72)
-            .padding(.vertical, 36)
+            .padding(.horizontal, TVSettingsLayout.scaled(72))
+            .padding(.vertical, TVSettingsLayout.scaled(36))
         }
         .tvSettingsPageSurface()
         .task { await loadSections() }
@@ -63,12 +63,12 @@ struct TVHomeScreenSettingsView: View {
     private func row(id: String, title: String) -> some View {
         let isSelected = selected.contains(id)
         return Button { preferences.toggle(id) } label: {
-            HStack(spacing: 18) {
+            HStack(spacing: TVSettingsLayout.scaled(18)) {
                 TVSettingsRowLabel(title: title)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .frame(width: 44, height: 44)
+                    .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
             }
-            .font(.system(size: 26))
+            .font(.tvSettings(26))
         }
         .buttonStyle(TVSettingsPaneRowStyle())
         .accessibilityValue(isSelected ? "Selected" : "Not selected")

@@ -19,7 +19,7 @@ struct TVDiagnosticsSettingsPane: View {
     private var toSend: [AppHealthReport] { unsent.isEmpty ? reports : unsent }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
             TVSettingsSectionHeader("LATEST PLAYBACK")
             if let latestPlayback {
                 TVSettingsGroup {
@@ -107,7 +107,7 @@ private struct TVDiagnosticsGroupPage: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(24)) {
                 TVSettingsPageHeader(
                     title: group.summary,
                     subtitle: [group.kind.title, group.latest.technicalCode, group.latest.issueID]
@@ -127,7 +127,7 @@ private struct TVDiagnosticsGroupPage: View {
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24).padding(.vertical, 48)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48))
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
@@ -172,20 +172,20 @@ private struct TVDiagnosticsReportPage: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: report.groupSummary, subtitle: report.kind.title)
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(section.title).font(.system(size: 27, weight: .semibold))
+                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
+                        Text(section.title).font(.tvSettings(27, weight: .semibold))
                         ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.system(size: 20, design: .monospaced)).foregroundStyle(.secondary)
+                            Text(line).font(.tvSettings(20, design: .monospaced)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
+                    .padding(TVSettingsLayout.scaled(18))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(14))
                             .strokeBorder(.white.opacity(focusedSection == index ? 0.85 : 0), lineWidth: 2)
                     }
                     .focusable()
@@ -195,7 +195,7 @@ private struct TVDiagnosticsReportPage: View {
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24).padding(.vertical, 48)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48))
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
@@ -249,7 +249,7 @@ private struct TVLatestPlaybackPage: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: "Latest Playback",
                                      subtitle: report.startedAt.formatted(date: .abbreviated, time: .shortened))
                 TVSettingsGroup {
@@ -259,17 +259,17 @@ private struct TVLatestPlaybackPage: View {
                 }
                 TVSettingsFooter("Sends this session to Vivid, where it's emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. It contains no titles, account details or server addresses. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
                 ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(section.title).font(.system(size: 27, weight: .semibold))
+                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(10)) {
+                        Text(section.title).font(.tvSettings(27, weight: .semibold))
                         ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.system(size: 20, design: .monospaced)).foregroundStyle(.secondary)
+                            Text(line).font(.tvSettings(20, design: .monospaced)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
+                    .padding(TVSettingsLayout.scaled(18))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(14))
                             .strokeBorder(.white.opacity(focusedSection == index ? 0.85 : 0), lineWidth: 2)
                     }
                     .focusable()
@@ -279,7 +279,7 @@ private struct TVLatestPlaybackPage: View {
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24).padding(.vertical, 48)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48))
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
@@ -347,7 +347,7 @@ private struct TVDiagnosticsSendPage: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(20)) {
                 TVSettingsPageHeader(title: "Send to Vivid",
                                      subtitle: reports.count == 1 ? "1 report" : "\(reports.count) reports")
                 TVSettingsGroup {
@@ -361,17 +361,17 @@ private struct TVDiagnosticsSendPage: View {
                 }
                 TVSettingsFooter("Sends these reports to Vivid, where they're emailed to \(VividAbout.diagnosticsEmail) and kept for 30 days. Open a report in Diagnostics to see exactly what it contains. Anything you write in the note is sent as written, so leave out passwords and server addresses.")
                 TVSettingsSectionHeader("WHAT IS SENT")
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                     ForEach(AppHealthReportGroup.grouping(reports)) { group in
                         Text(TVDiagnosticsQRCode.summaryLine(for: group))
-                            .font(.system(size: 20, design: .monospaced)).foregroundStyle(.secondary)
+                            .font(.tvSettings(20, design: .monospaced)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .accessibilityElement(children: .combine)
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24).padding(.vertical, 48)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48))
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
@@ -401,19 +401,19 @@ private struct TVDiagnosticsQRPage: View {
 
     var body: some View {
         let code = TVDiagnosticsQRCode.make(for: reports)
-        VStack(spacing: 28) {
-            Text("Send by QR Code").font(.system(size: 42, weight: .bold, design: .rounded))
+        VStack(spacing: TVSettingsLayout.scaled(28)) {
+            Text("Send by QR Code").font(.tvSettings(42, weight: .bold, design: .rounded))
             if let image = code.image {
                 Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
-                    .frame(width: 420, height: 420).padding(24)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 20))
+                    .frame(width: TVSettingsLayout.scaled(420), height: TVSettingsLayout.scaled(420)).padding(TVSettingsLayout.scaled(24))
+                    .background(.white, in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(20)))
                     .accessibilityLabel("Scan to email a diagnostics summary to Vivid")
             }
             Text("Scan with your phone to open an email with a summary of these reports. Review it before sending.")
-                .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 900)
+                .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: TVSettingsLayout.scaled(900))
             if code.omittedGroups > 0 {
                 Text("\(code.omittedGroups) older \(code.omittedGroups == 1 ? "problem" : "problems") didn’t fit in the code.")
-                    .font(.system(size: 20)).foregroundStyle(.secondary)
+                    .font(.tvSettings(20)).foregroundStyle(.secondary)
             }
             Text(VividAbout.diagnosticsEmail)
         }

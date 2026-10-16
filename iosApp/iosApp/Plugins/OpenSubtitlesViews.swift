@@ -10,8 +10,8 @@ struct OpenSubtitlesSettingsView: View {
     var body: some View {
         #if os(tvOS)
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("OpenSubtitles").font(.system(size: 40, weight: .bold, design: .rounded))
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(16)) {
+                Text("OpenSubtitles").font(.tvSettings(40, weight: .bold, design: .rounded))
                 TVSettingsFooter("Find and download subtitles from the detail page or player.")
                 TVSettingsGroup {
                     TVSettingsInfoRow(title: "Status", value: status, showsConnectedDot: store.isConnected && !busy)
@@ -25,7 +25,7 @@ struct OpenSubtitlesSettingsView: View {
                 if let message { TVSettingsFooter(message) }
                 TVSettingsFooter(footer)
             }.frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(48).frame(maxWidth: .infinity)
+                .padding(TVSettingsLayout.scaled(48)).frame(maxWidth: .infinity)
         }.background(SettingsBackdrop()).task { store.reload() }
         #else
         List {

@@ -37,11 +37,11 @@ struct MDBListSettingsView: View {
     var body: some View {
         #if os(tvOS)
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
                 historyHeader
                 TVSettingsGroup {
                     TVSettingsInfoRow(title: "Status", value: connectionStatus, showsConnectedDot: store.isConnected)
-                    if store.isConnected && store.isSyncing { syncProgress.padding(24) }
+                    if store.isConnected && store.isSyncing { syncProgress.padding(TVSettingsLayout.scaled(24)) }
                     if !store.isConnected {
                         TVSettingsFieldRow(title: "Personal API key", detail: "Get your free key at mdblist.com/preferences.") {
                             credentialField
@@ -59,7 +59,7 @@ struct MDBListSettingsView: View {
                 if let message { TVSettingsFooter(message) }
                 TVSettingsFooter(privacy)
             }.frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-                .padding(.horizontal, 24).padding(.vertical, 48).frame(maxWidth: .infinity)
+                .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48)).frame(maxWidth: .infinity)
         }.background(SettingsBackdrop()).task { store.reload() }
         #else
         List {
@@ -122,7 +122,7 @@ struct MDBListSettingsView: View {
                 .foregroundStyle(.secondary)
             Text("Connect your MDBList account.")
                 #if os(tvOS)
-                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .font(.tvSettings(40, weight: .bold, design: .rounded))
                 #else
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 #endif
@@ -146,8 +146,8 @@ struct MDBListSettingsView: View {
     private var integrationLogos: some View {
         let logos = [("Jellyfin", "MDBListJellyfin"), ("Emby", "MDBListEmby")]
         #if os(tvOS)
-        let size: CGFloat = 48
-        let spacing: CGFloat = 16
+        let size: CGFloat = TVSettingsLayout.scaled(48)
+        let spacing: CGFloat = TVSettingsLayout.scaled(16)
         #else
         let size: CGFloat = 32
         let spacing: CGFloat = 8

@@ -10,7 +10,7 @@ struct TVSeerrSettingsPane: View {
     @State private var message: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(18)) {
             TVSettingsSectionHeader("CONNECTION")
             TVSettingsGroup {
                 TVSettingsFieldRow(title: "Seerr URL", detail: "Your Seerr address, including https:// or http://.") {
@@ -48,7 +48,7 @@ struct TVSeerrSettingsPane: View {
                 }
             }
             .disabled(busy)
-            if let message { Text(message).font(.system(size: 20)).foregroundStyle(.secondary).padding(.horizontal, 24) }
+            if let message { Text(message).font(.tvSettings(20)).foregroundStyle(.secondary).padding(.horizontal, TVSettingsLayout.scaled(24)) }
         }
         .onAppear {
             if let config = store.configuration { url = config.url; username = config.username }

@@ -63,25 +63,25 @@ struct ServerListView: View {
     #if os(tvOS)
     private var tvOSContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
+                HStack(spacing: TVSettingsLayout.scaled(20)) {
                     Image(systemName: "server.rack")
-                        .font(.system(size: 27, weight: .medium))
+                        .font(.tvSettings(27, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
-                        .frame(width: 62, height: 62)
+                        .frame(width: TVSettingsLayout.scaled(62), height: TVSettingsLayout.scaled(62))
                         .background(Color(red: 0.12, green: 0.13, blue: 0.15),
-                                    in: RoundedRectangle(cornerRadius: 15.5, style: .continuous))
-                    VStack(alignment: .leading, spacing: 7) {
+                                    in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(15.5), style: .continuous))
+                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(7)) {
                         Text("Manage Servers")
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
+                            .font(.tvSettings(40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("Manage the servers shared by your saved profiles.")
-                            .font(.system(size: 20))
+                            .font(.tvSettings(20))
                             .foregroundColor(.vividSecondaryText)
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 18)
+                .padding(.horizontal, TVSettingsLayout.scaled(24))
+                .padding(.bottom, TVSettingsLayout.scaled(18))
 
                 TVSettingsSectionHeader("SAVED SERVERS")
 
@@ -99,14 +99,14 @@ struct ServerListView: View {
                 NavigationLink {
                     TVProviderSelectionView(addingServer: true)
                 } label: {
-                    HStack(spacing: 16) {
+                    HStack(spacing: TVSettingsLayout.scaled(16)) {
                         Image(systemName: "plus")
-                            .font(.system(size: 22, weight: .semibold))
-                            .frame(width: 28)
+                            .font(.tvSettings(22, weight: .semibold))
+                            .frame(width: TVSettingsLayout.scaled(28))
                         TVSettingsRowLabel(title: "Add Server")
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.tvSettings(18, weight: .semibold))
                             .opacity(0.55)
                     }
                 }
@@ -118,8 +118,8 @@ struct ServerListView: View {
                 if let removalError { TVSettingsFooter(removalError) }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 48)
+            .padding(.horizontal, TVSettingsLayout.scaled(24))
+            .padding(.vertical, TVSettingsLayout.scaled(48))
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
@@ -153,11 +153,11 @@ struct ServerListView: View {
                 removeTarget = entry
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 24, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: 49)
+                    .font(.tvSettings(24, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: TVSettingsLayout.scaled(49))
             }
             .buttonStyle(TVSettingsPaneRowStyle(isDestructive: true))
-            .frame(width: 92)
+            .frame(width: TVSettingsLayout.scaled(92))
             .focused($focusedRow, equals: .remove(entry.id))
             .accessibilityLabel("Remove \(entry.displayName)")
         }
@@ -314,26 +314,26 @@ private struct TVServerSummaryLabel: View {
     let isActive: Bool
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: TVSettingsLayout.scaled(18)) {
             Image(systemName: isActive ? "checkmark.circle.fill" : "server.rack")
-                .font(.system(size: 24, weight: .medium))
-                .frame(width: 34)
+                .font(.tvSettings(24, weight: .medium))
+                .frame(width: TVSettingsLayout.scaled(34))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(4)) {
                 Text(entry.displayName)
-                    .font(.system(size: 26, weight: .medium))
+                    .font(.tvSettings(26, weight: .medium))
                     .lineLimit(1)
                 Text(entry.url)
-                    .font(.system(size: 19))
+                    .font(.tvSettings(19))
                     .opacity(0.62)
                     .lineLimit(1)
             }
 
-            Spacer(minLength: 16)
+            Spacer(minLength: TVSettingsLayout.scaled(16))
 
             if isActive {
                 Text("Active")
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.tvSettings(19, weight: .semibold))
                     .opacity(0.72)
             }
         }

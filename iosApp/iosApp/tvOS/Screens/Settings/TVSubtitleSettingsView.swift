@@ -8,7 +8,7 @@ struct TVSubtitleSettingsPane: View {
     @State private var showResetConfirmation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
             profileSection
             appearanceSection
         }
@@ -74,11 +74,11 @@ struct TVSubtitleSettingsPane: View {
 
         TVSettingsGroup {
             TVSettingsSubtitlePreview(appearance: viewModel.effectiveSubtitleAppearance)
-                .padding(24)
+                .padding(TVSettingsLayout.scaled(24))
             Rectangle()
                 .fill(Color.white.opacity(0.12))
                 .frame(height: 1)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, TVSettingsLayout.scaled(24))
 
             TVSettingsToggleRow(
                 title: "Use Device Settings",

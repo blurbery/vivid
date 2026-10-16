@@ -23,7 +23,7 @@ struct ServiceAcknowledgementsView: View {
 
     private var columns: [GridItem] {
         #if os(tvOS)
-        [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
+        [GridItem(.flexible(), spacing: TVSettingsLayout.scaled(24)), GridItem(.flexible(), spacing: TVSettingsLayout.scaled(24))]
         #else
         [GridItem(.adaptive(minimum: 280), spacing: 20)]
         #endif
@@ -34,13 +34,13 @@ struct ServiceAcknowledgementsView: View {
             VStack(alignment: .leading, spacing: pageSpacing) {
                 Text("Acknowledgements")
                     #if os(tvOS)
-                    .font(.system(size: 42, weight: .bold))
+                    .font(.tvSettings(42, weight: .bold))
                     #else
                     .font(.largeTitle.bold())
                     #endif
                 Text("With thanks to the projects and communities that help make Vivid possible.")
                     #if os(tvOS)
-                    .font(.system(size: 20))
+                    .font(.tvSettings(20))
                     #else
                     .font(.body)
                     #endif
@@ -56,7 +56,7 @@ struct ServiceAcknowledgementsView: View {
             }
             #if os(tvOS)
             .frame(maxWidth: TVSettingsLayout.contentWidth)
-            .padding(20)
+            .padding(TVSettingsLayout.scaled(20))
             #else
             .padding(32)
             .frame(maxWidth: 1160)
@@ -100,21 +100,21 @@ struct ServiceAcknowledgementsView: View {
                 .resizable()
                 .scaledToFit()
                 #if os(tvOS)
-                .frame(width: 120, height: 56)
+                .frame(width: TVSettingsLayout.scaled(120), height: TVSettingsLayout.scaled(56))
                 #else
                 .frame(width: 120, height: 80)
                 #endif
                 .accessibilityHidden(true)
             Text(credit.name)
                 #if os(tvOS)
-                .font(.system(size: 26, weight: .bold))
+                .font(.tvSettings(26, weight: .bold))
                 #else
                 .font(.title3.bold())
                 #endif
             Text(credit.thanks)
                 #if os(tvOS)
-                .font(.system(size: 19))
-                .frame(height: 114, alignment: .top)
+                .font(.tvSettings(19))
+                .frame(height: TVSettingsLayout.scaled(114), alignment: .top)
                 #else
                 .font(.body)
                 .fixedSize(horizontal: false, vertical: true)
@@ -122,7 +122,7 @@ struct ServiceAcknowledgementsView: View {
                 .foregroundStyle(.secondary)
             Text(credit.website)
                 #if os(tvOS)
-                .font(.system(size: 17))
+                .font(.tvSettings(17))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 #else
@@ -134,7 +134,7 @@ struct ServiceAcknowledgementsView: View {
         .padding(cardPadding)
         #if os(tvOS)
         .frame(maxWidth: .infinity)
-        .frame(height: 300)
+        .frame(height: TVSettingsLayout.scaled(300))
         #else
         .frame(maxWidth: .infinity, minHeight: 270)
         #endif
