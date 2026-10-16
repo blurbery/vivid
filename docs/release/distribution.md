@@ -88,7 +88,7 @@ Before conveying any new GPL-covered binary, including through TestFlight:
 
 ## TestFlight information
 
-The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList completed-watch exports and watchlists, OpenSubtitles, both timestamp services and on-device diagnostics reports. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory.
+The website serves the app and website privacy policy at [vividapp.co/privacy](https://vividapp.co/privacy). Keep it aligned with the in-app iOS and tvOS privacy text, including encrypted preference/credential sync, MDBList completed-watch exports and watchlists, OpenSubtitles, both timestamp services and on-device diagnostics reports. Website source is under `website/public`; publishing it is separate from a GitHub source push and an Apple upload. Run the existing website build and Wrangler commands from `website/`, because the custom build resolves `build.mjs` from that working directory. The homepage screenshots and clips in `website/public/media` are too large to build into the Worker, so Wrangler uploads them as Workers static assets and the Worker serves them through its `ASSETS` binding with the same security headers as every other page.
 
 Use `admin@vividapp.co` for feedback. For an uploaded build containing the Jellyfin integration, a starting beta description is:
 

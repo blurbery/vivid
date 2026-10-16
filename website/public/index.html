@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#000000">
   <title>Vivid · Your media. Your Apple devices.</title>
-  <meta name="description" content="Vivid is a native media app for iPhone, iPad and Apple TV. Connect to your own server and make yourself at home.">
+  <meta name="description" content="Vivid is a native media app for Apple TV, iPhone and iPad. Connect to your own Silo, Emby or Jellyfin server and make yourself at home.">
   <link rel="canonical" href="https://vividapp.co/">
   <meta property="og:title" content="Vivid">
   <meta property="og:description" content="Your media. Your Apple devices.">
@@ -13,34 +13,146 @@
   <meta property="og:url" content="https://vividapp.co/">
   <link rel="icon" href="/favicon-951aa75958.png" type="image/png" sizes="512x512">
   <link rel="icon" href="/favicon-e0959b1e2a.svg" type="image/svg+xml" sizes="any">
-  <link rel="preload" href="/fonts/geist-400.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="/styles.css?v=7b2c0eb546">
-  <script src="/app.js?v=029015c174" defer></script>
+  <link rel="preload" href="/fonts/geist-600.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="/media/tv-spotlight.webp" as="image" fetchpriority="high">
+  <link rel="stylesheet" href="/styles.css">
+  <noscript><link rel="stylesheet" href="/noscript.css"></noscript>
+  <script src="/app.js" defer></script>
   <link rel="apple-touch-icon" sizes="1024x1024" href="/apple-touch-icon-f6838b3e82.png">
 </head>
-<body>
+<body class="home">
   <a class="skip" href="#main">Skip to content</a>
-  <header class="nav"><a class="brand" href="/" aria-label="Vivid home"><img src="/logo.png?v=8ecabc3db8" width="28" height="28" alt="">Vivid</a></header>
+  <header class="nav">
+    <a class="brand" href="/" aria-label="Vivid home"><img src="/logo.png" width="28" height="28" alt="">Vivid</a>
+    <nav class="nav-links" aria-label="Sections"><a href="#apple-tv">Apple TV</a><a href="#iphone">iPhone</a><a href="#features">Features</a></nav>
+    <a class="nav-cta" href="#get">Get Vivid</a>
+  </header>
   <main id="main">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="logo-stage"><img src="/logo.png?v=8ecabc3db8" alt="Vivid" width="1254" height="1254"><span class="logo-pieces" aria-hidden="true"><img class="logo-piece" src="/logo-left.svg" alt="" width="1254" height="1254"><img class="logo-piece" src="/logo-right.svg" alt="" width="1254" height="1254"></span></div>
-      <h1 id="hero-title">Your media. Vivid.</h1>
-      <p class="hero-subtitle">Built for iPhone, iPad and Apple TV.</p>
-    </section>
-    <section class="features" aria-labelledby="features-title">
-      <canvas class="stars" aria-hidden="true"></canvas>
-      <div class="section-intro reveal"><h2 id="features-title">Make yourself at home.<br>With your own media.</h2><p>A native Apple app for the films and series on your server.<br class="desktop-break"> Browse your library, pick an episode and settle in.</p></div>
-      <div class="feature-grid">
-        <article class="reveal"><h3>Continue watching</h3><p>Pick up where you left off. Your next episode and unfinished films, right on the home screen.</p></article>
-        <article class="reveal"><h3>Made for Apple</h3><p>Designed for touch on iPhone and iPad, and the remote on Apple TV.</p></article>
-        <article class="reveal"><h3>Playback across Apple devices</h3><p>Lucid Engine on Apple TV, iPhone and iPad, with Vivid’s controls, embedded subtitles and chapters.</p></article>
-        <article class="reveal"><h3>A home for your library</h3><p>Films, series, artwork and the details you want, brought together in a clean, familiar layout.</p></article>
-        <article class="reveal"><h3>Keep moving</h3><p>Move through seasons and episodes with artwork warmed ahead of you and browsing that keeps up.</p></article>
-        <article class="reveal"><h3>Your choice of server</h3><p>Connect to Silo, Emby or Jellyfin on iPhone, iPad and Apple TV. Features and device coverage vary by server.</p></article>
+    <section class="story story-tv" id="apple-tv" aria-labelledby="hero-title" data-steps="4">
+      <div class="story-pin">
+        <div class="ambient" aria-hidden="true">
+          <img class="is-active" data-step="0" src="/media/glow-tv-spotlight.webp" alt="" width="48" height="27">
+          <img data-step="1" src="/media/glow-tv-home.webp" alt="" width="48" height="27">
+          <img data-step="2" src="/media/glow-tv-detail.webp" alt="" width="48" height="27">
+          <img data-step="3" src="/media/glow-tv-episodes.webp" alt="" width="48" height="27">
+        </div>
+        <div class="hero-copy">
+          <p class="eyebrow">Vivid for Apple TV, iPhone and iPad</p>
+          <h1 id="hero-title">Your media.<br><span class="silver">Vivid.</span></h1>
+          <p class="hero-sub">A native Apple home for the films and series on your own server.</p>
+        </div>
+        <figure class="device tv">
+          <div class="screen">
+            <video class="shot is-active" data-step="0" src="/media/tv-spotlight.mp4" poster="/media/tv-spotlight.webp" width="1920" height="1080" muted loop playsinline preload="auto" aria-label="Vivid's Apple TV Home, with Spotlight moving through Silo, The Boys, Superman, The Avengers and Dune: Part Two"></video>
+            <img class="shot" data-step="1" src="/media/tv-home.webp" width="2400" height="1350" loading="lazy" decoding="async" alt="Apple TV Home with Silo in Spotlight above the Studios and Networks and Continue Watching rows">
+            <img class="shot" data-step="2" src="/media/tv-detail.webp" width="2400" height="1350" loading="lazy" decoding="async" alt="The Superman detail page on Apple TV, with its logo, formats, rating and Play button over full-screen artwork">
+            <img class="shot" data-step="3" src="/media/tv-episodes.webp" width="2400" height="1350" loading="lazy" decoding="async" alt="Season one episodes of The Boys on Apple TV, followed by its trailers">
+          </div>
+          <figcaption class="visually-hidden">Vivid on Apple TV</figcaption>
+        </figure>
+        <ol class="captions">
+          <li class="is-active" data-step="0"><h2>Spotlight.</h2><p>Your library, front and centre. Spotlight moves through the rows you choose in full-screen artwork.</p></li>
+          <li data-step="1"><h2>Pick up where you left off.</h2><p>Continue Watching leads Home, with your next episode and unfinished films a click away.</p></li>
+          <li data-step="2"><h2>Every title, in detail.</h2><p>Logos, ratings, formats, trailers and cast, laid out for the big screen.</p></li>
+          <li data-step="3"><h2>Seasons at a glance.</h2><p>Glide through seasons and episodes with the Siri Remote, artwork loading ahead of you.</p></li>
+        </ol>
+        <div class="progress" aria-hidden="true"><span class="is-active"></span><span></span><span></span><span></span></div>
       </div>
     </section>
+
+    <section class="gallery" aria-labelledby="gallery-title">
+      <div class="section-head reveal">
+        <h2 id="gallery-title">The good stuff, <span class="silver">up front.</span></h2>
+        <p>Pick up to three Home rows for Spotlight and Vivid fills it with their best, straight from your server.</p>
+      </div>
+      <div class="marquee" role="group" aria-label="Spotlight on Apple TV">
+        <div class="marquee-track">
+          <img src="/media/banner-01.webp" width="1600" height="501" loading="lazy" decoding="async" alt="Silo in Spotlight">
+          <img src="/media/banner-02.webp" width="1600" height="501" loading="lazy" decoding="async" alt="The Boys in Spotlight">
+          <img src="/media/banner-03.webp" width="1600" height="501" loading="lazy" decoding="async" alt="Superman in Spotlight">
+          <img src="/media/banner-04.webp" width="1600" height="501" loading="lazy" decoding="async" alt="The Avengers in Spotlight">
+          <img src="/media/banner-05.webp" width="1600" height="501" loading="lazy" decoding="async" alt="Dune: Part Two in Spotlight">
+          <img src="/media/banner-01.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-02.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-03.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-04.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-05.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+        </div>
+        <div class="marquee-track marquee-reverse">
+          <img src="/media/banner-06.webp" width="1600" height="501" loading="lazy" decoding="async" alt="The Last of Us in Spotlight">
+          <img src="/media/banner-07.webp" width="1600" height="501" loading="lazy" decoding="async" alt="Severance in Spotlight">
+          <img src="/media/banner-08.webp" width="1600" height="501" loading="lazy" decoding="async" alt="F1 in Spotlight">
+          <img src="/media/banner-09.webp" width="1600" height="501" loading="lazy" decoding="async" alt="Andor in Spotlight">
+          <img src="/media/banner-10.webp" width="1600" height="501" loading="lazy" decoding="async" alt="Oppenheimer in Spotlight">
+          <img src="/media/banner-06.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-07.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-08.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-09.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          <img src="/media/banner-10.webp" width="1600" height="501" loading="lazy" decoding="async" alt="" aria-hidden="true">
+        </div>
+      </div>
+    </section>
+
+    <section class="story story-phone" id="iphone" aria-labelledby="phone-title" data-steps="4">
+      <div class="story-pin">
+        <div class="ambient" aria-hidden="true">
+          <img class="is-active" data-step="0" src="/media/glow-phone-spotlight.webp" alt="" width="48" height="104">
+          <img data-step="1" src="/media/glow-phone-home.webp" alt="" width="48" height="104">
+          <img data-step="2" src="/media/glow-phone-detail.webp" alt="" width="48" height="104">
+          <img data-step="3" src="/media/glow-phone-episodes.webp" alt="" width="48" height="104">
+        </div>
+        <div class="phone-copy">
+          <p class="eyebrow">Vivid for iPhone</p>
+          <h2 id="phone-title">From the big screen<br>to the palm of <span class="silver">your hand.</span></h2>
+        </div>
+        <div class="tv-echo" aria-hidden="true"><div class="device tv"><div class="screen"><img src="/media/tv-spotlight.webp" width="1920" height="1080" loading="lazy" decoding="async" alt=""></div></div></div>
+        <figure class="device phone">
+          <div class="screen">
+            <video class="shot is-active" data-step="0" src="/media/phone-spotlight.mp4" poster="/media/phone-spotlight.webp" width="750" height="1630" muted loop playsinline preload="none" aria-label="Vivid's iPhone Home, with Spotlight moving through Silo, The Boys, Superman, The Avengers and Dune: Part Two"></video>
+            <img class="shot" data-step="1" src="/media/phone-home.webp" width="900" height="1957" loading="lazy" decoding="async" alt="iPhone Home scrolled to Continue Watching, Trending Shows and Trending Movies">
+            <img class="shot" data-step="2" src="/media/phone-detail.webp" width="900" height="1957" loading="lazy" decoding="async" alt="The Silo detail page on iPhone, with its logo, ratings, Play S1-E1 and quick actions">
+            <img class="shot" data-step="3" src="/media/phone-episodes.webp" width="900" height="1957" loading="lazy" decoding="async" alt="Season one episodes of Silo on iPhone, with trailers below">
+            <span class="island" aria-hidden="true"></span>
+          </div>
+          <figcaption class="visually-hidden">Vivid on iPhone</figcaption>
+        </figure>
+        <ol class="captions">
+          <li class="is-active" data-step="0"><h3>Spotlight in your pocket.</h3><p>The same Spotlight, edge to edge on iPhone, with your rows right underneath.</p></li>
+          <li data-step="1"><h3>Home, your way.</h3><p>Continue Watching, trending rows and your libraries. Show or hide rows to suit you.</p></li>
+          <li data-step="2"><h3>Details that look the part.</h3><p>Logos, ratings, video and audio formats, with Play a tap away.</p></li>
+          <li data-step="3"><h3>Every season. Every episode.</h3><p>Jump between seasons, see what you’ve watched and start the next one.</p></li>
+        </ol>
+        <div class="progress" aria-hidden="true"><span class="is-active"></span><span></span><span></span><span></span></div>
+      </div>
+    </section>
+
+    <section class="features" id="features" aria-labelledby="features-title">
+      <div class="section-head reveal">
+        <h2 id="features-title">Make yourself at home.</h2>
+        <p>A native Apple app for the films and series on your server.</p>
+      </div>
+      <div class="bento">
+        <article class="tile tile-wide reveal">
+          <div class="tile-copy"><h3>A home for your library.</h3><p>Films, series, artwork, trailers and cast, brought together in a clean, familiar layout.</p></div>
+          <img src="/media/tv-cast.webp" width="2400" height="1350" loading="lazy" decoding="async" alt="Trailers and Cast and Crew for Superman on Apple TV">
+        </article>
+        <article class="tile reveal"><p class="tile-kicker">Lucid Engine</p><h3>Playback across Apple devices.</h3><p>Lucid Engine on Apple TV, iPhone and iPad, with Vivid’s controls, embedded subtitles and chapters.</p></article>
+        <article class="tile reveal"><p class="tile-kicker">Made for Apple</p><h3>Touch and remote, both first class.</h3><p>Designed for touch on iPhone and iPad, and the Siri Remote on Apple TV.</p></article>
+        <article class="tile reveal"><p class="tile-kicker">Keep moving</p><h3>Browsing that keeps up.</h3><p>Move through seasons and episodes with artwork warmed ahead of you.</p></article>
+        <article class="tile reveal"><p class="tile-kicker">Continue watching</p><h3>Right where you left off.</h3><p>Your next episode and unfinished films, right on the Home screen.</p></article>
+      </div>
+    </section>
+
+    <section class="servers" aria-labelledby="servers-title">
+      <div class="reveal">
+        <p class="eyebrow">Your choice of server</p>
+        <h2 id="servers-title"><span>Silo.</span> <span>Emby.</span> <span>Jellyfin.</span></h2>
+        <p>Connect to the server you already use, on iPhone, iPad and Apple TV. Features and device coverage vary by server.</p>
+      </div>
+    </section>
+
     <section class="get" id="get" aria-labelledby="get-title">
-      <div class="logo-stage logo-stage-small"><img src="/logo.png?v=8ecabc3db8" alt="" width="1254" height="1254"><span class="logo-pieces" aria-hidden="true"><img class="logo-piece" src="/logo-left.svg" alt="" width="1254" height="1254"><img class="logo-piece" src="/logo-right.svg" alt="" width="1254" height="1254"></span></div>
+      <div class="logo-stage"><img src="/logo.png" alt="" width="1254" height="1254"><span class="logo-pieces" aria-hidden="true"><img class="logo-piece" src="/logo-left.svg" alt="" width="1254" height="1254"><img class="logo-piece" src="/logo-right.svg" alt="" width="1254" height="1254"></span></div>
       <h2 id="get-title">Get Vivid</h2>
       <p>For iPhone, iPad and Apple TV.<br>Try the latest build through TestFlight.</p>
       <a class="pill" href="https://testflight.apple.com/join/Ycb8t685" target="_blank" rel="noopener noreferrer">Join TestFlight</a>
@@ -51,7 +163,7 @@
       <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.38.97.1-.75.4-1.27.74-1.56-2.57-.29-5.28-1.29-5.28-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18A11 11 0 0 1 12 6.12c.98 0 1.95.13 2.86.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.07.79 2.16v3.25c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"></path></svg>
       <span>View on GitHub</span>
     </a>
-    <div class="footer-meta"><span>© 2026 Vivid™</span><nav aria-label="Footer"><a href="https://discord.gg/3jcxk3vJ4X" target="_blank" rel="noopener noreferrer">Discord</a><a href="/brand">Brand policy</a><a href="/privacy">Privacy</a><a href="mailto:admin@vividapp.co">Contact</a></nav></div>
+    <div class="footer-meta"><span>© 2026 Vivid™</span><nav aria-label="Footer"><a href="https://discord.gg/3jcxk3vJ4X" target="_blank" rel="noopener noreferrer">Discord</a><a href="/support">Support</a><a href="/brand">Brand policy</a><a href="/privacy">Privacy</a><a href="mailto:admin@vividapp.co">Contact</a></nav></div>
   </footer>
 </body>
 </html>
