@@ -51,14 +51,16 @@ img,video{display:block;max-width:100%}
 .device{position:absolute;left:50%;top:50%}
 .screen{position:relative;overflow:hidden;background:#000}
 .shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.025);transition:opacity .8s var(--ease),transform 1.6s var(--ease)}
+/* Screens get their own layers while their story is near, so a step change never builds one mid-fade. */
+.story.is-near .shot,.story.is-near .ambient,.tv-echo .tv{will-change:opacity,transform}
 .shot.was-active{z-index:1;opacity:1;transform:none;transition:none}
 .shot.is-active{z-index:2;opacity:1;transform:none}
 
 /* Apple TV: a slim panel with a metallic edge. */
-.story-tv{--tvw:min(1180px,92vw,max(50vw,calc((100svh - 270px) * 16 / 9)));--tvh:calc(var(--tvw) * .5625 + 22px);--tv-y:-48px;--tv-s0:.62;--tv-drop:27svh}
+.story-tv{--tvw:min(1180px,92vw,max(50vw,calc((100svh - 270px) * 16 / 9)));--tvh:calc(var(--tvw) * .5625 + 22px);--tv-x:-50%;--tv-y:-48px;--tv-s0:.62;--tv-s1:1;--tv-drop:27svh}
 .tv{width:var(--tvw);padding:10px;border:1px solid transparent;border-radius:18px;background:linear-gradient(#08080a,#08080a) padding-box,linear-gradient(160deg,#6a6c73,#1c1d20 38%,#45464c 66%,#121214) border-box;box-shadow:0 70px 120px -50px rgba(0,0,0,.95),0 0 0 1px rgba(0,0,0,.6)}
 .tv .screen{aspect-ratio:16/9;border-radius:6px}
-.story-tv .tv{transform:translate(-50%,-50%) translateY(calc(var(--tv-y) + (1 - var(--q)) * var(--tv-drop))) scale(calc(var(--tv-s0) + (1 - var(--tv-s0)) * var(--q)));will-change:transform}
+.story-tv .tv{transform:translate(var(--tv-x),-50%) translateY(calc(var(--tv-y) + (1 - var(--q)) * var(--tv-drop))) scale(calc(var(--tv-s0) + (var(--tv-s1) - var(--tv-s0)) * var(--q)));will-change:transform}
 .hero-copy{position:absolute;left:0;right:0;top:calc(var(--nav-h) + 5.5svh);padding:0 24px;text-align:center;opacity:calc(1 - var(--q) * 2.2);transform:translateY(calc(var(--q) * -70px));will-change:opacity,transform}
 .hero-copy h1{font-size:clamp(52px,8.2vw,104px);line-height:.98;letter-spacing:-.045em;font-weight:600;margin-top:14px}
 .hero-sub{font-size:clamp(17px,1.7vw,22px);line-height:1.45;color:var(--muted);margin:18px auto 0;max-width:560px}
@@ -76,8 +78,8 @@ img,video{display:block;max-width:100%}
 .progress span.is-active{height:24px;background:#f5f5f7}
 
 /* iPhone: the TV hands over to a phone rising in front of it. */
-.story-phone{--phw:min(330px,72vw,calc((100svh - 150px) * .43));--ph-x:-15vw}
-.phone{width:var(--phw);padding:calc(var(--phw) * .03);border:calc(var(--phw) * .009) solid transparent;border-radius:calc(var(--phw) * .17);background:linear-gradient(#060607,#060607) padding-box,linear-gradient(150deg,#8a8c93,#2b2c30 34%,#5e6067 62%,#1a1b1e) border-box;box-shadow:0 60px 110px -40px rgba(0,0,0,.95);transform:translate(-50%,-50%) translate(calc(var(--qs) * var(--ph-x)),calc(18px + (1 - var(--q)) * 80svh)) rotate(calc((1 - var(--q)) * 6deg));will-change:transform}
+.story-phone{--phw:min(330px,72vw,calc((100svh - 150px) * .43));--ph-x:-15vw;--ph-ay:-50%;--ph-dy:18px;--ph-rise:80svh}
+.phone{width:var(--phw);padding:calc(var(--phw) * .03);border:calc(var(--phw) * .009) solid transparent;border-radius:calc(var(--phw) * .17);background:linear-gradient(#060607,#060607) padding-box,linear-gradient(150deg,#8a8c93,#2b2c30 34%,#5e6067 62%,#1a1b1e) border-box;box-shadow:0 60px 110px -40px rgba(0,0,0,.95);transform:translate(-50%,var(--ph-ay)) translate(calc(var(--qs) * var(--ph-x)),calc(var(--ph-dy) + (1 - var(--q)) * var(--ph-rise))) rotate(calc((1 - var(--q)) * 6deg));will-change:transform}
 .phone .screen{aspect-ratio:1206/2622;border-radius:calc(var(--phw) * .135);container-type:inline-size}
 .island{position:absolute;z-index:2;left:50%;top:2.9cqw;width:31cqw;height:9.1cqw;margin-left:-15.5cqw;border-radius:999px;background:#000}
 .phone-copy{position:absolute;left:0;right:0;top:calc(var(--nav-h) + 7svh);padding:0 24px;text-align:center;opacity:calc(1 - var(--q) * 1.8);transform:translateY(calc(var(--q) * -60px))}
@@ -152,6 +154,34 @@ body:not(.home){background:radial-gradient(70% 520px at 50% -120px,rgba(118,128,
 .motion-ready .reveal{opacity:0;transform:translateY(30px);transition:opacity .9s var(--ease),transform .9s var(--ease)}
 .motion-ready .reveal.visible{opacity:1;transform:none}
 
+/* Where the browser runs scroll-driven animations, the intro motion follows
+   the scroll itself rather than script, which keeps it smooth on iPhone.
+   app.js stops writing --q in that case. */
+@supports (animation-timeline: view()){
+  @media (prefers-reduced-motion:no-preference){
+    .story-tv{view-timeline:--tv-story block}
+    .story-phone{view-timeline:--phone-story block}
+    .story-tv .tv{animation:tv-intro linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
+    .story-tv .hero-copy{animation:hero-out linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
+    .story-tv .ambient{animation:glow-up linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
+    .story-tv .captions,.story-tv .progress{animation:fade-in linear both;animation-timeline:--tv-story;animation-range:contain 16% contain 20%}
+    .story-tv .ambient img.is-active{opacity:.48}
+    .phone{animation:phone-intro linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
+    .phone-copy{animation:phone-copy-out linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
+    .tv-echo .tv{animation:echo-out linear both;animation-timeline:--phone-story;animation-range:contain 0% contain 26%}
+    .story-phone .ambient{animation:fade-in linear both;animation-timeline:--phone-story;animation-range:contain 11.7% contain 26%}
+    .story-phone .captions,.story-phone .progress{animation:fade-in linear both;animation-timeline:--phone-story;animation-range:contain 22% contain 26%}
+    .story-phone .ambient img.is-active{opacity:.42}
+  }
+}
+@keyframes tv-intro{from{transform:translate(var(--tv-x),-50%) translateY(calc(var(--tv-y) + var(--tv-drop))) scale(var(--tv-s0))}to{transform:translate(var(--tv-x),-50%) translateY(var(--tv-y)) scale(var(--tv-s1))}}
+@keyframes hero-out{0%{opacity:1;transform:none}45%{opacity:0}100%{opacity:0;transform:translateY(-70px)}}
+@keyframes glow-up{from{opacity:.375}to{opacity:1}}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+@keyframes phone-intro{0%{transform:translate(-50%,var(--ph-ay)) translate(0px,calc(var(--ph-dy) + var(--ph-rise))) rotate(6deg)}45%{transform:translate(-50%,var(--ph-ay)) translate(0px,calc(var(--ph-dy) + var(--ph-rise) * .55)) rotate(3.3deg)}100%{transform:translate(-50%,var(--ph-ay)) translate(var(--ph-x),var(--ph-dy)) rotate(0deg)}}
+@keyframes phone-copy-out{0%{opacity:1;transform:none}55%{opacity:0}100%{opacity:0;transform:translateY(-60px)}}
+@keyframes echo-out{0%{opacity:.9;transform:translate(-50%,-50%) translateY(12svh) scale(.86)}95%{opacity:0}100%{opacity:0;transform:translate(-50%,-50%) translateY(4svh) scale(.66)}}
+
 @media(max-width:1200px){footer{margin:0 48px}}
 @media(max-width:900px){
   .story-phone{--ph-x:0px;--phw:min(300px,64vw,calc((100svh - 300px) * .43))}
@@ -166,16 +196,18 @@ body:not(.home){background:radial-gradient(70% 520px at 50% -120px,rgba(118,128,
   .nav-links{display:none}
   /* On a phone the TV starts at full width, then zooms past it, anchored on
      the left, so its screens read at a useful size. Captions sit underneath. */
-  .story-tv{--tvw:calc(100vw - 32px);--tv-s1:1.7;--tvh:calc((var(--tvw) * .5625 + 16px) * var(--tv-s1));--tv-c:calc(var(--nav-h) + 22px + var(--tvh) / 2);--tv-drop:22svh}
-  .story-tv .tv{left:16px;top:var(--tv-c);transform-origin:0 50%;transform:translateY(-50%) translateY(calc((1 - var(--q)) * var(--tv-drop))) scale(calc(1 + (var(--tv-s1) - 1) * var(--q)))}
+  .story-tv{--tvw:calc(100vw - 32px);--tv-x:0px;--tv-y:0px;--tv-s0:1;--tv-s1:1.7;--tvh:calc((var(--tvw) * .5625 + 16px) * var(--tv-s1));--tv-c:calc(var(--nav-h) + 22px + var(--tvh) / 2);--tv-drop:22svh}
+  .story-tv .tv{left:16px;top:var(--tv-c);transform-origin:0 50%}
   .story-tv .captions{left:24px;right:24px;width:auto;top:calc(var(--tv-c) + var(--tvh) / 2 + 22px);transform:none;text-align:left}
   .story-tv .captions p{margin-inline:0}
   .tv{padding:7px;border-radius:12px}
   .tv .screen{border-radius:4px}
   .progress{display:none}
+  /* Phones load glows with the same blur baked in, so no live blur runs while scrolling. */
+  .ambient img{width:calc(100vw + 420px);max-width:none;height:calc(90svh + 420px);object-fit:fill;filter:none}
   /* The phone rises large and runs off the bottom edge, with captions above. */
-  .story-phone{--phw:min(340px,80vw)}
-  .phone{top:calc(var(--nav-h) + 168px);transform:translateX(-50%) translateY(calc((1 - var(--q)) * 75svh)) rotate(calc((1 - var(--q)) * 6deg))}
+  .story-phone{--phw:min(340px,80vw);--ph-ay:0%;--ph-dy:0px;--ph-rise:75svh}
+  .phone{top:calc(var(--nav-h) + 168px)}
   .story-phone .captions{left:24px;right:24px;top:calc(var(--nav-h) + 22px);bottom:auto;width:auto;transform:none;text-align:left}
   .story-phone .captions p{margin-inline:0}
   .phone-copy h2{font-size:clamp(34px,10vw,44px)}
