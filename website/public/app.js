@@ -98,6 +98,31 @@
     schedule();
   }, {rootMargin:'50% 0px'});
   stories.forEach(story => nearby.observe(story.section));
+  // On wider screens each story's TV starts just below its heading, so a
+  // large headline in a short window is never covered. Screens with room to
+  // spare keep the designed start, and phones use their own layout.
+  const wide = matchMedia('(min-width: 641px)');
+  function placeIntros() {
+    const tvStory = document.querySelector('.story-tv');
+    const phoneStory = document.querySelector('.story-phone');
+    const below = (story, copy, device, scale, centre, design, property) => {
+      if (!story || !copy || !device) return;
+      if (!wide.matches) { story.style.removeProperty(property); return; }
+      const pin = story.querySelector('.story-pin').clientHeight;
+      const needed = copy.offsetTop + copy.offsetHeight + 32 + scale * device.offsetHeight / 2 - (pin / 2 + centre);
+      story.style.setProperty(property, `${Math.round(Math.max(design * pin, needed))}px`);
+    };
+    if (tvStory) {
+      const style = getComputedStyle(tvStory);
+      below(tvStory, tvStory.querySelector('.hero-copy'), tvStory.querySelector('.tv'),
+        parseFloat(style.getPropertyValue('--tv-s0')) || .62, parseFloat(style.getPropertyValue('--tv-y')) || 0, .27, '--tv-drop');
+    }
+    below(phoneStory, phoneStory?.querySelector('.phone-copy'), phoneStory?.querySelector('.tv-echo .tv'), .86, 0, .12, '--echo-y0');
+  }
+  placeIntros();
+  addEventListener('resize', placeIntros);
+  wide.addEventListener('change', placeIntros);
+  document.fonts?.ready.then(placeIntros);
   update();
 
   // The Spotlight banners only drift while they're on screen.

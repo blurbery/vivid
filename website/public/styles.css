@@ -80,13 +80,13 @@ img,video{display:block;max-width:100%}
 .progress span.is-active{height:24px;background:#f5f5f7}
 
 /* iPhone: the TV hands over to a phone rising in front of it. */
-.story-phone{--phw:min(330px,72vw,calc((100svh - 150px) * .43));--ph-x:-15vw;--ph-ay:-50%;--ph-dy:18px;--ph-rise:80svh}
+.story-phone{--phw:min(330px,72vw,calc((100svh - 150px) * .43));--ph-x:-15vw;--ph-ay:-50%;--ph-dy:18px;--ph-rise:80svh;--echo-y0:12svh}
 .phone{width:var(--phw);padding:calc(var(--phw) * .03);border:calc(var(--phw) * .009) solid transparent;border-radius:calc(var(--phw) * .17);background:linear-gradient(#060607,#060607) padding-box,linear-gradient(150deg,#8a8c93,#2b2c30 34%,#5e6067 62%,#1a1b1e) border-box;box-shadow:0 60px 110px -40px rgba(0,0,0,.95);transform:translate(-50%,var(--ph-ay)) translate(calc(var(--qs) * var(--ph-x)),calc(var(--ph-dy) + (1 - var(--q)) * var(--ph-rise))) rotate(calc((1 - var(--q)) * 6deg));will-change:transform}
 .phone .screen{aspect-ratio:1206/2622;border-radius:calc(var(--phw) * .135);container-type:inline-size}
 .island{position:absolute;z-index:2;left:50%;top:2.9cqw;width:31cqw;height:9.1cqw;margin-left:-15.5cqw;border-radius:999px;background:#000}
 .phone-copy{position:absolute;left:0;right:0;top:calc(var(--nav-h) + 7svh);padding:0 24px;text-align:center;opacity:calc(1 - var(--q) * 1.8);transform:translateY(calc(var(--q) * -60px))}
 .phone-copy h2{font-size:clamp(40px,6vw,76px);line-height:1.02;letter-spacing:-.04em;font-weight:600;margin-top:12px}
-.tv-echo .tv{--tvw:min(1000px,84vw);transform:translate(-50%,-50%) translateY(calc(12svh - var(--q) * 8svh)) scale(calc(.86 - var(--q) * .2));opacity:calc(.9 - var(--q) * .95)}
+.tv-echo .tv{--tvw:min(1000px,84vw);transform:translate(-50%,-50%) translateY(calc(var(--echo-y0) - var(--q) * 8svh)) scale(calc(.86 - var(--q) * .2));opacity:calc(.9 - var(--q) * .95)}
 .tv-echo img{width:100%;height:100%;object-fit:cover}
 .story-phone .captions{left:calc(50% + var(--ph-x) + var(--phw) / 2 + 56px);top:50%;width:min(420px,36vw);transform:translateY(-50%);opacity:clamp(0,(var(--q) - .85) * 6.6,1)}
 
@@ -161,8 +161,10 @@ body:not(.home){background:radial-gradient(70% 520px at 50% -120px,rgba(118,128,
    app.js stops writing --q in that case. */
 @supports (animation-timeline: view()){
   @media (prefers-reduced-motion:no-preference){
-    .story-tv{view-timeline:--tv-story block}
-    .story-phone{view-timeline:--phone-story block}
+    /* No inset: the html scroll-padding (the nav height plus 24px) would
+       otherwise start each intro that much early. */
+    .story-tv{view-timeline:--tv-story block;view-timeline-inset:0px}
+    .story-phone{view-timeline:--phone-story block;view-timeline-inset:0px}
     .story-tv .tv{animation:tv-intro 1ms linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
     .story-tv .hero-copy{animation:hero-out 1ms linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
     .story-tv .ambient{animation:glow-up 1ms linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
@@ -182,7 +184,7 @@ body:not(.home){background:radial-gradient(70% 520px at 50% -120px,rgba(118,128,
 @keyframes fade-in{from{opacity:0}to{opacity:1}}
 @keyframes phone-intro{0%{transform:translate(-50%,var(--ph-ay)) translate(0px,calc(var(--ph-dy) + var(--ph-rise))) rotate(6deg)}45%{transform:translate(-50%,var(--ph-ay)) translate(0px,calc(var(--ph-dy) + var(--ph-rise) * .55)) rotate(3.3deg)}100%{transform:translate(-50%,var(--ph-ay)) translate(var(--ph-x),var(--ph-dy)) rotate(0deg)}}
 @keyframes phone-copy-out{0%{opacity:1;transform:none}55%{opacity:0}100%{opacity:0;transform:translateY(-60px)}}
-@keyframes echo-out{0%{opacity:.9;transform:translate(-50%,-50%) translateY(12svh) scale(.86)}95%{opacity:0}100%{opacity:0;transform:translate(-50%,-50%) translateY(4svh) scale(.66)}}
+@keyframes echo-out{0%{opacity:.9;transform:translate(-50%,-50%) translateY(var(--echo-y0)) scale(.86)}95%{opacity:0}100%{opacity:0;transform:translate(-50%,-50%) translateY(calc(var(--echo-y0) - 8svh)) scale(.66)}}
 
 @media(max-width:1200px){footer{margin:0 48px}}
 @media(max-width:900px){
