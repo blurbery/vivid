@@ -161,8 +161,8 @@ body:not(.home){background:radial-gradient(70% 520px at 50% -120px,rgba(118,128,
    app.js stops writing --q in that case. */
 @supports (animation-timeline: view()){
   @media (prefers-reduced-motion:no-preference){
-    /* No inset: the html scroll-padding (kept clear for the nav) would
-       otherwise start each intro 80px early. */
+    /* No inset: the html scroll-padding (the nav height plus 24px) would
+       otherwise start each intro that much early. */
     .story-tv{view-timeline:--tv-story block;view-timeline-inset:0px}
     .story-phone{view-timeline:--phone-story block;view-timeline-inset:0px}
     .story-tv .tv{animation:tv-intro 1ms linear both;animation-timeline:--tv-story;animation-range:contain 0% contain 20%}
