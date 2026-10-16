@@ -1,7 +1,14 @@
-/* Without the script the stories lay out as plain sections. */
+/* Without the script the stories lay out as plain sections, with every
+   screen shown in turn above its captions. */
 .story{height:auto}
 .story .story-pin{position:relative;height:auto;overflow:visible;padding:calc(var(--nav-h) + 40px) 24px 60px;display:flex;flex-direction:column;align-items:center;gap:40px}
-.story .hero-copy,.story .phone-copy,.story .device{position:static;transform:none;opacity:1}
+.story .hero-copy,.story .phone-copy{position:static;transform:none;opacity:1}
+.story .device{position:static;width:min(900px,100%);padding:0;border:0;border-radius:0;background:none;box-shadow:none;transform:none;opacity:1}
+.story .screen{display:grid;gap:16px;aspect-ratio:auto;overflow:visible;border-radius:0;background:none}
+.story .phone .screen{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.story .shot{position:static;height:auto;opacity:1;transform:none;border-radius:12px}
+.story .tv .shot{aspect-ratio:16/9}
+.story .phone .shot{aspect-ratio:1206/2622}
 .story .captions{position:static;transform:none;opacity:1;width:min(680px,100%);gap:28px;text-align:center}
 .story .captions li{grid-area:auto;opacity:1;transform:none}
-.story .tv-echo,.story .progress,.story .ambient{display:none}
+.story .tv-echo,.story .progress,.story .ambient,.story .island{display:none}

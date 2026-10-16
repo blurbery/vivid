@@ -49,7 +49,9 @@
       const distance = rect.height - height;
       const progress = distance > 0 ? clamp(-rect.top / distance) : 0;
       const intro = story.section.classList.contains('story-tv') ? .2 : .26;
-      const q = clamp(progress / intro);
+      // With Reduce Motion, the intro cuts between its start and end layouts
+      // halfway through instead of zooming and rising with the scroll.
+      const q = reduced.matches ? (progress / intro >= .5 ? 1 : 0) : clamp(progress / intro);
       if (Math.abs(q - story.q) > .0005) {
         story.q = q;
         story.section.style.setProperty('--q', q.toFixed(4));
@@ -113,10 +115,9 @@
 
   // The approved Glide entrance: the logo's two pieces slide into place once.
   const running = new Set();
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) return;
-    running.forEach(animation => animation.finish());
-  });
+  const settleLogos = () => running.forEach(animation => animation.finish());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) settleLogos(); });
+  reduced.addEventListener('change', () => { if (reduced.matches) settleLogos(); });
   document.querySelectorAll('.logo-stage').forEach(async stage => {
     const pieces = [...stage.querySelectorAll('.logo-piece')];
     try {

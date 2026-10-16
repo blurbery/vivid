@@ -50,7 +50,8 @@ export default {
       }
       response.headers.set('Accept-Ranges', 'bytes');
       for (const [name, value] of Object.entries(security)) response.headers.set(name, value);
-      if (media.ok) response.headers.set('Cache-Control', url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
+      if (response.status === 200 || response.status === 206) response.headers.set('Cache-Control', url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
+      else response.headers.set('Cache-Control', 'no-store');
       return response;
     }
     if (url.pathname === '/index.html') {
