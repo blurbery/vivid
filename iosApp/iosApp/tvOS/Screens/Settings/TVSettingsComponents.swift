@@ -1,9 +1,25 @@
 #if os(tvOS)
 import SwiftUI
 
+/// Settings keep their original design values in code and draw them through
+/// `scale`, so the whole screen grows in proportion: fonts, spacing, radii
+/// and widths together. 1.25 lifts row text towards Apple's tvOS sizes
+/// (29pt body, 23pt minimum) so it reads from across the room.
 enum TVSettingsLayout {
-    static let contentWidth: CGFloat = 812
-    static let pageWidth: CGFloat = contentWidth + 48
+    static let scale: CGFloat = 1.25
+    static let contentWidth: CGFloat = scaled(812)
+    static let pageWidth: CGFloat = contentWidth + scaled(48)
+
+    /// An original design value at the settings scale, in whole points.
+    static func scaled(_ value: CGFloat) -> CGFloat { (value * scale).rounded() }
+}
+
+extension Font {
+    /// System font at an original settings design size, drawn at the
+    /// settings scale.
+    static func tvSettings(_ size: CGFloat, weight: Font.Weight? = nil, design: Font.Design? = nil) -> Font {
+        .system(size: TVSettingsLayout.scaled(size), weight: weight, design: design)
+    }
 }
 
 enum TVSettingsPalette {
@@ -26,22 +42,22 @@ struct TVSettingsPageHeader<Actions: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: TVSettingsLayout.scaled(24)) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 Text(title)
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .font(.tvSettings(40, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 20))
+                        .font(.tvSettings(20))
                         .foregroundStyle(.white.opacity(0.68))
                 }
             }
             Spacer(minLength: 0)
             actions()
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 8)
+        .padding(.horizontal, TVSettingsLayout.scaled(24))
+        .padding(.vertical, TVSettingsLayout.scaled(8))
     }
 }
 
@@ -56,14 +72,14 @@ struct TVSettingsOverview<Profiles: View, Categories: View>: View {
     @ViewBuilder let categories: () -> Categories
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
             TVSettingsPageHeader(title: "Settings")
-                .padding(.bottom, 16)
-            VStack(alignment: .leading, spacing: 8) {
+                .padding(.bottom, TVSettingsLayout.scaled(16))
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 TVSettingsSectionHeader("PROFILES", topInset: 0)
                 profiles()
             }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 TVSettingsSectionHeader("SETTINGS", topInset: 0)
                 TVSettingsGroup { categories() }
             }
@@ -97,7 +113,7 @@ struct TVSettingsGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) { content }
             .environment(\.tvSettingsJoinedRows, true)
             .background(TVSettingsPalette.groupFill)
-            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(30), style: .continuous))
     }
 }
 
@@ -106,12 +122,12 @@ struct TVSettingsFieldRow<Content: View>: View {
     let detail: String
     @ViewBuilder let content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
             TVSettingsRowLabel(title: title, detail: detail)
             content
         }
-        .padding(24)
-        .overlay(alignment: .bottom) { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
+        .padding(TVSettingsLayout.scaled(24))
+        .overlay(alignment: .bottom) { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, TVSettingsLayout.scaled(24)) }
     }
 }
 
@@ -119,17 +135,17 @@ struct TVSettingsRowLabel: View {
     let title: String
     var detail: String? = nil
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 26, weight: .medium))
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(6)) {
+            Text(title).font(.tvSettings(26, weight: .medium))
             if let text = detail ?? Self.descriptions[title] {
-                Text(text).font(.system(size: 19)).opacity(0.7)
+                Text(text).font(.tvSettings(19)).opacity(0.7)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     private static let descriptions: [String: String] = [
-        "Home Screen": "Choose up to three rows for your discovery spotlight.",
+        "Spotlight": "Choose up to three rows for your discovery spotlight.",
         "Home Sections": "Choose which rows appear on Home and arrange their order.",
         "Poster Size": "Adjust card sizes on Home only.",
         "Captions": "Choose titles and years, titles only, or artwork only.",
@@ -288,16 +304,16 @@ private struct TVSettingsRailRowBody: View {
 
     var body: some View {
         configuration.label
-            .padding(.horizontal, 20)
-            .padding(.vertical, 15)
+            .padding(.horizontal, TVSettingsLayout.scaled(20))
+            .padding(.vertical, TVSettingsLayout.scaled(15))
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundColor(foreground)
             .background(
-                RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
+                RoundedRectangle(cornerRadius: joined ? 0 : TVSettingsLayout.scaled(14), style: .continuous)
                     .fill(fill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
+                RoundedRectangle(cornerRadius: joined ? 0 : TVSettingsLayout.scaled(14), style: .continuous)
                     .strokeBorder(
                         isSelected && !isFocused
                             ? Color.vividChromeSelectedBorder
@@ -308,17 +324,17 @@ private struct TVSettingsRailRowBody: View {
             .overlay(alignment: .leading) {
                 Capsule()
                     .fill(Color.vividOnSurface)
-                    .frame(width: 4)
-                    .padding(.vertical, 12)
+                    .frame(width: TVSettingsLayout.scaled(4))
+                    .padding(.vertical, TVSettingsLayout.scaled(12))
                     .opacity(isSelected && !isFocused ? 1 : 0)
             }
             .scaleEffect(joined ? 1 : (configuration.isPressed ? 0.98 : (isFocused ? 1.012 : 1)))
             .shadow(
                 color: isFocused && !joined ? Color.black.opacity(0.2) : .clear,
-                radius: 18
+                radius: TVSettingsLayout.scaled(18)
             )
             .overlay(alignment: .bottom) {
-                if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
+                if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, TVSettingsLayout.scaled(24)) }
             }
             .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
     }
@@ -364,16 +380,16 @@ private struct TVSettingsPaneRowBody: View {
 
     var body: some View {
         configuration.label
-            .padding(.horizontal, 24)
-            .padding(.vertical, 17)
+            .padding(.horizontal, TVSettingsLayout.scaled(24))
+            .padding(.vertical, TVSettingsLayout.scaled(17))
             .frame(maxWidth: .infinity, alignment: .leading)
             .foregroundColor(foreground)
             .background(
-                RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
+                RoundedRectangle(cornerRadius: joined ? 0 : TVSettingsLayout.scaled(14), style: .continuous)
                     .fill(backgroundFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
+                RoundedRectangle(cornerRadius: joined ? 0 : TVSettingsLayout.scaled(14), style: .continuous)
                     .strokeBorder(
                         borderColor,
                         lineWidth: 1
@@ -382,11 +398,11 @@ private struct TVSettingsPaneRowBody: View {
             .scaleEffect(joined ? 1 : (configuration.isPressed ? 0.98 : (isFocused ? 1.012 : 1)))
             .shadow(
                 color: isFocused && !joined ? Color.black.opacity(0.2) : .clear,
-                radius: 18
+                radius: TVSettingsLayout.scaled(18)
             )
             .focusEffectDisabled()
             .overlay(alignment: .bottom) {
-                if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
+                if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, TVSettingsLayout.scaled(24)) }
             }
             .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
     }
@@ -424,16 +440,16 @@ struct TVSettingsPickerRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
+            HStack(spacing: TVSettingsLayout.scaled(16)) {
                 TVSettingsRowLabel(title: title, detail: detail)
-                Spacer(minLength: 16)
+                Spacer(minLength: TVSettingsLayout.scaled(16))
                 Text(value)
-                    .font(.system(size: 24))
+                    .font(.tvSettings(24))
                     .opacity(0.68)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.tvSettings(18, weight: .semibold))
                     .opacity(0.55)
             }
         }
@@ -462,16 +478,16 @@ struct TVSettingsOptionMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: 16) {
+            HStack(spacing: TVSettingsLayout.scaled(16)) {
                 TVSettingsRowLabel(title: title, detail: detail)
-                Spacer(minLength: 16)
+                Spacer(minLength: TVSettingsLayout.scaled(16))
                 Text(value)
-                    .font(.system(size: 24))
+                    .font(.tvSettings(24))
                     .opacity(0.68)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.tvSettings(16, weight: .semibold))
                     .opacity(0.55)
             }
         }
@@ -491,11 +507,11 @@ struct TVSettingsToggleRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
+            HStack(spacing: TVSettingsLayout.scaled(16)) {
                 TVSettingsRowLabel(title: title, detail: detail)
-                Spacer(minLength: 16)
+                Spacer(minLength: TVSettingsLayout.scaled(16))
                 Text(isOn ? "On" : "Off")
-                    .font(.system(size: 24, weight: isOn ? .semibold : .regular))
+                    .font(.tvSettings(24, weight: isOn ? .semibold : .regular))
                     .opacity(isOn ? 0.9 : 0.55)
             }
         }
@@ -533,34 +549,34 @@ struct TVSettingsInfoRow: View {
 
     @Environment(\.tvSettingsJoinedRows) private var joined
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: TVSettingsLayout.scaled(16)) {
             Text(title)
-                .font(.system(size: 26))
+                .font(.tvSettings(26))
                 .lineLimit(1)
-            Spacer(minLength: 16)
+            Spacer(minLength: TVSettingsLayout.scaled(16))
             if showsConnectedDot {
-                Circle().fill(.green).frame(width: 10, height: 10).accessibilityHidden(true)
+                Circle().fill(.green).frame(width: TVSettingsLayout.scaled(10), height: TVSettingsLayout.scaled(10)).accessibilityHidden(true)
             }
             Text(value)
-                .font(.system(size: 24))
+                .font(.tvSettings(24))
                 .opacity(0.68)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 17)
+        .padding(.horizontal, TVSettingsLayout.scaled(24))
+        .padding(.vertical, TVSettingsLayout.scaled(17))
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundColor(.vividOnSurface)
         .background(
-            RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
+            RoundedRectangle(cornerRadius: joined ? 0 : TVSettingsLayout.scaled(14), style: .continuous)
                 .fill(joined ? Color.clear : TVSettingsPalette.groupFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: joined ? 0 : 14, style: .continuous)
+            RoundedRectangle(cornerRadius: joined ? 0 : TVSettingsLayout.scaled(14), style: .continuous)
                 .strokeBorder(joined ? Color.clear : Color.vividChromeRestingBorder, lineWidth: 1)
         )
         .overlay(alignment: .bottom) {
-            if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, 24) }
+            if joined { Rectangle().fill(TVSettingsPalette.separator).frame(height: 1).padding(.leading, TVSettingsLayout.scaled(24)) }
         }
         .accessibilityElement(children: .combine)
     }
@@ -578,12 +594,12 @@ struct TVSettingsSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 18, weight: .bold, design: .rounded))
+            .font(.tvSettings(18, weight: .bold, design: .rounded))
             .tracking(1)
             .foregroundStyle(TVSettingsPalette.sectionText)
-            .padding(.horizontal, 24)
-            .padding(.top, topInset)
-            .padding(.bottom, 6)
+            .padding(.horizontal, TVSettingsLayout.scaled(24))
+            .padding(.top, TVSettingsLayout.scaled(topInset))
+            .padding(.bottom, TVSettingsLayout.scaled(6))
     }
 }
 
@@ -595,10 +611,10 @@ struct TVSettingsFooter: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 19))
+            .font(.tvSettings(19))
             .foregroundColor(.vividSecondaryText)
-            .padding(.horizontal, 24)
-            .padding(.top, 4)
+            .padding(.horizontal, TVSettingsLayout.scaled(24))
+            .padding(.top, TVSettingsLayout.scaled(4))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -624,22 +640,22 @@ struct TVSettingsConfirmationOverlay: View {
                 .ignoresSafeArea()
                 .onTapGesture(perform: cancel)
 
-            VStack(spacing: 28) {
-                VStack(spacing: 12) {
+            VStack(spacing: TVSettingsLayout.scaled(28)) {
+                VStack(spacing: TVSettingsLayout.scaled(12)) {
                     Text(title)
-                        .font(.system(size: 38, weight: .semibold))
+                        .font(.tvSettings(38, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
 
                     Text(message)
-                        .font(.system(size: 22))
+                        .font(.tvSettings(22))
                         .foregroundColor(.vividSecondaryText)
                         .multilineTextAlignment(.center)
                 }
 
-                HStack(spacing: 16) {
+                HStack(spacing: TVSettingsLayout.scaled(16)) {
                     Button(action: cancel) {
                         Text("Cancel")
-                            .font(.system(size: 24, weight: .semibold))
+                            .font(.tvSettings(24, weight: .semibold))
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                         .buttonStyle(TVSettingsPaneRowStyle())
@@ -648,7 +664,7 @@ struct TVSettingsConfirmationOverlay: View {
 
                     Button(action: confirm) {
                         Text(confirmTitle)
-                            .font(.system(size: 24, weight: .semibold))
+                            .font(.tvSettings(24, weight: .semibold))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
@@ -661,7 +677,7 @@ struct TVSettingsConfirmationOverlay: View {
                        let additionalDestructiveAction {
                         Button(action: additionalDestructiveAction) {
                             Text(additionalDestructiveTitle)
-                                .font(.system(size: 24, weight: .semibold))
+                                .font(.tvSettings(24, weight: .semibold))
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.65)
@@ -672,14 +688,14 @@ struct TVSettingsConfirmationOverlay: View {
                     }
                 }
             }
-            .padding(.horizontal, 48)
-            .padding(.vertical, 42)
+            .padding(.horizontal, TVSettingsLayout.scaled(48))
+            .padding(.vertical, TVSettingsLayout.scaled(42))
             .background(
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(30), style: .continuous)
                     .fill(TVSettingsPalette.groupFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(30), style: .continuous)
                     .strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1)
             )
             .focusSection()
@@ -696,7 +712,7 @@ struct TVSettingsConfirmationOverlay: View {
     }
 
     private var buttonWidth: CGFloat {
-        additionalDestructiveTitle == nil ? 260 : 320
+        TVSettingsLayout.scaled(additionalDestructiveTitle == nil ? 260 : 320)
     }
 }
 
@@ -708,7 +724,7 @@ struct TVPrivacyPolicyPage: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(24)) {
                 TVSettingsPageHeader(title: "Privacy Policy", subtitle: "App privacy information · Updated 15 October 2026")
                 policySection("Your accounts and media server", "Vivid connects to the media servers you choose. Your server receives the sign-in details and requests needed to provide your account, library, artwork and playback. Depending on the provider, requests also identify this device by its name, a generated client identifier, platform and app version/build. If you press the Siri button to search, Apple turns what you say into text under its own privacy policy, and Vivid receives only that text and searches your server with it, as it does a typed search. The server operator controls that information and may keep its own logs and records. Vivid’s policy does not replace your server operator’s privacy policy.")
                 policySection("Information on this Apple TV", "Vivid saves preferences, Home metadata, artwork and playback buffers on this Apple TV. Saved account session tokens and optional Vivid PIN records use Keychain. The saved-account feature does not retain the media-server password you enter.")
@@ -722,7 +738,7 @@ struct TVPrivacyPolicyPage: View {
                 policySection("Contact and changes", "For questions about Vivid, contact admin@vividapp.co. Vivid is in development; this information will be updated as its features and data handling change.")
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24).padding(.vertical, 48)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48))
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
@@ -731,15 +747,15 @@ struct TVPrivacyPolicyPage: View {
     }
 
     private func policySection(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.system(size: 27, weight: .semibold))
-            Text(text).font(.system(size: 22)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
+            Text(title).font(.tvSettings(27, weight: .semibold))
+            Text(text).font(.tvSettings(22)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(TVSettingsLayout.scaled(18))
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(14))
                 .strokeBorder(.white.opacity(focusedSection == title ? 0.85 : 0), lineWidth: 2)
         }
         .focusable()

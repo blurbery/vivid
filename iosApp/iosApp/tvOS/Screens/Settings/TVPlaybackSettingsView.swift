@@ -7,7 +7,7 @@ struct TVPlaybackSettingsPane: View {
     let detailFocus: FocusState<TVSettingsDetailFocus?>.Binding
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
             streamingSection
             episodesSection
         }

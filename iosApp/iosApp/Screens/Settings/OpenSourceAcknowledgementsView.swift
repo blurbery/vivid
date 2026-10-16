@@ -232,20 +232,20 @@ private struct OpenSourceLicencePage: View {
 struct TVOpenSourceAcknowledgementsPage: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 TVSettingsPageHeader(title: "Open Source Licences")
                 TVSettingsGroup {
                     row(.source)
                     ForEach(OpenSourceAcknowledgements.entries) { row(.entry($0)) }
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                     TVSettingsSectionHeader("LICENCE TEXTS", topInset: 0)
                     TVSettingsGroup {
                         ForEach(OpenSourceAcknowledgements.texts) { row(.text($0)) }
                     }
                 }
             }
-            .frame(maxWidth: TVSettingsLayout.contentWidth).padding(24).frame(maxWidth: .infinity)
+            .frame(maxWidth: TVSettingsLayout.contentWidth).padding(TVSettingsLayout.scaled(24)).frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
     }
@@ -267,25 +267,25 @@ struct TVOpenSourceLicencePage: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: TVSettingsLayout.scaled(24)) {
                 TVSettingsPageHeader(title: page.title, subtitle: page.subtitle)
                 if blocks.isEmpty {
                     ProgressView("Loading licence…")
                 }
                 ForEach(blocks) { block in
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(12)) {
                         if let heading = block.heading {
-                            Text(heading).font(.system(size: 27, weight: .semibold))
+                            Text(heading).font(.tvSettings(27, weight: .semibold))
                         }
                         Text(verbatim: block.text)
-                            .font(.system(size: 22))
+                            .font(.tvSettings(22))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
+                    .padding(TVSettingsLayout.scaled(18))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(14))
                             .strokeBorder(.white.opacity(focusedBlock == block.id ? 0.85 : 0), lineWidth: 2)
                     }
                     .focusable()
@@ -295,7 +295,7 @@ struct TVOpenSourceLicencePage: View {
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24).padding(.vertical, 48)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.vertical, TVSettingsLayout.scaled(48))
             .frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()

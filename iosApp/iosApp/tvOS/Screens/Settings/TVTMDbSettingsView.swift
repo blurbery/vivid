@@ -9,26 +9,26 @@ struct TVTMDbSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
+                HStack(spacing: TVSettingsLayout.scaled(20)) {
                     Image(systemName: "film.stack")
-                        .font(.system(size: 27, weight: .medium))
+                        .font(.tvSettings(27, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
-                        .frame(width: 62, height: 62)
+                        .frame(width: TVSettingsLayout.scaled(62), height: TVSettingsLayout.scaled(62))
                         .background(TVSettingsPalette.iconFill,
-                                    in: RoundedRectangle(cornerRadius: 15.5))
-                    VStack(alignment: .leading, spacing: 7) {
+                                    in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(15.5)))
+                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(7)) {
                         Text("TMDb")
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
+                            .font(.tvSettings(40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("Configure your personal TMDB API to show trailers and TMDB ratings for your media.")
-                            .font(.system(size: 20)).foregroundStyle(.secondary)
+                            .font(.tvSettings(20)).foregroundStyle(.secondary)
                     }
-                }.padding(.horizontal, 24).padding(.bottom, 18)
+                }.padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.bottom, TVSettingsLayout.scaled(18))
                 TVSettingsSectionHeader("TMDB CONNECTION")
                 TVSettingsGroup {
                     TVSettingsInfoRow(title: "Status", value: busy ? "Connecting…" : (store.isConfigured ? "Connected" : "Not configured"), showsConnectedDot: store.isConfigured && !busy)
-                    if let message { TVSettingsFooter(message).padding(.horizontal, 24) }
+                    if let message { TVSettingsFooter(message).padding(.horizontal, TVSettingsLayout.scaled(24)) }
                     TVSettingsFieldRow(title: "Personal API key", detail: "You can also use your API Read Access Token.") {
                         SecureField("API key or read access token", text: $credential)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -71,7 +71,7 @@ struct TVTMDbSettingsView: View {
                 TVTMDbAttribution()
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 24).padding(.top, 48).padding(.bottom, 64)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.top, TVSettingsLayout.scaled(48)).padding(.bottom, TVSettingsLayout.scaled(64))
             .frame(maxWidth: .infinity)
         }
         .background(SettingsBackdrop())
@@ -83,13 +83,13 @@ struct TVTMDbSettingsView: View {
 
 struct TVTMDbAttribution: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(16)) {
             Image("TMDbAttributionLogo").resizable().scaledToFit()
-                .frame(width: 140, height: 54).accessibilityLabel("TMDB")
+                .frame(width: TVSettingsLayout.scaled(140), height: TVSettingsLayout.scaled(54)).accessibilityLabel("TMDB")
             Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
-                .font(.system(size: 19)).foregroundStyle(.secondary)
-            Text("themoviedb.org").font(.system(size: 19)).foregroundStyle(.secondary)
-        }.padding(24)
+                .font(.tvSettings(19)).foregroundStyle(.secondary)
+            Text("themoviedb.org").font(.tvSettings(19)).foregroundStyle(.secondary)
+        }.padding(TVSettingsLayout.scaled(24))
     }
 }
 #endif

@@ -125,8 +125,18 @@ struct SiloHouseholdTile: View {
     let isAdding: Bool
     var avatarSize: CGFloat = 64
 
+    /// On Apple TV the tile only appears in the account editor, so it
+    /// follows the settings scale there.
+    private func metric(_ value: CGFloat) -> CGFloat {
+        #if os(tvOS)
+        TVSettingsLayout.scaled(value)
+        #else
+        value
+        #endif
+    }
+
     var body: some View {
-        VStack(spacing: avatarSize > 80 ? 14 : 8) {
+        VStack(spacing: metric(avatarSize > 80 ? 14 : 8)) {
             ProfileAvatarView(avatar: profile.avatarEmoji, imageUrl: profile.avatarImageUrl, name: profile.name,
                               size: avatarSize,
                               cacheScope: VividCacheScope.key(serverID: account.serverID, accountID: account.userID,
@@ -137,28 +147,28 @@ struct SiloHouseholdTile: View {
                         ProgressView()
                     }
                 }
-            VStack(spacing: 3) {
-                HStack(spacing: 5) {
+            VStack(spacing: metric(3)) {
+                HStack(spacing: metric(5)) {
                     Text(profile.name).lineLimit(1)
                     if profile.hasPin {
-                        Image(systemName: "lock.fill").font(avatarSize > 80 ? .system(size: 15) : .caption2).opacity(0.7)
+                        Image(systemName: "lock.fill").font(avatarSize > 80 ? .system(size: metric(15)) : .caption2).opacity(0.7)
                     }
                 }
                 #if os(tvOS)
-                .font(.system(size: 20, weight: .medium))
+                .font(.tvSettings(20, weight: .medium))
                 #else
                 .font(.subheadline.weight(.medium))
                 #endif
                 Text("Add")
                     #if os(tvOS)
-                    .font(.system(size: 15))
+                    .font(.tvSettings(15))
                     #else
                     .font(.caption)
                     #endif
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: avatarSize + 40)
+        .frame(width: avatarSize + metric(40))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Add " + profile.name + (profile.hasPin ? ", PIN required" : ""))
     }

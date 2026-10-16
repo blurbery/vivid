@@ -59,7 +59,7 @@ struct TVSettingsView: View {
             } else {
                 ZStack {
                     ScrollView(.vertical, showsIndicators: false) {
-                        rail.padding(24)
+                        rail.padding(TVSettingsLayout.scaled(24))
                     }
                         .frame(maxWidth: TVSettingsLayout.pageWidth)
                         .defaultFocus($railFocus, .category(selectedCategory), priority: .userInitiated)
@@ -99,28 +99,28 @@ struct TVSettingsView: View {
     // MARK: - Left rail
 
     private var rail: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(6)) {
             TVSettingsOverview {
                 profileRow
             } categories: {
                 ForEach(visibleCategories) { category in categoryRow(category) }
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: TVSettingsLayout.scaled(12))
 
             VividCopyrightFooter()
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 10)
+            .padding(.top, TVSettingsLayout.scaled(10))
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .padding(.bottom, 24)
+        .padding(.bottom, TVSettingsLayout.scaled(24))
     }
 
     private var profileRow: some View {
         TVSavedAccountCards()
-            .padding(.horizontal, 8)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
+            .padding(.horizontal, TVSettingsLayout.scaled(8))
+            .padding(.top, TVSettingsLayout.scaled(12))
+            .padding(.bottom, TVSettingsLayout.scaled(4))
     }
 
     @ViewBuilder private func categoryImage(_ category: TVSettingsCategory) -> some View {
@@ -129,7 +129,7 @@ struct TVSettingsView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 28, height: 28)
+                .frame(width: TVSettingsLayout.scaled(28), height: TVSettingsLayout.scaled(28))
         } else {
             Image(systemName: category.icon)
         }
@@ -139,32 +139,32 @@ struct TVSettingsView: View {
         Button {
             enterDetailPane(for: category)
         } label: {
-            HStack(spacing: 16) {
+            HStack(spacing: TVSettingsLayout.scaled(16)) {
                 categoryImage(category)
-                    .font(.system(size: 22, weight: .medium))
-                    .frame(width: 48, height: 48)
+                    .font(.tvSettings(22, weight: .medium))
+                    .frame(width: TVSettingsLayout.scaled(48), height: TVSettingsLayout.scaled(48))
                     .background(
                         TVSettingsPalette.iconFill,
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(12), style: .continuous)
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(12))
                             .strokeBorder(TVSettingsPalette.separator, lineWidth: 1)
                     }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(2)) {
                     Text(category.title)
-                        .font(.system(size: 25, weight: .medium))
+                        .font(.tvSettings(25, weight: .medium))
 
                     Text(category.railDescription)
-                        .font(.system(size: 19))
+                        .font(.tvSettings(19))
                         .opacity(0.7)
                         .lineLimit(1)
                 }
 
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.tvSettings(17, weight: .semibold))
                     .opacity(0.5)
             }
         }
@@ -218,18 +218,18 @@ struct TVSettingsView: View {
 
     private var categoryControls: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
                 paneHeader
 
                 paneContent
-                    .padding(.top, 18)
+                    .padding(.top, TVSettingsLayout.scaled(18))
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.bottom, 64)
+            .padding(.bottom, TVSettingsLayout.scaled(64))
         }
         // Keep focused row scaling and shadows inside a deliberate gutter
         // instead of letting the scroll view trim their rounded edges.
-        .contentMargins(.horizontal, 24, for: .scrollContent)
+        .contentMargins(.horizontal, TVSettingsLayout.scaled(24), for: .scrollContent)
         .scrollClipDisabled()
         // Rebuild the scroll view per category so it opens at the top.
         // Safe: selection only changes while focus is in the rail.
@@ -276,7 +276,7 @@ struct TVSettingsView: View {
     // MARK: - Server pane
 
     private var serverPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
             TVSettingsSectionHeader("ACTIVE SERVER")
 
             TVSettingsGroup {
@@ -293,11 +293,11 @@ struct TVSettingsView: View {
                 }
 
                 Button { router.navigate(to: .serverList) } label: {
-                    HStack(spacing: 16) {
+                    HStack(spacing: TVSettingsLayout.scaled(16)) {
                         TVSettingsRowLabel(title: "Manage Servers")
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.tvSettings(18, weight: .semibold))
                             .opacity(0.55)
                     }
                 }

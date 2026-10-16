@@ -60,7 +60,7 @@ struct AboutSettingsView: View {
     var body: some View {
         #if os(tvOS)
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 TVSettingsPageHeader(title: "About")
                 brand
                 TVSettingsGroup {
@@ -79,7 +79,7 @@ struct AboutSettingsView: View {
                 }
                 VividCopyrightFooter().frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: TVSettingsLayout.contentWidth).padding(24).frame(maxWidth: .infinity)
+            .frame(maxWidth: TVSettingsLayout.contentWidth).padding(TVSettingsLayout.scaled(24)).frame(maxWidth: .infinity)
         }
         .tvSettingsPageSurface()
         #else
@@ -112,10 +112,19 @@ struct AboutSettingsView: View {
         #endif
     }
 
+    /// The brand block is shared; on Apple TV it follows the settings scale.
+    private func brandMetric(_ value: CGFloat) -> CGFloat {
+        #if os(tvOS)
+        TVSettingsLayout.scaled(value)
+        #else
+        value
+        #endif
+    }
+
     private var brand: some View {
-        VStack(spacing: 12) {
-            VividMarkView(width: 112)
-            Text("Vivid").font(.system(size: 36, weight: .semibold, design: .rounded))
+        VStack(spacing: brandMetric(12)) {
+            VividMarkView(width: brandMetric(112))
+            Text("Vivid").font(.system(size: brandMetric(36), weight: .semibold, design: .rounded))
             Text(VividAbout.version).foregroundStyle(.secondary)
             if let label = VividAbout.sourceLabel {
                 #if os(tvOS)
@@ -128,7 +137,7 @@ struct AboutSettingsView: View {
                 }
                 #endif
             }
-        }.frame(maxWidth: .infinity).padding(.vertical, 20)
+        }.frame(maxWidth: .infinity).padding(.vertical, brandMetric(20))
     }
 
 
@@ -146,12 +155,12 @@ private struct VividContactSettingsView: View {
     }()
 
     var body: some View {
-        VStack(spacing: 28) {
-            Text("Contact").font(.system(size: 42, weight: .bold, design: .rounded))
+        VStack(spacing: TVSettingsLayout.scaled(28)) {
+            Text("Contact").font(.tvSettings(42, weight: .bold, design: .rounded))
             if let image = Self.mailImage {
                 Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
-                    .frame(width: 300, height: 300).padding(24)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 20))
+                    .frame(width: TVSettingsLayout.scaled(300), height: TVSettingsLayout.scaled(300)).padding(TVSettingsLayout.scaled(24))
+                    .background(.white, in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(20)))
                     .accessibilityLabel("Scan to email Vivid support")
             }
             Text("Scan with your phone to open an email form.").foregroundStyle(.secondary)

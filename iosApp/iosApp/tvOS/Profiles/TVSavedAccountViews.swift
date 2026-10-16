@@ -84,7 +84,7 @@ struct TVSavedAccountCards: View {
     var body: some View {
         GeometryReader { viewport in
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 32) {
+            HStack(alignment: .top, spacing: metric(32)) {
                 ForEach(displayedAccounts) { account in
                     if isEditingProfiles {
                         if account.id == movingID {
@@ -92,7 +92,7 @@ struct TVSavedAccountCards: View {
                                 tile(account)
                                     .overlay(alignment: .top) {
                                         Circle().strokeBorder(.white, lineWidth: 3)
-                                            .frame(width: 112, height: 112)
+                                            .frame(width: metric(112), height: metric(112))
                                     }
                                     .modifier(ProfileArrangeWobble(active: true))
                             }
@@ -116,7 +116,7 @@ struct TVSavedAccountCards: View {
                         Group {
                             if (isSettings && account.id == store.activeID) || store.needsLogin(account) {
                                 NavigationLink(value: TVAccountRoute.editor(account.id)) { tile(account) }
-                                    .buttonStyle(TVAccountCircleStyle())
+                                    .buttonStyle(TVAccountCircleStyle(scale: scale))
                                     .focused($focusedAccount, equals: account.id)
                                     .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
 
@@ -125,7 +125,7 @@ struct TVSavedAccountCards: View {
                                     if store.hasPIN(account.id) { pinAccount = account }
                                     else { Task { await store.select(account, router: router) } }
                                 } label: { tile(account) }
-                                .buttonStyle(TVAccountCircleStyle())
+                                .buttonStyle(TVAccountCircleStyle(scale: scale))
                                     .focused($focusedAccount, equals: account.id)
                                     .prefersDefaultFocus(account.id == store.accounts.first?.id, in: profileFocusScope)
 
@@ -137,23 +137,23 @@ struct TVSavedAccountCards: View {
                 }
                 if store.canAddAccount {
                     NavigationLink(value: TVAccountRoute.editor(nil)) {
-                        VStack(spacing: 14) {
-                            Image(systemName: "plus").font(.system(size: 46, weight: .medium))
-                                .frame(width: 108, height: 108)
+                        VStack(spacing: metric(14)) {
+                            Image(systemName: "plus").font(.system(size: metric(46), weight: .medium))
+                                .frame(width: metric(108), height: metric(108))
                                 .background(.white.opacity(0.12), in: Circle())
-                            Text("Add Profile").font(.system(size: 20, weight: .medium))
-                        }.frame(width: 142)
+                            Text("Add Profile").font(.system(size: metric(20), weight: .medium))
+                        }.frame(width: metric(142))
                     }
-                    .buttonStyle(TVAccountCircleStyle())
+                    .buttonStyle(TVAccountCircleStyle(scale: scale))
                     .disabled(isEditingProfiles)
                 }
             }
-            .padding(16)
+            .padding(metric(16))
             .frame(minWidth: viewport.size.width, alignment: isSettings ? .leading : .center)
         }
         .scrollClipDisabled()
         }
-        .frame(height: 222)
+        .frame(height: metric(222))
         .disabled(store.busy || pinAccount != nil)
         .task {
             await profileStore.refresh(force: true)
@@ -202,6 +202,11 @@ struct TVSavedAccountCards: View {
         }
     }
 
+    /// The row follows the settings scale inside Settings; the profile
+    /// picker keeps its own size.
+    private var scale: CGFloat { isSettings ? TVSettingsLayout.scale : 1 }
+    private func metric(_ value: CGFloat) -> CGFloat { (value * scale).rounded() }
+
     private var initialProfileFocusID: String? {
         guard !isSettings, isEnabled, scenePhase == .active, !store.busy, !store.showsAnimation,
               store.error == nil,
@@ -243,23 +248,21 @@ struct TVSavedAccountCards: View {
     }
 
     private func tile(_ account: TVSavedAccount) -> some View {
-        VStack(spacing: 14) {
+        VStack(spacing: metric(14)) {
             ProfileAvatarView(avatar: displayedProfile(account)?.avatarEmoji,
-                              imageUrl: avatarURL(account), name: account.displayName, size: 108,
+                              imageUrl: avatarURL(account), name: account.displayName, size: metric(108),
                               cacheScope: displayedProfile(account).map {
                                   VividCacheScope.key(serverID: account.serverID, accountID: account.userID, profileID: String($0.id))
                               })
-                .overlay {
-                    Circle().strokeBorder(isSettings && isCurrentAccount(account) ? Color.white : .clear, lineWidth: 3)
-                }
-            VStack(spacing: 5) {
-                Text(account.displayName).font(.system(size: 20, weight: .medium)).lineLimit(1)
+                .overlay { TVCurrentAccountRing(isCurrent: isSettings && isCurrentAccount(account)) }
+            VStack(spacing: metric(5)) {
+                Text(account.displayName).font(.system(size: metric(20), weight: .medium)).lineLimit(1)
                 Text(serverLabel(for: account))
-                    .font(.system(size: 17)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                if account.requiresLogin { Text("Signed out").font(.system(size: 15)).opacity(0.6) }
+                    .font(.system(size: metric(17))).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                if account.requiresLogin { Text("Signed out").font(.system(size: metric(15))).opacity(0.6) }
             }
         }
-        .frame(width: 142)
+        .frame(width: metric(142))
         .accessibilityLabel(account.displayName + (account.requiresLogin ? ", signed out" : "")
             + ", " + serverLabel(for: account)
             + (isSettings && isCurrentAccount(account) ? ", current account" : ""))
@@ -282,17 +285,33 @@ struct TVSavedAccountCards: View {
     }
 }
 
+/// Marks the signed-in account in Settings. It steps aside while the card
+/// has focus, where the focus ring already circles the avatar and the two
+/// rings would read as one doubled outline.
+private struct TVCurrentAccountRing: View {
+    let isCurrent: Bool
+    @Environment(\.isFocused) private var isFocused
+    var body: some View {
+        Circle().strokeBorder(isCurrent && !isFocused ? Color.white : .clear, lineWidth: 3)
+    }
+}
+
 struct TVAccountCircleStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { CircleBody(configuration: configuration) }
+    /// Matches the card's own scale so the focus ring keeps circling a
+    /// larger avatar.
+    var scale: CGFloat = 1
+    func makeBody(configuration: Configuration) -> some View { CircleBody(configuration: configuration, scale: scale) }
     private struct CircleBody: View {
         let configuration: Configuration
+        let scale: CGFloat
         @Environment(\.isFocused) private var focused
         var body: some View {
             configuration.label
                 .foregroundStyle(.white)
                 .overlay(alignment: .top) {
                     Circle().strokeBorder(focused ? Color.white : .clear, lineWidth: 3)
-                        .frame(width: 116, height: 116).offset(y: -4)
+                        .frame(width: (116 * scale).rounded(), height: (116 * scale).rounded())
+                        .offset(y: (-4 * scale).rounded())
                 }
                 .scaleEffect(configuration.isPressed ? 0.98 : (focused ? 1.05 : 1))
                 .animation(.easeOut(duration: 0.15), value: focused)
@@ -328,25 +347,25 @@ struct TVSavedAccountEditor: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 30) {
-                HStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(30)) {
+                HStack(spacing: TVSettingsLayout.scaled(20)) {
                     Image(systemName: "person.crop.circle")
-                        .font(.system(size: 27, weight: .medium))
+                        .font(.tvSettings(27, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
-                        .frame(width: 62, height: 62)
+                        .frame(width: TVSettingsLayout.scaled(62), height: TVSettingsLayout.scaled(62))
                         .background(
                             Color(red: 0.12, green: 0.13, blue: 0.15),
-                            in: RoundedRectangle(cornerRadius: 15.5, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(15.5), style: .continuous)
                         )
-                    VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(7)) {
                         Text(account == nil ? (addingServer ? "Add Server" : "Add Profile") : account!.displayName)
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
+                            .font(.tvSettings(40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("Account details and access on this Apple TV.")
-                            .font(.system(size: 20)).foregroundStyle(.secondary)
+                            .font(.tvSettings(20)).foregroundStyle(.secondary)
                     }
                 }
-                .padding(.bottom, 12)
+                .padding(.bottom, TVSettingsLayout.scaled(12))
 
                 if account == nil {
                     if selectedServerProvider == nil {
@@ -468,12 +487,12 @@ struct TVSavedAccountEditor: View {
                         .buttonStyle(TVSettingsPaneRowStyle(isDestructive: true))
                     }
                 }
-                if let error = store.error { Text(error).foregroundStyle(.red).font(.system(size: 21)) }
-                if let message { Text(message).font(.system(size: 21)) }
+                if let error = store.error { Text(error).foregroundStyle(.red).font(.tvSettings(21)) }
+                if let message { Text(message).font(.tvSettings(21)) }
                 if store.busy { ProgressView() }
             }
-            .frame(maxWidth: 1080, alignment: .leading)
-            .padding(.horizontal, 24).padding(.top, 48).padding(.bottom, 64)
+            .frame(maxWidth: TVSettingsLayout.scaled(1080), alignment: .leading)
+            .padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.top, TVSettingsLayout.scaled(48)).padding(.bottom, TVSettingsLayout.scaled(64))
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -521,28 +540,28 @@ struct TVSavedAccountEditor: View {
                 }
                 .buttonStyle(TVSettingsPaneRowStyle())
             case .searching:
-                HStack(spacing: 18) {
+                HStack(spacing: TVSettingsLayout.scaled(18)) {
                     VividLoadingDots()
                     Text("Searching for accounts")
-                        .font(.system(size: 24, weight: .medium))
+                        .font(.tvSettings(24, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, minHeight: 96)
+                .frame(maxWidth: .infinity, minHeight: TVSettingsLayout.scaled(96))
             case .results:
                 if !household.profiles.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 32) {
+                        HStack(alignment: .top, spacing: TVSettingsLayout.scaled(32)) {
                             ForEach(household.profiles) { profile in
                                 Button { Task { await household.choose(profile, for: account) } } label: {
                                     SiloHouseholdTile(profile: profile, account: account,
                                                       isAdding: household.addingID == profile.id,
-                                                      avatarSize: 108)
+                                                      avatarSize: TVSettingsLayout.scaled(108))
                                 }
-                                .buttonStyle(TVAccountCircleStyle())
+                                .buttonStyle(TVAccountCircleStyle(scale: TVSettingsLayout.scale))
                                 .disabled(household.addingID != nil)
                             }
                         }
-                        .padding(24)
+                        .padding(TVSettingsLayout.scaled(24))
                     }
                     .scrollClipDisabled()
                     .focusSection()

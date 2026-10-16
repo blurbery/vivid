@@ -22,7 +22,7 @@ struct TVGeneralSettingsPane: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
             TVSettingsSectionHeader("THEMES")
             TVSettingsGroup {
                 TVSettingsOptionMenu(
@@ -40,7 +40,7 @@ struct TVGeneralSettingsPane: View {
             TVSettingsSectionHeader("HOME SCREEN")
 
             TVSettingsGroup {
-                TVSettingsPickerRow(title: "Home Screen", value: "Discovery Spotlight") {
+                TVSettingsPickerRow(title: "Spotlight", value: "Discovery Spotlight") {
                     showsHomeScreenSettings = true
                 }
                 .focused(detailFocus, equals: .generalHomeScreen)
@@ -51,11 +51,11 @@ struct TVGeneralSettingsPane: View {
                 ) { showsStudiosNetworksEditor = true }
 
                 Button { showsHomeSectionsEditor = true } label: {
-                    HStack(spacing: 16) {
+                    HStack(spacing: TVSettingsLayout.scaled(16)) {
                         TVSettingsRowLabel(title: "Home Sections")
-                        Spacer(minLength: 16)
+                        Spacer(minLength: TVSettingsLayout.scaled(16))
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.tvSettings(18, weight: .semibold))
                             .opacity(0.55)
                     }
                 }
@@ -108,14 +108,14 @@ struct TVGeneralSettingsPane: View {
 
             TVSettingsGroup {
                 Button { showsMenuEditor = true } label: {
-                    HStack(spacing: 16) {
+                    HStack(spacing: TVSettingsLayout.scaled(16)) {
                         TVSettingsRowLabel(title: "Customise Tab Bar")
-                        Spacer(minLength: 16)
+                        Spacer(minLength: TVSettingsLayout.scaled(16))
                         Text("\(visibleMenuCount) items")
-                            .font(.system(size: 24))
+                            .font(.tvSettings(24))
                             .opacity(0.68)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.tvSettings(18, weight: .semibold))
                             .opacity(0.55)
                     }
                 }
@@ -223,7 +223,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 editorControlsCard
 
                 if arrangedSections.isEmpty, isLoading {
@@ -233,7 +233,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
                             .tint(.vividOnSurface)
                         Spacer()
                     }
-                    .frame(height: 160)
+                    .frame(height: TVSettingsLayout.scaled(160))
                 } else if arrangedSections.isEmpty {
                     TVSettingsFooter(
                         loadFailed
@@ -256,8 +256,8 @@ private struct TVHomeSectionsCustomizationSheet: View {
                 }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 72)
-            .padding(.vertical, 36)
+            .padding(.horizontal, TVSettingsLayout.scaled(72))
+            .padding(.vertical, TVSettingsLayout.scaled(36))
         }
         .tvSettingsPageSurface()
         .task {
@@ -305,26 +305,26 @@ private struct TVHomeSectionsCustomizationSheet: View {
         let isVisible = preferences.isVisible(section.id)
         let index = arrangedSections.firstIndex(where: { $0.id == section.id }) ?? 0
 
-        return HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
+        return HStack(spacing: TVSettingsLayout.scaled(14)) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(4)) {
                 Text(section.title)
-                    .font(.system(size: 26, weight: .medium))
+                    .font(.tvSettings(26, weight: .medium))
                     .lineLimit(1)
 
                 Text("\(section.items.count) item\(section.items.count == 1 ? "" : "s")")
-                    .font(.system(size: 18))
+                    .font(.tvSettings(18))
                     .foregroundStyle(Color.vividSecondaryText)
             }
             .opacity(isVisible ? 1 : 0.42)
 
-            Spacer(minLength: 16)
+            Spacer(minLength: TVSettingsLayout.scaled(16))
 
             if isEditing {
                 Button {
                     move(section, by: -1)
                 } label: {
                     Image(systemName: "arrow.up")
-                        .frame(width: 44, height: 44)
+                        .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
                 }
                 .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
                 .focused($focusedControl, equals: .moveUp(section.id))
@@ -335,7 +335,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
                     move(section, by: 1)
                 } label: {
                     Image(systemName: "arrow.down")
-                        .frame(width: 44, height: 44)
+                        .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
                 }
                 .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
                 .focused($focusedControl, equals: .moveDown(section.id))
@@ -349,15 +349,15 @@ private struct TVHomeSectionsCustomizationSheet: View {
                 }
             } label: {
                 Image(systemName: isVisible ? "eye" : "eye.slash")
-                    .frame(width: 44, height: 44)
+                    .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
             }
             .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
             .focused($focusedControl, equals: .visibility(section.id))
             .disabled(!isVisible && preferences.visibleRowCount >= HomeSectionPreferences.maximumVisibleRows)
             .accessibilityLabel(isVisible ? "Hide \(section.title)" : "Show \(section.title)")
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
+        .padding(.horizontal, TVSettingsLayout.scaled(24))
+        .padding(.vertical, TVSettingsLayout.scaled(12))
         .background(
             Rectangle()
                 .fill(TVSettingsPalette.groupFill)
@@ -443,7 +443,7 @@ private struct TVHomeSectionsCustomizationSheet: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 18, weight: .bold, design: .rounded))
+            .font(.tvSettings(18, weight: .bold, design: .rounded))
             .tracking(1)
             .foregroundStyle(TVSettingsPalette.sectionText)
     }
@@ -471,17 +471,17 @@ private struct TVHomeSectionsControlButtonBody: View {
 
     var body: some View {
         configuration.label
-            .font(.system(size: compact ? 24 : 20, weight: .semibold))
+            .font(.tvSettings(compact ? 24 : 20, weight: .semibold))
             .foregroundStyle(foreground)
-            .padding(.horizontal, compact ? 0 : 22)
-            .frame(minWidth: compact ? 64 : 120, minHeight: 64, alignment: .center)
+            .padding(.horizontal, TVSettingsLayout.scaled(compact ? 0 : 22))
+            .frame(minWidth: TVSettingsLayout.scaled(compact ? 64 : 120), minHeight: TVSettingsLayout.scaled(64), alignment: .center)
             .multilineTextAlignment(.center)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(12), style: .continuous)
                     .fill(isFocused ? Color.vividOnSurface : TVSettingsPalette.groupFill)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(12), style: .continuous)
                     .strokeBorder(
                         isFocused ? Color.clear : Color.vividChromeRestingBorder,
                         lineWidth: 1
@@ -490,7 +490,7 @@ private struct TVHomeSectionsControlButtonBody: View {
             .scaleEffect(configuration.isPressed ? 0.97 : (isFocused ? 1.04 : 1))
             .shadow(
                 color: isFocused ? Color.black.opacity(0.2) : .clear,
-                radius: 16
+                radius: TVSettingsLayout.scaled(16)
             )
             .focusEffectDisabled()
             .animation(.easeOut(duration: VividTheme.fastDuration), value: isFocused)
@@ -510,7 +510,7 @@ private struct TVMenuCustomizationSheet: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(28)) {
                 TVSettingsPageHeader(title: "Tab Bar", subtitle: "Choose and arrange your navigation tabs.")
                 menuPreview
                 sectionHeader("SEARCH & PROFILE")
@@ -548,12 +548,12 @@ private struct TVMenuCustomizationSheet: View {
                             Button {
                                 persistVisibleItems(visibleItems + [item])
                             } label: {
-                                HStack(spacing: 18) {
+                                HStack(spacing: TVSettingsLayout.scaled(18)) {
                                     Image(systemName: "eye.slash")
                                     Text("Show \(item.title)")
                                     Spacer()
                                 }
-                                .font(.system(size: 26, weight: .medium))
+                                .font(.tvSettings(26, weight: .medium))
                             }
                             .buttonStyle(TVSettingsPaneRowStyle())
                         }
@@ -565,34 +565,34 @@ private struct TVMenuCustomizationSheet: View {
                 TVSettingsFooter("Changes save automatically. Home stays visible; press Back to return.")
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, 72)
-            .padding(.vertical, 36)
+            .padding(.horizontal, TVSettingsLayout.scaled(72))
+            .padding(.vertical, TVSettingsLayout.scaled(36))
         }
         .tvSettingsPageSurface()
         .onExitCommand { dismiss() }
     }
 
     private var menuPreview: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: TVSettingsLayout.scaled(8)) {
             Image(systemName: utilitiesSwapped ? "person.crop.circle.fill" : "magnifyingglass")
-                .frame(width: 42)
-            Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: 24)
+                .frame(width: TVSettingsLayout.scaled(42))
+            Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: TVSettingsLayout.scaled(24))
             ForEach(visibleItems) { item in
                 Text(item.title)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.tvSettings(20, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.6)
-                    .padding(.horizontal, 12).padding(.vertical, 9)
+                    .padding(.horizontal, TVSettingsLayout.scaled(12)).padding(.vertical, TVSettingsLayout.scaled(9))
                     .foregroundStyle(item == .builtin(.home) ? Color.black : Color.white)
                     .background(item == .builtin(.home) ? Color.white : Color.clear, in: Capsule())
             }
-            Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: 24)
+            Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: TVSettingsLayout.scaled(24))
             Image(systemName: utilitiesSwapped ? "magnifyingglass" : "person.crop.circle.fill")
-                .frame(width: 42)
+                .frame(width: TVSettingsLayout.scaled(42))
         }
-        .font(.system(size: 24))
+        .font(.tvSettings(24))
         .modifier(TVTopMenuGlassChrome())
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        .padding(.vertical, TVSettingsLayout.scaled(28))
         .allowsHitTesting(false)
         .accessibilityLabel("Tab bar preview")
     }
@@ -650,15 +650,15 @@ private struct TVMenuCustomizationSheet: View {
 
     private func visibleRow(_ item: PrimaryMenuItem) -> some View {
         let index = visibleItems.firstIndex(where: { $0.id == item.id }) ?? 0
-        return HStack(spacing: 12) {
+        return HStack(spacing: TVSettingsLayout.scaled(12)) {
             TVSettingsRowLabel(title: item.title, detail: "Shown in the tab bar. Use the arrows to change its position.")
-            Spacer(minLength: 12)
+            Spacer(minLength: TVSettingsLayout.scaled(12))
 
             Button {
                 move(item, by: -1)
             } label: {
                 Image(systemName: "arrow.up")
-                    .frame(width: 44, height: 44)
+                    .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
             }
             .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
             .disabled(index == 0)
@@ -668,7 +668,7 @@ private struct TVMenuCustomizationSheet: View {
                 move(item, by: 1)
             } label: {
                 Image(systemName: "arrow.down")
-                    .frame(width: 44, height: 44)
+                    .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
             }
             .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
             .disabled(index == visibleItems.count - 1)
@@ -679,14 +679,14 @@ private struct TVMenuCustomizationSheet: View {
                     hide(item)
                 } label: {
                     Image(systemName: "eye")
-                        .frame(width: 44, height: 44)
+                        .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
                 }
                 .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
                 .accessibilityLabel("Hide \(item.title)")
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
+        .padding(.horizontal, TVSettingsLayout.scaled(24))
+        .padding(.vertical, TVSettingsLayout.scaled(12))
         .background(
             Rectangle()
                 .fill(TVSettingsPalette.groupFill)
@@ -741,7 +741,7 @@ private struct TVMenuCustomizationSheet: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 18, weight: .bold, design: .rounded))
+            .font(.tvSettings(18, weight: .bold, design: .rounded))
             .tracking(1)
             .foregroundStyle(TVSettingsPalette.sectionText)
     }
