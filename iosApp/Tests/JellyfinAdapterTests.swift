@@ -600,6 +600,42 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertEqual(types, ["Movie,Episode"], "History keeps its own item types")
     }
 
+    func testLibraryBrowseAsksJellyfinNotToGroupTitlesIntoCollections() async throws {
+        var browse: [String: String] = [:]
+        let adapter = adapter { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            if components.path == "/jellyfin/UserViews" {
+                return (200, ["Items": [["Id": self.source, "Name": "Movies", "CollectionType": "movies"]]])
+            }
+            browse = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        _ = try await adapter.catalog(["library_id": String(JellyfinAdapter.numberID(source)), "type": "movie"])
+        XCTAssertEqual(browse["ParentId"], source)
+        XCTAssertEqual(browse["IncludeItemTypes"], "Movie")
+        XCTAssertEqual(browse["CollapseBoxSetItems"], "false")
+    }
+
+    func testCollectionItemsFollowTheServersDisplayOrder() async throws {
+        var requests: [[String: String]] = []
+        let adapter = adapter { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            requests.append(Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        _ = try await adapter.catalog(["source": "library_collection", "collection_id": item, "offset": "60", "limit": "60"])
+        _ = try await adapter.route(method: "GET", path: "/api/v1/collections/\(item)/items", query: [:], body: nil)
+        XCTAssertEqual(requests.count, 2)
+        for query in requests {
+            XCTAssertEqual(query["ParentId"], item)
+            XCTAssertEqual(query["Recursive"], "false")
+            XCTAssertEqual(query["CollapseBoxSetItems"], "false")
+            XCTAssertNil(query["SortBy"], "A sort would replace the collection's own order")
+            XCTAssertNil(query["SortOrder"])
+        }
+        XCTAssertEqual(requests.first?["StartIndex"], "60")
+    }
+
     func testLibraryDirectoryIsIsolatedByUserServerAndLoginEpochAndExpires() async throws {
         let directory = JellyfinLibraryDirectory()
         let epoch = UUID()

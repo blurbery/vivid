@@ -812,9 +812,11 @@ struct JellyfinAdapter {
 
     private var watchlistIDs: [String] { UserDefaults.standard.stringArray(forKey: storagePrefix + ".watchlist") ?? [] }
 
+    /// No sort, so Jellyfin lists a collection in its own display order
+    /// (release date unless changed on the server), as its web client does.
     nonisolated static func collectionQuery(id: String, offset: String, limit: String) -> [String:String] {
         ["ParentId":id,"Recursive":"false","CollapseBoxSetItems":"false",
-         "StartIndex":offset,"Limit":limit,"SortBy":"SortName","SortOrder":"Ascending"]
+         "StartIndex":offset,"Limit":limit]
     }
 
     nonisolated static func catalogFilterOptions(_ raw: [String: Any]) -> [String: Any] {
@@ -834,6 +836,9 @@ struct JellyfinAdapter {
             return try await items(query:Self.collectionQuery(id:JellyfinConnection.id(collection),offset:input["offset"] ?? "0",limit:input["limit"] ?? "60").merging(["Fields": Self.browseFields]) { _, new in new })
         }
         var q = ["Fields": Self.browseFields, "StartIndex": input["offset"] ?? "0", "Limit": input["limit"] ?? "60", "IncludeItemTypes": "Movie,Series", "SortBy":"SortName", "SortOrder":input["order"] == "desc" ? "Descending" : "Ascending"]
+        // A server set to group movies or shows into collections would otherwise swap
+        // a library's titles for collection cards. Collections have their own pages.
+        q["CollapseBoxSetItems"] = "false"
         // Search's "video" scope, like any other unmapped type, keeps both movies and series.
         if let type = input["type"], let mapped = ["movie":"Movie", "series":"Series", "episode":"Episode"][type] { q["IncludeItemTypes"] = mapped }
         for (source,target) in ["search":"SearchTerm", "q":"SearchTerm", "genre":"Genres", "genres":"Genres", "year":"Years", "years":"Years", "content_rating":"OfficialRatings", "studio":"StudioIds"] { if let v = input[source], !v.isEmpty { q[target] = v } }
