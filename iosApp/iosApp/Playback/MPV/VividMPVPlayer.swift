@@ -122,6 +122,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     private var managedSource: VividManagedStreamSource?
     private var managedSourceURL: URL?
     private var requestedRate: Float = 1
+    /// Read from Settings at each load, so a change applies from the next one.
+    private var audioEnhancement = VividAudioEnhancement.off
     private var rateTask: Task<Void, Never>?
     private var endConfirmationTask: Task<Void, Never>?
     private var wantsPlay = false
@@ -254,6 +256,8 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         instance.audioOnly = options.audioOnly
         instance.initialRate = requestedRate
         instance.initialVolume = volume
+        audioEnhancement = PlayerSettings.shared.audioEnhancement
+        instance.audioEnhancement = audioEnhancement
         instance.audioLanguages = options.preferredAudioLanguages
         instance.plannedAudio = (audioSourceStreamIndex, options.audioTrackOrdinal)
         #if os(tvOS)
@@ -293,7 +297,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         startSessionSampler(token: token)
         videoRoute = options.audioOnly ? .audio : .sampleBuffer
         trace?.event("mpv_initialised", fields: "backend=mpv compressed_sink=avplayer pcm_sink=samplebuffer")
-        trace?.event("mpv_audio_policy", fields: "airplay_pcm=\(instance.airPlayPCM) layouts=\(instance.airPlayPCM ? "7.1,5.1,stereo" : "auto-safe")")
+        trace?.event("mpv_audio_policy", fields: "airplay_pcm=\(instance.airPlayPCM) layouts=\(instance.airPlayPCM ? "7.1,5.1,stereo" : "auto-safe") boost=\(audioEnhancement.boostPercent) dialogue=\(audioEnhancement.enhancedDialogue)")
         var openURL = url
         if instance.managedStreamsRegistered {
             // Read the app's refresh hook when it is needed: it is installed
@@ -771,20 +775,23 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         guard rate.isFinite, rate > 0 else { return }
         trace?.event("mpv_rate_requested", fields: "rate=\(rate) previous=\(requestedRate)")
         // Crossing 1x on an AC-3 or E-AC-3 track swaps compressed output for
-        // PCM, or back, which replaces the audio output.
+        // PCM, or back, which replaces the audio output. With Volume Boost or
+        // Enhanced Dialogue on, those tracks are decoded at every speed.
         let codec = audioTracks.first { $0.id == activeAudioTrackIndex }?.codec ?? ""
         let swapsAudioOutput = (rate == 1) != (requestedRate == 1) && ["ac3", "eac3"].contains(codec)
+            && !audioEnhancement.isActive
         requestedRate = rate
         guard let core else { return }
         let token = generation
         let previous = rateTask
+        let spdif = VividMPVAudio.spdifCodecs(rate: rate, enhancement: audioEnhancement)
         rateTask = Task { @MainActor [weak self, weak core] in
             await previous?.value
             guard let self, let core, generation == token, !Task.isCancelled else { return }
             // Compressed packets cannot pass through a tempo filter.
             let changes = rate == 1
-                ? [("speed", String(rate)), ("audio-spdif", "ac3,eac3")]
-                : [("audio-spdif", ""), ("speed", String(rate))]
+                ? [("speed", String(rate)), ("audio-spdif", spdif)]
+                : [("audio-spdif", spdif), ("speed", String(rate))]
             do {
                 for (name, value) in changes {
                     guard generation == token, !Task.isCancelled else { return }
@@ -1164,6 +1171,7 @@ private final class VividMPVCore: VividPlayerCore {
     var audioOnly = false
     var initialRate: Float = 1
     var initialVolume: Float = 1
+    var audioEnhancement = VividAudioEnhancement.off
     var audioLanguages: [String] = []
     var plannedAudio: (streamIndex: Int32?, ordinal: Int?) = (nil, nil)
     var airPlayPCM = false
@@ -1172,7 +1180,8 @@ private final class VividMPVCore: VividPlayerCore {
         VividMPVPlayer.plannedAudioTrackID(in: tracks, streamIndex: plannedAudio.streamIndex, ordinal: plannedAudio.ordinal)
     }
     override func configurePlatformMpvOptions(mpv: OpaquePointer) {
-        let settings = ["ao": "avfoundation", "audio-spdif": initialRate == 1 ? "ac3,eac3" : "",
+        let settings = ["ao": "avfoundation",
+                        "audio-spdif": VividMPVAudio.spdifCodecs(rate: initialRate, enhancement: audioEnhancement),
                         "ao-avfoundation-manage-audio-session": "no",
                         "audio-exclusive": "yes", "audio-channels": airPlayPCM ? "7.1,5.1,stereo" : "auto-safe",
                         "config": "no", "input-default-bindings": "no", "input-vo-keyboard": "no",
@@ -1187,6 +1196,9 @@ private final class VividMPVCore: VividPlayerCore {
                         "cache": "yes", "demuxer-max-bytes": "268435456", "demuxer-max-back-bytes": "16777216",
                         "alang": audioLanguages.joined(separator: ","), "terminal": "no"]
         for (name, value) in settings { checkError(mpv_set_option_string(mpv, name, value), option: name) }
+        for (name, value) in VividMPVAudio.enhancementOptions(audioEnhancement) {
+            checkError(mpv_set_option_string(mpv, name, value), option: name)
+        }
         // Check HTTPS certificates when the linked FFmpeg uses Secure Transport.
         // An FFmpeg built with OpenSSL has no trust store on Apple platforms.
         checkError(LucidTLS.apply(to: mpv), option: "tls-verify")
@@ -1245,6 +1257,49 @@ enum VividMPVHeaders {
             }
         }
     }
+}
+
+/// Volume Boost and Enhanced Dialogue as Lucid options.
+enum VividMPVAudio {
+    /// The codecs Lucid may pass through compressed: AC-3 and E-AC-3 at 1x,
+    /// unless an enhancement is on. mpv's gain and filters leave a bitstream
+    /// untouched, so those tracks are then decoded and Dolby Atmos plays as
+    /// its surround bed.
+    static func spdifCodecs(rate: Float, enhancement: VividAudioEnhancement) -> String {
+        rate == 1 && !enhancement.isActive ? "ac3,eac3" : ""
+    }
+
+    /// Set only while an enhancement is on, so the default options are unchanged.
+    static func enhancementOptions(_ enhancement: VividAudioEnhancement) -> [(String, String)] {
+        var options: [(String, String)] = []
+        // mpv's `volume` is cubic, so the boost uses its gain in decibels,
+        // applied to decoded audio after the filters. 200% is +6.02 dB,
+        // inside mpv's default 12 dB limit.
+        if enhancement.boostPercent > 100 {
+            options.append(("volume-gain", String(format: "%.2f", enhancement.boostDecibels)))
+        }
+        if enhancement.enhancedDialogue {
+            options.append(("af", dialogueFilter))
+        }
+        return options
+    }
+
+    /// Enhanced Dialogue as one FIR equaliser. It handles every channel
+    /// layout and never adds gain, so it cannot push a peak over full scale:
+    /// - With a centre channel (3.0 and up, in native order), the centre
+    ///   keeps its level and every other channel drops 6 dB. `chid` 2 is
+    ///   FFmpeg's front centre, and bit 2 of `chlayout` is its mask bit.
+    /// - Otherwise (mono, stereo, quad and the rest), the 1.5 to 4 kHz speech
+    ///   band keeps its level, bass below 120 Hz drops 8 dB and the rest
+    ///   drops 2 to 3 dB.
+    ///
+    /// It runs before mpv mixes down to the route, so a stereo route still
+    /// hears the louder centre. Zero-phase mode moves the timestamps back by
+    /// the filter's 10 ms delay, which keeps the audio in sync.
+    static let dialogueFilter = "lavfi=[firequalizer=multi=on:zero_phase=on"
+        + ":gain_entry='entry(0,-8);entry(120,-8);entry(300,-3);entry(1000,-2);"
+        + "entry(1500,0);entry(4000,0);entry(6000,-3);entry(24000,-3)'"
+        + ":gain='if(gte(chs,3)*mod(floor(chlayout/4),2),if(eq(chid,2),0,-6),gain_interpolate(f))']"
 }
 
 private final class VividMPVDelegate: VividPlayerCoreDelegate {

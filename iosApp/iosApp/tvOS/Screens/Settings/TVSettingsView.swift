@@ -329,6 +329,7 @@ enum TVSettingsDetailFocus: Hashable {
     case generalTopMenu
     case playbackAudioLanguage
     case playbackBufferAhead
+    case playbackVolumeBoostLevel
     case playbackNextUpPrompt
     case subtitleBehavior
     case subtitleUseDeviceSettings
@@ -388,7 +389,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         case .general:
             return "App-level options for this Apple TV."
         case .playback:
-            return "Streaming quality and episode behavior for this Apple TV."
+            return "Streaming quality, audio and episode behavior for this Apple TV."
         case .subtitles:
             return "Language, behavior, and on-screen appearance."
         case .plugins:
@@ -409,7 +410,7 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
     var railDescription: String {
         switch self {
         case .general: return "App and navigation"
-        case .playback: return "Quality and episodes"
+        case .playback: return "Quality, audio and episodes"
         case .subtitles: return "Language and appearance"
         case .plugins: return "Trailers and watched history"
         case .server: return "Connection and version"

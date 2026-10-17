@@ -154,6 +154,9 @@ struct TVSettingsRowLabel: View {
         "Quality": "Preferred playback resolution and bitrate.",
         "Audio Language": "Prefer a matching audio track when available.",
         "Buffer Ahead": "Lucid manages buffering automatically.",
+        "Volume Boost": "Play louder than Vivid’s standard volume.",
+        "Boost Level": "Choose how much louder Volume Boost plays.",
+        "Enhanced Dialogue": "Lower music and effects so voices are easier to hear.",
         "Auto-Play Next Episode": "Start the following episode automatically.",
         "Show Next Up": "Choose when the next-episode prompt appears.",
         "Auto-Skip Intros & Recaps": "Skip intros and recaps automatically when timestamps are available.",
@@ -221,6 +224,9 @@ enum TVSettingsOptions {
 
     static let bufferAhead: [TVSettingsOption] =
         BufferAheadMode.allCases.map { .init(id: $0.rawValue, label: $0.label) }
+
+    static let volumeBoostLevel: [TVSettingsOption] =
+        VividAudioEnhancement.boostLevels.map { .init(id: String($0), label: "\($0)%") }
 
     static let nextUpPrompt: [TVSettingsOption] = [
         .init(id: "0", label: "At end"),

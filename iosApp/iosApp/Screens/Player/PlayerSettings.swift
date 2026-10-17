@@ -228,6 +228,35 @@ final class PlayerSettings {
         }
     }
 
+    /// Device-local: Volume Boost. Off plays at Vivid's standard level, and
+    /// ``volumeBoostPercent`` is kept so turning it back on restores the level.
+    ///
+    /// Never synced to the server, and deliberately not a contract key: how
+    /// loud a title needs to be depends on this device's speakers.
+    var volumeBoostEnabled: Bool {
+        didSet { defaults.set(volumeBoostEnabled, forKey: Self.cacheKey(Keys.volumeBoostEnabled)) }
+    }
+
+    /// Device-local: the Volume Boost level, one of
+    /// ``VividAudioEnhancement/boostLevels``.
+    var volumeBoostPercent: Int {
+        didSet { defaults.set(volumeBoostPercent, forKey: Self.cacheKey(Keys.volumeBoostPercent)) }
+    }
+
+    /// Device-local: Enhanced Dialogue, which lowers music and effects so
+    /// voices are easier to hear. Never synced, like Volume Boost.
+    var enhancedDialogueEnabled: Bool {
+        didSet { defaults.set(enhancedDialogueEnabled, forKey: Self.cacheKey(Keys.enhancedDialogueEnabled)) }
+    }
+
+    /// What the player applies to the next load.
+    var audioEnhancement: VividAudioEnhancement {
+        VividAudioEnhancement(
+            boostPercent: volumeBoostEnabled ? volumeBoostPercent : 100,
+            enhancedDialogue: enhancedDialogueEnabled
+        )
+    }
+
     var subtitleAppearance: SubtitleAppearance {
         didSet {
             let sanitized = subtitleAppearance.sanitized()
@@ -316,6 +345,9 @@ final class PlayerSettings {
 
             Keys.backgroundPlaybackEnabled: true,
             Keys.bufferAhead: BufferAheadMode.automatic.rawValue,
+            Keys.volumeBoostEnabled: false,
+            Keys.volumeBoostPercent: VividAudioEnhancement.defaultBoostLevel,
+            Keys.enhancedDialogueEnabled: false,
 
             Keys.subtitleAppearance: SubtitleAppearance.default.jsonString,
 
@@ -344,6 +376,9 @@ final class PlayerSettings {
         )
         preferLosslessAudio = defaults.bool(forKey: Self.cacheKey(Keys.preferLosslessAudio))
         bufferAhead = Self.cachedBufferAhead(defaults)
+        volumeBoostEnabled = Self.cachedBool(defaults, key: Keys.volumeBoostEnabled, defaultValue: false)
+        volumeBoostPercent = Self.cachedVolumeBoostPercent(defaults)
+        enhancedDialogueEnabled = Self.cachedBool(defaults, key: Keys.enhancedDialogueEnabled, defaultValue: false)
         subtitleAppearance = SubtitleAppearance.decode(from: defaults.string(forKey: Self.cacheKey(Keys.subtitleAppearance)))
         subtitleUsesDeviceAppearanceOverride = Self.cachedBool(
             defaults,
@@ -463,6 +498,21 @@ final class PlayerSettings {
         bufferAhead = mode
     }
 
+    /// Turn Volume Boost on or off. Purely local; the level is kept.
+    func setVolumeBoostEnabled(_ enabled: Bool) {
+        volumeBoostEnabled = enabled
+    }
+
+    /// Choose the Volume Boost level, snapped to an offered one.
+    func setVolumeBoostPercent(_ percent: Int) {
+        volumeBoostPercent = VividAudioEnhancement.boostLevel(percent)
+    }
+
+    /// Turn Enhanced Dialogue on or off. Purely local.
+    func setEnhancedDialogueEnabled(_ enabled: Bool) {
+        enhancedDialogueEnabled = enabled
+    }
+
     func setPlaybackSpeed(_ rate: Double) {
         let normalized = Self.clampPlaybackSpeed(rate)
         playbackSpeed = normalized
@@ -523,6 +573,9 @@ final class PlayerSettings {
         backgroundPlaybackEnabled = true
         preferLosslessAudio = false
         bufferAhead = .automatic
+        volumeBoostEnabled = false
+        volumeBoostPercent = VividAudioEnhancement.defaultBoostLevel
+        enhancedDialogueEnabled = false
         subtitleMatchesSystemAppearance = false
     }
 
@@ -555,6 +608,9 @@ final class PlayerSettings {
         )
         preferLosslessAudio = defaults.bool(forKey: Self.cacheKey(Keys.preferLosslessAudio))
         bufferAhead = Self.cachedBufferAhead(defaults)
+        volumeBoostEnabled = Self.cachedBool(defaults, key: Keys.volumeBoostEnabled, defaultValue: false)
+        volumeBoostPercent = Self.cachedVolumeBoostPercent(defaults)
+        enhancedDialogueEnabled = Self.cachedBool(defaults, key: Keys.enhancedDialogueEnabled, defaultValue: false)
         playbackSpeed = Self.clampPlaybackSpeed(
             Self.cachedDouble(defaults, key: Keys.playbackSpeed, defaultValue: 1.0)
         )
@@ -683,6 +739,12 @@ final class PlayerSettings {
         ) ?? .automatic
     }
 
+    private static func cachedVolumeBoostPercent(_ defaults: UserDefaults) -> Int {
+        VividAudioEnhancement.boostLevel(
+            cachedInt(defaults, key: Keys.volumeBoostPercent, defaultValue: VividAudioEnhancement.defaultBoostLevel)
+        )
+    }
+
     private static func cachedDouble(_ defaults: UserDefaults, key: String, defaultValue: Double) -> Double {
         let scopedKey = cacheKey(key)
         guard defaults.object(forKey: scopedKey) != nil else {
@@ -729,6 +791,9 @@ final class PlayerSettings {
         static let backgroundPlaybackEnabled = "player.backgroundPlaybackEnabled"
         static let preferLosslessAudio = "player.preferLosslessAudio"
         static let bufferAhead = "player.bufferAhead"
+        static let volumeBoostEnabled = "player.volumeBoostEnabled"
+        static let volumeBoostPercent = "player.volumeBoostPercent"
+        static let enhancedDialogueEnabled = "player.enhancedDialogueEnabled"
         static let subtitleAppearance = "player.subtitleAppearance"
         static let subtitleUsesDeviceAppearanceOverride = "player.subtitleUsesDeviceAppearanceOverride"
         static let subtitleMatchesSystemAppearance = "player.subtitleMatchesSystemAppearance"

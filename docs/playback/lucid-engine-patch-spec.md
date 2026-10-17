@@ -150,7 +150,9 @@ If something here seems incomplete or contradictory, ask the spec editor. Do not
 | `target-colorspace-hint` | `auto` | always; the VO never reads it |
 | `keep-open` | `yes` | always |
 | `ao` | `avfoundation` | always |
-| `audio-spdif` | `ac3,eac3` when the initial rate is exactly 1, otherwise the empty string | |
+| `audio-spdif` | `ac3,eac3` when the initial rate is exactly 1 and neither Volume Boost nor Enhanced Dialogue is on, otherwise the empty string | |
+| `volume-gain` | the Volume Boost gain in dB, from `1.94` to `6.02` | only while Volume Boost is on |
+| `af` | Enhanced Dialogue's `lavfi` `firequalizer` graph | only while Enhanced Dialogue is on |
 | `ao-avfoundation-manage-audio-session` | `no` | always |
 | `audio-exclusive` | `yes` | always |
 | `audio-channels` | `7.1,5.1,stereo` on tvOS when the route is AirPlay at load, otherwise `auto-safe` | |
@@ -183,7 +185,7 @@ No GPU context is configured on iOS or tvOS: the old bridge sets `gpu-api` `vulk
 - `hr-seek` `default` at the first `playback-restart` of a resumed load.
 - `vid` `no` on entering the background without Picture in Picture, and `vid` `auto` on every return to the foreground and, on iOS, on every scene activation (Control Centre, banners, alerts, app-switcher peeks), whether or not the load is audio-only.
 - Commands: `loadfile`; `seek <t> absolute+exact`; `seek 0 relative+exact` (the paused redraw, and before some `audio-spdif` changes, below); `sub-add <path> auto` for external subtitle files added during playback. An `on_preloaded` hook may write `aid` synchronously.
-- **Speed changes.** Every change of rate writes both `speed` and `audio-spdif`: towards 1x, `speed` first and then `audio-spdif` `ac3,eac3`; away from 1x, `audio-spdif` empty first and then `speed`. So `audio-spdif` changes value on every crossing of 1x, whatever the audio codec. It is an `UPDATE_AD` option, so each crossing tears down and rebuilds the audio decoder and filter chain, for every codec. Whether the AO is replaced depends on the track:
+- **Speed changes.** Every change of rate writes both `speed` and `audio-spdif`: towards 1x, `speed` first and then `audio-spdif` `ac3,eac3`; away from 1x, `audio-spdif` empty first and then `speed`. So `audio-spdif` changes value on every crossing of 1x, whatever the audio codec. The exception is a load with Volume Boost or Enhanced Dialogue on: `audio-spdif` is empty from the start and every write keeps it empty, so no crossing changes it and the adapter never queues the seek below. It is an `UPDATE_AD` option, so each crossing tears down and rebuilds the audio decoder and filter chain, for every codec. Whether the AO is replaced depends on the track:
   - on an AC-3 or E-AC-3 track the crossing switches between passthrough and decoded PCM, so mpv closes the AO and opens a new one, which starts again from `init` (3.1);
   - on any other track (DTS, TrueHD, AAC and the rest, decoded to PCM either way) the output format does not change, so mpv's default weak gapless handling keeps the same AO: it gets no `init`, no driver `reset`, no fresh sink and no `start-fresh` edge. mpv's queued audio is kept and the AO keeps pulling through the rebuild. If that queue runs dry before the new chain refills it, mpv later starts the AO again with a plain `start` (on bounded tvOS PCM, at most one `start` edge, with the renderer and its enqueued end kept).
 

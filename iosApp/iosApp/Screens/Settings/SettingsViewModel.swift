@@ -45,6 +45,11 @@ class SettingsViewModel {
     var backgroundPlaybackEnabled: Bool = PlayerSettings.shared.backgroundPlaybackEnabled
     /// Local — it spends this device's temporary storage, not the profile's.
     var bufferAhead: BufferAheadMode = PlayerSettings.shared.bufferAhead
+    /// Local, like the rest of the Audio section's switches: how loud a title
+    /// needs to be depends on this device's speakers.
+    var volumeBoostEnabled: Bool = PlayerSettings.shared.volumeBoostEnabled
+    var volumeBoostPercent: Int = PlayerSettings.shared.volumeBoostPercent
+    var enhancedDialogueEnabled: Bool = PlayerSettings.shared.enhancedDialogueEnabled
 
     // Subtitle styling (local — applies to renderer overrides, not the
     // language/behavior selection that lives server-side).
@@ -134,6 +139,7 @@ class SettingsViewModel {
         skipCredits = PlayerSettings.shared.autoSkipCredits
         backgroundPlaybackEnabled = PlayerSettings.shared.backgroundPlaybackEnabled
         bufferAhead = PlayerSettings.shared.bufferAhead
+        adoptAudioFromPlayerSettings()
         subtitleAppearance = PlayerSettings.shared.subtitleAppearance
         subtitleUsesDeviceAppearanceOverride = PlayerSettings.shared.subtitleUsesDeviceAppearanceOverride
         subtitleMatchesSystemAppearance = PlayerSettings.shared.subtitleMatchesSystemAppearance
@@ -218,6 +224,30 @@ class SettingsViewModel {
         bufferAhead = PlayerSettings.shared.bufferAhead
     }
 
+    @MainActor
+    func setVolumeBoostEnabled(_ enabled: Bool) async {
+        PlayerSettings.shared.setVolumeBoostEnabled(enabled)
+        volumeBoostEnabled = PlayerSettings.shared.volumeBoostEnabled
+    }
+
+    @MainActor
+    func setVolumeBoostPercent(_ percent: Int) async {
+        PlayerSettings.shared.setVolumeBoostPercent(percent)
+        volumeBoostPercent = PlayerSettings.shared.volumeBoostPercent
+    }
+
+    @MainActor
+    func setEnhancedDialogueEnabled(_ enabled: Bool) async {
+        PlayerSettings.shared.setEnhancedDialogueEnabled(enabled)
+        enhancedDialogueEnabled = PlayerSettings.shared.enhancedDialogueEnabled
+    }
+
+    private func adoptAudioFromPlayerSettings() {
+        volumeBoostEnabled = PlayerSettings.shared.volumeBoostEnabled
+        volumeBoostPercent = PlayerSettings.shared.volumeBoostPercent
+        enhancedDialogueEnabled = PlayerSettings.shared.enhancedDialogueEnabled
+    }
+
 
 
     @MainActor
@@ -234,6 +264,7 @@ class SettingsViewModel {
         // has to re-adopt them too or it keeps showing the old choice.
         backgroundPlaybackEnabled = PlayerSettings.shared.backgroundPlaybackEnabled
         bufferAhead = PlayerSettings.shared.bufferAhead
+        adoptAudioFromPlayerSettings()
         subtitleAppearance = PlayerSettings.shared.subtitleAppearance
         subtitleUsesDeviceAppearanceOverride = PlayerSettings.shared.subtitleUsesDeviceAppearanceOverride
     }

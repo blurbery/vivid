@@ -396,7 +396,7 @@ For context only (Vivid-owned, not rewritten), the adapter's options hook then s
 | Option | Value |
 | --- | --- |
 | `ao` | `avfoundation` |
-| `audio-spdif` | `ac3,eac3` when the initial rate is exactly 1, otherwise the empty string |
+| `audio-spdif` | `ac3,eac3` when the initial rate is exactly 1 and neither Volume Boost nor Enhanced Dialogue is on, otherwise the empty string |
 | `ao-avfoundation-manage-audio-session` | `no` (Vivid owns the audio session) |
 | `audio-exclusive` | `yes` |
 | `audio-channels` | `7.1,5.1,stereo` when the tvOS route is AirPlay at load time, otherwise `auto-safe` |
@@ -784,7 +784,9 @@ The bridge sets no audio option, never touches `AVAudioSession`, and must never 
 | Option | Value the adapter sets | Meaning |
 | --- | --- | --- |
 | `ao` | `avfoundation` | The engine's AVFoundation audio output. At normal speed, AC-3 and E-AC-3 that `audio-spdif` allows are passed through compressed via an `AVPlayer` resource loader; everything else is decoded to PCM and played through sample-buffer audio. The audio output schedules audio and drives mpv's audio clock, and video follows that clock. |
-| `audio-spdif` | `ac3,eac3` at rate 1, otherwise empty | Which codecs may be passed through compressed. The adapter changes it with the playback speed (seeking in place first on AC-3 and E-AC-3, so queued audio for the old output is dropped). |
+| `audio-spdif` | `ac3,eac3` at rate 1, otherwise empty; always empty while Volume Boost or Enhanced Dialogue is on | Which codecs may be passed through compressed. The adapter changes it with the playback speed (seeking in place first on AC-3 and E-AC-3, so queued audio for the old output is dropped). While either enhancement is on it writes the empty string in both directions and skips that seek, because the output never changes. |
+| `volume-gain` | Only while Volume Boost is on: 20·log10(level/100) dB, from `1.94` (125%) to `6.02` (200%) | Upstream mpv option: software gain in decibels on decoded audio, after the filters. |
+| `af` | Only while Enhanced Dialogue is on: one `lavfi` `firequalizer` graph | Upstream mpv option. Keeps the front centre and lowers the other channels by 6 dB, or without a centre keeps the speech band and lowers the rest; see the [player engine core](../cores/player-engine.md#volume-boost-and-enhanced-dialogue). |
 | `audio-exclusive` | `yes` | Upstream mpv option. It has no effect on this audio output. |
 | `audio-channels` | `7.1,5.1,stereo` on tvOS when the route is AirPlay at load time, otherwise `auto-safe` | The PCM layouts the output may use. |
 | `ao-avfoundation-manage-audio-session` | `no` | The output neither activates nor deactivates the shared `AVAudioSession` and sets no category or mode. It still declares multichannel content (passthrough, or more than two channels) and sets the preferred output channel count for decoded audio. Vivid activates the session and waits for the `dispose` completions of retired cores before deactivating. |

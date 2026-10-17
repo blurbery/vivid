@@ -9,6 +9,7 @@ struct TVPlaybackSettingsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
             streamingSection
+            audioSection
             episodesSection
         }
     }
@@ -28,6 +29,17 @@ struct TVPlaybackSettingsPane: View {
             )
             .focused(detailFocus, equals: .top)
 
+            TVSettingsInfoRow(title: "Buffer Ahead", value: "Automatic")
+
+        }
+        TVSettingsFooter("Lucid manages buffering automatically. Preferences are saved for this profile on this Apple TV.")
+    }
+
+    @ViewBuilder
+    private var audioSection: some View {
+        TVSettingsSectionHeader("AUDIO")
+
+        TVSettingsGroup {
             TVSettingsOptionMenu(
                 title: "Audio Language",
                 value: TVSettingsOptions.label(
@@ -39,10 +51,34 @@ struct TVPlaybackSettingsPane: View {
             )
             .focused(detailFocus, equals: .playbackAudioLanguage)
 
-            TVSettingsInfoRow(title: "Buffer Ahead", value: "Automatic")
+            TVSettingsToggleRow(
+                title: "Volume Boost",
+                isOn: viewModel.volumeBoostEnabled
+            ) {
+                let value = !viewModel.volumeBoostEnabled
+                viewModel.volumeBoostEnabled = value
+                Task { await viewModel.setVolumeBoostEnabled(value) }
+            }
 
+            TVSettingsOptionMenu(
+                title: "Boost Level",
+                value: TVSettingsOptions.label(for: String(viewModel.volumeBoostPercent), in: TVSettingsOptions.volumeBoostLevel),
+                options: pickerRequest(for: .volumeBoostLevel).options,
+                selection: pickerRequest(for: .volumeBoostLevel).selection
+            )
+            .focused(detailFocus, equals: .playbackVolumeBoostLevel)
+            .disabled(!viewModel.volumeBoostEnabled)
+
+            TVSettingsToggleRow(
+                title: "Enhanced Dialogue",
+                isOn: viewModel.enhancedDialogueEnabled
+            ) {
+                let value = !viewModel.enhancedDialogueEnabled
+                viewModel.enhancedDialogueEnabled = value
+                Task { await viewModel.setEnhancedDialogueEnabled(value) }
+            }
         }
-        TVSettingsFooter("Lucid manages buffering automatically. Preferences are saved for this profile on this Apple TV.")
+        TVSettingsFooter("While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels.")
     }
 
     @ViewBuilder
@@ -159,6 +195,20 @@ struct TVPlaybackSettingsPane: View {
                     }
                 )
             )
+        case .volumeBoostLevel:
+            TVSettingsPickerRequest(
+                id: kind.id,
+                title: "Boost Level",
+                options: TVSettingsOptions.volumeBoostLevel,
+                selection: Binding(
+                    get: { String(viewModel.volumeBoostPercent) },
+                    set: { value in
+                        guard let percent = Int(value) else { return }
+                        viewModel.volumeBoostPercent = percent
+                        Task { await viewModel.setVolumeBoostPercent(percent) }
+                    }
+                )
+            )
         case .nextUpPrompt:
             TVSettingsPickerRequest(
                 id: kind.id,
@@ -180,6 +230,7 @@ struct TVPlaybackSettingsPane: View {
         case quality
         case audioLanguage
         case bufferAhead
+        case volumeBoostLevel
         case nextUpPrompt
 
         var id: String { rawValue }

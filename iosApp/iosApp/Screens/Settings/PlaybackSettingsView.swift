@@ -17,6 +17,7 @@ struct PlaybackSettingsView: View {
             .settingsPageHeaderRow()
 
             streamingSection
+            audioSection
             behaviorSection
             resetSection
         }
@@ -36,28 +37,6 @@ struct PlaybackSettingsView: View {
                 LabeledContent("Quality", value: viewModel.preferredQualityLabel)
             }
             .foregroundStyle(Color.vividOnSurface)
-
-            Picker("Audio Language", selection: Binding(
-                get: { viewModel.preferredAudioLanguage },
-                set: { newValue in
-                    viewModel.preferredAudioLanguage = newValue
-                    Task { await viewModel.setPreferredAudioLanguage(newValue) }
-                }
-            )) {
-                Text(
-                    SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.unsetLabel
-                        ?? "No preference"
-                ).tag("")
-                ForEach(viewModel.audioLanguageOptions) { option in
-                    Text(option.label).tag(option.code)
-                }
-            }
-            .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
-            .pickerStyle(.navigationLink)
-            #endif
 
             LabeledContent("Buffer Ahead", value: "Automatic")
                 .foregroundStyle(Color.vividOnSurface)
@@ -82,6 +61,103 @@ struct PlaybackSettingsView: View {
 
         }
 
+    }
+
+    // MARK: - Audio
+
+    private var audioSection: some View {
+        Section {
+            Picker("Audio Language", selection: Binding(
+                get: { viewModel.preferredAudioLanguage },
+                set: { newValue in
+                    viewModel.preferredAudioLanguage = newValue
+                    Task { await viewModel.setPreferredAudioLanguage(newValue) }
+                }
+            )) {
+                Text(
+                    SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.unsetLabel
+                        ?? "No preference"
+                ).tag("")
+                ForEach(viewModel.audioLanguageOptions) { option in
+                    Text(option.label).tag(option.code)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            #if os(macOS)
+            .pickerStyle(.menu)
+            #else
+            .pickerStyle(.navigationLink)
+            #endif
+
+            Toggle(isOn: Binding(
+                get: { viewModel.volumeBoostEnabled },
+                set: { enabled in
+                    viewModel.volumeBoostEnabled = enabled
+                    Task { await viewModel.setVolumeBoostEnabled(enabled) }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Volume Boost")
+                    Text("Play louder than Vivid’s standard volume.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            .tint(.green)
+
+            NavigationLink {
+                boostLevelChoices
+            } label: {
+                LabeledContent("Boost Level", value: "\(viewModel.volumeBoostPercent)%")
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            .disabled(!viewModel.volumeBoostEnabled)
+
+            Toggle(isOn: Binding(
+                get: { viewModel.enhancedDialogueEnabled },
+                set: { enabled in
+                    viewModel.enhancedDialogueEnabled = enabled
+                    Task { await viewModel.setEnhancedDialogueEnabled(enabled) }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Enhanced Dialogue")
+                    Text("Lower music and effects so voices are easier to hear.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            .tint(.green)
+        } header: {
+            PhoneSettingsSectionHeader("Audio")
+        } footer: {
+            Text("Changes apply the next time a video starts. While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels.")
+                .foregroundStyle(Color.vividSecondaryText)
+        }
+    }
+
+    /// Its own page, like Quality, so it keeps the Settings theme.
+    private var boostLevelChoices: some View {
+        List {
+            Picker("Boost Level", selection: Binding(
+                get: { viewModel.volumeBoostPercent },
+                set: { percent in
+                    viewModel.volumeBoostPercent = percent
+                    Task { await viewModel.setVolumeBoostPercent(percent) }
+                }
+            )) {
+                ForEach(VividAudioEnhancement.boostLevels, id: \.self) { percent in
+                    Text("\(percent)%").tag(percent)
+                }
+            }
+            .pickerStyle(.inline)
+            .foregroundStyle(Color.vividOnSurface)
+        }
+        .settingsListChrome()
+        .navigationTitle("Boost Level")
+        .vividNavigationTitleDisplayMode(.inline)
     }
 
     private var qualityChoices: some View {
