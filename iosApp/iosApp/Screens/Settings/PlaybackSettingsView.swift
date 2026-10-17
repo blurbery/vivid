@@ -132,49 +132,33 @@ struct PlaybackSettingsView: View {
             ?? audioLanguageUnsetLabel
     }
 
-    /// The option pages below are pages of their own, like Quality, so they
-    /// keep the Settings theme rather than a plain pushed list.
     private var audioLanguageChoices: some View {
-        List {
-            Picker("Audio Language", selection: Binding(
+        PlaybackOptionPage<String>(
+            title: "Audio Language",
+            options: [.init(value: "", label: audioLanguageUnsetLabel)]
+                + viewModel.audioLanguageOptions.map { .init(value: $0.code, label: $0.label) },
+            selection: Binding(
                 get: { viewModel.preferredAudioLanguage },
                 set: { newValue in
                     viewModel.preferredAudioLanguage = newValue
                     Task { await viewModel.setPreferredAudioLanguage(newValue) }
                 }
-            )) {
-                Text(audioLanguageUnsetLabel).tag("")
-                ForEach(viewModel.audioLanguageOptions) { option in
-                    Text(option.label).tag(option.code)
-                }
-            }
-            .pickerStyle(.inline)
-            .foregroundStyle(Color.vividOnSurface)
-        }
-        .settingsListChrome()
-        .navigationTitle("Audio Language")
-        .vividNavigationTitleDisplayMode(.inline)
+            )
+        )
     }
 
     private var boostLevelChoices: some View {
-        List {
-            Picker("Boost Level", selection: Binding(
+        PlaybackOptionPage<Int>(
+            title: "Boost Level",
+            options: VividAudioEnhancement.boostLevels.map { .init(value: $0, label: "\($0)%") },
+            selection: Binding(
                 get: { viewModel.volumeBoostPercent },
                 set: { percent in
                     viewModel.volumeBoostPercent = percent
                     Task { await viewModel.setVolumeBoostPercent(percent) }
                 }
-            )) {
-                ForEach(VividAudioEnhancement.boostLevels, id: \.self) { percent in
-                    Text("\(percent)%").tag(percent)
-                }
-            }
-            .pickerStyle(.inline)
-            .foregroundStyle(Color.vividOnSurface)
-        }
-        .settingsListChrome()
-        .navigationTitle("Boost Level")
-        .vividNavigationTitleDisplayMode(.inline)
+            )
+        )
     }
 
     private var nextUpPromptLabel: String {
@@ -183,24 +167,17 @@ struct PlaybackSettingsView: View {
     }
 
     private var nextUpPromptChoices: some View {
-        List {
-            Picker("Show Next Up", selection: Binding(
+        PlaybackOptionPage<Int>(
+            title: "Show Next Up",
+            options: nextUpPromptOptions.map { .init(value: $0.0, label: $0.1) },
+            selection: Binding(
                 get: { viewModel.nextUpPromptSeconds },
                 set: { newValue in
                     viewModel.nextUpPromptSeconds = newValue
                     Task { await viewModel.setNextUpPromptSeconds(newValue) }
                 }
-            )) {
-                ForEach(nextUpPromptOptions, id: \.0) { seconds, label in
-                    Text(label).tag(seconds)
-                }
-            }
-            .pickerStyle(.inline)
-            .foregroundStyle(Color.vividOnSurface)
-        }
-        .settingsListChrome()
-        .navigationTitle("Show Next Up")
-        .vividNavigationTitleDisplayMode(.inline)
+            )
+        )
     }
 
     private var qualityChoices: some View {
@@ -360,6 +337,42 @@ struct PlaybackSettingsView: View {
             (60, "1 minute before end"),
             (120, "2 minutes before end"),
         ]
+    }
+}
+
+/// A single-choice page in the Settings theme, like Quality. Choosing an
+/// option goes back to Playback, as the system navigation-link picker did.
+private struct PlaybackOptionPage<Value: Hashable>: View {
+    struct Option: Identifiable {
+        let value: Value
+        let label: String
+        var id: Value { value }
+    }
+
+    let title: String
+    let options: [Option]
+    @Binding var selection: Value
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Picker(title, selection: Binding(
+                get: { selection },
+                set: { newValue in
+                    selection = newValue
+                    dismiss()
+                }
+            )) {
+                ForEach(options) { option in
+                    Text(option.label).tag(option.value)
+                }
+            }
+            .pickerStyle(.inline)
+            .foregroundStyle(Color.vividOnSurface)
+        }
+        .settingsListChrome()
+        .navigationTitle(title)
+        .vividNavigationTitleDisplayMode(.inline)
     }
 }
 #endif

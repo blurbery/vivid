@@ -60,14 +60,18 @@ struct TVPlaybackSettingsPane: View {
                 Task { await viewModel.setVolumeBoostEnabled(value) }
             }
 
-            TVSettingsOptionMenu(
-                title: "Boost Level",
-                value: TVSettingsOptions.label(for: String(viewModel.volumeBoostPercent), in: TVSettingsOptions.volumeBoostLevel),
-                options: pickerRequest(for: .volumeBoostLevel).options,
-                selection: pickerRequest(for: .volumeBoostLevel).selection
-            )
-            .focused(detailFocus, equals: .playbackVolumeBoostLevel)
-            .disabled(!viewModel.volumeBoostEnabled)
+            // Dimmed while Volume Boost is off, like the custom subtitle
+            // appearance rows under their switch.
+            TVSettingsNestedGroup(enabled: viewModel.volumeBoostEnabled) {
+                TVSettingsOptionMenu(
+                    title: "Boost Level",
+                    value: TVSettingsOptions.label(for: String(viewModel.volumeBoostPercent), in: TVSettingsOptions.volumeBoostLevel),
+                    options: pickerRequest(for: .volumeBoostLevel).options,
+                    selection: pickerRequest(for: .volumeBoostLevel).selection
+                )
+                .focused(detailFocus, equals: .playbackVolumeBoostLevel)
+                .disabled(!viewModel.volumeBoostEnabled)
+            }
 
             TVSettingsToggleRow(
                 title: "Enhanced Dialogue",
