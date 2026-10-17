@@ -239,7 +239,13 @@ enum EmbyConnectService {
 
     /// Whether the PIN has been entered at emby.media/pin yet.
     static func isConfirmed(_ pin: EmbyConnectPIN) async throws -> Bool {
-        let result = try await object("GET", "/pin", query: ["pin": pin.pin, "deviceId": pin.deviceID])
+        let result: [String: Any]
+        do {
+            result = try await object("GET", "/pin", query: ["pin": pin.pin, "deviceId": pin.deviceID])
+        } catch HTTPError.http {
+            // Emby's own apps treat a PIN the service no longer answers for as expired.
+            throw EmbyError.connectPINExpired
+        }
         if result["IsExpired"] as? Bool == true { throw EmbyError.connectPINExpired }
         return result["IsConfirmed"] as? Bool == true
     }
