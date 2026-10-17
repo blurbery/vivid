@@ -1020,6 +1020,53 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertTrue(EmbyAdapter.usesServerHomeSections(version:"4.11.0.0"))
     }
 
+    func testCollectionDisplayOrderNeedsEmby48016() {
+        XCTAssertFalse(EmbyAdapter.sortsCollectionsByDisplayOrder(version:""))
+        XCTAssertFalse(EmbyAdapter.sortsCollectionsByDisplayOrder(version:"4.7.14.0"))
+        XCTAssertFalse(EmbyAdapter.sortsCollectionsByDisplayOrder(version:"4.8.0.15"))
+        XCTAssertTrue(EmbyAdapter.sortsCollectionsByDisplayOrder(version:"4.8.0.16"))
+        XCTAssertTrue(EmbyAdapter.sortsCollectionsByDisplayOrder(version:"4.10.0.40"))
+    }
+
+    func testCollectionsFollowEachCollectionsDisplayOrder() async throws {
+        var version: String? = "4.10.0.40"
+        var requests: [[String: String]] = []
+        let adapter = stubbedAdapter { request in
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+            if components.path == "/emby/System/Info/Public" {
+                guard let version else { return (500, [:]) }
+                return (200, ["Id": "server", "Version": version])
+            }
+            XCTAssertEqual(components.path, "/emby/Users/user-1/Items")
+            requests.append(Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }))
+            return (200, ["Items": [], "TotalRecordCount": 0])
+        }
+        func load() async throws {
+            _ = try await adapter.catalog(["source": "library_collection", "collection_id": "12345", "offset": "60", "limit": "60"])
+            _ = try await adapter.route(method: "GET", path: "/api/v1/collections/12345/items", query: [:], body: nil)
+        }
+
+        try await load()
+        XCTAssertEqual(requests.count, 2)
+        for query in requests {
+            XCTAssertEqual(query["ParentId"], "12345")
+            XCTAssertEqual(query["Recursive"], "false")
+            XCTAssertEqual(query["GroupItemsIntoCollections"], "false")
+            XCTAssertEqual(query["SortBy"], "DisplayOrder")
+            XCTAssertNil(query["SortOrder"], "The collection's display order sets the direction")
+        }
+        XCTAssertEqual(requests.first?["StartIndex"], "60")
+        XCTAssertEqual(requests.first?["Fields"], EmbyAdapter.browseFields)
+
+        for older in ["4.7.14.0", nil] {
+            version = older
+            requests.removeAll()
+            try await load()
+            XCTAssertEqual(requests.count, 2, "A failed version check still loads the collection")
+            XCTAssertTrue(requests.allSatisfy { $0["SortBy"] == nil && $0["SortOrder"] == nil }, "version \(older ?? "unavailable")")
+        }
+    }
+
     func testLegacyHomePreservesConfiguredOrderAndDisabledRows() {
         let settings: [String:Any] = ["homesection0":"collections","homesection1":"nextup","homesection2":"resume","homesection3":"none","homesection4":"none","homesection5":"none","homesection6":"none"]
         XCTAssertEqual(EmbyAdapter.legacyHomeSectionTypes(settings:settings),["collections","nextup","resume"])
