@@ -761,6 +761,9 @@ class PlayerViewModel {
     /// this viewing, including next episodes that play on from here, while
     /// Settings > Subtitles stays the default for anything started afresh.
     var viewingSubtitlePrefs: PrefsSnapshot?
+    /// The viewer switched audio during the current item, so the load's own
+    /// audio ordinal no longer says which track is playing.
+    var audioPickedForCurrentItem = false
     /// Set after the resolver has fired once for the current item so we
     /// don't keep re-evaluating (and overriding the user) on every
     /// subsequent track-list update.

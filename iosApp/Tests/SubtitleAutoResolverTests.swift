@@ -342,6 +342,17 @@ final class SubtitleAutoResolverTests: XCTestCase {
         ), "eng")
     }
 
+    /// English audio beside an untagged dub: playing the dub must not borrow
+    /// English from the other track, or Auto hides subtitles over it.
+    func testPolicyAudioLanguageKeepsAnUntaggedPlayingTrackUnknown() {
+        XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(
+            live: nil, catalog: [audio("eng"), audio(nil)], ordinal: 1
+        ))
+        XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(
+            live: "und", catalog: [audio("eng"), audio("und")], ordinal: 1
+        ))
+    }
+
     /// Several audio languages and nothing saying which one plays: unknown,
     /// rather than a guess that could hide subtitles for foreign audio.
     func testPolicyAudioLanguageStaysUnknownForAmbiguousCatalogue() {

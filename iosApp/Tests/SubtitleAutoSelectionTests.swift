@@ -273,6 +273,25 @@ final class SubtitleAutoSelectionTests: XCTestCase {
         }
     }
 
+    /// After the viewer switches audio, the load's ordinal describes the old
+    /// track. With an untagged transcode it must not be read as the new
+    /// track's language; unknown audio keeps the full track.
+    func testAudioSwitchDoesNotReuseTheLoadOrdinal() async {
+        let model = makeModel()
+        model.currentSelectedVersion = version(audio: ["eng", "jpn"])
+        model.lastLoadRequest = .init(contentId: "movie", preferredFileId: 42, preferredAudioTrackIndex: 0,
+                                      preferredSubtitleTrackIndex: nil, preferredSidecarSubtitleTrackId: nil,
+                                      startFromBeginning: false)
+        let switched = audio(japaneseAudioID, lang: "und", ordinal: 0, selected: true)
+        model.audioTracks = [switched]
+        establishLoad(model)
+        model.selectAudio(switched)
+        model.prefsResolvedForCurrentItem = false
+        model.applyAutoSubtitlePreferencesIfNeeded()
+        XCTAssertEqual(model.selectedSubtitleId, fullID)
+        await finish(model)
+    }
+
     /// A manual pick still wins over Auto.
     func testExplicitChoiceIsNotOverridden() async {
         let model = makeModel()

@@ -104,6 +104,7 @@ extension PlayerViewModel {
             preferredSubtitleTrackIndex != nil
             || preferredSidecarSubtitleTrackId != nil
             || preferredProtocolV3SubtitleIndex != nil
+        audioPickedForCurrentItem = false
         prefsForCurrentItem = nil
         prefsResolvedForCurrentItem = false
     }

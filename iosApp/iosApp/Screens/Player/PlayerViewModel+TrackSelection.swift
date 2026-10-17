@@ -25,6 +25,7 @@ extension PlayerViewModel {
             let priorPendingAudioFfIndex = pendingAudioFfIndex
             pendingAudioFfIndex = nil
             selectedAudioId = track.trackId
+            audioPickedForCurrentItem = true
             reapplySystemSubtitlePolicy()
             guard attemptProtocolV3Replan(
                 position: currentTime,
@@ -56,6 +57,7 @@ extension PlayerViewModel {
         }
         pendingAudioFfIndex = nil
         selectedAudioId = track.trackId
+        audioPickedForCurrentItem = true
         persistAudioSelection(track)
         reapplySystemSubtitlePolicy()
         applyAudioTrackSelection(track.trackId, reason: "user_selection")
@@ -628,6 +630,9 @@ extension PlayerViewModel {
            let ordinal = audioSelectionIndex(for: selected) {
             return ordinal
         }
+        // The plan and the load request describe the audio the item started
+        // with, not a track the viewer has switched to since.
+        guard !audioPickedForCurrentItem else { return nil }
         return activePreparedProtocolV3?.plan.selectedTracks.audio?.index
             ?? lastLoadRequest?.preferredAudioTrackIndex
     }
