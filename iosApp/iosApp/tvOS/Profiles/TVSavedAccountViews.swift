@@ -469,7 +469,7 @@ struct TVSavedAccountEditor: View {
                         if let failure = codeSignIn.failure {
                             TVSettingsInfoRow(title: "Status", value: failure)
                         }
-                        Button { codeSignIn.cancel() } label: {
+                        Button { if codeSignIn.canCancel { codeSignIn.cancel() } } label: {
                             TVSettingsRowLabel(title: "Cancel \(codeSignIn.service.title)")
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())

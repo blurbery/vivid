@@ -81,6 +81,8 @@ struct TVLoginView: View {
                 HStack(spacing: 18) {
                     if codeSignIn.isActive {
                         Button {
+                            // Disabling the focused button would move focus.
+                            guard codeSignIn.canCancel else { return }
                             codeSignIn.cancel()
                             // The pressed button is gone; its replacement takes focus.
                             moveFocusAfterUpdate(to: .codeSignIn)

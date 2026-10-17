@@ -678,6 +678,7 @@ struct PhoneSavedAccountEditor: View {
                 Button(codeSignIn.service == .embyConnect ? "Get a New PIN" : "Get a New Code") { startCodeSignIn(codeSignIn.service) }
             }
             Button("Cancel", role: .cancel) { codeSignIn.cancel() }
+                .disabled(!codeSignIn.canCancel)
         } header: { PhoneSettingsSectionHeader(codeSignIn.service.title) } footer: {
             Text(codeSignIn.service.instructions)
         }

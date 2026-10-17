@@ -159,6 +159,7 @@ struct LoginView: View {
         Button("Use a password instead") { codeSignIn.cancel() }
             .buttonStyle(AuroraGhostButtonStyle())
             .frame(maxWidth: .infinity)
+            .disabled(!codeSignIn.canCancel)
     }
 
     private func signIn() {

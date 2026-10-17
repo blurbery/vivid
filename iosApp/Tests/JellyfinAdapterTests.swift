@@ -764,6 +764,16 @@ final class JellyfinAdapterTests: XCTestCase {
             _ = try await connection.quickConnectApproved(secret: "forgotten")
             XCTFail("A forgotten request means the code expired")
         } catch JellyfinError.quickConnectExpired { }
+        // Only failures that say nothing about the code keep the wait going.
+        for status in [408, 429, 500, 503] {
+            XCTAssertTrue(CodeSignIn.isTemporary(HTTPError.http(statusCode: status, body: nil)), "\(status)")
+        }
+        XCTAssertTrue(CodeSignIn.isTemporary(URLError(.timedOut)))
+        XCTAssertFalse(CodeSignIn.isTemporary(URLError(.cancelled)))
+        XCTAssertFalse(CodeSignIn.isTemporary(HTTPError.http(statusCode: 400, body: nil)))
+        XCTAssertFalse(CodeSignIn.isTemporary(JellyfinError.quickConnectExpired))
+        XCTAssertTrue(CodeSignIn.isTemporary(EmbyError.connectUnavailable))
+        XCTAssertFalse(CodeSignIn.isTemporary(EmbyError.connectPINExpired))
     }
 
     func testLegacyJellyfinRetryOnlyForMapped404() async throws {

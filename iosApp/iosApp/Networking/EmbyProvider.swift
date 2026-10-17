@@ -242,8 +242,8 @@ enum EmbyConnectService {
         let result: [String: Any]
         do {
             result = try await object("GET", "/pin", query: ["pin": pin.pin, "deviceId": pin.deviceID])
-        } catch HTTPError.http {
-            // Emby's own apps treat a PIN the service no longer answers for as expired.
+        } catch HTTPError.http(let status, _) where status == 404 || status == 410 {
+            // The service no longer knows this PIN.
             throw EmbyError.connectPINExpired
         }
         if result["IsExpired"] as? Bool == true { throw EmbyError.connectPINExpired }
@@ -306,7 +306,9 @@ enum EmbyConnectService {
         }
         guard let http = response as? HTTPURLResponse else { throw EmbyError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            throw http.statusCode >= 500 ? EmbyError.connectUnavailable : HTTPError.http(statusCode: http.statusCode, body: nil)
+            // A timeout, rate limit or server error says nothing about the PIN.
+            let temporary = http.statusCode == 408 || http.statusCode == 429 || http.statusCode >= 500
+            throw temporary ? EmbyError.connectUnavailable : HTTPError.http(statusCode: http.statusCode, body: nil)
         }
         return data
     }

@@ -48,6 +48,10 @@ final class CodeSignIn {
 
     var isActive: Bool { phase != .idle }
 
+    /// Once the code is approved, the sign-in finishes like a password
+    /// sign-in in progress, so the code screen can't be cancelled.
+    var canCancel: Bool { phase != .signingIn }
+
     var code: String? {
         if case .waiting(let code) = phase { return code }
         return nil
@@ -88,12 +92,17 @@ final class CodeSignIn {
             let connection = JellyfinConnection.signIn(serverURL: serverURL)
             guard try await connection.quickConnectEnabled() else { throw JellyfinError.quickConnectDisabled }
             let request = try await connection.initiateQuickConnect()
+            // A cancelled or replaced flow must not show its code.
+            try Task.checkCancellation()
             self?.phase = .waiting(code: request.code)
             try await Self.poll(expired: JellyfinError.quickConnectExpired) {
                 try await connection.quickConnectApproved(secret: request.secret)
             }
+            try Task.checkCancellation()
             self?.phase = .signingIn
-            return try await connection.authenticate(quickConnectSecret: request.secret)
+            return try await Self.retryingTemporaryFailures {
+                try await connection.authenticate(quickConnectSecret: request.secret)
+            }
         }
     }
 
@@ -101,13 +110,17 @@ final class CodeSignIn {
     func startEmbyConnect(serverURL: String, complete: @escaping @MainActor (EmbyLogin) async -> String?) {
         run(.embyConnect, complete: complete) { [weak self] in
             let pin = try await EmbyConnectService.createPIN()
+            try Task.checkCancellation()
             self?.phase = .waiting(code: pin.pin)
             try await Self.poll(expired: EmbyError.connectPINExpired) {
                 try await EmbyConnectService.isConfirmed(pin)
             }
+            try Task.checkCancellation()
             self?.phase = .signingIn
-            let account = try await EmbyConnectService.authenticate(pin)
-            return try await EmbyConnection.login(serverURL: serverURL, connect: account)
+            let account = try await Self.retryingTemporaryFailures { try await EmbyConnectService.authenticate(pin) }
+            return try await Self.retryingTemporaryFailures {
+                try await EmbyConnection.login(serverURL: serverURL, connect: account)
+            }
         }
     }
 
@@ -141,7 +154,7 @@ final class CodeSignIn {
     }
 
     /// Checks every five seconds, as Jellyfin's and Emby's own apps do. A
-    /// dropped connection keeps waiting; the code itself expires after ten
+    /// temporary failure keeps waiting; the code itself expires after ten
     /// minutes.
     private static func poll(expired: Error, approved: () async throws -> Bool) async throws {
         let deadline = Date().addingTimeInterval(10 * 60)
@@ -149,12 +162,33 @@ final class CodeSignIn {
             try await Task.sleep(for: .seconds(5))
             do {
                 if try await approved() { return }
-            } catch is URLError {
-                try Task.checkCancellation()
-            } catch EmbyError.connectUnavailable {
+            } catch let error where isTemporary(error) {
                 try Task.checkCancellation()
             }
         }
         throw expired
+    }
+
+    /// The approved code stays valid briefly, so a temporary failure after
+    /// approval is tried twice more before giving up.
+    private static func retryingTemporaryFailures<T>(_ operation: () async throws -> T) async throws -> T {
+        var attempt = 1
+        while true {
+            do {
+                return try await operation()
+            } catch let error where attempt < 3 && isTemporary(error) {
+                attempt += 1
+                try await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    /// No connection, a timeout, rate limiting or a server error, rather than
+    /// an answer about the code.
+    nonisolated static func isTemporary(_ error: Error) -> Bool {
+        if let error = error as? URLError { return error.code != .cancelled }
+        if case HTTPError.http(let status, _) = error { return status == 408 || status == 429 || status >= 500 }
+        if case EmbyError.connectUnavailable = error { return true }
+        return false
     }
 }
