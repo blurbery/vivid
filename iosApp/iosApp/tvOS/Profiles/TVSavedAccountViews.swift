@@ -335,6 +335,7 @@ struct TVSavedAccountEditor: View {
     @State private var showsDeleteConfirm = false
     @State private var pinIsSet = false
     @State private var household = SiloHouseholdSearch()
+    @State private var quickConnect = QuickConnectSignIn()
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -441,9 +442,38 @@ struct TVSavedAccountEditor: View {
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                     .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (password.isEmpty && !selectedProvider.usesNativeUser))
+                    if selectedProvider == .jellyfin {
+                        // One row for starting and replacing a code, so focus stays put.
+                        Button { startQuickConnect() } label: {
+                            TVSettingsRowLabel(title: quickConnect.isActive ? "Get a New Code" : "Use Quick Connect",
+                                               detail: quickConnect.isActive ? "Replace the code below with a new one."
+                                                   : "Approve this Apple TV from Jellyfin on a signed-in device, without a password.")
+                        }
+                        .buttonStyle(TVSettingsPaneRowStyle())
+                        .disabled((accountID == nil && !store.canAddAccount) || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
                 if account == nil {
                     TVSettingsFooter("Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile.")
+                }
+                if quickConnect.isActive {
+                    TVSettingsSectionHeader("QUICK CONNECT")
+                    TVSettingsGroup {
+                        if let code = quickConnect.code {
+                            TVSettingsInfoRow(title: "Code", value: code)
+                        }
+                        if let status = quickConnect.status {
+                            TVSettingsInfoRow(title: "Status", value: status)
+                        }
+                        if let failure = quickConnect.failure {
+                            TVSettingsInfoRow(title: "Status", value: failure)
+                        }
+                        Button { quickConnect.cancel() } label: {
+                            TVSettingsRowLabel(title: "Cancel Quick Connect")
+                        }
+                        .buttonStyle(TVSettingsPaneRowStyle())
+                    }
+                    TVSettingsFooter("On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code.")
                 }
                 }
                 if isActive, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
@@ -516,7 +546,8 @@ struct TVSavedAccountEditor: View {
             pinIsSet = accountID.map { store.hasPIN($0) } ?? false
             store.error = nil
         }
-        .onDisappear { password = ""; pin = ""; confirmation = "" }
+        .onDisappear { password = ""; pin = ""; confirmation = ""; quickConnect.cancel() }
+        .onChange(of: provider) { quickConnect.cancel() }
         .onExitCommand { if !store.busy { dismiss() } }
         .fullScreenCover(item: $household.pinProfile) { profile in
             PINEntryView(profile: profile, onCancel: {
@@ -524,6 +555,17 @@ struct TVSavedAccountEditor: View {
             }) { pin in
                 if let account { Task { await household.add(profile, pin: pin, for: account) } }
             }
+        }
+    }
+
+    private func startQuickConnect() {
+        store.error = nil
+        let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
+        let accountID = accountID
+        quickConnect.start(serverURL: address) { login in
+            let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                   router: router, provider: .jellyfin, quickConnect: login)
+            return success ? nil : store.error ?? "Couldn’t finish signing in with Quick Connect. Please try again."
         }
     }
 

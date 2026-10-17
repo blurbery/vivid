@@ -527,6 +527,7 @@ struct PhoneSavedAccountEditor: View {
     @State private var message: String?
     @State private var showsDeleteConfirm = false
     @State private var household = SiloHouseholdSearch()
+    @State private var quickConnect = QuickConnectSignIn()
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -569,8 +570,15 @@ struct PhoneSavedAccountEditor: View {
                         if success { dismiss() } else { message = store.error }
                     }
                 }.disabled((accountID == nil && !store.canAddAccount) || store.busy || (password.isEmpty && provider == "Silo") || username.isEmpty || serverURL.isEmpty)
+                if provider == "Jellyfin", !quickConnect.isActive {
+                    Button("Use Quick Connect") { startQuickConnect() }
+                        .disabled((accountID == nil && !store.canAddAccount) || store.busy || serverURL.isEmpty)
+                }
             } header: { PhoneSettingsSectionHeader("Account") }
             .textInputAutocapitalization(.never).autocorrectionDisabled()
+            if quickConnect.isActive {
+                quickConnectSection
+            }
             if active, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
                 householdSection(account)
             }
@@ -640,6 +648,45 @@ struct PhoneSavedAccountEditor: View {
                 username = account.username
                 serverURL = registry.entry(with: account.serverID)?.url ?? ""
             } else { serverURL = registry.activeServer?.url ?? "" }
+        }
+        .onDisappear { quickConnect.cancel() }
+        .onChange(of: provider) { quickConnect.cancel() }
+    }
+
+    /// Jellyfin Quick Connect: the code to approve from a signed-in device.
+    private var quickConnectSection: some View {
+        Section {
+            if let code = quickConnect.code {
+                LabeledContent("Code") {
+                    Text(code).font(.title2.monospaced().weight(.semibold)).textSelection(.enabled)
+                        .accessibilityLabel(code.map(String.init).joined(separator: " "))
+                }
+            }
+            if let status = quickConnect.status {
+                HStack(spacing: 12) {
+                    VividLoadingDots(compact: true)
+                    Text(status).foregroundStyle(.secondary)
+                }
+            }
+            if let failure = quickConnect.failure {
+                Text(failure).foregroundStyle(.secondary)
+                Button("Get a New Code") { startQuickConnect() }
+            }
+            Button("Cancel", role: .cancel) { quickConnect.cancel() }
+        } header: { PhoneSettingsSectionHeader("Quick Connect") } footer: {
+            Text("On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code.")
+        }
+    }
+
+    private func startQuickConnect() {
+        message = nil
+        let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
+        let accountID = accountID
+        quickConnect.start(serverURL: address) { login in
+            let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                   router: router, provider: .jellyfin, quickConnect: login)
+            if success { dismiss() }
+            return success ? nil : store.error ?? "Couldn’t finish signing in with Quick Connect. Please try again."
         }
     }
 

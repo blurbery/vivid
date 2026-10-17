@@ -150,12 +150,7 @@ final class AuthService: @unchecked Sendable {
         }
         if MediaServerProvider.forServerID(expectedAccount.serverId) == .jellyfin {
             let login = try await JellyfinConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)
-            try await installSession(accessToken: login.token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: login.userID, cacheAccountID: String(JellyfinAdapter.numberID(login.userID)))
-            #if os(tvOS) || os(iOS)
-            await VividCloudAccountSync.shared.noteExplicitAuthentication(
-                serverID: expectedAccount.serverId, userID: String(JellyfinAdapter.numberID(login.userID))
-            )
-            #endif
+            try await installJellyfinSession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
             return
         }
         if MediaServerProvider.forServerID(expectedAccount.serverId) == .emby {
@@ -184,6 +179,25 @@ final class AuthService: @unchecked Sendable {
                 serverID: expectedAccount.serverId, userID: String(response.user.id)
             )
         }
+        #endif
+    }
+
+    /// Signs in with a session Jellyfin approved through Quick Connect for
+    /// `serverURL`, provided that server is still the active one.
+    func login(jellyfinQuickConnect login: JellyfinLogin, serverURL: String) async throws {
+        guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
+            throw HTTPError.serverUrlNotConfigured
+        }
+        guard MediaServerProvider.forServerID(expectedAccount.serverId) == .jellyfin,
+              expectedAccount.serverURL == ServerRegistry.normalize(url: serverURL) else { throw HTTPError.requestIdentityChanged }
+        try await installJellyfinSession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
+    }
+
+    private func installJellyfinSession(token: String, userID: String, expectedAccount: RefreshAccountIdentity) async throws {
+        let accountID = String(JellyfinAdapter.numberID(userID))
+        try await installSession(accessToken: token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: userID, cacheAccountID: accountID)
+        #if os(tvOS) || os(iOS)
+        await VividCloudAccountSync.shared.noteExplicitAuthentication(serverID: expectedAccount.serverId, userID: accountID)
         #endif
     }
 

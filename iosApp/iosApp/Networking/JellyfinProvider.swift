@@ -3,6 +3,7 @@ import CryptoKit
 
 enum JellyfinError: LocalizedError {
     case invalidResponse, invalidURL, unsupportedFeature, signInRequired, playbackUnavailable
+    case quickConnectDisabled, quickConnectExpired
     case filterRequestFailed(step: String, status: Int)
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,8 @@ enum JellyfinError: LocalizedError {
         case .unsupportedFeature: "This feature is not available with Jellyfin yet."
         case .signInRequired: "Please sign in to Jellyfin again."
         case .playbackUnavailable: "Jellyfin could not provide a playable media source."
+        case .quickConnectDisabled: "Quick Connect isn’t turned on for this Jellyfin server."
+        case .quickConnectExpired: "This Quick Connect code has expired."
         }
     }
 }
@@ -287,9 +290,88 @@ struct JellyfinConnection: Sendable {
     static func login(serverURL: String, username: String, password: String) async throws -> (token: String, userID: String) {
         let result = try await Self(serverURL: serverURL, token: nil, userID: nil, identity: nil)
             .object("POST", "/Users/AuthenticateByName", body: ["Username": username, "Pw": password])
+        let login = try JellyfinLogin(result)
+        return (login.token, login.userID)
+    }
+
+    // MARK: Quick Connect
+
+    /// An unauthenticated connection for Quick Connect sign-in.
+    static func signIn(serverURL: String) -> Self {
+        Self(serverURL: serverURL, token: nil, userID: nil, identity: nil)
+    }
+
+    /// Jellyfin answers a bare `true` or `false`. A server without the route
+    /// (not Jellyfin, or older than 10.8) doesn't offer Quick Connect.
+    func quickConnectEnabled() async throws -> Bool {
+        do {
+            let body = try await data("GET", "/QuickConnect/Enabled")
+            return String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "true"
+        } catch HTTPError.http(let status, _) where status == 404 {
+            return false
+        }
+    }
+
+    /// Starts a request and returns the code the user approves from a signed-in
+    /// Jellyfin app. Jellyfin ties the request to this device's ID in the
+    /// authorisation header.
+    func initiateQuickConnect() async throws -> JellyfinQuickConnectCode {
+        let result: [String: Any]
+        do {
+            do {
+                result = try await object("POST", "/QuickConnect/Initiate")
+            } catch HTTPError.http(let status, _) where status == 404 || status == 405 {
+                // Jellyfin 10.8 starts Quick Connect with GET.
+                result = try await object("GET", "/QuickConnect/Initiate")
+            }
+        } catch JellyfinError.signInRequired {
+            throw JellyfinError.quickConnectDisabled
+        }
+        guard let code = result["Code"] as? String, !code.isEmpty,
+              let secret = result["Secret"] as? String, !secret.isEmpty else { throw JellyfinError.invalidResponse }
+        return JellyfinQuickConnectCode(code: code, secret: secret)
+    }
+
+    /// Whether the code has been approved yet. Jellyfin forgets a request once
+    /// it expires, after about ten minutes.
+    func quickConnectApproved(secret: String) async throws -> Bool {
+        do {
+            let result = try await object("GET", "/QuickConnect/Connect", query: ["secret": secret])
+            return result["Authenticated"] as? Bool == true
+        } catch HTTPError.http(let status, _) where status == 404 {
+            throw JellyfinError.quickConnectExpired
+        } catch JellyfinError.signInRequired {
+            throw JellyfinError.quickConnectDisabled
+        }
+    }
+
+    /// Exchanges an approved request for a session, like a password sign-in.
+    func authenticate(quickConnectSecret secret: String) async throws -> JellyfinLogin {
+        try JellyfinLogin(try await object("POST", "/Users/AuthenticateWithQuickConnect", body: ["Secret": secret]))
+    }
+}
+
+struct JellyfinQuickConnectCode: Sendable, Equatable {
+    let code: String
+    let secret: String
+}
+
+/// A new Jellyfin session from `AuthenticateByName` or Quick Connect.
+struct JellyfinLogin: Sendable, Equatable {
+    let token: String
+    let userID: String
+    let username: String
+
+    init(token: String, userID: String, username: String) {
+        self.token = token
+        self.userID = userID
+        self.username = username
+    }
+
+    init(_ result: [String: Any]) throws {
         guard let token = result["AccessToken"] as? String, !token.isEmpty,
               let user = result["User"] as? [String: Any], let userID = user["Id"] as? String else { throw JellyfinError.invalidResponse }
-        return (token, try id(userID))
+        self.init(token: token, userID: try JellyfinConnection.id(userID), username: user["Name"] as? String ?? "")
     }
 }
 

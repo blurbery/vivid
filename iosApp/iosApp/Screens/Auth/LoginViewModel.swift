@@ -32,14 +32,34 @@ class LoginViewModel {
             // A Silo sign-in becomes a saved profile, and records the sign-in,
             // once its viewing profile is entered.
             if isSilo { await TVSavedAccountStore.shared.beginProfileChoice() }
-            await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
             #else
             try await auth.login(username: username, password: password)
-            await StartupContentPrefetcher.prefetchProfiles()
-            router.showProfileSelection()
             #endif
+            await finishSignIn(router: router)
         } catch let loginError {
             self.error = loginError.localizedDescription
         }
+    }
+
+    /// Finishes a Jellyfin Quick Connect sign-in. Returns a message to show
+    /// when the approved session couldn't be saved.
+    func login(jellyfinQuickConnect login: JellyfinLogin, serverURL: String, router: AppRouter) async -> String? {
+        do {
+            try await auth.login(jellyfinQuickConnect: login, serverURL: serverURL)
+            password = ""
+            await finishSignIn(router: router)
+            return nil
+        } catch let loginError {
+            return loginError.localizedDescription
+        }
+    }
+
+    private func finishSignIn(router: AppRouter) async {
+        #if os(tvOS) || os(iOS)
+        await TVLoginPreparation.shared.begin(router: router, newSignIn: true)
+        #else
+        await StartupContentPrefetcher.prefetchProfiles()
+        router.showProfileSelection()
+        #endif
     }
 }

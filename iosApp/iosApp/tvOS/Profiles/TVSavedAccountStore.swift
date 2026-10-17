@@ -602,7 +602,10 @@ final class TVSavedAccountStore {
         }
     }
 
-    func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter, provider requestedProvider: MediaServerProvider? = nil) async -> Bool {
+    /// - Parameter quickConnect: a Jellyfin session already approved through
+    ///   Quick Connect for `serverURL`, used instead of the username and password.
+    func authenticate(id: String?, serverURL: String, username: String, password: String, router: AppRouter,
+                      provider requestedProvider: MediaServerProvider? = nil, quickConnect: JellyfinLogin? = nil) async -> Bool {
         guard !busy else { return false }
         guard id != nil || canAddAccount else { error = "You can save up to eight profiles. Delete a saved profile to add another."; return false }
         await captureCurrent(refreshMetadata: false)
@@ -619,10 +622,16 @@ final class TVSavedAccountStore {
             let login: LoginResponse
             let nativeUserID: String?
             if provider == .jellyfin {
-                let result = try await JellyfinConnection.login(serverURL: normalized, username: username, password: password)
+                let result: JellyfinLogin
+                if let quickConnect {
+                    result = quickConnect
+                } else {
+                    let session = try await JellyfinConnection.login(serverURL: normalized, username: username, password: password)
+                    result = JellyfinLogin(token: session.token, userID: session.userID, username: username)
+                }
                 nativeUserID = result.userID
                 login = LoginResponse(accessToken:result.token,refreshToken:"",expiresIn:0,
-                    user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:username,email:"",role:"user",downloadAllowed:false,impersonation:nil))
+                    user:AuthUser(id:JellyfinAdapter.numberID(result.userID),username:result.username,email:"",role:"user",downloadAllowed:false,impersonation:nil))
             } else if provider == .emby {
                 let result = try await EmbyConnection.login(serverURL: normalized, username: username, password: password)
                 nativeUserID = result.userID
@@ -684,7 +693,9 @@ final class TVSavedAccountStore {
             await finishLogin(router: router, prepareHome: true)
             return true
         } catch {
-            self.error = "Couldn’t sign in. Check the server address, username and password, then try again."
+            self.error = quickConnect == nil
+                ? "Couldn’t sign in. Check the server address, username and password, then try again."
+                : "Couldn’t finish signing in with Quick Connect. Please try again."
             return false
         }
     }

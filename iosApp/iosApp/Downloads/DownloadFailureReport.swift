@@ -122,6 +122,7 @@ struct DownloadFailureReport: Equatable {
             case .signInRequired: return (nil, nil, "sign_in_required")
             case .playbackUnavailable: return (nil, nil, "media_source_unavailable")
             case .filterRequestFailed(_, let status): return (status, nil, "http")
+            case .quickConnectDisabled, .quickConnectExpired: return (nil, nil, "other")
             }
         case is DecodingError:
             return (nil, nil, "decode")

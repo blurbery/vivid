@@ -696,6 +696,76 @@ final class JellyfinAdapterTests: XCTestCase {
         _ = try await adapter.items(query: ["UserId":"other-account"])
     }
 
+    private func signInConnection(_ handler: @escaping (URLRequest) throws -> (Int, Any)) -> JellyfinConnection {
+        JellyfinRequestStub.handler = handler
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [JellyfinRequestStub.self]
+        let session = URLSession(configuration: configuration)
+        self.session = session
+        return JellyfinConnection(serverURL: "https://media.example.test/jellyfin", token: nil, userID: nil,
+                                  identity: nil, sessionOverride: session)
+    }
+
+    func testQuickConnectStartsWaitsForApprovalAndSignsIn() async throws {
+        var requests: [String] = []
+        let connection = signInConnection { request in
+            requests.append("\(request.httpMethod ?? "") \(request.url!.path)")
+            XCTAssertFalse(request.value(forHTTPHeaderField: "Authorization")?.contains("Token=") ?? true)
+            switch request.url!.path {
+            case "/jellyfin/QuickConnect/Enabled":
+                return (200, true)
+            case "/jellyfin/QuickConnect/Initiate":
+                // Jellyfin 10.8 only accepts GET here.
+                return request.httpMethod == "POST" ? (405, [:]) : (200, ["Code": "123456", "Secret": "secret-1", "Authenticated": false])
+            case "/jellyfin/QuickConnect/Connect":
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+                XCTAssertEqual(query.first { $0.name == "secret" }?.value, "secret-1")
+                return (200, ["Authenticated": true])
+            case "/jellyfin/Users/AuthenticateWithQuickConnect":
+                let body = try JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: String]
+                XCTAssertEqual(body, ["Secret": "secret-1"])
+                return (200, ["AccessToken": "quick-connect-token", "User": ["Id": self.user, "Name": "oidc-user"]])
+            default:
+                return (404, [:])
+            }
+        }
+        let enabled = try await connection.quickConnectEnabled()
+        XCTAssertTrue(enabled)
+        let code = try await connection.initiateQuickConnect()
+        XCTAssertEqual(code, JellyfinQuickConnectCode(code: "123456", secret: "secret-1"))
+        let approved = try await connection.quickConnectApproved(secret: code.secret)
+        XCTAssertTrue(approved)
+        let login = try await connection.authenticate(quickConnectSecret: code.secret)
+        XCTAssertEqual(login, JellyfinLogin(token: "quick-connect-token", userID: user, username: "oidc-user"))
+        XCTAssertEqual(requests, [
+            "GET /jellyfin/QuickConnect/Enabled",
+            "POST /jellyfin/QuickConnect/Initiate",
+            "GET /jellyfin/QuickConnect/Initiate",
+            "GET /jellyfin/QuickConnect/Connect",
+            "POST /jellyfin/Users/AuthenticateWithQuickConnect",
+        ])
+    }
+
+    func testQuickConnectReportsMissingDisabledAndExpiredRequests() async throws {
+        let connection = signInConnection { request in
+            switch request.url!.path {
+            case "/jellyfin/QuickConnect/Initiate": return (401, [:])
+            case "/jellyfin/QuickConnect/Connect": return (404, [:])
+            default: return (404, [:])
+            }
+        }
+        let enabled = try await connection.quickConnectEnabled()
+        XCTAssertFalse(enabled, "A server without the route doesn't offer Quick Connect")
+        do {
+            _ = try await connection.initiateQuickConnect()
+            XCTFail("A refused request means Quick Connect is turned off")
+        } catch JellyfinError.quickConnectDisabled { }
+        do {
+            _ = try await connection.quickConnectApproved(secret: "forgotten")
+            XCTFail("A forgotten request means the code expired")
+        } catch JellyfinError.quickConnectExpired { }
+    }
+
     func testLegacyJellyfinRetryOnlyForMapped404() async throws {
         var paths: [String] = []
         let adapter = adapter { request in
@@ -992,7 +1062,7 @@ private final class JellyfinRequestStub: URLProtocol {
             let (status, body) = try handler(request)
             let response = HTTPURLResponse(url:request.url!,statusCode:status,httpVersion:nil,headerFields:nil)!
             client?.urlProtocol(self,didReceive:response,cacheStoragePolicy:.notAllowed)
-            client?.urlProtocol(self,didLoad:try JSONSerialization.data(withJSONObject:body))
+            client?.urlProtocol(self,didLoad:try JSONSerialization.data(withJSONObject:body,options:.fragmentsAllowed))
             client?.urlProtocolDidFinishLoading(self)
         } catch { client?.urlProtocol(self,didFailWithError:error) }
     }
