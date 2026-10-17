@@ -901,8 +901,9 @@ struct EmbyAdapter {
 
     func collectionItems(_ collection: String, offset: String, limit: String, fields: String? = nil) async throws -> [String: Any] {
         let id = try EmbyConnection.id(collection)
-        // A failed version check still loads the collection, in the server's default order.
-        let version = (try? await serverVersion()) ?? ""
+        // A failed version check fails the page rather than loading it in another
+        // order, which would repeat or skip titles part-way through paging.
+        let version = try await serverVersion()
         var query = Self.collectionQuery(id: id, offset: offset, limit: limit,
                                          displayOrder: Self.sortsCollectionsByDisplayOrder(version: version))
         if let fields { query["Fields"] = fields }

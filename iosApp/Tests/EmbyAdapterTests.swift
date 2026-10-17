@@ -1058,13 +1058,22 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(requests.first?["StartIndex"], "60")
         XCTAssertEqual(requests.first?["Fields"], EmbyAdapter.browseFields)
 
-        for older in ["4.7.14.0", nil] {
+        for older in ["4.7.14.0", ""] {
             version = older
             requests.removeAll()
             try await load()
-            XCTAssertEqual(requests.count, 2, "A failed version check still loads the collection")
-            XCTAssertTrue(requests.allSatisfy { $0["SortBy"] == nil && $0["SortOrder"] == nil }, "version \(older ?? "unavailable")")
+            XCTAssertEqual(requests.count, 2)
+            XCTAssertTrue(requests.allSatisfy { $0["SortBy"] == nil && $0["SortOrder"] == nil }, "version \"\(older)\"")
         }
+
+        // A page in a different order would repeat or skip titles, so a failed check fails the page.
+        version = nil
+        requests.removeAll()
+        do {
+            _ = try await adapter.catalog(["source": "library_collection", "collection_id": "12345", "offset": "60", "limit": "60"])
+            XCTFail("A failed version check must not load the page in another order")
+        } catch {}
+        XCTAssertTrue(requests.isEmpty)
     }
 
     func testLegacyHomePreservesConfiguredOrderAndDisabledRows() {
