@@ -131,8 +131,11 @@ final class CodeSignIn {
         phase = .idle
     }
 
+    /// Every start goes through here. An approved code that is still signing
+    /// in is never replaced, whichever button asked.
     private func run<Login: Sendable>(_ service: Service, complete: @escaping @MainActor (Login) async -> String?,
                                       flow: @escaping @MainActor () async throws -> Login) {
+        guard canCancel else { return }
         task?.cancel()
         self.service = service
         phase = .starting
