@@ -614,13 +614,6 @@ final class ServerRegistry {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    /// Normalises a server address the user typed or pasted. Schemes and host
-    /// names are case-insensitive, but sign-in checks and server IDs are not,
-    /// so `Https://Media.Example.com` would otherwise be rejected or saved as
-    /// a separate server. The path keeps its case because reverse proxies can
-    /// treat it as case-sensitive. An address matching a saved server reuses
-    /// that server's stored spelling so its ID, and its saved accounts, stay
-    /// the same.
     /// The address to keep when a profile form switches to `provider`: a
     /// saved server of another type is swapped for the most recent saved
     /// server of this type, or cleared. A typed address is kept as entered.
@@ -631,6 +624,13 @@ final class ServerRegistry {
         return sortedEntries.first { MediaServerProvider.forServerID($0.id) == provider }?.url ?? ""
     }
 
+    /// Normalises a server address the user typed or pasted. Schemes and host
+    /// names are case-insensitive, but sign-in checks and server IDs are not,
+    /// so `Https://Media.Example.com` would otherwise be rejected or saved as
+    /// a separate server. The path keeps its case because reverse proxies can
+    /// treat it as case-sensitive. An address matching a saved server reuses
+    /// that server's stored spelling so its ID, and its saved accounts, stay
+    /// the same.
     func normalizedUserAddress(_ input: String) -> String {
         let trimmed = Self.normalize(url: input)
         guard var components = URLComponents(string: trimmed), components.host != nil else { return trimmed }
