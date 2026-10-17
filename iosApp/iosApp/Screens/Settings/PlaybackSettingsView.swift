@@ -67,27 +67,12 @@ struct PlaybackSettingsView: View {
 
     private var audioSection: some View {
         Section {
-            Picker("Audio Language", selection: Binding(
-                get: { viewModel.preferredAudioLanguage },
-                set: { newValue in
-                    viewModel.preferredAudioLanguage = newValue
-                    Task { await viewModel.setPreferredAudioLanguage(newValue) }
-                }
-            )) {
-                Text(
-                    SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.unsetLabel
-                        ?? "No preference"
-                ).tag("")
-                ForEach(viewModel.audioLanguageOptions) { option in
-                    Text(option.label).tag(option.code)
-                }
+            NavigationLink {
+                audioLanguageChoices
+            } label: {
+                LabeledContent("Audio Language", value: audioLanguageLabel)
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
-            .pickerStyle(.navigationLink)
-            #endif
 
             Toggle(isOn: Binding(
                 get: { viewModel.volumeBoostEnabled },
@@ -138,7 +123,39 @@ struct PlaybackSettingsView: View {
         }
     }
 
-    /// Its own page, like Quality, so it keeps the Settings theme.
+    private var audioLanguageUnsetLabel: String {
+        SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.unsetLabel ?? "No preference"
+    }
+
+    private var audioLanguageLabel: String {
+        viewModel.audioLanguageOptions.first { $0.code == viewModel.preferredAudioLanguage }?.label
+            ?? audioLanguageUnsetLabel
+    }
+
+    /// The option pages below are pages of their own, like Quality, so they
+    /// keep the Settings theme rather than a plain pushed list.
+    private var audioLanguageChoices: some View {
+        List {
+            Picker("Audio Language", selection: Binding(
+                get: { viewModel.preferredAudioLanguage },
+                set: { newValue in
+                    viewModel.preferredAudioLanguage = newValue
+                    Task { await viewModel.setPreferredAudioLanguage(newValue) }
+                }
+            )) {
+                Text(audioLanguageUnsetLabel).tag("")
+                ForEach(viewModel.audioLanguageOptions) { option in
+                    Text(option.label).tag(option.code)
+                }
+            }
+            .pickerStyle(.inline)
+            .foregroundStyle(Color.vividOnSurface)
+        }
+        .settingsListChrome()
+        .navigationTitle("Audio Language")
+        .vividNavigationTitleDisplayMode(.inline)
+    }
+
     private var boostLevelChoices: some View {
         List {
             Picker("Boost Level", selection: Binding(
@@ -157,6 +174,32 @@ struct PlaybackSettingsView: View {
         }
         .settingsListChrome()
         .navigationTitle("Boost Level")
+        .vividNavigationTitleDisplayMode(.inline)
+    }
+
+    private var nextUpPromptLabel: String {
+        nextUpPromptOptions.first { $0.0 == viewModel.nextUpPromptSeconds }?.1
+            ?? "\(viewModel.nextUpPromptSeconds) seconds before end"
+    }
+
+    private var nextUpPromptChoices: some View {
+        List {
+            Picker("Show Next Up", selection: Binding(
+                get: { viewModel.nextUpPromptSeconds },
+                set: { newValue in
+                    viewModel.nextUpPromptSeconds = newValue
+                    Task { await viewModel.setNextUpPromptSeconds(newValue) }
+                }
+            )) {
+                ForEach(nextUpPromptOptions, id: \.0) { seconds, label in
+                    Text(label).tag(seconds)
+                }
+            }
+            .pickerStyle(.inline)
+            .foregroundStyle(Color.vividOnSurface)
+        }
+        .settingsListChrome()
+        .navigationTitle("Show Next Up")
         .vividNavigationTitleDisplayMode(.inline)
     }
 
@@ -210,23 +253,12 @@ struct PlaybackSettingsView: View {
             .foregroundStyle(Color.vividOnSurface)
             .tint(.green)
 
-            Picker("Show Next Up", selection: Binding(
-                get: { viewModel.nextUpPromptSeconds },
-                set: { newValue in
-                    viewModel.nextUpPromptSeconds = newValue
-                    Task { await viewModel.setNextUpPromptSeconds(newValue) }
-                }
-            )) {
-                ForEach(nextUpPromptOptions, id: \.0) { seconds, label in
-                    Text(label).tag(seconds)
-                }
+            NavigationLink {
+                nextUpPromptChoices
+            } label: {
+                LabeledContent("Show Next Up", value: nextUpPromptLabel)
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
-            .pickerStyle(.navigationLink)
-            #endif
 
             Toggle(isOn: Binding(
                 get: { PlayerSettings.shared.introDBEnabled },
