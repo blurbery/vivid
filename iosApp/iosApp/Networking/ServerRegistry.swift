@@ -614,6 +614,16 @@ final class ServerRegistry {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    /// The address to keep when a profile form switches to `provider`: a
+    /// saved server of another type is swapped for the most recent saved
+    /// server of this type, or cleared. A typed address is kept as entered.
+    func address(_ input: String, keptFor provider: MediaServerProvider) -> String {
+        let normalized = normalizedUserAddress(input)
+        guard let saved = entries.first(where: { $0.url == normalized }),
+              MediaServerProvider.forServerID(saved.id) != provider else { return input }
+        return sortedEntries.first { MediaServerProvider.forServerID($0.id) == provider }?.url ?? ""
+    }
+
     /// Normalises a server address the user typed or pasted. Schemes and host
     /// names are case-insensitive, but sign-in checks and server IDs are not,
     /// so `Https://Media.Example.com` would otherwise be rejected or saved as

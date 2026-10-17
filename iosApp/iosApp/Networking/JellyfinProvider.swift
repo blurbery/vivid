@@ -3,7 +3,7 @@ import CryptoKit
 
 enum JellyfinError: LocalizedError {
     case invalidResponse, invalidURL, unsupportedFeature, signInRequired, playbackUnavailable
-    case quickConnectDisabled, quickConnectExpired
+    case quickConnectDisabled, quickConnectExpired, quickConnectUnavailable
     case filterRequestFailed(step: String, status: Int)
     var errorDescription: String? {
         switch self {
@@ -15,6 +15,7 @@ enum JellyfinError: LocalizedError {
         case .playbackUnavailable: "Jellyfin could not provide a playable media source."
         case .quickConnectDisabled: "Quick Connect isn’t turned on for this Jellyfin server."
         case .quickConnectExpired: "This Quick Connect code has expired."
+        case .quickConnectUnavailable: "This server doesn’t offer Quick Connect. Check that the address is your Jellyfin server."
         }
     }
 }
@@ -301,14 +302,20 @@ struct JellyfinConnection: Sendable {
         Self(serverURL: serverURL, token: nil, userID: nil, identity: nil)
     }
 
-    /// Jellyfin answers a bare `true` or `false`. A server without the route
-    /// (not Jellyfin, or older than 10.8) doesn't offer Quick Connect.
+    /// Jellyfin answers a bare `true` or `false`. Any other answer, or no
+    /// route at all, comes from a server that isn't Jellyfin 10.8 or later,
+    /// such as another server's address left in the form.
     func quickConnectEnabled() async throws -> Bool {
+        let body: Data
         do {
-            let body = try await data("GET", "/QuickConnect/Enabled")
-            return String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "true"
+            body = try await data("GET", "/QuickConnect/Enabled")
         } catch HTTPError.http(let status, _) where status == 404 {
-            return false
+            throw JellyfinError.quickConnectUnavailable
+        }
+        switch String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "true": return true
+        case "false": return false
+        default: throw JellyfinError.quickConnectUnavailable
         }
     }
 

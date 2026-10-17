@@ -542,11 +542,19 @@ struct TVSavedAccountEditor: View {
         .onAppear {
             username = account?.username ?? ""
             serverURL = account.flatMap { ServerRegistry.shared.entry(with: $0.serverID)?.url } ?? (addingServer ? "" : ServerRegistry.shared.activeServerUrl)
+            // Start on the type of the server the address is filled from.
+            if account == nil, selectedServerProvider == nil, !addingServer, let active = registry.activeServer {
+                provider = MediaServerProvider.forServerID(active.id).name
+            }
             pinIsSet = accountID.map { store.hasPIN($0) } ?? false
             store.error = nil
         }
         .onDisappear { password = ""; pin = ""; confirmation = ""; codeSignIn.cancel() }
-        .onChange(of: provider) { codeSignIn.cancel() }
+        .onChange(of: provider) {
+            if codeSignIn.canCancel { codeSignIn.cancel() }
+            if account == nil { serverURL = registry.address(serverURL, keptFor: selectedProvider) }
+        }
+        .onChange(of: serverURL) { if codeSignIn.canCancel { codeSignIn.cancel() } }
         .onExitCommand { if !store.busy { dismiss() } }
         .fullScreenCover(item: $household.pinProfile) { profile in
             PINEntryView(profile: profile, onCancel: {

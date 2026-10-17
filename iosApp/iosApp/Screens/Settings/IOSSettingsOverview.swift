@@ -543,10 +543,12 @@ struct PhoneSavedAccountEditor: View {
                         Text("Emby").tag("Emby")
                         Text("Jellyfin").tag("Jellyfin")
                     }
-                    if !registry.entries.isEmpty {
+                    // Only servers of the chosen type, as on Apple TV.
+                    let saved = registry.sortedEntries.filter { MediaServerProvider.forServerID($0.id) == selectedProvider }
+                    if !saved.isEmpty {
                         Picker("Saved Server", selection: $serverURL) {
                             Text("Enter an address").tag("")
-                            ForEach(registry.entries) { Text($0.displayName).tag($0.url) }
+                            ForEach(saved) { Text($0.displayName).tag($0.url) }
                         }
                     }
                 } header: { PhoneSettingsSectionHeader("Server") }
@@ -648,10 +650,22 @@ struct PhoneSavedAccountEditor: View {
                 provider = MediaServerProvider.forServerID(account.serverID).name
                 username = account.username
                 serverURL = registry.entry(with: account.serverID)?.url ?? ""
-            } else { serverURL = registry.activeServer?.url ?? "" }
+            } else {
+                // Start on the type of the server the address is filled from.
+                serverURL = registry.activeServer?.url ?? ""
+                if let active = registry.activeServer { provider = MediaServerProvider.forServerID(active.id).name }
+            }
         }
         .onDisappear { codeSignIn.cancel() }
-        .onChange(of: provider) { codeSignIn.cancel() }
+        .onChange(of: provider) {
+            if codeSignIn.canCancel { codeSignIn.cancel() }
+            if account == nil { serverURL = registry.address(serverURL, keptFor: selectedProvider) }
+        }
+        .onChange(of: serverURL) { if codeSignIn.canCancel { codeSignIn.cancel() } }
+    }
+
+    private var selectedProvider: MediaServerProvider {
+        MediaServerProvider(rawValue: provider.lowercased()) ?? .silo
     }
 
     private var codeService: CodeSignIn.Service? {
