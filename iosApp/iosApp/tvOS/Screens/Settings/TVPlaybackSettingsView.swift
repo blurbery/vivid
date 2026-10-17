@@ -78,7 +78,7 @@ struct TVPlaybackSettingsPane: View {
                 Task { await viewModel.setEnhancedDialogueEnabled(value) }
             }
         }
-        TVSettingsFooter("While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels.")
+        TVSettingsFooter("Changes apply the next time a video starts. While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels.")
     }
 
     @ViewBuilder

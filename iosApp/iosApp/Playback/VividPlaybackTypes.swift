@@ -180,7 +180,9 @@ struct VividAudioEnhancement: Equatable, Sendable {
     /// The offered level nearest to a stored one, so a value written by
     /// another build still reads back as one of the choices.
     static func boostLevel(_ percent: Int) -> Int {
-        boostLevels.min { abs($0 - percent) < abs($1 - percent) } ?? defaultBoostLevel
+        // Bounded first, so a corrupt stored value cannot overflow the distance.
+        let percent = min(max(percent, 0), 1_000)
+        return boostLevels.min { abs($0 - percent) < abs($1 - percent) } ?? defaultBoostLevel
     }
 }
 struct MediaChapter: Identifiable { let id: Int; let name: String; let startSeconds: Double }

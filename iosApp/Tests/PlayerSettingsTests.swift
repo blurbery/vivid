@@ -284,7 +284,8 @@ final class PlayerSettingsTests: XCTestCase {
                        "Turning the boost off keeps its level")
         settings.setVolumeBoostPercent(310)
         XCTAssertEqual(settings.volumeBoostPercent, 200)
-        for (stored, offered) in [(0, 125), (100, 125), (140, 150), (160, 150), (190, 200)] {
+        for (stored, offered) in [(0, 125), (100, 125), (140, 150), (160, 150), (190, 200),
+                                  (Int.min, 125), (Int.max, 200)] {
             XCTAssertEqual(VividAudioEnhancement.boostLevel(stored), offered)
         }
         await settings.resetAllDeviceSettings()
