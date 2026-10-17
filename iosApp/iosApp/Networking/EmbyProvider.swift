@@ -597,13 +597,30 @@ struct EmbyAdapter {
     }
 
     nonisolated static func usesServerHomeSections(version: String) -> Bool {
+        isVersion(version, atLeast: [4,10,0,4])
+    }
+
+    /// Emby's own client asks 4.8.0.16 and later to list a collection in its display order.
+    nonisolated static func sortsCollectionsByDisplayOrder(version: String) -> Bool {
+        isVersion(version, atLeast: [4,8,0,16])
+    }
+
+    nonisolated static func isVersion(_ version: String, atLeast minimum: [Int]) -> Bool {
         let actual = version.split(separator:".").map { Int($0) ?? 0 }
-        let minimum = [4,10,0,4]
         for index in minimum.indices {
             let value = actual.indices.contains(index) ? actual[index] : 0
             if value != minimum[index] { return value > minimum[index] }
         }
         return true
+    }
+
+    /// The server's version, cached per account and user for ten minutes.
+    func serverVersion() async throws -> String {
+        if let cached = await EmbyServerDirectory.shared.version(connection: connection) { return cached }
+        let system = try await connection.object("GET", "/System/Info/Public")
+        let version = system["Version"] as? String ?? ""
+        await EmbyServerDirectory.shared.rememberVersion(version, connection: connection)
+        return version
     }
 
     nonisolated static func legacyHomeSectionTypes(settings: [String:Any]) -> [String] {
@@ -671,15 +688,7 @@ struct EmbyAdapter {
             let rows = try convert(latest as? [[String:Any]] ?? [])
             return ["sections":[section("latest-" + parent,"Latest",["items":rows,"total":rows.count])]]
         }
-        let version: String
-        if let cached = await EmbyServerDirectory.shared.version(connection: connection) {
-            version = cached
-        } else {
-            let system = try await connection.object("GET", "/System/Info/Public")
-            version = system["Version"] as? String ?? ""
-            await EmbyServerDirectory.shared.rememberVersion(version, connection: connection)
-        }
-        guard Self.usesServerHomeSections(version: version) else { return try await legacyHome() }
+        guard Self.usesServerHomeSections(version: try await serverVersion()) else { return try await legacyHome() }
         #if os(tvOS)
         let displayMode = "tv"
         #else
@@ -881,9 +890,24 @@ struct EmbyAdapter {
         "EnableUserData":"false", "EnableImageTypes":"Primary", "ImageTypeLimit":"1",
     ]
 
-    nonisolated static func collectionQuery(id: String, offset: String, limit: String) -> [String:String] {
-        ["ParentId":id,"Recursive":"false","GroupItemsIntoCollections":"false",
-         "StartIndex":offset,"Limit":limit,"SortBy":"SortName","SortOrder":"Ascending"]
+    /// `DisplayOrder` keeps the order set on each collection (release date unless
+    /// changed to name). Older servers get no sort, as Emby's own client does there.
+    nonisolated static func collectionQuery(id: String, offset: String, limit: String, displayOrder: Bool) -> [String:String] {
+        var query = ["ParentId":id,"Recursive":"false","GroupItemsIntoCollections":"false",
+                     "StartIndex":offset,"Limit":limit]
+        if displayOrder { query["SortBy"] = "DisplayOrder" }
+        return query
+    }
+
+    func collectionItems(_ collection: String, offset: String, limit: String, fields: String? = nil) async throws -> [String: Any] {
+        let id = try EmbyConnection.id(collection)
+        // A failed version check fails the page rather than loading it in another
+        // order, which would repeat or skip titles part-way through paging.
+        let version = try await serverVersion()
+        var query = Self.collectionQuery(id: id, offset: offset, limit: limit,
+                                         displayOrder: Self.sortsCollectionsByDisplayOrder(version: version))
+        if let fields { query["Fields"] = fields }
+        return try await items(query: query)
     }
 
     nonisolated static func catalogFilterOptions(_ raw: [String: Any]) -> [String: Any] {
@@ -900,7 +924,7 @@ struct EmbyAdapter {
 
     func catalog(_ input: [String: String]) async throws -> [String: Any] {
         if let collection = input["collection_id"] {
-            return try await items(query:Self.collectionQuery(id:EmbyConnection.id(collection),offset:input["offset"] ?? "0",limit:input["limit"] ?? "60").merging(["Fields": Self.browseFields]) { _, new in new })
+            return try await collectionItems(collection, offset: input["offset"] ?? "0", limit: input["limit"] ?? "60", fields: Self.browseFields)
         }
         var q = ["Fields": Self.browseFields, "StartIndex": input["offset"] ?? "0", "Limit": input["limit"] ?? "60", "IncludeItemTypes": "Movie,Series", "SortBy":"SortName", "SortOrder":input["order"] == "desc" ? "Descending" : "Ascending"]
         // Search's "video" scope, like any other unmapped type, keeps both movies and series.
@@ -1069,7 +1093,7 @@ struct EmbyAdapter {
             return ["collections":(raw["Items"] as? [[String:Any]] ?? []).compactMap(collection),"sections":[]]
         }
         if p.count == 5, p[2] == "collections", p[4] == "items", method == "GET" {
-            return try await items(query:Self.collectionQuery(id:EmbyConnection.id(p[3]),offset:query["offset"] ?? "0",limit:query["limit"] ?? "200"))
+            return try await collectionItems(p[3], offset: query["offset"] ?? "0", limit: query["limit"] ?? "200")
         }
         if p.count >= 3, p[2] == "downloads" {
             return try await EmbyDownloads.shared.route(connection:connection,method:method,path:p,body:payload)
