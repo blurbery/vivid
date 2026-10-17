@@ -899,7 +899,10 @@ actor VividIntroDBClient {
     }
 
     struct FallbackResponse: Decodable, Sendable {
-        let tmdb_id: Int?
+        // v4 keys every response by TVDB and no longer returns tmdb_id.
+        let tvdb_id: Int?
+        let season: Int?
+        let episode: Int?
         struct Timestamp: Decodable, Sendable {
             let start_ms: Double?
             let end_ms: Double?
@@ -929,7 +932,7 @@ actor VividIntroDBClient {
             }
             return Segments(imdb_id: episode.imdbID, season: episode.season, episode: episode.episode,
                             intro: first(intro, credits: false), outro: first(credits, credits: true),
-                            recap: first(recap, credits: false), tmdb_id: tmdb_id ?? episode.tmdbID)
+                            recap: first(recap, credits: false), tmdb_id: episode.tmdbID)
         }
     }
 
@@ -949,7 +952,9 @@ actor VividIntroDBClient {
         if let cached = fallbackCache[episode], Date().timeIntervalSince(cached.0) < 3600 {
             return cached.1
         }
-        var url = URLComponents(string: "https://api.theintrodb.org/v3/media")!
+        // TMDB and IMDb IDs are resolved server-side using that provider's
+        // episode numbering, so no TVDB episode-order mapping is sent.
+        var url = URLComponents(string: "https://api.theintrodb.org/v4/media")!
         url.queryItems = [identifier,
                          URLQueryItem(name: "season", value: String(episode.season)),
                          URLQueryItem(name: "episode", value: String(episode.episode))]
@@ -959,8 +964,11 @@ actor VividIntroDBClient {
         guard let response = response as? HTTPURLResponse,
               response.statusCode == 200, data.count < 100_000 else { return nil }
         let responseBody = try JSONDecoder().decode(FallbackResponse.self, from: data)
-        guard let responseTMDBID = responseBody.tmdb_id, responseTMDBID > 0 else { return nil }
-        if identifier.name == "tmdb_id", responseBody.tmdb_id != episode.tmdbID { return nil }
+        // The response must identify a series and echo the requested episode.
+        // This also rejects the version and episode-list response shapes.
+        guard let responseTVDBID = responseBody.tvdb_id, responseTVDBID > 0,
+              responseBody.season == episode.season,
+              responseBody.episode == episode.episode else { return nil }
         let result = responseBody.segments(for: episode)
         if fallbackCache.count >= 200 { fallbackCache.removeAll() }
         fallbackCache[episode] = (Date(), result)

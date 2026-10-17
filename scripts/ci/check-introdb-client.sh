@@ -11,6 +11,7 @@ trap 'rm -rf "$intro_tmp"' EXIT
 final class MockIntroDB: URLProtocol, @unchecked Sendable {
     static var count = 0
     static var expectedHost = "api.introdb.app"
+    static var expectedPath = "/segments"
     static var expectedIDName = "imdb_id"
     static var expectedID = "tt0944947"
     static var code = 200
@@ -20,6 +21,7 @@ final class MockIntroDB: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         Self.count += 1
         precondition(request.url?.host == Self.expectedHost)
+        precondition(request.url?.path == Self.expectedPath)
         let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
         precondition(query.first { $0.name == Self.expectedIDName }?.value == Self.expectedID)
         precondition(query.filter { ["imdb_id", "tmdb_id"].contains($0.name) }.count == 1)
@@ -66,9 +68,10 @@ final class MockIntroDB: URLProtocol, @unchecked Sendable {
         precondition(separate?.intro?.range(duration: 1800)?.start == 30)
         precondition(separate?.outro?.range(duration: 1800)?.start == 1700)
         MockIntroDB.expectedHost = "api.theintrodb.org"
+        MockIntroDB.expectedPath = "/v4/media"
         MockIntroDB.expectedIDName = "tmdb_id"
         MockIntroDB.expectedID = "1399"
-        MockIntroDB.body = #"{"tmdb_id":1399,"intro":[{"start_ms":10000,"end_ms":20000}],"credits":[{"start_ms":90000,"end_ms":null}],"recap":[{"start_ms":null,"end_ms":5000}]}"#
+        MockIntroDB.body = #"{"tvdb_id":121361,"type":"tv","season":1,"episode":1,"intro":[{"start_ms":10000,"end_ms":20000}],"credits":[{"start_ms":90000,"end_ms":null}],"recap":[{"start_ms":null,"end_ms":5000}]}"#
         let tmdbOnly = VividIntroDBClient.Episode(imdbID: "", season: 1, episode: 1, tmdbID: 1399)
         let fallbackClient = client()
         let before = MockIntroDB.count
@@ -94,28 +97,31 @@ final class MockIntroDB: URLProtocol, @unchecked Sendable {
         precondition(primary.fillingMissing(from: anotherEpisode).outro == nil)
         let both = VividIntroDBClient.Episode(imdbID: "tt0944947", season: 1, episode: 1, tmdbID: 1399)
         _ = try await client().fallbackSegments(for: both)
-        MockIntroDB.body = #"{"tmdb_id":999,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
-        let wrongSeries = try await client().fallbackSegments(for: tmdbOnly)
-        precondition(wrongSeries == nil, "Reject mismatched TMDB response")
-        MockIntroDB.body = #"{"intro":[{"start_ms":1000,"end_ms":2000}]}"#
+        MockIntroDB.body = #"{"tvdb_id":121361,"type":"tv","season":1,"episode":2,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
+        let wrongEpisode = try await client().fallbackSegments(for: tmdbOnly)
+        precondition(wrongEpisode == nil, "Reject a response for another episode")
+        MockIntroDB.body = #"{"tvdb_id":121361,"type":"tv","intro":[{"start_ms":1000,"end_ms":2000}]}"#
+        let noEpisode = try await client().fallbackSegments(for: tmdbOnly)
+        precondition(noEpisode == nil, "Response must echo the requested episode")
+        MockIntroDB.body = #"{"type":"tv","season":1,"episode":1,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
         let unidentified = try await client().fallbackSegments(for: tmdbOnly)
-        precondition(unidentified == nil, "TMDB response must identify the requested series")
+        precondition(unidentified == nil, "Response must identify a TVDB series")
         MockIntroDB.expectedIDName = "imdb_id"
         MockIntroDB.expectedID = "tt0944947"
         let imdbClient = client()
         let unidentifiedIMDb = try await imdbClient.fallbackSegments(for: identity)
-        precondition(unidentifiedIMDb == nil, "IMDb lookups must also return a TMDB identity")
-        MockIntroDB.body = #"{"tmdb_id":0,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
+        precondition(unidentifiedIMDb == nil, "IMDb lookups must also return a TVDB identity")
+        MockIntroDB.body = #"{"tvdb_id":0,"type":"tv","season":1,"episode":1,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
         let invalidIdentity = try await imdbClient.fallbackSegments(for: identity)
         precondition(invalidIdentity == nil)
-        MockIntroDB.body = #"{"tmdb_id":1399,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
+        MockIntroDB.body = #"{"tvdb_id":121361,"type":"tv","season":1,"episode":1,"intro":[{"start_ms":1000,"end_ms":2000}]}"#
         let imdbFallback = try await imdbClient.fallbackSegments(for: identity)
         precondition(imdbFallback?.intro?.range(duration: 100)?.end == 2,
                      "Rejected responses must not poison the cache")
         let invalidIDs = VividIntroDBClient.Episode(imdbID: "", season: 1, episode: 1, tmdbID: -1)
         let invalidResult = try await client().fallbackSegments(for: invalidIDs)
         precondition(invalidResult == nil)
-        print("IntroDB checks passed: anonymous requests, milliseconds, bounds, TMDB-only fallback, provider merging, separate intro/credits/recap, cache, invalid IDs, missing data, rate limiting and episode identity.")
+        print("IntroDB checks passed: anonymous requests, milliseconds, bounds, TMDB-only fallback, provider merging, separate intro/credits/recap, cache, invalid IDs, missing data, rate limiting, TheIntroDB v4 path and episode identity.")
     }
 }
 SWIFT
