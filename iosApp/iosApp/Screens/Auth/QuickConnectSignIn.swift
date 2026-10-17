@@ -48,8 +48,10 @@ final class QuickConnectSignIn {
     }
 
     /// Starts a new code, replacing any earlier one. `complete` saves the
-    /// approved session and returns a message to show when that fails.
+    /// approved session and returns a message to show when that fails. An
+    /// approved code that is still signing in is never replaced.
     func start(serverURL: String, complete: @escaping @MainActor (JellyfinLogin) async -> String?) {
+        guard canCancel else { return }
         task?.cancel()
         phase = .starting
         task = Task { [weak self] in
