@@ -89,6 +89,7 @@ extension PlayerViewModel {
             ? settings.subtitleSystemSelectionPreferences.preferredLanguages.first
             : settings.preferredSubtitleLanguage
         hasExplicitSubtitleChoice = false
+        viewingSubtitlePrefs = nil
         prefsForCurrentItem = enabled
             ? systemCaptionPrefsSnapshot()
             : currentWatchDetail.map(localSubtitlePrefsSnapshot)

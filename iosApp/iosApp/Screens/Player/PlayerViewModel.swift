@@ -757,6 +757,13 @@ class PlayerViewModel {
         let disableWhenNoLanguageMatch: Bool
         let trackSignature: SubtitleTrackSignature?
     }
+    /// A subtitle pick, or Off, made in the player. It holds for the rest of
+    /// this viewing, including next episodes that play on from here, while
+    /// Settings > Subtitles stays the default for anything started afresh.
+    var viewingSubtitlePrefs: PrefsSnapshot?
+    /// The viewer switched audio during the current item, so the load's own
+    /// audio ordinal no longer says which track is playing.
+    var audioPickedForCurrentItem = false
     /// Set after the resolver has fired once for the current item so we
     /// don't keep re-evaluating (and overriding the user) on every
     /// subsequent track-list update.
@@ -1037,7 +1044,7 @@ class PlayerViewModel {
                 self.applySubtitleAppearanceToPlayer()
                 self.subtitleOrderingLanguage = self.settings
                     .subtitleSystemSelectionPreferences.preferredLanguages.first
-                guard !self.hasExplicitSubtitleChoice else { return }
+                guard !self.hasExplicitSubtitleChoice, self.viewingSubtitlePrefs == nil else { return }
                 self.prefsForCurrentItem = self.systemCaptionPrefsSnapshot()
                 self.prefsResolvedForCurrentItem = false
                 self.applyAutoSubtitlePreferencesIfNeeded(forceReevaluation: true)

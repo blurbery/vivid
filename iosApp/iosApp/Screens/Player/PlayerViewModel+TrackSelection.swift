@@ -23,8 +23,10 @@ extension PlayerViewModel {
             // under way — a dropped switch must not be filed as a success.
             let priorAudioId = selectedAudioId
             let priorPendingAudioFfIndex = pendingAudioFfIndex
+            let priorAudioPicked = audioPickedForCurrentItem
             pendingAudioFfIndex = nil
             selectedAudioId = track.trackId
+            audioPickedForCurrentItem = true
             reapplySystemSubtitlePolicy()
             guard attemptProtocolV3Replan(
                 position: currentTime,
@@ -35,6 +37,7 @@ extension PlayerViewModel {
             ) else {
                 selectedAudioId = priorAudioId
                 pendingAudioFfIndex = priorPendingAudioFfIndex
+                audioPickedForCurrentItem = priorAudioPicked
                 reapplySystemSubtitlePolicy()
                 showNotice(
                     title: "Couldn't change audio",
@@ -56,6 +59,7 @@ extension PlayerViewModel {
         }
         pendingAudioFfIndex = nil
         selectedAudioId = track.trackId
+        audioPickedForCurrentItem = true
         persistAudioSelection(track)
         reapplySystemSubtitlePolicy()
         applyAudioTrackSelection(track.trackId, reason: "user_selection")
@@ -231,15 +235,53 @@ extension PlayerViewModel {
         TrackSelectionPersistence.saveAudio(prefKey: key, request: request)
     }
 
-    /// Best-effort write of an explicit subtitle pick (or explicit
-    /// "Off" when `track` is nil).
+    /// Keeps an explicit subtitle pick (or "Off" when `track` is nil) for
+    /// the rest of this viewing. Settings > Subtitles is left alone: one pick
+    /// must not turn Auto into Always, or Off, for everything played later.
     private func persistSubtitleSelection(_ track: PlayerTrack?) {
-        if let track {
-            if let language = track.lang, !language.isEmpty { settings.preferredSubtitleLanguage = language }
-            settings.preferredSubtitleMode = "always"
-        } else {
-            settings.preferredSubtitleMode = "off"
+        viewingSubtitlePrefs = Self.viewingSubtitlePrefs(for: track)
+    }
+
+    /// The pick as preferences the next episode can resolve against its own
+    /// tracks: the same language and kind of track (forced, CC/SDH, title),
+    /// or Off.
+    static func viewingSubtitlePrefs(for track: PlayerTrack?) -> PrefsSnapshot {
+        guard let track else {
+            return PrefsSnapshot(
+                preferredLanguage: nil, additionalPreferredLanguages: [], mode: .off,
+                showForced: false, forcedOnly: false, preferAccessibilityTracks: false,
+                disableWhenNoLanguageMatch: true, trackSignature: nil
+            )
         }
+        let language = track.normalizedLanguageCode
+        return PrefsSnapshot(
+            preferredLanguage: language,
+            additionalPreferredLanguages: [],
+            mode: .always,
+            showForced: track.isForced,
+            forcedOnly: false,
+            preferAccessibilityTracks: track.isHearingImpaired,
+            // A pick without a language still means "subtitles on".
+            disableWhenNoLanguageMatch: language != nil,
+            trackSignature: SubtitleTrackSignature(
+                source: track.isExternal ? "external" : "embedded",
+                language: language,
+                codec: track.codec,
+                label: track.normalizedTitle,
+                forced: track.isForced,
+                hearingImpaired: track.isHearingImpaired
+            )
+        )
+    }
+
+    /// What drives the automatic pick for the item being loaded: this
+    /// viewing's player choice first, then Settings > Subtitles, or the
+    /// device's caption settings when Vivid follows them.
+    func automaticSubtitlePrefsSnapshot(_ watchDetail: WatchDetail) -> PrefsSnapshot {
+        if let viewingSubtitlePrefs { return viewingSubtitlePrefs }
+        return settings.subtitleMatchesSystemAppearance
+            ? systemCaptionPrefsSnapshot()
+            : localSubtitlePrefsSnapshot(watchDetail)
     }
 
     func selectSecondarySubtitle(_ track: PlayerTrack) {
@@ -543,15 +585,25 @@ extension PlayerViewModel {
             return
         }
 
+        // Startup inventory can list subtitles before the engine has picked
+        // an audio track, and before server subtitle files are mounted.
+        // Resolving then sees no audio language, so Auto falls through to the
+        // full track, and the latch below keeps that answer for the whole
+        // item. Wait for the established load, as deferred picks do;
+        // `loadVivid` re-enters `adoptVividInventory` once it is.
+        guard isVividLoadEstablished else { return }
+
         let allSubs = subtitleTracks
         guard !allSubs.isEmpty else {
             prefsResolvedForCurrentItem = false
             return
         }
 
-        let audioLang = audioTracks
-            .first(where: { $0.trackId == selectedAudioId })?
-            .lang
+        let audioLang = SubtitleAutoResolver.policyAudioLanguage(
+            live: audioTracks.first(where: { $0.trackId == selectedAudioId })?.lang,
+            catalog: currentSelectedVersion?.audioTracks ?? [],
+            ordinal: catalogAudioOrdinalForSubtitlePolicy
+        )
         let pick = SubtitleAutoResolver.resolve(.init(
             preferredLanguage: prefs.preferredLanguage,
             additionalPreferredLanguages: prefs.additionalPreferredLanguages,
@@ -569,6 +621,22 @@ extension PlayerViewModel {
         // resolver: embedded or sidecar tracks can arrive in a later update.
         prefsResolvedForCurrentItem = !allSubs.isEmpty
         applyAutoSubtitle(pick)
+    }
+
+    /// The catalogue ordinal of the audio that's playing. The engine's ordinal
+    /// counts only when its list lines up with the catalogue's, since a
+    /// transcode can carry fewer audio tracks than the file.
+    private var catalogAudioOrdinalForSubtitlePolicy: Int? {
+        if let selected = audioTracks.first(where: { $0.trackId == selectedAudioId }),
+           audioTracks.count == (currentSelectedVersion?.audioTracks?.count ?? 0),
+           let ordinal = audioSelectionIndex(for: selected) {
+            return ordinal
+        }
+        // The plan and the load request describe the audio the item started
+        // with, not a track the viewer has switched to since.
+        guard !audioPickedForCurrentItem else { return nil }
+        return activePreparedProtocolV3?.plan.selectedTracks.audio?.index
+            ?? lastLoadRequest?.preferredAudioTrackIndex
     }
 
     /// Answer VividEngine's `systemCaptionRequest` (upstream api.md, "The
@@ -614,7 +682,8 @@ extension PlayerViewModel {
     }
 
     func reapplySystemSubtitlePolicy() {
-        guard settings.subtitleMatchesSystemAppearance, !hasExplicitSubtitleChoice else { return }
+        guard settings.subtitleMatchesSystemAppearance, !hasExplicitSubtitleChoice,
+              viewingSubtitlePrefs == nil else { return }
         subtitleOrderingLanguage = settings.subtitleSystemSelectionPreferences
             .preferredLanguages.first
         prefsForCurrentItem = systemCaptionPrefsSnapshot()

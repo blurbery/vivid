@@ -104,6 +104,7 @@ extension PlayerViewModel {
             preferredSubtitleTrackIndex != nil
             || preferredSidecarSubtitleTrackId != nil
             || preferredProtocolV3SubtitleIndex != nil
+        audioPickedForCurrentItem = false
         prefsForCurrentItem = nil
         prefsResolvedForCurrentItem = false
     }
@@ -464,9 +465,7 @@ extension PlayerViewModel {
                 // entirely if the caller already passed an explicit
                 // subtitle index — manual override always wins.
                 if !self.hasExplicitSubtitleChoice {
-                    self.prefsForCurrentItem = self.settings.subtitleMatchesSystemAppearance
-                        ? self.systemCaptionPrefsSnapshot()
-                        : self.localSubtitlePrefsSnapshot(prepared.watchDetail)
+                    self.prefsForCurrentItem = self.automaticSubtitlePrefsSnapshot(prepared.watchDetail)
                 }
 
                 self.title = prepared.displayTitle
@@ -879,6 +878,9 @@ extension PlayerViewModel {
             offlineDownloadId: offlineDownloadId
         )
         request.prefersLastUsedVersion = prefersLastUsedVersion
+        // A title started from outside the player is a new viewing, so
+        // Settings > Subtitles applies again.
+        viewingSubtitlePrefs = nil
         beginFreshLoad(
             request: request,
             progressPosition: currentTime,

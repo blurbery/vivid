@@ -124,6 +124,9 @@ targets:
       - path: Tests/PlayerStreamBadgesTests.swift
       # Emby and Jellyfin PlaybackInfo device limits, including Apple TV HD.
       - path: Tests/ServerDeviceProfileTests.swift
+      # Automatic subtitle choice: Auto, forced subtitles and audio language.
+      - path: Tests/SubtitleAutoResolverTests.swift
+      - path: Tests/SubtitleAutoSelectionTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:

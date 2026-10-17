@@ -1,5 +1,9 @@
 import XCTest
+#if os(tvOS)
+@testable import VividTV
+#else
 @testable import Vivid
+#endif
 
 final class SubtitleAutoResolverTests: XCTestCase {
     private func track(
@@ -304,6 +308,58 @@ final class SubtitleAutoResolverTests: XCTestCase {
             disableWhenNoLanguageMatch: true, trackSignature: nil,
             availableSubtitles: [track(id: 1, lang: "en")], currentAudioLanguage: "ja"
         )), .disable)
+    }
+
+    // MARK: - Audio language for Auto
+
+    private func audio(_ language: String?) -> AudioTrack {
+        AudioTrack(index: nil, codec: "eac3", channels: 6, channelLayout: "5.1", bitrate: 640_000,
+                   sampleRate: 48_000, language: language, title: nil, embeddedTitle: nil, isDefault: nil)
+    }
+
+    func testPolicyAudioLanguagePrefersTheStreamTag() {
+        XCTAssertEqual(SubtitleAutoResolver.policyAudioLanguage(
+            live: "jpn", catalog: [audio("eng"), audio("jpn")], ordinal: 0
+        ), "jpn")
+    }
+
+    /// A transcode can drop the audio language, and `und` says nothing. The
+    /// catalogue's language for the playing ordinal stands in.
+    func testPolicyAudioLanguageFallsBackToTheCatalogueOrdinal() {
+        for live in [nil, "", "und", "UND"] as [String?] {
+            XCTAssertEqual(SubtitleAutoResolver.policyAudioLanguage(
+                live: live, catalog: [audio("jpn"), audio("eng")], ordinal: 1
+            ), "eng", String(describing: live))
+        }
+    }
+
+    func testPolicyAudioLanguageUsesASingleLanguageCatalogue() {
+        XCTAssertEqual(SubtitleAutoResolver.policyAudioLanguage(
+            live: nil, catalog: [audio("eng"), audio("en"), audio(nil)], ordinal: nil
+        ), "eng")
+        XCTAssertEqual(SubtitleAutoResolver.policyAudioLanguage(
+            live: nil, catalog: [audio("eng")], ordinal: 5
+        ), "eng")
+    }
+
+    /// English audio beside an untagged dub: playing the dub must not borrow
+    /// English from the other track, or Auto hides subtitles over it.
+    func testPolicyAudioLanguageKeepsAnUntaggedPlayingTrackUnknown() {
+        XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(
+            live: nil, catalog: [audio("eng"), audio(nil)], ordinal: 1
+        ))
+        XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(
+            live: "und", catalog: [audio("eng"), audio("und")], ordinal: 1
+        ))
+    }
+
+    /// Several audio languages and nothing saying which one plays: unknown,
+    /// rather than a guess that could hide subtitles for foreign audio.
+    func testPolicyAudioLanguageStaysUnknownForAmbiguousCatalogue() {
+        XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(
+            live: nil, catalog: [audio("eng"), audio("jpn")], ordinal: nil
+        ))
+        XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(live: "und", catalog: [], ordinal: 0))
     }
 
 }
