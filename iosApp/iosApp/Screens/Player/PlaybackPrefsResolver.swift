@@ -188,6 +188,36 @@ struct SubtitleAutoResolver {
         return inputs.disableWhenNoLanguageMatch ? .disable : .noChange
     }
 
+    /// The audio language Auto compares with the subtitle language. The
+    /// engine's tag for the playing track wins. A stream without a usable tag
+    /// (a server transcode can drop it, and `und` says nothing) falls back to
+    /// the catalogue: the track at the playing audio ordinal, or the only
+    /// language the file's audio comes in. Unknown audio must not read as
+    /// foreign audio, or Auto shows full subtitles over the viewer's own
+    /// language.
+    static func policyAudioLanguage(
+        live: String?,
+        catalog: [AudioTrack],
+        ordinal: Int?
+    ) -> String? {
+        if let live = usableLanguage(live) { return live }
+        if let ordinal, catalog.indices.contains(ordinal),
+           let language = usableLanguage(catalog[ordinal].language) {
+            return language
+        }
+        let languages = catalog.compactMap { usableLanguage($0.language) }
+        guard let first = languages.first,
+              languages.allSatisfy({ languagesMatch($0, first) }) else { return nil }
+        return first
+    }
+
+    private static func usableLanguage(_ language: String?) -> String? {
+        guard let trimmed = language?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              !["und", "mis", "mul", "zxx"].contains(trimmed.lowercased()) else { return nil }
+        return trimmed
+    }
+
     // MARK: - Matching helpers
 
     /// Score-based signature match. Higher score = better. Returns the
