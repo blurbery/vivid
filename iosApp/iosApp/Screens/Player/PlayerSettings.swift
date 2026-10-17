@@ -964,8 +964,9 @@ actor VividIntroDBClient {
         guard let response = response as? HTTPURLResponse,
               response.statusCode == 200, data.count < 100_000 else { return nil }
         let responseBody = try JSONDecoder().decode(FallbackResponse.self, from: data)
-        // The response must identify a series and echo the requested episode.
-        // This also rejects the version and episode-list response shapes.
+        // v4 has no tmdb_id to compare with the request, so the series rests on
+        // TheIntroDB resolving the ID sent. Require a TVDB ID and the echoed
+        // episode, which also rejects the version and episode-list shapes.
         guard let responseTVDBID = responseBody.tvdb_id, responseTVDBID > 0,
               responseBody.season == episode.season,
               responseBody.episode == episode.episode else { return nil }
