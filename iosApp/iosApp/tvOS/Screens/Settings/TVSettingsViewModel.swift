@@ -32,6 +32,9 @@ final class TVSettingsViewModel {
     var skipCredits: Bool = PlayerSettings.shared.autoSkipCredits
     /// Retained preference for compatibility; Lucid manages buffering automatically.
     var bufferAhead: BufferAheadMode = PlayerSettings.shared.bufferAhead
+    var volumeBoostEnabled: Bool = PlayerSettings.shared.volumeBoostEnabled
+    var volumeBoostPercent: Int = PlayerSettings.shared.volumeBoostPercent
+    var enhancedDialogueEnabled: Bool = PlayerSettings.shared.enhancedDialogueEnabled
 
     // Local text-subtitle appearance.
     var subtitleAppearance: SubtitleAppearance = PlayerSettings.shared.subtitleAppearance
@@ -88,6 +91,9 @@ final class TVSettingsViewModel {
         skipIntros = PlayerSettings.shared.autoSkipIntro
         skipCredits = PlayerSettings.shared.autoSkipCredits
         bufferAhead = PlayerSettings.shared.bufferAhead
+        volumeBoostEnabled = PlayerSettings.shared.volumeBoostEnabled
+        volumeBoostPercent = PlayerSettings.shared.volumeBoostPercent
+        enhancedDialogueEnabled = PlayerSettings.shared.enhancedDialogueEnabled
         subtitleAppearance = PlayerSettings.shared.subtitleAppearance
         subtitleUsesDeviceAppearanceOverride = PlayerSettings.shared.subtitleUsesDeviceAppearanceOverride
         subtitleMatchesSystemAppearance = PlayerSettings.shared.subtitleMatchesSystemAppearance
@@ -141,6 +147,24 @@ final class TVSettingsViewModel {
     func setBufferAhead(_ mode: BufferAheadMode) async {
         PlayerSettings.shared.setBufferAhead(mode)
         bufferAhead = PlayerSettings.shared.bufferAhead
+    }
+
+    @MainActor
+    func setVolumeBoostEnabled(_ enabled: Bool) async {
+        PlayerSettings.shared.setVolumeBoostEnabled(enabled)
+        volumeBoostEnabled = PlayerSettings.shared.volumeBoostEnabled
+    }
+
+    @MainActor
+    func setVolumeBoostPercent(_ percent: Int) async {
+        PlayerSettings.shared.setVolumeBoostPercent(percent)
+        volumeBoostPercent = PlayerSettings.shared.volumeBoostPercent
+    }
+
+    @MainActor
+    func setEnhancedDialogueEnabled(_ enabled: Bool) async {
+        PlayerSettings.shared.setEnhancedDialogueEnabled(enabled)
+        enhancedDialogueEnabled = PlayerSettings.shared.enhancedDialogueEnabled
     }
 
     @MainActor

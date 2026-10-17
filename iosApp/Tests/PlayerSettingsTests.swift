@@ -267,6 +267,57 @@ final class PlayerSettingsTests: XCTestCase {
         XCTAssertEqual(restored.effectiveSubtitleAppearance, custom)
     }
 
+    func testAudioEnhancementsPersistSnapToOfferedLevelsAndReset() async throws {
+        let harness = try PlayerSettingsHarness()
+        let settings = harness.settings
+        XCTAssertEqual(settings.audioEnhancement, .off)
+        XCTAssertEqual(settings.volumeBoostPercent, VividAudioEnhancement.defaultBoostLevel)
+        settings.setVolumeBoostPercent(175)
+        XCTAssertEqual(settings.audioEnhancement, .off, "A level alone must not boost")
+        settings.setVolumeBoostEnabled(true)
+        settings.setEnhancedDialogueEnabled(true)
+        XCTAssertEqual(PlayerSettings(defaults: harness.defaults).audioEnhancement,
+                       VividAudioEnhancement(boostPercent: 175, enhancedDialogue: true))
+        settings.setVolumeBoostEnabled(false)
+        XCTAssertEqual(settings.audioEnhancement, VividAudioEnhancement(enhancedDialogue: true))
+        XCTAssertEqual(PlayerSettings(defaults: harness.defaults).volumeBoostPercent, 175,
+                       "Turning the boost off keeps its level")
+        settings.setVolumeBoostPercent(310)
+        XCTAssertEqual(settings.volumeBoostPercent, 200)
+        for (stored, offered) in [(0, 125), (100, 125), (140, 150), (160, 150), (190, 200),
+                                  (Int.min, 125), (Int.max, 200)] {
+            XCTAssertEqual(VividAudioEnhancement.boostLevel(stored), offered)
+        }
+        await settings.resetAllDeviceSettings()
+        let reset = PlayerSettings(defaults: harness.defaults)
+        XCTAssertEqual(reset.audioEnhancement, .off)
+        XCTAssertFalse(reset.volumeBoostEnabled)
+        XCTAssertFalse(reset.enhancedDialogueEnabled)
+        XCTAssertEqual(reset.volumeBoostPercent, VividAudioEnhancement.defaultBoostLevel)
+    }
+
+    func testAudioEnhancementsDecodeDolbyAndSetOnlyTheirOwnLucidOptions() {
+        XCTAssertEqual(VividMPVAudio.spdifCodecs(rate: 1, enhancement: .off), "ac3,eac3")
+        XCTAssertEqual(VividMPVAudio.spdifCodecs(rate: 1.5, enhancement: .off), "")
+        XCTAssertTrue(VividMPVAudio.enhancementOptions(.off).isEmpty)
+        // 20 log10(percent / 100): 200% doubles the signal level.
+        for (percent, decibels) in [(125, "1.94"), (150, "3.52"), (175, "4.86"), (200, "6.02")] {
+            let boost = VividAudioEnhancement(boostPercent: percent)
+            XCTAssertEqual(VividMPVAudio.spdifCodecs(rate: 1, enhancement: boost), "")
+            let options = VividMPVAudio.enhancementOptions(boost)
+            XCTAssertEqual(options.map(\.0), ["volume-gain"])
+            XCTAssertEqual(options.first?.1, decibels)
+        }
+        let dialogue = VividAudioEnhancement(enhancedDialogue: true)
+        XCTAssertEqual(VividMPVAudio.spdifCodecs(rate: 1, enhancement: dialogue), "")
+        XCTAssertEqual(VividMPVAudio.enhancementOptions(dialogue).map(\.0), ["af"])
+        XCTAssertEqual(VividMPVAudio.enhancementOptions(dialogue).first?.1, VividMPVAudio.dialogueFilter)
+        // mpv ends a bracketed value at the first closing bracket.
+        XCTAssertTrue(VividMPVAudio.dialogueFilter.hasPrefix("lavfi=[firequalizer="))
+        XCTAssertEqual(VividMPVAudio.dialogueFilter.filter { $0 == "]" }.count, 1)
+        XCTAssertTrue(VividMPVAudio.dialogueFilter.hasSuffix("]"))
+    }
+
     func testPlaybackAndSubtitlePreferencesSurviveLocalReload() async throws {
         let harness = try PlayerSettingsHarness()
         let settings = harness.settings

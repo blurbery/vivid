@@ -118,6 +118,8 @@ targets:
       - path: Tests/VividPlayerCoreTests.swift
       - path: Tests/VividPlayerDisplayCriteriaTests.swift
       - path: Tests/VividPlayerEngineTests.swift
+      # Volume Boost and Enhanced Dialogue measured through Lucid's own mpv and FFmpeg.
+      - path: Tests/LucidAudioEnhancementTests.swift
       # Playback-end recovery, Next Up guards and end-of-stream confirmation.
       - path: Tests/PlaybackEndRecoveryTests.swift
       - path: Tests/VividEndOfStreamConfirmationTests.swift

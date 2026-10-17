@@ -28,7 +28,7 @@ struct IOSSettingsOverview: View {
 
             Section {
                 destination("General", "App and navigation", "gearshape") { GeneralSettingsView() }
-                destination("Playback", "Quality and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
+                destination("Playback", "Quality, audio and episodes", "play.rectangle") { PlaybackSettingsView(viewModel: viewModel) }
                 destination("Subtitles", "Language and appearance", "captions.bubble") { SubtitleSettingsView(viewModel: viewModel) }
                 destination("Servers", "Connection and version", "server.rack") {
                     PhoneServerSettingsView(viewModel: viewModel, showSignOutConfirm: $showSignOutConfirm)

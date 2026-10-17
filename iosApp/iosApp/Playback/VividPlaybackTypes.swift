@@ -157,6 +157,34 @@ struct LoadOptions: Equatable, Sendable {
     /// refreshed credentials reach the live stream.
     var managedHTTPReader = false
 }
+/// Volume Boost and Enhanced Dialogue, as one load applies them.
+struct VividAudioEnhancement: Equatable, Sendable {
+    /// The boost levels Settings offers, as a percentage of the standard level.
+    static let boostLevels = [125, 150, 175, 200]
+    static let defaultBoostLevel = 150
+    static let off = VividAudioEnhancement()
+
+    /// Output level as a percentage of the standard level; 100 is no boost.
+    var boostPercent = 100
+    /// Lowers everything except dialogue, so voices stand out.
+    var enhancedDialogue = false
+
+    /// Both work on decoded audio, so either one turns passthrough off.
+    var isActive: Bool { boostPercent > 100 || enhancedDialogue }
+
+    /// The boost as a signal gain: 200% doubles the level, which is +6.02 dB.
+    var boostDecibels: Double {
+        boostPercent > 100 ? 20 * log10(Double(boostPercent) / 100) : 0
+    }
+
+    /// The offered level nearest to a stored one, so a value written by
+    /// another build still reads back as one of the choices.
+    static func boostLevel(_ percent: Int) -> Int {
+        // Bounded first, so a corrupt stored value cannot overflow the distance.
+        let percent = min(max(percent, 0), 1_000)
+        return boostLevels.min { abs($0 - percent) < abs($1 - percent) } ?? defaultBoostLevel
+    }
+}
 struct MediaChapter: Identifiable { let id: Int; let name: String; let startSeconds: Double }
 struct SystemCaptionRequest { let language: String? }
 struct StartupProgress { let checkpoint: String }

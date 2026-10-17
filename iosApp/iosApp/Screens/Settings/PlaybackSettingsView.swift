@@ -17,6 +17,7 @@ struct PlaybackSettingsView: View {
             .settingsPageHeaderRow()
 
             streamingSection
+            audioSection
             behaviorSection
             resetSection
         }
@@ -36,28 +37,6 @@ struct PlaybackSettingsView: View {
                 LabeledContent("Quality", value: viewModel.preferredQualityLabel)
             }
             .foregroundStyle(Color.vividOnSurface)
-
-            Picker("Audio Language", selection: Binding(
-                get: { viewModel.preferredAudioLanguage },
-                set: { newValue in
-                    viewModel.preferredAudioLanguage = newValue
-                    Task { await viewModel.setPreferredAudioLanguage(newValue) }
-                }
-            )) {
-                Text(
-                    SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.unsetLabel
-                        ?? "No preference"
-                ).tag("")
-                ForEach(viewModel.audioLanguageOptions) { option in
-                    Text(option.label).tag(option.code)
-                }
-            }
-            .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
-            .pickerStyle(.navigationLink)
-            #endif
 
             LabeledContent("Buffer Ahead", value: "Automatic")
                 .foregroundStyle(Color.vividOnSurface)
@@ -82,6 +61,123 @@ struct PlaybackSettingsView: View {
 
         }
 
+    }
+
+    // MARK: - Audio
+
+    private var audioSection: some View {
+        Section {
+            NavigationLink {
+                audioLanguageChoices
+            } label: {
+                LabeledContent("Audio Language", value: audioLanguageLabel)
+            }
+            .foregroundStyle(Color.vividOnSurface)
+
+            Toggle(isOn: Binding(
+                get: { viewModel.volumeBoostEnabled },
+                set: { enabled in
+                    viewModel.volumeBoostEnabled = enabled
+                    Task { await viewModel.setVolumeBoostEnabled(enabled) }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Volume Boost")
+                    Text("Play louder than Vivid’s standard volume.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            .tint(.green)
+
+            NavigationLink {
+                boostLevelChoices
+            } label: {
+                LabeledContent("Boost Level", value: "\(viewModel.volumeBoostPercent)%")
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            .disabled(!viewModel.volumeBoostEnabled)
+
+            Toggle(isOn: Binding(
+                get: { viewModel.enhancedDialogueEnabled },
+                set: { enabled in
+                    viewModel.enhancedDialogueEnabled = enabled
+                    Task { await viewModel.setEnhancedDialogueEnabled(enabled) }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Enhanced Dialogue")
+                    Text("Lower music and effects so voices are easier to hear.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            .tint(.green)
+        } header: {
+            PhoneSettingsSectionHeader("Audio")
+        } footer: {
+            Text("Changes apply the next time a video starts. While Volume Boost or Enhanced Dialogue is on, Dolby Atmos plays as standard surround sound, and the loudest moments can distort at higher boost levels.")
+                .foregroundStyle(Color.vividSecondaryText)
+        }
+    }
+
+    private var audioLanguageUnsetLabel: String {
+        SettingPresentationMetadata.definitions[.playbackAudioLanguage]?.unsetLabel ?? "No preference"
+    }
+
+    private var audioLanguageLabel: String {
+        viewModel.audioLanguageOptions.first { $0.code == viewModel.preferredAudioLanguage }?.label
+            ?? audioLanguageUnsetLabel
+    }
+
+    private var audioLanguageChoices: some View {
+        PlaybackOptionPage<String>(
+            title: "Audio Language",
+            options: [.init(value: "", label: audioLanguageUnsetLabel)]
+                + viewModel.audioLanguageOptions.map { .init(value: $0.code, label: $0.label) },
+            selection: Binding(
+                get: { viewModel.preferredAudioLanguage },
+                set: { newValue in
+                    viewModel.preferredAudioLanguage = newValue
+                    Task { await viewModel.setPreferredAudioLanguage(newValue) }
+                }
+            )
+        )
+    }
+
+    private var boostLevelChoices: some View {
+        PlaybackOptionPage<Int>(
+            title: "Boost Level",
+            options: VividAudioEnhancement.boostLevels.map { .init(value: $0, label: "\($0)%") },
+            selection: Binding(
+                get: { viewModel.volumeBoostPercent },
+                set: { percent in
+                    viewModel.volumeBoostPercent = percent
+                    Task { await viewModel.setVolumeBoostPercent(percent) }
+                }
+            )
+        )
+    }
+
+    private var nextUpPromptLabel: String {
+        nextUpPromptOptions.first { $0.0 == viewModel.nextUpPromptSeconds }?.1
+            ?? "\(viewModel.nextUpPromptSeconds) seconds before end"
+    }
+
+    private var nextUpPromptChoices: some View {
+        PlaybackOptionPage<Int>(
+            title: "Show Next Up",
+            options: nextUpPromptOptions.map { .init(value: $0.0, label: $0.1) },
+            selection: Binding(
+                get: { viewModel.nextUpPromptSeconds },
+                set: { newValue in
+                    viewModel.nextUpPromptSeconds = newValue
+                    Task { await viewModel.setNextUpPromptSeconds(newValue) }
+                }
+            )
+        )
     }
 
     private var qualityChoices: some View {
@@ -134,23 +230,12 @@ struct PlaybackSettingsView: View {
             .foregroundStyle(Color.vividOnSurface)
             .tint(.green)
 
-            Picker("Show Next Up", selection: Binding(
-                get: { viewModel.nextUpPromptSeconds },
-                set: { newValue in
-                    viewModel.nextUpPromptSeconds = newValue
-                    Task { await viewModel.setNextUpPromptSeconds(newValue) }
-                }
-            )) {
-                ForEach(nextUpPromptOptions, id: \.0) { seconds, label in
-                    Text(label).tag(seconds)
-                }
+            NavigationLink {
+                nextUpPromptChoices
+            } label: {
+                LabeledContent("Show Next Up", value: nextUpPromptLabel)
             }
             .foregroundStyle(Color.vividOnSurface)
-            #if os(macOS)
-            .pickerStyle(.menu)
-            #else
-            .pickerStyle(.navigationLink)
-            #endif
 
             Toggle(isOn: Binding(
                 get: { PlayerSettings.shared.introDBEnabled },
@@ -252,6 +337,42 @@ struct PlaybackSettingsView: View {
             (60, "1 minute before end"),
             (120, "2 minutes before end"),
         ]
+    }
+}
+
+/// A single-choice page in the Settings theme, like Quality. Choosing an
+/// option goes back to Playback, as the system navigation-link picker did.
+private struct PlaybackOptionPage<Value: Hashable>: View {
+    struct Option: Identifiable {
+        let value: Value
+        let label: String
+        var id: Value { value }
+    }
+
+    let title: String
+    let options: [Option]
+    @Binding var selection: Value
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Picker(title, selection: Binding(
+                get: { selection },
+                set: { newValue in
+                    selection = newValue
+                    dismiss()
+                }
+            )) {
+                ForEach(options) { option in
+                    Text(option.label).tag(option.value)
+                }
+            }
+            .pickerStyle(.inline)
+            .foregroundStyle(Color.vividOnSurface)
+        }
+        .settingsListChrome()
+        .navigationTitle(title)
+        .vividNavigationTitleDisplayMode(.inline)
     }
 }
 #endif
