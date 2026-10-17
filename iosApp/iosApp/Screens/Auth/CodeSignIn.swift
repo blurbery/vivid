@@ -42,6 +42,14 @@ final class CodeSignIn {
             }
         }
 
+        /// How the choice works, for the Apple TV profile editor's row.
+        var summary: String {
+            switch self {
+            case .jellyfinQuickConnect: "Approve this Apple TV from Jellyfin on a signed-in device, without a password."
+            case .embyConnect: "Sign in with a PIN entered at emby.media/pin, without a password."
+            }
+        }
+
         var instructions: String {
             switch self {
             case .jellyfinQuickConnect: "On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code."
@@ -80,7 +88,7 @@ final class CodeSignIn {
 
     var status: String? {
         switch phase {
-        case .starting: service == .embyConnect ? "Getting a PIN…" : "Getting a code…"
+        case .starting: "Getting a \(service.codeName)…"
         case .waiting: "Waiting for approval…"
         case .signingIn: "Signing in…"
         case .idle, .failed: nil

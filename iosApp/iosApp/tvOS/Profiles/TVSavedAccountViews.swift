@@ -446,9 +446,7 @@ struct TVSavedAccountEditor: View {
                         // One row for starting and replacing a code, so focus stays put.
                         Button { startCodeSignIn(service) } label: {
                             TVSettingsRowLabel(title: codeSignIn.isActive ? "Get a New \(service.codeTitle)" : "Use \(service.title)",
-                                               detail: codeSignIn.isActive ? "Replace the \(service.codeName) below with a new one."
-                                                   : service == .embyConnect ? "Sign in with a PIN entered at emby.media/pin, without a password."
-                                                   : "Approve this Apple TV from Jellyfin on a signed-in device, without a password.")
+                                               detail: codeSignIn.isActive ? "Replace the \(service.codeName) below with a new one." : service.summary)
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
                         .disabled((accountID == nil && !store.canAddAccount) || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
