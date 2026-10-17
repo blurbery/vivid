@@ -388,6 +388,30 @@ final class JellyfinAdapterTests: XCTestCase {
         }
     }
 
+    func testEpisodesKeepOnlyTheRequestedSeason() async throws {
+        var requestedSeason: String?
+        let adapter = adapter { request in
+            XCTAssertTrue(request.url!.path.hasSuffix("/Episodes"))
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            requestedSeason = query.first { $0.name == "Season" }?.value
+            return (200, ["Items": [
+                ["Id": "s1e1", "Name": "Season 1 episode", "Type": "Episode", "SeriesId": "show",
+                 "ParentIndexNumber": 1, "IndexNumber": 1],
+                ["Id": "s2e1", "Name": "Season 2 episode 1", "Type": "Episode", "SeriesId": "show",
+                 "ParentIndexNumber": 2, "IndexNumber": 1],
+                ["Id": "s2e2", "Name": "Season 2 episode 2", "Type": "Episode", "SeriesId": "show",
+                 "ParentIndexNumber": 2, "IndexNumber": 2]
+            ]])
+        }
+
+        let response: EpisodesResponse = try JellyfinAdapter.decode(try await adapter.episodes(
+            seriesID: "show", seasonNumber: "2", resumeEpisodeID: nil))
+
+        XCTAssertEqual(requestedSeason, "2")
+        XCTAssertEqual(response.episodes.map(\.contentId), ["s2e1", "s2e2"])
+        XCTAssertTrue(response.episodes.allSatisfy { $0.seasonNumber == 2 })
+    }
+
     func testResumeEpisodeUsesExactVersionInsteadOfSeasonRepresentative() async throws {
         let adapter = adapter { request in
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []

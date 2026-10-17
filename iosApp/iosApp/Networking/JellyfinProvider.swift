@@ -598,6 +598,7 @@ struct JellyfinAdapter {
         var value: [String: Any] = [:]
         value["videoRangeType"] = raw["VideoRangeType"] as? String
         value["dvProfile"] = raw["DvProfile"] as? Int
+
         value["dvBlCompatId"] = raw["DvBlSignalCompatibilityId"] as? Int
         value["hdr10Plus"] = raw["Hdr10PlusPresentFlag"] as? Bool
         return value
@@ -624,7 +625,10 @@ struct JellyfinAdapter {
             "SortBy": "ParentIndexNumber,IndexNumber", "SortOrder": "Ascending"
         ])
         async let resume = resumeItem(resumeEpisodeID)
-        var rows = try await page["Items"] as? [[String: Any]] ?? []
+        let requestedSeason = Int(seasonNumber)
+        var rows = (try await page["Items"] as? [[String: Any]] ?? []).filter {
+            $0["ParentIndexNumber"] as? Int == requestedSeason
+        }
         if let selected = try await resume {
             guard selected["Id"] as? String == resumeEpisodeID,
                   selected["Type"] as? String == "Episode",
