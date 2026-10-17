@@ -292,6 +292,32 @@ final class SubtitleAutoSelectionTests: XCTestCase {
         await finish(model)
     }
 
+    /// A refused Silo audio switch leaves the original audio playing, so the
+    /// load's ordinal must keep naming it.
+    func testRefusedAudioSwitchKeepsTheLoadOrdinal() async {
+        let model = makeModel()
+        let plan = PlaybackEndFixtures.plan(sessionId: "fixture-session", durationSeconds: 3_600)
+        model.activePreparedProtocolV3 = PreparedPlaybackV3(
+            playbackAttemptId: "apple:fixture-attempt",
+            planAttemptId: "apple-plan:fixture-attempt",
+            planAttemptKey: plan.planAttemptKey,
+            outputContextId: ApplePlaybackV3Capabilities.snapshot().outputContextId,
+            serverFeatures: [PlaybackProtocolV3.planFeature],
+            plan: plan
+        )
+        // No server ordinal, so the replan is refused before it is issued.
+        let unmappable = PlayerTrack(trackId: japaneseAudioID, kind: .audio, title: nil, lang: "und",
+                                     codec: "eac3", audioChannelCount: 6, bitrate: nil, isDefault: false,
+                                     isForced: false, isHearingImpaired: false, isExternal: false,
+                                     isSelected: false, ffIndex: nil, srcId: nil)
+        model.audioTracks = [audio(englishAudioID, lang: "eng", ordinal: 0, selected: true), unmappable]
+        model.selectedAudioId = englishAudioID
+        model.selectAudio(unmappable)
+        XCTAssertEqual(model.selectedAudioId, englishAudioID)
+        XCTAssertFalse(model.audioPickedForCurrentItem)
+        await finish(model)
+    }
+
     /// A manual pick still wins over Auto.
     func testExplicitChoiceIsNotOverridden() async {
         let model = makeModel()

@@ -23,6 +23,7 @@ extension PlayerViewModel {
             // under way — a dropped switch must not be filed as a success.
             let priorAudioId = selectedAudioId
             let priorPendingAudioFfIndex = pendingAudioFfIndex
+            let priorAudioPicked = audioPickedForCurrentItem
             pendingAudioFfIndex = nil
             selectedAudioId = track.trackId
             audioPickedForCurrentItem = true
@@ -36,6 +37,7 @@ extension PlayerViewModel {
             ) else {
                 selectedAudioId = priorAudioId
                 pendingAudioFfIndex = priorPendingAudioFfIndex
+                audioPickedForCurrentItem = priorAudioPicked
                 reapplySystemSubtitlePolicy()
                 showNotice(
                     title: "Couldn't change audio",
