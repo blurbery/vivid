@@ -468,7 +468,7 @@ struct TVSavedAccountEditor: View {
                         if let failure = quickConnect.failure {
                             TVSettingsInfoRow(title: "Status", value: failure)
                         }
-                        Button { quickConnect.cancel() } label: {
+                        Button { if quickConnect.canCancel { quickConnect.cancel() } } label: {
                             TVSettingsRowLabel(title: "Cancel Quick Connect")
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())

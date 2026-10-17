@@ -156,6 +156,7 @@ struct LoginView: View {
         Button("Use a password instead") { quickConnect.cancel() }
             .buttonStyle(AuroraGhostButtonStyle())
             .frame(maxWidth: .infinity)
+            .disabled(!quickConnect.canCancel)
     }
 
     private func signIn() {

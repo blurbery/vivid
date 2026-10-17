@@ -78,6 +78,8 @@ struct TVLoginView: View {
                 HStack(spacing: 18) {
                     if quickConnect.isActive {
                         Button {
+                            // Disabling the focused button would move focus.
+                            guard quickConnect.canCancel else { return }
                             quickConnect.cancel()
                             // The pressed button is gone; its replacement takes focus.
                             moveFocusAfterUpdate(to: .quickConnect)

@@ -673,6 +673,7 @@ struct PhoneSavedAccountEditor: View {
                 Button("Get a New Code") { startQuickConnect() }
             }
             Button("Cancel", role: .cancel) { quickConnect.cancel() }
+                .disabled(!quickConnect.canCancel)
         } header: { PhoneSettingsSectionHeader("Quick Connect") } footer: {
             Text("On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code.")
         }
