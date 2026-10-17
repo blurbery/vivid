@@ -2,13 +2,15 @@ import SwiftUI
 
 #if !os(tvOS)
 /// Password-first sign-in on iOS and macOS; tvOS uses `TVLoginView`.
-/// Jellyfin servers with Quick Connect turned on also offer a code that a
-/// signed-in device approves, for accounts without a password.
+/// Jellyfin servers with Quick Connect turned on, and Emby servers through
+/// Emby Connect, also offer a code approved somewhere else, for accounts
+/// without a password.
 struct LoginView: View {
     var router: AppRouter
     @State private var viewModel = LoginViewModel()
-    @State private var quickConnect = QuickConnectSignIn()
-    @State private var offersQuickConnect = false
+    @State private var codeSignIn = CodeSignIn()
+    /// The code sign-in this server offers, once checked.
+    @State private var codeService: CodeSignIn.Service?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable { case username, password }
@@ -41,8 +43,8 @@ struct LoginView: View {
             .padding(.bottom, 24)
 
             VStack(alignment: .leading, spacing: 18) {
-                if quickConnect.isActive {
-                    quickConnectPanel
+                if codeSignIn.isActive {
+                    codeSignInPanel
                 } else {
                     passwordForm
                 }
@@ -50,14 +52,15 @@ struct LoginView: View {
             .padding(22)
             .auroraGlass(cornerRadius: 24, emphasized: true)
             .animation(.easeInOut(duration: 0.2), value: viewModel.error)
-            .animation(.easeInOut(duration: 0.2), value: quickConnect.phase)
+            .animation(.easeInOut(duration: 0.2), value: codeSignIn.phase)
         }
         .navigationBarBackButtonHidden()
         .task {
-            guard MediaServerProvider.active == .jellyfin else { return }
-            offersQuickConnect = await QuickConnectSignIn.isAvailable(serverURL: AuthService.shared.serverUrl)
+            guard let service = CodeSignIn.Service(MediaServerProvider.active),
+                  await CodeSignIn.isAvailable(service, serverURL: AuthService.shared.serverUrl) else { return }
+            codeService = service
         }
-        .onDisappear { quickConnect.cancel() }
+        .onDisappear { codeSignIn.cancel() }
     }
 
     @ViewBuilder
@@ -99,8 +102,8 @@ struct LoginView: View {
         .disabled(viewModel.isLoading)
         .padding(.top, 4)
 
-        if offersQuickConnect {
-            Button("Use Quick Connect") { startQuickConnect() }
+        if let codeService {
+            Button("Use \(codeService.title)") { startCodeSignIn(codeService) }
                 .buttonStyle(AuroraGhostButtonStyle())
                 .frame(maxWidth: .infinity)
                 .disabled(viewModel.isLoading)
@@ -112,14 +115,14 @@ struct LoginView: View {
         .disabled(viewModel.isLoading)
     }
 
-    /// Jellyfin Quick Connect: the code to approve from a signed-in device.
+    /// Quick Connect or Emby Connect: the code to approve somewhere else.
     @ViewBuilder
-    private var quickConnectPanel: some View {
+    private var codeSignInPanel: some View {
         VStack(spacing: 8) {
-            Text("Quick Connect")
+            Text(codeSignIn.service.title)
                 .font(.vividHeadline)
                 .foregroundStyle(Color.auroraInk)
-            Text("On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code.")
+            Text(codeSignIn.service.instructions)
                 .font(.vividBody)
                 .foregroundStyle(Color.auroraInkSecondary)
                 .multilineTextAlignment(.center)
@@ -127,17 +130,17 @@ struct LoginView: View {
         }
         .frame(maxWidth: .infinity)
 
-        if let code = quickConnect.code {
+        if let code = codeSignIn.code {
             Text(code)
                 .font(.system(size: 40, weight: .semibold, design: .monospaced))
                 .tracking(8)
                 .foregroundStyle(Color.auroraInk)
                 .frame(maxWidth: .infinity)
                 .textSelection(.enabled)
-                .accessibilityLabel("Quick Connect code \(code.map(String.init).joined(separator: " "))")
+                .accessibilityLabel("\(codeSignIn.service.title) code \(code.map(String.init).joined(separator: " "))")
         }
 
-        if let status = quickConnect.status {
+        if let status = codeSignIn.status {
             HStack(spacing: 10) {
                 ProgressView()
                 Text(status)
@@ -147,13 +150,13 @@ struct LoginView: View {
             .frame(maxWidth: .infinity)
         }
 
-        if let failure = quickConnect.failure {
+        if let failure = codeSignIn.failure {
             AuroraErrorLabel(failure)
-            Button("Get a new code") { startQuickConnect() }
+            Button(codeSignIn.service == .embyConnect ? "Get a new PIN" : "Get a new code") { startCodeSignIn(codeSignIn.service) }
                 .buttonStyle(AuroraPrimaryButtonStyle())
         }
 
-        Button("Use a password instead") { quickConnect.cancel() }
+        Button("Use a password instead") { codeSignIn.cancel() }
             .buttonStyle(AuroraGhostButtonStyle())
             .frame(maxWidth: .infinity)
     }
@@ -163,11 +166,18 @@ struct LoginView: View {
         Task { await viewModel.login(router: router) }
     }
 
-    private func startQuickConnect() {
+    private func startCodeSignIn(_ service: CodeSignIn.Service) {
         viewModel.error = nil
         let serverURL = AuthService.shared.serverUrl
-        quickConnect.start(serverURL: serverURL) { login in
-            await viewModel.login(jellyfinQuickConnect: login, serverURL: serverURL, router: router)
+        switch service {
+        case .jellyfinQuickConnect:
+            codeSignIn.startQuickConnect(serverURL: serverURL) { login in
+                await viewModel.login(jellyfinQuickConnect: login, serverURL: serverURL, router: router)
+            }
+        case .embyConnect:
+            codeSignIn.startEmbyConnect(serverURL: serverURL) { login in
+                await viewModel.login(embyConnect: login, serverURL: serverURL, router: router)
+            }
         }
     }
 

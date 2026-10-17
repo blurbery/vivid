@@ -155,12 +155,7 @@ final class AuthService: @unchecked Sendable {
         }
         if MediaServerProvider.forServerID(expectedAccount.serverId) == .emby {
             let login = try await EmbyConnection.login(serverURL: expectedAccount.serverURL, username: username, password: password)
-            try await installSession(accessToken: login.token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: login.userID, cacheAccountID: String(EmbyAdapter.numberID(login.userID)))
-            #if os(tvOS) || os(iOS)
-            await VividCloudAccountSync.shared.noteExplicitAuthentication(
-                serverID: expectedAccount.serverId, userID: String(EmbyAdapter.numberID(login.userID))
-            )
-            #endif
+            try await installEmbySession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
             return
         }
         let response: LoginResponse = try await HTTPClient.shared.post(
@@ -191,6 +186,25 @@ final class AuthService: @unchecked Sendable {
         guard MediaServerProvider.forServerID(expectedAccount.serverId) == .jellyfin,
               expectedAccount.serverURL == ServerRegistry.normalize(url: serverURL) else { throw HTTPError.requestIdentityChanged }
         try await installJellyfinSession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
+    }
+
+    /// Signs in with an Emby session reached through Emby Connect for
+    /// `serverURL`, provided that server is still the active one.
+    func login(embyConnect login: EmbyLogin, serverURL: String) async throws {
+        guard let expectedAccount = await TokenStore.shared.refreshAccountIdentity() else {
+            throw HTTPError.serverUrlNotConfigured
+        }
+        guard MediaServerProvider.forServerID(expectedAccount.serverId) == .emby,
+              expectedAccount.serverURL == ServerRegistry.normalize(url: serverURL) else { throw HTTPError.requestIdentityChanged }
+        try await installEmbySession(token: login.token, userID: login.userID, expectedAccount: expectedAccount)
+    }
+
+    private func installEmbySession(token: String, userID: String, expectedAccount: RefreshAccountIdentity) async throws {
+        let accountID = String(EmbyAdapter.numberID(userID))
+        try await installSession(accessToken: token, refreshToken: "", expectedAccount: expectedAccount, nativeUserID: userID, cacheAccountID: accountID)
+        #if os(tvOS) || os(iOS)
+        await VividCloudAccountSync.shared.noteExplicitAuthentication(serverID: expectedAccount.serverId, userID: accountID)
+        #endif
     }
 
     private func installJellyfinSession(token: String, userID: String, expectedAccount: RefreshAccountIdentity) async throws {

@@ -54,6 +54,19 @@ class LoginViewModel {
         }
     }
 
+    /// Finishes an Emby Connect sign-in. Returns a message to show when the
+    /// session couldn't be saved.
+    func login(embyConnect login: EmbyLogin, serverURL: String, router: AppRouter) async -> String? {
+        do {
+            try await auth.login(embyConnect: login, serverURL: serverURL)
+            password = ""
+            await finishSignIn(router: router)
+            return nil
+        } catch let loginError {
+            return loginError.localizedDescription
+        }
+    }
+
     private func finishSignIn(router: AppRouter) async {
         #if os(tvOS) || os(iOS)
         await TVLoginPreparation.shared.begin(router: router, newSignIn: true)

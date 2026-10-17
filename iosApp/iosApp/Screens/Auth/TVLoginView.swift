@@ -2,14 +2,16 @@
 import SwiftUI
 
 /// Username and password sign-in shared by the supported tvOS providers.
-/// Jellyfin servers with Quick Connect turned on also offer a code that a
-/// signed-in device approves, for accounts without a password.
+/// Jellyfin servers with Quick Connect turned on, and Emby servers through
+/// Emby Connect, also offer a code approved somewhere else, for accounts
+/// without a password.
 struct TVLoginView: View {
     var router: AppRouter
 
     @State private var loginVM = LoginViewModel()
-    @State private var quickConnect = QuickConnectSignIn()
-    @State private var offersQuickConnect = false
+    @State private var codeSignIn = CodeSignIn()
+    /// The code sign-in this server offers, once checked.
+    @State private var codeService: CodeSignIn.Service?
     @State private var showPassword: Bool = false
 
     @FocusState private var focusedField: Field?
@@ -20,7 +22,7 @@ struct TVLoginView: View {
         case password
         case togglePassword
         case signIn
-        case quickConnect
+        case codeSignIn
         case usePassword
         case newCode
     }
@@ -35,10 +37,11 @@ struct TVLoginView: View {
         }
         .task { focusedField = .username }
         .task {
-            guard MediaServerProvider.active == .jellyfin else { return }
-            offersQuickConnect = await QuickConnectSignIn.isAvailable(serverURL: AuthService.shared.serverUrl)
+            guard let service = CodeSignIn.Service(MediaServerProvider.active),
+                  await CodeSignIn.isAvailable(service, serverURL: AuthService.shared.serverUrl) else { return }
+            codeService = service
         }
-        .onDisappear { quickConnect.cancel() }
+        .onDisappear { codeSignIn.cancel() }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -69,32 +72,32 @@ struct TVLoginView: View {
             topBar
             Spacer(minLength: 28)
             VStack(alignment: .leading, spacing: 24) {
-                if quickConnect.isActive {
-                    quickConnectFields
+                if codeSignIn.isActive {
+                    codeSignInFields
                 } else {
                     passwordFields
                 }
 
                 HStack(spacing: 18) {
-                    if quickConnect.isActive {
+                    if codeSignIn.isActive {
                         Button {
-                            quickConnect.cancel()
+                            codeSignIn.cancel()
                             // The pressed button is gone; its replacement takes focus.
-                            moveFocusAfterUpdate(to: .quickConnect)
+                            moveFocusAfterUpdate(to: .codeSignIn)
                         } label: {
                             Text("Use a password instead")
                         }
                         .buttonStyle(AuroraGhostButtonStyle())
                         .focused($focusedField, equals: .usePassword)
-                    } else if offersQuickConnect {
+                    } else if let codeService {
                         Button {
-                            startQuickConnect()
+                            startCodeSignIn(codeService)
                             moveFocusAfterUpdate(to: .usePassword)
                         } label: {
-                            Text("Use Quick Connect")
+                            Text("Use \(codeService.title)")
                         }
                         .buttonStyle(AuroraGhostButtonStyle())
-                        .focused($focusedField, equals: .quickConnect)
+                        .focused($focusedField, equals: .codeSignIn)
                         .disabled(loginVM.isLoading)
                     }
 
@@ -112,7 +115,7 @@ struct TVLoginView: View {
             .frame(maxWidth: 780, alignment: .leading)
             .auroraGlass(cornerRadius: 30)
             .animation(.easeInOut(duration: 0.2), value: loginVM.error)
-            .animation(.easeInOut(duration: 0.2), value: quickConnect.phase)
+            .animation(.easeInOut(duration: 0.2), value: codeSignIn.phase)
             .focusSection()
             Spacer(minLength: 0)
         }
@@ -193,26 +196,26 @@ struct TVLoginView: View {
         .padding(.top, 4)
     }
 
-    /// Jellyfin Quick Connect: the code to approve from a signed-in device.
+    /// Quick Connect or Emby Connect: the code to approve somewhere else.
     @ViewBuilder
-    private var quickConnectFields: some View {
-        Text("Sign in with Quick Connect")
+    private var codeSignInFields: some View {
+        Text("Sign in with \(codeSignIn.service.title)")
             .font(.vividTitle)
             .foregroundStyle(Color.auroraInk)
-        Text("On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code.")
+        Text(codeSignIn.service.instructions)
             .font(.vividBody)
             .foregroundStyle(Color.auroraInkSecondary)
             .fixedSize(horizontal: false, vertical: true)
 
-        if let code = quickConnect.code {
+        if let code = codeSignIn.code {
             Text(code)
                 .font(.system(size: 76, weight: .semibold, design: .monospaced))
                 .tracking(14)
                 .foregroundStyle(Color.auroraInk)
-                .accessibilityLabel("Quick Connect code \(code.map(String.init).joined(separator: " "))")
+                .accessibilityLabel("\(codeSignIn.service.title) code \(code.map(String.init).joined(separator: " "))")
         }
 
-        if let status = quickConnect.status {
+        if let status = codeSignIn.status {
             HStack(spacing: 14) {
                 ProgressView()
                 Text(status)
@@ -221,7 +224,7 @@ struct TVLoginView: View {
             }
         }
 
-        if let failure = quickConnect.failure {
+        if let failure = codeSignIn.failure {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(Color.requestRose)
@@ -232,20 +235,27 @@ struct TVLoginView: View {
             .transition(.opacity)
 
             Button {
-                startQuickConnect()
+                startCodeSignIn(codeSignIn.service)
             } label: {
-                Text("Get a new code")
+                Text(codeSignIn.service == .embyConnect ? "Get a new PIN" : "Get a new code")
             }
             .buttonStyle(AuroraPrimaryButtonStyle())
             .focused($focusedField, equals: .newCode)
         }
     }
 
-    private func startQuickConnect() {
+    private func startCodeSignIn(_ service: CodeSignIn.Service) {
         loginVM.error = nil
         let serverURL = AuthService.shared.serverUrl
-        quickConnect.start(serverURL: serverURL) { login in
-            await loginVM.login(jellyfinQuickConnect: login, serverURL: serverURL, router: router)
+        switch service {
+        case .jellyfinQuickConnect:
+            codeSignIn.startQuickConnect(serverURL: serverURL) { login in
+                await loginVM.login(jellyfinQuickConnect: login, serverURL: serverURL, router: router)
+            }
+        case .embyConnect:
+            codeSignIn.startEmbyConnect(serverURL: serverURL) { login in
+                await loginVM.login(embyConnect: login, serverURL: serverURL, router: router)
+            }
         }
     }
 

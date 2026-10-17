@@ -335,7 +335,7 @@ struct TVSavedAccountEditor: View {
     @State private var showsDeleteConfirm = false
     @State private var pinIsSet = false
     @State private var household = SiloHouseholdSearch()
-    @State private var quickConnect = QuickConnectSignIn()
+    @State private var codeSignIn = CodeSignIn()
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -442,11 +442,12 @@ struct TVSavedAccountEditor: View {
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                     .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (password.isEmpty && !selectedProvider.usesNativeUser))
-                    if selectedProvider == .jellyfin {
+                    if let service = CodeSignIn.Service(selectedProvider) {
                         // One row for starting and replacing a code, so focus stays put.
-                        Button { startQuickConnect() } label: {
-                            TVSettingsRowLabel(title: quickConnect.isActive ? "Get a New Code" : "Use Quick Connect",
-                                               detail: quickConnect.isActive ? "Replace the code below with a new one."
+                        Button { startCodeSignIn(service) } label: {
+                            TVSettingsRowLabel(title: codeSignIn.isActive ? (service == .embyConnect ? "Get a New PIN" : "Get a New Code") : "Use \(service.title)",
+                                               detail: codeSignIn.isActive ? "Replace the \(service == .embyConnect ? "PIN" : "code") below with a new one."
+                                                   : service == .embyConnect ? "Sign in with a PIN entered at emby.media/pin, without a password."
                                                    : "Approve this Apple TV from Jellyfin on a signed-in device, without a password.")
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
@@ -456,24 +457,24 @@ struct TVSavedAccountEditor: View {
                 if account == nil {
                     TVSettingsFooter("Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile.")
                 }
-                if quickConnect.isActive {
-                    TVSettingsSectionHeader("QUICK CONNECT")
+                if codeSignIn.isActive {
+                    TVSettingsSectionHeader(codeSignIn.service.title.uppercased())
                     TVSettingsGroup {
-                        if let code = quickConnect.code {
-                            TVSettingsInfoRow(title: "Code", value: code)
+                        if let code = codeSignIn.code {
+                            TVSettingsInfoRow(title: codeSignIn.service == .embyConnect ? "PIN" : "Code", value: code)
                         }
-                        if let status = quickConnect.status {
+                        if let status = codeSignIn.status {
                             TVSettingsInfoRow(title: "Status", value: status)
                         }
-                        if let failure = quickConnect.failure {
+                        if let failure = codeSignIn.failure {
                             TVSettingsInfoRow(title: "Status", value: failure)
                         }
-                        Button { quickConnect.cancel() } label: {
-                            TVSettingsRowLabel(title: "Cancel Quick Connect")
+                        Button { codeSignIn.cancel() } label: {
+                            TVSettingsRowLabel(title: "Cancel \(codeSignIn.service.title)")
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
                     }
-                    TVSettingsFooter("On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code.")
+                    TVSettingsFooter(codeSignIn.service.instructions)
                 }
                 }
                 if isActive, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
@@ -546,8 +547,8 @@ struct TVSavedAccountEditor: View {
             pinIsSet = accountID.map { store.hasPIN($0) } ?? false
             store.error = nil
         }
-        .onDisappear { password = ""; pin = ""; confirmation = ""; quickConnect.cancel() }
-        .onChange(of: provider) { quickConnect.cancel() }
+        .onDisappear { password = ""; pin = ""; confirmation = ""; codeSignIn.cancel() }
+        .onChange(of: provider) { codeSignIn.cancel() }
         .onExitCommand { if !store.busy { dismiss() } }
         .fullScreenCover(item: $household.pinProfile) { profile in
             PINEntryView(profile: profile, onCancel: {
@@ -558,14 +559,24 @@ struct TVSavedAccountEditor: View {
         }
     }
 
-    private func startQuickConnect() {
+    private func startCodeSignIn(_ service: CodeSignIn.Service) {
         store.error = nil
         let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
         let accountID = accountID
-        quickConnect.start(serverURL: address) { login in
-            let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
-                                                   router: router, provider: .jellyfin, quickConnect: login)
-            return success ? nil : store.error ?? "Couldn’t finish signing in with Quick Connect. Please try again."
+        let fallback = "Couldn’t finish signing in with \(service.title). Please try again."
+        switch service {
+        case .jellyfinQuickConnect:
+            codeSignIn.startQuickConnect(serverURL: address) { login in
+                let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                       router: router, provider: .jellyfin, quickConnect: login)
+                return success ? nil : store.error ?? fallback
+            }
+        case .embyConnect:
+            codeSignIn.startEmbyConnect(serverURL: address) { login in
+                let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                       router: router, provider: .emby, embyConnect: login)
+                return success ? nil : store.error ?? fallback
+            }
         }
     }
 
