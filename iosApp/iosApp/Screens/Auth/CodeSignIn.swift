@@ -26,6 +26,22 @@ final class CodeSignIn {
             }
         }
 
+        /// What the screen calls the code: Emby Connect calls it a PIN.
+        var codeName: String {
+            switch self {
+            case .jellyfinQuickConnect: "code"
+            case .embyConnect: "PIN"
+            }
+        }
+
+        /// `codeName` at the start of a title: "Code" or "PIN".
+        var codeTitle: String {
+            switch self {
+            case .jellyfinQuickConnect: "Code"
+            case .embyConnect: "PIN"
+            }
+        }
+
         var instructions: String {
             switch self {
             case .jellyfinQuickConnect: "On a device that’s signed in to Jellyfin, go to Settings > Quick Connect and enter this code."

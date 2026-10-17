@@ -137,7 +137,7 @@ struct LoginView: View {
                 .foregroundStyle(Color.auroraInk)
                 .frame(maxWidth: .infinity)
                 .textSelection(.enabled)
-                .accessibilityLabel("\(codeSignIn.service.title) code \(code.map(String.init).joined(separator: " "))")
+                .accessibilityLabel("\(codeSignIn.service.title) \(codeSignIn.service.codeName) \(code.map(String.init).joined(separator: " "))")
         }
 
         if let status = codeSignIn.status {
@@ -152,7 +152,7 @@ struct LoginView: View {
 
         if let failure = codeSignIn.failure {
             AuroraErrorLabel(failure)
-            Button(codeSignIn.service == .embyConnect ? "Get a new PIN" : "Get a new code") { startCodeSignIn(codeSignIn.service) }
+            Button("Get a new \(codeSignIn.service.codeName)") { startCodeSignIn(codeSignIn.service) }
                 .buttonStyle(AuroraPrimaryButtonStyle())
         }
 

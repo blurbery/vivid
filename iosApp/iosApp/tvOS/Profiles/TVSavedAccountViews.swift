@@ -445,8 +445,8 @@ struct TVSavedAccountEditor: View {
                     if let service = CodeSignIn.Service(selectedProvider) {
                         // One row for starting and replacing a code, so focus stays put.
                         Button { startCodeSignIn(service) } label: {
-                            TVSettingsRowLabel(title: codeSignIn.isActive ? (service == .embyConnect ? "Get a New PIN" : "Get a New Code") : "Use \(service.title)",
-                                               detail: codeSignIn.isActive ? "Replace the \(service == .embyConnect ? "PIN" : "code") below with a new one."
+                            TVSettingsRowLabel(title: codeSignIn.isActive ? "Get a New \(service.codeTitle)" : "Use \(service.title)",
+                                               detail: codeSignIn.isActive ? "Replace the \(service.codeName) below with a new one."
                                                    : service == .embyConnect ? "Sign in with a PIN entered at emby.media/pin, without a password."
                                                    : "Approve this Apple TV from Jellyfin on a signed-in device, without a password.")
                         }
@@ -461,7 +461,7 @@ struct TVSavedAccountEditor: View {
                     TVSettingsSectionHeader(codeSignIn.service.title.uppercased())
                     TVSettingsGroup {
                         if let code = codeSignIn.code {
-                            TVSettingsInfoRow(title: codeSignIn.service == .embyConnect ? "PIN" : "Code", value: code)
+                            TVSettingsInfoRow(title: codeSignIn.service.codeTitle, value: code)
                         }
                         if let status = codeSignIn.status {
                             TVSettingsInfoRow(title: "Status", value: status)

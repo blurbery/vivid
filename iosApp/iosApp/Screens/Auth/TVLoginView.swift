@@ -214,7 +214,7 @@ struct TVLoginView: View {
                 .font(.system(size: 76, weight: .semibold, design: .monospaced))
                 .tracking(14)
                 .foregroundStyle(Color.auroraInk)
-                .accessibilityLabel("\(codeSignIn.service.title) code \(code.map(String.init).joined(separator: " "))")
+                .accessibilityLabel("\(codeSignIn.service.title) \(codeSignIn.service.codeName) \(code.map(String.init).joined(separator: " "))")
         }
 
         if let status = codeSignIn.status {
@@ -239,7 +239,7 @@ struct TVLoginView: View {
             Button {
                 startCodeSignIn(codeSignIn.service)
             } label: {
-                Text(codeSignIn.service == .embyConnect ? "Get a new PIN" : "Get a new code")
+                Text("Get a new \(codeSignIn.service.codeName)")
             }
             .buttonStyle(AuroraPrimaryButtonStyle())
             .focused($focusedField, equals: .newCode)
