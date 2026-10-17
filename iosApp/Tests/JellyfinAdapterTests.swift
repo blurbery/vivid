@@ -754,8 +754,25 @@ final class JellyfinAdapterTests: XCTestCase {
             default: return (404, [:])
             }
         }
+        do {
+            _ = try await connection.quickConnectEnabled()
+            XCTFail("A server without the route doesn't offer Quick Connect")
+        } catch JellyfinError.quickConnectUnavailable { }
+        // Another server's web page for an unknown route isn't "turned off".
+        JellyfinRequestStub.handler = { _ in (200, "<html>") }
+        do {
+            _ = try await connection.quickConnectEnabled()
+            XCTFail("An answer other than true or false isn't Jellyfin")
+        } catch JellyfinError.quickConnectUnavailable { }
+        JellyfinRequestStub.handler = { request in
+            switch request.url!.path {
+            case "/jellyfin/QuickConnect/Enabled": return (200, false)
+            case "/jellyfin/QuickConnect/Initiate": return (401, [:])
+            default: return (404, [:])
+            }
+        }
         let enabled = try await connection.quickConnectEnabled()
-        XCTAssertFalse(enabled, "A server without the route doesn't offer Quick Connect")
+        XCTAssertFalse(enabled, "Jellyfin with Quick Connect turned off says false")
         do {
             _ = try await connection.initiateQuickConnect()
             XCTFail("A refused request means Quick Connect is turned off")

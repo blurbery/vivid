@@ -621,6 +621,16 @@ final class ServerRegistry {
     /// treat it as case-sensitive. An address matching a saved server reuses
     /// that server's stored spelling so its ID, and its saved accounts, stay
     /// the same.
+    /// The address to keep when a profile form switches to `provider`: a
+    /// saved server of another type is swapped for the most recent saved
+    /// server of this type, or cleared. A typed address is kept as entered.
+    func address(_ input: String, keptFor provider: MediaServerProvider) -> String {
+        let normalized = normalizedUserAddress(input)
+        guard let saved = entries.first(where: { $0.url == normalized }),
+              MediaServerProvider.forServerID(saved.id) != provider else { return input }
+        return sortedEntries.first { MediaServerProvider.forServerID($0.id) == provider }?.url ?? ""
+    }
+
     func normalizedUserAddress(_ input: String) -> String {
         let trimmed = Self.normalize(url: input)
         guard var components = URLComponents(string: trimmed), components.host != nil else { return trimmed }
