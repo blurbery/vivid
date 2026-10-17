@@ -662,7 +662,7 @@ struct PhoneSavedAccountEditor: View {
     private var codeSignInSection: some View {
         Section {
             if let code = codeSignIn.code {
-                LabeledContent(codeSignIn.service == .embyConnect ? "PIN" : "Code") {
+                LabeledContent(codeSignIn.service.codeTitle) {
                     Text(code).font(.title2.monospaced().weight(.semibold)).textSelection(.enabled)
                         .accessibilityLabel(code.map(String.init).joined(separator: " "))
                 }
@@ -675,7 +675,7 @@ struct PhoneSavedAccountEditor: View {
             }
             if let failure = codeSignIn.failure {
                 Text(failure).foregroundStyle(.secondary)
-                Button(codeSignIn.service == .embyConnect ? "Get a New PIN" : "Get a New Code") { startCodeSignIn(codeSignIn.service) }
+                Button("Get a New \(codeSignIn.service.codeTitle)") { startCodeSignIn(codeSignIn.service) }
             }
             Button("Cancel", role: .cancel) { codeSignIn.cancel() }
                 .disabled(!codeSignIn.canCancel)
