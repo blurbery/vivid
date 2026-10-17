@@ -23,6 +23,57 @@ final class EmbyAdapterTests: XCTestCase {
         ))
     }
 
+    func testEmbyConnectSignsInAsTheLinkedUserOfThisServerOnly() async throws {
+        var requests: [String] = []
+        EmbyReviewRequestStub.handler = { request in
+            let url = request.url!
+            requests.append("\(url.host!) \(url.path)")
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            switch (url.host!, url.path) {
+            case ("media.example.test", "/emby/System/Info/Public"):
+                return (200, ["Id": "this-server", "Version": "4.9.1.80"])
+            case ("connect.emby.media", "/service/servers"):
+                XCTAssertEqual(query.first { $0.name == "userId" }?.value, "connect-user")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Connect-UserToken"), "connect-token")
+                XCTAssertTrue(request.value(forHTTPHeaderField: "X-Application")?.hasPrefix("Vivid/") == true)
+                return (200, [
+                    ["SystemId": "other-server", "AccessKey": "other-key", "Url": "https://other.example.test"],
+                    ["SystemId": "this-server", "AccessKey": "this-key", "Url": "https://reported.example.test"],
+                ])
+            case ("media.example.test", "/emby/Connect/Exchange"):
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Emby-Token"), "this-key")
+                XCTAssertEqual(query.first { $0.name == "ConnectUserId" }?.value, "connect-user")
+                return (200, ["LocalUserId": "local-user", "AccessToken": "local-token"])
+            case ("media.example.test", "/emby/Users/local-user"):
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Emby-Token"), "local-token")
+                return (200, ["Id": "local-user", "Name": "connect-only"])
+            default:
+                return (404, [:])
+            }
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [EmbyReviewRequestStub.self]
+        let session = URLSession(configuration: config)
+        testSession = session
+        let account = EmbyConnectAccount(userID: "connect-user", token: "connect-token")
+
+        let login = try await EmbyConnection.login(serverURL: "https://media.example.test", connect: account, session: session)
+
+        XCTAssertEqual(login, EmbyLogin(token: "local-token", userID: "local-user", username: "connect-only"))
+        XCTAssertFalse(requests.contains { $0.hasPrefix("reported.example.test") }, "The address Emby Connect reports is never used")
+
+        EmbyReviewRequestStub.handler = { request in
+            if request.url!.host == "connect.emby.media" {
+                return (200, [["SystemId": "other-server", "AccessKey": "other-key"]])
+            }
+            return (200, ["Id": "this-server", "Version": "4.9.1.80"])
+        }
+        do {
+            _ = try await EmbyConnection.login(serverURL: "https://media.example.test", connect: account, session: session)
+            XCTFail("An account not linked to this server must not sign in")
+        } catch EmbyError.connectServerNotLinked { }
+    }
+
     func testHiddenHomeRowsSkipLoadingButRemainAvailableForSettingsAndSpotlight() async throws {
         // Rows load concurrently, so record them thread-safely and compare as sets.
         let loaded = LoadedRows()

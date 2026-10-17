@@ -335,6 +335,7 @@ struct TVSavedAccountEditor: View {
     @State private var showsDeleteConfirm = false
     @State private var pinIsSet = false
     @State private var household = SiloHouseholdSearch()
+    @State private var codeSignIn = CodeSignIn()
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -441,9 +442,39 @@ struct TVSavedAccountEditor: View {
                     }
                     .buttonStyle(TVSettingsPaneRowStyle())
                     .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (password.isEmpty && !selectedProvider.usesNativeUser))
+                    if let service = CodeSignIn.Service(selectedProvider) {
+                        // One row for starting and replacing a code, so focus stays put.
+                        Button { startCodeSignIn(service) } label: {
+                            TVSettingsRowLabel(title: codeSignIn.isActive ? (service == .embyConnect ? "Get a New PIN" : "Get a New Code") : "Use \(service.title)",
+                                               detail: codeSignIn.isActive ? "Replace the \(service == .embyConnect ? "PIN" : "code") below with a new one."
+                                                   : service == .embyConnect ? "Sign in with a PIN entered at emby.media/pin, without a password."
+                                                   : "Approve this Apple TV from Jellyfin on a signed-in device, without a password.")
+                        }
+                        .buttonStyle(TVSettingsPaneRowStyle())
+                        .disabled((accountID == nil && !store.canAddAccount) || serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
                 if account == nil {
                     TVSettingsFooter("Signing in saves this profile and its server together. Saved servers are available in Manage Servers and when adding another profile.")
+                }
+                if codeSignIn.isActive {
+                    TVSettingsSectionHeader(codeSignIn.service.title.uppercased())
+                    TVSettingsGroup {
+                        if let code = codeSignIn.code {
+                            TVSettingsInfoRow(title: codeSignIn.service == .embyConnect ? "PIN" : "Code", value: code)
+                        }
+                        if let status = codeSignIn.status {
+                            TVSettingsInfoRow(title: "Status", value: status)
+                        }
+                        if let failure = codeSignIn.failure {
+                            TVSettingsInfoRow(title: "Status", value: failure)
+                        }
+                        Button { if codeSignIn.canCancel { codeSignIn.cancel() } } label: {
+                            TVSettingsRowLabel(title: "Cancel \(codeSignIn.service.title)")
+                        }
+                        .buttonStyle(TVSettingsPaneRowStyle())
+                    }
+                    TVSettingsFooter(codeSignIn.service.instructions)
                 }
                 }
                 if isActive, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
@@ -516,13 +547,35 @@ struct TVSavedAccountEditor: View {
             pinIsSet = accountID.map { store.hasPIN($0) } ?? false
             store.error = nil
         }
-        .onDisappear { password = ""; pin = ""; confirmation = "" }
+        .onDisappear { password = ""; pin = ""; confirmation = ""; codeSignIn.cancel() }
+        .onChange(of: provider) { codeSignIn.cancel() }
         .onExitCommand { if !store.busy { dismiss() } }
         .fullScreenCover(item: $household.pinProfile) { profile in
             PINEntryView(profile: profile, onCancel: {
                 if let account { household.cancelPIN(for: account) }
             }) { pin in
                 if let account { Task { await household.add(profile, pin: pin, for: account) } }
+            }
+        }
+    }
+
+    private func startCodeSignIn(_ service: CodeSignIn.Service) {
+        store.error = nil
+        let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
+        let accountID = accountID
+        let fallback = "Couldn’t finish signing in with \(service.title). Please try again."
+        switch service {
+        case .jellyfinQuickConnect:
+            codeSignIn.startQuickConnect(serverURL: address) { login in
+                let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                       router: router, provider: .jellyfin, quickConnect: login)
+                return success ? nil : store.error ?? fallback
+            }
+        case .embyConnect:
+            codeSignIn.startEmbyConnect(serverURL: address) { login in
+                let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                       router: router, provider: .emby, embyConnect: login)
+                return success ? nil : store.error ?? fallback
             }
         }
     }

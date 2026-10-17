@@ -3,6 +3,7 @@ import CryptoKit
 
 enum EmbyError: LocalizedError {
     case invalidResponse, invalidURL, unsupportedFeature, signInRequired, playbackUnavailable
+    case connectUnavailable, connectPINExpired, connectServerNotLinked
     case filterRequestFailed(step: String, status: Int)
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,9 @@ enum EmbyError: LocalizedError {
         case .unsupportedFeature: "This feature is not available with Emby yet."
         case .signInRequired: "Please sign in to Emby again."
         case .playbackUnavailable: "Emby could not provide a playable media source."
+        case .connectUnavailable: "Emby Connect couldn’t be reached. Please try again later."
+        case .connectPINExpired: "This Emby Connect PIN has expired."
+        case .connectServerNotLinked: "This Emby Connect account isn’t linked to a user on this server."
         }
     }
 }
@@ -156,6 +160,157 @@ struct EmbyConnection: Sendable {
         guard let token = result["AccessToken"] as? String, !token.isEmpty,
               let user = result["User"] as? [String: Any], let userID = user["Id"] as? String else { throw EmbyError.invalidResponse }
         return (token, try id(userID))
+    }
+
+    // MARK: Emby Connect
+
+    /// Signs in to this server as the local user linked to an approved Emby
+    /// Connect account. Only this server's own address is used; the
+    /// addresses Emby Connect reports for it are ignored.
+    static func login(serverURL: String, connect account: EmbyConnectAccount, session: URLSession? = nil) async throws -> EmbyLogin {
+        let info = try await Self(serverURL: serverURL, token: nil, userID: nil, identity: nil, sessionOverride: session)
+            .object("GET", "/System/Info/Public")
+        guard let systemID = info["Id"] as? String,
+              let server = try await EmbyConnectService.servers(for: account, session: session).first(where: { $0.systemID == systemID }) else {
+            throw EmbyError.connectServerNotLinked
+        }
+        let exchange: [String: Any]
+        do {
+            exchange = try await Self(serverURL: serverURL, token: server.accessKey, userID: nil, identity: nil, sessionOverride: session)
+                .object("GET", "/Connect/Exchange", query: ["format": "json", "ConnectUserId": account.userID])
+        } catch EmbyError.signInRequired {
+            throw EmbyError.connectServerNotLinked
+        } catch HTTPError.http(let status, _) where status == 404 {
+            throw EmbyError.connectServerNotLinked
+        }
+        guard let token = exchange["AccessToken"] as? String, !token.isEmpty,
+              let localUser = exchange["LocalUserId"] as? String else { throw EmbyError.invalidResponse }
+        let userID = try id(localUser)
+        let user = try await Self(serverURL: serverURL, token: token, userID: nil, identity: nil, sessionOverride: session)
+            .object("GET", "/Users/\(userID)")
+        return EmbyLogin(token: token, userID: userID, username: user["Name"] as? String ?? "")
+    }
+}
+
+/// A new Emby session from Emby Connect.
+struct EmbyLogin: Sendable, Equatable {
+    let token: String
+    let userID: String
+    let username: String
+}
+
+/// An Emby Connect account approved through a PIN. Used once to find this
+/// server and is never stored.
+struct EmbyConnectAccount: Sendable, Equatable {
+    let userID: String
+    let token: String
+}
+
+struct EmbyConnectPIN: Sendable, Equatable {
+    let pin: String
+    let deviceID: String
+}
+
+/// Emby Connect PIN sign-in through Emby's service at connect.emby.media,
+/// as Emby's own TV apps do: the user enters the PIN at emby.media/pin with
+/// their Emby Connect email and password, which Vivid never sees.
+enum EmbyConnectService {
+    static let baseURL = URL(string: "https://connect.emby.media/service")!
+
+    struct Server: Sendable, Equatable {
+        let systemID: String
+        let accessKey: String
+    }
+
+    private static let session = URLSession(configuration: {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 40
+        config.httpShouldSetCookies = false
+        config.urlCache = nil
+        return config
+    }(), delegate: EmbyRedirectPolicy(), delegateQueue: nil)
+
+    static func createPIN() async throws -> EmbyConnectPIN {
+        let result = try await object("POST", "/pin", form: ["deviceId": EmbyConnection.deviceID])
+        guard let pin = result["Pin"] as? String, !pin.isEmpty else { throw EmbyError.invalidResponse }
+        return EmbyConnectPIN(pin: pin, deviceID: result["DeviceId"] as? String ?? EmbyConnection.deviceID)
+    }
+
+    /// Whether the PIN has been entered at emby.media/pin yet.
+    static func isConfirmed(_ pin: EmbyConnectPIN) async throws -> Bool {
+        let result: [String: Any]
+        do {
+            result = try await object("GET", "/pin", query: ["pin": pin.pin, "deviceId": pin.deviceID])
+        } catch HTTPError.http(let status, _) where status == 404 || status == 410 {
+            // The service no longer knows this PIN.
+            throw EmbyError.connectPINExpired
+        }
+        if result["IsExpired"] as? Bool == true { throw EmbyError.connectPINExpired }
+        return result["IsConfirmed"] as? Bool == true
+    }
+
+    static func authenticate(_ pin: EmbyConnectPIN) async throws -> EmbyConnectAccount {
+        let result = try await object("POST", "/pin/authenticate", form: ["deviceId": pin.deviceID, "pin": pin.pin])
+        guard let token = result["AccessToken"] as? String, !token.isEmpty else { throw EmbyError.invalidResponse }
+        let userID: String
+        if let text = result["UserId"] as? String { userID = text }
+        else if let number = result["UserId"] as? Int { userID = String(number) }
+        else { throw EmbyError.invalidResponse }
+        return EmbyConnectAccount(userID: userID, token: token)
+    }
+
+    /// The servers linked to the account, each with the key that exchanges
+    /// the account for its linked local user.
+    static func servers(for account: EmbyConnectAccount, session: URLSession? = nil) async throws -> [Server] {
+        let data = try await send("GET", "/servers", query: ["userId": account.userID], token: account.token, session: session)
+        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { throw EmbyError.invalidResponse }
+        return rows.compactMap { row in
+            guard let systemID = row["SystemId"] as? String, let key = row["AccessKey"] as? String, !key.isEmpty else { return nil }
+            return Server(systemID: systemID, accessKey: key)
+        }
+    }
+
+    private static func object(_ method: String, _ path: String, query: [String: String] = [:], form: [String: String]? = nil) async throws -> [String: Any] {
+        guard let result = try JSONSerialization.jsonObject(with: try await send(method, path, query: query, form: form)) as? [String: Any] else {
+            throw EmbyError.invalidResponse
+        }
+        return result
+    }
+
+    private static func send(_ method: String, _ path: String, query: [String: String] = [:], form: [String: String]? = nil,
+                             token: String? = nil, session sessionOverride: URLSession? = nil) async throws -> Data {
+        guard var components = URLComponents(url: baseURL.appendingPathComponent(String(path.dropFirst())), resolvingAgainstBaseURL: false) else {
+            throw EmbyError.invalidURL
+        }
+        components.queryItems = query.isEmpty ? nil : query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components.url else { throw EmbyError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        request.setValue("Vivid/\(version)", forHTTPHeaderField: "X-Application")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token { request.setValue(token, forHTTPHeaderField: "X-Connect-UserToken") }
+        if let form {
+            var body = URLComponents()
+            body.queryItems = form.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+            request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        }
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await (sessionOverride ?? session).data(for: request)
+        } catch let error as URLError where error.code != .cancelled {
+            throw EmbyError.connectUnavailable
+        }
+        guard let http = response as? HTTPURLResponse else { throw EmbyError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            // A timeout, rate limit or server error says nothing about the PIN.
+            let temporary = http.statusCode == 408 || http.statusCode == 429 || http.statusCode >= 500
+            throw temporary ? EmbyError.connectUnavailable : HTTPError.http(statusCode: http.statusCode, body: nil)
+        }
+        return data
     }
 }
 

@@ -129,6 +129,7 @@ struct PhoneVividPrivacyView: View {
             LazyVStack(alignment: .leading, spacing: 24) {
                 Text("Vivid Privacy Policy").font(.system(size: 30, weight: .bold, design: .rounded))
                 policySection("Your accounts and media server", "Vivid connects to the media servers you choose. Your server receives the sign-in details and requests needed to provide your account, library, artwork and playback. Depending on the provider, requests also identify this device by its name, a generated client identifier, platform and app version/build. The server operator controls that information and may keep its own logs and records. Vivid’s policy does not replace your server operator’s privacy policy.")
+                policySection("Optional Emby Connect sign-in", "If you choose Use Emby Connect when signing in to an Emby server, Vivid asks Emby’s Emby Connect service (connect.emby.media) for a PIN, sending a generated device identifier and the app name and version. You enter the PIN on emby.media with your Emby Connect email and password, which Vivid never receives. Vivid then receives an Emby Connect sign-in token and the list of servers linked to your Emby Connect account, uses them once to sign in to the server you chose, and doesn’t keep them. Emby Connect also receives normal connection information, including your IP address, and handles it under Emby’s own privacy policy. Signing in with a password doesn’t contact Emby Connect.")
                 policySection("Information on this device", "Vivid saves preferences, downloads and their subtitle files, Home metadata, artwork and playback buffers on the device. Saved account session tokens and optional Vivid PIN records use Keychain. The saved-account feature does not retain the media-server password you enter.")
                 policySection("Private iCloud account sync", "When iCloud is available, Vivid stores saved server addresses, account and viewing-profile details, login sessions, optional Vivid PIN records and profile order in encrypted fields in your private iCloud database. Shared browsing, navigation, metadata and download preferences, plus configured Trailers, MDBList, OpenSubtitles and Seerr connection details, also sync between your iPhone, iPad and Apple TV for the matching server account and viewing profile. Playback and subtitle preferences, downloaded media, artwork and metadata caches stay on the device. Playback history and resume positions stay with your media server. Optional MDBList completed-watch exports and watchlist sync are described below.")
                 policySection("Playback and connected features", "Vivid sends playback position, pause state and watched-progress updates to the selected server. Subtitles and chapters are read from the opened media on this device, along with subtitle files an Emby or Jellyfin server keeps beside it. If you connect OpenSubtitles in Plugins, searches send the title, language, media type, season number and episode number to OpenSubtitles. The subtitle file you choose is downloaded to this device and kept with that title, along with any subtitle delay you set for it, for your 40 most recent titles, so it comes back when you resume. Choosing another subtitle, Off or Auto, or disconnecting, removes it. A small, limited memory cache reuses recent downloads during the app session and clears when the connection changes. Your API key stays in Keychain, separate for each server account and profile, and syncs through the encrypted private iCloud account vault. Searches send the key only to the OpenSubtitles API. Subtitles are not uploaded to your media server. Subtitle translation is not provided. If you configure TMDb, your personal API credential is stored in Keychain and sent to TMDb with media identifiers for trailers, ratings and missing Emby and Jellyfin metadata IDs. Studios & Networks also asks TMDb for studio and network logos and their most popular titles; your library and watch history are matched on this device and are not sent to TMDb. When a page has trailers, Vivid loads their preview images from YouTube, and opening a trailer hands it to the YouTube app or website. Seerr request artwork loads from TMDb’s image service. These services receive normal connection information and apply their own privacy policies.")
@@ -527,6 +528,7 @@ struct PhoneSavedAccountEditor: View {
     @State private var message: String?
     @State private var showsDeleteConfirm = false
     @State private var household = SiloHouseholdSearch()
+    @State private var codeSignIn = CodeSignIn()
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     private var account: TVSavedAccount? { store.accounts.first { $0.id == accountID } }
@@ -569,8 +571,15 @@ struct PhoneSavedAccountEditor: View {
                         if success { dismiss() } else { message = store.error }
                     }
                 }.disabled((accountID == nil && !store.canAddAccount) || store.busy || (password.isEmpty && provider == "Silo") || username.isEmpty || serverURL.isEmpty)
+                if let service = codeService, !codeSignIn.isActive {
+                    Button("Use \(service.title)") { startCodeSignIn(service) }
+                        .disabled((accountID == nil && !store.canAddAccount) || store.busy || serverURL.isEmpty)
+                }
             } header: { PhoneSettingsSectionHeader("Account") }
             .textInputAutocapitalization(.never).autocorrectionDisabled()
+            if codeSignIn.isActive {
+                codeSignInSection
+            }
             if active, let account, MediaServerProvider.forServerID(account.serverID) == .silo {
                 householdSection(account)
             }
@@ -640,6 +649,61 @@ struct PhoneSavedAccountEditor: View {
                 username = account.username
                 serverURL = registry.entry(with: account.serverID)?.url ?? ""
             } else { serverURL = registry.activeServer?.url ?? "" }
+        }
+        .onDisappear { codeSignIn.cancel() }
+        .onChange(of: provider) { codeSignIn.cancel() }
+    }
+
+    private var codeService: CodeSignIn.Service? {
+        MediaServerProvider(rawValue: provider.lowercased()).flatMap(CodeSignIn.Service.init)
+    }
+
+    /// Quick Connect or Emby Connect: the code to approve somewhere else.
+    private var codeSignInSection: some View {
+        Section {
+            if let code = codeSignIn.code {
+                LabeledContent(codeSignIn.service == .embyConnect ? "PIN" : "Code") {
+                    Text(code).font(.title2.monospaced().weight(.semibold)).textSelection(.enabled)
+                        .accessibilityLabel(code.map(String.init).joined(separator: " "))
+                }
+            }
+            if let status = codeSignIn.status {
+                HStack(spacing: 12) {
+                    VividLoadingDots(compact: true)
+                    Text(status).foregroundStyle(.secondary)
+                }
+            }
+            if let failure = codeSignIn.failure {
+                Text(failure).foregroundStyle(.secondary)
+                Button(codeSignIn.service == .embyConnect ? "Get a New PIN" : "Get a New Code") { startCodeSignIn(codeSignIn.service) }
+            }
+            Button("Cancel", role: .cancel) { codeSignIn.cancel() }
+                .disabled(!codeSignIn.canCancel)
+        } header: { PhoneSettingsSectionHeader(codeSignIn.service.title) } footer: {
+            Text(codeSignIn.service.instructions)
+        }
+    }
+
+    private func startCodeSignIn(_ service: CodeSignIn.Service) {
+        message = nil
+        let address = account.flatMap { registry.entry(with: $0.serverID)?.url } ?? registry.normalizedUserAddress(serverURL)
+        let accountID = accountID
+        let fallback = "Couldn’t finish signing in with \(service.title). Please try again."
+        switch service {
+        case .jellyfinQuickConnect:
+            codeSignIn.startQuickConnect(serverURL: address) { login in
+                let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                       router: router, provider: .jellyfin, quickConnect: login)
+                if success { dismiss() }
+                return success ? nil : store.error ?? fallback
+            }
+        case .embyConnect:
+            codeSignIn.startEmbyConnect(serverURL: address) { login in
+                let success = await store.authenticate(id: accountID, serverURL: address, username: login.username, password: "",
+                                                       router: router, provider: .emby, embyConnect: login)
+                if success { dismiss() }
+                return success ? nil : store.error ?? fallback
+            }
         }
     }
 

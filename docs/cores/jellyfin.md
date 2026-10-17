@@ -5,13 +5,19 @@
 
 ---
 
-Jellyfin has its own server core. Its provider card opens Vivid's existing server and username/password forms on iPhone, iPad and Apple TV. The connection supplies metadata and playable sources to Vivid's shared player; it does not use Silo Protocol V3 or the Emby adapter.
+Jellyfin has its own server core. Its provider card opens Vivid's existing server and username/password forms on iPhone, iPad and Apple TV, with [Quick Connect](#quick-connect) as a second way to sign in. The connection supplies metadata and playable sources to Vivid's shared player; it does not use Silo Protocol V3 or the Emby adapter.
 
 ## Ownership and authentication
 
 `JellyfinProvider.swift` owns Jellyfin discovery, authenticated transport and catalogue mapping. `JellyfinPlayback.swift` owns playback negotiation and reporting. `JellyfinDownloads.swift` and `JellyfinLocalPreferences.swift` keep download records and client preferences separate from other providers. Shared Vivid code selects the provider and presents its results. Silo and Emby wire implementations remain unchanged.
 
 Server identities use a `jellyfin:` prefix. Native user IDs and access tokens remain scoped to that server account in Keychain. Requests capture their account identity and reject results after a session switch. Authentication uses Jellyfin's MediaBrowser authorisation header. Credentials are not placed in generated image, subtitle or media URLs, and API redirects are rejected. Custom server base paths are preserved without adding `/emby` or `/jellyfin`.
+
+### Quick Connect
+
+Accounts without a password, such as OIDC-only users, sign in with [Jellyfin Quick Connect](https://jellyfin.org/docs/general/server/quick-connect/). When the server reports Quick Connect turned on, the first-run sign-in form shows Use Quick Connect on iPhone, iPad and Apple TV. Add Profile, Sign In and Update Login on a Jellyfin profile offer it too; there the server is checked when the code is requested. Vivid shows the six-digit code Jellyfin returns, and the user approves it from a signed-in Jellyfin app under Settings > Quick Connect. Vivid asks every five seconds whether the code has been approved, then exchanges it for an ordinary session, saved like a password sign-in. The username comes from the server, and Update Login still refuses a code approved by a different Jellyfin user. A temporary failure while waiting (no connection, a timeout, rate limiting or a server error) keeps waiting, and exchanging the approved code is tried up to three times. A code Jellyfin no longer knows, or ten minutes without approval, offers a new code. Once the code is approved, the code screen can't be cancelled or replaced with a new code while the session is saved. On the first-run sign-in form, a server with Quick Connect turned off, or without the route (older than Jellyfin 10.8), doesn't show the choice. The profile editors offer it on every Jellyfin profile and show "Quick Connect isn’t turned on for this Jellyfin server" when the code is requested. Jellyfin 10.8 starts a request with `GET`; newer servers use `POST`, and Vivid falls back to `GET` on a 404 or 405. The approval request goes to the user's own Jellyfin server only, under the same device ID as password sign-in.
+
+Quick Connect was checked on the iPad simulator against the public Jellyfin 12.2 demo server: first-run sign-in and Sign In on a signed-out profile both opened Home, and Update Login offered the choice. Those codes were approved through Jellyfin's `QuickConnect/Authorize` API rather than its apps. Apple TV builds, but its Quick Connect screens and focus haven't been run. The Jellyfin 10.8 `GET` fallback and the expired and turned-off paths are covered by request tests only.
 
 ## API mapping
 
@@ -21,6 +27,7 @@ The core follows the [official Jellyfin API specification](https://api.jellyfin.
 |---|---|
 | Server discovery | `GET /System/Info/Public` |
 | Login / logout | `POST /Users/AuthenticateByName`, `POST /Sessions/Logout` |
+| Quick Connect | `GET /QuickConnect/Enabled`, `POST /QuickConnect/Initiate`, `GET /QuickConnect/Connect`, `POST /Users/AuthenticateWithQuickConnect` |
 | Libraries | `GET /UserViews` |
 | Browse, search, favourites and history lists | `GET /Items` with native filters |
 | Item details | `GET /Items/{id}` |
