@@ -118,17 +118,17 @@ final class PlayerSettingsTests: XCTestCase {
 
     func testFallbackDecodesNullBoundsAndKeepsSeparateSegments() throws {
         let data = Data(#"{"intro":[{"start_ms":-1,"end_ms":50},{"start_ms":null,"end_ms":20000}],"credits":[{"start_ms":90000,"end_ms":null},{"start_ms":70000,"end_ms":80000}]}"#.utf8)
-        let response = try JSONDecoder().decode(VividIntroDBClient.FallbackResponse.self, from: data)
+        let response = try JSONDecoder().decode(VividIntroDBClient.TheIntroDBResponse.self, from: data)
         let markers = response.segments(for: .init(imdbID: "tt1234567", season: 1, episode: 1))
         XCTAssertEqual(markers.intro?.range(duration: 100), TimeRange(start: 0, end: 20))
         XCTAssertEqual(markers.outro?.range(duration: 100), TimeRange(start: 70, end: 80))
-        let openCredits = VividIntroDBClient.FallbackResponse.Timestamp(start_ms: 90_000, end_ms: nil)
+        let openCredits = VividIntroDBClient.TheIntroDBResponse.Timestamp(start_ms: 90_000, end_ms: nil)
             .segment(credits: true)
         XCTAssertNil(openCredits?.range(duration: 0))
         XCTAssertEqual(openCredits?.range(duration: 100), TimeRange(start: 90, end: 100))
-        XCTAssertNil(VividIntroDBClient.FallbackResponse.Timestamp(start_ms: 1, end_ms: nil).segment(credits: false))
-        XCTAssertNil(VividIntroDBClient.FallbackResponse.Timestamp(start_ms: nil, end_ms: 20).segment(credits: true))
-        let empty = try JSONDecoder().decode(VividIntroDBClient.FallbackResponse.self, from: Data("{}".utf8))
+        XCTAssertNil(VividIntroDBClient.TheIntroDBResponse.Timestamp(start_ms: 1, end_ms: nil).segment(credits: false))
+        XCTAssertNil(VividIntroDBClient.TheIntroDBResponse.Timestamp(start_ms: nil, end_ms: 20).segment(credits: true))
+        let empty = try JSONDecoder().decode(VividIntroDBClient.TheIntroDBResponse.self, from: Data("{}".utf8))
         XCTAssertNil(empty.segments(for: .init(imdbID: "tt1234567", season: 1, episode: 1)).intro)
     }
 
