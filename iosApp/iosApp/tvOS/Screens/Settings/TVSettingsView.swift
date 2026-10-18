@@ -275,12 +275,18 @@ struct TVSettingsView: View {
 
     // MARK: - Server pane
 
+    /// The saved profile the Server row renames for. With none, the row is
+    /// plain text and Manage Servers is the pane's top focus target.
+    private var renamableAccount: TVSavedAccount? {
+        viewModel.serverDisplayName.isEmpty ? nil : TVSavedAccountStore.shared.activeAccount
+    }
+
     private var serverPane: some View {
         VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
             TVSettingsSectionHeader("ACTIVE SERVER")
 
             TVSettingsGroup {
-                if let account = TVSavedAccountStore.shared.activeAccount, !viewModel.serverDisplayName.isEmpty {
+                if let account = renamableAccount {
                     NavigationLink {
                         TVProfileServerNameView(account: account, serverName: viewModel.serverDisplayName,
                                                 serverURL: viewModel.serverUrl)
@@ -323,7 +329,7 @@ struct TVSettingsView: View {
                     }
                 }
                 .buttonStyle(TVSettingsPaneRowStyle())
-                .focused($detailFocus, equals: TVSavedAccountStore.shared.activeAccount == nil ? .top : .manageServers)
+                .focused($detailFocus, equals: renamableAccount == nil ? .top : .manageServers)
 
             }
 
