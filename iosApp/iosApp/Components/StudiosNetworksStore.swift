@@ -801,7 +801,7 @@ final class StudiosNetworksStore {
         }.value
     }
 
-    nonisolated static func result(for lists: BrandLists, index: StudioNetworkIndexFile) -> StudioNetworkResult {
+    private nonisolated static func result(for lists: BrandLists, index: StudioNetworkIndexFile) -> StudioNetworkResult {
         let allSeries = matches(lists.series, index.series)
         let allMovies = matches(lists.movies, index.movies)
         var all: [(item: BrowseItem, popularity: Double)] = []
