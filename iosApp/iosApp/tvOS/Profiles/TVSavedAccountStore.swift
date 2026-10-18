@@ -873,6 +873,7 @@ final class TVSavedAccountStore {
                 error = "Couldn’t remove the saved server. Try again."
                 return false
             }
+            VividCloudPreferences.shared.forgetServerName(for: serverID)
         }
         accounts.removeAll { ids.contains($0.id) }
         for id in ids { modificationDates.removeValue(forKey: id) }
@@ -887,6 +888,24 @@ final class TVSavedAccountStore {
             else { router.resetToLogin() }
         }
         await VividCloudAccountSync.shared.synchronize(router: router)
+        return true
+    }
+
+    /// Renames a saved server on this device and, through iCloud, the
+    /// person's other devices. A nil or blank name puts the server's own name
+    /// back.
+    @discardableResult
+    func renameServer(_ serverID: String, to name: String?) -> Bool {
+        let name = ServerEntry.customName(from: name)
+        guard let entry = ServerRegistry.shared.entry(with: serverID) else { return false }
+        guard entry.customName != name else { return true }
+        // The vault entry is written first: a sync applies it to the server
+        // list, so a failed list write is put right on the next sync rather
+        // than replaced by an older name from another device.
+        do { try VividCloudPreferences.shared.setServerName(name, for: serverID) }
+        catch { return false }
+        guard ServerRegistry.shared.setCustomName(name, for: serverID) else { return false }
+        Task { await VividCloudAccountSync.shared.synchronize() }
         return true
     }
 
@@ -1248,6 +1267,7 @@ final class VividCloudAccountSync {
                 if legacyOrder != nil || fullOrder != nil {
                     TVSavedAccountStore.shared.applyCloudOrder(legacy: legacyOrder, full: fullOrder)
                 }
+                VividCloudServerNames.apply(vault.preferences ?? [:])
                 let parts = VividCloudVaultPartition.split(vault)
                 let payload = try Self.encoder.encode(parts.main)
                 let profilePayload = try Self.encoder.encode(parts.profiles)

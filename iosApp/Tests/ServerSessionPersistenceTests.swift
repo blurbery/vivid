@@ -91,6 +91,76 @@ final class ServerSessionPersistenceTests: XCTestCase {
         XCTAssertEqual(registry.entry(with: serverID)?.fetchedName, "Home Renamed")
         XCTAssertEqual(registry.entry(with: serverID)?.displayName, "Home Renamed")
     }
+
+    func testServerRenameSurvivesSignInAndRelaunchUntilCleared() throws {
+        let suiteName = "ServerSessionPersistenceTests.suite.\(UUID().uuidString)"
+        let standardName = "ServerSessionPersistenceTests.standard.\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let standard = try XCTUnwrap(UserDefaults(suiteName: standardName))
+        defer {
+            suite.removePersistentDomain(forName: suiteName)
+            standard.removePersistentDomain(forName: standardName)
+        }
+        let defaults = SharedDefaults(suite: suite, standard: standard)
+        let keychain = SharedKeychain(service: "ServerSessionPersistenceTests.\(UUID().uuidString)", accessGroup: nil)
+        let registry = ServerRegistry(
+            defaults: defaults,
+            keychain: keychain,
+            launchPreferences: ProfileLaunchPreferences(defaults: defaults)
+        )
+        let serverID = "emby:" + ServerRegistry.serverId(for: "https://home.example")
+        registry.addOrUpdate(ServerEntry(id: serverID, url: "https://home.example", fetchedName: "Home", lastUsedAt: Date()))
+
+        XCTAssertTrue(registry.setCustomName("  Lounge  ", for: serverID))
+        XCTAssertEqual(registry.entry(with: serverID)?.customName, "Lounge")
+        XCTAssertEqual(registry.entry(with: serverID)?.displayName, "Lounge")
+
+        // Signing in again and importing from iCloud both pass an entry
+        // without the name.
+        registry.addOrUpdate(ServerEntry(
+            id: serverID,
+            url: "https://home.example",
+            fetchedName: "Home Renamed",
+            lastUsedAt: Date()
+        ), preservingProfile: false)
+        XCTAssertEqual(registry.entry(with: serverID)?.customName, "Lounge")
+        XCTAssertEqual(registry.entry(with: serverID)?.fetchedName, "Home Renamed")
+
+        let relaunched = ServerRegistry(
+            defaults: defaults,
+            keychain: keychain,
+            launchPreferences: ProfileLaunchPreferences(defaults: defaults)
+        )
+        XCTAssertEqual(relaunched.entry(with: serverID)?.displayName, "Lounge")
+
+        XCTAssertTrue(registry.setCustomName("   ", for: serverID))
+        XCTAssertNil(registry.entry(with: serverID)?.customName)
+        XCTAssertEqual(registry.entry(with: serverID)?.displayName, "Home Renamed")
+    }
+
+    func testServerEntrySavedBeforeRenamingDecodesWithoutName() throws {
+        let data = Data(#"{"id":"a","url":"https://a.example","fetchedName":"A","lastUsedAt":0}"#.utf8)
+        let entry = try JSONDecoder().decode(ServerEntry.self, from: data)
+        XCTAssertNil(entry.customName)
+        XCTAssertEqual(entry.displayName, "A")
+    }
+
+    func testCloudServerNamesReadRenamesAndClearsOnly() throws {
+        let encoder = JSONEncoder()
+        let preferences: [String: VividCloudPreference] = [
+            VividCloudServerNames.key(for: "renamed"): VividCloudPreference(
+                value: try encoder.encode("Lounge"), modifiedAt: Date(), writer: "a"
+            ),
+            VividCloudServerNames.key(for: "cleared"): VividCloudPreference(value: nil, modifiedAt: Date(), writer: "a"),
+            VividCloudAccountOrder.legacyKey: VividCloudPreference(
+                value: try encoder.encode(["profile"]), modifiedAt: Date(), writer: "a"
+            ),
+        ]
+        let names = VividCloudServerNames.names(in: preferences)
+        XCTAssertEqual(Set(names.keys), ["renamed", "cleared"])
+        XCTAssertEqual(names["renamed"], .some("Lounge"))
+        XCTAssertEqual(names["cleared"], .some(nil))
+    }
 }
 
 final class CloudServerDeletionTests: XCTestCase {

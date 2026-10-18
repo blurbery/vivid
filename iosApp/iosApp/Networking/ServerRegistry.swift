@@ -5,7 +5,8 @@ import OSLog
 ///
 /// The registry stores one of these per remembered server. Tokens live in
 /// Keychain keyed by `id`, never in the entry itself. The display name is
-/// always server-administered through the advertised `fetchedName`.
+/// the name the user gave the server in Manage Servers, or otherwise the
+/// server-administered `fetchedName`.
 struct ServerEntry: Codable, Identifiable, Equatable, Hashable {
     /// Stable client-derived ID: base64url of the normalized URL's UTF-8
     /// bytes. Reversible — but the registry treats it as opaque.
@@ -18,14 +19,27 @@ struct ServerEntry: Codable, Identifiable, Equatable, Hashable {
     /// Filled on first successful connect and refreshed on server activation.
     var fetchedName: String?
 
+    /// The name the user gave this server in Manage Servers. Only
+    /// `ServerRegistry.setCustomName` changes it, so signing in again or
+    /// refreshing the advertised name never replaces it.
+    var customName: String?
+
     /// When this server was last activated. Used only for sorting the
     /// list; not part of identity.
     var lastUsedAt: Date
 
-    /// Display label for lists/menus. Server-advertised name → URL.
+    /// Display label for lists/menus. User's name > server-advertised name > URL.
     var displayName: String {
+        if let name = customName, !name.isEmpty { return name }
         if let name = fetchedName, !name.isEmpty { return name }
         return url
+    }
+
+    /// A typed server name with surrounding spaces removed, or nil when it's
+    /// blank, which puts the server's own name back.
+    static func customName(from input: String?) -> String? {
+        let name = input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? nil : name
     }
 
     /// Read only while migrating the pre-profile-launch registry schema. New
@@ -37,12 +51,14 @@ struct ServerEntry: Codable, Identifiable, Equatable, Hashable {
         id: String,
         url: String,
         fetchedName: String?,
+        customName: String? = nil,
         profileId: String? = nil,
         lastUsedAt: Date
     ) {
         self.id = id
         self.url = url
         self.fetchedName = fetchedName
+        self.customName = customName
         self.lastUsedAt = lastUsedAt
         self.legacyProfileId = profileId
     }
@@ -51,6 +67,7 @@ struct ServerEntry: Codable, Identifiable, Equatable, Hashable {
         case id
         case url
         case fetchedName
+        case customName
         case profileId
         case lastUsedAt
     }
@@ -60,6 +77,7 @@ struct ServerEntry: Codable, Identifiable, Equatable, Hashable {
         id = try container.decode(String.self, forKey: .id)
         url = try container.decode(String.self, forKey: .url)
         fetchedName = try container.decodeIfPresent(String.self, forKey: .fetchedName)
+        customName = try container.decodeIfPresent(String.self, forKey: .customName)
         lastUsedAt = try container.decode(Date.self, forKey: .lastUsedAt)
         legacyProfileId = try container.decodeIfPresent(String.self, forKey: .profileId)
     }
@@ -69,6 +87,7 @@ struct ServerEntry: Codable, Identifiable, Equatable, Hashable {
         try container.encode(id, forKey: .id)
         try container.encode(url, forKey: .url)
         try container.encodeIfPresent(fetchedName, forKey: .fetchedName)
+        try container.encodeIfPresent(customName, forKey: .customName)
         // Retain pre-split profile identity only until its current-user
         // launch mapping has been durably written and read back. New entries
         // always leave this nil, so normal registry payloads contain no
@@ -221,6 +240,7 @@ final class ServerRegistry {
     /// Insert or update an entry. `preservingProfile` remains as an account-
     /// replacement signal for existing callers; profile state itself lives in
     /// `ProfileLaunchPreferences`, never in the shared registry payload.
+    /// An existing entry keeps the name the user gave it.
     @discardableResult
     func addOrUpdate(_ entry: ServerEntry, preservingProfile: Bool = true) -> ServerEntry? {
         let previousEntries = entries
@@ -229,6 +249,7 @@ final class ServerRegistry {
             if merged.fetchedName == nil || merged.fetchedName?.isEmpty == true {
                 merged.fetchedName = existing.fetchedName
             }
+            merged.customName = existing.customName
         }
         let isExistingEntry = self.entries.contains(where: { $0.id == entry.id })
         if let idx = self.entries.firstIndex(where: { $0.id == entry.id }) {
@@ -269,6 +290,23 @@ final class ServerRegistry {
         guard let idx = entries.firstIndex(where: { $0.id == serverId }) else { return false }
         let previousEntries = entries
         if let name = fetchedName, !name.isEmpty { entries[idx].fetchedName = name }
+        guard persist() else {
+            entries = previousEntries
+            _ = persist()
+            return false
+        }
+        return true
+    }
+
+    /// Renames a saved server, or puts its own name back when `name` is nil
+    /// or blank.
+    @discardableResult
+    func setCustomName(_ name: String?, for serverId: String) -> Bool {
+        guard let idx = entries.firstIndex(where: { $0.id == serverId }) else { return false }
+        let name = ServerEntry.customName(from: name)
+        guard entries[idx].customName != name else { return true }
+        let previousEntries = entries
+        entries[idx].customName = name
         guard persist() else {
             entries = previousEntries
             _ = persist()
