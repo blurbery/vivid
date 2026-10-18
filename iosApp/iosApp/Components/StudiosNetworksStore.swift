@@ -518,7 +518,8 @@ final class StudiosNetworksStore {
             // the library is read and are matched once both are in. Any TMDb
             // failure throws to the catch below, so a partial result never
             // replaces good saved results or resets the refresh timer.
-            async let lists = Self.brandLists(Self.catalogue) { [weak self] in self?.noteListsLoaded(scope) }
+            let brands = Self.catalogue
+            async let lists = Self.brandLists(brands) { [weak self] in self?.noteListsLoaded(scope) }
             let index: StudioNetworkIndexFile
             if let cached = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")),
                Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval,
@@ -764,7 +765,7 @@ final class StudiosNetworksStore {
         let gate = RequestGate(limit: concurrentRequests)
         return try await withThrowingTaskGroup(of: (String, BrandLists).self) { group in
             for brand in brands {
-                group.addTask { (brand.id, try await lists(for: brand, from: from, to: to, gate: gate)) }
+                group.addTask { (brand.id, try await Self.lists(for: brand, from: from, to: to, gate: gate)) }
             }
             var all: [String: BrandLists] = [:]
             for try await (id, found) in group {
@@ -796,7 +797,7 @@ final class StudiosNetworksStore {
         _ lists: [String: BrandLists], index: StudioNetworkIndexFile
     ) async -> [String: StudioNetworkResult] {
         await Task.detached(priority: .utility) {
-            lists.mapValues { result(for: $0, index: index) }
+            lists.mapValues { Self.result(for: $0, index: index) }
         }.value
     }
 
@@ -849,7 +850,7 @@ final class StudiosNetworksStore {
     ) async throws -> [TVTMDbStore.DiscoverPage.Result] {
         guard let query else { return [] }
         @Sendable func page(_ number: Int) async throws -> TVTMDbStore.DiscoverPage {
-            try await retryingOnce {
+            try await Self.retryingOnce {
                 try await gate.run { try await TVTMDbStore.shared.discover(media: media, query: query, page: number) }
             }
         }
