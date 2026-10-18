@@ -12,21 +12,25 @@ private final class TMDbRedirectPolicy: NSObject, URLSessionTaskDelegate, @unche
 @Observable @MainActor
 final class TVTMDbStore {
     static let shared = TVTMDbStore()
+    /// Vivid's relay answers every TMDb lookup with Vivid's own token, so
+    /// nobody needs a TMDb key of their own.
+    nonisolated static let relayBase = "https://tmdb.vividapp.co/3/"
+    /// TMDb features are available: there's an active account.
     private(set) var isConfigured = false
     private(set) var revision = 0
     private let keychain = SharedKeychain(audience: .currentUser)
-    private var credentialKey: String {
-        VividCloudPreferences.activeCredentialKey("tmdb") ?? legacyCredentialKey
+    /// Where earlier versions kept a personal TMDb key for this account and profile.
+    private var savedKeyName: String {
+        VividCloudPreferences.activeCredentialKey("tmdb") ?? legacyKeyName
     }
-    private var legacyCredentialKey: String {
+    private var legacyKeyName: String {
         #if os(iOS)
         MobileProfilePreferenceKeys.key("vivid.tmdb.credential.v1")
         #else
         "vivid.tmdb.credential.v1"
         #endif
     }
-    private var loadedCredentialKey: String?
-    private var credential = ""
+    private var loadedAccount: String?
     private let session: URLSession
     private var videoCache: [String: (Date, [ItemVideo])] = [:]
     private var membershipCache: [String: (Date, CollectionMembership?)] = [:]
@@ -64,50 +68,25 @@ final class TVTMDbStore {
 
     func reloadForCurrentProfile(force: Bool = false) {
         guard VividCloudPreferences.matchingActiveAccount != nil else {
-            credential = ""
             isConfigured = false
-            loadedCredentialKey = nil
+            loadedAccount = nil
             invalidate()
             return
         }
-        let key = credentialKey
-        guard force || loadedCredentialKey != key else { return }
-        if key != legacyCredentialKey, legacyCredentialKey != "vivid.tmdb.credential.v1", keychain.get(key) == nil, let legacy = keychain.get(legacyCredentialKey) {
-            if keychain.set(legacy, for: key) { _ = keychain.delete(legacyCredentialKey) }
-        }
-        loadedCredentialKey = key
-        credential = keychain.get(key) ?? ""
-        isConfigured = !credential.isEmpty
-        invalidate()
-    }
-
-    func connect(_ input: String) async throws {
-        reloadForCurrentProfile()
-        guard VividCloudPreferences.matchingActiveAccount != nil else { throw Failure.unavailable }
-        let key = credentialKey
-        let context = contextKey
-        let candidate = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !candidate.isEmpty, candidate.count <= 4096,
-              !candidate.contains(where: { $0.isWhitespace }) else { throw Failure.invalidKey }
-        let validation: Validation = try await request("authentication", credential: candidate)
-        guard validation.success else { throw Failure.invalidKey }
-        try Task.checkCancellation()
-        guard key == credentialKey, context == contextKey else { throw CancellationError() }
-        guard keychain.set(candidate, for: key) else { throw Failure.storage }
-        credential = candidate
+        let account = savedKeyName
+        guard force || loadedAccount != account else { return }
+        removeSavedKeys()
+        loadedAccount = account
         isConfigured = true
         invalidate()
-        VividCloudPreferences.shared.schedule()
     }
 
-    func disconnect() throws {
-        reloadForCurrentProfile()
-        guard VividCloudPreferences.matchingActiveAccount != nil else { throw Failure.unavailable }
-        guard keychain.delete(credentialKey) else { throw Failure.storage }
-        credential = ""
-        isConfigured = false
-        invalidate()
-        VividCloudPreferences.shared.schedule()
+    /// Personal keys aren't used any more. The vault deletes any saved for a
+    /// saved account, here and on the person's other devices. An old key that
+    /// was never tied to an account is deleted here only.
+    private func removeSavedKeys() {
+        if legacyKeyName != savedKeyName, keychain.get(legacyKeyName) != nil { _ = keychain.delete(legacyKeyName) }
+        VividCloudPreferences.shared.retireTMDbKeys()
     }
 
     private func invalidate() {
@@ -128,7 +107,7 @@ final class TVTMDbStore {
         if let cached = videoCache[cacheKey], Date().timeIntervalSince(cached.0) < 1800 { return cached.1 }
         guard let source = try await source(contentId: contentId, context: context) else { return [] }
         try checkContext(context)
-        let response: Videos = try await request("\(source.kind)/\(source.id)/videos", credential: credential)
+        let response: Videos = try await request("\(source.kind)/\(source.id)/videos")
         try checkContext(context)
         let main = Self.rankedTrailers(response.results)
         var candidates = main
@@ -136,7 +115,7 @@ final class TVTMDbStore {
             do {
                 let series = try await seriesSummary(id: source.id, context: context)
                 if let latest = series.seasons.filter({ $0.season_number > 0 }).max(by: { $0.season_number < $1.season_number }) {
-                    let season: Videos = try await request("tv/\(source.id)/season/\(latest.season_number)/videos", credential: credential)
+                    let season: Videos = try await request("tv/\(source.id)/season/\(latest.season_number)/videos")
                     try checkContext(context)
                     candidates = Array(main.prefix(1)) + Self.rankedTrailers(season.results) + Array(main.dropFirst())
                 }
@@ -174,7 +153,7 @@ final class TVTMDbStore {
     private func tmdbID(kind: String, detail: ItemDetail, context: String) async throws -> Int? {
         if let id = Int(detail.tmdbId ?? ""), id > 0 { return id }
         guard MediaServerProvider.active.usesNativeUser, let imdb = detail.imdbId, imdb.range(of:"^tt[0-9]{7,10}$",options:.regularExpression) != nil else { return nil }
-        let result: ExternalMatches = try await request("find/" + imdb,credential:credential,query:["external_source":"imdb_id"])
+        let result: ExternalMatches = try await request("find/" + imdb,query:["external_source":"imdb_id"])
         try checkContext(context)
         let matches = kind == "movie" ? result.movie_results : result.tv_results
         guard let id = matches.first?.id, id > 0 else { return nil }
@@ -245,9 +224,8 @@ final class TVTMDbStore {
     private func movieSummary(id: Int, context: String) async throws -> MovieSummary {
         let cacheKey = context + "|movie|" + String(id)
         if let cached = movieCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        let credential = credential
         let movie = try await movieFlights.value(for: cacheKey) { [self] in
-            try await request("movie/\(id)", credential: credential) as MovieSummary
+            try await request("movie/\(id)") as MovieSummary
         }
         try checkContext(context)
         if movieCache.count >= 200 { movieCache.removeAll() }
@@ -259,9 +237,8 @@ final class TVTMDbStore {
     private func seriesSummary(id: Int, context: String) async throws -> Series {
         let cacheKey = context + "|tv|" + String(id)
         if let cached = seriesCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        let credential = credential
         let series = try await seriesFlights.value(for: cacheKey) { [self] in
-            try await request("tv/\(id)", credential: credential) as Series
+            try await request("tv/\(id)") as Series
         }
         try checkContext(context)
         if seriesCache.count >= 200 { seriesCache.removeAll() }
@@ -277,7 +254,7 @@ final class TVTMDbStore {
     private func collection(id collectionID: Int, context: String) async throws -> CollectionFilms {
         let cacheKey = context + "|" + String(collectionID)
         if let cached = collectionCache[cacheKey], Date().timeIntervalSince(cached.0) < Self.collectionLifetime { return cached.1 }
-        let response: CollectionDetail = try await request("collection/\(collectionID)", credential: credential)
+        let response: CollectionDetail = try await request("collection/\(collectionID)")
         try checkContext(context)
         let date: (CollectionPart) -> String? = { part in
             part.release_date.flatMap { $0.isEmpty ? nil : $0 }
@@ -305,8 +282,8 @@ final class TVTMDbStore {
 
     // MARK: Ratings
 
-    /// TMDb's user score for a movie or series, out of 10, or nil without a
-    /// key, without a TMDb match, or when nobody has rated the title. Kept for
+    /// TMDb's user score for a movie or series, out of 10, or nil without an
+    /// account, without a TMDb match, or when nobody has rated the title. Kept for
     /// a day per title, like collection lookups, and a miss is cached too.
     func rating(for detail: ItemDetail) async throws -> Double? {
         reloadForCurrentProfile()
@@ -379,13 +356,13 @@ final class TVTMDbStore {
         q["sort_by"] = "popularity.desc"
         q["include_adult"] = "false"
         q["page"] = String(page)
-        return try await request("discover/\(media)", credential: credential, query: q)
+        return try await request("discover/\(media)", query: q)
     }
 
     /// The logo for a TMDb company or network. `kind` is "company" or "network".
     func logoURL(kind: String, id: Int) async throws -> URL? {
         guard isConfigured else { throw Failure.unavailable }
-        let detail: BrandDetail = try await request("\(kind)/\(id)", credential: credential)
+        let detail: BrandDetail = try await request("\(kind)/\(id)")
         return detail.logoPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w500" + $0) }
     }
 
@@ -394,34 +371,38 @@ final class TVTMDbStore {
         guard isConfigured, contextKey == expected else { throw CancellationError() }
     }
 
-    private func request<T: Decodable>(_ path: String, credential: String, query: [String:String] = [:]) async throws -> T {
-        var components = URLComponents(string: "https://api.themoviedb.org/3/" + path)!
-        let isAPIKey = credential.range(of: "^[A-Fa-f0-9]{32}$", options: .regularExpression) != nil
-        if !query.isEmpty { components.queryItems = query.map { URLQueryItem(name:$0.key,value:$0.value) } }
-        if isAPIKey { components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "api_key", value: credential)] }
+    /// Every request goes to Vivid's relay, which adds Vivid's TMDb token.
+    /// The app never holds or sends a TMDb credential.
+    nonisolated static func urlRequest(_ path: String, query: [String: String] = [:]) -> URLRequest {
+        var components = URLComponents(string: relayBase + path)!
+        if !query.isEmpty { components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) } }
         var request = URLRequest(url: components.url!)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if !isAPIKey { request.setValue("Bearer " + credential, forHTTPHeaderField: "Authorization") }
+        return request
+    }
+
+    private func request<T: Decodable>(_ path: String, query: [String:String] = [:]) async throws -> T {
+        let request = Self.urlRequest(path, query: query)
         do {
             let (data, response) = try await session.data(for: request)
             guard let response = response as? HTTPURLResponse else { throw Failure.unavailable }
-            if response.statusCode == 401 || response.statusCode == 403 { throw Failure.invalidKey }
-            guard response.statusCode == 200, data.count <= 2_000_000 else { throw Failure.unavailable }
+            if let failure = Self.failure(status: response.statusCode) { throw failure }
+            guard data.count <= 2_000_000 else { throw Failure.unavailable }
             return try JSONDecoder().decode(T.self, from: data)
         } catch is CancellationError { throw CancellationError() }
         catch let error as Failure { throw error }
         catch { throw Failure.unavailable }
     }
 
+    /// What a response status means. Anything but success is a temporary
+    /// problem: there's no key for anyone to get wrong.
+    nonisolated static func failure(status: Int) -> Failure? {
+        status == 200 ? nil : .unavailable
+    }
+
     enum Failure: LocalizedError {
-        case invalidKey, unavailable, storage
-        var errorDescription: String? {
-            switch self {
-            case .invalidKey: "TMDb could not validate this API key or read access token."
-            case .unavailable: "TMDb is unavailable right now. Please try again."
-            case .storage: "Could not update the saved TMDb key on this Apple TV."
-            }
-        }
+        case unavailable
+        var errorDescription: String? { "TMDb is unavailable right now. Please try again." }
     }
     private static func rankedTrailers(_ videos: [Video]) -> [Video] {
         videos.filter {
@@ -455,7 +436,6 @@ final class TVTMDbStore {
         let vote_count: Int?
     }
     private struct Season: Decodable { let season_number: Int }
-    private struct Validation: Decodable { let success: Bool }
     private struct Videos: Decodable { let results: [Video] }
     private struct Video: Decodable {
         let key: String; let name: String?; let site: String; let type: String

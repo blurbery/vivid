@@ -6,7 +6,7 @@ name: PR checks
 # - scripts/ci/check-pr.py checks the PR title (a Conventional Commit, with
 #   [skip release] when nothing in the app changes), the branch name and the
 #   description. Editing the title or description runs it again.
-# - When the release tooling, the release workflow, the diagnostics relay,
+# - When the release tooling, the release workflow, the diagnostics or TMDb relay,
 #   the PR, docs or action pin checker, the PR template or this workflow
 #   change, their tests run here before merge.
 #   The release workflow runs only the release tests, and only after merge.
@@ -71,7 +71,7 @@ jobs:
           while IFS= read -r -d '' file; do
             case "$file" in
               package.json|package-lock.json|release.config.mjs|scripts/release/*|\
-              diagnostics-relay/*|scripts/ci/check-pr.py|\
+              diagnostics-relay/*|tmdb-relay/*|scripts/ci/check-pr.py|\
               scripts/tests/check-pr-tests.py|scripts/ci/check-docs.py|\
               scripts/tests/check-docs-tests.py|scripts/ci/check-action-pins.py|\
               scripts/tests/check-action-pins-tests.py|.github/PULL_REQUEST_TEMPLATE.md|\
@@ -126,7 +126,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check version rules and release notes
         run: npm run test:release
-      - name: Check the diagnostics relay
+      - name: Check the diagnostics and TMDb relays
         run: npm run test:relay
       - name: Check the PR, docs and action pin checkers
         run: |

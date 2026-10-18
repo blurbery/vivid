@@ -47,7 +47,7 @@ struct TVGeneralSettingsPane: View {
 
                 TVSettingsPickerRow(
                     title: "Studios & Networks",
-                    value: !tmdb.isConfigured ? "Needs TMDb" : studiosNetworks.isEnabled ? "On" : "Off"
+                    value: !tmdb.isConfigured ? "Needs sign-in" : studiosNetworks.isEnabled ? "On" : "Off"
                 ) { showsStudiosNetworksEditor = true }
 
                 Button { showsHomeSectionsEditor = true } label: {

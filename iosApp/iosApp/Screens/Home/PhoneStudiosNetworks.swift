@@ -152,7 +152,7 @@ struct PhoneStudiosNetworksSettingsView: View {
 
     private var statusText: String {
         switch store.status {
-        case .needsTMDB: "Connect TMDb in Settings → Plugins → TMDb to use Studios & Networks."
+        case .needsAccount: "Sign in to a server and choose a profile to use Studios & Networks."
         case .loading, .idle: "Matching your library with TMDb…"
         case .failed: "Couldn’t load from TMDb or your server. Check your connection and try again."
         case .ready where store.needsMorePicks:
@@ -187,7 +187,7 @@ struct PhoneStudiosNetworksSettingsView: View {
                     Button("Try Again") { Task { await store.loadIfNeeded() } }
                         .frame(maxWidth: .infinity)
                 }
-            case .needsTMDB:
+            case .needsAccount:
                 EmptyView()
             }
         }

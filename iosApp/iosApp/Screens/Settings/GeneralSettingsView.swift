@@ -28,7 +28,7 @@ struct GeneralSettingsView: View {
                 }
                 NavigationLink { PhoneStudiosNetworksSettingsView() } label: {
                     LabeledContent("Studios & Networks",
-                                   value: !TVTMDbStore.shared.isConfigured ? "Needs TMDb"
+                                   value: !TVTMDbStore.shared.isConfigured ? "Needs sign-in"
                                        : StudiosNetworksStore.shared.isEnabled ? "On" : "Off")
                 }
                 #endif
@@ -83,45 +83,18 @@ struct GeneralSettingsView: View {
 
 struct PhoneTMDbSettingsView: View {
     @State private var store = TVTMDbStore.shared
-    @State private var credential = ""
-    @State private var busy = false
-    @State private var message: String?
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "TMDb", subtitle: "Configure your personal TMDB API to show trailers and TMDB ratings for your media.", systemImage: "film.stack")
+            SettingsPageHeader(title: "TMDb", subtitle: "Trailers, TMDB ratings, collections and Studios & Networks come from TMDB through Vivid. There's nothing to set up.", systemImage: "film.stack")
                 .settingsPageHeaderRow()
             Section {
                 LabeledContent("Status") {
                     HStack(spacing: 7) {
-                        if store.isConfigured && !busy { Circle().fill(.green).frame(width: 8, height: 8).accessibilityHidden(true) }
-                        Text(busy ? "Connecting…" : store.isConfigured ? "Connected" : "Not configured")
+                        if store.isConfigured { Circle().fill(.green).frame(width: 8, height: 8).accessibilityHidden(true) }
+                        Text(store.isConfigured ? "Connected" : "Not available")
                     }
                 }
-                SecureField("API key or read access token", text: $credential)
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    #endif
-                Button("Save Connection") {
-                    let input = credential
-                    busy = true
-                    Task { @MainActor in
-                        defer { busy = false }
-                        do {
-                            try await store.connect(input)
-                            credential = ""
-                            message = "Connected"
-                        } catch { message = error.localizedDescription }
-                    }
-                }.disabled(busy || credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if store.isConfigured {
-                    Button("Disconnect", role: .destructive) {
-                        do { try store.disconnect(); message = nil }
-                        catch { message = error.localizedDescription }
-                    }.disabled(busy)
-                }
-                if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
             } header: { PhoneSettingsSectionHeader("TMDB Connection") }
             Section {
                 Image("TMDbAttributionLogo").resizable().scaledToFit().frame(width: 100)

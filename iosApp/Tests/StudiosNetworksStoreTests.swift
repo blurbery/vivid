@@ -231,4 +231,57 @@ final class StudiosNetworksStoreTests: XCTestCase {
         XCTAssertEqual(studio.series, ["with_companies": "127928|25"], "20th Century Fox's films count too")
         XCTAssertEqual(studio.movies, studio.series)
     }
+
+    func testMatchesKeepTMDbOrderAndCountEachTitleOnce() throws {
+        let fight = try item("a", "Fight Club", year: 1999)
+        let index = ["550": fight, StudiosNetworksStore.titleKey("Fight Club", year: 1999): fight]
+        let results = [
+            try discover(id: 1, title: "Not In Library", date: "2001-01-01"),
+            try discover(id: 550, title: "Fight Club", date: "1999-10-15"),
+            // The same title again, found by title and year this time.
+            try discover(id: 9, title: "Fight Club", date: "1999-10-15"),
+        ]
+        let found = StudiosNetworksStore.matches(results, index)
+        XCTAssertEqual(found.map(\.item.contentId), ["a"])
+        XCTAssertTrue(StudiosNetworksStore.matches([], index).isEmpty)
+    }
+
+    func testRequestGateNeverRunsMoreThanItsLimit() async throws {
+        actor Counter {
+            var running = 0, peak = 0, done = 0
+            func start() { running += 1; peak = max(peak, running) }
+            func finish() { running -= 1; done += 1 }
+        }
+        let gate = RequestGate(limit: 3)
+        let counter = Counter()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<20 {
+                group.addTask {
+                    try await gate.run {
+                        await counter.start()
+                        try await Task.sleep(for: .milliseconds(5))
+                        await counter.finish()
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+        let peak = await counter.peak
+        let done = await counter.done
+        XCTAssertEqual(done, 20)
+        XCTAssertLessThanOrEqual(peak, 3)
+        XCTAssertGreaterThan(peak, 1, "requests should still overlap")
+    }
+
+    func testRequestGateFreesItsSlotWhenARequestFails() async throws {
+        struct Failed: Error {}
+        let gate = RequestGate(limit: 1)
+        do {
+            _ = try await gate.run { () async throws -> Int in throw Failed() }
+            XCTFail("The failure should come through")
+        } catch is Failed {}
+        // With the only slot leaked, this would wait forever.
+        let value = try await gate.run { 7 }
+        XCTAssertEqual(value, 7)
+    }
 }

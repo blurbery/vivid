@@ -3,9 +3,6 @@ import SwiftUI
 
 struct TVTMDbSettingsView: View {
     @State private var store = TVTMDbStore.shared
-    @State private var credential = ""
-    @State private var busy = false
-    @State private var message: String?
 
     var body: some View {
         ScrollView {
@@ -21,52 +18,15 @@ struct TVTMDbSettingsView: View {
                         Text("TMDb")
                             .font(.tvSettings(40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
-                        Text("Configure your personal TMDB API to show trailers and TMDB ratings for your media.")
+                        Text("Trailers, TMDB ratings, collections and Studios & Networks come from TMDB through Vivid. There’s nothing to set up.")
                             .font(.tvSettings(20)).foregroundStyle(.secondary)
                     }
                 }.padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.bottom, TVSettingsLayout.scaled(18))
                 TVSettingsSectionHeader("TMDB CONNECTION")
                 TVSettingsGroup {
-                    TVSettingsInfoRow(title: "Status", value: busy ? "Connecting…" : (store.isConfigured ? "Connected" : "Not configured"), showsConnectedDot: store.isConfigured && !busy)
-                    if let message { TVSettingsFooter(message).padding(.horizontal, TVSettingsLayout.scaled(24)) }
-                    TVSettingsFieldRow(title: "Personal API key", detail: "You can also use your API Read Access Token.") {
-                        SecureField("API key or read access token", text: $credential)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .disabled(busy)
-                    }
-                    Button {
-                        guard !busy else { return }
-                        let candidate = credential.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !candidate.isEmpty else {
-                            message = "Enter your API key, finish editing, then choose Save Connection."
-                            return
-                        }
-                        busy = true; message = "Validating your key with TMDB…"
-                        // Keep an explicit save alive if tvOS presents another screen.
-                        // Capture the submitted value before any view/focus changes.
-                        Task { @MainActor in
-                            defer { busy = false }
-                            do {
-                                try await store.connect(candidate)
-                                credential = ""
-                                message = "Connected. TMDB trailers and ratings are enabled."
-                            } catch is CancellationError {
-                                message = "Connection interrupted. Please try saving again."
-                            } catch { message = error.localizedDescription }
-                        }
-                    } label: { TVSettingsRowLabel(title: busy ? "Connecting…" : "Save Connection") }
-                    .buttonStyle(TVSettingsPaneRowStyle())
-                    if store.isConfigured {
-                        Button {
-                            do { try store.disconnect(); credential = ""; message = "Disconnected. Trailers and ratings are hidden; More Like This still uses your library." }
-                            catch { message = error.localizedDescription }
-                        } label: { TVSettingsRowLabel(title: "Disconnect") }
-                        .buttonStyle(TVSettingsPaneRowStyle())
-                        .disabled(busy)
-                    }
+                    TVSettingsInfoRow(title: "Status", value: store.isConfigured ? "Connected" : "Not available", showsConnectedDot: store.isConfigured)
                 }
-                TVSettingsFooter("More Like This works without a key, using genres, studios and networks from your server library. Trailers and the TMDB rating on movie and series pages require a TMDB connection. Trailers open in the YouTube app, which must be installed on your Apple TV.")
-                TVSettingsFooter("Your key is saved in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Requests use it only with TMDB. Get your personal key at themoviedb.org. TMDB attribution is required.")
+                TVSettingsFooter("Trailers open in the YouTube app, which must be installed on your Apple TV.")
                 TVSettingsSectionHeader("ABOUT TMDB")
                 TVTMDbAttribution()
             }
@@ -75,9 +35,6 @@ struct TVTMDbSettingsView: View {
             .frame(maxWidth: .infinity)
         }
         .background(SettingsBackdrop())
-        // SecureField uses a system editing presentation on tvOS. Its lifecycle
-        // must not clear the draft or cancel an explicit save. The draft is
-        // view-local and is cleared after a successful save or disconnection.
     }
 }
 

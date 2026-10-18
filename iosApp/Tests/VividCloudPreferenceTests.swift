@@ -2,6 +2,16 @@ import XCTest
 @testable import Vivid
 
 final class VividCloudPreferenceTests: XCTestCase {
+    /// TMDb keys are retired: the vault deletes them and never restores one.
+    /// No other plugin's key may be caught by that.
+    @MainActor
+    func testOnlyTMDbKeysAreRetired() {
+        XCTAssertTrue(VividCloudPreferences.isRetiredCredential(VividCloudPreferences.credentialKey("tmdb", server: "s", profile: "p")))
+        XCTAssertFalse(VividCloudPreferences.isRetiredCredential(VividCloudPreferences.credentialKey("seerr", server: "s", profile: "p")))
+        XCTAssertFalse(VividCloudPreferences.isRetiredCredential("vivid.mdblist.key.v1.scope"))
+        XCTAssertFalse(VividCloudPreferences.isRetiredCredential("vivid.opensubtitles.key.v1.scope"))
+    }
+
     /// Older Vivid builds write every `setting|` entry back to Silo's shared
     /// rows, so Vivid's own Silo interface settings must never use that name.
     @MainActor

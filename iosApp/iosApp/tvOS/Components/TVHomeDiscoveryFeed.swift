@@ -145,7 +145,7 @@ struct TVHomeDiscoveryFeed: View {
         .environment(\.tvHomeFocusOwnership, rowFocusOwnership)
         .environment(\.tvHomeScrollDiagnostics, scrollDiagnostics.enabled ? scrollDiagnostics : nil)
         .onDisappear { rowArtworkWindow.stopPendingPreparation() }
-        // Loads Studios & Networks, and again once a TMDb key is connected.
+        // Loads Studios & Networks, and again once TMDb is available for the account.
         .task(id: TVTMDbStore.shared.isConfigured) { await StudiosNetworksStore.shared.loadIfNeeded() }
         .ignoresSafeArea()
     }

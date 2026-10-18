@@ -88,7 +88,8 @@ DOC_MAP = [
           "iosApp/iosApp/Screens/Detail/TrailerRail.swift",
           "iosApp/**/PrivacyInfo.xcprivacy",
           "iosApp/*.entitlements",
-          "diagnostics-relay/worker.mjs"],
+          "diagnostics-relay/worker.mjs",
+          "tmdb-relay/worker.mjs"],
          ["website/public/privacy.html"],
          "The privacy policy, and the in-app privacy text that follows it, describe what Vivid "
          "sends to other services and stores."),
@@ -146,6 +147,11 @@ DOC_MAP = [
          ["docs/diagnostics-relay.md"],
          "docs/diagnostics-relay.md describes the relay Worker.",
          exclude=["diagnostics-relay/*.test.mjs", "diagnostics-relay/fixtures/**"]),
+    Rule("TMDb relay",
+         ["tmdb-relay/**"],
+         ["docs/tmdb-relay.md"],
+         "docs/tmdb-relay.md describes the TMDb relay Worker.",
+         exclude=["tmdb-relay/*.test.mjs"]),
 ]
 
 EM_DASH = re.compile(r"\u2014|&mdash;|&#8212;|&#x2014;", re.IGNORECASE)

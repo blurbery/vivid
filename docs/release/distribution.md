@@ -19,7 +19,7 @@ Vivid uses TestFlight for Apple beta distribution. Its App Store Connect record 
 | Build tools | Recent signed archives use local Xcode 27.0; the regression workflow selects Xcode 26.3. Check Apple’s current SDK requirements before each upload. |
 | Branding | Vivid display names, gradient app icons, the TV App Store layer stack and Top Shelf artwork are included. |
 | About | Version/build, source commit, contact, privacy information, service acknowledgements and separate bundled open-source licences are present. TMDb attribution appears in Acknowledgements. |
-| iCloud | The encrypted private account vault includes profile order, shared preferences and TMDb, Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The Production schema was deployed on 12 September 2026 and Apple TV restoration was confirmed. Check schema changes and live restoration separately from archive entitlements; see the dated build record. |
+| iCloud | The encrypted private account vault includes profile order, shared preferences and Seerr, MDBList and OpenSubtitles credentials on iPhone, iPad and Apple TV. Playback and subtitle settings remain device-specific. The Production schema was deployed on 12 September 2026 and Apple TV restoration was confirmed. Check schema changes and live restoration separately from archive entitlements; see the dated build record. |
 | Local device coverage | Historical development checks include iPhone 16 Pro Max on iOS 26.6.1 and Apple TV 4K (3rd generation) on tvOS 26.6. These records do not state the devices’ current OS or validate every later TestFlight build. |
 | iPad coverage | Focused simulator layout checks exist. Physical iPad playback, rotation and multitasking still need checking. |
 | Apple upload tooling | Signed archives can be uploaded from the maintainer’s local Xcode configuration. Signing credentials remain outside Git and there is no committed TestFlight uploader. |
@@ -124,7 +124,7 @@ Vivid has not been submitted to the App Store yet. TestFlight approval does not 
 | --- | --- |
 | Build tools | Uploads need the SDK and Xcode versions Apple currently requires (Xcode 26 or later with the iOS 26 and tvOS 26 SDKs at the time of writing). |
 | Privacy manifests | Review the archive's privacy report as described in [Check the distribution archive](#check-the-distribution-archive), and read any ITMS-91053 or ITMS-91061 email after upload. |
-| App Privacy answers | Match App Store Connect's answers to the privacy manifest and the privacy policy. Data sent only to the person's own media server, their private iCloud database or a service they connect with their own key does not reach Vivid. |
+| App Privacy answers | Match App Store Connect's answers to the privacy manifest and the privacy policy. Data sent only to the person's own media server, their private iCloud database or a service they connect with their own key does not reach Vivid. TMDb lookups do pass through Vivid's [TMDb relay](../tmdb-relay.md), which receives TMDb and IMDb IDs and the Studios & Networks lists requested, uses the address only for rate limiting and keeps nothing. |
 | Privacy policy | Use [vividapp.co/privacy](https://vividapp.co/privacy) and paste the same text into the Apple TV Privacy Policy field. Update the website and in-app text together before submitting a build that changes how data is handled. |
 | Support URL | Use [vividapp.co/support](https://vividapp.co/support), which has real contact details. |
 | Age rating | Answer Apple's current age rating questions for what Vivid shows: TMDb artwork, ratings and trailer links, plus the person's own library. Vivid has no web browser, chat, advertising or user-generated content. |
@@ -150,7 +150,7 @@ Start from this text and add the server details in App Store Connect:
 
 > Vivid plays media from servers that people run themselves (Silo, Emby or Jellyfin). It doesn't sell or supply content, create accounts or offer in-app purchases. Please use the demo server and account provided to sign in, browse and play the sample titles, which are in the public domain or licensed for reuse.
 >
-> Plugins are optional connections to TMDb, MDBList and OpenSubtitles using the person's own free API key. They don't download or run code. Seerr is an optional connection to a request manager the person runs alongside their own server. Trailers open in the YouTube app, or the browser on iPhone and iPad; Vivid doesn't download them. Downloads are offline copies from the person's own server.
+> Trailers, ratings and the Studios & Networks row come from TMDb through Vivid's own server, with nothing to set up. Plugins are optional connections to MDBList and OpenSubtitles using the person's own free API key. They don't download or run code. Seerr is an optional connection to a request manager the person runs alongside their own server. Trailers open in the YouTube app, or the browser on iPhone and iPad; Vivid doesn't download them. Downloads are offline copies from the person's own server.
 >
 > Diagnostics reports stay on the device unless the person chooses Send in Settings → Diagnostics, where they can see exactly what is sent.
 

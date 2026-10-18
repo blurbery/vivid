@@ -47,11 +47,11 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
-Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions.
+Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions.
 
 ## Apple TV
 
-I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Search uses seven posters across the available width, and a short press of the Siri button anywhere in the app searches by voice. TV cards share consistent title and year captions. Detail pages include optional personal-TMDb trailers and ratings, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
+I’ve built the TV experience around a configurable Home spotlight, local Home metadata caching, separate movie and series libraries, and saved server accounts with optional profile PINs. Search uses seven posters across the available width, and a short press of the Siri button anywhere in the app searches by voice. TV cards share consistent title and year captions. Detail pages include TMDb trailers and ratings, server-only More Like This, compact playback selections and a Start Over menu when you long-press Resume. The [Apple TV guide](docs/apple-tv-browsing.md) covers the current behaviour and validation status.
 
 ## iPhone and iPad
 
@@ -63,7 +63,7 @@ Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keep
 
 ## Plugins
 
-Optional plugins add more on top of your server, using your own free keys. TMDb brings trailers, ratings, Studios & Networks and collection rows. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
+TMDb is built in and brings trailers, ratings, Studios & Networks and collection rows, with nothing to set up. Optional plugins add more on top of your server, using your own free keys. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
 
 > [!IMPORTANT]
 > Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.

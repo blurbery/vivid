@@ -240,6 +240,7 @@ final class TVLoginPreparation {
             // render. Fresh sections and libraries must not gate the handoff.
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
             guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { throw CancellationError() }
+            await waitForStudiosNetworks()
             try Task.checkCancellation()
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
             ready = true
@@ -249,6 +250,38 @@ final class TVLoginPreparation {
             Logger(subsystem: "Vivid", category: "LoginPreparation")
                 .error("Profile preparation failed: \(String(describing: type(of: error)), privacy: .public)")
             fail(LoginPreparationFailure.classify(error, enteredPIN: checkedPIN))
+        }
+    }
+
+    /// Longest Home waits for a first Studios & Networks load.
+    static let studiosNetworksWait: TimeInterval = 120
+
+    /// Home waits for Studios & Networks, so its row is there when Home first
+    /// appears. Saved results are ready almost at once, so this only takes a
+    /// while the first time for a server and profile. A failure, or a load
+    /// still running after the limit, never holds Home: the row fills in later.
+    private func waitForStudiosNetworks() async {
+        let store = StudiosNetworksStore.shared
+        // Clear a status left from another account or profile, then start or
+        // join this one's load. That runs before the first check below, and a
+        // retry shows as loading straight away.
+        store.refresh()
+        Task { await store.loadIfNeeded() }
+        let start = Date()
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(250))
+            let elapsed = Date().timeIntervalSince(start)
+            guard elapsed < Self.studiosNetworksWait else { return }
+            switch store.status {
+            // Results on screen, saved or fresh, are enough. A refresh of saved
+            // results carries on behind Home.
+            case .ready: return
+            // With no load running, this attempt has ended.
+            case .failed, .needsAccount: if !store.isLoading { return }
+            case .loading: break
+            // A load that hasn't started within a few seconds isn't coming.
+            case .idle: if elapsed > 5 { return }
+            }
         }
     }
 
