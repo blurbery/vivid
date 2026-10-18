@@ -403,7 +403,7 @@ XCTest suites under [`iosApp/Tests/`](../../iosApp/Tests). `VividTests` (iOS) co
     <tr><td><code>PlayerSurfaceLayoutTests</code></td><td>iOS</td><td>Real media through the adapter, the bridge and the engine's video output: the Picture in Picture layer is the core's layer, the two-level nesting, <code>isReadyForDisplay</code>, and one new layer per load (bridge 4.1, 7.3; engine 2.5).</td></tr>
     <tr><td><code>VividPlaybackBoundaryTests</code></td><td>iOS</td><td>The controller and adapter boundaries, including the <code>on_preloaded</code> audio choice end to end, embedded tracks after a clear, the shared audio session and its activation retries, and that the controller constructs only <code>VividEngine</code>.</td></tr>
     <tr><td><code>VividPlaybackStatsProjectionTests</code></td><td>both</td><td>The statistics projection, including transport through telemetry updates during simulator playback.</td></tr>
-    <tr><td><code>PrematureEndRecoveryGateTests</code>, <code>ManagedStreamReaderTests</code></td><td>iOS</td><td>When a premature end reopens the same route; the managed reader's reconnects, credential refresh, seeking, cancellation and changed files against a scripted origin.</td></tr>
+    <tr><td><code>PrematureEndRecoveryGateTests</code>, <code>ManagedStreamReaderTests</code></td><td>iOS</td><td>When a premature end reopens the same route; the managed reader's reconnects, credential refresh, seeking, cancellation (including a cancel after close) and changed files against a scripted origin.</td></tr>
   </tbody>
 </table>
 
