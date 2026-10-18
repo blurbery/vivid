@@ -121,7 +121,7 @@ final class MockIntroDB: URLProtocol, @unchecked Sendable {
         let invalidIDs = VividIntroDBClient.Episode(imdbID: "", season: 1, episode: 1, tmdbID: -1)
         let invalidResult = try await client().theIntroDBSegments(for: invalidIDs)
         precondition(invalidResult == nil)
-        print("IntroDB checks passed: anonymous requests, milliseconds, bounds, TMDB-only fallback, provider merging, separate intro/credits/recap, cache, invalid IDs, missing data, rate limiting, TheIntroDB v4 path and episode identity.")
+        print("IntroDB checks passed: anonymous requests, milliseconds, bounds, TMDB-only TheIntroDB lookups, provider merging, separate intro/credits/recap, cache, invalid IDs, missing data, rate limiting, TheIntroDB v4 path and episode identity.")
     }
 }
 SWIFT

@@ -27,7 +27,7 @@ The **Intro & Credit Skipper** toggle in Playback settings controls selected-fil
 
 Valid markers for the selected file take priority. TheIntroDB fills missing ranges, then IntroDB can fill missing intro, credits or recap ranges. Item-level markers from another edition and realtime server marker updates do not override this selection. IntroDB uses the series IMDb ID; TheIntroDB prefers TMDb and falls back to IMDb. Both use the season and episode number. Requests run without media-server credentials or API keys and do not delay playback. Public lookups cover episodes; online movies can still use their selected-file markers. Offline playback does not load these skip markers.
 
-See [marker timing](../playback/architecture.md#introdb-marker-timing) for ordering, caching, duration validation and cancellation. Earlier IntroDB playback was verified on Silo-backed Apple TV; that does not establish device coverage of the newer fallback and recap paths or every Emby route. Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
+See [marker timing](../playback/architecture.md#introdb-marker-timing) for ordering, caching, duration validation and cancellation. Earlier IntroDB playback was verified on Silo-backed Apple TV; that does not establish device coverage of the TheIntroDB-first v4 lookups, recaps or every Emby route. Request and range checks live in [check-introdb-client.sh](../../scripts/ci/check-introdb-client.sh).
 
 ## Implementation references
 
