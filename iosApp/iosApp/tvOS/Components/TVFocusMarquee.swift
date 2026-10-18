@@ -570,11 +570,8 @@ struct TVMarqueeEnrichment: Equatable {
     /// Mirrors PlayerView's air-date formatting, with a date-only
     /// fallback for the server's `yyyy-MM-dd` strings.
     private static func airDateText(_ raw: String?) -> String? {
-        guard let raw, !raw.isEmpty else { return nil }
-        let date = (try? Date(raw, strategy: .iso8601))
-            ?? (try? Date(raw, strategy: .iso8601.year().month().day()))
-        guard let date else { return nil }
-        return date.formatted(date: .abbreviated, time: .omitted)
+        guard let raw, DetailDateFormatting.calendarDay(raw) != nil else { return nil }
+        return DetailDateFormatting.abbreviatedDate(raw)
     }
 
     private static func runtimeText(minutes: Int?) -> String? {

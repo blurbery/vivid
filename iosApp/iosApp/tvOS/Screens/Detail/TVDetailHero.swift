@@ -916,19 +916,11 @@ enum TVHeroMetadata {
         return facts
     }
 
-    /// Built once; the series hero recounts released episodes on every redraw.
-    private static let airDateParser: ISO8601DateFormatter = {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withFullDate]
-        return parser
-    }()
-
     static func releasedEpisodeCount(_ episodes: [EpisodeListItem], now: Date = Date()) -> Int {
-        let parser = airDateParser
-        return Set(episodes.filter { episode in
+        Set(episodes.filter { episode in
             if let raw = episode.airDate,
-               let date = parser.date(from: String(raw.prefix(10))) {
-                return date <= now
+               let aired = DetailDateFormatting.dayHasArrived(raw, now: now) {
+                return aired
             }
             // Undated entries are only known to be released when a file exists.
             return episode.files?.isEmpty == false

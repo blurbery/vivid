@@ -1323,8 +1323,7 @@ struct PlayerNextUpScreen: View {
     }
 
     private func formatAirDate(_ airDate: String) -> String {
-        guard let date = try? Date(airDate, strategy: .iso8601) else { return airDate }
-        return date.formatted(date: .abbreviated, time: .omitted)
+        DetailDateFormatting.abbreviatedDate(airDate) ?? airDate
     }
 
     private func formatRuntime(_ minutes: Int) -> String {
