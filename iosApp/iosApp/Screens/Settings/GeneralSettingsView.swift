@@ -83,45 +83,18 @@ struct GeneralSettingsView: View {
 
 struct PhoneTMDbSettingsView: View {
     @State private var store = TVTMDbStore.shared
-    @State private var credential = ""
-    @State private var busy = false
-    @State private var message: String?
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "TMDb", subtitle: "Trailers, TMDB ratings, collections and Studios & Networks work without a key. You can add your own TMDB key instead.", systemImage: "film.stack")
+            SettingsPageHeader(title: "TMDb", subtitle: "Trailers, TMDB ratings, collections and Studios & Networks come from TMDB through Vivid. There's nothing to set up.", systemImage: "film.stack")
                 .settingsPageHeaderRow()
             Section {
                 LabeledContent("Status") {
                     HStack(spacing: 7) {
-                        if store.isConfigured && !busy { Circle().fill(.green).frame(width: 8, height: 8).accessibilityHidden(true) }
-                        Text(busy ? "Connecting…" : store.usesOwnKey ? "Your key" : store.isConfigured ? "Built in" : "Not available")
+                        if store.isConfigured { Circle().fill(.green).frame(width: 8, height: 8).accessibilityHidden(true) }
+                        Text(store.isConfigured ? "Connected" : "Not available")
                     }
                 }
-                SecureField("Your API key or read access token (optional)", text: $credential)
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    #endif
-                Button("Save Connection") {
-                    let input = credential
-                    busy = true
-                    Task { @MainActor in
-                        defer { busy = false }
-                        do {
-                            try await store.connect(input)
-                            credential = ""
-                            message = "Connected"
-                        } catch { message = error.localizedDescription }
-                    }
-                }.disabled(busy || credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if store.usesOwnKey {
-                    Button("Remove Your Key", role: .destructive) {
-                        do { try store.disconnect(); message = "Removed. Vivid's built-in TMDB access is used again." }
-                        catch { message = error.localizedDescription }
-                    }.disabled(busy)
-                }
-                if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
             } header: { PhoneSettingsSectionHeader("TMDB Connection") }
             Section {
                 Image("TMDbAttributionLogo").resizable().scaledToFit().frame(width: 100)

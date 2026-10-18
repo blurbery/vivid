@@ -8,14 +8,14 @@
 
 ---
 
-Vivid works fine without plugins. Each one is an optional connection to a free service, using your own personal key, and adds something on top of your media server. This guide walks through setting each one up and what you get once it's connected.
+Vivid works fine without plugins. TMDb is built in. MDBList and OpenSubtitles are optional connections to a free service, using your own personal key, and add something on top of your media server. This guide walks through setting each one up and what you get once it's connected.
 
 <table width="100%">
   <thead>
     <tr><th align="left">Plugin</th><th align="left" width="10000">What you get</th><th align="left">What you need</th></tr>
   </thead>
   <tbody>
-    <tr><td><a href="#tmdb"><strong>TMDb</strong></a></td><td>Trailers, TMDb ratings, Studios &amp; Networks on Home and movie collection rows</td><td>Nothing. Your own TMDb key is optional</td></tr>
+    <tr><td><a href="#tmdb"><strong>TMDb</strong></a></td><td>Trailers, TMDb ratings, Studios &amp; Networks on Home and movie collection rows</td><td>Nothing. It's built in</td></tr>
     <tr><td><a href="#mdblist"><strong>MDBList</strong></a></td><td>Finished movies and episodes sent to MDBList, and your watchlist kept in sync both ways</td><td>A free MDBList account and API key</td></tr>
     <tr><td><a href="#opensubtitles"><strong>OpenSubtitles</strong></a></td><td>Subtitles searched and downloaded from a movie or episode page, or while you watch</td><td>A free OpenSubtitles.com account and API key</td></tr>
   </tbody>
@@ -48,32 +48,7 @@ To find the plugins:
 
 ## TMDb
 
-TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid. They work straight away: without a key of your own, Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings > Plugins > TMDb** shows Status **Built in**.
-
-### Use your own key (optional)
-
-If you'd rather your lookups went straight to TMDb with your own key:
-
-1. Create a free account at [themoviedb.org](https://www.themoviedb.org/signup) and sign in.
-2. Open your account settings, choose [API](https://www.themoviedb.org/settings/api) and request an API key for personal use. TMDb asks a few short questions about how you'll use it.
-3. Copy either the **API Key** or the **API Read Access Token**. Vivid accepts both.
-4. In Vivid, open **Settings → Plugins → TMDb**.
-5. Paste it into **Your API key or read access token (optional)** and choose **Save Connection**.
-6. Vivid checks it with TMDb. Once it works, Status shows **Your key**.
-
-On Apple TV the field is called **Your own API key (optional)**. The 32-character API Key is much quicker to type with the remote than the longer read access token.
-
-<table width="100%">
-  <thead>
-    <tr><th align="center">iPhone</th><th align="center">Apple TV</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center" valign="middle"><img src="images/plugins/tmdb-settings.jpg" width="260" alt="The TMDb plugin page on iPhone, connected"></td>
-      <td align="center" valign="middle"><img src="images/plugins/tv-tmdb-settings.jpg" width="460" alt="The TMDb plugin page on Apple TV, connected"></td>
-    </tr>
-  </tbody>
-</table>
+TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid. There's nothing to set up: Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings > Plugins > TMDb** shows Status **Connected** with a green dot, and TMDb's logo and attribution. A personal TMDb key saved by an earlier version of Vivid is deleted, from every device that shares the profile.
 
 ### What you get
 
@@ -130,14 +105,11 @@ To choose your own, open **Settings → General** and choose **Studios & Network
 
 - Trailers, ratings and collection rows need your server to have identified the title. Silo needs a TMDb ID. Emby and Jellyfin can also use an IMDb ID, which Vivid looks up on TMDb. Studios & Networks, and the other films in a collection row, are matched with your library by TMDb ID where your server lists one, and otherwise by exact title and year.
 - More Like This comes from your server and works without TMDb.
-- **Remove Your Key** goes back to Vivid's built-in TMDb access. Nothing else changes.
 - This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 ### If something goes wrong
 
-- **"TMDb could not validate this API key or read access token."** Copy the key again and check nothing is missing from either end.
-- **"TMDb is unavailable right now. Please try again."** If your internet is working, check you're signed in to a server and have chosen a profile, then save again.
-- **No trailers, ratings or Studios & Networks without a key of your own.** Vivid's TMDb relay may be busy or over its daily limit. Try again later, or add your own key.
+- **No trailers, ratings or Studios & Networks.** Check you're signed in to a server and have chosen a profile. If you have, Vivid's TMDb relay may be busy or over its daily limit, so try again later.
 - **No trailers on Apple TV.** Install the YouTube app from the App Store.
 
 ## MDBList

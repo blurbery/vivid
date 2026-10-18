@@ -176,7 +176,7 @@ actor RequestGate {
 
 /// Loads, matches, caches and remembers the pinned Studios & Networks row.
 ///
-/// Uses Vivid's TMDb relay, or the profile's own key. TMDb supplies each brand's logo and its
+/// Uses Vivid's TMDb relay. TMDb supplies each brand's logo and its
 /// popularity-ordered titles; only titles in the library are kept, matched by
 /// TMDb ID when the server lists one and otherwise by exact title and year.
 /// Results and the library index are cached per server and profile, so Home
@@ -207,8 +207,7 @@ final class StudiosNetworksStore {
     /// back already near expiry or the device clock runs ahead.
     static let artworkRefreshCooldown: TimeInterval = 15 * 60
     /// TMDb requests in flight at once across every brand, below the 15 the
-    /// load used before, so a refresh with a person's own key stays inside
-    /// TMDb's rate limit.
+    /// load used before, so a refresh stays well inside the relay's limits.
     nonisolated static let concurrentRequests = 12
 
     static let catalogue: [StudioNetworkBrand] = [

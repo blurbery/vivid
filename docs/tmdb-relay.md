@@ -8,7 +8,7 @@
 
 ---
 
-Vivid uses TMDb for trailers, the TMDb rating, movie collection rows, Studios & Networks and IMDb-to-TMDb lookups on Emby and Jellyfin. A TMDb key can't be kept secret inside an app, so Vivid doesn't ship one. Instead, when someone hasn't added a key of their own, the app sends its TMDb requests to a small Cloudflare Worker at `tmdb.vividapp.co`. The Worker adds Vivid's TMDb read access token, forwards the request to `api.themoviedb.org` and caches the answer at the edge for a day. Someone who adds their own key in **Settings > Plugins > TMDb** goes straight to TMDb instead, exactly as before, and the relay sees none of their requests.
+Vivid uses TMDb for trailers, the TMDb rating, movie collection rows, Studios & Networks and IMDb-to-TMDb lookups on Emby and Jellyfin. A TMDb key can't be kept secret inside an app, so Vivid doesn't ship one. Instead, the app sends every TMDb request to a small Cloudflare Worker at `tmdb.vividapp.co`. The Worker adds Vivid's TMDb read access token, forwards the request to `api.themoviedb.org` and caches the answer at the edge for a day. The app never holds a TMDb key. A personal key saved by an earlier version of Vivid is deleted from Keychain and, through the encrypted iCloud vault, from the person's other devices.
 
 The source is in [`tmdb-relay/`](../tmdb-relay). It is separate from the website and the [diagnostics relay](diagnostics-relay.md).
 
@@ -35,7 +35,7 @@ Nothing from the client's request reaches TMDb except the path and the checked q
 | `400`, `404`, `405` | Not a request the app makes, or no such title on TMDb | Treats it as unavailable |
 | `429` | More than 1,200 requests a minute from one address, or TMDb's own rate limit | Treats it as unavailable; Studios & Networks retries once after a second |
 | `502` | TMDb couldn't be reached, answered with an error or sent something too large | Treats it as unavailable |
-| `503` | The token is missing or TMDb rejected it | Treats it as unavailable. It never reports a key problem, because the person didn't supply one |
+| `503` | The token is missing or TMDb rejected it | Treats it as unavailable. It never reports a key problem, because there's no key in the app |
 
 Studios & Networks is the busiest caller: a full refresh reads up to five pages of four lists for each of 24 brands, about 500 requests, once a day per device and profile. The app keeps at most 12 TMDb requests in flight, and the per-address limit leaves room for two devices refreshing at once.
 
@@ -46,7 +46,7 @@ The client's address is used only as the rate-limit key. It isn't stored, logged
 The relay sees which TMDb or IMDb IDs are looked up and which Studios & Networks lists are read. Libraries, watch history, account details and media-server addresses never reach it: Studios & Networks matches TMDb's lists with the library on the device. The in-app Privacy Policy and the [website privacy policy](../website/public/privacy.html) describe this for users.
 
 > [!IMPORTANT]
-> The relay must be deployed, with the token set, and the privacy policy must be live, before an app build that uses the relay ships. Without the relay, TMDb features in that build show nothing unless the person adds their own key.
+> The relay must be deployed, with the token set, and the privacy policy must be live, before an app build that uses the relay ships. Without the relay, TMDb features in that build show nothing.
 
 ## Setup
 
@@ -72,7 +72,7 @@ To change the token, run `npx wrangler secret put TMDB_READ_TOKEN` again with th
 
 ### Plan limits
 
-The Workers free plan allows 100,000 requests a day, resetting at midnight UTC. Past that, Cloudflare answers `1027` errors until the reset, and TMDb features show nothing for anyone without their own key. Each device's Studios & Networks refresh uses about 500 requests a day, plus a few for each movie or series page opened, so the free plan suits a few hundred active devices a day. Workers Paid includes 10 million requests a month.
+The Workers free plan allows 100,000 requests a day, resetting at midnight UTC. Past that, Cloudflare answers `1027` errors until the reset, and TMDb features show nothing. Each device's Studios & Networks refresh uses about 500 requests a day, plus a few for each movie or series page opened, so the free plan suits a few hundred active devices a day. Workers Paid includes 10 million requests a month.
 
 ## Tests
 
@@ -84,4 +84,4 @@ npm run test:relay
 
 That runs the diagnostics relay's tests too. The PR checks workflow runs them on every pull request that changes `tmdb-relay/`, and its Docs check fails one that changes the relay, apart from its tests, unless it also updates this guide (and, when `worker.mjs` changes, the privacy policy and the in-app privacy text that follows it), or blurbery adds the `docs-not-needed` label. No workflow deploys the relay, so run them by hand again before each `npx wrangler deploy`. They cover every accepted path, refused paths and methods, query checks (including the date filters and page limits), query order sharing one cache entry, rate limiting, that nothing from the client is forwarded and the token never comes back, TMDb's error answers, an unreachable TMDb, a missing token and oversized answers. `npx wrangler deploy --dry-run` checks the configuration without deploying.
 
-The app side is covered by `TMDbRelayTests` in `iosApp/Tests/`: without a key, requests go to the relay with no credential; a key goes only to TMDb.
+The app side is covered by `TMDbRelayTests` in `iosApp/Tests/`: every request goes to the relay with no credential, and every failure is reported as temporary.

@@ -256,6 +256,8 @@ final class VividCloudPreferences {
         for account in accounts {
             guard let profile = account.profile?.id else { continue }
             let scope = Data("\(account.serverID)|\(profile)".utf8).base64EncodedString()
+            // TMDb keys aren't used any more. Still listed, so one saved by an
+            // earlier version is deleted through the vault and with the account.
             let tmdb = Self.credentialKey("tmdb", server: account.serverID, profile: profile)
             let seerr = Self.credentialKey("seerr", server: account.serverID, profile: profile)
             // An old global credential has no provable owner. Never assign it

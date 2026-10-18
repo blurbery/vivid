@@ -47,7 +47,7 @@ Vivid connects to your existing media server for your library, artwork and playb
   </tbody>
 </table>
 
-Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured TMDb, Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions.
+Saved server accounts, login sessions, optional Vivid PINs, profile order, shared preferences and configured Seerr, MDBList and OpenSubtitles credentials can sync through the user’s encrypted private iCloud vault across iPhone, iPad and Apple TV for matching server accounts and viewing profiles. Deleting a saved account records that deletion so an older device cannot add it back. Downloads, artwork caches, playback and subtitle preferences stay on the device; watched and resume state remains owned by the connected media server. Optional MDBList sync exports newly completed or explicitly marked watches after the server confirms them, and syncs watchlist additions and removals in both directions. It does not import either service’s existing watched history or replace server resume positions.
 
 ## Apple TV
 
