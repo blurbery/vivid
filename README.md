@@ -63,7 +63,7 @@ Playback on Apple TV, iPhone and iPad is powered by **Lucid Engine**. Vivid keep
 
 ## Plugins
 
-Optional plugins add more on top of your server, using your own free keys. TMDb brings trailers, ratings, Studios & Networks and collection rows. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
+TMDb is built in and brings trailers, ratings, Studios & Networks and collection rows, with nothing to set up. Optional plugins add more on top of your server, using your own free keys. MDBList sends your finished movies and episodes to MDBList and keeps your watchlist in sync both ways. OpenSubtitles finds and downloads subtitles from a movie or episode page, or while you watch. The [plugins guide](docs/plugins.md) shows how to set each one up and what you get.
 
 > [!IMPORTANT]
 > Yes, I use AI to help develop Vivid. I design the app and all of its development, and use AI to assist me.

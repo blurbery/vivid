@@ -48,7 +48,7 @@ To find the plugins:
 
 ## TMDb
 
-TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid. There's nothing to set up: Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings > Plugins > TMDb** shows Status **Connected** with a green dot, and TMDb's logo and attribution. A personal TMDb key saved by an earlier version of Vivid is deleted, from every device that shares the profile.
+TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid. There's nothing to set up: Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings > Plugins > TMDb** shows Status **Connected** with a green dot, and TMDb's logo and attribution. Vivid deletes any personal TMDb key an earlier version saved, for every saved profile on the device, and the deletion syncs to your other devices.
 
 ### What you get
 

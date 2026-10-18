@@ -257,7 +257,7 @@ final class VividCloudPreferences {
             guard let profile = account.profile?.id else { continue }
             let scope = Data("\(account.serverID)|\(profile)".utf8).base64EncodedString()
             // TMDb keys aren't used any more. Still listed, so one saved by an
-            // earlier version is deleted through the vault and with the account.
+            // earlier version is retired through the vault and with the account.
             let tmdb = Self.credentialKey("tmdb", server: account.serverID, profile: profile)
             let seerr = Self.credentialKey("seerr", server: account.serverID, profile: profile)
             // An old global credential has no provable owner. Never assign it
@@ -377,6 +377,31 @@ final class VividCloudPreferences {
         schedule()
     }
 
+    /// TMDb keys aren't used any more: Vivid's relay answers every TMDb lookup.
+    nonisolated static func isRetiredCredential(_ key: String) -> Bool {
+        key.hasPrefix("vivid.cloud.credential.tmdb.")
+    }
+
+    /// Deletes the TMDb key an earlier version saved for any saved account
+    /// on this device, and records each deletion so the vault removes it from
+    /// the person's other devices too. Keys arriving from the vault later are
+    /// turned away in `reconcile`.
+    func retireTMDbKeys() {
+        guard !applying, (try? load()) != nil else { return }
+        var changed = false
+        for key in credentialKeys(accounts: TVSavedAccountStore.shared.accounts) where Self.isRetiredCredential(key) {
+            let name = "keychain|" + key
+            let stored = keychain.get(key) != nil
+            if stored { _ = keychain.delete(key) }
+            guard stored || entries[name]?.value != nil else { continue }
+            entries[name] = VividCloudPreference(value: nil, modifiedAt: Date(), writer: writer)
+            changed = true
+        }
+        guard changed, (try? persist()) != nil else { return }
+        credentialSyncPending = true
+        schedule()
+    }
+
     private func isPluginCredential(_ name: String) -> Bool {
         name.hasPrefix("keychain|vivid.mdblist.key.v1.") ||
         name.hasPrefix("keychain|vivid.opensubtitles.key.v1.")
@@ -424,7 +449,7 @@ final class VividCloudPreferences {
         try load()
         let local = entries
         let candidates = local.filter { key, value in remote[key] == nil || value.modifiedAt != .distantPast }
-        let merged = VividCloudPreferencePolicy.merge(candidates, remote)
+        var merged = VividCloudPreferencePolicy.merge(candidates, remote)
         let keys = defaultsKeys(accounts: accounts, remoteNames: Array(remote.keys))
         let credentials = credentialKeys(accounts: accounts)
         applying = true
@@ -441,6 +466,15 @@ final class VividCloudPreferences {
                     UserDefaults.standard.set(value, forKey: key)
                 } else { SharedDefaults.shared.removeObject(forKey: key) }
                 changed = true
+            } else if name.hasPrefix("keychain|"), credentials.contains(String(name.dropFirst(9))),
+                      Self.isRetiredCredential(String(name.dropFirst(9))) {
+                // Never restore a TMDb key from another device. Answer with a
+                // deletion, which this sync uploads, so that device drops it too.
+                let key = String(name.dropFirst(9))
+                if keychain.get(key) != nil { _ = keychain.delete(key); changed = true }
+                if entry.value != nil {
+                    merged[name] = VividCloudPreference(value: nil, modifiedAt: Date(), writer: writer)
+                }
             } else if name.hasPrefix("keychain|"), credentials.contains(String(name.dropFirst(9))) {
                 let key = String(name.dropFirst(9))
                 let stored = keychain.get(key).map { Data($0.utf8) }

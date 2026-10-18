@@ -75,20 +75,18 @@ final class TVTMDbStore {
         }
         let account = savedKeyName
         guard force || loadedAccount != account else { return }
-        removeSavedKeys(account)
+        removeSavedKeys()
         loadedAccount = account
         isConfigured = true
         invalidate()
     }
 
-    /// Personal keys aren't used any more. One saved by an earlier version is
-    /// deleted here and, through the iCloud vault, on the person's other devices.
-    private func removeSavedKeys(_ name: String) {
-        var removed = false
-        for key in Set([name, legacyKeyName]) where keychain.get(key) != nil {
-            if keychain.delete(key) { removed = true }
-        }
-        if removed { VividCloudPreferences.shared.schedule() }
+    /// Personal keys aren't used any more. The vault deletes any saved for a
+    /// saved account, here and on the person's other devices. An old key that
+    /// was never tied to an account is deleted here only.
+    private func removeSavedKeys() {
+        if legacyKeyName != savedKeyName, keychain.get(legacyKeyName) != nil { _ = keychain.delete(legacyKeyName) }
+        VividCloudPreferences.shared.retireTMDbKeys()
     }
 
     private func invalidate() {
