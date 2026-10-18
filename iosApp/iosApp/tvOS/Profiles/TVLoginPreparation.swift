@@ -262,14 +262,27 @@ final class TVLoginPreparation {
     /// still running after the limit, never holds Home: the row fills in later.
     private func waitForStudiosNetworks() async {
         let store = StudiosNetworksStore.shared
+        // Clear a status left from another account or profile, then start or
+        // join this one's load.
+        store.refresh()
+        Task { await store.loadIfNeeded() }
         let start = Date()
-        while !Task.isCancelled, Date().timeIntervalSince(start) < Self.studiosNetworksWait {
+        var sawLoading = false
+        while !Task.isCancelled {
+            let elapsed = Date().timeIntervalSince(start)
+            guard elapsed < Self.studiosNetworksWait else { return }
             switch store.status {
-            case .ready, .failed, .needsAccount: return
+            // Results on screen, saved or fresh, are enough. A refresh of saved
+            // results carries on behind Home.
+            case .ready: return
+            case .loading: sawLoading = true
+            // A failure or missing account left by an earlier attempt is
+            // replaced by this load within a moment, so trust one only after.
+            case .failed, .needsAccount: if sawLoading || elapsed > 1 { return }
             // A load that hasn't started within a few seconds isn't coming.
-            case .idle where Date().timeIntervalSince(start) > 5: return
-            case .idle, .loading: try? await Task.sleep(for: .milliseconds(250))
+            case .idle: if elapsed > 5 { return }
             }
+            try? await Task.sleep(for: .milliseconds(250))
         }
     }
 

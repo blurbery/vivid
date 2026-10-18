@@ -527,8 +527,9 @@ enum StartupContentPrefetcher {
         guard !Task.isCancelled, generation == profileScopedGeneration else { return false }
         TVHomeMetadataCache.shared.hydrate()
         // Studios & Networks starts while Home is prepared, so its first load
-        // is under way before Home shows. Home never waits for it, and Home's
-        // own request joins this load.
+        // is under way before Home shows. Only sign-in and profile setup hold
+        // Home for it (`TVLoginPreparation`, up to two minutes); cold launches
+        // and saved-profile switches don't wait. Home's own request joins it.
         Task(priority: .utility) { await StudiosNetworksStore.shared.loadIfNeeded() }
         #endif
         prefetchHomeSections()
