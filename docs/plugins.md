@@ -48,7 +48,7 @@ To find the plugins:
 
 ## TMDb
 
-TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid. They work straight away: without a key of your own, Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings → Plugins → TMDb** shows Status **Built in**.
+TMDb (The Movie Database) adds trailers, ratings, Studios & Networks and collection rows to Vivid. They work straight away: without a key of your own, Vivid's TMDb lookups go through Vivid's [TMDb relay](tmdb-relay.md), which uses Vivid's own TMDb key. **Settings > Plugins > TMDb** shows Status **Built in**.
 
 ### Use your own key (optional)
 

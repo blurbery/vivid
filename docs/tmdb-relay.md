@@ -8,7 +8,7 @@
 
 ---
 
-Vivid uses TMDb for trailers, the TMDb rating, movie collection rows, Studios & Networks and IMDb-to-TMDb lookups on Emby and Jellyfin. A TMDb key can't be kept secret inside an app, so Vivid doesn't ship one. Instead, when someone hasn't added a key of their own, the app sends its TMDb requests to a small Cloudflare Worker at `tmdb.vividapp.co`. The Worker adds Vivid's TMDb read access token, forwards the request to `api.themoviedb.org` and caches the answer at the edge for a day. Someone who adds their own key in **Settings → Plugins → TMDb** goes straight to TMDb instead, exactly as before, and the relay sees none of their requests.
+Vivid uses TMDb for trailers, the TMDb rating, movie collection rows, Studios & Networks and IMDb-to-TMDb lookups on Emby and Jellyfin. A TMDb key can't be kept secret inside an app, so Vivid doesn't ship one. Instead, when someone hasn't added a key of their own, the app sends its TMDb requests to a small Cloudflare Worker at `tmdb.vividapp.co`. The Worker adds Vivid's TMDb read access token, forwards the request to `api.themoviedb.org` and caches the answer at the edge for a day. Someone who adds their own key in **Settings > Plugins > TMDb** goes straight to TMDb instead, exactly as before, and the relay sees none of their requests.
 
 The source is in [`tmdb-relay/`](../tmdb-relay). It is separate from the website and the [diagnostics relay](diagnostics-relay.md).
 
