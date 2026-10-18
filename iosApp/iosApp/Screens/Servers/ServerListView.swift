@@ -3,8 +3,8 @@ import SwiftUI
 /// Picker + management UI for the set of saved Silo servers.
 ///
 /// Shared between iOS and tvOS with minor platform-specific tweaks:
-/// - iOS: Navigation `List` with swipe and context-menu rename and remove.
-/// - tvOS: focusable server summary with separate rename and remove actions.
+/// - iOS: Navigation `List` with swipe-to-delete.
+/// - tvOS: focusable read-only server summary with a separate remove action.
 ///
 /// Switching a server asks the `AppRouter` to re-evaluate auth state so
 /// the user lands on login or profile-select for the new server (or on
@@ -16,10 +16,6 @@ struct ServerListView: View {
     @State private var removalError: String?
     #if os(tvOS)
     @FocusState private var focusedRow: TVRow?
-    #else
-    @State private var renameTarget: ServerEntry?
-    @State private var renameText = ""
-    @State private var renameError: String?
     #endif
 
     var body: some View {
@@ -60,23 +56,6 @@ struct ServerListView: View {
                 Button("Cancel", role: .cancel) { removeTarget = nil }
             } message: { entry in
                 Text("The saved server \(entry.displayName) and all its profiles will be removed from your Vivid devices through iCloud. Accounts and media on the server are not deleted.")
-            }
-            .alert(
-                "Rename Server",
-                isPresented: Binding(
-                    get: { renameTarget != nil },
-                    set: { if !$0 { renameTarget = nil } }
-                ),
-                presenting: renameTarget
-            ) { entry in
-                TextField(entry.fetchedName ?? "Server name", text: $renameText)
-                Button("Save") { rename(entry, to: renameText) }
-                if entry.customName != nil {
-                    Button("Use Server Name") { rename(entry, to: nil) }
-                }
-                Button("Cancel", role: .cancel) { renameTarget = nil }
-            } message: { _ in
-                Text("Vivid shows this name for the server, including under its profiles, on your Vivid devices. Leave it blank to use the server’s own name.")
             }
         #endif
     }
@@ -135,7 +114,7 @@ struct ServerListView: View {
                 .focused($focusedRow, equals: .add)
 
                 }
-                TVSettingsFooter("Select the pencil to rename a saved server, or the trash icon to remove it and its profiles from your Vivid devices.")
+                TVSettingsFooter("Select the trash icon to remove a saved server and its profiles from your Vivid devices.")
                 if let removalError { TVSettingsFooter(removalError) }
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
@@ -166,21 +145,9 @@ struct ServerListView: View {
             .focused($focusedRow, equals: .server(entry.id))
             .accessibilityHint(
                 entry.id == registry.activeServerId
-                    ? "Current server"
-                    : "Switch to this server"
+                    ? "Current server. Server names are managed by the server administrator"
+                    : "Switch to this server. Server names are managed by the server administrator"
             )
-
-            NavigationLink {
-                TVServerRenameView(entry: entry)
-            } label: {
-                Image(systemName: "pencil")
-                    .font(.tvSettings(24, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: TVSettingsLayout.scaled(49))
-            }
-            .buttonStyle(TVSettingsPaneRowStyle())
-            .frame(width: TVSettingsLayout.scaled(92))
-            .focused($focusedRow, equals: .rename(entry.id))
-            .accessibilityLabel("Rename \(entry.displayName)")
 
             Button {
                 removeTarget = entry
@@ -198,7 +165,6 @@ struct ServerListView: View {
 
     private enum TVRow: Hashable {
         case server(String)
-        case rename(String)
         case remove(String)
         case add
     }
@@ -231,7 +197,7 @@ struct ServerListView: View {
                 Text("Saved servers")
                     .foregroundColor(.vividSecondaryText)
             } footer: {
-                if let message = renameError ?? removalError { Text(message) }
+                if let removalError { Text(removalError) }
             }
 
 
@@ -293,36 +259,6 @@ struct ServerListView: View {
             } label: {
                 Label("Remove", systemImage: "trash")
             }
-            Button {
-                beginRename(entry)
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-        }
-        .contextMenu {
-            Button {
-                beginRename(entry)
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                removeTarget = entry
-            } label: {
-                Label("Remove", systemImage: "trash")
-            }
-        }
-    }
-
-    private func beginRename(_ entry: ServerEntry) {
-        renameError = nil
-        renameText = entry.customName ?? entry.fetchedName ?? ""
-        renameTarget = entry
-    }
-
-    private func rename(_ entry: ServerEntry, to name: String?) {
-        renameTarget = nil
-        if !TVSavedAccountStore.shared.renameServer(entry.id, to: name) {
-            renameError = "Couldn’t rename the server. Try again."
         }
     }
     #endif
@@ -373,79 +309,6 @@ struct ServerListView: View {
 }
 
 #if os(tvOS)
-/// Names a saved server. The name shows wherever Vivid names the server,
-/// including under its profiles, and syncs to the person's other devices.
-private struct TVServerRenameView: View {
-    let entry: ServerEntry
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    @State private var error: String?
-
-    init(entry: ServerEntry) {
-        self.entry = entry
-        _name = State(initialValue: entry.customName ?? entry.fetchedName ?? "")
-    }
-
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
-                HStack(spacing: TVSettingsLayout.scaled(20)) {
-                    Image(systemName: "server.rack")
-                        .font(.tvSettings(27, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .frame(width: TVSettingsLayout.scaled(62), height: TVSettingsLayout.scaled(62))
-                        .background(Color(red: 0.12, green: 0.13, blue: 0.15),
-                                    in: RoundedRectangle(cornerRadius: TVSettingsLayout.scaled(15.5), style: .continuous))
-                    VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(7)) {
-                        Text("Rename Server")
-                            .font(.tvSettings(40, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text(entry.url)
-                            .font(.tvSettings(20))
-                            .foregroundColor(.vividSecondaryText)
-                            .lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, TVSettingsLayout.scaled(24))
-                .padding(.bottom, TVSettingsLayout.scaled(18))
-
-                TVSettingsGroup {
-                    TVSettingsFieldRow(
-                        title: "Name",
-                        detail: "Vivid shows this name for the server, including under its profiles, on your Vivid devices. Leave it blank to use the server’s own name."
-                    ) {
-                        TextField(entry.fetchedName ?? "Server name", text: $name)
-                    }
-                    Button { save(name) } label: {
-                        TVSettingsRowLabel(title: "Save")
-                    }
-                    .buttonStyle(TVSettingsPaneRowStyle())
-                    if entry.customName != nil {
-                        Button { save(nil) } label: {
-                            TVSettingsRowLabel(title: "Use Server Name", detail: "Go back to the name the server gives itself.")
-                        }
-                        .buttonStyle(TVSettingsPaneRowStyle())
-                    }
-                }
-                if let error { TVSettingsFooter(error) }
-            }
-            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
-            .padding(.horizontal, TVSettingsLayout.scaled(24))
-            .padding(.vertical, TVSettingsLayout.scaled(48))
-            .frame(maxWidth: .infinity)
-        }
-        .tvSettingsPageSurface()
-    }
-
-    private func save(_ name: String?) {
-        if TVSavedAccountStore.shared.renameServer(entry.id, to: name) {
-            dismiss()
-        } else {
-            error = "Couldn’t rename the server. Try again."
-        }
-    }
-}
-
 private struct TVServerSummaryLabel: View {
     let entry: ServerEntry
     let isActive: Bool

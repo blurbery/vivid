@@ -280,12 +280,33 @@ struct TVSettingsView: View {
             TVSettingsSectionHeader("ACTIVE SERVER")
 
             TVSettingsGroup {
-                TVSettingsInfoRow(
-                    title: "Server",
-                    value: viewModel.serverDisplayName.isEmpty
-                        ? "Not configured"
-                        : viewModel.serverDisplayName
-                )
+                if let account = TVSavedAccountStore.shared.activeAccount, !viewModel.serverDisplayName.isEmpty {
+                    NavigationLink {
+                        TVProfileServerNameView(account: account, serverName: viewModel.serverDisplayName,
+                                                serverURL: viewModel.serverUrl)
+                    } label: {
+                        HStack(spacing: TVSettingsLayout.scaled(16)) {
+                            TVSettingsRowLabel(title: "Server")
+                            Text(account.serverName ?? viewModel.serverDisplayName)
+                                .font(.tvSettings(24))
+                                .opacity(0.68)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.tvSettings(18, weight: .semibold))
+                                .opacity(0.55)
+                        }
+                    }
+                    .buttonStyle(TVSettingsPaneRowStyle())
+                    .focused($detailFocus, equals: .top)
+                    .accessibilityHint("Rename this server for this profile")
+                } else {
+                    TVSettingsInfoRow(
+                        title: "Server",
+                        value: viewModel.serverDisplayName.isEmpty
+                            ? "Not configured"
+                            : viewModel.serverDisplayName
+                    )
+                }
 
                 if !viewModel.serverUrl.isEmpty,
                    viewModel.serverDisplayName != viewModel.serverUrl {
@@ -302,7 +323,7 @@ struct TVSettingsView: View {
                     }
                 }
                 .buttonStyle(TVSettingsPaneRowStyle())
-                .focused($detailFocus, equals: .top)
+                .focused($detailFocus, equals: TVSavedAccountStore.shared.activeAccount == nil ? .top : .manageServers)
 
             }
 
@@ -339,6 +360,7 @@ enum TVSettingsDetailFocus: Hashable {
     case subtitleBackgroundOpacity
     case subtitleBackgroundColor
     case subtitlePosition
+    case manageServers
 }
 
 // MARK: - Categories
@@ -421,5 +443,66 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
         }
     }
 
+}
+
+/// Names the server for the current saved profile. The name shows under that
+/// profile and on the Servers page, and syncs with the profile.
+private struct TVProfileServerNameView: View {
+    let account: TVSavedAccount
+    let serverName: String
+    let serverURL: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var error: String?
+
+    init(account: TVSavedAccount, serverName: String, serverURL: String) {
+        self.account = account
+        self.serverName = serverName
+        self.serverURL = serverURL
+        _name = State(initialValue: account.serverName ?? (serverName == serverURL ? "" : serverName))
+    }
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: TVSettingsLayout.scaled(8)) {
+                TVSettingsPageHeader(title: "Rename Server", subtitle: serverURL)
+                    .padding(.horizontal, TVSettingsLayout.scaled(24))
+                    .padding(.bottom, TVSettingsLayout.scaled(18))
+
+                TVSettingsGroup {
+                    TVSettingsFieldRow(
+                        title: "Name",
+                        detail: "Shown for this profile only, under its profile picture and on the Servers page. Leave it blank to use the server’s own name."
+                    ) {
+                        TextField(serverName, text: $name)
+                    }
+                    Button { save(name) } label: {
+                        TVSettingsRowLabel(title: "Save")
+                    }
+                    .buttonStyle(TVSettingsPaneRowStyle())
+                    if account.serverName != nil {
+                        Button { save(nil) } label: {
+                            TVSettingsRowLabel(title: "Use Server Name", detail: "Go back to the server’s own name for this profile.")
+                        }
+                        .buttonStyle(TVSettingsPaneRowStyle())
+                    }
+                }
+                if let error { TVSettingsFooter(error) }
+            }
+            .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
+            .padding(.horizontal, TVSettingsLayout.scaled(24))
+            .padding(.vertical, TVSettingsLayout.scaled(48))
+            .frame(maxWidth: .infinity)
+        }
+        .tvSettingsPageSurface()
+    }
+
+    private func save(_ name: String?) {
+        if TVSavedAccountStore.shared.renameServer(for: account.id, to: name) {
+            dismiss()
+        } else {
+            error = "Couldn’t rename the server. Try again."
+        }
+    }
 }
 #endif

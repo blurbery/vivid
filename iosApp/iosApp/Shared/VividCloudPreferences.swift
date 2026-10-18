@@ -52,37 +52,6 @@ enum VividCloudPreferencePolicy {
     }
 }
 
-/// Names given to servers in Manage Servers. Each server has its own vault
-/// entry, so the latest rename on any device wins, and a nil value records
-/// that the server's own name is back. Older builds keep entries they don't
-/// know, so a rename survives a device that hasn't updated yet.
-enum VividCloudServerNames {
-    static let prefix = "serverName|"
-
-    static func key(for serverID: String) -> String { prefix + serverID }
-
-    /// Each recorded server's name, or nil where the rename was cleared.
-    static func names(in preferences: [String: VividCloudPreference]) -> [String: String?] {
-        var result: [String: String?] = [:]
-        for (key, entry) in preferences where key.hasPrefix(prefix) {
-            let serverID = String(key.dropFirst(prefix.count))
-            guard !serverID.isEmpty else { continue }
-            guard let data = entry.value else { result[serverID] = .some(nil); continue }
-            guard let name = try? JSONDecoder().decode(String.self, from: data) else { continue }
-            result[serverID] = ServerEntry.customName(from: name)
-        }
-        return result
-    }
-
-    /// Applies the vault's names to the saved servers on this device. Runs
-    /// after every sync, since a server can arrive after its name did.
-    static func apply(_ preferences: [String: VividCloudPreference], to registry: ServerRegistry = .shared) {
-        for (serverID, name) in names(in: preferences) where registry.entry(with: serverID) != nil {
-            registry.setCustomName(name, for: serverID)
-        }
-    }
-}
-
 /// Values, including credentials, are retained in Keychain and transported
 /// only inside the existing CloudKit encrypted account-vault payload.
 @MainActor
@@ -384,25 +353,6 @@ final class VividCloudPreferences {
         }
         do { try persist() }
         catch { entries = previous; throw error }
-    }
-
-    /// Records a server rename for the person's other devices. Nil records
-    /// that the server's own name is back.
-    func setServerName(_ name: String?, for serverID: String) throws {
-        try load()
-        let key = VividCloudServerNames.key(for: serverID)
-        let previous = entries[key]
-        entries[key] = VividCloudPreference(value: try name.map { try Self.encoder.encode($0) },
-                                            modifiedAt: Date(), writer: writer)
-        do { try persist() }
-        catch { entries[key] = previous; throw error }
-    }
-
-    /// Forgets a removed server's name, so adding that server again starts
-    /// from the server's own name on every device.
-    func forgetServerName(for serverID: String) {
-        guard (try? load()) != nil, entries[VividCloudServerNames.key(for: serverID)]?.value != nil else { return }
-        try? setServerName(nil, for: serverID)
     }
 
     /// Record explicit plugin edits immediately, including disconnect tombstones.

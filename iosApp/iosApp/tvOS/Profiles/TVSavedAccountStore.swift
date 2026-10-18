@@ -20,6 +20,17 @@ struct TVSavedAccount: Codable, Identifiable, Hashable {
     /// the original behaviour (the primary, or only, profile) and the original
     /// identity, so existing saved profiles are unchanged.
     var siloProfileID: String? = nil
+    /// The name this saved profile shows for its server, set from the Server
+    /// row in Settings > Servers. Each profile keeps its own, so two profiles
+    /// on one server can name it differently. Nil shows the server's own label.
+    var serverName: String? = nil
+
+    /// A typed server name with surrounding spaces removed, or nil when it's
+    /// blank, which shows the server's own label again.
+    static func serverName(from input: String?) -> String? {
+        let name = input?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? nil : name
+    }
 
     /// A Silo saved profile is labelled with its viewing profile's name in
     /// Silo, the primary profile included, since that name is chosen there
@@ -437,7 +448,8 @@ final class TVSavedAccountStore {
         let value = TVSavedAccount(id: id, serverID: server, userID: userID,
                                    username: user.username, profile: profile, requiresLogin: false,
                                    pinEnabled: index.flatMap { accounts[$0].pinEnabled },
-                                   siloProfileID: owner.binding)
+                                   siloProfileID: owner.binding,
+                                   serverName: index.flatMap { accounts[$0].serverName })
         do {
             try saveSession(stored, id: id)
             if let index { accounts[index] = value } else { accounts.append(value) }
@@ -684,7 +696,8 @@ final class TVSavedAccountStore {
             let accountID = existing?.id ?? UUID().uuidString
             let account = TVSavedAccount(id: accountID, serverID: serverID, userID: userID,
                                          username: login.user.username, profile: existing?.profile, requiresLogin: false,
-                                         pinEnabled: existing?.pinEnabled, siloProfileID: existing?.siloProfileID)
+                                         pinEnabled: existing?.pinEnabled, siloProfileID: existing?.siloProfileID,
+                                         serverName: existing?.serverName)
             // Re-authentication requires a fresh PIN proof for a protected pairing.
             let pairing = existing?.profile.flatMap { $0.hasPin ? nil : $0 }
             let saved = TVSavedAccountSession(accessToken: login.accessToken, refreshToken: login.refreshToken,
@@ -873,7 +886,6 @@ final class TVSavedAccountStore {
                 error = "Couldn’t remove the saved server. Try again."
                 return false
             }
-            VividCloudPreferences.shared.forgetServerName(for: serverID)
         }
         accounts.removeAll { ids.contains($0.id) }
         for id in ids { modificationDates.removeValue(forKey: id) }
@@ -891,20 +903,17 @@ final class TVSavedAccountStore {
         return true
     }
 
-    /// Renames a saved server on this device and, through iCloud, the
-    /// person's other devices. A nil or blank name puts the server's own name
-    /// back.
+    /// Names the server for one saved profile, here and, through iCloud, on
+    /// the person's other devices. A nil or blank name shows the server's own
+    /// label again. Other profiles on the same server keep their own.
     @discardableResult
-    func renameServer(_ serverID: String, to name: String?) -> Bool {
-        let name = ServerEntry.customName(from: name)
-        guard let entry = ServerRegistry.shared.entry(with: serverID) else { return false }
-        guard entry.customName != name else { return true }
-        // The vault entry is written first: a sync applies it to the server
-        // list, so a failed list write is put right on the next sync rather
-        // than replaced by an older name from another device.
-        do { try VividCloudPreferences.shared.setServerName(name, for: serverID) }
-        catch { return false }
-        guard ServerRegistry.shared.setCustomName(name, for: serverID) else { return false }
+    func renameServer(for accountID: String, to name: String?) -> Bool {
+        guard !busy, let index = accounts.firstIndex(where: { $0.id == accountID }) else { return false }
+        let name = TVSavedAccount.serverName(from: name)
+        guard accounts[index].serverName != name else { return true }
+        accounts[index].serverName = name
+        markAccountChanged(accountID)
+        persist()
         Task { await VividCloudAccountSync.shared.synchronize() }
         return true
     }
@@ -1006,7 +1015,8 @@ final class TVSavedAccountStore {
                 profile: imported.profile,
                 requiresLogin: imported.requiresLogin,
                 pinEnabled: imported.pinEnabled,
-                siloProfileID: imported.siloProfileID
+                siloProfileID: imported.siloProfileID,
+                serverName: imported.serverName
             )
             if let saved = envelope.session {
                 guard (try? saveSession(saved, id: localID)) != nil else { continue }
@@ -1267,7 +1277,6 @@ final class VividCloudAccountSync {
                 if legacyOrder != nil || fullOrder != nil {
                     TVSavedAccountStore.shared.applyCloudOrder(legacy: legacyOrder, full: fullOrder)
                 }
-                VividCloudServerNames.apply(vault.preferences ?? [:])
                 let parts = VividCloudVaultPartition.split(vault)
                 let payload = try Self.encoder.encode(parts.main)
                 let profilePayload = try Self.encoder.encode(parts.profiles)
