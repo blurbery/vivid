@@ -56,8 +56,9 @@ extension PlayerViewModel {
                 let imdb = series.imdbId ?? ""
                 let identity = VividIntroDBClient.Episode(imdbID: imdb, season: season, episode: episode,
                     tmdbID: series.tmdbId.flatMap(Int.init))
-                guard identity.fallbackIdentifier != nil else { return }
-                let fetched = try? await VividIntroDBClient.shared.segments(for: identity)
+                guard identity.theIntroDBIdentifier != nil else { return }
+                // TheIntroDB comes first. IntroDB only fills what it's missing.
+                let fetched = try? await VividIntroDBClient.shared.theIntroDBSegments(for: identity)
                 let markers = VividIntroDBClient.Segments(
                     imdb_id: imdb, season: season, episode: episode,
                     intro: fileMarkers.intro, outro: fileMarkers.outro, tmdb_id: identity.tmdbID
@@ -68,15 +69,15 @@ extension PlayerViewModel {
                       self.currentSelectedVersion?.fileId == fileID else { return }
                 self.updateIntroDBSegments(markers)
                 // Publish the primary result immediately. A slow or failed
-                // fallback must never delay an existing intro or credits prompt.
+                // IntroDB lookup must never delay an existing prompt.
                 guard markers.intro == nil || markers.outro == nil || markers.recap == nil else { return }
-                let fallback = try? await VividIntroDBClient.shared.fallbackSegments(for: identity)
+                let gaps = try? await VividIntroDBClient.shared.introDBSegments(for: identity)
                 guard !Task.isCancelled, VividSkipSource.isEnabled,
                       self.activePlaybackSessionId == sessionID,
                       self.currentWatchDetail?.contentId == detail.contentId,
                       self.currentSelectedVersion?.fileId == fileID else { return }
-                guard let fallback, fallback.intro != nil || fallback.outro != nil || fallback.recap != nil else { return }
-                let combined = markers.fillingMissing(from: fallback)
+                guard let gaps, gaps.intro != nil || gaps.outro != nil || gaps.recap != nil else { return }
+                let combined = markers.fillingMissing(from: gaps)
                 self.updateIntroDBSegments(combined)
             } catch {
                 // Missing timestamps or temporary service failure never block playback.

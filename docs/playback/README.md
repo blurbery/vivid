@@ -90,9 +90,9 @@ Apple TV requests the source frame rate and dynamic range through Apple’s disp
 
 ### Vivid-owned intro, recap and credits markers
 
-Playback → Intro & Credit Skipper is enabled by default and preserves an explicitly saved Off choice. Valid selected-file intro/credits markers appear first. IntroDB fills missing ranges; TheIntroDB fills remaining intro, credits or recap ranges. Separate automatic-skip settings control automatic skipping, and valid ranges supply manual prompts. On iOS, prompts stay hidden while playback is loading or buffering.
+Playback → Intro & Credit Skipper is enabled by default and preserves an explicitly saved Off choice. Valid selected-file intro/credits markers appear first. TheIntroDB fills missing ranges; IntroDB fills remaining intro, credits or recap ranges. Separate automatic-skip settings control automatic skipping, and valid ranges supply manual prompts. On iOS, prompts stay hidden while playback is loading or buffering.
 
-IntroDB requests use the series IMDb ID and episode numbering; TheIntroDB prefers the series TMDb ID and falls back to IMDb. Neither receives media-server credentials or API keys. Each provider has a bounded one-hour cache. Errors preserve markers already available, and requests are cancelled or ignored when the item, file or session changes. Movies can use selected-file markers, but public lookups are episode-only. Offline playback does not load skip markers. See [marker timing](architecture.md#introdb-marker-timing) for duration handling and exact precedence.
+TheIntroDB requests prefer the series TMDb ID and fall back to IMDb; IntroDB requests use the series IMDb ID and episode numbering. Neither receives media-server credentials or API keys. Each provider has a bounded one-hour cache. Errors preserve markers already available, and requests are cancelled or ignored when the item, file or session changes. Movies can use selected-file markers, but public lookups are episode-only. Offline playback does not load skip markers. See [marker timing](architecture.md#introdb-marker-timing) for duration handling and exact precedence.
 
 Run `bash scripts/ci/check-introdb-client.sh` for the focused request and range checks. Earlier IntroDB playback was verified on Silo-backed Apple TV. The newer fallback/recap paths and wider provider/device coverage still need verification.
 

@@ -835,7 +835,7 @@ actor VividIntroDBClient {
             self.tmdbID = tmdbID.flatMap { $0 > 0 ? $0 : nil }
         }
 
-        var fallbackIdentifier: URLQueryItem? {
+        var theIntroDBIdentifier: URLQueryItem? {
             if let tmdbID, tmdbID > 0 {
                 return URLQueryItem(name: "tmdb_id", value: String(tmdbID))
             }
@@ -863,7 +863,7 @@ actor VividIntroDBClient {
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             start_ms = try values.decode(Double.self, forKey: .start_ms)
-            // IntroDB requires an explicit end. Only the fallback adapter
+            // IntroDB requires an explicit end. Only the TheIntroDB adapter
             // creates an open-ended credits marker.
             end_ms = try values.decode(Double.self, forKey: .end_ms)
         }
@@ -898,7 +898,7 @@ actor VividIntroDBClient {
         }
     }
 
-    struct FallbackResponse: Decodable, Sendable {
+    struct TheIntroDBResponse: Decodable, Sendable {
         // v4 keys every response by TVDB and no longer returns tmdb_id.
         let tvdb_id: Int?
         let season: Int?
@@ -936,7 +936,7 @@ actor VividIntroDBClient {
         }
     }
 
-    private var fallbackCache: [Episode: (Date, Segments)] = [:]
+    private var theIntroDBCache: [Episode: (Date, Segments)] = [:]
     private var cache: [Episode: (Date, Segments)] = [:]
     private let session: URLSession
     init(session: URLSession? = nil) {
@@ -946,10 +946,10 @@ actor VividIntroDBClient {
         self.session = session ?? URLSession(configuration: configuration)
     }
 
-    func fallbackSegments(for episode: Episode) async throws -> Segments? {
-        guard let identifier = episode.fallbackIdentifier,
+    func theIntroDBSegments(for episode: Episode) async throws -> Segments? {
+        guard let identifier = episode.theIntroDBIdentifier,
               episode.season > 0, episode.episode > 0 else { return nil }
-        if let cached = fallbackCache[episode], Date().timeIntervalSince(cached.0) < 3600 {
+        if let cached = theIntroDBCache[episode], Date().timeIntervalSince(cached.0) < 3600 {
             return cached.1
         }
         // TMDB and IMDb IDs are resolved server-side using that provider's
@@ -963,7 +963,7 @@ actor VividIntroDBClient {
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse,
               response.statusCode == 200, data.count < 100_000 else { return nil }
-        let responseBody = try JSONDecoder().decode(FallbackResponse.self, from: data)
+        let responseBody = try JSONDecoder().decode(TheIntroDBResponse.self, from: data)
         // v4 has no tmdb_id to compare with the request, so the series rests on
         // TheIntroDB resolving the ID sent. Require a TVDB ID and the echoed
         // episode, which also rejects the version and episode-list shapes.
@@ -971,12 +971,12 @@ actor VividIntroDBClient {
               responseBody.season == episode.season,
               responseBody.episode == episode.episode else { return nil }
         let result = responseBody.segments(for: episode)
-        if fallbackCache.count >= 200 { fallbackCache.removeAll() }
-        fallbackCache[episode] = (Date(), result)
+        if theIntroDBCache.count >= 200 { theIntroDBCache.removeAll() }
+        theIntroDBCache[episode] = (Date(), result)
         return result
     }
 
-    func segments(for episode: Episode) async throws -> Segments? {
+    func introDBSegments(for episode: Episode) async throws -> Segments? {
         guard episode.imdbID.range(of: "^tt[0-9]{7,8}$", options: .regularExpression) != nil,
               episode.season > 0, episode.episode > 0 else { return nil }
         if let cached = cache[episode], Date().timeIntervalSince(cached.0) < 3600 { return cached.1 }
