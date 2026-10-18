@@ -288,8 +288,7 @@ struct TVSettingsView: View {
             TVSettingsGroup {
                 if let account = renamableAccount {
                     NavigationLink {
-                        TVProfileServerNameView(account: account, serverName: viewModel.serverDisplayName,
-                                                serverURL: viewModel.serverUrl)
+                        TVProfileServerNameView(account: account, serverURL: viewModel.serverUrl)
                     } label: {
                         HStack(spacing: TVSettingsLayout.scaled(16)) {
                             TVSettingsRowLabel(title: "Server")
@@ -331,6 +330,10 @@ struct TVSettingsView: View {
                 .buttonStyle(TVSettingsPaneRowStyle())
                 .focused($detailFocus, equals: renamableAccount == nil ? .top : .manageServers)
 
+            }
+
+            if renamableAccount != nil {
+                TVSettingsFooter("Select Server to rename it for this profile.")
             }
 
         }
@@ -455,18 +458,16 @@ enum TVSettingsCategory: String, CaseIterable, Identifiable {
 /// profile and on the Servers page, and syncs with the profile.
 private struct TVProfileServerNameView: View {
     let account: TVSavedAccount
-    let serverName: String
     let serverURL: String
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var error: String?
 
-    init(account: TVSavedAccount, serverName: String, serverURL: String) {
+    init(account: TVSavedAccount, serverURL: String) {
         self.account = account
-        self.serverName = serverName
         self.serverURL = serverURL
-        // Starts empty without a name, with the server's own name as the
-        // placeholder, so saving untouched never pins that name to the profile.
+        // Starts empty without a name, with the label a blank name shows as
+        // the placeholder, so saving untouched never pins a name to the profile.
         _name = State(initialValue: account.serverName ?? "")
     }
 
@@ -480,9 +481,9 @@ private struct TVProfileServerNameView: View {
                 TVSettingsGroup {
                     TVSettingsFieldRow(
                         title: "Name",
-                        detail: "Shown for this profile only, under its profile picture and on the Servers page. Leave it blank to use the server’s own name."
+                        detail: "Shown for this profile only, under its profile picture and on the Servers page. Leave it blank to show “\(account.defaultServerLabel)”."
                     ) {
-                        TextField(serverName, text: $name)
+                        TextField(account.defaultServerLabel, text: $name)
                     }
                     Button { save(name) } label: {
                         TVSettingsRowLabel(title: "Save")
@@ -490,7 +491,7 @@ private struct TVProfileServerNameView: View {
                     .buttonStyle(TVSettingsPaneRowStyle())
                     if account.serverName != nil {
                         Button { save(nil) } label: {
-                            TVSettingsRowLabel(title: "Use Server Name", detail: "Go back to the server’s own name for this profile.")
+                            TVSettingsRowLabel(title: "Use Server Name", detail: "Show “\(account.defaultServerLabel)” for this profile again.")
                         }
                         .buttonStyle(TVSettingsPaneRowStyle())
                     }

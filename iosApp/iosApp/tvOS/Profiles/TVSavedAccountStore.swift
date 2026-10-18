@@ -25,6 +25,14 @@ struct TVSavedAccount: Codable, Identifiable, Hashable {
     /// on one server can name it differently. Nil shows the server's own label.
     var serverName: String? = nil
 
+    /// The label under this saved profile when it has no server name: "Emby"
+    /// or "Jellyfin", or the Silo server's own name.
+    var defaultServerLabel: String {
+        let provider = MediaServerProvider.forServerID(serverID)
+        if provider.usesNativeUser { return provider.name }
+        return ServerRegistry.shared.entry(with: serverID)?.displayName ?? "Media server"
+    }
+
     /// A typed server name with surrounding spaces removed, or nil when it's
     /// blank, which shows the server's own label again.
     static func serverName(from input: String?) -> String? {

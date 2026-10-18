@@ -131,25 +131,32 @@ struct PhoneServerSettingsView: View {
                 LabeledContent("Address", value: viewModel.serverUrl)
                 NavigationLink("Manage Servers") { ServerListView() }.foregroundStyle(.white)
             } header: { PhoneSettingsSectionHeader("Connection") } footer: {
-                if let renameError { Text(renameError) }
+                if let renameError {
+                    Text(renameError)
+                } else if store.activeAccount != nil {
+                    Text("Tap Server to rename it for this profile.")
+                }
             }
         }.settingsListChrome().navigationTitle("")
             .alert("Rename Server", isPresented: $renaming) {
-                TextField(viewModel.serverDisplayName, text: $serverName)
+                TextField(defaultLabel, text: $serverName)
                 Button("Save") { rename(to: serverName) }
                 if store.activeAccount?.serverName != nil {
                     Button("Use Server Name") { rename(to: nil) }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This name shows for this profile only, under its profile picture and here. Leave it blank to use the server’s own name.")
+                Text("This name shows for this profile only, under its profile picture and here. Leave it blank to show “\(defaultLabel)”.")
             }
     }
 
+    /// What a blank name shows under the profile, as the field's placeholder.
+    private var defaultLabel: String { store.activeAccount?.defaultServerLabel ?? viewModel.serverDisplayName }
+
     private func beginRename() {
         renameError = nil
-        // Starts empty without a name, with the server's own name as the
-        // placeholder, so saving untouched never pins that name to the profile.
+        // Starts empty without a name, with the label a blank name shows as
+        // the placeholder, so saving untouched never pins a name to the profile.
         serverName = store.activeAccount?.serverName ?? ""
         renaming = true
     }
@@ -418,9 +425,7 @@ struct PhoneSavedAccountCards: View {
     }
 
     private func serverLabel(for account: TVSavedAccount) -> String {
-        if let name = account.serverName { return name }
-        if MediaServerProvider.forServerID(account.serverID).usesNativeUser { return MediaServerProvider.forServerID(account.serverID).name }
-        return registry.entry(with: account.serverID)?.displayName ?? "Media server"
+        account.serverName ?? account.defaultServerLabel
     }
 
     private func activateProfile(_ account: TVSavedAccount) {
