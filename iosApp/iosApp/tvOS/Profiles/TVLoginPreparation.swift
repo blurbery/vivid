@@ -263,27 +263,25 @@ final class TVLoginPreparation {
     private func waitForStudiosNetworks() async {
         let store = StudiosNetworksStore.shared
         // Clear a status left from another account or profile, then start or
-        // join this one's load.
+        // join this one's load. That runs before the first check below, and a
+        // retry shows as loading straight away.
         store.refresh()
         Task { await store.loadIfNeeded() }
         let start = Date()
-        var sawLoading = false
         while !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(250))
             let elapsed = Date().timeIntervalSince(start)
             guard elapsed < Self.studiosNetworksWait else { return }
             switch store.status {
             // Results on screen, saved or fresh, are enough. A refresh of saved
             // results carries on behind Home.
             case .ready: return
-            case .loading: sawLoading = true
-            // A retry shows as loading as soon as it starts, so a failure or
-            // missing account from before it is trusted only once this load
-            // has run, or if it never starts.
-            case .failed, .needsAccount: if sawLoading || elapsed > 5 { return }
+            // With no load running, this attempt has ended.
+            case .failed, .needsAccount: if !store.isLoading { return }
+            case .loading: break
             // A load that hasn't started within a few seconds isn't coming.
             case .idle: if elapsed > 5 { return }
             }
-            try? await Task.sleep(for: .milliseconds(250))
         }
     }
 

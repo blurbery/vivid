@@ -268,6 +268,8 @@ final class StudiosNetworksStore {
     private var listsLoaded = 0
     private var libraryIsRead = false
     private var loadTask: Task<Void, Never>?
+    /// A load or refresh is running for the current server and profile.
+    var isLoading: Bool { loadTask != nil }
     private let defaults = SharedDefaults.shared
     @ObservationIgnored private var movieLookupCache: (scope: Scope, modified: Date, lookup: LibraryMovieLookup)?
     /// Changes whenever a movie lookup is saved, so open movie pages load
