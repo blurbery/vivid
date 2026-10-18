@@ -474,6 +474,9 @@ final class StudiosNetworksStore {
         // their expiry.
         let isReady = status == .ready
         if isReady, !artworkNeedsRefresh { return }
+        // A retry shows as loading straight away, so nothing waiting on it
+        // mistakes the last attempt's failure for this one's.
+        if status == .failed || status == .needsAccount { status = .loading }
         // One task covers the cache read and any load, so Home and Settings
         // asking at the same time share a single load.
         let task = Task { [weak self] in

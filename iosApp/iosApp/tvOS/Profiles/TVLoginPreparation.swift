@@ -276,9 +276,10 @@ final class TVLoginPreparation {
             // results carries on behind Home.
             case .ready: return
             case .loading: sawLoading = true
-            // A failure or missing account left by an earlier attempt is
-            // replaced by this load within a moment, so trust one only after.
-            case .failed, .needsAccount: if sawLoading || elapsed > 1 { return }
+            // A retry shows as loading as soon as it starts, so a failure or
+            // missing account from before it is trusted only once this load
+            // has run, or if it never starts.
+            case .failed, .needsAccount: if sawLoading || elapsed > 5 { return }
             // A load that hasn't started within a few seconds isn't coming.
             case .idle: if elapsed > 5 { return }
             }

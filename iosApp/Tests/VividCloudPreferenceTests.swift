@@ -2,8 +2,6 @@ import XCTest
 @testable import Vivid
 
 final class VividCloudPreferenceTests: XCTestCase {
-    /// Older Vivid builds write every `setting|` entry back to Silo's shared
-    /// rows, so Vivid's own Silo interface settings must never use that name.
     /// TMDb keys are retired: the vault deletes them and never restores one.
     /// No other plugin's key may be caught by that.
     @MainActor
@@ -14,6 +12,8 @@ final class VividCloudPreferenceTests: XCTestCase {
         XCTAssertFalse(VividCloudPreferences.isRetiredCredential("vivid.opensubtitles.key.v1.scope"))
     }
 
+    /// Older Vivid builds write every `setting|` entry back to Silo's shared
+    /// rows, so Vivid's own Silo interface settings must never use that name.
     @MainActor
     func testSiloInterfaceSettingsUseTheirOwnVaultName() {
         let siloMenu = VividCloudPreferences.settingName(serverId: "silo", profileId: "p", key: "nav.primary_menu")
