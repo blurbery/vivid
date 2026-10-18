@@ -61,7 +61,7 @@ struct StudioNetworkResult: Codable, Equatable {
 }
 
 /// Decodes a catalogue item together with the TMDb ID providers attach.
-private struct StudioNetworkIndexedItem: Decodable {
+private struct StudioNetworkIndexedItem: Decodable, Sendable {
     let item: BrowseItem
     let tmdbId: String?
     private enum Keys: String, CodingKey { case tmdbId }
@@ -75,9 +75,11 @@ private struct StudioNetworkIndexedItem: Decodable {
     }
 }
 
-private struct StudioNetworkIndexPage: Decodable {
+private struct StudioNetworkIndexPage: Decodable, Sendable {
     let items: [StudioNetworkIndexedItem]
     let hasMore: Bool?
+    /// Asked for on the first page only, so the rest can load together.
+    let total: Int?
 }
 
 private struct StudioNetworkResultsFile: Codable, Sendable {
@@ -666,6 +668,11 @@ final class StudiosNetworksStore {
         return index
     }
 
+    /// Library pages read at once once the first page has given the total.
+    private nonisolated static let concurrentLibraryPages = 4
+    /// 200 per page, the same shape as the app's browse queries.
+    private nonisolated static let libraryPageSize = 200
+
     /// Every library title of one type, keyed by TMDb ID and by title + year.
     /// Runs off the main actor: building the index folds every library
     /// title, which would stall scrolling during the daily refresh.
@@ -673,15 +680,14 @@ final class StudiosNetworksStore {
         type: String,
         report: @MainActor (String, Int) -> Void
     ) async throws -> [String: BrowseItem] {
-        var index: [String: BrowseItem] = [:]
-        var offset = 0
-        // 200 per page, the same shape as the app's browse queries.
-        for _ in 0..<500 {
-            try Task.checkCancellation()
-            let page = try await VividAPI.shared.catalog(query: [
-                "source": "query", "type": type, "offset": String(offset), "limit": "200",
-                "sort": "title", "order": "asc", "match": "all", "include_total": "false",
+        @Sendable func page(_ offset: Int, total: Bool) async throws -> StudioNetworkIndexPage {
+            try await VividAPI.shared.catalog(query: [
+                "source": "query", "type": type, "offset": String(offset), "limit": String(libraryPageSize),
+                "sort": "title", "order": "asc", "match": "all", "include_total": total ? "true" : "false",
             ], as: StudioNetworkIndexPage.self)
+        }
+        var index: [String: BrowseItem] = [:]
+        func add(_ page: StudioNetworkIndexPage) {
             for entry in page.items {
                 if let id = entry.tmdbId, !id.isEmpty, index[id] == nil { index[id] = entry.item }
                 // Servers that leave provider IDs out of lists still match here.
@@ -690,9 +696,43 @@ final class StudiosNetworksStore {
                     if index[key] == nil { index[key] = entry.item }
                 }
             }
-            offset += page.items.count
+        }
+        try Task.checkCancellation()
+        let first = try await page(0, total: true)
+        add(first)
+        var offset = first.items.count
+        var more = first.hasMore == true && !first.items.isEmpty
+        await report(type, offset)
+        // With a total and full pages, the rest load a few at a time and are
+        // added in title order. A server that sends smaller pages than asked,
+        // or no total, is read one page at a time below.
+        if more, first.items.count == libraryPageSize, let total = first.total, total > offset {
+            let offsets = Array(stride(from: offset, to: min(total, libraryPageSize * 500), by: libraryPageSize))
+            for start in stride(from: 0, to: offsets.count, by: concurrentLibraryPages) {
+                try Task.checkCancellation()
+                let batch = Array(offsets[start..<min(start + concurrentLibraryPages, offsets.count)])
+                let pages = try await withThrowingTaskGroup(of: (Int, StudioNetworkIndexPage).self) { group in
+                    for pageOffset in batch { group.addTask { (pageOffset, try await page(pageOffset, total: false)) } }
+                    var found: [Int: StudioNetworkIndexPage] = [:]
+                    for try await (pageOffset, result) in group { found[pageOffset] = result }
+                    return batch.compactMap { found[$0] }
+                }
+                for result in pages { add(result) }
+                guard let lastOffset = batch.last, let last = pages.last else { break }
+                offset = lastOffset + last.items.count
+                more = last.hasMore == true && !last.items.isEmpty
+                await report(type, offset)
+                if !more { break }
+            }
+        }
+        // Titles added while reading, or a server without a total.
+        for _ in 0..<500 where more {
+            try Task.checkCancellation()
+            let result = try await page(offset, total: false)
+            add(result)
+            offset += result.items.count
+            more = result.hasMore == true && !result.items.isEmpty
             await report(type, offset)
-            if page.hasMore != true || page.items.isEmpty { break }
         }
         return index
     }
