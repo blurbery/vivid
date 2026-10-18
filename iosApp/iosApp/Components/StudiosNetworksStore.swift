@@ -160,7 +160,7 @@ struct LibraryMovieLookup: Codable, Sendable {
 }
 
 /// Caps how many requests run at once. Each `run` waits for a free slot.
-private actor RequestGate {
+actor RequestGate {
     private var available: Int
     private var waiting: [CheckedContinuation<Void, Never>] = []
 

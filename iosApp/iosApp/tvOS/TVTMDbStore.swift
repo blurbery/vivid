@@ -424,13 +424,20 @@ final class TVTMDbStore {
         do {
             let (data, response) = try await session.data(for: request)
             guard let response = response as? HTTPURLResponse else { throw Failure.unavailable }
-            // The relay never blames a key: only a person's own key can be invalid.
-            if !credential.isEmpty, response.statusCode == 401 || response.statusCode == 403 { throw Failure.invalidKey }
-            guard response.statusCode == 200, data.count <= 2_000_000 else { throw Failure.unavailable }
+            if let failure = Self.failure(status: response.statusCode, usesOwnKey: !credential.isEmpty) { throw failure }
+            guard data.count <= 2_000_000 else { throw Failure.unavailable }
             return try JSONDecoder().decode(T.self, from: data)
         } catch is CancellationError { throw CancellationError() }
         catch let error as Failure { throw error }
         catch { throw Failure.unavailable }
+    }
+
+    /// What a response status means. The relay never blames a key: only a
+    /// person's own key can be invalid.
+    nonisolated static func failure(status: Int, usesOwnKey: Bool) -> Failure? {
+        if status == 200 { return nil }
+        if usesOwnKey, status == 401 || status == 403 { return .invalidKey }
+        return .unavailable
     }
 
     enum Failure: LocalizedError {
