@@ -241,7 +241,7 @@ final class StudiosNetworksStore {
 
     static let firstLoadNotice = "Setting up Studios & Networks for the first time. Vivid is reading your library and matching it with TMDb, which can take a few minutes on a large library. Keep Vivid open until it finishes. After this it loads instantly."
 
-    enum Status: Equatable { case idle, needsTMDB, loading, ready, failed }
+    enum Status: Equatable { case idle, needsAccount, loading, ready, failed }
 
     private(set) var status: Status = .idle
     private(set) var results: [String: StudioNetworkResult] = [:]
@@ -464,7 +464,7 @@ final class StudiosNetworksStore {
         let tmdb = TVTMDbStore.shared
         tmdb.reloadForCurrentProfile()
         guard tmdb.isConfigured else {
-            status = .needsTMDB
+            status = .needsAccount
             return
         }
         if let loadTask { await loadTask.value; return }

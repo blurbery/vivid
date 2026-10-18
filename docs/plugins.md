@@ -58,7 +58,7 @@ If you'd rather your lookups went straight to TMDb with your own key:
 2. Open your account settings, choose [API](https://www.themoviedb.org/settings/api) and request an API key for personal use. TMDb asks a few short questions about how you'll use it.
 3. Copy either the **API Key** or the **API Read Access Token**. Vivid accepts both.
 4. In Vivid, open **Settings → Plugins → TMDb**.
-5. Paste it into **API key or read access token** and choose **Save Connection**.
+5. Paste it into **Your API key or read access token (optional)** and choose **Save Connection**.
 6. Vivid checks it with TMDb. Once it works, Status shows **Your key**.
 
 On Apple TV the field is called **Your own API key (optional)**. The 32-character API Key is much quicker to type with the remote than the longer read access token.

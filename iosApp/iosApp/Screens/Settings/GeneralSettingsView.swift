@@ -28,7 +28,7 @@ struct GeneralSettingsView: View {
                 }
                 NavigationLink { PhoneStudiosNetworksSettingsView() } label: {
                     LabeledContent("Studios & Networks",
-                                   value: !TVTMDbStore.shared.isConfigured ? "Needs TMDb"
+                                   value: !TVTMDbStore.shared.isConfigured ? "Needs sign-in"
                                        : StudiosNetworksStore.shared.isEnabled ? "On" : "Off")
                 }
                 #endif
