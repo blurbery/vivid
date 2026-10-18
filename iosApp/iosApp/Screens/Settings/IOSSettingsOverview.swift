@@ -148,8 +148,9 @@ struct PhoneServerSettingsView: View {
 
     private func beginRename() {
         renameError = nil
-        serverName = store.activeAccount?.serverName
-            ?? (viewModel.serverDisplayName == viewModel.serverUrl ? "" : viewModel.serverDisplayName)
+        // Starts empty without a name, with the server's own name as the
+        // placeholder, so saving untouched never pins that name to the profile.
+        serverName = store.activeAccount?.serverName ?? ""
         renaming = true
     }
 

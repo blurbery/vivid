@@ -459,7 +459,9 @@ private struct TVProfileServerNameView: View {
         self.account = account
         self.serverName = serverName
         self.serverURL = serverURL
-        _name = State(initialValue: account.serverName ?? (serverName == serverURL ? "" : serverName))
+        // Starts empty without a name, with the server's own name as the
+        // placeholder, so saving untouched never pins that name to the profile.
+        _name = State(initialValue: account.serverName ?? "")
     }
 
     var body: some View {
