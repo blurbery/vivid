@@ -240,6 +240,7 @@ final class TVLoginPreparation {
             // render. Fresh sections and libraries must not gate the handoff.
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
             guard await StartupContentPrefetcher.prefetchAuthenticatedContent() else { throw CancellationError() }
+            await waitForStudiosNetworks()
             try Task.checkCancellation()
             guard account == (await TokenStore.shared.refreshAccountIdentity()) else { throw CancellationError() }
             ready = true
@@ -249,6 +250,26 @@ final class TVLoginPreparation {
             Logger(subsystem: "Vivid", category: "LoginPreparation")
                 .error("Profile preparation failed: \(String(describing: type(of: error)), privacy: .public)")
             fail(LoginPreparationFailure.classify(error, enteredPIN: checkedPIN))
+        }
+    }
+
+    /// Longest Home waits for a first Studios & Networks load.
+    static let studiosNetworksWait: TimeInterval = 120
+
+    /// Home waits for Studios & Networks, so its row is there when Home first
+    /// appears. Saved results are ready almost at once, so this only takes a
+    /// while the first time for a server and profile. A failure, or a load
+    /// still running after the limit, never holds Home: the row fills in later.
+    private func waitForStudiosNetworks() async {
+        let store = StudiosNetworksStore.shared
+        let start = Date()
+        while !Task.isCancelled, Date().timeIntervalSince(start) < Self.studiosNetworksWait {
+            switch store.status {
+            case .ready, .failed, .needsAccount: return
+            // A load that hasn't started within a few seconds isn't coming.
+            case .idle where Date().timeIntervalSince(start) > 5: return
+            case .idle, .loading: try? await Task.sleep(for: .milliseconds(250))
+            }
         }
     }
 
