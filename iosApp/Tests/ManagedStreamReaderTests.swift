@@ -313,6 +313,24 @@ final class ManagedStreamReaderTests: XCTestCase {
         XCTAssertTrue(ScriptedOrigin.requests.isEmpty)
     }
 
+    /// Lucid can cancel a stream from another thread just after closing it.
+    /// That cancel must find nothing rather than reach the released reader.
+    func testCancelAfterCloseFindsNoReader() {
+        var reader: VividManagedStreamReader? = makeReader()
+        weak var released = reader
+        let cookie = VividManagedStreamProtocol.track(reader!)
+        reader = nil
+        XCTAssertNotNil(VividManagedStreamProtocol.reader(for: cookie))
+
+        VividManagedStreamProtocol.close(cookie)
+        XCTAssertNil(released)
+        XCTAssertNil(VividManagedStreamProtocol.reader(for: cookie))
+
+        let next = VividManagedStreamProtocol.track(makeReader())
+        XCTAssertNotEqual(next, cookie)
+        VividManagedStreamProtocol.close(next)
+    }
+
     func testRejectedBearerAtOpenFailsFastWithoutRefreshing() {
         ScriptedOrigin.respond = { _, _ in ScriptedOrigin.Reply(status: 401) }
         let reader = makeReader(refresh: { XCTFail("Open must not refresh"); return nil })

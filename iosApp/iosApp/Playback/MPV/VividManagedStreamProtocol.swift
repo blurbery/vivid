@@ -40,10 +40,38 @@ enum VividManagedStreamProtocol {
         lock.lock(); defer { lock.unlock() }
         return sources[id]
     }
-}
 
-private func reader(_ cookie: UnsafeMutableRawPointer?) -> VividManagedStreamReader? {
-    cookie.map { Unmanaged<VividManagedStreamReader>.fromOpaque($0).takeUnretainedValue() }
+    // MARK: Open streams
+
+    /// Open readers by the cookie Lucid passes to the stream callbacks. Lucid
+    /// detaches a stream's cancel callback only after `close_fn` returns, so a
+    /// player teardown on another thread can still cancel a stream it has
+    /// just closed. The cookie is therefore a number that is never reused,
+    /// not the reader's address, and a late cancel finds nothing.
+    nonisolated(unsafe) private static var readers: [UInt: VividManagedStreamReader] = [:]
+    nonisolated(unsafe) private static var lastCookie: UInt = 0
+
+    /// Keeps `reader` until `close` and returns its cookie.
+    static func track(_ reader: VividManagedStreamReader) -> UnsafeMutableRawPointer? {
+        lock.lock(); defer { lock.unlock() }
+        lastCookie += 1
+        readers[lastCookie] = reader
+        return UnsafeMutableRawPointer(bitPattern: lastCookie)
+    }
+
+    /// The reader for `cookie`, or nil once it is closed.
+    static func reader(for cookie: UnsafeMutableRawPointer?) -> VividManagedStreamReader? {
+        lock.lock(); defer { lock.unlock() }
+        return readers[UInt(bitPattern: cookie)]
+    }
+
+    /// Ends the reader for `cookie` and lets it go.
+    static func close(_ cookie: UnsafeMutableRawPointer?) {
+        lock.lock()
+        let reader = readers.removeValue(forKey: UInt(bitPattern: cookie))
+        lock.unlock()
+        reader?.cancel()
+    }
 }
 
 private let openStream: mpv_stream_cb_open_ro_fn = { _, uri, info in
@@ -55,24 +83,19 @@ private let openStream: mpv_stream_cb_open_ro_fn = { _, uri, info in
         stream.cancel()
         return MPV_ERROR_LOADING_FAILED.rawValue
     }
-    info.pointee.cookie = Unmanaged.passRetained(stream).toOpaque()
+    info.pointee.cookie = VividManagedStreamProtocol.track(stream)
     info.pointee.read_fn = { cookie, buffer, count in
-        guard let buffer, let stream = reader(cookie) else { return -1 }
+        guard let buffer, let stream = VividManagedStreamProtocol.reader(for: cookie) else { return -1 }
         return stream.read(into: buffer, count: Int(min(count, UInt64(Int32.max))))
     }
     info.pointee.seek_fn = { cookie, offset in
-        reader(cookie)?.seek(to: offset) ?? Int64(MPV_ERROR_GENERIC.rawValue)
+        VividManagedStreamProtocol.reader(for: cookie)?.seek(to: offset) ?? Int64(MPV_ERROR_GENERIC.rawValue)
     }
     info.pointee.size_fn = { cookie in
-        reader(cookie)?.size ?? Int64(MPV_ERROR_UNSUPPORTED.rawValue)
+        VividManagedStreamProtocol.reader(for: cookie)?.size ?? Int64(MPV_ERROR_UNSUPPORTED.rawValue)
     }
-    info.pointee.cancel_fn = { cookie in reader(cookie)?.cancel() }
-    info.pointee.close_fn = { cookie in
-        guard let cookie else { return }
-        let stream = Unmanaged<VividManagedStreamReader>.fromOpaque(cookie)
-        stream.takeUnretainedValue().cancel()
-        stream.release()
-    }
+    info.pointee.cancel_fn = { cookie in VividManagedStreamProtocol.reader(for: cookie)?.cancel() }
+    info.pointee.close_fn = { cookie in VividManagedStreamProtocol.close(cookie) }
     return 0
 }
 #endif
