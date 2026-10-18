@@ -243,8 +243,7 @@ struct TVSavedAccountCards: View {
         }
     }
     private func serverLabel(for account: TVSavedAccount) -> String {
-        if MediaServerProvider.forServerID(account.serverID).usesNativeUser { return MediaServerProvider.forServerID(account.serverID).name }
-        return registry.entry(with: account.serverID)?.displayName ?? "Media server"
+        account.serverName ?? account.defaultServerLabel
     }
 
     private func tile(_ account: TVSavedAccount) -> some View {

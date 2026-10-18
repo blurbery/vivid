@@ -174,3 +174,31 @@ final class AccountMetadataDeletionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 }
+
+final class ProfileServerNameTests: XCTestCase {
+    func testSavedProfileFromBeforeServerNamesDecodesWithoutOne() throws {
+        let data = Data(#"{"id":"a","serverID":"s","userID":"1","username":"Test","requiresLogin":false}"#.utf8)
+        let account = try JSONDecoder().decode(TVSavedAccount.self, from: data)
+        XCTAssertNil(account.serverName)
+    }
+
+    func testServerNameTravelsWithItsProfileThroughTheVault() throws {
+        var account = TVSavedAccount(id: "a", serverID: "s", userID: "1", username: "Test", profile: nil, requiresLogin: false)
+        account.serverName = "Lounge"
+        let envelope = VividCloudAccountEnvelope(
+            account: account,
+            session: nil,
+            server: ServerEntry(id: "s", url: "https://example.invalid", fetchedName: "Test", lastUsedAt: .distantPast),
+            pinRecord: nil,
+            updatedAt: Date(timeIntervalSince1970: 1)
+        )
+        let decoded = try JSONDecoder().decode(VividCloudAccountEnvelope.self, from: JSONEncoder().encode(envelope))
+        XCTAssertEqual(decoded.account.serverName, "Lounge")
+    }
+
+    func testTypedServerNameIsTrimmedAndBlankClearsIt() {
+        XCTAssertEqual(TVSavedAccount.serverName(from: "  Lounge  "), "Lounge")
+        XCTAssertNil(TVSavedAccount.serverName(from: "   "))
+        XCTAssertNil(TVSavedAccount.serverName(from: nil))
+    }
+}
