@@ -312,7 +312,7 @@ struct HomeView: View {
                     PhoneDiscoverySpotlight(sections: displayedSections.isEmpty ? [] : viewModel.sections, height: min(650, max(420, geometry.size.height * 0.68)) - geometry.safeAreaInsets.top, topSafeAreaInset: geometry.safeAreaInsets.top) { item in
                         navigateToDetail(item.type == "episode" ? (item.seriesId ?? item.contentId) : item.contentId, item)
                     }
-                    // Loads Studios & Networks, and again once a TMDb key is connected.
+                    // Loads Studios & Networks, and again once TMDb is available for the account.
                     .task(id: TVTMDbStore.shared.isConfigured) { await StudiosNetworksStore.shared.loadIfNeeded() }
                     PhoneStudiosNetworksRow()
                     #endif

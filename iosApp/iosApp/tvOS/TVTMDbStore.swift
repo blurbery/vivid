@@ -12,7 +12,15 @@ private final class TMDbRedirectPolicy: NSObject, URLSessionTaskDelegate, @unche
 @Observable @MainActor
 final class TVTMDbStore {
     static let shared = TVTMDbStore()
+    /// Vivid's relay answers TMDb lookups with Vivid's own token, so TMDb
+    /// features work without a key. A person's own key goes direct to TMDb.
+    nonisolated static let relayBase = "https://tmdb.vividapp.co/3/"
+    nonisolated static let directBase = "https://api.themoviedb.org/3/"
+    /// TMDb features are available: there's an active account, using either
+    /// the relay or the person's own key.
     private(set) var isConfigured = false
+    /// A key of the person's own is saved for this account and profile.
+    private(set) var usesOwnKey = false
     private(set) var revision = 0
     private let keychain = SharedKeychain(audience: .currentUser)
     private var credentialKey: String {
@@ -66,6 +74,7 @@ final class TVTMDbStore {
         guard VividCloudPreferences.matchingActiveAccount != nil else {
             credential = ""
             isConfigured = false
+            usesOwnKey = false
             loadedCredentialKey = nil
             invalidate()
             return
@@ -77,7 +86,8 @@ final class TVTMDbStore {
         }
         loadedCredentialKey = key
         credential = keychain.get(key) ?? ""
-        isConfigured = !credential.isEmpty
+        usesOwnKey = !credential.isEmpty
+        isConfigured = true
         invalidate()
     }
 
@@ -95,6 +105,7 @@ final class TVTMDbStore {
         guard key == credentialKey, context == contextKey else { throw CancellationError() }
         guard keychain.set(candidate, for: key) else { throw Failure.storage }
         credential = candidate
+        usesOwnKey = true
         isConfigured = true
         invalidate()
         VividCloudPreferences.shared.schedule()
@@ -104,8 +115,9 @@ final class TVTMDbStore {
         reloadForCurrentProfile()
         guard VividCloudPreferences.matchingActiveAccount != nil else { throw Failure.unavailable }
         guard keychain.delete(credentialKey) else { throw Failure.storage }
+        // Back to the relay, so TMDb features stay on.
         credential = ""
-        isConfigured = false
+        usesOwnKey = false
         invalidate()
         VividCloudPreferences.shared.schedule()
     }
@@ -305,8 +317,8 @@ final class TVTMDbStore {
 
     // MARK: Ratings
 
-    /// TMDb's user score for a movie or series, out of 10, or nil without a
-    /// key, without a TMDb match, or when nobody has rated the title. Kept for
+    /// TMDb's user score for a movie or series, out of 10, or nil without an
+    /// account, without a TMDb match, or when nobody has rated the title. Kept for
     /// a day per title, like collection lookups, and a miss is cached too.
     func rating(for detail: ItemDetail) async throws -> Double? {
         reloadForCurrentProfile()
@@ -394,18 +406,26 @@ final class TVTMDbStore {
         guard isConfigured, contextKey == expected else { throw CancellationError() }
     }
 
-    private func request<T: Decodable>(_ path: String, credential: String, query: [String:String] = [:]) async throws -> T {
-        var components = URLComponents(string: "https://api.themoviedb.org/3/" + path)!
+    /// Without a key of the person's own, the request goes to Vivid's relay
+    /// with no credential at all. A key goes only to TMDb itself.
+    nonisolated static func urlRequest(_ path: String, credential: String, query: [String: String] = [:]) -> URLRequest {
+        var components = URLComponents(string: (credential.isEmpty ? relayBase : directBase) + path)!
         let isAPIKey = credential.range(of: "^[A-Fa-f0-9]{32}$", options: .regularExpression) != nil
         if !query.isEmpty { components.queryItems = query.map { URLQueryItem(name:$0.key,value:$0.value) } }
         if isAPIKey { components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "api_key", value: credential)] }
         var request = URLRequest(url: components.url!)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if !isAPIKey { request.setValue("Bearer " + credential, forHTTPHeaderField: "Authorization") }
+        if !credential.isEmpty, !isAPIKey { request.setValue("Bearer " + credential, forHTTPHeaderField: "Authorization") }
+        return request
+    }
+
+    private func request<T: Decodable>(_ path: String, credential: String, query: [String:String] = [:]) async throws -> T {
+        let request = Self.urlRequest(path, credential: credential, query: query)
         do {
             let (data, response) = try await session.data(for: request)
             guard let response = response as? HTTPURLResponse else { throw Failure.unavailable }
-            if response.statusCode == 401 || response.statusCode == 403 { throw Failure.invalidKey }
+            // The relay never blames a key: only a person's own key can be invalid.
+            if !credential.isEmpty, response.statusCode == 401 || response.statusCode == 403 { throw Failure.invalidKey }
             guard response.statusCode == 200, data.count <= 2_000_000 else { throw Failure.unavailable }
             return try JSONDecoder().decode(T.self, from: data)
         } catch is CancellationError { throw CancellationError() }

@@ -89,16 +89,16 @@ struct PhoneTMDbSettingsView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "TMDb", subtitle: "Configure your personal TMDB API to show trailers and TMDB ratings for your media.", systemImage: "film.stack")
+            SettingsPageHeader(title: "TMDb", subtitle: "Trailers, TMDB ratings, collections and Studios & Networks work without a key. You can add your own TMDB key instead.", systemImage: "film.stack")
                 .settingsPageHeaderRow()
             Section {
                 LabeledContent("Status") {
                     HStack(spacing: 7) {
                         if store.isConfigured && !busy { Circle().fill(.green).frame(width: 8, height: 8).accessibilityHidden(true) }
-                        Text(busy ? "Connecting…" : store.isConfigured ? "Connected" : "Not configured")
+                        Text(busy ? "Connecting…" : store.usesOwnKey ? "Your key" : store.isConfigured ? "Built in" : "Not available")
                     }
                 }
-                SecureField("API key or read access token", text: $credential)
+                SecureField("Your API key or read access token (optional)", text: $credential)
                     .autocorrectionDisabled()
                     #if os(iOS)
                     .textInputAutocapitalization(.never)
@@ -115,9 +115,9 @@ struct PhoneTMDbSettingsView: View {
                         } catch { message = error.localizedDescription }
                     }
                 }.disabled(busy || credential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if store.isConfigured {
-                    Button("Disconnect", role: .destructive) {
-                        do { try store.disconnect(); message = nil }
+                if store.usesOwnKey {
+                    Button("Remove Your Key", role: .destructive) {
+                        do { try store.disconnect(); message = "Removed. Vivid's built-in TMDB access is used again." }
                         catch { message = error.localizedDescription }
                     }.disabled(busy)
                 }

@@ -159,9 +159,24 @@ struct LibraryMovieLookup: Codable, Sendable {
     }
 }
 
+/// Caps how many requests run at once. Each `run` waits for a free slot.
+private actor RequestGate {
+    private var available: Int
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) { available = limit }
+
+    func run<T: Sendable>(_ operation: @Sendable () async throws -> T) async throws -> T {
+        if available > 0 { available -= 1 } else { await withCheckedContinuation { waiting.append($0) } }
+        defer { if waiting.isEmpty { available += 1 } else { waiting.removeFirst().resume() } }
+        try Task.checkCancellation()
+        return try await operation()
+    }
+}
+
 /// Loads, matches, caches and remembers the pinned Studios & Networks row.
 ///
-/// Uses the profile's own TMDb key. TMDb supplies each brand's logo and its
+/// Uses Vivid's TMDb relay, or the profile's own key. TMDb supplies each brand's logo and its
 /// popularity-ordered titles; only titles in the library are kept, matched by
 /// TMDb ID when the server lists one and otherwise by exact title and year.
 /// Results and the library index are cached per server and profile, so Home
@@ -191,8 +206,10 @@ final class StudiosNetworksStore {
     /// Least time between poster refreshes, in case the server's URLs come
     /// back already near expiry or the device clock runs ahead.
     static let artworkRefreshCooldown: TimeInterval = 15 * 60
-    /// Brands matched at once. Each runs up to four lists in parallel.
-    static let concurrentBrands = 3
+    /// TMDb requests in flight at once across every brand, below the 15 the
+    /// load used before, so a refresh with a person's own key stays inside
+    /// TMDb's rate limit.
+    nonisolated static let concurrentRequests = 12
 
     static let catalogue: [StudioNetworkBrand] = [
         .init(id: "netflix", name: "Netflix", kind: .network, tmdbId: 213, watchProviderIds: [8]),
@@ -246,6 +263,9 @@ final class StudiosNetworksStore {
     private var artworkExpiresAt: Date?
     private var artworkRefreshedAt: Date?
     private var titlesRead: [String: Int] = [:]
+    /// Brands whose TMDb lists have arrived in the current load.
+    private var listsLoaded = 0
+    private var libraryIsRead = false
     private var loadTask: Task<Void, Never>?
     private let defaults = SharedDefaults.shared
     @ObservationIgnored private var movieLookupCache: (scope: Scope, modified: Date, lookup: LibraryMovieLookup)?
@@ -491,7 +511,14 @@ final class StudiosNetworksStore {
     }
 
     private func load(_ scope: Scope) async {
+        listsLoaded = 0
+        libraryIsRead = false
         do {
+            // TMDb's lists don't depend on the library, so they download while
+            // the library is read and are matched once both are in. Any TMDb
+            // failure throws to the catch below, so a partial result never
+            // replaces good saved results or resets the refresh timer.
+            async let lists = Self.brandLists(Self.catalogue) { [weak self] in self?.noteListsLoaded(scope) }
             let index: StudioNetworkIndexFile
             if let cached = await Self.read(StudioNetworkIndexFile.self, scope.cacheURL("library")),
                Date().timeIntervalSince(cached.savedAt) < Self.refreshInterval,
@@ -501,27 +528,9 @@ final class StudiosNetworksStore {
                 index = try await readLibrary(scope, reportsProgress: true)
             }
             await Self.saveMovieLookup(index, to: scope.cacheURL("movies"))
-
-            // Any TMDb failure throws to the catch below, so a partial result
-            // never replaces good saved results or resets the refresh timer.
-            // Brands load a few at a time to stay well inside TMDb's rate limit.
-            var loaded: [String: StudioNetworkResult] = [:]
-            var pending = Self.catalogue[...]
-            try await withThrowingTaskGroup(of: (String, StudioNetworkResult).self) { group in
-                for _ in 0..<Self.concurrentBrands {
-                    guard let brand = pending.popFirst() else { break }
-                    group.addTask { (brand.id, try await Self.result(for: brand, index: index)) }
-                }
-                while let (id, result) = try await group.next() {
-                    loaded[id] = result
-                    if loadedScope == scope {
-                        progressText = "Matching with TMDb… \(loaded.count) of \(Self.catalogue.count)"
-                    }
-                    if let brand = pending.popFirst() {
-                        group.addTask { (brand.id, try await Self.result(for: brand, index: index)) }
-                    }
-                }
-            }
+            libraryIsRead = true
+            if loadedScope == scope { showMatchingProgress() }
+            let loaded = await Self.matched(try await lists, index: index)
             try Task.checkCancellation()
             guard loadedScope == scope else { return }
             let savedAt = Date()
@@ -539,6 +548,18 @@ final class StudiosNetworksStore {
             // Keep showing saved results if only the background refresh failed.
             if results.isEmpty { status = .failed }
         }
+    }
+
+    private func noteListsLoaded(_ scope: Scope) {
+        guard loadedScope == scope else { return }
+        listsLoaded += 1
+        showMatchingProgress()
+    }
+
+    /// Library progress shows until the library is read, then TMDb's.
+    private func showMatchingProgress() {
+        guard libraryIsRead, status != .ready else { return }
+        progressText = "Matching with TMDb… \(listsLoaded) of \(Self.catalogue.count)"
     }
 
     // MARK: Poster refresh
@@ -722,23 +743,66 @@ final class StudiosNetworksStore {
         }
     }
 
-    private nonisolated static func result(for brand: StudioNetworkBrand, index: StudioNetworkIndexFile) async throws -> StudioNetworkResult {
+    /// One brand's TMDb lists, before they're matched with the library.
+    struct BrandLists: Sendable {
+        var logoURL: URL?
+        var series: [TVTMDbStore.DiscoverPage.Result] = []
+        var recentSeries: [TVTMDbStore.DiscoverPage.Result] = []
+        var movies: [TVTMDbStore.DiscoverPage.Result] = []
+        var recentMovies: [TVTMDbStore.DiscoverPage.Result] = []
+    }
+
+    /// Every brand's lists at once. The request gate, not the brand count,
+    /// limits how much reaches TMDb.
+    private nonisolated static func brandLists(
+        _ brands: [StudioNetworkBrand],
+        loaded: @escaping @MainActor () -> Void
+    ) async throws -> [String: BrandLists] {
         let today = Date()
         let from = dayFormatter.string(from: Calendar.current.date(byAdding: .month, value: -12, to: today) ?? today)
         let to = dayFormatter.string(from: today)
+        let gate = RequestGate(limit: concurrentRequests)
+        return try await withThrowingTaskGroup(of: (String, BrandLists).self) { group in
+            for brand in brands {
+                group.addTask { (brand.id, try await lists(for: brand, from: from, to: to, gate: gate)) }
+            }
+            var all: [String: BrandLists] = [:]
+            for try await (id, found) in group {
+                all[id] = found
+                await loaded()
+            }
+            return all
+        }
+    }
 
+    private nonisolated static func lists(
+        for brand: StudioNetworkBrand, from: String, to: String, gate: RequestGate
+    ) async throws -> BrandLists {
         let (seriesQuery, movieQuery) = discoverQueries(for: brand)
         let recentSeriesQuery = seriesQuery.merging(["air_date.gte": from, "air_date.lte": to]) { $1 }
         let recentMovieQuery = movieQuery?.merging(["primary_release_date.gte": from, "primary_release_date.lte": to]) { $1 }
 
-        async let logo = logoURL(for: brand)
-        async let series = matches("tv", seriesQuery, index.series)
-        async let recentSeries = matches("tv", recentSeriesQuery, index.series)
-        async let movies = matches("movie", movieQuery, index.movies)
-        async let recentMovies = matches("movie", recentMovieQuery, index.movies)
+        async let logo = logoURL(for: brand, gate: gate)
+        async let series = discoverResults("tv", seriesQuery, gate: gate)
+        async let recentSeries = discoverResults("tv", recentSeriesQuery, gate: gate)
+        async let movies = discoverResults("movie", movieQuery, gate: gate)
+        async let recentMovies = discoverResults("movie", recentMovieQuery, gate: gate)
+        return try await BrandLists(logoURL: logo, series: series, recentSeries: recentSeries,
+                                    movies: movies, recentMovies: recentMovies)
+    }
 
-        let allSeries = try await series
-        let allMovies = try await movies
+    /// Matches every brand's lists with the library, off the main actor.
+    private nonisolated static func matched(
+        _ lists: [String: BrandLists], index: StudioNetworkIndexFile
+    ) async -> [String: StudioNetworkResult] {
+        await Task.detached(priority: .utility) {
+            lists.mapValues { result(for: $0, index: index) }
+        }.value
+    }
+
+    nonisolated static func result(for lists: BrandLists, index: StudioNetworkIndexFile) -> StudioNetworkResult {
+        let allSeries = matches(lists.series, index.series)
+        let allMovies = matches(lists.movies, index.movies)
         var all: [(item: BrowseItem, popularity: Double)] = []
         var seen = Set<String>()
         for entry in (allMovies + allSeries).sorted(by: { $0.popularity > $1.popularity })
@@ -746,20 +810,22 @@ final class StudiosNetworksStore {
             all.append(entry)
         }
         return StudioNetworkResult(
-            logoURL: try await logo,
+            logoURL: lists.logoURL,
             movies: allMovies.map(\.item),
             series: allSeries.map(\.item),
-            recentSeries: try await recentSeries.map(\.item),
-            recentMovies: try await recentMovies.map(\.item),
+            recentSeries: matches(lists.recentSeries, index.series).map(\.item),
+            recentMovies: matches(lists.recentMovies, index.movies).map(\.item),
             all: Array(all.prefix(gridLimit)).map(\.item),
             matchCount: all.count
         )
     }
 
-    private nonisolated static func logoURL(for brand: StudioNetworkBrand) async throws -> URL? {
+    private nonisolated static func logoURL(for brand: StudioNetworkBrand, gate: RequestGate) async throws -> URL? {
         guard !brand.usesWordmark else { return nil }
         return try await retryingOnce {
-            try await TVTMDbStore.shared.logoURL(kind: brand.kind == .network ? "network" : "company", id: brand.tmdbId)
+            try await gate.run {
+                try await TVTMDbStore.shared.logoURL(kind: brand.kind == .network ? "network" : "company", id: brand.tmdbId)
+            }
         }
     }
 
@@ -776,26 +842,40 @@ final class StudiosNetworksStore {
         }
     }
 
-    /// Library matches for one TMDb discover list, in popularity order.
-    private nonisolated static func matches(
-        _ media: String,
-        _ query: [String: String]?,
-        _ index: [String: BrowseItem]
-    ) async throws -> [(item: BrowseItem, popularity: Double)] {
+    /// Every result of one TMDb discover list, in popularity order. The first
+    /// page says how many there are, and the rest load together.
+    private nonisolated static func discoverResults(
+        _ media: String, _ query: [String: String]?, gate: RequestGate
+    ) async throws -> [TVTMDbStore.DiscoverPage.Result] {
         guard let query else { return [] }
+        @Sendable func page(_ number: Int) async throws -> TVTMDbStore.DiscoverPage {
+            try await retryingOnce {
+                try await gate.run { try await TVTMDbStore.shared.discover(media: media, query: query, page: number) }
+            }
+        }
+        let first = try await page(1)
+        let last = min(pagesPerList, first.totalPages ?? 1)
+        guard last > 1 else { return first.results }
+        let rest = try await withThrowingTaskGroup(of: (Int, [TVTMDbStore.DiscoverPage.Result]).self) { group in
+            for number in 2...last { group.addTask { (number, try await page(number).results) } }
+            var pages: [Int: [TVTMDbStore.DiscoverPage.Result]] = [:]
+            for try await (number, results) in group { pages[number] = results }
+            return (2...last).flatMap { pages[$0] ?? [] }
+        }
+        return first.results + rest
+    }
+
+    /// Library matches for one TMDb list, in its popularity order.
+    nonisolated static func matches(
+        _ results: [TVTMDbStore.DiscoverPage.Result],
+        _ index: [String: BrowseItem]
+    ) -> [(item: BrowseItem, popularity: Double)] {
         var found: [(item: BrowseItem, popularity: Double)] = []
         var seen = Set<String>()
-        for page in 1...pagesPerList {
-            try Task.checkCancellation()
-            let response = try await retryingOnce {
-                try await TVTMDbStore.shared.discover(media: media, query: query, page: page)
+        for result in results {
+            if let item = lookup(result, in: index), seen.insert(item.contentId).inserted {
+                found.append((item, result.popularity ?? 0))
             }
-            for result in response.results {
-                if let item = lookup(result, in: index), seen.insert(item.contentId).inserted {
-                    found.append((item, result.popularity ?? 0))
-                }
-            }
-            if page >= (response.totalPages ?? 1) { break }
         }
         return found
     }

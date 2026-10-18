@@ -21,15 +21,15 @@ struct TVTMDbSettingsView: View {
                         Text("TMDb")
                             .font(.tvSettings(40, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
-                        Text("Configure your personal TMDB API to show trailers and TMDB ratings for your media.")
+                        Text("Trailers, TMDB ratings, collections and Studios & Networks work without a key. You can add your own TMDB key instead.")
                             .font(.tvSettings(20)).foregroundStyle(.secondary)
                     }
                 }.padding(.horizontal, TVSettingsLayout.scaled(24)).padding(.bottom, TVSettingsLayout.scaled(18))
                 TVSettingsSectionHeader("TMDB CONNECTION")
                 TVSettingsGroup {
-                    TVSettingsInfoRow(title: "Status", value: busy ? "Connecting…" : (store.isConfigured ? "Connected" : "Not configured"), showsConnectedDot: store.isConfigured && !busy)
+                    TVSettingsInfoRow(title: "Status", value: busy ? "Connecting…" : (store.usesOwnKey ? "Your key" : store.isConfigured ? "Built in" : "Not available"), showsConnectedDot: store.isConfigured && !busy)
                     if let message { TVSettingsFooter(message).padding(.horizontal, TVSettingsLayout.scaled(24)) }
-                    TVSettingsFieldRow(title: "Personal API key", detail: "You can also use your API Read Access Token.") {
+                    TVSettingsFieldRow(title: "Your own API key (optional)", detail: "You can also use your API Read Access Token.") {
                         SecureField("API key or read access token", text: $credential)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .disabled(busy)
@@ -49,24 +49,24 @@ struct TVTMDbSettingsView: View {
                             do {
                                 try await store.connect(candidate)
                                 credential = ""
-                                message = "Connected. TMDB trailers and ratings are enabled."
+                                message = "Connected. TMDB requests now use your own key."
                             } catch is CancellationError {
                                 message = "Connection interrupted. Please try saving again."
                             } catch { message = error.localizedDescription }
                         }
                     } label: { TVSettingsRowLabel(title: busy ? "Connecting…" : "Save Connection") }
                     .buttonStyle(TVSettingsPaneRowStyle())
-                    if store.isConfigured {
+                    if store.usesOwnKey {
                         Button {
-                            do { try store.disconnect(); credential = ""; message = "Disconnected. Trailers and ratings are hidden; More Like This still uses your library." }
+                            do { try store.disconnect(); credential = ""; message = "Removed. Vivid's built-in TMDB access is used again." }
                             catch { message = error.localizedDescription }
-                        } label: { TVSettingsRowLabel(title: "Disconnect") }
+                        } label: { TVSettingsRowLabel(title: "Remove Your Key") }
                         .buttonStyle(TVSettingsPaneRowStyle())
                         .disabled(busy)
                     }
                 }
-                TVSettingsFooter("More Like This works without a key, using genres, studios and networks from your server library. Trailers and the TMDB rating on movie and series pages require a TMDB connection. Trailers open in the YouTube app, which must be installed on your Apple TV.")
-                TVSettingsFooter("Your key is saved in Keychain and syncs through Vivid’s encrypted iCloud vault for the matching server account and profile. Requests use it only with TMDB. Get your personal key at themoviedb.org. TMDB attribution is required.")
+                TVSettingsFooter("More Like This uses genres, studios and networks from your server library. Trailers, the TMDB rating on movie and series pages, collections and Studios & Networks use Vivid’s built-in TMDB access, or your own key if you add one. Trailers open in the YouTube app, which must be installed on your Apple TV.")
+                TVSettingsFooter("Without a key of your own, TMDB lookups go through Vivid’s TMDB relay (tmdb.vividapp.co). A key you add is saved in Keychain, syncs through Vivid’s encrypted iCloud vault for the matching server account and profile, and is used only with TMDB. Get a key at themoviedb.org. TMDB attribution is required.")
                 TVSettingsSectionHeader("ABOUT TMDB")
                 TVTMDbAttribution()
             }
