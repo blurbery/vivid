@@ -46,6 +46,9 @@ struct SubtitleAutoResolver {
         let showForced: Bool
         /// Apple's Forced Only display mode.
         let forcedOnly: Bool
+        /// With `forcedOnly`, match the forced track to the audio's language,
+        /// as Apple's Forced Only does, rather than to `preferredLanguage`.
+        let forcedFollowsAudio: Bool
         /// Prefer CC/SDH over plain subtitles when Apple requests the
         /// accessibility media characteristics.
         let preferAccessibilityTracks: Bool
@@ -77,6 +80,7 @@ struct SubtitleAutoResolver {
             mode: SubtitleMode?,
             showForced: Bool,
             forcedOnly: Bool = false,
+            forcedFollowsAudio: Bool = false,
             preferAccessibilityTracks: Bool = false,
             disableWhenNoLanguageMatch: Bool = false,
             trackSignature: SubtitleTrackSignature?,
@@ -89,6 +93,7 @@ struct SubtitleAutoResolver {
             self.mode = mode
             self.showForced = showForced
             self.forcedOnly = forcedOnly
+            self.forcedFollowsAudio = forcedFollowsAudio
             self.preferAccessibilityTracks = preferAccessibilityTracks
             self.disableWhenNoLanguageMatch = disableWhenNoLanguageMatch
             self.trackSignature = trackSignature
@@ -116,6 +121,16 @@ struct SubtitleAutoResolver {
 
         if inputs.forcedOnly {
             let forcedSubtitles = inputs.availableSubtitles.filter(isForced)
+            // Apple's Forced Only shows the forced track in the language of
+            // the audio that's playing. With the audio unknown, fall back to
+            // the preferred languages below.
+            if inputs.forcedFollowsAudio, let audio = usableLanguage(inputs.currentAudioLanguage) {
+                if let forced = bestLanguageMatch(audio, in: forcedSubtitles, preferForced: true,
+                                                  preferAccessibility: inputs.preferAccessibilityTracks) {
+                    return .select(forced)
+                }
+                return .disable
+            }
             // A forced pick with no language carried from an earlier episode
             // takes this episode's forced track, whatever its language.
             let forced = preferredLanguages.isEmpty && !inputs.disableWhenNoLanguageMatch
@@ -140,16 +155,36 @@ struct SubtitleAutoResolver {
 
         guard let rawLang = inputs.preferredLanguage else {
             if inputs.disableWhenNoLanguageMatch { return .disable }
-            // No language preference recorded anywhere. Honour `always`
-            // by choosing the best available track, but otherwise leave
-            // alone — auto-enabling a random language would surprise.
-            if mode == .always, let any = bestLanguageMatch(
-                nil,
-                in: readableSubtitles,
-                preferForced: inputs.showForced,
-                preferAccessibility: inputs.preferAccessibilityTracks
-            ) {
-                return .select(any)
+            // No language preference. Always still means subtitles: the
+            // backup languages first (the device's, for Always with Language
+            // set to None), then the file's default full track, then the best
+            // full track. Auto leaves the player alone, since turning on a
+            // random language would surprise.
+            if mode == .always {
+                // Full-dialogue tracks first, in every step: a signs-only
+                // track is only taken when the file has nothing else.
+                let fullDialogue = readableSubtitles.filter { !isForced($0) }
+                for pool in [fullDialogue, readableSubtitles] {
+                    if !inputs.fallbackLanguages.isEmpty, let pick = bestLanguageMatch(
+                        inputs.fallbackLanguages,
+                        in: pool,
+                        preferForced: false,
+                        preferAccessibility: inputs.preferAccessibilityTracks
+                    ) {
+                        return .select(pick)
+                    }
+                    if let fileDefault = pool.first(where: { $0.isDefault }) {
+                        return .select(fileDefault)
+                    }
+                    if let any = bestLanguageMatch(
+                        nil,
+                        in: pool,
+                        preferForced: false,
+                        preferAccessibility: inputs.preferAccessibilityTracks
+                    ) {
+                        return .select(any)
+                    }
+                }
             }
             return .noChange
         }
