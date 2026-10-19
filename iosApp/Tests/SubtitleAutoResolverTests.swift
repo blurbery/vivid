@@ -508,6 +508,15 @@ final class SubtitleAutoResolverTests: XCTestCase {
                                         ffIndex: 5, srcId: nil)
         XCTAssertEqual(always([forced, english, frenchDefault], device: ["de"]), .select(frenchDefault))
         XCTAssertEqual(always([forced, english], device: []), .select(english))
+        // The device language has only a signs-only track: a full track in
+        // another language still wins; with nothing else, the forced one plays.
+        let frenchForced = track(id: 8, lang: "fra", forced: true)
+        let englishDefault = PlayerTrack(trackId: 9, kind: .sub, title: nil, lang: "eng", codec: "subrip",
+                                         audioChannelCount: nil, bitrate: nil, isDefault: true, isForced: false,
+                                         isHearingImpaired: false, isExternal: false, isSelected: false,
+                                         ffIndex: 9, srcId: nil)
+        XCTAssertEqual(always([frenchForced, englishDefault], device: ["fr"]), .select(englishDefault))
+        XCTAssertEqual(always([frenchForced], device: ["fr"]), .select(frenchForced))
     }
 
     /// Apple's Forced Only picks the forced track in the audio's language,

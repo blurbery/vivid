@@ -161,24 +161,29 @@ struct SubtitleAutoResolver {
             // full track. Auto leaves the player alone, since turning on a
             // random language would surprise.
             if mode == .always {
-                if !inputs.fallbackLanguages.isEmpty, let pick = bestLanguageMatch(
-                    inputs.fallbackLanguages,
-                    in: readableSubtitles,
-                    preferForced: false,
-                    preferAccessibility: inputs.preferAccessibilityTracks
-                ) {
-                    return .select(pick)
-                }
-                if let fileDefault = readableSubtitles.first(where: { $0.isDefault && !isForced($0) }) {
-                    return .select(fileDefault)
-                }
-                if let any = bestLanguageMatch(
-                    nil,
-                    in: readableSubtitles,
-                    preferForced: false,
-                    preferAccessibility: inputs.preferAccessibilityTracks
-                ) {
-                    return .select(any)
+                // Full-dialogue tracks first, in every step: a signs-only
+                // track is only taken when the file has nothing else.
+                let fullDialogue = readableSubtitles.filter { !isForced($0) }
+                for pool in [fullDialogue, readableSubtitles] {
+                    if !inputs.fallbackLanguages.isEmpty, let pick = bestLanguageMatch(
+                        inputs.fallbackLanguages,
+                        in: pool,
+                        preferForced: false,
+                        preferAccessibility: inputs.preferAccessibilityTracks
+                    ) {
+                        return .select(pick)
+                    }
+                    if let fileDefault = pool.first(where: { $0.isDefault }) {
+                        return .select(fileDefault)
+                    }
+                    if let any = bestLanguageMatch(
+                        nil,
+                        in: pool,
+                        preferForced: false,
+                        preferAccessibility: inputs.preferAccessibilityTracks
+                    ) {
+                        return .select(any)
+                    }
                 }
             }
             return .noChange
