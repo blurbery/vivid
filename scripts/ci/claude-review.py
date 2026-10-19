@@ -7,16 +7,18 @@ review runs in two passes: one looks for bugs in the code, then one checks
 what the PR description, docs and comments claim against the code. Claude
 gets read-only tools for reading, searching and listing files, and reports
 each finding through a tool as it goes, so a run stopped by its cost limit
-still keeps what it found. This script never writes to GitHub; the workflow
-posts the result.
+or a Claude API error still keeps what it found. This script never writes to
+GitHub; the workflow posts the result.
 
 Usage: claude-review.py --pr N --mode full|incremental --from SHA --head SHA
                         --merge-base SHA --out review.json
 Environment: ANTHROPIC_API_KEY, optional ANTHROPIC_WORKSPACE_ID,
-REVIEW_MODEL, REVIEW_EFFORT, REVIEW_MAX_COST_USD, REVIEW_MAX_TURNS.
+REVIEW_MODEL, REVIEW_EFFORT, REVIEW_MAX_COST_USD (0 for no limit),
+REVIEW_MAX_TURNS (per pass; 100, or 300 without a cost limit).
 """
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -291,17 +293,24 @@ def run_pass(client, settings, system, opening, to_read, budget):
         if run["turns"] >= max_turns:
             run["stopped"] = "turns"
             break
-        response = client.beta.messages.create(
-            model=model,
-            max_tokens=16000,
-            system=system,
-            tools=TOOLS,
-            messages=messages,
-            output_config={"effort": effort},
-            cache_control={"type": "ephemeral"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
+        try:
+            response = client.beta.messages.create(
+                model=model,
+                max_tokens=16000,
+                system=system,
+                tools=TOOLS,
+                messages=messages,
+                output_config={"effort": effort},
+                cache_control={"type": "ephemeral"},
+                betas=["server-side-fallback-2026-07-01"],
+                fallbacks="default",
+            )
+        except (anthropic.APIStatusError, anthropic.APIConnectionError) as error:
+            # A long run can outgrow the context window or hit an outage late
+            # on. Stop here and keep the findings rather than losing them all.
+            print(f"::warning::Claude API error on turn {run['turns'] + 1}: {error}")
+            run["stopped"] = "error"
+            break
         run["turns"] += 1
         run["cost"] += cost_of(response.usage, prices)
         if response.stop_reason == "max_tokens":
@@ -367,8 +376,11 @@ def main():
 
     model = os.environ.get("REVIEW_MODEL", "claude-sonnet-5-5")
     effort = os.environ.get("REVIEW_EFFORT", "low")
+    # A cost limit of 0 means none. The turn limit still ends a run that loops.
     max_cost = float(os.environ.get("REVIEW_MAX_COST_USD", "1.50"))
-    max_turns = int(os.environ.get("REVIEW_MAX_TURNS", "100"))
+    if max_cost <= 0:
+        max_cost = math.inf
+    max_turns = int(os.environ.get("REVIEW_MAX_TURNS", "100" if math.isfinite(max_cost) else "300"))
     settings = (model, effort, PRICES[model], max_turns)
     workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
     client = anthropic.Anthropic(default_headers={"anthropic-workspace-id": workspace} if workspace else None)
@@ -411,6 +423,10 @@ def main():
         "model": model,
         "effort": effort,
     }
+    if result["turns"] == 0:
+        # The API never answered (a bad key or no credit), so there's nothing to post.
+        print("Claude API error before the review started.", file=sys.stderr)
+        sys.exit(1)
     Path(args.out).write_text(json.dumps(result, indent=2))
     for name, run in passes:
         print(f"{name} pass: {len(run['findings'])} findings, {run['turns']} turns, {run['tool_calls']} tool calls, about US${run['cost']:.2f}")
