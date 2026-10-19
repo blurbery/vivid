@@ -17,8 +17,9 @@ struct PlaybackSessionReport: Codable, Equatable {
     var setup: Setup
     var media: Media
     var totals: Totals
-    /// One entry per minute of playback that had a problem. Quiet minutes
-    /// are left out to keep the report small.
+    /// One entry per minute of playback with the app's memory use, plus
+    /// anything that went wrong in it. Records saved before memory was
+    /// recorded list only the minutes that had a problem.
     var timeline: [Minute]
     var notMeasured: [String]
     /// The tester's own "What happened?" text, added only to the copy being
@@ -146,7 +147,13 @@ struct PlaybackSessionReport: Codable, Equatable {
         var rebufferSeconds: Double = 0
         var stallSeconds: Double = 0
         var faults: [String: Int] = [:]
+        /// The app's highest memory use in this minute, in MB, as the system
+        /// counts it against the app's limit. Past the 240-minute cap the last
+        /// entry keeps the highest reading of all the time after it. Optional
+        /// so older records load.
+        var memoryMB: Int?
 
+        /// Nothing went wrong in this minute. Memory use isn't a problem.
         var isQuiet: Bool {
             droppedFrames == 0 && decoderDroppedFrames == 0 && delayedFrames == 0
                 && (maxAvSyncMs ?? 0) <= 100 && rebufferSeconds == 0 && stallSeconds == 0 && faults.isEmpty
@@ -214,6 +221,7 @@ extension PlaybackSessionReport {
         if let method = setup.playMethod { rows.append(("Play method", method)) }
         rows.append(("Played", Duration.seconds(totals.playedSeconds).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated))))
         rows.append(("Ended", Self.endReasonLabel(totals.endReason)))
+        if let memory = memorySummary { rows.append(("Memory", memory)) }
         rows.append(("Dropped frames", count(totals.droppedFrames)))
         rows.append(("Decoder dropped frames", count(totals.decoderDroppedFrames)))
         rows.append(("Late frames", count(totals.delayedFrames)))
@@ -240,6 +248,16 @@ extension PlaybackSessionReport {
         }
         if !notMeasured.isEmpty { rows.append(("Not measured", notMeasured.joined(separator: ", "))) }
         return rows
+    }
+
+    /// The first and highest memory readings, for example "640 MB in minute 0,
+    /// highest 1690 MB in minute 9". Nil for records without readings.
+    var memorySummary: String? {
+        let readings = timeline.compactMap { minute in minute.memoryMB.map { (minute: minute.minute, mb: $0) } }
+        guard let first = readings.first, let highest = readings.max(by: { $0.mb < $1.mb }) else { return nil }
+        let start = "\(first.mb) MB in minute \(first.minute)"
+        guard highest.mb > first.mb else { return start }
+        return start + ", highest \(highest.mb) MB in minute \(highest.minute)"
     }
 
     /// "failed_<kind>" comes from the player's error kind, for example

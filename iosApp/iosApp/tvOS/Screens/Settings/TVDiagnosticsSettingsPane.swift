@@ -229,7 +229,9 @@ private struct TVLatestPlaybackPage: View {
             ("Summary", report.summaryRows.map { "\($0.label): \($0.value)" }),
             ("App", ["\(report.app.version) (\(report.app.build)) on \(report.app.os), \(report.app.device)"]),
         ]
-        let minutes = report.timeline.map { minute -> String in
+        // Every minute carries a memory reading; the summary covers those, so
+        // this list stays on the minutes that had a problem.
+        let minutes = report.timeline.filter { !$0.isQuiet }.map { minute -> String in
             var parts: [String] = []
             if minute.droppedFrames > 0 { parts.append("\(minute.droppedFrames) dropped") }
             if minute.decoderDroppedFrames > 0 { parts.append("\(minute.decoderDroppedFrames) decoder dropped") }
@@ -238,6 +240,7 @@ private struct TVLatestPlaybackPage: View {
             if minute.rebufferSeconds > 0 { parts.append("rebuffering \(Int(minute.rebufferSeconds)) s") }
             if minute.stallSeconds > 0 { parts.append("stalled \(Int(minute.stallSeconds)) s") }
             for (fault, count) in minute.faults.sorted(by: { $0.key < $1.key }) { parts.append("\(fault) ×\(count)") }
+            if let memory = minute.memoryMB { parts.append("memory \(memory) MB") }
             return "Minute \(minute.minute): " + parts.joined(separator: ", ")
         }
         stride(from: 0, to: minutes.count, by: 8).forEach { start in

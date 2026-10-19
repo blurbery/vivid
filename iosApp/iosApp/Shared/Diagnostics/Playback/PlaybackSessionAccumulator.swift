@@ -314,14 +314,24 @@ struct PlaybackSessionAccumulator {
         totals.lowestNetworkKbps = min(totals.lowestNetworkKbps ?? kbps, kbps)
     }
 
+    /// The app's memory use with each sample. A minute keeps its highest
+    /// reading, so steady growth towards the system's limit shows.
+    mutating func memory(mb: Int?) {
+        guard let mb, mb > 0 else { return }
+        let index = minuteIndex
+        var minute = minutes[index, default: .init(minute: index)]
+        minute.memoryMB = max(minute.memoryMB ?? 0, mb)
+        minutes[index] = minute
+    }
+
     mutating func ended(reason: String, at now: TimeInterval) {
         tick(at: now)
         totals.endReason = reason
     }
 
-    /// Minutes with something to report, oldest first.
+    /// Minutes with a memory reading or a problem, oldest first.
     var timeline: [PlaybackSessionReport.Minute] {
-        minutes.values.filter { !$0.isQuiet }.sorted { $0.minute < $1.minute }
+        minutes.values.filter { !$0.isQuiet || $0.memoryMB != nil }.sorted { $0.minute < $1.minute }
     }
 
     private func totalValue(_ counter: Counter) -> Int? {
