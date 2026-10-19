@@ -19,8 +19,8 @@ extension PlayerViewModel {
             // The server owns the switch on this path, so the track must not
             // be applied locally before its plan arrives. The selection is
             // published optimistically because the replan reads it back, but
-            // nothing is persisted or recorded until the replan is actually
-            // under way — a dropped switch must not be filed as a success.
+            // nothing is kept or recorded until the replan is actually under
+            // way — a dropped switch must not be filed as a success.
             let priorAudioId = selectedAudioId
             let priorPendingAudioFfIndex = pendingAudioFfIndex
             let priorAudioPicked = audioPickedForCurrentItem
@@ -48,7 +48,6 @@ extension PlayerViewModel {
                 scheduleHideControls()
                 return
             }
-            persistAudioSelection(track)
             recordAudioTrackSelectionBreadcrumb(
                 track.trackId,
                 reason: "user_selection",
@@ -60,7 +59,6 @@ extension PlayerViewModel {
         pendingAudioFfIndex = nil
         selectedAudioId = track.trackId
         audioPickedForCurrentItem = true
-        persistAudioSelection(track)
         reapplyAutomaticSubtitlePolicy()
         applyAudioTrackSelection(track.trackId, reason: "user_selection")
         scheduleHideControls()
@@ -202,37 +200,6 @@ extension PlayerViewModel {
         persistSubtitleSelection(nil)
         applySubtitleTrackSelection(nil, reason: "user_selection")
         scheduleHideControls()
-    }
-
-    /// Server pref key for remembering explicit track picks: series id
-    /// for episodes (one choice covers the series), the item's own
-    /// content id for movies. Nil during offline playback — there is no
-    /// server to remember anything for.
-    private var trackPrefPersistKey: String? {
-        guard offlinePlaybackContext == nil, let detail = currentWatchDetail else { return nil }
-        return TrackSelectionPersistence.prefKey(
-            seriesId: detail.seriesId,
-            contentId: detail.contentId
-        )
-    }
-
-    /// Best-effort write of an explicit audio pick so it sticks across
-    /// player exits (web-app parity; the server only auto-persists
-    /// audio on its own change endpoint, which Apple's engine-local
-    /// switching never calls). Prefers the server's probed metadata for
-    /// the signature so re-resolution gets an exact match.
-    private func persistAudioSelection(_ track: PlayerTrack) {
-        guard let key = trackPrefPersistKey else { return }
-        let ordinal = audioSelectionIndex(for: track)
-        let request: AudioPrefRequest
-        if let ordinal,
-           let version = currentSelectedVersion,
-           let fromDetail = TrackSelectionPersistence.audioRequest(version: version, ordinal: ordinal) {
-            request = fromDetail
-        } else {
-            request = TrackSelectionPersistence.audioRequest(track: track, ordinal: ordinal)
-        }
-        TrackSelectionPersistence.saveAudio(prefKey: key, request: request)
     }
 
     /// Keeps an explicit subtitle pick (or "Off" when `track` is nil) for
