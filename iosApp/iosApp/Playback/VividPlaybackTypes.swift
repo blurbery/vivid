@@ -201,6 +201,13 @@ struct SubtitleTextRun {
     var isStruckThrough = false
     var fontName: String? = nil
     var fontSize: Double? = nil
+
+    /// Every attribute but the text matches.
+    func sameStyle(as other: SubtitleTextRun) -> Bool {
+        color == other.color && isBold == other.isBold && isItalic == other.isItalic
+            && isUnderlined == other.isUnderlined && isStruckThrough == other.isStruckThrough
+            && fontName == other.fontName && fontSize == other.fontSize
+    }
 }
 struct SubtitleTextPlacement { var alignment: Int? = nil; var position: CGPoint? = nil }
 struct SubtitleImage {

@@ -238,3 +238,90 @@ final class VividSubtitleCueCursorTests: XCTestCase {
         cues.map { if case .text(let text) = $0.body { return text }; return "Non-text cue" }
     }
 }
+
+/// The overlay draws external text files the way libass draws an embedded
+/// track: the same tags, overlapping cues stacked, and the same rectangle.
+@MainActor
+final class VividSubtitleOverlayLayoutTests: XCTestCase {
+    private func runs(_ raw: String) -> [SubtitleTextRun] {
+        guard case .richText(let runs) = VividSubtitleLoader.textCue(raw).0 else { return [] }
+        return runs
+    }
+
+    func testSubRipTagsBecomeStyledRuns() {
+        let styled = runs("<i>Off screen</i> and <b>loud</b>\n<u>under</u> <s>gone</s>")
+        XCTAssertEqual(styled.map(\.text), ["Off screen", " and ", "loud", "\n", "under", " ", "gone"])
+        XCTAssertEqual(styled.map(\.isItalic), [true, false, false, false, false, false, false])
+        XCTAssertEqual(styled.map(\.isBold), [false, false, true, false, false, false, false])
+        XCTAssertTrue(styled[4].isUnderlined)
+        XCTAssertTrue(styled[6].isStruckThrough)
+
+        let coloured = runs("<font color=\"#FF8000\">Amber <b>bold</b></font> <font color=red>red</font> <font color='#0f0'>green</font>")
+        XCTAssertEqual(coloured.map(\.text), ["Amber ", "bold", " ", "red", " ", "green"])
+        XCTAssertEqual(coloured[0].color, SubtitleColor(r: 255, g: 128, b: 0))
+        XCTAssertEqual(coloured[1].color, SubtitleColor(r: 255, g: 128, b: 0))
+        XCTAssertTrue(coloured[1].isBold)
+        XCTAssertNil(coloured[2].color)
+        XCTAssertEqual(coloured[3].color, SubtitleColor(r: 255, g: 0, b: 0))
+        XCTAssertEqual(coloured[5].color, SubtitleColor(r: 0, g: 255, b: 0))
+    }
+
+    /// Unknown tags are dropped, entities decoded once, and an ASS alignment
+    /// moves the cue instead of showing as text.
+    func testOtherTagsAndAlignment() {
+        let (body, placement) = VividSubtitleLoader.textCue("{\\an8}<v Narrator><c.yellow>Up top</c> &amp;lt; &amp; &lt;3")
+        guard case .text(let text) = body else { return XCTFail("Unstyled text should stay plain") }
+        XCTAssertEqual(text, "Up top &lt; & <3")
+        XCTAssertEqual(placement?.alignment, 8)
+        XCTAssertNil(placement?.position)
+        let (literal, none) = VividSubtitleLoader.textCue("{laughs} 3 < 4")
+        guard case .text(let kept) = literal else { return XCTFail("Expected plain text") }
+        XCTAssertEqual(kept, "{laughs} 3 < 4")
+        XCTAssertNil(none)
+    }
+
+    func testParsedFileKeepsStylingAndAlignment() {
+        let cues = VividSubtitleLoader.parse("1\n00:00:01,000 --> 00:00:03,000\n{\\an8}<i>Hello</i>\n")
+        XCTAssertEqual(cues.count, 1)
+        XCTAssertEqual(cues.first?.placement?.alignment, 8)
+        guard case .richText(let runs) = cues.first?.body else { return XCTFail("Expected styled runs") }
+        XCTAssertEqual(runs.map(\.text), ["Hello"])
+        XCTAssertTrue(runs[0].isItalic)
+    }
+
+    /// Overlapping cues stack instead of drawing over each other. As in
+    /// libass, the first keeps its place at the edge, so at the bottom the
+    /// latest is on top and at the top it's underneath.
+    func testOverlappingCuesStackLikeLibass() {
+        let first = SubtitleCue(id: 0, startTime: 1, endTime: 9, body: .text("First"))
+        let later = SubtitleCue(id: 1, startTime: 3, endTime: 9, body: .text("Later"))
+        let raised = SubtitleCue(id: 2, startTime: 3, endTime: 9, body: .text("Sign"),
+                                 placement: SubtitleTextPlacement(alignment: 8))
+        let placed = SubtitleCue(id: 3, startTime: 3, endTime: 9, body: .text("Placed"),
+                                 placement: SubtitleTextPlacement(position: CGPoint(x: 0.5, y: 0.5)))
+        let bottom = VividSubtitleOverlay.cueStacks([later, first, raised, placed], position: .bottom)
+        XCTAssertEqual(bottom.map(\.alignment), [nil, 8])
+        XCTAssertEqual(bottom[0].cues.map(\.id), [1, 0])
+        XCTAssertEqual(bottom[1].cues.map(\.id), [2])
+        let top = VividSubtitleOverlay.cueStacks([later, first], position: .top)
+        XCTAssertEqual(top[0].cues.map(\.id), [0, 1])
+    }
+
+    /// Text is laid out in the fitted picture at its display shape, so an
+    /// anamorphic picture isn't treated as its stored size, and Zoom doesn't
+    /// push the text off screen.
+    func testSubtitleRectUsesTheDisplayedShape() {
+        let engine = VividEngine()
+        defer { engine.stop() }
+        engine.debugReceiveProperty("video-params", value: [
+            "w": Int64(720), "h": Int64(480), "par": 1.185, "dw": Int64(853), "dh": Int64(480)
+        ] as [String: Any])
+        XCTAssertEqual(engine.softwareDisplaySize, CGSize(width: 853, height: 480))
+        engine.videoGravity = .resizeAspectFill
+        let rect = VividSubtitleOverlay.subtitleRect(surface: CGSize(width: 874, height: 402),
+                                                     picture: engine.softwareDisplaySize)
+        XCTAssertEqual(rect.height, 402, accuracy: 0.01)
+        XCTAssertEqual(rect.width, 402 * 853 / 480, accuracy: 0.01)
+        XCTAssertEqual(rect.midX, 437, accuracy: 0.01)
+    }
+}

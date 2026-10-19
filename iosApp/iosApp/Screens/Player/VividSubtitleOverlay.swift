@@ -70,13 +70,41 @@ struct VividSubtitleOverlay: View {
 
 
 
+    /// Text cues sharing a place on screen, shown together.
+    struct CueStack: Identifiable {
+        let alignment: Int?
+        let cues: [SubtitleCue]
+        var id: Int { alignment ?? 0 }
+    }
+
+    /// Text cues without an authored position, grouped by their alignment
+    /// and stacked as libass stacks overlapping lines: the first cue keeps
+    /// its place at the edge and later ones go further in, so at the bottom
+    /// the latest is on top.
+    static func cueStacks(_ cues: [SubtitleCue], position: VividSubtitleRenderStyle.Position) -> [CueStack] {
+        let text = cues.filter { cue in
+            if case .image = cue.body { return false }
+            return cue.placement?.position == nil
+        }
+        return Dictionary(grouping: text) { $0.placement?.alignment }
+            .map { alignment, group in
+                let fileOrder = group.sorted { $0.id < $1.id }
+                let fromTop = alignment.map { (7...9).contains($0) } ?? (position == .top)
+                return CueStack(alignment: alignment, cues: fromTop ? fileOrder : fileOrder.reversed())
+            }
+            .sorted { ($0.alignment ?? 0) < ($1.alignment ?? 0) }
+    }
+
     @ViewBuilder
     private func cueLayer(
         _ cues: [SubtitleCue],
         videoRect: CGRect,
         secondary: Bool
     ) -> some View {
-        ForEach(cues) { cue in
+        ForEach(cues.filter { cue in
+            if case .image = cue.body { return true }
+            return cue.placement?.position != nil
+        }) { cue in
             switch cue.body {
             case .image(let subtitleImage):
                 let rect = bitmapRect(subtitleImage, videoRect: videoRect)
@@ -84,35 +112,49 @@ struct VividSubtitleOverlay: View {
                     .resizable()
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
-            case .text(let value):
+            case .text, .richText:
                 positionedText(
-                    styledPlainText(value, videoRect: videoRect),
-                    placement: cue.placement,
-                    videoRect: videoRect,
-                    secondary: secondary
-                )
-            case .richText(let runs):
-                positionedText(
-                    runs.reduce(Text("")) { accumulated, run in
-                        Text("\(accumulated)\(styledText(run, videoRect: videoRect))")
-                    },
+                    decoratedText(cueText(cue, videoRect: videoRect), videoRect: videoRect),
                     placement: cue.placement,
                     videoRect: videoRect,
                     secondary: secondary
                 )
             }
         }
+        ForEach(Self.cueStacks(cues, position: renderStyle.position)) { stack in
+            positionedText(
+                VStack(alignment: horizontalAlignment(for: stack.alignment), spacing: 0) {
+                    ForEach(stack.cues) { cue in
+                        decoratedText(cueText(cue, videoRect: videoRect), videoRect: videoRect)
+                    }
+                },
+                placement: SubtitleTextPlacement(alignment: stack.alignment),
+                videoRect: videoRect,
+                secondary: secondary
+            )
+        }
+    }
+
+    private func cueText(_ cue: SubtitleCue, videoRect: CGRect) -> Text {
+        switch cue.body {
+        case .text(let value):
+            return styledPlainText(value, videoRect: videoRect)
+        case .richText(let runs):
+            return runs.reduce(Text("")) { accumulated, run in
+                Text("\(accumulated)\(styledText(run, videoRect: videoRect))")
+            }
+        case .image:
+            return Text("")
+        }
     }
 
     private func positionedText(
-        _ text: Text,
+        _ rendered: some View,
         placement: SubtitleTextPlacement?,
         videoRect: CGRect,
         secondary: Bool
     ) -> some View {
-        let rendered = decoratedText(text, videoRect: videoRect)
-
-        return Group {
+        Group {
             if let position = placement?.position {
                 Color.clear
                     .frame(width: 0, height: 0)
@@ -261,6 +303,14 @@ struct VividSubtitleOverlay: View {
         }
     }
 
+    private func horizontalAlignment(for assAlignment: Int?) -> HorizontalAlignment {
+        switch assAlignment {
+        case 1, 4, 7: return .leading
+        case 3, 6, 9: return .trailing
+        default: return .center
+        }
+    }
+
     private func alignment(for assAlignment: Int?) -> Alignment {
         switch assAlignment {
         case 1: return .bottomLeading
@@ -276,40 +326,24 @@ struct VividSubtitleOverlay: View {
         }
     }
 
+    /// The picture fitted to the surface at its display aspect ratio, as
+    /// Lucid lays out its own subtitles. Zoom and Stretch change only the
+    /// picture, so the text stays the same size and on screen.
     private func displayedVideoRect(in surfaceSize: CGSize) -> CGRect {
-        let bounds = CGRect(origin: .zero, size: surfaceSize)
-        if let nativeRect = engine.nativePlayerLayer?.videoRect,
-           nativeRect.width > 0,
-           nativeRect.height > 0 {
-            return nativeRect
-        }
-        guard let displaySize = engine.softwareDisplaySize,
-              displaySize.width > 0,
-              displaySize.height > 0 else {
-            return bounds
-        }
-        switch engine.videoGravity {
-        case .resize:
-            return bounds
-        case .resizeAspectFill:
-            let scale = max(bounds.width / displaySize.width, bounds.height / displaySize.height)
-            let size = CGSize(width: displaySize.width * scale, height: displaySize.height * scale)
-            return CGRect(
-                x: bounds.midX - size.width / 2,
-                y: bounds.midY - size.height / 2,
-                width: size.width,
-                height: size.height
-            )
-        default:
-            let scale = min(bounds.width / displaySize.width, bounds.height / displaySize.height)
-            let size = CGSize(width: displaySize.width * scale, height: displaySize.height * scale)
-            return CGRect(
-                x: bounds.midX - size.width / 2,
-                y: bounds.midY - size.height / 2,
-                width: size.width,
-                height: size.height
-            )
-        }
+        Self.subtitleRect(surface: surfaceSize, picture: engine.softwareDisplaySize)
+    }
+
+    static func subtitleRect(surface: CGSize, picture: CGSize?) -> CGRect {
+        let bounds = CGRect(origin: .zero, size: surface)
+        guard let picture, picture.width > 0, picture.height > 0 else { return bounds }
+        let scale = min(bounds.width / picture.width, bounds.height / picture.height)
+        let size = CGSize(width: picture.width * scale, height: picture.height * scale)
+        return CGRect(
+            x: bounds.midX - size.width / 2,
+            y: bounds.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     private func bitmapRect(_ image: SubtitleImage, videoRect: CGRect) -> CGRect {
@@ -403,7 +437,9 @@ struct VividSubtitleOverlay: View {
         case .monospace:
             return .system(size: size, weight: .semibold, design: .monospaced)
         case .custom(let name):
-            return .custom(name, size: size)
+            // A fixed size: subtitles follow Settings > Subtitles and the
+            // video's size, not Dynamic Type.
+            return .custom(name, fixedSize: size)
         }
     }
 

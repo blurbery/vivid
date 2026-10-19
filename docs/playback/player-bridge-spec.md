@@ -1652,7 +1652,7 @@ Vivid-authored (`8268108`), the audio choice:
 
 The previous bridge contained code that nothing in Vivid reached. The replacement omits it. Each row gives the evidence, from a repository-wide search before the switch-over, that it was unreached.
 
-Evidence used by several rows: the complete set of property names the adapter passes to `setProperty` and `setPropertyAsync` is `volume`, `pause`, `hr-seek`, `speed`, `audio-spdif`, `aid`, `sid`, `secondary-sid`, `sub-delay`, `secondary-sub-delay` and the subtitle style keys `sub-ass-override`, `secondary-sub-ass-override`, `sub-font`, `sub-font-size`, `sub-color`, `sub-border-style`, `sub-back-color`, `sub-outline-color`, `sub-outline-size`, `sub-shadow-offset`, `sub-align-y`, `sub-pos`, `sub-scale-with-window` and `sub-use-margins`. Nothing else calls the setters.
+Evidence used by several rows: the complete set of property names the adapter passes to `setProperty` and `setPropertyAsync` is `volume`, `pause`, `hr-seek`, `speed`, `audio-spdif`, `aid`, `sid`, `secondary-sid`, `sub-delay`, `secondary-sub-delay` and the subtitle style keys `sub-ass-override`, `secondary-sub-ass-override`, `sub-font`, `sub-bold`, `sub-font-size`, `sub-color`, `sub-border-style`, `sub-back-color`, `sub-outline-color`, `sub-outline-size`, `sub-shadow-offset`, `sub-align-y`, `sub-margin-x`, `sub-margin-y`, `sub-pos`, `secondary-sub-pos`, `sub-scale-with-window` and `sub-use-margins`. Nothing else calls the setters.
 
 | Omitted from the previous bridge **[unreached]** | Evidence | What the replacement does instead |
 | --- | --- | --- |
