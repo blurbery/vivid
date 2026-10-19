@@ -199,7 +199,11 @@ private struct OpenSubtitleDetailSearch: ViewModifier {
     }
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
-            LucidDetailSubtitleMenu(context: context, serverRows: ServerSubtitleSidecars.detailRows(serverSubtitles),
+            LucidDetailSubtitleMenu(context: context,
+                                    serverRows: ServerSubtitleSidecars.detailRows(serverSubtitles, fileID: fileID),
+                                    storedSubtitleID: { [serverSubtitles, fileID] in
+                                        ServerSubtitleSidecars.detailStoredSubtitleID($0, catalog: serverSubtitles, fileID: fileID)
+                                    },
                                     automaticSubtitle: automaticSubtitle)
                 .vividGlassSheet(startsTall: true)
         }
@@ -216,8 +220,10 @@ extension View {
 
 private struct LucidDetailSubtitleMenu: View {
     let context: OpenSubtitlePlaybackContext?
-    /// Emby and Jellyfin subtitle files beside the media.
+    /// Subtitle files beside the media, and subtitles Silo stores.
     let serverRows: [PlayerTrack]
+    /// The stored subtitle a Silo row names, if it names one.
+    var storedSubtitleID: @MainActor (Int64) -> Int? = { _ in nil }
     /// What Auto plays from Settings > Subtitles, such as "English (Forced)".
     var automaticSubtitle: String?
     @Environment(\.dismiss) private var dismiss
@@ -311,12 +317,13 @@ private struct LucidDetailSubtitleMenu: View {
             detail: track.languageFirstDetailLabel,
             attributes: nil, pills: track.attributePillLabels(includeLanguage: track.normalizedLanguageCode == nil),
             isSelected: selectedID == track.trackId && !hasStagedSelection) {
-            select(track.trackId, label: track.isExternal ? track.languageFirstPrimaryLabel : nil)
+            select(track.trackId, label: track.isExternal ? track.languageFirstPrimaryLabel : nil,
+                   storedSubtitleID: storedSubtitleID(track.trackId))
         }
     }
-    private func select(_ id: Int64?, label: String? = nil) {
+    private func select(_ id: Int64?, label: String? = nil, storedSubtitleID: Int? = nil) {
         guard let context else { return }
-        LucidSubtitleInventory.shared.choose(id, label: label, context: context)
+        LucidSubtitleInventory.shared.choose(id, label: label, storedSubtitleID: storedSubtitleID, context: context)
         selectedID = id
         selectionIsAutomatic = false
         dismiss()
