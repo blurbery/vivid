@@ -152,8 +152,7 @@ final class OfflinePlaybackMappingTests: XCTestCase {
         let track = try XCTUnwrap(version.audioTracks?.first)
 
         // The server collapsed title and embedded title into one field. Echoing
-        // the same string back as both would corrupt the audio-pref signature,
-        // which compares them separately.
+        // the same string back as both would claim the file carries two titles.
         XCTAssertNil(track.embeddedTitle)
     }
 
@@ -177,6 +176,33 @@ final class OfflinePlaybackMappingTests: XCTestCase {
         // Ordinal into `version.audioTracks` — the same space the server's
         // `audio_track_index` uses.
         XCTAssertEqual(session.audioTrackIndex, 0)
+    }
+
+    /// A downloaded file starts with the audio streaming would: Settings >
+    /// Playback > Audio Language over the file's tracks, not the track the
+    /// server had chosen when it was downloaded. A pick still wins.
+    func testDownloadStartsWithTheAudioSettingsPicks() throws {
+        let tracks = """
+        [
+          { "index": 0, "language": "eng", "codec": "truehd", "channels": 8, "default": true },
+          { "index": 1, "language": "eng", "codec": "eac3", "channels": 6 },
+          { "index": 2, "language": "jpn", "codec": "eac3", "channels": 6 }
+        ]
+        """
+        let manifest = try manifest(audioTracksJSON: tracks, selectedAudioTrackIndex: 2)
+        func start(_ manual: Int? = nil, viewing: String? = nil, settings: String?) -> Int? {
+            OfflinePlaybackBuilder.makePreparedPlayback(
+                leafContentId: "leaf", manifest: manifest,
+                mediaURL: URL(fileURLWithPath: "/tmp/media.mkv"), subtitleURLs: [], resumePosition: nil,
+                preferredAudioTrackIndex: manual, viewingAudioLanguage: viewing, audioLanguage: settings
+            ).session.audioTrackIndex
+        }
+
+        XCTAssertEqual(start(settings: "en"), 1, "English, as a track the device plays directly")
+        XCTAssertEqual(start(settings: "ja"), 2)
+        XCTAssertEqual(start(0, settings: "ja"), 0, "A pick wins")
+        XCTAssertEqual(start(viewing: "jpn", settings: "en"), 2, "A language picked in this viewing")
+        XCTAssertEqual(start(settings: nil), 2, "Without the settings, the manifest's choice stands")
     }
 
     // MARK: - Bitrate

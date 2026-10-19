@@ -27,10 +27,24 @@ extension PlayerViewModel {
         refreshOpenSubtitleOffsets(contentID: prepared.watchDetail.contentId, fileID: prepared.selectedVersion.fileId)
         #endif
         let preferredSubtitles = subtitleOrderingLanguage.map { [$0] } ?? []
+        loadAudioOrdinal = prepared.session.audioTrackIndex
+        if let seed = viewingAudioSeedOrdinal {
+            viewingAudioSeedOrdinal = nil
+            viewingAudioLanguage = Self.viewingAudioLanguage(
+                stream: nil,
+                catalog: prepared.selectedVersion.audioTracks ?? [],
+                ordinal: seed
+            )
+        }
+        let catalogAudio = prepared.selectedVersion.audioTracks ?? []
         let preferredAudio = VividInitialAudioPreference.languages(
             selectedOrdinal: prepared.protocolV3?.plan.selectedTracks.audio?.index,
-            tracks: prepared.selectedVersion.audioTracks ?? [],
-            fallbackLanguage: settings.audioLanguage
+            tracks: catalogAudio,
+            fallbackLanguage: VividInitialAudioPreference.preferredLanguage(
+                viewing: viewingAudioLanguage,
+                settings: settings.audioLanguage,
+                tracks: catalogAudio
+            )
         )
         let forwardBufferSegments = settings.bufferAhead.forwardBufferSegments
         let spec: VividLoadSpec

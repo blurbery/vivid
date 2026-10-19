@@ -486,8 +486,10 @@ extension PlayerViewModel {
 
     func playOnDeckItemNow(_ item: PlayerOnDeckItem) {
         // Another title rather than the next episode: Settings > Subtitles
-        // applies again.
+        // and Audio Language apply again.
         viewingSubtitlePrefs = nil
+        viewingAudioLanguage = nil
+        viewingAudioSeedOrdinal = nil
         let request = LoadRequest(
             contentId: item.contentId,
             preferredFileId: nil,
