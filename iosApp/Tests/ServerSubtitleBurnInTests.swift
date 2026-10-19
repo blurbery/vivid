@@ -231,6 +231,36 @@ final class ServerSubtitleBurnInTests: XCTestCase {
         await finish(model)
     }
 
+    /// A quality change can carry Auto's pick into a load that burns it in.
+    /// Auto mustn't run again there: on a transcode that only copies the
+    /// video it would hide the row, switch the burn-in off and reload.
+    func testAConfirmedBurnInHoldsForTheItemEvenWhenAutoChoseIt() async throws {
+        let model = PlayerViewModel()
+        model.hasExplicitSubtitleChoice = false
+        model.prefsForCurrentItem = .init(
+            preferredLanguage: "en", additionalPreferredLanguages: [], mode: .auto,
+            showForced: true, forcedOnly: false, preferAccessibilityTracks: false,
+            disableWhenNoLanguageMatch: true, trackSignature: nil
+        )
+        let file = version([catalogue(2, codec: "subrip", forced: true), catalogue(3, codec: "pgssub", forced: true)])
+        let session = PlaybackSessionResponse(sessionId: "burned", userId: nil, profileId: nil, mediaFileId: 42,
+            playMethod: "Transcode", position: 0, isPaused: false, streamUrl: "https://media.example.test/master.m3u8",
+            audioTrackIndex: nil, durationSeconds: 7_200, subtitleUrls: [], playbackInfo: nil)
+        model.adoptServerTranscodeSubtitles(PreparedPlayback(
+            watchDetail: try watchDetail(), selectedVersion: file, session: session,
+            transcodeSubtitles: ServerTranscodeSubtitles(burnedIndex: 3, failedIndex: nil, copiesVideo: true)))
+        XCTAssertTrue(model.hasExplicitSubtitleChoice)
+        XCTAssertNil(model.prefsForCurrentItem)
+        model.currentWatchDetail = try watchDetail()
+        model.currentSelectedVersion = file
+        model.subtitleTracks = model.refreshServerBurnInRows()
+        model.reassertServerBurnedInSubtitle(loadIsEstablished: false)
+        model.applyAutoSubtitlePreferencesIfNeeded(forceReevaluation: true)
+        XCTAssertEqual(model.selectedSubtitleId, SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: 3))
+        XCTAssertEqual(model.serverBurnInReload, .none)
+        await finish(model)
+    }
+
     func testLeavingOrChoosingABurnInRowNeedsAReload() async throws {
         let burned = try transcodingModel(burned: 3)
         burned.reassertServerBurnedInSubtitle(loadIsEstablished: false)

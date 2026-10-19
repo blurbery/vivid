@@ -24,9 +24,19 @@ extension PlayerViewModel {
     /// load plays without a burn-in the server didn't confirm, and one it
     /// refused is dropped for the rest of the item. After a request that
     /// failed, the subtitle can be chosen again to retry.
+    ///
+    /// A burn-in the server confirmed holds for the item, even when Auto
+    /// chose it before a quality change or renewal: running Auto again could
+    /// switch it off (on a transcode that only copies the video, say) and
+    /// restart the transcode for nothing.
     func adoptServerTranscodeSubtitles(_ prepared: PreparedPlayback) {
         serverTranscodeSubtitles = prepared.transcodeSubtitles
         serverBurnInRows = []
+        if prepared.transcodeSubtitles?.burnedIndex != nil {
+            hasExplicitSubtitleChoice = true
+            prefsForCurrentItem = nil
+            prefsResolvedForCurrentItem = true
+        }
         guard let transcode = prepared.transcodeSubtitles, let failed = transcode.failedIndex else { return }
         if !transcode.failureIsTemporary {
             failedServerBurnIns.insert(ServerBurnInFailure(
