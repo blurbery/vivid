@@ -22,8 +22,10 @@ name: Claude Code Review
 # models, effort levels and prompt changes against commits other reviewers
 # have already checked. With "post" ticked, a manual run reviews the PR's
 # head in full instead, with the chosen model, effort and cost limit, and
-# posts the result like an automatic review. A cost limit of 0 means none
-# (each pass then stops at 300 turns), and manual runs get two hours.
+# posts the result like an automatic review. Setting "since" as well reviews
+# only the commits after that one, like a push does, which checks the fixes
+# for earlier findings. A cost limit of 0 means none (each pass then stops at
+# 300 turns), and manual runs get two hours.
 
 on:
   pull_request:
@@ -55,6 +57,9 @@ on:
         description: Post the review on the PR instead of a dry run (reviews the PR's head)
         type: boolean
         default: false
+      since:
+        description: With post, review only the commits after this one, for example to check fixes (empty reviews the whole PR)
+        required: false
 
 # A newer push waits for the running review rather than cancelling it, so the
 # credit already spent isn't wasted. Reviews still queued are replaced. A
@@ -129,6 +134,7 @@ jobs:
           BOT_LOGIN: ${{ steps.app.outputs.app-slug && format('{0}[bot]', steps.app.outputs.app-slug) || 'github-actions[bot]' }}
           REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
+          SINCE: ${{ inputs.since }}
           PR: ${{ steps.pr.outputs.number }}
           BASE_SHA: ${{ steps.pr.outputs.base }}
           HEAD_SHA: ${{ steps.pr.outputs.head }}
@@ -150,7 +156,8 @@ jobs:
             if [ "$last_sha" = "-" ]; then last_sha=""; fi
             if [ "$login" != "$BOT_LOGIN" ]; then comment_id=""; fi
           fi
-          # A manual run always reviews the whole PR, even a commit already reviewed.
+          # A manual run reviews the whole PR, or the commits after "since",
+          # even when they've been reviewed already.
           if [ "$EVENT" = workflow_dispatch ]; then last_sha=""; fi
           if [ "$last_sha" = "$HEAD_SHA" ]; then
             echo "::notice::This commit has already been reviewed."
@@ -160,7 +167,18 @@ jobs:
 
           merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           git diff --name-only "$merge_base" "$HEAD_SHA" > "$dir/files.txt"
-          if [ -n "$last_sha" ] && git merge-base --is-ancestor "$last_sha" "$HEAD_SHA" 2>/dev/null; then
+          if [ -n "$SINCE" ]; then
+            # "since" has to be one of the PR's own commits before its head.
+            from=""
+            if [[ "$SINCE" =~ ^[0-9a-f]{7,40}$ ]]; then from=$(git rev-parse --verify --quiet "$SINCE^{commit}" || true); fi
+            if [ -z "$from" ] || [ "$from" = "$HEAD_SHA" ] \
+              || ! git merge-base --is-ancestor "$merge_base" "$from" \
+              || ! git merge-base --is-ancestor "$from" "$HEAD_SHA"; then
+              echo "::error::\"since\" must be a commit on this PR before its head, ${HEAD_SHA:0:7}."
+              exit 1
+            fi
+            mode=incremental
+          elif [ -n "$last_sha" ] && git merge-base --is-ancestor "$last_sha" "$HEAD_SHA" 2>/dev/null; then
             mode=incremental
             from=$last_sha
           else
@@ -176,6 +194,8 @@ jobs:
             git diff "$from" "$HEAD_SHA" -- "${files[@]}" > "$dir/diff.patch"
           fi
           if [ ! -s "$dir/diff.patch" ]; then
+            # A manual run fails instead, so it doesn't look as if it reviewed something.
+            if [ "$EVENT" = workflow_dispatch ]; then echo "::error::Nothing to review since ${from:0:7}."; exit 1; fi
             echo "::notice::Nothing new to review since ${from:0:7}."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -325,10 +345,12 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ inputs.pr }}
           SHA: ${{ inputs.sha }}
+          SINCE: ${{ inputs.since }}
         run: |
           set -euo pipefail
           dir=.claude-review
           if ! [[ "$PR" =~ ^[0-9]+$ ]]; then echo "::error::The PR must be a number."; exit 1; fi
+          if [ -n "$SINCE" ]; then echo "::error::\"since\" only works with post, because a dry run always reviews the whole PR."; exit 1; fi
           read -r cross base pr_head < <(gh pr view "$PR" --repo "$REPO" --json isCrossRepository,baseRefOid,headRefOid --jq '"\(.isCrossRepository) \(.baseRefOid) \(.headRefOid)"')
           if [ "$cross" != false ]; then echo "::error::Only PRs from this repository can be reviewed."; exit 1; fi
 
