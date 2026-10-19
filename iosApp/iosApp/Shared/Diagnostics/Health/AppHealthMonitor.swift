@@ -83,14 +83,15 @@ enum AppHealthMonitor {
             $0.bootTime = bootTime
         }
 
-        let previous = store?.data(forKey: markerKey)
+        // Earlier builds kept both in the standard store. They are still read
+        // once, so a crash just before an update keeps what the app was
+        // doing, then removed.
+        let previous = (store?.data(forKey: markerKey) ?? UserDefaults.standard.data(forKey: markerKey))
             .flatMap { try? JSONDecoder().decode(AppHealthExitMarker.self, from: $0) }
         store?.removeObject(forKey: markerKey)
-        let backgroundContext = store?.data(forKey: backgroundContextKey)
+        let backgroundContext = (store?.data(forKey: backgroundContextKey) ?? UserDefaults.standard.data(forKey: backgroundContextKey))
             .flatMap { try? JSONDecoder().decode(AppHealthBackgroundContext.self, from: $0) }
         store?.removeObject(forKey: backgroundContextKey)
-        // Earlier builds kept both in the standard store. A marker from
-        // another build is discarded anyway, so nothing is carried over.
         for key in [markerKey, backgroundContextKey] where UserDefaults.standard.object(forKey: key) != nil {
             UserDefaults.standard.removeObject(forKey: key)
         }
