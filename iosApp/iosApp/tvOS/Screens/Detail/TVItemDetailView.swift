@@ -14,10 +14,6 @@ struct TVItemDetailView: View {
     let seed: TVItemDetailRouteSeed?
 
     @State private var viewModel: ItemDetailViewModel
-    /// Set when the user explicitly resets subtitles to "Auto" this visit:
-    /// the server override is cleared with a fire-and-forget DELETE, but the
-    /// already-fetched detail still carries the old `effectiveSubtitle*`, so
-    /// the selector must stop feeding it to the "Auto: …" preview.
     @State private var nextUpPlaybackDetail: ItemDetail?
     /// Pin playback independently of browsing; nil uses the suggested episode.
     @State private var activeSeriesEpisodeContentId: String?

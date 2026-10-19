@@ -577,10 +577,6 @@ extension PlayerViewModel {
             restoreQueuedProtocolV3TrackSelection(trackTarget)
         }
         let selectedSubtitleSnapshot = selectedSubtitleId
-        // The replacement load starts with subtitles off, and Silo is asked
-        // for none because Vivid renders them. Read the playing subtitle back
-        // now, while the old plan still describes it.
-        let subtitleIndexForReload = targetsSubtitle ? nil : resolvedSubtitleTrackIndexForResume()
         // The user-facing selection can be republished from Vivid while the
         // async replan task is waiting to start (inventory/store discovery is
         // still active after a replacement load). A user track change already
@@ -694,6 +690,11 @@ extension PlayerViewModel {
                     throw CancellationError()
                 }
 
+                // The replacement load starts with subtitles off, and Silo is
+                // asked for none because Vivid renders them. Read the playing
+                // subtitle back now, after the wait (a pick or Off made
+                // meanwhile counts) and while the old plan still describes it.
+                let subtitleIndexForReload = targetsSubtitle ? nil : self.resolvedSubtitleTrackIndexForResume()
                 let previousSessionId = self.activePlaybackSessionId
                 self.activePlaybackSessionId = prepared.session.sessionId
                 self.currentWatchDetail = prepared.watchDetail

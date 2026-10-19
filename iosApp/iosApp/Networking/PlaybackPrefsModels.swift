@@ -232,15 +232,6 @@ enum SubtitleMode: String, CaseIterable, Codable, Hashable {
     }
 }
 
-struct SubtitlePrefRequest: Codable {
-    let subtitleLanguage: String
-    let subtitleTrackIndex: Int
-    let externalSubtitlePath: String
-    let subtitleMode: String
-    let trackSignature: SubtitleTrackSignature?
-    let showForcedSubtitles: Bool?
-}
-
 struct AudioPrefRequest: Codable {
     let audioTrackIndex: Int
     let audioLanguage: String

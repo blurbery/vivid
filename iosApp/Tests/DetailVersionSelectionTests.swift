@@ -475,10 +475,6 @@ final class DetailVersionSelectionTests: XCTestCase {
             DetailPlaybackFormatting.subtitleShortLabel(versions[0].subtitleTracks![0], ordinal: 0),
             "English"
         )
-        XCTAssertEqual(
-            TrackSelectionPersistence.subtitleRequest(version: versions[0], ffIndex: 0, showForced: nil)?.subtitleTrackIndex,
-            0
-        )
     }
 
     func testSignatureSubtitlePreviewConsidersExternalTracks() {

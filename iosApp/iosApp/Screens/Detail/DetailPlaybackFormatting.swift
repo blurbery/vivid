@@ -118,7 +118,8 @@ enum DetailPlaybackFormatting {
     }
 
     /// The subtitle row always shows once the file is known, even for a file
-    /// with no subtitles: it reads "Off" and still opens OpenSubtitles search.
+    /// with no subtitles: it reads "Auto: Off" (or "Off") and still opens
+    /// OpenSubtitles search.
     static func shouldShowSubtitleValue(version: FileVersion?) -> Bool {
         version != nil
     }
