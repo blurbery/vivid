@@ -482,7 +482,7 @@ extension PlayerViewModel {
             guard let resolved, selectedAudioId != resolved.trackId else { return }
             pendingAudioFfIndex = nil
             selectedAudioId = resolved.trackId
-            reapplySystemSubtitlePolicy()
+            reapplyAutomaticSubtitlePolicy()
         case .subtitle(let trackId, let combinedIndex):
             guard let trackId else {
                 guard selectedSubtitleId != nil else { return }
@@ -690,12 +690,29 @@ extension PlayerViewModel {
                     throw CancellationError()
                 }
 
+                // The replacement load starts with subtitles off, and Silo is
+                // asked for none because Vivid renders them. Read the playing
+                // subtitle back now, after the wait (a pick or Off made
+                // meanwhile counts) and while the old plan still describes it.
+                let subtitleIndexForReload = targetsSubtitle ? nil : self.resolvedSubtitleTrackIndexForResume()
                 let previousSessionId = self.activePlaybackSessionId
                 self.activePlaybackSessionId = prepared.session.sessionId
                 self.currentWatchDetail = prepared.watchDetail
                 self.currentSelectedVersion = prepared.selectedVersion
                 self.activePreparedProtocolV3 = prepared.protocolV3
                 self.adoptProtocolV3RenewalIntent(from: prepared)
+                if !targetsSubtitle {
+                    if self.hasExplicitSubtitleChoice {
+                        // A track (or Off) picked for this item comes back.
+                        self.pendingSubtitleFfIndex = subtitleIndexForReload
+                    } else {
+                        // The automatic pick runs again on the new tracks,
+                        // with the audio this replan may have switched.
+                        self.prefsForCurrentItem = self.prefsForCurrentItem
+                            ?? self.automaticSubtitlePrefsSnapshot()
+                        self.prefsResolvedForCurrentItem = false
+                    }
+                }
                 switch Self.protocolV3SidecarRestoreIntent(
                     snapshot: selectedSubtitleSnapshot,
                     selectedSubtitleIndex: prepared.protocolV3?.plan.selectedTracks.subtitle?.index,

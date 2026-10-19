@@ -42,6 +42,18 @@ struct TVSubtitleSettingsPane: View {
             .disabled(viewModel.subtitleMatchesSystemAppearance)
 
             TVSettingsOptionMenu(
+                title: "Backup Language",
+                value: TVSettingsOptions.label(
+                    for: viewModel.editorSubtitleBackupLanguage,
+                    in: TVSettingsOptions.subtitleBackupLanguage(viewModel.subtitleBackupLanguageOptions)
+                ),
+                options: pickerRequest(for: .backupLanguage).options,
+                selection: pickerRequest(for: .backupLanguage).selection
+            )
+            .focused(detailFocus, equals: .subtitleBackupLanguage)
+            .disabled(viewModel.subtitleMatchesSystemAppearance || !viewModel.subtitleBackupLanguageApplies)
+
+            TVSettingsOptionMenu(
                 title: "Behavior",
                 value: TVSettingsOptions.label(for: viewModel.editorSubtitleMode, in: TVSettingsOptions.subtitleMode),
                 options: pickerRequest(for: .mode).options,
@@ -63,7 +75,7 @@ struct TVSubtitleSettingsPane: View {
         if viewModel.subtitleMatchesSystemAppearance {
             TVSettingsFooter("Language, display behavior, forced captions, and CC/SDH preference follow this Apple TV's Accessibility settings.")
         } else {
-            TVSettingsFooter("Subtitles are read from the media. Preferences are saved in Vivid for this profile on this Apple TV.")
+            TVSettingsFooter("Subtitles are read from the media. Backup Language is used when full subtitles would play but the title has none in your language. Preferences are saved in Vivid for this profile on this Apple TV.")
         }
 
     }
@@ -192,6 +204,13 @@ struct TVSubtitleSettingsPane: View {
                 options: TVSettingsOptions.subtitleLanguage(viewModel.subtitleLanguageOptions),
                 selection: $viewModel.editorSubtitleLanguage
             )
+        case .backupLanguage:
+            TVSettingsPickerRequest(
+                id: kind.id,
+                title: "Backup Language",
+                options: TVSettingsOptions.subtitleBackupLanguage(viewModel.subtitleBackupLanguageOptions),
+                selection: $viewModel.editorSubtitleBackupLanguage
+            )
         case .mode:
             TVSettingsPickerRequest(
                 id: kind.id,
@@ -246,6 +265,7 @@ struct TVSubtitleSettingsPane: View {
 
     enum PickerKind: String, Identifiable {
         case language
+        case backupLanguage
         case mode
         case fontSize
         case fontColor
@@ -259,6 +279,7 @@ struct TVSubtitleSettingsPane: View {
         var returnFocus: TVSettingsDetailFocus {
             switch self {
             case .language: .top
+            case .backupLanguage: .subtitleBackupLanguage
             case .mode: .subtitleBehavior
             case .fontSize: .subtitleFontSize
             case .fontColor: .subtitleFontColor

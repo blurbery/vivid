@@ -27,7 +27,7 @@ extension PlayerViewModel {
             pendingAudioFfIndex = nil
             selectedAudioId = track.trackId
             audioPickedForCurrentItem = true
-            reapplySystemSubtitlePolicy()
+            reapplyAutomaticSubtitlePolicy()
             guard attemptProtocolV3Replan(
                 position: currentTime,
                 classification: "audio_track_changed",
@@ -38,7 +38,7 @@ extension PlayerViewModel {
                 selectedAudioId = priorAudioId
                 pendingAudioFfIndex = priorPendingAudioFfIndex
                 audioPickedForCurrentItem = priorAudioPicked
-                reapplySystemSubtitlePolicy()
+                reapplyAutomaticSubtitlePolicy()
                 showNotice(
                     title: "Couldn't change audio",
                     message: "The audio track couldn't be switched. Try again.",
@@ -61,7 +61,7 @@ extension PlayerViewModel {
         selectedAudioId = track.trackId
         audioPickedForCurrentItem = true
         persistAudioSelection(track)
-        reapplySystemSubtitlePolicy()
+        reapplyAutomaticSubtitlePolicy()
         applyAudioTrackSelection(track.trackId, reason: "user_selection")
         scheduleHideControls()
     }
@@ -254,12 +254,15 @@ extension PlayerViewModel {
             )
         }
         let language = track.normalizedLanguageCode
+        let isForced = SubtitleAutoResolver.isForced(track)
         return PrefsSnapshot(
             preferredLanguage: language,
             additionalPreferredLanguages: [],
             mode: .always,
-            showForced: track.isForced,
-            forcedOnly: false,
+            showForced: isForced,
+            // A forced pick stays forced: an episode without a forced track in
+            // that language plays without subtitles rather than the full track.
+            forcedOnly: isForced,
             preferAccessibilityTracks: track.isHearingImpaired,
             // A pick without a language still means "subtitles on".
             disableWhenNoLanguageMatch: language != nil,
@@ -268,7 +271,7 @@ extension PlayerViewModel {
                 language: language,
                 codec: track.codec,
                 label: track.normalizedTitle,
-                forced: track.isForced,
+                forced: isForced,
                 hearingImpaired: track.isHearingImpaired
             )
         )
@@ -277,11 +280,19 @@ extension PlayerViewModel {
     /// What drives the automatic pick for the item being loaded: this
     /// viewing's player choice first, then Settings > Subtitles, or the
     /// device's caption settings when Vivid follows them.
-    func automaticSubtitlePrefsSnapshot(_ watchDetail: WatchDetail) -> PrefsSnapshot {
-        if let viewingSubtitlePrefs { return viewingSubtitlePrefs }
-        return settings.subtitleMatchesSystemAppearance
-            ? systemCaptionPrefsSnapshot()
-            : localSubtitlePrefsSnapshot(watchDetail)
+    func automaticSubtitlePrefsSnapshot(_ watchDetail: WatchDetail? = nil) -> PrefsSnapshot {
+        viewingSubtitlePrefs ?? Self.settingsSubtitlePrefs(settings)
+    }
+
+    /// Settings > Subtitles, or the device's caption settings when Vivid
+    /// follows them. This is the only source of the automatic subtitle pick,
+    /// on Silo, Emby and Jellyfin alike: the player resolves it against the
+    /// tracks it plays and the detail pages against the catalogue's, so both
+    /// show the same choice. No server-side subtitle setting takes part.
+    static func settingsSubtitlePrefs(_ settings: PlayerSettings) -> PrefsSnapshot {
+        settings.subtitleMatchesSystemAppearance
+            ? systemCaptionPrefs(settings.subtitleSystemSelectionPreferences)
+            : localSubtitlePrefs(settings)
     }
 
     func selectSecondarySubtitle(_ track: PlayerTrack) {
@@ -610,9 +621,11 @@ extension PlayerViewModel {
             mode: prefs.mode,
             showForced: prefs.showForced,
             forcedOnly: prefs.forcedOnly,
+            forcedFollowsAudio: prefs.forcedFollowsAudio,
             preferAccessibilityTracks: prefs.preferAccessibilityTracks,
             disableWhenNoLanguageMatch: prefs.disableWhenNoLanguageMatch,
             trackSignature: prefs.trackSignature,
+            fallbackLanguages: prefs.fallbackLanguages,
             availableSubtitles: allSubs,
             currentAudioLanguage: audioLang
         ))
@@ -681,18 +694,21 @@ extension PlayerViewModel {
         applyAutoSubtitle(.select(track))
     }
 
-    func reapplySystemSubtitlePolicy() {
-        guard settings.subtitleMatchesSystemAppearance, !hasExplicitSubtitleChoice,
-              viewingSubtitlePrefs == nil else { return }
-        subtitleOrderingLanguage = settings.subtitleSystemSelectionPreferences
-            .preferredLanguages.first
-        prefsForCurrentItem = systemCaptionPrefsSnapshot()
+    /// Re-run the automatic pick for the current item. Auto's answer depends
+    /// on the audio's language, so an audio switch needs this in every mode.
+    /// A pick made for this item stays.
+    func reapplyAutomaticSubtitlePolicy() {
+        guard !hasExplicitSubtitleChoice else { return }
+        prefsForCurrentItem = automaticSubtitlePrefsSnapshot()
         prefsResolvedForCurrentItem = false
         applyAutoSubtitlePreferencesIfNeeded(forceReevaluation: true)
     }
 
     func systemCaptionPrefsSnapshot() -> PrefsSnapshot {
-        let system = settings.subtitleSystemSelectionPreferences
+        Self.systemCaptionPrefs(settings.subtitleSystemSelectionPreferences)
+    }
+
+    static func systemCaptionPrefs(_ system: SystemCaptionSelectionPreferences) -> PrefsSnapshot {
         let firstLanguage = system.preferredLanguages.first
         let remainingLanguages = Array(system.preferredLanguages.dropFirst())
         switch system.displayMode {
@@ -705,12 +721,16 @@ extension PlayerViewModel {
                 forcedOnly: true,
                 preferAccessibilityTracks: system.prefersAccessibilityTracks,
                 disableWhenNoLanguageMatch: true,
-                trackSignature: nil
+                trackSignature: nil,
+                forcedFollowsAudio: true
             )
         case .automatic:
+            // Apple's Automatic shows subtitles in the device's language when
+            // the audio isn't in it. The caption languages are a history of
+            // past picks and don't decide it.
             return PrefsSnapshot(
-                preferredLanguage: firstLanguage,
-                additionalPreferredLanguages: remainingLanguages,
+                preferredLanguage: system.deviceLanguages.first ?? firstLanguage,
+                additionalPreferredLanguages: system.deviceLanguages.isEmpty ? remainingLanguages : [],
                 mode: .auto,
                 showForced: true,
                 forcedOnly: false,
@@ -719,11 +739,13 @@ extension PlayerViewModel {
                 trackSignature: nil
             )
         case .alwaysOn:
+            // Always On prefers the full track, but a language whose only
+            // track is forced still gets that track rather than nothing.
             return PrefsSnapshot(
                 preferredLanguage: firstLanguage,
                 additionalPreferredLanguages: remainingLanguages,
                 mode: .always,
-                showForced: false,
+                showForced: true,
                 forcedOnly: false,
                 preferAccessibilityTracks: system.prefersAccessibilityTracks,
                 disableWhenNoLanguageMatch: true,
@@ -732,14 +754,31 @@ extension PlayerViewModel {
         }
     }
 
-    func localSubtitlePrefsSnapshot(_ watchDetail: WatchDetail) -> PrefsSnapshot {
-        PrefsSnapshot(
-            preferredLanguage: settings.preferredSubtitleLanguage == PlaybackPrefSentinel.none ? nil : settings.preferredSubtitleLanguage,
+    func localSubtitlePrefsSnapshot(_ watchDetail: WatchDetail? = nil) -> PrefsSnapshot {
+        Self.localSubtitlePrefs(settings)
+    }
+
+    static func localSubtitlePrefs(_ settings: PlayerSettings) -> PrefsSnapshot {
+        let language = settings.preferredSubtitleLanguage == PlaybackPrefSentinel.none
+            ? nil : settings.preferredSubtitleLanguage
+        let backup = settings.preferredSubtitleBackupLanguage
+        let mode = SubtitleMode(rawValue: settings.preferredSubtitleMode)
+        // Always with Language set to None still shows subtitles: in the
+        // device's language when the file has it, otherwise the file's own
+        // default track.
+        let alwaysWithoutLanguage = language == nil && mode == .always
+        // A backup only stands in for a chosen language.
+        let fallback = alwaysWithoutLanguage
+            ? Locale.preferredLanguages
+            : language != nil && !backup.isEmpty && backup != PlaybackPrefSentinel.none ? [backup] : []
+        return PrefsSnapshot(
+            preferredLanguage: language,
             additionalPreferredLanguages: [],
-            mode: SubtitleMode(rawValue: settings.preferredSubtitleMode),
+            mode: mode,
             showForced: settings.showForcedSubtitles,
             forcedOnly: false, preferAccessibilityTracks: false,
-            disableWhenNoLanguageMatch: true, trackSignature: nil
+            disableWhenNoLanguageMatch: !alwaysWithoutLanguage, trackSignature: nil,
+            fallbackLanguages: fallback
         )
     }
 

@@ -49,6 +49,20 @@ struct SubtitleSettingsView: View {
             .pickerStyle(.navigationLink)
             #endif
 
+            Picker("Backup Language", selection: $viewModel.editorSubtitleBackupLanguage) {
+                Text("None").tag(PlaybackPrefSentinel.none)
+                ForEach(viewModel.subtitleBackupLanguageOptions) { option in
+                    Text(option.label).tag(option.code)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            #if os(macOS)
+            .pickerStyle(.menu)
+            #else
+            .pickerStyle(.navigationLink)
+            #endif
+            .disabled(!viewModel.subtitleBackupLanguageApplies)
+
             Picker("Behavior", selection: $viewModel.editorSubtitleMode) {
                 ForEach(SubtitleMode.allCases, id: \.rawValue) { mode in
                     Text(mode.displayLabel).tag(mode.rawValue)
@@ -70,6 +84,8 @@ struct SubtitleSettingsView: View {
             )
             .foregroundStyle(Color.vividOnSurface)
             .tint(.white)
+            // Off means no subtitles at all, forced ones included (as on Apple TV).
+            .disabled(viewModel.editorSubtitleMode == SubtitleMode.off.rawValue)
         } header: {
             PhoneSettingsSectionHeader("Embedded Subtitles")
         } footer: {
@@ -77,7 +93,7 @@ struct SubtitleSettingsView: View {
                 if viewModel.subtitleMatchesSystemAppearance {
                     Text("Language, display behavior, forced captions, and CC/SDH preference follow this device's Accessibility settings.")
                 } else {
-                    Text("Selects matching subtitles embedded in the media. Preferences are saved on this device for the current profile.")
+                    Text("Selects matching subtitles embedded in the media. Backup Language is used when full subtitles would play but the title has none in your language. Preferences are saved on this device for the current profile.")
                 }
             }
             .foregroundStyle(Color.vividSecondaryText)
@@ -141,11 +157,7 @@ struct SubtitleSettingsView: View {
                 } else {
                     Text("Using Vivid’s default appearance. Turn on Custom Appearance to adjust it.")
                 }
-                if viewModel.subtitleMatchesSystemAppearance {
-                    Text("Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
-                } else {
-                    Text("Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
-                }
+                Text("Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
             }
             .foregroundStyle(Color.vividSecondaryText)
         }

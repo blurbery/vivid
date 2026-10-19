@@ -58,8 +58,14 @@ extension PlayerViewModel {
 
     @MainActor
     func setSubtitleAppearance(_ appearance: SubtitleAppearance) async {
+        let followedDeviceSettings = settings.subtitleMatchesSystemAppearance
         await settings.setSubtitleAppearance(appearance)
         applySubtitleAppearanceToPlayer()
+        // Editing the style leaves Use Device Settings, and the subtitle choice
+        // goes back to Settings > Subtitles with it.
+        if followedDeviceSettings, !settings.subtitleMatchesSystemAppearance {
+            subtitleSettingsSourceDidChange()
+        }
     }
 
     @MainActor
@@ -85,14 +91,35 @@ extension PlayerViewModel {
     func setSubtitleMatchesSystemAppearance(_ enabled: Bool) {
         settings.setSubtitleMatchesSystemAppearance(enabled)
         applySubtitleAppearanceToPlayer()
-        subtitleOrderingLanguage = enabled
+        subtitleSettingsSourceDidChange()
+    }
+
+    /// The device's caption settings may have changed (MediaAccessibility's
+    /// notification, or a return to the app). With Use Device Settings on, the
+    /// new style reaches the engine and Auto picks again, unless a subtitle
+    /// was picked in this viewing.
+    @MainActor
+    func systemCaptionSettingsDidChange() {
+        guard !isDisposed, settings.subtitleMatchesSystemAppearance else { return }
+        settings.refreshSubtitleSystemAppearance()
+        applySubtitleAppearanceToPlayer()
+        subtitleOrderingLanguage = settings.subtitleSystemSelectionPreferences.preferredLanguages.first
+        guard !hasExplicitSubtitleChoice, viewingSubtitlePrefs == nil else { return }
+        prefsForCurrentItem = systemCaptionPrefsSnapshot()
+        prefsResolvedForCurrentItem = false
+        applyAutoSubtitlePreferencesIfNeeded(forceReevaluation: true)
+    }
+
+    /// Use Device Settings changed, so the automatic pick starts again from
+    /// the settings now in charge, and a pick made in this viewing is dropped.
+    @MainActor
+    private func subtitleSettingsSourceDidChange() {
+        subtitleOrderingLanguage = settings.subtitleMatchesSystemAppearance
             ? settings.subtitleSystemSelectionPreferences.preferredLanguages.first
             : settings.preferredSubtitleLanguage
         hasExplicitSubtitleChoice = false
         viewingSubtitlePrefs = nil
-        prefsForCurrentItem = enabled
-            ? systemCaptionPrefsSnapshot()
-            : currentWatchDetail.map(localSubtitlePrefsSnapshot)
+        prefsForCurrentItem = automaticSubtitlePrefsSnapshot()
         prefsResolvedForCurrentItem = false
         applyAutoSubtitlePreferencesIfNeeded(forceReevaluation: true)
     }

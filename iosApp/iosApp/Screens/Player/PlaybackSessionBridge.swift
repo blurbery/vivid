@@ -890,21 +890,18 @@ actor PlaybackSessionBridge {
             version: selectedVersion,
             explicitFFmpegIndex: preferredSubtitleTrackIndex,
             explicitCombinedIndex: preferredProtocolV3SubtitleIndex,
-            preferredLanguage: initialSubtitlePreferences == nil
-                ? watchDetail.effectiveSubtitleLanguage
-                : initialSubtitlePreferences?.preferredLanguage,
+            // Only the preferences the caller hands in. A server's remembered
+            // subtitle mode or track never chooses subtitles: without
+            // preferences the plan starts with none, and the player picks from
+            // Settings > Subtitles once the file is open.
+            preferredLanguage: initialSubtitlePreferences?.preferredLanguage,
             additionalPreferredLanguages: initialSubtitlePreferences?.additionalPreferredLanguages ?? [],
-            mode: initialSubtitlePreferences == nil
-                ? SubtitleMode(rawValue: watchDetail.effectiveSubtitleMode ?? "")
-                : initialSubtitlePreferences?.mode,
-            showForced: initialSubtitlePreferences?.showForced
-                ?? (watchDetail.effectiveShowForcedSubtitles ?? false),
+            mode: initialSubtitlePreferences == nil ? .off : initialSubtitlePreferences?.mode,
+            showForced: initialSubtitlePreferences?.showForced ?? false,
             forcedOnly: initialSubtitlePreferences?.forcedOnly ?? false,
             preferAccessibilityTracks: initialSubtitlePreferences?.preferAccessibilityTracks ?? false,
             disableWhenNoLanguageMatch: initialSubtitlePreferences?.disableWhenNoLanguageMatch ?? false,
-            trackSignature: initialSubtitlePreferences == nil
-                ? watchDetail.effectiveSubtitleTrackSignature
-                : initialSubtitlePreferences?.trackSignature,
+            trackSignature: initialSubtitlePreferences?.trackSignature,
             currentAudioLanguage: selectedAudioLanguage
         )
         let effectiveStartPosition = resolvedStartPosition(

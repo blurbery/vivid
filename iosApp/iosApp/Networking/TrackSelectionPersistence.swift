@@ -2,13 +2,12 @@
 //  TrackSelectionPersistence.swift
 //  Vivid (iOS + tvOS)
 //
-//  Persists the user's explicit audio / subtitle track choices to the
-//  server's per-series preference endpoints so they survive exiting
-//  the player and revisiting the item — matching the web app. The web
-//  player PUTs `/subtitle-prefs/{key}` on every subtitle change and
-//  relies on its audio-change PATCH to persist audio server-side;
-//  Apple's track switches are engine-local (no wire call), so both
-//  kinds are written here explicitly.
+//  Persists the user's explicit audio track choices to the server's
+//  per-series preference endpoints so they survive exiting the player and
+//  revisiting the item, matching the web app. Apple's track switches are
+//  engine-local (no wire call), so audio is written here explicitly.
+//  Subtitles are never written: Settings > Subtitles decides them on every
+//  server, and a pick lasts only for the viewing.
 //
 //  Key semantics mirror the web's `seriesContext?.seriesId ?? contentId`:
 //  episodes persist under their series id (one choice applies to the
@@ -16,10 +15,9 @@
 //  the key the server's detail resolver reads movie prefs back from.
 //
 //  Writes are best-effort fire-and-forget: a failed PUT costs the user
-//  a remembered preference, never playback. Reads never happen here —
-//  the server folds saved prefs into `WatchDetail.effective_*` /
-//  `FileVersion.effectiveAudioTrackIndex`, which the detail page and
-//  player already consume.
+//  a remembered preference, never playback. Reads never happen here:
+//  the server folds saved audio prefs into
+//  `FileVersion.effectiveAudioTrackIndex`, which the detail page reads.
 //
 
 import Foundation
@@ -87,72 +85,6 @@ enum TrackSelectionPersistence {
         )
     }
 
-    /// Subtitle pick against server file metadata. `ffIndex` matches
-    /// `version.subtitleTracks[].selectionIndex` (an embedded track with no
-    /// wire index is stream 0); a negative value is the detail page's
-    /// explicit "Off".
-    static func subtitleRequest(
-        version: FileVersion,
-        ffIndex: Int,
-        showForced: Bool?
-    ) -> SubtitlePrefRequest? {
-        if ffIndex < 0 {
-            return subtitleOffRequest(showForced: showForced)
-        }
-        guard let track = version.subtitleTracks?.first(where: { $0.selectionIndex == ffIndex }) else {
-            return nil
-        }
-        let isExternal = track.external ?? false
-        return SubtitlePrefRequest(
-            subtitleLanguage: track.language ?? "",
-            subtitleTrackIndex: ffIndex,
-            externalSubtitlePath: isExternal ? (track.externalPath ?? "") : "",
-            subtitleMode: SubtitleMode.always.rawValue,
-            trackSignature: SubtitleTrackSignature(
-                source: isExternal ? "external" : "embedded",
-                language: track.language,
-                codec: track.codec,
-                label: track.title ?? track.embeddedTitle,
-                forced: track.forced ?? false,
-                hearingImpaired: track.hearingImpaired ?? false
-            ),
-            showForcedSubtitles: showForced
-        )
-    }
-
-    /// Subtitle pick from a live player track (sidecar / downloaded /
-    /// embedded rows the watch detail can't describe).
-    static func subtitleRequest(track: PlayerTrack, showForced: Bool?) -> SubtitlePrefRequest {
-        SubtitlePrefRequest(
-            subtitleLanguage: track.normalizedLanguageCode ?? "",
-            subtitleTrackIndex: track.ffIndex ?? -1,
-            externalSubtitlePath: "",
-            subtitleMode: SubtitleMode.always.rawValue,
-            trackSignature: SubtitleTrackSignature(
-                source: track.isExternal ? "external" : "embedded",
-                language: track.normalizedLanguageCode,
-                codec: track.codec,
-                label: track.normalizedTitle,
-                forced: track.isForced,
-                hearingImpaired: track.isHearingImpaired
-            ),
-            showForcedSubtitles: showForced
-        )
-    }
-
-    /// Explicit "subtitles off" — same payload the web writes for a
-    /// null selection: empty language, index -1, mode "off".
-    static func subtitleOffRequest(showForced: Bool?) -> SubtitlePrefRequest {
-        SubtitlePrefRequest(
-            subtitleLanguage: "",
-            subtitleTrackIndex: -1,
-            externalSubtitlePath: "",
-            subtitleMode: SubtitleMode.off.rawValue,
-            trackSignature: nil,
-            showForcedSubtitles: showForced
-        )
-    }
-
     // MARK: - Fire-and-forget writers
 
     static func saveAudio(prefKey: String, request: AudioPrefRequest) {
@@ -162,18 +94,6 @@ enum TrackSelectionPersistence {
             } catch {
                 logger.warning(
                     "audio pref save failed key=\(prefKey, privacy: .public): \(String(describing: error), privacy: .public)"
-                )
-            }
-        }
-    }
-
-    static func saveSubtitle(prefKey: String, request: SubtitlePrefRequest) {
-        Task {
-            do {
-                try await VividAPI.shared.setSubtitlePref(seriesId: prefKey, body: request)
-            } catch {
-                logger.warning(
-                    "subtitle pref save failed key=\(prefKey, privacy: .public): \(String(describing: error), privacy: .public)"
                 )
             }
         }
@@ -191,20 +111,6 @@ enum TrackSelectionPersistence {
             } catch {
                 logger.warning(
                     "audio pref clear failed key=\(prefKey, privacy: .public): \(String(describing: error), privacy: .public)"
-                )
-            }
-        }
-    }
-
-    static func clearSubtitle(prefKey: String) {
-        Task {
-            do {
-                try await VividAPI.shared.deleteSubtitlePref(seriesId: prefKey)
-            } catch HTTPError.http(let code, _) where code == 404 {
-                // Nothing to clear.
-            } catch {
-                logger.warning(
-                    "subtitle pref clear failed key=\(prefKey, privacy: .public): \(String(describing: error), privacy: .public)"
                 )
             }
         }

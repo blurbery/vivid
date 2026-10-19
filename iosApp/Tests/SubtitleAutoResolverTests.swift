@@ -362,4 +362,176 @@ final class SubtitleAutoResolverTests: XCTestCase {
         XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(live: "und", catalog: [], ordinal: 0))
     }
 
+
+    // MARK: - Show Forced Subtitles and forced detection
+
+    /// With Show Forced Subtitles off, a forced track is never picked, even as
+    /// the language's only track: foreign audio plays without subtitles.
+    func testForcedToggleOffNeverPicksTheOnlyForcedTrack() {
+        let forced = track(id: 3, lang: "eng", forced: true)
+        let foreignAudio = inputs(preferredLanguage: "en", mode: .auto, showForced: false,
+                                  tracks: [forced], audioLanguage: "ja", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(foreignAudio), .disable)
+        let always = inputs(preferredLanguage: "en", mode: .always, showForced: false,
+                            tracks: [forced], audioLanguage: "en", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(always), .disable)
+    }
+
+    /// With the toggle on, the language's only forced track still plays.
+    func testForcedToggleOnKeepsTheOnlyForcedTrackAsFallback() {
+        let forced = track(id: 3, lang: "eng", forced: true)
+        let always = inputs(preferredLanguage: "en", mode: .always, showForced: true,
+                            tracks: [forced], audioLanguage: "en", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(always), .select(forced))
+    }
+
+    /// Many files name the forced track without flagging it. Auto with English
+    /// audio picks it, and Always still prefers the full track.
+    func testTitleOnlyForcedTrackCountsAsForced() {
+        let full = track(id: 4, lang: "eng", title: "English")
+        let titled = track(id: 3, lang: "eng", title: "English Forced")
+        let auto = inputs(preferredLanguage: "en", mode: .auto, showForced: true,
+                          tracks: [titled, full], audioLanguage: "eng", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(auto), .select(titled))
+        let always = inputs(preferredLanguage: "en", mode: .always, showForced: true,
+                            tracks: [titled, full], audioLanguage: "eng", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(always), .select(full))
+    }
+
+    func testForcedTitleDetectionNeedsTheWholeWord() {
+        XCTAssertTrue(SubtitleAutoResolver.titleIndicatesForced("Forced"))
+        XCTAssertTrue(SubtitleAutoResolver.titleIndicatesForced("Signs & Songs (Forced)"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced("English (Non-Forced)"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced("Not Forced"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced("Unforced Errors"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced(nil))
+    }
+
+    /// Off means no subtitles, forced ones included.
+    func testOffDisablesEvenWithForcedWanted() {
+        let forced = track(id: 3, lang: "eng", forced: true)
+        let off = inputs(preferredLanguage: "en", mode: .off, showForced: true,
+                         tracks: [forced], audioLanguage: "eng", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(off), .disable)
+    }
+
+    /// A carried forced pick with no language takes this episode's forced
+    /// track, and plays nothing when the episode has none.
+    func testForcedOnlyWithoutLanguageTakesAnyForcedTrack() {
+        let full = track(id: 4, lang: nil)
+        let forced = track(id: 3, lang: nil, forced: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(inputs(preferredLanguage: nil, mode: .always, showForced: true,
+            tracks: [full, forced], audioLanguage: nil, forcedOnly: true)), .select(forced))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(inputs(preferredLanguage: nil, mode: .always, showForced: true,
+            tracks: [full], audioLanguage: nil, forcedOnly: true)), .disable)
+    }
+
+    // MARK: - Backup language
+
+    private func backupInputs(mode: SubtitleMode = .auto, tracks: [PlayerTrack], audio: String?) -> SubtitleAutoResolver.Inputs {
+        SubtitleAutoResolver.Inputs(
+            preferredLanguage: "ar", mode: mode, showForced: true,
+            disableWhenNoLanguageMatch: true, trackSignature: nil,
+            fallbackLanguages: ["en"], availableSubtitles: tracks, currentAudioLanguage: audio
+        )
+    }
+
+    /// Arabic with an English backup: an English film without Arabic
+    /// subtitles plays the English ones. English audio isn't the viewer's
+    /// language, so Auto still shows subtitles.
+    func testBackupLanguageFillsInWhenTheMainLanguageIsMissing() {
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english], audio: "eng")), .select(english))
+    }
+
+    /// The main language always wins, even as a CC/SDH track against a plain
+    /// backup track.
+    func testMainLanguageBeatsTheBackup() {
+        let arabicSDH = track(id: 5, lang: "ara", hearingImpaired: true)
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english, arabicSDH], audio: "eng")), .select(arabicSDH))
+    }
+
+    /// Audio already in the main language: Auto plays only its forced track,
+    /// and the backup isn't used.
+    func testBackupIsNotUsedWhenTheAudioIsInTheMainLanguage() {
+        let arabicForced = track(id: 6, lang: "ara", forced: true)
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english, arabicForced], audio: "ara")), .select(arabicForced))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english], audio: "ara")), .disable)
+    }
+
+    func testBackupFollowsAlwaysAndOff() {
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(mode: .always, tracks: [english], audio: "ara")), .select(english))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(mode: .off, tracks: [english], audio: "eng")), .disable)
+    }
+
+    /// Neither language present: no subtitles.
+    func testNoMainOrBackupTrackLeavesSubtitlesOff() {
+        let french = track(id: 7, lang: "fra")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [french], audio: "eng")), .disable)
+    }
+
+    /// Arabic with an English backup, and the file's only Arabic track is
+    /// signs-only: the English full track wins, so the dialogue can be
+    /// followed. Without a backup the forced Arabic track is still the pick.
+    func testBackupFullTrackBeatsAForcedOnlyMainTrack() {
+        let arabicForced = track(id: 6, lang: "ara", forced: true)
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [arabicForced, english], audio: "eng")), .select(english))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [arabicForced], audio: "eng")), .select(arabicForced))
+        let noBackup = SubtitleAutoResolver.Inputs(
+            preferredLanguage: "ar", mode: .auto, showForced: true, disableWhenNoLanguageMatch: true,
+            trackSignature: nil, availableSubtitles: [arabicForced, english], currentAudioLanguage: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(noBackup), .select(arabicForced))
+    }
+
+    // MARK: - Always without a language, Apple's Forced Only
+
+    /// Always with Language set to None: the device's language first (passed
+    /// as backup languages), then the file's default full track, then the
+    /// best full track. Never a signs-only track while a full one exists.
+    func testAlwaysWithoutLanguageStillShowsSubtitles() {
+        let english = track(id: 4, lang: "eng")
+        let french = track(id: 5, lang: "fra")
+        let forced = track(id: 6, lang: "eng", forced: true)
+        func always(_ tracks: [PlayerTrack], device: [String]) -> SubtitleAutoSelection {
+            SubtitleAutoResolver.resolve(.init(
+                preferredLanguage: nil, mode: .always, showForced: true, disableWhenNoLanguageMatch: false,
+                trackSignature: nil, fallbackLanguages: device, availableSubtitles: tracks, currentAudioLanguage: "ja"))
+        }
+        XCTAssertEqual(always([english, french], device: ["fr-FR"]), .select(french))
+        let frenchDefault = PlayerTrack(trackId: 5, kind: .sub, title: nil, lang: "fra", codec: "subrip",
+                                        audioChannelCount: nil, bitrate: nil, isDefault: true, isForced: false,
+                                        isHearingImpaired: false, isExternal: false, isSelected: false,
+                                        ffIndex: 5, srcId: nil)
+        XCTAssertEqual(always([forced, english, frenchDefault], device: ["de"]), .select(frenchDefault))
+        XCTAssertEqual(always([forced, english], device: []), .select(english))
+        // The device language has only a signs-only track: a full track in
+        // another language still wins; with nothing else, the forced one plays.
+        let frenchForced = track(id: 8, lang: "fra", forced: true)
+        let englishDefault = PlayerTrack(trackId: 9, kind: .sub, title: nil, lang: "eng", codec: "subrip",
+                                         audioChannelCount: nil, bitrate: nil, isDefault: true, isForced: false,
+                                         isHearingImpaired: false, isExternal: false, isSelected: false,
+                                         ffIndex: 9, srcId: nil)
+        XCTAssertEqual(always([frenchForced, englishDefault], device: ["fr"]), .select(englishDefault))
+        XCTAssertEqual(always([frenchForced], device: ["fr"]), .select(frenchForced))
+    }
+
+    /// Apple's Forced Only picks the forced track in the audio's language,
+    /// not the caption languages. With the audio unknown it falls back to them.
+    func testForcedOnlyFollowsTheAudioLanguage() {
+        let forcedEnglish = track(id: 3, lang: "eng", forced: true)
+        let forcedSpanish = track(id: 7, lang: "spa", forced: true)
+        func forcedOnly(audio: String?) -> SubtitleAutoSelection {
+            SubtitleAutoResolver.resolve(.init(
+                preferredLanguage: "es", mode: .auto, showForced: true, forcedOnly: true, forcedFollowsAudio: true,
+                disableWhenNoLanguageMatch: true, trackSignature: nil,
+                availableSubtitles: [forcedSpanish, forcedEnglish], currentAudioLanguage: audio))
+        }
+        XCTAssertEqual(forcedOnly(audio: "eng"), .select(forcedEnglish))
+        XCTAssertEqual(forcedOnly(audio: nil), .select(forcedSpanish))
+        XCTAssertEqual(forcedOnly(audio: "jpn"), .disable)
+    }
 }

@@ -361,6 +361,7 @@ enum TVSettingsDetailFocus: Hashable {
     case playbackBufferAhead
     case playbackVolumeBoostLevel
     case playbackNextUpPrompt
+    case subtitleBackupLanguage
     case subtitleBehavior
     case subtitleUseDeviceSettings
     case subtitleFontSize

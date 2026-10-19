@@ -4,21 +4,6 @@ import Foundation
 
 final class DetailVersionSelectionTests: XCTestCase {
 
-    func testDeviceSettingsDoNotForwardServerSubtitleSeedAsManualChoice() {
-        XCTAssertNil(DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-            version: nil,
-            signature: nil,
-            mode: SubtitleMode.off.rawValue,
-            usesDeviceSettings: true
-        ))
-        XCTAssertEqual(DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-            version: nil,
-            signature: nil,
-            mode: SubtitleMode.off.rawValue,
-            usesDeviceSettings: false
-        ), -1)
-    }
-
     func testAutoDisplayPrefersBestVersionOverFirstReturnedVersion() {
         let versions = [
             version(fileId: 10, resolution: "1080p"),
@@ -189,11 +174,9 @@ final class DetailVersionSelectionTests: XCTestCase {
         XCTAssertFalse(DetailPlaybackFormatting.shouldEnableAudioSelector(version: singleChoiceVersion))
         XCTAssertTrue(DetailPlaybackFormatting.shouldShowSubtitleValue(version: singleChoiceVersion))
         XCTAssertFalse(DetailPlaybackFormatting.shouldEnableSubtitleSelector(version: singleChoiceVersion))
-        XCTAssertTrue(
-            DetailPlaybackFormatting.subtitleValueLabel(
-                version: singleChoiceVersion,
-                selectedSubtitleTrackIndex: nil
-            ) == "English · SRT"
+        XCTAssertEqual(
+            DetailPlaybackFormatting.subtitleShortLabel(singleChoiceVersion.subtitleTracks![0], ordinal: 0),
+            "English"
         )
 
         let multipleChoiceVersion = decodedVersions("""
@@ -410,12 +393,6 @@ final class DetailVersionSelectionTests: XCTestCase {
         XCTAssertTrue(options[0].detail == "SRT · External · Available in player")
         XCTAssertFalse(options[0].isSelectable)
         XCTAssertFalse(options[0].isSelected)
-        XCTAssertTrue(
-            DetailPlaybackFormatting.subtitleValueLabel(
-                version: versions[0],
-                selectedSubtitleTrackIndex: -1
-            ) == "Off"
-        )
     }
 
     func testAutoSubtitlePreviewMatchesPlaybackCombinedOrder() {
@@ -433,12 +410,11 @@ final class DetailVersionSelectionTests: XCTestCase {
           }
         ]
         """)
-        let label = DetailPlaybackFormatting.subtitleValueLabel(
+        let pick = DetailPlaybackFormatting.automaticSubtitle(
             version: versions[0],
-            selectedSubtitleTrackIndex: nil,
-            autoContext: .init(preferredLanguage: "en", mode: "always", audioLanguage: "ja")
+            context: .init(preferredLanguage: "en", mode: "always", audioLanguage: "ja")
         )
-        XCTAssertEqual(label, "Auto: English · ASS", "preview must follow the external-first order playback uses; got \(label)")
+        XCTAssertEqual(pick?.track.codec, "ass", "preview must follow the external-first order playback uses")
     }
 
     func testAutoSubtitlePreviewKeepsEmbeddedStreamZero() {
@@ -456,12 +432,12 @@ final class DetailVersionSelectionTests: XCTestCase {
           }
         ]
         """)
-        let label = DetailPlaybackFormatting.subtitleValueLabel(
+        let pick = DetailPlaybackFormatting.automaticSubtitle(
             version: versions[0],
-            selectedSubtitleTrackIndex: nil,
-            autoContext: .init(preferredLanguage: "en", mode: "always", audioLanguage: "ja")
+            context: .init(preferredLanguage: "en", mode: "always", audioLanguage: "ja")
         )
-        XCTAssertEqual(label, "Auto: English · SRT", "embedded stream 0 must remain a preview candidate; got \(label)")
+        XCTAssertEqual(pick?.track.language, "eng", "embedded stream 0 must remain a preview candidate")
+        XCTAssertEqual(pick?.track.selectionIndex, 0)
     }
 
     func testSubtitleOptionsKeepEmbeddedStreamZeroSelectable() {
@@ -496,12 +472,8 @@ final class DetailVersionSelectionTests: XCTestCase {
         XCTAssertFalse(embedded.detail.contains("Available in player"))
 
         XCTAssertEqual(
-            DetailPlaybackFormatting.subtitleValueLabel(version: versions[0], selectedSubtitleTrackIndex: 0),
-            "English · SRT"
-        )
-        XCTAssertEqual(
-            TrackSelectionPersistence.subtitleRequest(version: versions[0], ffIndex: 0, showForced: nil)?.subtitleTrackIndex,
-            0
+            DetailPlaybackFormatting.subtitleShortLabel(versions[0].subtitleTracks![0], ordinal: 0),
+            "English"
         )
     }
 
@@ -521,12 +493,11 @@ final class DetailVersionSelectionTests: XCTestCase {
         ]
         """)
         let signature = SubtitleTrackSignature(source: nil, language: "en", codec: nil, label: nil, forced: false, hearingImpaired: false)
-        let label = DetailPlaybackFormatting.subtitleValueLabel(
+        let pick = DetailPlaybackFormatting.automaticSubtitle(
             version: versions[0],
-            selectedSubtitleTrackIndex: nil,
-            autoContext: .init(preferredLanguage: "en", mode: "auto", signature: signature, audioLanguage: "ja")
+            context: .init(preferredLanguage: "en", mode: "auto", signature: signature, audioLanguage: "ja")
         )
-        XCTAssertEqual(label, "Auto: English · ASS", "signature preview must include external tracks; got \(label)")
+        XCTAssertEqual(pick?.track.codec, "ass", "signature preview must include external tracks")
     }
 
     func testSubtitleLabelsIncludeTypeAndLanguage() {
@@ -557,17 +528,14 @@ final class DetailVersionSelectionTests: XCTestCase {
             selectedSubtitleTrackIndex: 2,
             preferredLanguage: nil
         )
-        let selectedLabel = DetailPlaybackFormatting.subtitleValueLabel(
-            version: versions[0],
-            selectedSubtitleTrackIndex: 2
-        )
+        let selectedLabel = DetailPlaybackFormatting.subtitleShortLabel(versions[0].subtitleTracks![0], ordinal: 0)
 
         XCTAssertTrue(options.count == 2)
         XCTAssertTrue(options[0].title == "English", "Expected language-first subtitle label; got \(options[0].title)")
         XCTAssertTrue(options[0].detail == "SRT · SDH · Default", "Expected subtitle type detail; got \(options[0].detail)")
         XCTAssertTrue(options[1].title == "Japanese", "Expected language-first subtitle label; got \(options[1].title)")
         XCTAssertTrue(options[1].detail == "SRT", "Expected subtitle format detail; got \(options[1].detail)")
-        XCTAssertTrue(selectedLabel == "English (SDH) · SRT", "Expected selected subtitle label; got \(selectedLabel)")
+        XCTAssertTrue(selectedLabel == "English (SDH)", "Expected selected subtitle label; got \(selectedLabel)")
     }
 
     func testSubtitleLabelsDoNotDuplicateTitleBasedMarkers() {
@@ -601,10 +569,8 @@ final class DetailVersionSelectionTests: XCTestCase {
 
         XCTAssertTrue(options[0].detail == "Signs and Songs Forced · SRT · Forced")
         XCTAssertTrue(
-            DetailPlaybackFormatting.subtitleValueLabel(
-                version: version,
-                selectedSubtitleTrackIndex: 3
-            ) == "Director's Commentary (Hearing Impaired) · SRT",
+            DetailPlaybackFormatting.subtitleShortLabel(version.subtitleTracks![1], ordinal: 1)
+                == "Director's Commentary (Hearing Impaired)",
             "The hearing-impaired marker is already present in the detail title and should not be repeated"
         )
     }

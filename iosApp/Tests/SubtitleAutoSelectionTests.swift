@@ -188,11 +188,12 @@ final class SubtitleAutoSelectionTests: XCTestCase {
 
     /// The next episode of the same viewing: no explicit index, so the
     /// automatic pick decides from this viewing's preferences.
-    private func playNextEpisode(_ model: PlayerViewModel) throws {
+    private func playNextEpisode(_ model: PlayerViewModel, withForcedTrack: Bool = true) throws {
         model.hasExplicitSubtitleChoice = false
         model.prefsResolvedForCurrentItem = false
         model.prefsForCurrentItem = model.automaticSubtitlePrefsSnapshot(try watchDetail())
-        model.subtitleTracks = [subtitle(fullID, forced: false), subtitle(forcedID, forced: true)]
+        model.subtitleTracks = [subtitle(fullID, forced: false)]
+            + (withForcedTrack ? [subtitle(forcedID, forced: true)] : [])
         model.audioTracks = [audio(englishAudioID, lang: "eng", ordinal: 0, selected: true)]
         model.selectedAudioId = englishAudioID
         model.selectedSubtitleId = nil
@@ -260,12 +261,17 @@ final class SubtitleAutoSelectionTests: XCTestCase {
     func testForcedPlayerPickCarriesAsForced() async throws {
         let prefs = PlayerViewModel.viewingSubtitlePrefs(for: subtitle(forcedID, forced: true))
         XCTAssertEqual(prefs.mode, .always)
+        XCTAssertTrue(prefs.forcedOnly)
         XCTAssertEqual(prefs.trackSignature?.forced, true)
         try await withEnglishAutoSettings {
             let model = PlayerViewModel()
             model.viewingSubtitlePrefs = prefs
             try playNextEpisode(model)
             XCTAssertEqual(model.selectedSubtitleId, forcedID)
+            // An episode without a forced English track stays without
+            // subtitles; it doesn't swap in the full track.
+            try playNextEpisode(model, withForcedTrack: false)
+            XCTAssertNil(model.selectedSubtitleId)
             model.viewingSubtitlePrefs = PlayerViewModel.viewingSubtitlePrefs(for: subtitle(fullID, forced: false))
             try playNextEpisode(model)
             XCTAssertEqual(model.selectedSubtitleId, fullID)
@@ -277,19 +283,44 @@ final class SubtitleAutoSelectionTests: XCTestCase {
     /// track. With an untagged transcode it must not be read as the new
     /// track's language; unknown audio keeps the full track.
     func testAudioSwitchDoesNotReuseTheLoadOrdinal() async {
-        let model = makeModel()
-        model.currentSelectedVersion = version(audio: ["eng", "jpn"])
-        model.lastLoadRequest = .init(contentId: "movie", preferredFileId: 42, preferredAudioTrackIndex: 0,
-                                      preferredSubtitleTrackIndex: nil, preferredSidecarSubtitleTrackId: nil,
-                                      startFromBeginning: false)
-        let switched = audio(japaneseAudioID, lang: "und", ordinal: 0, selected: true)
-        model.audioTracks = [switched]
-        establishLoad(model)
-        model.selectAudio(switched)
-        model.prefsResolvedForCurrentItem = false
-        model.applyAutoSubtitlePreferencesIfNeeded()
-        XCTAssertEqual(model.selectedSubtitleId, fullID)
-        await finish(model)
+        await withEnglishAutoSettings {
+            let model = makeModel()
+            model.currentSelectedVersion = version(audio: ["eng", "jpn"])
+            model.lastLoadRequest = .init(contentId: "movie", preferredFileId: 42, preferredAudioTrackIndex: 0,
+                                          preferredSubtitleTrackIndex: nil, preferredSidecarSubtitleTrackId: nil,
+                                          startFromBeginning: false)
+            let switched = audio(japaneseAudioID, lang: "und", ordinal: 0, selected: true)
+            model.audioTracks = [switched]
+            establishLoad(model)
+            model.selectAudio(switched)
+            XCTAssertEqual(model.selectedSubtitleId, fullID)
+            await finish(model)
+        }
+    }
+
+    /// Auto depends on the audio, so switching from English to Japanese audio
+    /// swaps the forced track for the full one with Settings > Subtitles in
+    /// charge, not only with Use Device Settings. A pick made for the item
+    /// stays put.
+    func testAudioSwitchReresolvesAutoFromSettings() async {
+        await withEnglishAutoSettings {
+            let model = makeModel()
+            let english = audio(englishAudioID, lang: "eng", ordinal: 0, selected: true)
+            let japanese = audio(japaneseAudioID, lang: "jpn", ordinal: 1, selected: false)
+            model.audioTracks = [english, japanese]
+            model.selectedAudioId = englishAudioID
+            establishLoad(model)
+            model.applyAutoSubtitlePreferencesIfNeeded()
+            XCTAssertEqual(model.selectedSubtitleId, forcedID)
+
+            model.selectAudio(japanese)
+            XCTAssertEqual(model.selectedSubtitleId, fullID)
+
+            model.hasExplicitSubtitleChoice = true
+            model.selectAudio(english)
+            XCTAssertEqual(model.selectedSubtitleId, fullID)
+            await finish(model)
+        }
     }
 
     /// A refused Silo audio switch leaves the original audio playing, so the
@@ -315,6 +346,28 @@ final class SubtitleAutoSelectionTests: XCTestCase {
         model.selectAudio(unmappable)
         XCTAssertEqual(model.selectedAudioId, englishAudioID)
         XCTAssertFalse(model.audioPickedForCurrentItem)
+        await finish(model)
+    }
+
+    /// A Silo replan (audio switch, quality change) reloads the engine with
+    /// subtitles off. The embedded subtitle playing before it is read back by
+    /// its stream index, so the reload puts it back; Off stays Off.
+    func testReplanReadsBackThePlayingEmbeddedSubtitle() async {
+        let model = makeModel()
+        let plan = PlaybackEndFixtures.plan(sessionId: "fixture-session", durationSeconds: 3_600)
+        model.activePreparedProtocolV3 = PreparedPlaybackV3(
+            playbackAttemptId: "apple:fixture-attempt",
+            planAttemptId: "apple-plan:fixture-attempt",
+            planAttemptKey: plan.planAttemptKey,
+            outputContextId: ApplePlaybackV3Capabilities.snapshot().outputContextId,
+            serverFeatures: [PlaybackProtocolV3.planFeature],
+            plan: plan
+        )
+        model.hasExplicitSubtitleChoice = true
+        model.selectedSubtitleId = fullID
+        XCTAssertEqual(model.resolvedSubtitleTrackIndexForResume(), Int(fullID))
+        model.selectedSubtitleId = nil
+        XCTAssertEqual(model.resolvedSubtitleTrackIndexForResume(), -1)
         await finish(model)
     }
 

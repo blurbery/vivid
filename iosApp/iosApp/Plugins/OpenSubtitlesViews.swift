@@ -190,6 +190,7 @@ private struct OpenSubtitleDetailSearch: ViewModifier {
     @Environment(\.openSubtitleDetailContext) private var detailContext
     let fileID: Int?
     let serverSubtitles: [SubtitleTrack]?
+    let automaticSubtitle: String?
     @Binding var isPresented: Bool
     private var context: OpenSubtitlePlaybackContext? {
         guard var context = detailContext, let fileID else { return nil }
@@ -198,15 +199,18 @@ private struct OpenSubtitleDetailSearch: ViewModifier {
     }
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
-            LucidDetailSubtitleMenu(context: context, serverRows: ServerSubtitleSidecars.detailRows(serverSubtitles))
+            LucidDetailSubtitleMenu(context: context, serverRows: ServerSubtitleSidecars.detailRows(serverSubtitles),
+                                    automaticSubtitle: automaticSubtitle)
                 .vividGlassSheet(startsTall: true)
         }
     }
 }
 
 extension View {
-    func openSubtitlesDetailSearch(fileID: Int?, serverSubtitles: [SubtitleTrack]? = nil, isPresented: Binding<Bool>) -> some View {
-        modifier(OpenSubtitleDetailSearch(fileID: fileID, serverSubtitles: serverSubtitles, isPresented: isPresented))
+    func openSubtitlesDetailSearch(fileID: Int?, serverSubtitles: [SubtitleTrack]? = nil,
+                                   automaticSubtitle: String? = nil, isPresented: Binding<Bool>) -> some View {
+        modifier(OpenSubtitleDetailSearch(fileID: fileID, serverSubtitles: serverSubtitles,
+                                          automaticSubtitle: automaticSubtitle, isPresented: isPresented))
     }
 }
 
@@ -214,6 +218,8 @@ private struct LucidDetailSubtitleMenu: View {
     let context: OpenSubtitlePlaybackContext?
     /// Emby and Jellyfin subtitle files beside the media.
     let serverRows: [PlayerTrack]
+    /// What Auto plays from Settings > Subtitles, such as "English (Forced)".
+    var automaticSubtitle: String?
     @Environment(\.dismiss) private var dismiss
     @State private var tracks: [PlayerTrack] = []
     @State private var loading = true
@@ -244,17 +250,12 @@ private struct LucidDetailSubtitleMenu: View {
                     else if let message {
                         Text(message).foregroundStyle(.secondary)
                         Button("Retry") { retry += 1 }
+                        // Auto and Off don't depend on reading the file.
+                        automaticAndOffRows
                         // Server files come from the catalogue, not the file read.
                         ForEach(LucidSubtitleInventory.ordered(serverRows)) { trackRow($0) }
                     } else {
-                        TrackSelectionRow(name: "Auto", attributes: nil, isSelected: selectionIsAutomatic && !hasStagedSelection) {
-                            guard let context else { return }
-                            LucidSubtitleInventory.shared.clearChoice(context: context)
-                            OpenSubtitlesStore.shared.clearStaged(context: context)
-                            selectionIsAutomatic = true
-                            dismiss()
-                        }
-                        TrackSelectionRow(name: "Off", attributes: nil, isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
+                        automaticAndOffRows
                         ForEach(LucidSubtitleInventory.ordered(tracks + serverRows)) { trackRow($0) }
                         if tracks.isEmpty && serverRows.isEmpty { Text("This media file has no subtitles.").foregroundStyle(.secondary) }
                     }
@@ -274,19 +275,36 @@ private struct LucidDetailSubtitleMenu: View {
                     selectedID = choice.trackID
                     selectionIsAutomatic = false
                 } else {
+                    // Nothing picked for this file: Auto, which follows
+                    // Settings > Subtitles (Off included).
                     selectedID = nil
-                    selectionIsAutomatic = PlayerSettings.shared.preferredSubtitleMode != "off"
+                    selectionIsAutomatic = true
                 }
             } catch is CancellationError { return }
             catch {
                 message = "Unable to read this file’s embedded subtitles. Try again."
-                if let choice = LucidSubtitleInventory.shared.choice(context: context) { selectedID = choice.trackID }
+                if let choice = LucidSubtitleInventory.shared.choice(context: context) {
+                    selectedID = choice.trackID
+                    selectionIsAutomatic = false
+                }
             }
             loading = false
         }
         #if os(tvOS)
         .onExitCommand { dismiss() }
         #endif
+    }
+    @ViewBuilder private var automaticAndOffRows: some View {
+        TrackSelectionRow(name: "Auto", detail: automaticSubtitle, attributes: nil,
+                          isSelected: selectionIsAutomatic && !hasStagedSelection) {
+            guard let context else { return }
+            LucidSubtitleInventory.shared.clearChoice(context: context)
+            OpenSubtitlesStore.shared.clearStaged(context: context)
+            selectionIsAutomatic = true
+            dismiss()
+        }
+        TrackSelectionRow(name: "Off", attributes: nil,
+                          isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
     }
     private func trackRow(_ track: PlayerTrack) -> some View {
         TrackSelectionRow(name: track.languageFirstPrimaryLabel,

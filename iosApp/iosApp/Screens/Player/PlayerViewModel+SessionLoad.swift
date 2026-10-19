@@ -452,6 +452,11 @@ extension PlayerViewModel {
                 self.autoSkipIntroCancelledKey = nil
                 self.cancelPendingIntroAutoSkip()
                 self.staleSessionRecoverySessionId = nil
+                // Use the device's current caption settings, not the ones
+                // read when Vivid last noticed a change.
+                if self.settings.subtitleMatchesSystemAppearance {
+                    self.settings.refreshSubtitleSystemAppearance()
+                }
                 // Snapshot the preferred language for track-list ordering
                 // unconditionally (even with an explicit choice) so the
                 // displayed groups float the user's language to the top.
@@ -459,11 +464,11 @@ extension PlayerViewModel {
                     ? self.settings.subtitleSystemSelectionPreferences.preferredLanguages.first
                     : self.settings.preferredSubtitleLanguage
 
-                // Snapshot the server-resolved subtitle policy so the
-                // track-list callback (which fires after Vivid opens media)
-                // can pick the right track without another fetch. Skip
-                // entirely if the caller already passed an explicit
-                // subtitle index — manual override always wins.
+                // Snapshot Settings > Subtitles (or the device's caption
+                // settings, or this viewing's pick) so the track-list callback
+                // (which fires after Vivid opens media) can pick the right
+                // track. Skip entirely if the caller already passed an
+                // explicit subtitle index: a manual override always wins.
                 if !self.hasExplicitSubtitleChoice {
                     self.prefsForCurrentItem = self.automaticSubtitlePrefsSnapshot(prepared.watchDetail)
                 }

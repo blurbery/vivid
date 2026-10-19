@@ -72,7 +72,10 @@ struct PhonePlaybackSelectorRow: View {
         if currentVersion != nil, !selectorKinds.isEmpty {
             selectorCard
                 .task { await ProfilePrefsStore.shared.hydrateIfNeeded() }
-                .openSubtitlesDetailSearch(fileID: currentVersion?.fileId, serverSubtitles: currentVersion?.subtitleTracks, isPresented: $showOpenSubtitles)
+                .openSubtitlesDetailSearch(fileID: currentVersion?.fileId, serverSubtitles: currentVersion?.subtitleTracks,
+                    automaticSubtitle: DetailPlaybackFormatting.automaticSubtitleOutcome(
+                        version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex),
+                    isPresented: $showOpenSubtitles)
         }
     }
 
@@ -187,7 +190,7 @@ struct PhonePlaybackSelectorRow: View {
     }
 
     private var shouldShowSubtitleValue: Bool {
-        currentVersion != nil
+        DetailPlaybackFormatting.shouldShowSubtitleValue(version: currentVersion)
     }
 
     private var shouldEnableSubtitleSelector: Bool {
@@ -221,8 +224,12 @@ struct PhonePlaybackSelectorRow: View {
         case .subtitles:
             var context = detailContext
             context?.fileID = currentVersion?.fileId
-            let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && PlayerSettings.shared.preferredSubtitleMode == "off")
-                ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+            // Until something is picked here, the row shows what playback
+            // will pick from Settings > Subtitles, the same on every server.
+            let fallback = selectedSubtitleTrackIndex == -1 ? "Off" : selectedSubtitleTrackIndex == nil
+                ? DetailPlaybackFormatting.automaticSubtitleLabel(
+                    version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex)
+                : "On"
             return LucidSubtitleInventory.shared.selectionLabel(context: context, fallback: fallback)
         }
     }

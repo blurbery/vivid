@@ -182,8 +182,7 @@ struct TVItemDetailLoadingView: View {
             currentVersion: nil,
             selectedVersionFileId: nil,
             selectedAudioTrackIndex: nil,
-            selectedSubtitleTrackIndex: nil,
-            subtitleMode: nil
+            selectedSubtitleTrackIndex: nil
         ))
     }
 

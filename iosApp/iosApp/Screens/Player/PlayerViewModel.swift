@@ -756,6 +756,11 @@ class PlayerViewModel {
         let preferAccessibilityTracks: Bool
         let disableWhenNoLanguageMatch: Bool
         let trackSignature: SubtitleTrackSignature?
+        /// Settings > Subtitles > Backup Language: tried only when no track
+        /// is in a preferred language.
+        var fallbackLanguages: [String] = []
+        /// Apple's Forced Only: the forced track follows the audio's language.
+        var forcedFollowsAudio = false
     }
     /// A subtitle pick, or Off, made in the player. It holds for the rest of
     /// this viewing, including next episodes that play on from here, while
@@ -970,6 +975,7 @@ class PlayerViewModel {
     /// Re-applies subtitle styling when the user edits the system's
     /// Subtitles & Captioning preferences mid-playback.
     private var systemCaptionObserverToken: NSObjectProtocol?
+    private var systemCaptionForegroundObserverToken: NSObjectProtocol?
     /// Triggers a V3 replan when the audio route the session was planned
     /// against changes. iOS/tvOS only — macOS has no `AVAudioSession`.
     private var outputRouteObserverToken: NSObjectProtocol?
@@ -1037,19 +1043,19 @@ class PlayerViewModel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, !self.isDisposed,
-                      self.settings.subtitleMatchesSystemAppearance else { return }
-                self.settings.refreshSubtitleSystemAppearance()
-                self.applySubtitleAppearanceToPlayer()
-                self.subtitleOrderingLanguage = self.settings
-                    .subtitleSystemSelectionPreferences.preferredLanguages.first
-                guard !self.hasExplicitSubtitleChoice, self.viewingSubtitlePrefs == nil else { return }
-                self.prefsForCurrentItem = self.systemCaptionPrefsSnapshot()
-                self.prefsResolvedForCurrentItem = false
-                self.applyAutoSubtitlePreferencesIfNeeded(forceReevaluation: true)
-            }
+            Task { @MainActor [weak self] in self?.systemCaptionSettingsDidChange() }
         }
+        #if os(iOS) || os(tvOS)
+        // Caption settings only change outside Vivid. Catch up on the way
+        // back in too, in case the change notification didn't arrive.
+        systemCaptionForegroundObserverToken = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.systemCaptionSettingsDidChange() }
+        }
+        #endif
         #if !os(macOS)
         outputRouteObserverToken = NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
@@ -1176,6 +1182,10 @@ class PlayerViewModel {
         if let systemCaptionObserverToken {
             NotificationCenter.default.removeObserver(systemCaptionObserverToken)
             self.systemCaptionObserverToken = nil
+        }
+        if let systemCaptionForegroundObserverToken {
+            NotificationCenter.default.removeObserver(systemCaptionForegroundObserverToken)
+            self.systemCaptionForegroundObserverToken = nil
         }
         if let foregroundExitObserverToken {
             NotificationCenter.default.removeObserver(foregroundExitObserverToken)
@@ -1304,6 +1314,9 @@ class PlayerViewModel {
             transientRecoveryBudget.cancel()
             if let systemCaptionObserverToken {
                 NotificationCenter.default.removeObserver(systemCaptionObserverToken)
+            }
+            if let systemCaptionForegroundObserverToken {
+                NotificationCenter.default.removeObserver(systemCaptionForegroundObserverToken)
             }
             if let outputRouteObserverToken {
                 NotificationCenter.default.removeObserver(outputRouteObserverToken)

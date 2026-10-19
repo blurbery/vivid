@@ -117,8 +117,11 @@ enum DetailPlaybackFormatting {
         (version?.audioTracks ?? []).count > 1
     }
 
+    /// The subtitle row always shows once the file is known, even for a file
+    /// with no subtitles: it reads "Auto: Off" (or "Off") and still opens
+    /// OpenSubtitles search.
     static func shouldShowSubtitleValue(version: FileVersion?) -> Bool {
-        !(version?.subtitleTracks ?? []).isEmpty
+        version != nil
     }
 
     static func shouldEnableSubtitleSelector(version: FileVersion?) -> Bool {
@@ -264,207 +267,105 @@ enum DetailPlaybackFormatting {
         return tokens.isEmpty ? audioTitle(track, ordinal: ordinal) : tokens.joined(separator: " · ")
     }
 
-    /// Resolve the server-remembered subtitle override for display /
-    /// launch seeding. Audio gets this for free via the per-version
-    /// `effectiveAudioTrackIndex`; subtitles have no index field on the
-    /// wire, so the stored signature is re-matched against this
-    /// version's track list. Returns the ffmpeg stream index to
-    /// pre-select, `-1` for "Off", or nil when nothing points at a
-    /// track in this file ("Auto" — the player's resolver decides).
-    static func serverPreferredSubtitleIndex(
+    /// What the detail page's subtitle row shows while nothing is picked this
+    /// visit: the track playback will choose from Settings > Subtitles, or
+    /// from the device's caption settings when Vivid follows them. It runs the
+    /// player's own resolver on this file's tracks, with the audio the player
+    /// will start, so the row and playback agree on Silo, Emby and Jellyfin.
+    /// Auto reads "Auto: English (Forced)" or "Auto: Off"; Always and Off read
+    /// as the track or "Off".
+    @MainActor
+    static func automaticSubtitleLabel(
         version: FileVersion?,
-        signature: SubtitleTrackSignature?,
-        mode: String?
-    ) -> Int? {
-        if let signature,
-           let tracks = version?.subtitleTracks,
-           let match = bestSignatureMatch(signature, in: tracks) {
-            return match.selectionIndex
-        }
-        if SubtitleMode(rawValue: mode ?? "") == .off {
-            return -1
-        }
-        return nil
-    }
-
-    /// A server-remembered track is useful for reflecting the server policy
-    /// in the pre-play selector, but it is not a manual choice made during
-    /// this visit. Device-settings mode must start on Apple's caption policy
-    /// instead of forwarding that seed as an explicit player override.
-    static func launchPreferredSubtitleIndex(
-        version: FileVersion?,
-        signature: SubtitleTrackSignature?,
-        mode: String?,
-        usesDeviceSettings: Bool
-    ) -> Int? {
-        guard !usesDeviceSettings else { return nil }
-        return serverPreferredSubtitleIndex(
+        selectedAudioTrackIndex: Int?,
+        settings: PlayerSettings = .shared
+    ) -> String {
+        guard let version else { return "Auto" }
+        let outcome = automaticSubtitleOutcome(
             version: version,
-            signature: signature,
-            mode: mode
+            selectedAudioTrackIndex: selectedAudioTrackIndex,
+            settings: settings
         )
+        return PlayerViewModel.settingsSubtitlePrefs(settings).mode == .auto
+            ? "Auto: \(outcome)"
+            : outcome
     }
 
-    /// Mirrors `SubtitleAutoResolver.bestSignatureMatch` scoring, applied
-    /// to the detail payload's `SubtitleTrack` metadata, so the selector
-    /// shows the same track the player would restore on its own.
-    private static func bestSignatureMatch(
-        _ sig: SubtitleTrackSignature,
-        in tracks: [SubtitleTrack]
-    ) -> SubtitleTrack? {
-        var best: (SubtitleTrack, Int)?
-        // Every row is a candidate, external ones included, exactly as the
-        // player's `SubtitleAutoResolver.bestSignatureMatch` scores them.
-        for track in tracks {
-            var score = 0
-            var strongSignal = false
-            if let sigLang = sig.language, !sigLang.isEmpty,
-               let lang = track.language,
-               SubtitleAutoResolver.languagesMatch(lang, sigLang) {
-                score += 5
-                strongSignal = true
-            }
-            if sig.forced == (track.forced ?? false) {
-                score += 1
-            }
-            if sig.hearingImpaired == (track.hearingImpaired ?? false) {
-                score += 1
-            }
-            if let sigCodec = sig.codec, let codec = track.codec,
-               sigCodec.caseInsensitiveCompare(codec) == .orderedSame {
-                score += 1
-            }
-            if let sigLabel = sig.label, !sigLabel.isEmpty,
-               let title = track.title ?? track.embeddedTitle,
-               title.localizedCaseInsensitiveContains(sigLabel) {
-                score += 2
-                strongSignal = true
-            }
-            // Forced/HI/codec equality alone is meaningless (`false ==
-            // false` holds for nearly every track); require a language or
-            // label hit so a weak "match" can't override Auto.
-            if strongSignal, score > (best?.1 ?? 0) {
-                best = (track, score)
-            }
-        }
-        return best?.0
+    /// The track the automatic pick lands on, as "English (Forced)", or
+    /// "Off" for no subtitles.
+    @MainActor
+    static func automaticSubtitleOutcome(
+        version: FileVersion?,
+        selectedAudioTrackIndex: Int?,
+        settings: PlayerSettings = .shared
+    ) -> String {
+        let context = SubtitleAutoContext(
+            prefs: PlayerViewModel.settingsSubtitlePrefs(settings),
+            audioLanguage: playbackAudioLanguage(
+                version: version,
+                selectedAudioTrackIndex: selectedAudioTrackIndex,
+                settings: settings
+            )
+        )
+        return automaticSubtitle(version: version, context: context)
+            .map { subtitleShortLabel($0.track, ordinal: $0.ordinal) } ?? "Off"
     }
 
-    /// Preview the track the player's `SubtitleAutoResolver` would auto-select
-    /// for the "Auto" (no explicit override) case, applied to the detail
-    /// payload's `SubtitleTrack` list. Returns nil when Auto resolves to no
-    /// subtitles (mode off, no preference, or audio already in the preferred
-    /// language). Mirrors `SubtitleAutoResolver.resolve` branch-for-branch
-    /// with the inputs the detail page can supply, including where
-    /// `showForced` does and does not apply.
-    private static func autoResolvedSubtitle(
+    /// The language of the audio playback will start with: the track picked
+    /// on this page, otherwise the player's own choice from Settings >
+    /// Playback > Audio Language (`VividInitialAudioPreference`). Not the
+    /// server's remembered audio, which playback doesn't use either.
+    @MainActor
+    static func playbackAudioLanguage(
+        version: FileVersion?,
+        selectedAudioTrackIndex: Int?,
+        settings: PlayerSettings = .shared
+    ) -> String? {
+        let tracks = version?.audioTracks ?? []
+        let manual = selectedAudioTrackIndex.flatMap { tracks.indices.contains($0) ? $0 : nil }
+        let ordinal = VividInitialAudioPreference.selectedOrdinal(
+            manual: manual,
+            tracks: tracks,
+            preferredLanguage: settings.audioLanguage
+        )
+        return SubtitleAutoResolver.policyAudioLanguage(live: nil, catalog: tracks, ordinal: ordinal)
+    }
+
+    /// The track `SubtitleAutoResolver` picks from this file's catalogue
+    /// tracks, or nil for no subtitles. The candidates, their order and their
+    /// identities are the player's (`SubtitleTrackCandidates`), and a server
+    /// subtitle file the player can't render is left out. `ordinal` is the
+    /// catalogue offset, so "Track N" labels match `subtitleOptions`.
+    static func automaticSubtitle(
         version: FileVersion?,
         context: SubtitleAutoContext
     ) -> (track: SubtitleTrack, ordinal: Int)? {
         let catalog = Array((version?.subtitleTracks ?? []).enumerated())
-        guard !catalog.isEmpty else { return nil }
-        // Search in the Protocol V3 combined order (externals first) that
-        // `SubtitleTrackCandidates` and the plan inventory use, so a first-match
-        // tie resolves to the same track playback will start. The returned
-        // ordinal stays the catalog offset so "Track N" labels line up with
-        // `subtitleOptions`.
-        // Same candidate set and order as `SubtitleTrackCandidates`: externals
-        // first, then embedded. An embedded row with no index is FFmpeg stream
-        // 0 (the wire omits a zero index), so it stays selectable.
-        let ordered = catalog.filter { $0.element.external == true }
-            + catalog.filter { $0.element.external != true }
-        guard let pick = autoResolvedSubtitle(in: ordered.map(\.element), context: context) else {
+        let playable = catalog.filter {
+            $0.element.external != true || ServerSubtitleSidecars.isMountable(codec: $0.element.codec)
+        }
+        let ordered = playable.filter { $0.element.external == true }
+            + playable.filter { $0.element.external != true }
+        let candidates = SubtitleTrackCandidates.playerTracks(from: ordered.map(\.element))
+        let pick = SubtitleAutoResolver.resolve(.init(
+            preferredLanguage: context.preferredLanguage,
+            additionalPreferredLanguages: context.additionalPreferredLanguages,
+            mode: SubtitleMode(rawValue: context.mode ?? ""),
+            showForced: context.showForced,
+            forcedOnly: context.forcedOnly,
+            forcedFollowsAudio: context.forcedFollowsAudio,
+            preferAccessibilityTracks: context.preferAccessibilityTracks,
+            disableWhenNoLanguageMatch: context.disableWhenNoLanguageMatch,
+            trackSignature: context.signature,
+            fallbackLanguages: context.fallbackLanguages,
+            availableSubtitles: candidates,
+            currentAudioLanguage: context.audioLanguage
+        ))
+        guard case .select(let track) = pick,
+              let position = candidates.firstIndex(where: { $0.trackId == track.trackId }) else {
             return nil
         }
-        return (pick.track, ordered[pick.ordinal].offset)
-    }
-
-    /// `autoResolvedSubtitle(version:context:)` over an already ordered list;
-    /// `ordinal` is the position in `tracks`.
-    private static func autoResolvedSubtitle(
-        in tracks: [SubtitleTrack],
-        context: SubtitleAutoContext
-    ) -> (track: SubtitleTrack, ordinal: Int)? {
-        guard !tracks.isEmpty else { return nil }
-
-        let mode = SubtitleMode(rawValue: context.mode ?? "") ?? .auto
-        if mode == .off { return nil }
-
-        if let signature = context.signature,
-           let match = bestSignatureMatch(signature, in: tracks),
-           let ordinal = tracks.firstIndex(where: { $0.id == match.id }) {
-            return (match, ordinal)
-        }
-
-        guard let rawLang = context.preferredLanguage else {
-            if mode == .always {
-                return bestLanguageMatch(nil, in: tracks, preferForced: context.showForced)
-            }
-            return nil
-        }
-
-        if rawLang.isEmpty { return nil }
-
-        // Auto mode hides subs when the audio already matches the preferred
-        // subtitle language (e.g. English audio + English sub preference) —
-        // unless forced subs are wanted, in which case the language-matching
-        // forced (signs-only) track is exactly what plays.
-        if mode == .auto, let audio = context.audioLanguage,
-           SubtitleAutoResolver.languagesMatch(audio, rawLang) {
-            if context.showForced,
-               let forced = tracks.enumerated().first(where: { _, track in
-                   (track.forced ?? false)
-                       && track.language.map { SubtitleAutoResolver.languagesMatch($0, rawLang) } == true
-               }) {
-                return (forced.element, forced.offset)
-            }
-            return nil
-        }
-
-        // The user wants readable subs in this language: always the
-        // full-dialogue track — `showForced` must NOT steal this pick
-        // (mirrors the resolver's preferForced: false here).
-        if let pick = bestLanguageMatch(rawLang, in: tracks, preferForced: false) {
-            return pick
-        }
-
-        if context.showForced,
-           let forced = tracks.enumerated().first(where: { $0.element.forced == true }) {
-            return (forced.element, forced.offset)
-        }
-        return nil
-    }
-
-    /// Language-scored pick mirroring `SubtitleAutoResolver.bestLanguageMatch`
-    /// over `SubtitleTrack`. Prefers full-dialogue (non-forced, non-SDH) unless
-    /// `preferForced` is set. Carries the array offset through as the ordinal.
-    private static func bestLanguageMatch(
-        _ language: String?,
-        in tracks: [SubtitleTrack],
-        preferForced: Bool
-    ) -> (track: SubtitleTrack, ordinal: Int)? {
-        let pool = tracks.enumerated().filter { _, track in
-            guard let language else { return true }
-            guard let trackLang = track.language else { return false }
-            return SubtitleAutoResolver.languagesMatch(trackLang, language)
-        }
-        guard !pool.isEmpty else { return nil }
-        if preferForced, let forced = pool.first(where: { $0.element.forced == true }) {
-            return (forced.element, forced.offset)
-        }
-        if let full = pool.first(where: {
-            !($0.element.forced ?? false)
-                && !($0.element.hearingImpaired ?? false)
-                && !SubtitleAutoResolver.titleIndicatesHearingImpaired(
-                    $0.element.title ?? $0.element.embeddedTitle
-                )
-        }) {
-            return (full.element, full.offset)
-        }
-        if let nonForced = pool.first(where: { !($0.element.forced ?? false) }) {
-            return (nonForced.element, nonForced.offset)
-        }
-        return (pool[0].element, pool[0].offset)
+        return (ordered[position].element, ordered[position].offset)
     }
 
     static func subtitleOptions(
@@ -506,67 +407,20 @@ enum DetailPlaybackFormatting {
         }
     }
 
-    /// Inputs needed to preview what the player's subtitle auto-resolver
-    /// would land on, so the selector can annotate "Auto" with the concrete
-    /// track (or "None"). Mirrors `SubtitleAutoResolver.Inputs` with the
-    /// subset the detail payload can supply.
+    /// `SubtitleAutoResolver.Inputs` without the tracks: the preferences the
+    /// automatic pick resolves, and the audio it compares them with.
     struct SubtitleAutoContext {
         var preferredLanguage: String?
         var mode: String?
         var signature: SubtitleTrackSignature?
         var audioLanguage: String?
         var showForced: Bool = false
-    }
-
-    static func subtitleValueLabel(
-        version: FileVersion?,
-        selectedSubtitleTrackIndex: Int?,
-        autoContext: SubtitleAutoContext? = nil
-    ) -> String {
-        if selectedSubtitleTrackIndex == nil {
-            // When we can preview the auto-resolution, always spell it out as
-            // "Auto: <track>" (or "Auto: Off"), even for a single track, so
-            // the row shows what will actually play rather than a bare "Auto".
-            if let autoContext {
-                if let resolved = autoResolvedSubtitle(version: version, context: autoContext) {
-                    return "Auto: \(subtitlePillSummary(resolved.track, ordinal: resolved.ordinal))"
-                }
-                return "Auto: Off"
-            }
-            let tracks = version?.subtitleTracks ?? []
-            if tracks.count == 1, let track = tracks.first {
-                return subtitlePillSummary(track, ordinal: 0)
-            }
-            return "Auto"
-        }
-        if selectedSubtitleTrackIndex == -1 { return "Off" }
-        guard let selectedSubtitleTrackIndex,
-              let match = (version?.subtitleTracks ?? []).enumerated().first(where: { _, track in
-                  track.selectionIndex == selectedSubtitleTrackIndex
-              }) else {
-            // An explicit positive selection that doesn't resolve in this
-            // version's track list (e.g. the displayed version was re-scoped):
-            // a subtitle IS requested, so don't mislabel it as "Auto" (no
-            // selection). "On" reflects the active-but-unnamed selection.
-            return "On"
-        }
-        return subtitlePillSummary(match.element, ordinal: match.offset)
-    }
-
-    static func subtitleLanguageSummary(
-        version: FileVersion?,
-        selectedSubtitleTrackIndex: Int?,
-        autoContext: SubtitleAutoContext
-    ) -> String {
-        if selectedSubtitleTrackIndex == -1 { return "Off" }
-        let track: SubtitleTrack?
-        if let index = selectedSubtitleTrackIndex {
-            track = version?.subtitleTracks?.first { $0.selectionIndex == index }
-        } else {
-            track = autoResolvedSubtitle(version: version, context: autoContext)?.track
-        }
-        guard let track else { return selectedSubtitleTrackIndex == nil ? "Off" : "On" }
-        return languageDisplayName(track.language) ?? "Unknown"
+        var additionalPreferredLanguages: [String] = []
+        var forcedOnly = false
+        var preferAccessibilityTracks = false
+        var disableWhenNoLanguageMatch = false
+        var fallbackLanguages: [String] = []
+        var forcedFollowsAudio = false
     }
 
     static func subtitleTitle(_ track: SubtitleTrack, ordinal: Int) -> String {
@@ -601,7 +455,9 @@ enum DetailPlaybackFormatting {
         return tokens.joined(separator: " · ")
     }
 
-    private static func subtitlePillSummary(_ track: SubtitleTrack, ordinal: Int) -> String {
+    /// "English", "English (Forced)" or "English (SDH)": a track as the
+    /// subtitle row names it.
+    static func subtitleShortLabel(_ track: SubtitleTrack, ordinal: Int) -> String {
         var name = subtitleTitle(track, ordinal: ordinal)
         if isHearingImpaired(track), !containsAccessibilityMarker(name) {
             name += " (SDH)"
@@ -609,8 +465,7 @@ enum DetailPlaybackFormatting {
         if isForced(track), !name.localizedCaseInsensitiveContains("forced") {
             name += " (Forced)"
         }
-        guard let codec = normalizedSubtitleCodec(track.codec) else { return name }
-        return "\(name) · \(codec)"
+        return name
     }
 
     static func normalizedVideoCodec(_ codec: String?) -> String? {
@@ -745,7 +600,7 @@ enum DetailPlaybackFormatting {
 
     private static func isForced(_ track: SubtitleTrack) -> Bool {
         (track.forced ?? false)
-            || (track.title ?? track.embeddedTitle)?.localizedCaseInsensitiveContains("forced") == true
+            || SubtitleAutoResolver.titleIndicatesForced(track.title ?? track.embeddedTitle)
     }
 
     private static func containsAccessibilityMarker(_ value: String) -> Bool {
@@ -828,5 +683,23 @@ enum DetailPlaybackFormatting {
 private extension Array {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension DetailPlaybackFormatting.SubtitleAutoContext {
+    init(prefs: PlayerViewModel.PrefsSnapshot, audioLanguage: String?) {
+        self.init(
+            preferredLanguage: prefs.preferredLanguage,
+            mode: prefs.mode?.rawValue,
+            signature: prefs.trackSignature,
+            audioLanguage: audioLanguage,
+            showForced: prefs.showForced,
+            additionalPreferredLanguages: prefs.additionalPreferredLanguages,
+            forcedOnly: prefs.forcedOnly,
+            preferAccessibilityTracks: prefs.preferAccessibilityTracks,
+            disableWhenNoLanguageMatch: prefs.disableWhenNoLanguageMatch,
+            fallbackLanguages: prefs.fallbackLanguages,
+            forcedFollowsAudio: prefs.forcedFollowsAudio
+        )
     }
 }

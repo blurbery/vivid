@@ -231,6 +231,10 @@ extension PlayerViewModel {
             }
         }
         reapplyVividGain()
+        // A new engine starts with Settings' style and the plain subtitle
+        // delay. Re-apply the current ones, including an OpenSubtitles file's
+        // own offset, which no view change would otherwise send after a reload.
+        applySubtitleAppearanceToPlayer()
 
         if vividPlaybackController.shouldPlayWhenReady {
             vividPlaybackController.play()

@@ -49,7 +49,19 @@ final class TVSettingsViewModel {
 
     var editorSubtitleLanguage: String {
         get { PlayerSettings.shared.preferredSubtitleLanguage }
-        set { PlayerSettings.shared.preferredSubtitleLanguage = newValue }
+        set {
+            PlayerSettings.shared.preferredSubtitleLanguage = newValue
+            // A backup in the same language would be a second copy of it.
+            if SubtitleAutoResolver.languagesMatch(PlayerSettings.shared.preferredSubtitleBackupLanguage, newValue) {
+                PlayerSettings.shared.preferredSubtitleBackupLanguage = PlaybackPrefSentinel.none
+            }
+        }
+    }
+
+    /// Used when a title has no subtitles in `editorSubtitleLanguage`.
+    var editorSubtitleBackupLanguage: String {
+        get { PlayerSettings.shared.preferredSubtitleBackupLanguage }
+        set { PlayerSettings.shared.preferredSubtitleBackupLanguage = newValue }
     }
 
     var editorSubtitleMode: String {
@@ -77,6 +89,22 @@ final class TVSettingsViewModel {
             currentValue: editorSubtitleLanguage,
             runtimeValues: []
         )
+    }
+
+    /// Every subtitle language except the main one.
+    var subtitleBackupLanguageOptions: [PlaybackLanguageOption] {
+        PlaybackLanguageOption.options(
+            for: .playbackSubtitleLanguage,
+            currentValue: editorSubtitleBackupLanguage,
+            runtimeValues: []
+        )
+        .filter { !SubtitleAutoResolver.languagesMatch($0.code, editorSubtitleLanguage) }
+    }
+
+    /// A backup only stands in for a chosen language, and Off shows nothing.
+    var subtitleBackupLanguageApplies: Bool {
+        editorSubtitleLanguage != PlaybackPrefSentinel.none
+            && editorSubtitleMode != SubtitleMode.off.rawValue
     }
 
     // MARK: - Load / save
