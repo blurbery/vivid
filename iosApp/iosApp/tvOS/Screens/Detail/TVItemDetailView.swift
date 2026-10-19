@@ -428,13 +428,6 @@ struct TVItemDetailView: View {
                         versionFileId: preferredNextUpFileId,
                         candidate: index
                     )
-                    persistSubtitleSelection(
-                        prefKey: prefKey(for: nextUpPlaybackDetail),
-                        version: effectiveVersion(for: nextUpPlaybackDetail, versionFileId: preferredNextUpFileId),
-                        requested: index,
-                        sanitized: preferredNextUpSubtitleTrackIndex,
-                        showForced: nil
-                    )
                 },
                 onToggleFavorite: { Task { await viewModel.toggleFavorite() } },
                 onToggleWatchlist: { Task { await viewModel.toggleWatchlist() } },
@@ -582,13 +575,6 @@ struct TVItemDetailView: View {
                         versionFileId: preferredNextUpFileId,
                         candidate: index
                     )
-                    persistSubtitleSelection(
-                        prefKey: prefKey(for: nextUpPlaybackDetail),
-                        version: effectiveVersion(for: nextUpPlaybackDetail, versionFileId: preferredNextUpFileId),
-                        requested: index,
-                        sanitized: preferredNextUpSubtitleTrackIndex,
-                        showForced: nil
-                    )
                 },
                 onToggleFavorite: { Task { await viewModel.toggleFavorite() } },
                 onToggleWatchlist: { Task { await viewModel.toggleWatchlist() } },
@@ -694,13 +680,6 @@ struct TVItemDetailView: View {
                         for: detail,
                         versionFileId: preferredVersionFileId,
                         candidate: index
-                    )
-                    persistSubtitleSelection(
-                        prefKey: prefKey(for: detail),
-                        version: effectiveVersion(for: detail, versionFileId: preferredVersionFileId),
-                        requested: index,
-                        sanitized: preferredSubtitleTrackIndex,
-                        showForced: nil
                     )
                 },
                 onSelectSeason: { season in
@@ -956,7 +935,7 @@ struct TVItemDetailView: View {
     // Audio picks are remembered server-side (web-app parity): episodes key
     // by series id so one choice covers the series, movies by their own
     // content id. Subtitles always start from Settings > Subtitles, on every
-    // server, so the detail page never seeds a remembered subtitle.
+    // server, so the detail page neither seeds nor saves a remembered subtitle.
 
     private func prefKey(for detail: ItemDetail?) -> String? {
         TrackSelectionPersistence.prefKey(seriesId: detail?.seriesId, contentId: detail?.contentId)
@@ -978,28 +957,6 @@ struct TVItemDetailView: View {
               let request = TrackSelectionPersistence.audioRequest(version: version, ordinal: requested)
         else { return }
         TrackSelectionPersistence.saveAudio(prefKey: prefKey, request: request)
-    }
-
-    private func persistSubtitleSelection(
-        prefKey: String?,
-        version: FileVersion?,
-        requested: Int?,
-        sanitized: Int?,
-        showForced: Bool?
-    ) {
-        guard let prefKey else { return }
-        guard let requested else {
-            TrackSelectionPersistence.clearSubtitle(prefKey: prefKey)
-            return
-        }
-        guard requested == sanitized, let version,
-              let request = TrackSelectionPersistence.subtitleRequest(
-                  version: version,
-                  ffIndex: requested,
-                  showForced: showForced
-              )
-        else { return }
-        TrackSelectionPersistence.saveSubtitle(prefKey: prefKey, request: request)
     }
 
     private func seasonNextUpEpisode(for detail: ItemDetail) -> EpisodeListItem? {
