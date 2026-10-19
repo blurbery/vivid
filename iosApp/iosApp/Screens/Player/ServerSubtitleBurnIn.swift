@@ -10,8 +10,8 @@ struct ServerTranscodeSubtitles: Equatable {
     /// A stream that was asked for but not confirmed. Playback goes on
     /// without it.
     var failedIndex: Int?
-    /// The burn-in request didn't get an answer (a dropped connection, a
-    /// timeout, a server error), so asking again later may work.
+    /// The burn-in request failed (a dropped connection, a timeout or an
+    /// HTTP error), so asking again later may work.
     var failureIsTemporary = false
     /// The transcode only repackages the video, so drawing a subtitle in
     /// would add a full video encode on the server.
@@ -55,8 +55,8 @@ enum ServerSubtitleBurnIn {
     /// transcode. A direct play keeps the file as it is: Lucid Engine draws
     /// PGS, VobSub and DVB itself, and asking the server for a subtitle it
     /// can't embed would make it transcode just for that. When the server
-    /// doesn't confirm the burn-in, or the request gets no answer, playback
-    /// goes on with `offer`.
+    /// doesn't confirm the burn-in, or the request fails, playback goes on
+    /// with `offer`.
     @MainActor
     static func negotiate(
         _ offer: Offer,

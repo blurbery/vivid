@@ -310,6 +310,11 @@ final class ServerSubtitleBurnInTests: XCTestCase {
         XCTAssertFalse(blames(.sourceRefused, domain: NSURLErrorDomain, code: NSURLErrorTimedOut))
         XCTAssertFalse(blames(.sourceRefused, domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
         XCTAssertFalse(blames(.sourceRefused, code: 401))
+        XCTAssertFalse(blames(.sourceRefused, code: 408))
+        XCTAssertFalse(blames(.sourceRefused, code: 429))
+        XCTAssertFalse(blames(.nativeItemFailed, domain: NSURLErrorDomain, code: NSURLErrorTimedOut),
+                       "A connection failure counts as one whatever kind the engine gives it")
+        XCTAssertFalse(blames(.vodSourceFailed, domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost))
         XCTAssertFalse(blames(.sourceRateLimited))
         XCTAssertFalse(blames(.audioSessionUnavailable))
         XCTAssertFalse(PlayerViewModel.loadFailureBlamesServerBurnIn(URLError(.badURL)), "Not an engine failure")

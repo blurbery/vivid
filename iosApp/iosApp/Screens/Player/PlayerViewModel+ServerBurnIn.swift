@@ -22,8 +22,8 @@ extension PlayerViewModel {
 
     /// Takes in what the server did with bitmap subtitles for a new load. The
     /// load plays without a burn-in the server didn't confirm, and one it
-    /// refused is dropped for the rest of the item. A request that got no
-    /// answer can be tried again by choosing the subtitle again.
+    /// refused is dropped for the rest of the item. After a request that
+    /// failed, the subtitle can be chosen again to retry.
     func adoptServerTranscodeSubtitles(_ prepared: PreparedPlayback) {
         serverTranscodeSubtitles = prepared.transcodeSubtitles
         serverBurnInRows = []
@@ -147,16 +147,18 @@ extension PlayerViewModel {
         )
     }
 
-    /// Whether a load failure points at the burned-in transcode itself (it
-    /// wouldn't open, its playlist or segments were refused, it wouldn't
-    /// decode) rather than the connection, sign-in, rate limiting or the
-    /// audio session, which have nothing to do with the subtitle.
+    /// Whether a load failure points at the burned-in transcode itself (the
+    /// server refused its playlist or segments, or it wouldn't open or
+    /// decode) rather than the connection, sign-in, a timeout, rate limiting
+    /// or the audio session, which have nothing to do with the subtitle.
     static func loadFailureBlamesServerBurnIn(_ error: Error) -> Bool {
         guard let failure = (error as? VividPlaybackController.LoadFailure)?.failure else { return false }
+        // Any URL loading error is the connection, whatever the failure kind.
+        if failure.underlyingDomain == NSURLErrorDomain { return false }
+        if let status = failure.underlyingCode, failure.underlyingDomain == nil,
+           [401, 403, 408, 429].contains(status) { return false }
         return !routeIndependentFailureKinds.contains(failure.kind)
             && failure.kind != .audioTrackSwitchFailed
-            && failure.transientSourceCode == nil
-            && !PlaybackErrorInfo.isHTTPAuthenticationFailure(failure)
     }
 
     /// A burned-in transcode that fails to open plays again without the
