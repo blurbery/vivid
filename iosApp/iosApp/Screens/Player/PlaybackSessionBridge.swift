@@ -998,8 +998,8 @@ actor PlaybackSessionBridge {
             qualityPreference: resolvedQualityPreference,
             bandwidthCapKbps: bandwidthCapKbps,
             startPosition: effectiveStartPosition,
-            // Without an explicit pick, send the server's own detail-resolved
-            // effective audio index so a movie's remembered track survives.
+            // The pick, or the track Settings > Playback > Audio Language
+            // chose above. The server's remembered audio never decides it.
             audioTrackIndex: resolvedAudioTrackIndex,
             subtitleTrackIndex: subtitleIntent.ffmpegStreamIndex,
             subtitleCombinedIndex: subtitleIntent.combinedIndex
