@@ -249,7 +249,9 @@ final class DetailVersionSelectionTests: XCTestCase {
         XCTAssertTrue(options[1].isSelected)
     }
 
-    func testEffectiveAudioLabelPrefersServerEffectiveTrack() {
+    /// With nothing picked, the Audio control shows the track the player will
+    /// start (`VividInitialAudioPreference`), not the server's remembered one.
+    func testAutoAudioLabelFollowsThePlayersChoiceNotTheServersRememberedTrack() {
         let versions = decodedVersions("""
         [
           {
@@ -264,42 +266,58 @@ final class DetailVersionSelectionTests: XCTestCase {
         """)
 
         let version = versions[0]
-        let effectiveLabel = DetailPlaybackFormatting.audioValueLabel(
+        let autoLabel = DetailPlaybackFormatting.audioValueLabel(
             version: version,
-            selectedAudioTrackIndex: nil
+            selectedAudioTrackIndex: nil,
+            preferredLanguage: "en"
         )
-        let selectedLabel = DetailPlaybackFormatting.audioValueLabel(
+        let pickedLabel = DetailPlaybackFormatting.audioValueLabel(
             version: version,
-            selectedAudioTrackIndex: 0
+            selectedAudioTrackIndex: 1,
+            preferredLanguage: "en"
         )
         let annotatedAutoLabel = DetailPlaybackFormatting.audioValueLabel(
             version: version,
             selectedAudioTrackIndex: nil,
-            annotateAuto: true
+            annotateAuto: true,
+            preferredLanguage: "en"
         )
 
-        XCTAssertTrue(version.effectiveAudioTrackIndex == 1)
-        XCTAssertTrue(effectiveLabel == "Japanese · TrueHD · 7.1", "Expected effective track label; got \(effectiveLabel)")
-        XCTAssertTrue(selectedLabel == "English · AAC", "Selected ordinal should override effective track; got \(selectedLabel)")
-        XCTAssertEqual(annotatedAutoLabel, "Auto: Japanese · TrueHD · 7.1")
+        XCTAssertEqual(autoLabel, "English · AAC")
+        XCTAssertEqual(pickedLabel, "Japanese · TrueHD · 7.1", "A pick on the page wins")
+        XCTAssertEqual(annotatedAutoLabel, "Auto: English · AAC")
+        XCTAssertEqual(
+            DetailPlaybackFormatting.audioValueLabel(
+                version: version, selectedAudioTrackIndex: nil, preferredLanguage: "ja"
+            ),
+            "Japanese · TrueHD · 7.1",
+            "Audio Language in Settings decides Auto"
+        )
+        let options = DetailPlaybackFormatting.audioOptions(
+            version: version, selectedAudioTrackIndex: nil, preferredLanguage: "en"
+        )
+        XCTAssertEqual(options.map(\.isSelected), [true, false])
 
+        // No match in Settings' language or English: the file default.
         let defaultFallback = decodedVersions("""
         [
           {
             "file_id": 2,
             "audio_tracks": [
-              { "codec": "aac", "language": "eng" },
+              { "codec": "aac", "language": "fra" },
               { "codec": "ac3", "language": "spa", "default": true }
             ]
           }
         ]
         """)[0]
-        let defaultLabel = DetailPlaybackFormatting.audioValueLabel(
-            version: defaultFallback,
-            selectedAudioTrackIndex: nil
+        XCTAssertEqual(
+            DetailPlaybackFormatting.audioValueLabel(
+                version: defaultFallback, selectedAudioTrackIndex: nil, preferredLanguage: "de"
+            ),
+            "Spanish · AC3"
         )
-        XCTAssertTrue(defaultLabel == "Spanish · AC3", "Expected default track label; got \(defaultLabel)")
 
+        // No preference and no default: the first track.
         let firstFallback = decodedVersions("""
         [
           {
@@ -311,11 +329,61 @@ final class DetailVersionSelectionTests: XCTestCase {
           }
         ]
         """)[0]
-        let firstLabel = DetailPlaybackFormatting.audioValueLabel(
-            version: firstFallback,
-            selectedAudioTrackIndex: nil
+        XCTAssertEqual(
+            DetailPlaybackFormatting.audioValueLabel(
+                version: firstFallback, selectedAudioTrackIndex: nil, preferredLanguage: ""
+            ),
+            "English · AAC"
         )
-        XCTAssertTrue(firstLabel == "English · AAC", "Expected first track fallback; got \(firstLabel)")
+    }
+
+    /// A default TrueHD track with an E-AC-3 sibling in the same language: the
+    /// player starts the E-AC-3 track, so the control and its summary say so.
+    func testAutoAudioPrefersTheTrackThePlayerStartsOverTrueHD() {
+        let version = decodedVersions("""
+        [
+          {
+            "file_id": 1,
+            "effective_audio_track_index": 0,
+            "audio_tracks": [
+              { "codec": "truehd", "language": "eng", "layout": "7.1", "default": true },
+              { "codec": "eac3", "language": "eng", "layout": "5.1" },
+              { "codec": "ac3", "language": "eng", "title": "Commentary", "channels": 2 }
+            ]
+          }
+        ]
+        """)[0]
+
+        XCTAssertEqual(
+            DetailPlaybackFormatting.resolvedAudioOrdinal(
+                version: version, selectedAudioTrackIndex: nil, preferredLanguage: "en"
+            ),
+            1
+        )
+        XCTAssertEqual(
+            DetailPlaybackFormatting.audioTechnicalSummary(
+                version: version, selectedAudioTrackIndex: nil, preferredLanguage: "en"
+            ),
+            "EAC3 5.1"
+        )
+        XCTAssertEqual(
+            DetailPlaybackFormatting.audioTechnicalSummary(
+                version: version, selectedAudioTrackIndex: 0, preferredLanguage: "en"
+            ),
+            "TrueHD 7.1"
+        )
+        // Out-of-range picks fall back to the automatic choice.
+        XCTAssertEqual(
+            DetailPlaybackFormatting.resolvedAudioOrdinal(
+                version: version, selectedAudioTrackIndex: 7, preferredLanguage: "en"
+            ),
+            1
+        )
+        let options = DetailPlaybackFormatting.audioOptions(
+            version: version, selectedAudioTrackIndex: nil, preferredLanguage: "en"
+        )
+        XCTAssertEqual(options.map(\.isSelected), [false, true, false])
+        XCTAssertFalse(options.contains { $0.detail.contains("Preferred") })
     }
 
     func testAudioLabelsSimplifyTechnicalTitles() {
@@ -339,16 +407,18 @@ final class DetailVersionSelectionTests: XCTestCase {
 
         let label = DetailPlaybackFormatting.audioValueLabel(
             version: versions[0],
-            selectedAudioTrackIndex: nil
+            selectedAudioTrackIndex: nil,
+            preferredLanguage: "en"
         )
         let options = DetailPlaybackFormatting.audioOptions(
             version: versions[0],
-            selectedAudioTrackIndex: nil
+            selectedAudioTrackIndex: nil,
+            preferredLanguage: "en"
         )
 
         XCTAssertTrue(label == "English · EAC3 · 5.1", "Expected simplified audio label; got \(label)")
         XCTAssertTrue(options[0].title == "English")
-        XCTAssertTrue(options[0].detail == "EAC3 · 5.1 · Default · Preferred")
+        XCTAssertEqual(options[0].detail, "EAC3 · 5.1 · Default")
     }
 
     func testSubtitleNilIndexDoesNotCollideWithOff() {

@@ -341,7 +341,9 @@ private struct ItemDetailPhoneContent: View {
             Task {
                 await viewModel.loadDetail(contentId: contentId)
                 // A pick made for that viewing doesn't outlive it: the
-                // selector goes back to following Settings > Subtitles.
+                // selectors go back to following Settings > Playback > Audio
+                // Language and Settings > Subtitles.
+                preferredAudioTrackIndex = nil
                 preferredSubtitleTrackIndex = nil
                 preferredSubtitleTrackWasManuallySelected = false
             }
@@ -360,6 +362,7 @@ private struct ItemDetailPhoneContent: View {
                 // list even after accepting the final progress write. Keep
                 // the completed state visible until their catalogue catches up.
                 viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
+                preferredAudioTrackIndex = nil
                 preferredSubtitleTrackIndex = nil
                 preferredSubtitleTrackWasManuallySelected = false
             }
@@ -541,12 +544,6 @@ private struct ItemDetailPhoneContent: View {
                         versionFileId: preferredNextUpFileId,
                         candidate: index
                     )
-                    persistAudioSelection(
-                        prefKey: prefKey(for: nextUpWatchDetail),
-                        version: effectiveVersion(for: nextUpWatchDetail, versionFileId: preferredNextUpFileId),
-                        requested: index,
-                        sanitized: preferredNextUpAudioTrackIndex
-                    )
                 },
                 onSelectNextUpSubtitleTrack: { index in
                     nextUpSelectionRevision += 1
@@ -659,12 +656,6 @@ private struct ItemDetailPhoneContent: View {
                         versionFileId: preferredNextUpFileId,
                         candidate: index
                     )
-                    persistAudioSelection(
-                        prefKey: prefKey(for: nextUpWatchDetail),
-                        version: effectiveVersion(for: nextUpWatchDetail, versionFileId: preferredNextUpFileId),
-                        requested: index,
-                        sanitized: preferredNextUpAudioTrackIndex
-                    )
                 },
                 onSelectNextUpSubtitleTrack: { index in
                     nextUpSelectionRevision += 1
@@ -755,12 +746,6 @@ private struct ItemDetailPhoneContent: View {
                         for: detail,
                         versionFileId: preferredVersionFileId,
                         candidate: index
-                    )
-                    persistAudioSelection(
-                        prefKey: prefKey(for: detail),
-                        version: effectiveVersion(for: detail, versionFileId: preferredVersionFileId),
-                        requested: index,
-                        sanitized: preferredAudioTrackIndex
                     )
                 },
                 onSelectSubtitleTrack: { index in
@@ -945,39 +930,6 @@ private struct ItemDetailPhoneContent: View {
         }
         let available = version.subtitleTracks?.compactMap(\.selectionIndex) ?? []
         return available.contains(candidate) ? candidate : nil
-    }
-
-    // MARK: - Track-choice persistence
-    //
-    // Audio picks are remembered server-side (web-app parity): episodes key
-    // by series id so one choice covers the series, movies by their own
-    // content id. Subtitles always start from Settings > Subtitles, on every
-    // server, so the detail page neither seeds nor saves a remembered subtitle.
-
-    private func prefKey(for detail: ItemDetail) -> String? {
-        TrackSelectionPersistence.prefKey(seriesId: detail.seriesId, contentId: detail.contentId)
-    }
-
-    private func prefKey(for detail: WatchDetail?) -> String? {
-        TrackSelectionPersistence.prefKey(seriesId: detail?.seriesId, contentId: detail?.contentId)
-    }
-
-    private func persistAudioSelection(
-        prefKey: String?,
-        version: FileVersion?,
-        requested: Int?,
-        sanitized: Int?
-    ) {
-        guard let prefKey else { return }
-        guard let requested else {
-            TrackSelectionPersistence.clearAudio(prefKey: prefKey)
-            return
-        }
-        guard requested == sanitized,
-              let version,
-              let request = TrackSelectionPersistence.audioRequest(version: version, ordinal: requested)
-        else { return }
-        TrackSelectionPersistence.saveAudio(prefKey: prefKey, request: request)
     }
 
     private func nextUpEpisode(for detail: ItemDetail) -> EpisodeListItem? {

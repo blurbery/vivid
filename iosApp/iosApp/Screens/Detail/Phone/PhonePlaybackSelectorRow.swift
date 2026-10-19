@@ -349,7 +349,7 @@ private struct PhonePlaybackSelectorOptions: View {
         Section {
             optionButton(
                 title: "Auto",
-                detail: "Use the file default track",
+                detail: "Use your Playback audio preference",
                 isSelected: selectedAudioTrackIndex == nil
             ) {
                 onSelectAudioTrack(nil)
