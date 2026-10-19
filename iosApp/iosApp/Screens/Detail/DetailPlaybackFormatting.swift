@@ -128,55 +128,63 @@ enum DetailPlaybackFormatting {
         (version?.subtitleTracks ?? []).count > 1
     }
 
+    /// The file's audio tracks as menu rows. With nothing picked on the
+    /// page, the row playback will start with is the selected one.
     static func audioOptions(
         version: FileVersion?,
-        selectedAudioTrackIndex: Int?
+        selectedAudioTrackIndex: Int?,
+        preferredLanguage: String = PlayerSettings.shared.audioLanguage
     ) -> [AudioOption] {
         guard let version else { return [] }
         let selectedOrdinal = resolvedAudioOrdinal(
             version: version,
-            selectedAudioTrackIndex: selectedAudioTrackIndex
+            selectedAudioTrackIndex: selectedAudioTrackIndex,
+            preferredLanguage: preferredLanguage
         )
         return (version.audioTracks ?? []).enumerated().map { ordinal, track in
             AudioOption(
                 ordinal: ordinal,
                 title: audioTitle(track, ordinal: ordinal),
-                detail: audioDetail(track, ordinal: ordinal, version: version),
+                detail: audioDetail(track, ordinal: ordinal),
                 isSelected: selectedOrdinal == ordinal
             )
         }
     }
 
+    /// The audio track playback will start with: the one picked on this page,
+    /// otherwise the player's own choice from Settings > Playback > Audio
+    /// Language (`VividInitialAudioPreference`), which falls back to English,
+    /// then the file default, and prefers a track the device plays directly
+    /// over commentary, TrueHD or DTS in the same language. The server's
+    /// remembered audio isn't used, as playback doesn't use it either, so the
+    /// page reads the same on Silo, Emby and Jellyfin.
     static func resolvedAudioOrdinal(
         version: FileVersion?,
-        selectedAudioTrackIndex: Int?
+        selectedAudioTrackIndex: Int?,
+        preferredLanguage: String = PlayerSettings.shared.audioLanguage
     ) -> Int? {
-        guard let version,
-              let tracks = version.audioTracks,
-              !tracks.isEmpty else {
+        guard let tracks = version?.audioTracks, !tracks.isEmpty else {
             return nil
         }
-        if let selectedAudioTrackIndex, tracks.indices.contains(selectedAudioTrackIndex) {
-            return selectedAudioTrackIndex
-        }
-        if let effective = version.effectiveAudioTrackIndex, tracks.indices.contains(effective) {
-            return effective
-        }
-        if let defaultIndex = tracks.firstIndex(where: { $0.isDefault == true }) {
-            return defaultIndex
-        }
-        return tracks.startIndex
+        let manual = selectedAudioTrackIndex.flatMap { tracks.indices.contains($0) ? $0 : nil }
+        return VividInitialAudioPreference.selectedOrdinal(
+            manual: manual,
+            tracks: tracks,
+            preferredLanguage: preferredLanguage
+        )
     }
 
     static func audioValueLabel(
         version: FileVersion?,
         selectedAudioTrackIndex: Int?,
-        annotateAuto: Bool = false
+        annotateAuto: Bool = false,
+        preferredLanguage: String = PlayerSettings.shared.audioLanguage
     ) -> String {
         guard let version,
               let ordinal = resolvedAudioOrdinal(
                   version: version,
-                  selectedAudioTrackIndex: selectedAudioTrackIndex
+                  selectedAudioTrackIndex: selectedAudioTrackIndex,
+                  preferredLanguage: preferredLanguage
               ),
               let track = version.audioTracks?[safe: ordinal] else {
             return "Unknown"
@@ -196,12 +204,14 @@ enum DetailPlaybackFormatting {
     /// "Auto" prefix (for example, "EAC3 5.1").
     static func audioTechnicalSummary(
         version: FileVersion?,
-        selectedAudioTrackIndex: Int?
+        selectedAudioTrackIndex: Int?,
+        preferredLanguage: String = PlayerSettings.shared.audioLanguage
     ) -> String? {
         guard let version,
               let ordinal = resolvedAudioOrdinal(
                   version: version,
-                  selectedAudioTrackIndex: selectedAudioTrackIndex
+                  selectedAudioTrackIndex: selectedAudioTrackIndex,
+                  preferredLanguage: preferredLanguage
               ),
               let track = version.audioTracks?[safe: ordinal] else {
             return normalizedAudioCodec(version?.codecAudio)
@@ -214,31 +224,13 @@ enum DetailPlaybackFormatting {
         .joined(separator: " ")
     }
 
-    /// Language of the track that `audioValueLabel` would display, used to
-    /// feed the subtitle auto-resolver (Auto mode hides subs when the audio
-    /// is already in the preferred subtitle language).
-    static func resolvedAudioLanguage(
-        version: FileVersion?,
-        selectedAudioTrackIndex: Int?
-    ) -> String? {
-        guard let version,
-              let ordinal = resolvedAudioOrdinal(
-                  version: version,
-                  selectedAudioTrackIndex: selectedAudioTrackIndex
-              ),
-              let track = version.audioTracks?[safe: ordinal] else {
-            return nil
-        }
-        return track.language
-    }
-
     static func audioTitle(_ track: AudioTrack, ordinal: Int) -> String {
         if let language = languageDisplayName(track.language) { return language }
         if let title = usefulAudioTitle(track) { return title }
         return "Track \(ordinal + 1)"
     }
 
-    static func audioDetail(_ track: AudioTrack, ordinal: Int, version: FileVersion?) -> String {
+    static func audioDetail(_ track: AudioTrack, ordinal: Int) -> String {
         var tokens: [String] = []
         if let title = usefulAudioTitle(track), title != audioTitle(track, ordinal: ordinal) {
             tokens.append(title)
@@ -251,9 +243,6 @@ enum DetailPlaybackFormatting {
         }
         if track.isDefault == true {
             tokens.append("Default")
-        }
-        if version?.effectiveAudioTrackIndex == ordinal {
-            tokens.append("Preferred")
         }
         return tokens.joined(separator: " · ")
     }
@@ -311,24 +300,24 @@ enum DetailPlaybackFormatting {
             .map { subtitleShortLabel($0.track, ordinal: $0.ordinal) } ?? "Off"
     }
 
-    /// The language of the audio playback will start with: the track picked
-    /// on this page, otherwise the player's own choice from Settings >
-    /// Playback > Audio Language (`VividInitialAudioPreference`). Not the
-    /// server's remembered audio, which playback doesn't use either.
+    /// The language of the audio playback will start with, the same track the
+    /// Audio control shows (`resolvedAudioOrdinal`).
     @MainActor
     static func playbackAudioLanguage(
         version: FileVersion?,
         selectedAudioTrackIndex: Int?,
         settings: PlayerSettings = .shared
     ) -> String? {
-        let tracks = version?.audioTracks ?? []
-        let manual = selectedAudioTrackIndex.flatMap { tracks.indices.contains($0) ? $0 : nil }
-        let ordinal = VividInitialAudioPreference.selectedOrdinal(
-            manual: manual,
-            tracks: tracks,
+        let ordinal = resolvedAudioOrdinal(
+            version: version,
+            selectedAudioTrackIndex: selectedAudioTrackIndex,
             preferredLanguage: settings.audioLanguage
         )
-        return SubtitleAutoResolver.policyAudioLanguage(live: nil, catalog: tracks, ordinal: ordinal)
+        return SubtitleAutoResolver.policyAudioLanguage(
+            live: nil,
+            catalog: version?.audioTracks ?? [],
+            ordinal: ordinal
+        )
     }
 
     /// The track `SubtitleAutoResolver` picks from this file's catalogue
