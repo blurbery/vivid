@@ -83,13 +83,21 @@ final class SiloStoredSubtitles {
     }
 
     /// Reads the file's stored subtitles unless a recent read is kept. A
-    /// failed read, including from a server without the route, lists none.
+    /// server without the route (404) lists none. Any other failed read isn't
+    /// kept, so the next load tries again rather than hiding the subtitles.
     func load(fileID: Int?) async {
         guard let key = key(fileID), let fileID, !loading.contains(key) else { return }
         if let entry = entries[key], entry.expires > Date() { return }
         loading.insert(key)
         defer { loading.remove(key) }
-        let subtitles = (try? await VividAPI.shared.storedSubtitles(fileID: fileID).subtitles) ?? []
+        let subtitles: [SiloStoredSubtitle]
+        do {
+            subtitles = try await VividAPI.shared.storedSubtitles(fileID: fileID).subtitles
+        } catch HTTPError.http(let statusCode, _) where statusCode == 404 {
+            subtitles = []
+        } catch {
+            return
+        }
         guard self.key(fileID) == key else { return }
         entries = entries.filter { $0.value.expires > Date() }
         if entries.count >= 32 { entries.removeAll() }
