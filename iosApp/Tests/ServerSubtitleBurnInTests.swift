@@ -305,6 +305,9 @@ final class ServerSubtitleBurnInTests: XCTestCase {
                 VividPlaybackController.LoadFailure(failure: failure, underlying: failure))
         }
         XCTAssertTrue(blames(.sourceRefused, code: 500), "The server's transcode refused to start")
+        XCTAssertTrue(blames(.sourceRefused, domain: NSURLErrorDomain, code: 502),
+                      "An HTTP status counts whichever domain carries it")
+        XCTAssertFalse(blames(.sourceRefused, domain: NSURLErrorDomain, code: 401))
         XCTAssertTrue(blames(.masterPlaylistRejected))
         XCTAssertTrue(blames(.softwarePipelineFailed))
         XCTAssertFalse(blames(.sourceRefused, domain: NSURLErrorDomain, code: NSURLErrorTimedOut))

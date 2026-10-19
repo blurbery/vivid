@@ -153,10 +153,14 @@ extension PlayerViewModel {
     /// or the audio session, which have nothing to do with the subtitle.
     static func loadFailureBlamesServerBurnIn(_ error: Error) -> Bool {
         guard let failure = (error as? VividPlaybackController.LoadFailure)?.failure else { return false }
-        // Any URL loading error is the connection, whatever the failure kind.
-        if failure.underlyingDomain == NSURLErrorDomain { return false }
-        if let status = failure.underlyingCode, failure.underlyingDomain == nil,
-           [401, 403, 408, 429].contains(status) { return false }
+        if let code = failure.underlyingCode,
+           failure.underlyingDomain == nil || failure.underlyingDomain == NSURLErrorDomain {
+            // URL loading errors (negative codes, whatever the failure kind)
+            // are the connection. An HTTP status can come with either domain:
+            // sign-in, a timeout and rate limiting aren't the transcode.
+            if failure.underlyingDomain == NSURLErrorDomain, code < 0 { return false }
+            if [401, 403, 408, 429].contains(code) { return false }
+        }
         return !routeIndependentFailureKinds.contains(failure.kind)
             && failure.kind != .audioTrackSwitchFailed
     }
