@@ -6,7 +6,9 @@ name: Claude Code Review
 # new changes are read and earlier fixes are checked; after a force-push or
 # rebase the whole PR is reviewed again. The summary comment (marked
 # <!-- claude-review sha=... -->) records the reviewed commit and is updated in
-# place. Each run stops at a cost limit and keeps what it found so far. Skips
+# place. Each run stops at a cost limit and keeps what it found so far; a run
+# that stops early doesn't record its commit, so the next one covers what it
+# missed. Skips
 # drafts, bots, fork PRs (GitHub withholds secrets from them) and
 # Markdown-only changes. Needs the ANTHROPIC_API_KEY secret (reviews come out
 # of API credits), plus ANTHROPIC_WORKSPACE_ID for a key that covers several
@@ -18,7 +20,12 @@ name: Claude Code Review
 # it reviews one commit of an existing PR in full, without that PR's review
 # comments, and prints the result rather than posting it. Use it to compare
 # models, effort levels and prompt changes against commits other reviewers
-# have already checked.
+# have already checked. With "post" ticked, a manual run reviews the PR's
+# head in full instead, with the chosen model, effort and cost limit, and
+# posts the result like an automatic review. Setting "since" as well reviews
+# only the commits after that one, like a push does, which checks the fixes
+# for earlier findings. A cost limit of 0 means none (each pass then stops at
+# 300 turns), and manual runs get two hours.
 
 on:
   pull_request:
@@ -44,40 +51,72 @@ on:
         options: [low, medium, high, xhigh, max]
         default: high
       max_cost:
-        description: Cost limit in US$
+        description: Cost limit in US$ (0 for no limit)
         default: "3.00"
+      post:
+        description: Post the review on the PR instead of a dry run (reviews the PR's head)
+        type: boolean
+        default: false
+      since:
+        description: With post, review only the commits after this one, for example to check fixes (empty reviews the whole PR)
+        required: false
 
 # A newer push waits for the running review rather than cancelling it, so the
-# credit already spent isn't wasted. Reviews still queued are replaced. Dry
-# runs each get their own group.
+# credit already spent isn't wasted. Reviews still queued are replaced. A
+# posted manual run shares its PR's group; dry runs each get their own.
 concurrency:
-  group: claude-code-review-${{ github.event.pull_request.number || github.run_id }}
+  group: claude-code-review-${{ github.event.pull_request.number || (inputs.post && inputs.pr) || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   review:
     if: >-
-      github.event_name == 'pull_request' &&
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft &&
-      github.event.pull_request.user.type != 'Bot'
+      github.event.pull_request.user.type != 'Bot') ||
+      (github.event_name == 'workflow_dispatch' && inputs.post)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 120 || 30 }}
     permissions:
       contents: read
       pull-requests: write
     env:
       HAS_CREDENTIALS: ${{ secrets.ANTHROPIC_API_KEY != '' }}
-      REVIEW_MODEL: claude-sonnet-5-5
-      REVIEW_EFFORT: high
+      REVIEW_MODEL: ${{ inputs.model || 'claude-sonnet-5-5' }}
+      REVIEW_EFFORT: ${{ inputs.effort || 'high' }}
     steps:
       - name: Skip without credentials
         if: env.HAS_CREDENTIALS != 'true'
         run: echo "::notice::Add an ANTHROPIC_API_KEY repository secret to turn on Claude reviews."
+      - name: Find the pull request
+        id: pr
+        if: env.HAS_CREDENTIALS == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            if ! [[ "$PR" =~ ^[0-9]+$ ]]; then echo "::error::The PR must be a number."; exit 1; fi
+            if [ -n "$SHA" ]; then echo "::error::A posted review always covers the PR's head, so leave the commit empty."; exit 1; fi
+            read -r cross BASE_SHA HEAD_SHA < <(gh pr view "$PR" --repo "$REPO" --json isCrossRepository,baseRefOid,headRefOid --jq '"\(.isCrossRepository) \(.baseRefOid) \(.headRefOid)"')
+            if [ "$cross" != false ]; then echo "::error::Only PRs from this repository can be reviewed."; exit 1; fi
+          fi
+          {
+            echo "number=$PR"
+            echo "base=$BASE_SHA"
+            echo "head=$HEAD_SHA"
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.HAS_CREDENTIALS == 'true'
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr.outputs.head }}
           fetch-depth: 0
       - name: Use the review app's identity
         id: app
@@ -94,9 +133,11 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
           BOT_LOGIN: ${{ steps.app.outputs.app-slug && format('{0}[bot]', steps.app.outputs.app-slug) || 'github-actions[bot]' }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT: ${{ github.event_name }}
+          SINCE: ${{ inputs.since }}
+          PR: ${{ steps.pr.outputs.number }}
+          BASE_SHA: ${{ steps.pr.outputs.base }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
         run: |
           set -euo pipefail
           dir=.claude-review
@@ -115,6 +156,10 @@ jobs:
             if [ "$last_sha" = "-" ]; then last_sha=""; fi
             if [ "$login" != "$BOT_LOGIN" ]; then comment_id=""; fi
           fi
+          # A manual run reviews the whole PR, or the commits after "since",
+          # even when they've been reviewed already.
+          prev_sha=$last_sha
+          if [ "$EVENT" = workflow_dispatch ]; then last_sha=""; fi
           if [ "$last_sha" = "$HEAD_SHA" ]; then
             echo "::notice::This commit has already been reviewed."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -123,7 +168,18 @@ jobs:
 
           merge_base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           git diff --name-only "$merge_base" "$HEAD_SHA" > "$dir/files.txt"
-          if [ -n "$last_sha" ] && git merge-base --is-ancestor "$last_sha" "$HEAD_SHA" 2>/dev/null; then
+          if [ -n "$SINCE" ]; then
+            # "since" has to be one of the PR's own commits before its head.
+            from=""
+            if [[ "$SINCE" =~ ^[0-9a-f]{7,40}$ ]]; then from=$(git rev-parse --verify --quiet "$SINCE^{commit}" || true); fi
+            if [ -z "$from" ] || [ "$from" = "$HEAD_SHA" ] \
+              || ! git merge-base --is-ancestor "$merge_base" "$from" \
+              || ! git merge-base --is-ancestor "$from" "$HEAD_SHA"; then
+              echo "::error::\"since\" must be a commit on this PR before its head, ${HEAD_SHA:0:7}."
+              exit 1
+            fi
+            mode=incremental
+          elif [ -n "$last_sha" ] && git merge-base --is-ancestor "$last_sha" "$HEAD_SHA" 2>/dev/null; then
             mode=incremental
             from=$last_sha
           else
@@ -138,7 +194,21 @@ jobs:
           if [ "${#files[@]}" -gt 0 ]; then
             git diff "$from" "$HEAD_SHA" -- "${files[@]}" > "$dir/diff.patch"
           fi
+          # What the marker records afterwards: the commit up to which
+          # everything has been reviewed. A review that stops early leaves the
+          # earlier marker as it was (dropped after a force-push), and a
+          # "since" run that leaves unreviewed commits before it doesn't move it.
+          kept=""
+          if [ -n "$prev_sha" ] && git merge-base --is-ancestor "$prev_sha" "$HEAD_SHA" 2>/dev/null; then kept=$prev_sha; fi
+          done_marker=$HEAD_SHA
+          if [ -n "$SINCE" ] && [ "$from" != "$merge_base" ] \
+            && ! { [ -n "$kept" ] && git merge-base --is-ancestor "$from" "$kept"; }; then
+            done_marker=$kept
+          fi
+
           if [ ! -s "$dir/diff.patch" ]; then
+            # A manual run fails instead, so it doesn't look as if it reviewed something.
+            if [ "$EVENT" = workflow_dispatch ]; then echo "::error::Nothing to review since ${from:0:7}."; exit 1; fi
             echo "::notice::Nothing new to review since ${from:0:7}."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -155,6 +225,8 @@ jobs:
             echo "from=$from"
             echo "merge_base=$merge_base"
             echo "comment_id=$comment_id"
+            echo "done_marker=$done_marker"
+            echo "stop_marker=$kept"
           } >> "$GITHUB_OUTPUT"
       - name: Review with Claude
         id: claude
@@ -162,16 +234,31 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
-          # Cost limits per run in US$: a whole PR, or only the new commits.
-          REVIEW_MAX_COST_USD: ${{ steps.prep.outputs.mode == 'incremental' && '1.00' || '2.00' }}
+          EVENT: ${{ github.event_name }}
+          MAX_COST: ${{ inputs.max_cost }}
+          MODE: ${{ steps.prep.outputs.mode }}
         run: |
+          set -euo pipefail
           if [ -n "$ANTHROPIC_WORKSPACE_ID" ]; then echo "::add-mask::$ANTHROPIC_WORKSPACE_ID"; fi
+          # Cost limits per run in US$: a whole PR or only the new commits, or
+          # the manual run's own. A manual run uses the script from the branch
+          # it started on, because the PR's head may have an older version.
+          script=scripts/ci/claude-review.py
+          if [ "$EVENT" = workflow_dispatch ]; then
+            export REVIEW_MAX_COST_USD="$MAX_COST"
+            git show "$GITHUB_SHA:scripts/ci/claude-review.py" > "$RUNNER_TEMP/claude-review.py"
+            script="$RUNNER_TEMP/claude-review.py"
+          elif [ "$MODE" = incremental ]; then
+            export REVIEW_MAX_COST_USD=1.00
+          else
+            export REVIEW_MAX_COST_USD=2.00
+          fi
           pip install --quiet --disable-pip-version-check "anthropic==1.11.0"
-          python3 scripts/ci/claude-review.py \
-            --pr "${{ github.event.pull_request.number }}" \
-            --mode "${{ steps.prep.outputs.mode }}" \
+          python3 "$script" \
+            --pr "${{ steps.pr.outputs.number }}" \
+            --mode "$MODE" \
             --from "${{ steps.prep.outputs.from }}" \
-            --head "${{ github.event.pull_request.head.sha }}" \
+            --head "${{ steps.pr.outputs.head }}" \
             --merge-base "${{ steps.prep.outputs.merge_base }}" \
             --out "$RUNNER_TEMP/review.json"
       - name: Post the review
@@ -179,11 +266,13 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head }}
           MODE: ${{ steps.prep.outputs.mode }}
           FROM: ${{ steps.prep.outputs.from }}
           COMMENT_ID: ${{ steps.prep.outputs.comment_id }}
+          DONE_MARKER: ${{ steps.prep.outputs.done_marker }}
+          STOP_MARKER: ${{ steps.prep.outputs.stop_marker }}
         run: |
           set -euo pipefail
           review="$RUNNER_TEMP/review.json"
@@ -219,12 +308,18 @@ jobs:
             cost) note="Stopped early at the cost limit, so not everything was checked." ;;
             turns) note="Stopped early at the turn limit, so not everything was checked." ;;
             refusal) note="Claude declined to continue part-way, so not everything was checked." ;;
+            error) note="Stopped early after a Claude API error, so not everything was checked." ;;
             *) note="" ;;
           esac
+          # A review that stopped early hasn't covered the head, so the marker
+          # keeps the commit reviewed before it and the next run picks up what
+          # this one missed.
+          marker_sha=$DONE_MARKER
+          if [ -n "$note" ]; then marker_sha=$STOP_MARKER; fi
           footer=$(jq -r '"\(.model), \(.effort) effort, \(.turns) turn\(if .turns == 1 then "" else "s" end), about US$\(.cost_usd * 100 | round / 100) of API credit"' "$review")
 
           {
-            echo "<!-- claude-review sha=$HEAD_SHA -->"
+            echo "<!-- claude-review${marker_sha:+ sha=$marker_sha} -->"
             echo "**Claude review** of the $scope"
             echo
             jq -r '.summary' "$review"
@@ -248,9 +343,9 @@ jobs:
           fi
 
   benchmark:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && !inputs.post
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     permissions:
       contents: read
       pull-requests: read
@@ -265,10 +360,12 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ inputs.pr }}
           SHA: ${{ inputs.sha }}
+          SINCE: ${{ inputs.since }}
         run: |
           set -euo pipefail
           dir=.claude-review
           if ! [[ "$PR" =~ ^[0-9]+$ ]]; then echo "::error::The PR must be a number."; exit 1; fi
+          if [ -n "$SINCE" ]; then echo "::error::\"since\" only works with post, because a dry run always reviews the whole PR."; exit 1; fi
           read -r cross base pr_head < <(gh pr view "$PR" --repo "$REPO" --json isCrossRepository,baseRefOid,headRefOid --jq '"\(.isCrossRepository) \(.baseRefOid) \(.headRefOid)"')
           if [ "$cross" != false ]; then echo "::error::Only PRs from this repository can be reviewed."; exit 1; fi
 
