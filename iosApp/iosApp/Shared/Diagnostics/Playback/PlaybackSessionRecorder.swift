@@ -7,8 +7,9 @@ import UIKit
 /// Latest Playback. Each new play replaces the previous session.
 ///
 /// Recording never adds work to the player's render path: inputs are values
-/// the player already receives, plus a once-a-second read of two counters.
-/// The main thread only updates counts. Apple's audio-route and HDR
+/// the player already receives, plus a once-a-second read of two counters
+/// and of the app's memory footprint (one cheap `task_info` call). Apart from
+/// that memory read, the main thread only updates counts. Apple's audio-route and HDR
 /// queries, JSON encoding and file writes all run on a background queue.
 /// The session lives in memory and is written to one small file when
 /// playback stops, when the app goes to the background and once a minute.

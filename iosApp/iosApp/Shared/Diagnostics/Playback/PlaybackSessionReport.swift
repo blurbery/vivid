@@ -148,7 +148,9 @@ struct PlaybackSessionReport: Codable, Equatable {
         var stallSeconds: Double = 0
         var faults: [String: Int] = [:]
         /// The app's highest memory use in this minute, in MB, as the system
-        /// counts it against the app's limit. Optional so older records load.
+        /// counts it against the app's limit. Past the 240-minute cap the last
+        /// entry keeps the highest reading of all the time after it. Optional
+        /// so older records load.
         var memoryMB: Int?
 
         /// Nothing went wrong in this minute. Memory use isn't a problem.
