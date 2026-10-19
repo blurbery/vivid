@@ -62,20 +62,32 @@ final class ServerSubtitleBurnInTests: XCTestCase {
         XCTAssertEqual(result.subtitles, ServerTranscodeSubtitles(burnedIndex: 3, failedIndex: nil, copiesVideo: false))
     }
 
-    func testAnUnconfirmedOrFailedBurnInPlaysTheFirstAnswerWithoutIt() async throws {
+    func testAnUnconfirmedBurnInPlaysTheFirstAnswerWithoutIt() async throws {
         let probe = try offer(direct: false, url: "/videos/1/master.m3u8?TranscodeReasons=ContainerBitrateExceedsLimit")
-        let answers: [() throws -> [String: Any]] = [
-            { self.info(session: "hls", direct: false, url: "/videos/1/master.m3u8?SubtitleStreamIndex=3&SubtitleMethod=Hls") },
-            { self.info(session: "other", direct: false, url: "/videos/1/master.m3u8?SubtitleStreamIndex=4&SubtitleMethod=Encode") },
-            { ["ErrorCode": "NoCompatibleStream"] },
-            { throw URLError(.badServerResponse) },
+        let answers: [[String: Any]] = [
+            info(session: "hls", direct: false, url: "/videos/1/master.m3u8?SubtitleStreamIndex=3&SubtitleMethod=Hls"),
+            info(session: "other", direct: false, url: "/videos/1/master.m3u8?SubtitleStreamIndex=4&SubtitleMethod=Encode"),
+            ["ErrorCode": "NoCompatibleStream"],
         ]
         for answer in answers {
             let result = try await ServerSubtitleBurnIn.negotiate(probe, burnIn: 3, sourceVideoCodec: "hevc",
-                                                                  body: [:], sourceID: source) { _ in try answer() }
+                                                                  body: [:], sourceID: source) { _ in answer }
             XCTAssertEqual(result.offer.playSessionID, "probe")
             XCTAssertEqual(result.subtitles, ServerTranscodeSubtitles(burnedIndex: nil, failedIndex: 3, copiesVideo: false))
         }
+    }
+
+    /// A dropped or refused request says nothing about the subtitle, so it
+    /// isn't held against the track.
+    func testABurnInRequestWithNoAnswerIsOnlyMissedThisTime() async throws {
+        let probe = try offer(direct: false, url: "/videos/1/master.m3u8?TranscodeReasons=ContainerBitrateExceedsLimit")
+        let result = try await ServerSubtitleBurnIn.negotiate(probe, burnIn: 3, sourceVideoCodec: "hevc",
+                                                              body: [:], sourceID: source) { _ in
+            throw URLError(.timedOut)
+        }
+        XCTAssertEqual(result.offer.playSessionID, "probe")
+        XCTAssertEqual(result.subtitles, ServerTranscodeSubtitles(burnedIndex: nil, failedIndex: 3, failureIsTemporary: true,
+                                                                  copiesVideo: false))
     }
 
     func testATranscodeWithoutABitmapPickIsAskedOnce() async throws {
@@ -261,6 +273,46 @@ final class ServerSubtitleBurnInTests: XCTestCase {
         model.currentSelectedVersion = file
         XCTAssertTrue(model.refreshServerBurnInRows().isEmpty, "Its row is gone, so Auto can't pick it again")
         await finish(model)
+    }
+
+    func testAMissedBurnInTurnsSubtitlesOffButCanBeChosenAgain() async throws {
+        let model = PlayerViewModel()
+        model.pendingSubtitleFfIndex = 3
+        let file = version([catalogue(3, codec: "pgssub")])
+        let session = PlaybackSessionResponse(sessionId: "probe", userId: nil, profileId: nil, mediaFileId: 42,
+            playMethod: "Transcode", position: 0, isPaused: false, streamUrl: "https://media.example.test/master.m3u8",
+            audioTrackIndex: nil, durationSeconds: 7_200, subtitleUrls: [], playbackInfo: nil)
+        model.adoptServerTranscodeSubtitles(PreparedPlayback(
+            watchDetail: try watchDetail(), selectedVersion: file, session: session,
+            transcodeSubtitles: ServerTranscodeSubtitles(burnedIndex: nil, failedIndex: 3, failureIsTemporary: true,
+                                                         copiesVideo: false)))
+        XCTAssertTrue(model.failedServerBurnIns.isEmpty)
+        XCTAssertEqual(model.pendingSubtitleFfIndex, -1)
+        XCTAssertNotNil(model.activeNotice)
+        model.currentWatchDetail = try watchDetail()
+        model.currentSelectedVersion = file
+        XCTAssertEqual(model.refreshServerBurnInRows().map(\.srcId), [3])
+        await finish(model)
+    }
+
+    /// Only a failure of the burned-in stream itself is blamed on the
+    /// subtitle; connection, sign-in and rate-limit failures take the usual
+    /// path and leave the track alone.
+    func testOnlyAFailureOfTheTranscodeItselfIsBlamedOnTheBurnIn() {
+        func blames(_ kind: PlaybackErrorKind, domain: String? = nil, code: Int? = nil) -> Bool {
+            let failure = PlaybackErrorInfo(kind: kind, message: "failed", underlyingDomain: domain, underlyingCode: code)
+            return PlayerViewModel.loadFailureBlamesServerBurnIn(
+                VividPlaybackController.LoadFailure(failure: failure, underlying: failure))
+        }
+        XCTAssertTrue(blames(.sourceRefused, code: 500), "The server's transcode refused to start")
+        XCTAssertTrue(blames(.masterPlaylistRejected))
+        XCTAssertTrue(blames(.softwarePipelineFailed))
+        XCTAssertFalse(blames(.sourceRefused, domain: NSURLErrorDomain, code: NSURLErrorTimedOut))
+        XCTAssertFalse(blames(.sourceRefused, domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
+        XCTAssertFalse(blames(.sourceRefused, code: 401))
+        XCTAssertFalse(blames(.sourceRateLimited))
+        XCTAssertFalse(blames(.audioSessionUnavailable))
+        XCTAssertFalse(PlayerViewModel.loadFailureBlamesServerBurnIn(URLError(.badURL)), "Not an engine failure")
     }
 
     /// The pick rides on the load's subtitle index, which every reload of

@@ -10,6 +10,9 @@ struct ServerTranscodeSubtitles: Equatable {
     /// A stream that was asked for but not confirmed. Playback goes on
     /// without it.
     var failedIndex: Int?
+    /// The burn-in request didn't get an answer (a dropped connection, a
+    /// timeout, a server error), so asking again later may work.
+    var failureIsTemporary = false
     /// The transcode only repackages the video, so drawing a subtitle in
     /// would add a full video encode on the server.
     var copiesVideo: Bool
@@ -52,7 +55,8 @@ enum ServerSubtitleBurnIn {
     /// transcode. A direct play keeps the file as it is: Lucid Engine draws
     /// PGS, VobSub and DVB itself, and asking the server for a subtitle it
     /// can't embed would make it transcode just for that. When the server
-    /// doesn't confirm the burn-in, playback goes on with `offer`.
+    /// doesn't confirm the burn-in, or the request gets no answer, playback
+    /// goes on with `offer`.
     @MainActor
     static func negotiate(
         _ offer: Offer,
@@ -71,13 +75,20 @@ enum ServerSubtitleBurnIn {
         }
         var burnBody = body
         burnBody["SubtitleStreamIndex"] = index
-        if let answer = try? await post(burnBody),
-           let burned = Offer(answer, sourceID: sourceID), !burned.direct,
+        let answer: [String: Any]
+        do {
+            answer = try await post(burnBody)
+        } catch {
+            try Task.checkCancellation()
+            logger.warning("[CMP-SUB] server burn-in request failed; playing without it this time")
+            return (offer, ServerTranscodeSubtitles(burnedIndex: nil, failedIndex: index, failureIsTemporary: true,
+                                                    copiesVideo: copiesVideo))
+        }
+        if let burned = Offer(answer, sourceID: sourceID), !burned.direct,
            confirms(index, transcodingURL: burned.transcodingURL, mediaStreams: burned.mediaStreams) {
             logger.info("[CMP-SUB] server burn-in confirmed copiesVideo=\(copiesVideo, privacy: .public)")
             return (burned, ServerTranscodeSubtitles(burnedIndex: index, failedIndex: nil, copiesVideo: copiesVideo))
         }
-        try Task.checkCancellation()
         logger.warning("[CMP-SUB] server burn-in not confirmed; playing without it")
         return (offer, ServerTranscodeSubtitles(burnedIndex: nil, failedIndex: index, copiesVideo: copiesVideo))
     }

@@ -20,17 +20,20 @@ extension PlayerViewModel {
         return trackID == SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: burned) && isServerBurnInRow(trackID)
     }
 
-    /// Takes in what the server did with bitmap subtitles for a new load. A
-    /// burn-in it didn't confirm is dropped for the rest of the item, and the
-    /// load plays without subtitles.
+    /// Takes in what the server did with bitmap subtitles for a new load. The
+    /// load plays without a burn-in the server didn't confirm, and one it
+    /// refused is dropped for the rest of the item. A request that got no
+    /// answer can be tried again by choosing the subtitle again.
     func adoptServerTranscodeSubtitles(_ prepared: PreparedPlayback) {
         serverTranscodeSubtitles = prepared.transcodeSubtitles
         serverBurnInRows = []
-        guard let failed = prepared.transcodeSubtitles?.failedIndex else { return }
-        failedServerBurnIns.insert(ServerBurnInFailure(
-            contentId: prepared.watchDetail.contentId, fileId: prepared.selectedVersion.fileId, index: failed))
+        guard let transcode = prepared.transcodeSubtitles, let failed = transcode.failedIndex else { return }
+        if !transcode.failureIsTemporary {
+            failedServerBurnIns.insert(ServerBurnInFailure(
+                contentId: prepared.watchDetail.contentId, fileId: prepared.selectedVersion.fileId, index: failed))
+        }
         if pendingSubtitleFfIndex == failed { pendingSubtitleFfIndex = -1 }
-        showServerBurnInNotice()
+        showServerBurnInNotice(temporary: transcode.failureIsTemporary)
     }
 
     /// The load's subtitle pick, if the server should draw it in. Nil once
@@ -144,12 +147,25 @@ extension PlayerViewModel {
         )
     }
 
+    /// Whether a load failure points at the burned-in transcode itself (it
+    /// wouldn't open, its playlist or segments were refused, it wouldn't
+    /// decode) rather than the connection, sign-in, rate limiting or the
+    /// audio session, which have nothing to do with the subtitle.
+    static func loadFailureBlamesServerBurnIn(_ error: Error) -> Bool {
+        guard let failure = (error as? VividPlaybackController.LoadFailure)?.failure else { return false }
+        return !routeIndependentFailureKinds.contains(failure.kind)
+            && failure.kind != .audioTrackSwitchFailed
+            && failure.transientSourceCode == nil
+            && !PlaybackErrorInfo.isHTTPAuthenticationFailure(failure)
+    }
+
     /// A burned-in transcode that fails to open plays again without the
     /// subtitle, rather than ending playback. Returns true when that reload
-    /// takes over.
-    func fallBackFromFailedServerBurnIn(_ failure: ServerBurnInFailure, request: LoadRequest,
+    /// takes over. Other failures take the usual path.
+    func fallBackFromFailedServerBurnIn(_ failure: ServerBurnInFailure, error: Error, request: LoadRequest,
                                         origin: LoadOrigin) -> Bool {
-        guard !isDisposed, request.offlineDownloadId == nil else { return false }
+        guard !isDisposed, request.offlineDownloadId == nil,
+              Self.loadFailureBlamesServerBurnIn(error) else { return false }
         failedServerBurnIns.insert(failure)
         Self.logger.warning("[CMP-SUB] server burn-in failed to open; playing without it")
         let fallback = request.copyForRecovery(
@@ -173,10 +189,12 @@ extension PlayerViewModel {
         return true
     }
 
-    private func showServerBurnInNotice() {
+    private func showServerBurnInNotice(temporary: Bool = false) {
         showNotice(
             title: "Couldn't show subtitles",
-            message: "The server couldn't add this subtitle to the video, so subtitles are off.",
+            message: temporary
+                ? "The server didn't add this subtitle this time, so subtitles are off. Choose it again to retry."
+                : "The server couldn't add this subtitle to the video, so subtitles are off.",
             tone: .warning,
             duration: 6
         )

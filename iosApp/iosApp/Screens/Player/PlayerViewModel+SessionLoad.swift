@@ -610,7 +610,7 @@ extension PlayerViewModel {
                     "Load failed: \(MediaLogRedactor.sanitize(error), privacy: .public)"
                 )
                 if let burnedInLoad,
-                   self.fallBackFromFailedServerBurnIn(burnedInLoad, request: request, origin: origin) {
+                   self.fallBackFromFailedServerBurnIn(burnedInLoad, error: error, request: request, origin: origin) {
                     return
                 }
                 self.handleBeginFreshLoadFailure(error: error, origin: origin)
