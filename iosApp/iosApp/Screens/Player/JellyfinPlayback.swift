@@ -103,7 +103,8 @@ final class JellyfinPlayback {
     }
 
     static func prepare(metadata: Metadata, detail: WatchDetail, version: FileVersion, start: Double,
-                        audioOrdinal: Int?, subtitleIndex: Int?, bitrateKbps: Int?, quality: String?) async throws -> (PreparedPlayback, JellyfinPlayback) {
+                        audioOrdinal: Int?, subtitleIndex: Int?, bitrateKbps: Int?, quality: String?,
+                        burnInSubtitleIndex: Int? = nil) async throws -> (PreparedPlayback, JellyfinPlayback) {
         let connection = metadata.connection
         try await connection.validate()
         let raw = metadata.raw
@@ -114,11 +115,16 @@ final class JellyfinPlayback {
         let audioIndex = audioOrdinal.flatMap { audioStreams.indices.contains($0) ? audioStreams[$0]["Index"] as? Int : nil }
         let body = playbackInfoBody(userID:connection.userID!, sourceID:sourceID, start:start, audioIndex:audioIndex,
             subtitleIndex:subtitleIndex, bitrateKbps:bitrateKbps, source:source, quality:quality, device:.current)
-        let info = try await connection.object("POST", "/Items/\(JellyfinConnection.id(detail.contentId))/PlaybackInfo", body: body)
-        guard info["ErrorCode"] == nil || info["ErrorCode"] is NSNull,
-              let playable = (info["MediaSources"] as? [[String: Any]])?.first(where: { $0["Id"] as? String == sourceID }),
-              let playSessionID = info["PlaySessionId"] as? String else { throw JellyfinError.playbackUnavailable }
-        let direct = playable["SupportsDirectPlay"] as? Bool == true
+        let infoPath = try "/Items/\(JellyfinConnection.id(detail.contentId))/PlaybackInfo"
+        let info = try await connection.object("POST", infoPath, body: body)
+        guard let offer = ServerSubtitleBurnIn.Offer(info, sourceID: sourceID) else { throw JellyfinError.playbackUnavailable }
+        let (chosen, transcodeSubtitles) = try await ServerSubtitleBurnIn.negotiate(offer, burnIn: burnInSubtitleIndex,
+            sourceVideoCodec: version.codecVideo, body: body, sourceID: sourceID) {
+            try await connection.object("POST", infoPath, body: $0)
+        }
+        let playable = chosen.playable
+        let playSessionID = chosen.playSessionID
+        let direct = chosen.direct
         let url: URL
         let method: String
         if direct {
@@ -151,10 +157,10 @@ final class JellyfinPlayback {
             audioTrackIndex:audioOrdinal, durationSeconds:version.duration, subtitleUrls:subtitles,
             playbackInfo:PlaybackInfo(streamType:direct ? "direct" : "hls", transcodeAudio:!direct, videoCodec:direct ? version.codecVideo : "h264", audioCodec:direct ? version.codecAudio : "aac"))
         let playback = JellyfinPlayback(connection:connection,itemID:detail.contentId,sourceID:sourceID,playSessionID:playSessionID,
-            stream:stream,method:method,audioIndex:audioIndex,subtitleIndex:subtitleIndex,position:start,
+            stream:stream,method:method,audioIndex:audioIndex,subtitleIndex:transcodeSubtitles?.burnedIndex ?? subtitleIndex,position:start,
             audioStreamIndexes:audioStreams.map { $0["Index"] as? Int })
         try await connection.validate()
-        return (PreparedPlayback(watchDetail:detail,selectedVersion:version,session:session,activeQualityId:quality ?? ApplePlaybackQuality.autoId, bandwidthCap:.inEffect(bitrateKbps), nativeAudioStreamIndex:direct ? audioIndex.flatMap(Int32.init(exactly:)) : nil, nativeHLS:!direct, nativeQualityOptions:playable["SupportsTranscoding"] as? Bool == true ? ApplePlaybackQuality.settingsOptions : [ApplePlaybackQuality.auto,ApplePlaybackQuality.original]),playback)
+        return (PreparedPlayback(watchDetail:detail,selectedVersion:version,session:session,activeQualityId:quality ?? ApplePlaybackQuality.autoId, bandwidthCap:.inEffect(bitrateKbps), nativeAudioStreamIndex:direct ? audioIndex.flatMap(Int32.init(exactly:)) : nil, nativeHLS:!direct, transcodeSubtitles:transcodeSubtitles, nativeQualityOptions:playable["SupportsTranscoding"] as? Bool == true ? ApplePlaybackQuality.settingsOptions : [ApplePlaybackQuality.auto,ApplePlaybackQuality.original]),playback)
     }
 
     func ping() async throws {

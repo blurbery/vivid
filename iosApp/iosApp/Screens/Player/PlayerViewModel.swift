@@ -519,8 +519,10 @@ class PlayerViewModel {
         let codec = selected?.codec.lowercased() ?? ""
         let authored = selected?.isNativelyRenderedSubtitle == true &&
             (SubtitleCodecClassifier.isBitmap(codec) || codec == "ass" || codec == "ssa")
+        // A subtitle the server draws into the video takes no styling either.
+        let burnedIn = isServerBurnedInSubtitle(selectedSubtitleId)
         return .vivid(
-            subtitleOverlayControls: !authored,
+            subtitleOverlayControls: !authored && !burnedIn,
             hasTextSubtitleTrack: subtitleTracks.contains {
                 !SubtitleCodecClassifier.isBitmap($0.codec)
             }
@@ -1023,6 +1025,20 @@ class PlayerViewModel {
     /// replacement loads of the same file re-apply it here. `storedID` names a
     /// stored subtitle, which another plan can list at a different index.
     var localExternalSubtitlePick: (trackID: Int64, contentID: String, fileID: Int?, storedID: Int?)?
+    /// Emby and Jellyfin transcodes: what the server does with bitmap
+    /// subtitles for the current load. Nil on direct play, Silo and offline.
+    var serverTranscodeSubtitles: ServerTranscodeSubtitles?
+    /// Bitmap tracks the server can draw into the current transcode, listed
+    /// after the subtitles Vivid plays itself. Views read `subtitleTracks`.
+    @ObservationIgnored var serverBurnInRows: [PlayerTrack] = []
+    struct ServerBurnInFailure: Hashable {
+        let contentId: String
+        let fileId: Int
+        let index: Int
+    }
+    /// Burn-ins the server didn't confirm or couldn't play. Those rows are
+    /// dropped for the rest of the item, so no pick asks for them again.
+    @ObservationIgnored var failedServerBurnIns: Set<ServerBurnInFailure> = []
 
     init() {
         do {

@@ -95,6 +95,8 @@ extension PlayerViewModel {
         playbackStatsEpoch = nil
         playbackStats = .empty
         pendingServerRenderedSubtitleTrackId = nil
+        serverTranscodeSubtitles = nil
+        serverBurnInRows = []
         // Subtitle `-1` is the explicit "Off" sentinel; Vivid inventory
         // adoption disables subtitles when it sees a negative value.
         pendingAudioFfIndex = preferredAudioTrackIndex
@@ -210,6 +212,8 @@ extension PlayerViewModel {
         if Self.selectedEmbeddedSubtitleIndexForResume(
             plan: activePreparedProtocolV3?.plan, selectedTrackID: selectedSubtitleId
         ) != nil { return nil }
+        // A burn-in row has no file of its own; its stream index carries it.
+        if isServerBurnInRow(selectedSubtitleId) { return nil }
         if let selectedSubtitleId, SubtitleTrackIdSpace.isSidecar(selectedSubtitleId) {
             return selectedSubtitleId
         }
@@ -305,6 +309,7 @@ extension PlayerViewModel {
                 PlaybackFallbackMode(rawValue: $0)
             } ?? settings.fallbackMode
             playbackFallbackGate = PlaybackFallbackGate()
+            failedServerBurnIns = []
         }
         lastLoadRequest = request
         offlinePlaybackContext = nil
@@ -365,6 +370,7 @@ extension PlayerViewModel {
         freshLoadTask = Task { @MainActor [weak self] in
             guard let self, !self.isDisposed else { return }
             var uncommittedPrepared: PreparedPlayback?
+            var burnedInLoad: ServerBurnInFailure?
             defer {
                 defer { self.recoverPendingUnexpectedEnd() }
                 if self.freshLoadGeneration == currentFreshLoadGeneration {
@@ -497,6 +503,11 @@ extension PlayerViewModel {
                 self.currentSelectedVersion = prepared.selectedVersion
                 self.activePreparedProtocolV3 = prepared.protocolV3
                 self.adoptProtocolV3RenewalIntent(from: prepared)
+                self.adoptServerTranscodeSubtitles(prepared)
+                burnedInLoad = prepared.transcodeSubtitles?.burnedIndex.map {
+                    ServerBurnInFailure(contentId: prepared.watchDetail.contentId,
+                                        fileId: prepared.selectedVersion.fileId, index: $0)
+                }
                 // Artwork and Next Up are catalog fetches; the offline path
                 // already published its cached poster above and has no
                 // server to resolve a next episode against.
@@ -616,6 +627,10 @@ extension PlayerViewModel {
                 Self.logger.error(
                     "Load failed: \(MediaLogRedactor.sanitize(error), privacy: .public)"
                 )
+                if let burnedInLoad,
+                   self.fallBackFromFailedServerBurnIn(burnedInLoad, error: error, request: request, origin: origin) {
+                    return
+                }
                 self.handleBeginFreshLoadFailure(error: error, origin: origin)
             }
         }
@@ -634,6 +649,8 @@ extension PlayerViewModel {
         allowNearEndResume: Bool,
         timeout: TimeInterval?
     ) async throws -> PreparedPlayback {
+        // A bitmap pick is drawn in by Emby or Jellyfin when they transcode.
+        let serverBurnInSubtitleIndex = serverBurnInCandidate(for: request)
         let viewingAudioLanguage = viewingAudioLanguage
         if let timeout {
             let startTask = Task<PreparedPlayback, Error> { [sessionBridge] in
@@ -650,7 +667,8 @@ extension PlayerViewModel {
                     allowNearEndResume: allowNearEndResume,
                     prefersLastUsedVersion: request.prefersLastUsedVersion,
                     preferredQualityOverride: request.preferredQualityOverride,
-                    carriedBandwidthCap: request.carriedBandwidthCap
+                    carriedBandwidthCap: request.carriedBandwidthCap,
+                    serverBurnInSubtitleIndex: serverBurnInSubtitleIndex
                 )
             }
             let timeoutTask = Task<Void, Never> { [startTask] in
@@ -681,7 +699,8 @@ extension PlayerViewModel {
                 allowNearEndResume: allowNearEndResume,
                 prefersLastUsedVersion: request.prefersLastUsedVersion,
                 preferredQualityOverride: request.preferredQualityOverride,
-                carriedBandwidthCap: request.carriedBandwidthCap
+                carriedBandwidthCap: request.carriedBandwidthCap,
+                serverBurnInSubtitleIndex: serverBurnInSubtitleIndex
             )
         }
     }

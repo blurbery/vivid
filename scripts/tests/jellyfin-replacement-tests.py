@@ -84,6 +84,7 @@ enum VividInitialAudioPreference {
     static func selectedOrdinal(manual: Int?, tracks: [AudioTrack], preferredLanguage: String?) -> Int? { manual }
     static func preferredLanguage(viewing: String?, settings: String?, tracks: [AudioTrack]) -> String? { viewing ?? settings }
 }
+enum ServerSubtitleBurnIn { static func bitmapStreamIndex(_ index: Int?, in version: FileVersion) -> Int? { nil } }
 actor TokenStore { static let shared = TokenStore(); func getProfileId() -> String? { "profile" } }
 struct PlaybackV3TerminalFailure: Error { let reason: String; let message: String; let retryable: Bool }
 enum APIError: Error { case httpError(statusCode: Int) }
@@ -136,7 +137,8 @@ struct Connection {
         Metadata(detail: WatchDetail(contentId: contentID), connection: Connection(probe: Probe.all[contentID]!))
     }
     static func prepare(metadata: Metadata, detail: WatchDetail, version: FileVersion, start: Double,
-                        audioOrdinal: Int?, subtitleIndex: Int?, bitrateKbps: Int?, quality: String?) async throws -> (PreparedPlayback, JellyfinPlayback) {
+                        audioOrdinal: Int?, subtitleIndex: Int?, bitrateKbps: Int?, quality: String?,
+                        burnInSubtitleIndex: Int? = nil) async throws -> (PreparedPlayback, JellyfinPlayback) {
         await metadata.connection.probe.preparing.wait()
         if let gate = metadata.connection.probe.prepareGate { await gate.wait() }
         try Task.checkCancellation()

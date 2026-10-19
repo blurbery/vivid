@@ -16,6 +16,8 @@ struct PreparedPlayback {
     let protocolV3: PreparedPlaybackV3?
     let nativeAudioStreamIndex: Int32?
     let nativeHLS: Bool
+    /// Emby and Jellyfin transcodes only: bitmap subtitle burn-in.
+    let transcodeSubtitles: ServerTranscodeSubtitles?
     let nativeQualityOptions: [ApplePlaybackQualityOption]?
 
     init(
@@ -27,6 +29,7 @@ struct PreparedPlayback {
         protocolV3: PreparedPlaybackV3? = nil,
         nativeAudioStreamIndex: Int32? = nil,
         nativeHLS: Bool = false,
+        transcodeSubtitles: ServerTranscodeSubtitles? = nil,
         nativeQualityOptions: [ApplePlaybackQualityOption]? = nil
     ) {
         self.watchDetail = watchDetail
@@ -37,6 +40,7 @@ struct PreparedPlayback {
         self.protocolV3 = protocolV3
         self.nativeAudioStreamIndex = nativeAudioStreamIndex
         self.nativeHLS = nativeHLS
+        self.transcodeSubtitles = transcodeSubtitles
         self.nativeQualityOptions = nativeQualityOptions
     }
 
@@ -800,7 +804,8 @@ actor PlaybackSessionBridge {
         allowNearEndResume: Bool = false,
         prefersLastUsedVersion: Bool = false,
         preferredQualityOverride: String? = nil,
-        carriedBandwidthCap: CarriedBandwidthCap? = nil
+        carriedBandwidthCap: CarriedBandwidthCap? = nil,
+        serverBurnInSubtitleIndex: Int? = nil
     ) async throws -> PreparedPlayback {
         let jellyfinAttempt = UUID()
         jellyfinStartAttempt = jellyfinAttempt
@@ -958,12 +963,15 @@ actor PlaybackSessionBridge {
                 retryable: false
             )
         }
+        // Emby and Jellyfin only: a bitmap pick is drawn into a transcode by
+        // the server. Silo's plan and its subtitle intent are left alone.
+        let burnInSubtitleIndex = ServerSubtitleBurnIn.bitmapStreamIndex(serverBurnInSubtitleIndex, in: selectedVersion)
         if let jellyfinMetadata {
             try validateJellyfinStart(jellyfinAttempt)
             let (prepared, playback) = try await JellyfinPlayback.prepare(metadata: jellyfinMetadata, detail: watchDetail, version: selectedVersion,
                 start: effectiveStartPosition ?? 0, audioOrdinal: resolvedAudioTrackIndex,
                 subtitleIndex: subtitleIntent.ffmpegStreamIndex, bitrateKbps: bandwidthCapKbps,
-                quality: resolvedQualityPreference)
+                quality: resolvedQualityPreference, burnInSubtitleIndex: burnInSubtitleIndex)
             // PlaybackInfo does not open a stream (AutoOpenLiveStream is false).
             // Discard unadopted candidates locally: a Jellyfin Stopped request
             // would clear this client's current playback, not just that candidate.
@@ -1004,7 +1012,7 @@ actor PlaybackSessionBridge {
             let (prepared, playback) = try await EmbyPlayback.prepare(metadata: embyMetadata, detail: watchDetail, version: selectedVersion,
                 start: effectiveStartPosition ?? 0, audioOrdinal: resolvedAudioTrackIndex,
                 subtitleIndex: subtitleIntent.ffmpegStreamIndex, bitrateKbps: bandwidthCapKbps,
-                quality: resolvedQualityPreference)
+                quality: resolvedQualityPreference, burnInSubtitleIndex: burnInSubtitleIndex)
             embyPlayback = playback
             adoptSession(prepared.session)
             return prepared

@@ -954,6 +954,40 @@ final class EmbyAdapterTests: XCTestCase {
         XCTAssertEqual(inherited,"eng")
     }
 
+    /// When Emby doesn't confirm drawing a PGS pick in, playback goes on with
+    /// its first answer, without subtitles, rather than failing.
+    @MainActor
+    func testAnUnconfirmedBurnInPlaysTheFirstTranscodeWithoutIt() async throws {
+        var bodies: [[String:Any]] = []
+        let media: [String:Any] = ["Id":"source-1","Container":"mkv","RunTimeTicks":6_000_000_000,
+            "SupportsDirectPlay":false,"SupportsTranscoding":true,
+            "MediaStreams":[["Type":"Video","Index":0,"Codec":"h264","Width":1920,"Height":1080],
+                            ["Type":"Audio","Index":1,"Codec":"aac"],
+                            ["Type":"Subtitle","Index":2,"Codec":"PGSSUB","Language":"eng"]]]
+        let adapter = stubbedAdapter { request in
+            guard request.url!.path.hasSuffix("/PlaybackInfo") else { return (200, [:]) }
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            bodies.append(body)
+            let index = body["SubtitleStreamIndex"] as? Int ?? -1
+            var playable = media
+            playable["TranscodingUrl"] = "/videos/item-1/master.m3u8?MediaSourceId=source-1&TranscodeReasons=ContainerNotSupported"
+                + (index < 0 ? "" : "&SubtitleStreamIndex=\(index)&SubtitleMethod=Hls")
+            return (200, ["MediaSources":[playable],"PlaySessionId":index < 0 ? "probe" : "unconfirmed"])
+        }
+        let raw: [String:Any] = ["Id":"item-1","Name":"Example","Type":"Movie","MediaSources":[media]]
+        let detail: WatchDetail = try EmbyAdapter.decode(adapter.watch(raw, preferences:[:]))
+        let metadata = EmbyPlayback.Metadata(connection:adapter.connection,raw:raw,detail:detail)
+        let version = try XCTUnwrap(detail.versions.first)
+        let (prepared, playback) = try await EmbyPlayback.prepare(metadata:metadata,detail:detail,version:version,start:0,
+            audioOrdinal:0,subtitleIndex:nil,bitrateKbps:nil,quality:nil,
+            burnInSubtitleIndex:ServerSubtitleBurnIn.bitmapStreamIndex(2, in: version))
+        XCTAssertEqual(bodies.map { $0["SubtitleStreamIndex"] as? Int }, [-1, 2])
+        XCTAssertEqual(prepared.session.sessionId, "probe")
+        XCTAssertNil(playback.subtitleIndex)
+        XCTAssertEqual(prepared.transcodeSubtitles, ServerTranscodeSubtitles(burnedIndex: nil, failedIndex: 2, copiesVideo: true))
+        XCTAssertEqual(prepared.session.subtitleUrls?.count, 0)
+    }
+
     func testQualityAndHDRPreferencesConstrainEmbyNegotiation() {
         let source: [String:Any] = ["MediaStreams":[["Type":"Video","Height":2160,"VideoRange":"HDR10"]]]
         var limited: [String:Any] = ["EnableDirectPlay":true,"DeviceProfile":["TranscodingProfiles":[["Type":"Video"]]]]
