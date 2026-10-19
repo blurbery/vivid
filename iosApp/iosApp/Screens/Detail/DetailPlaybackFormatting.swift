@@ -356,6 +356,7 @@ enum DetailPlaybackFormatting {
             preferAccessibilityTracks: context.preferAccessibilityTracks,
             disableWhenNoLanguageMatch: context.disableWhenNoLanguageMatch,
             trackSignature: context.signature,
+            fallbackLanguages: context.fallbackLanguages,
             availableSubtitles: candidates,
             currentAudioLanguage: context.audioLanguage
         ))
@@ -417,6 +418,7 @@ enum DetailPlaybackFormatting {
         var forcedOnly = false
         var preferAccessibilityTracks = false
         var disableWhenNoLanguageMatch = false
+        var fallbackLanguages: [String] = []
     }
 
     static func subtitleTitle(_ track: SubtitleTrack, ordinal: Int) -> String {
@@ -693,7 +695,8 @@ extension DetailPlaybackFormatting.SubtitleAutoContext {
             additionalPreferredLanguages: prefs.additionalPreferredLanguages,
             forcedOnly: prefs.forcedOnly,
             preferAccessibilityTracks: prefs.preferAccessibilityTracks,
-            disableWhenNoLanguageMatch: prefs.disableWhenNoLanguageMatch
+            disableWhenNoLanguageMatch: prefs.disableWhenNoLanguageMatch,
+            fallbackLanguages: prefs.fallbackLanguages
         )
     }
 }

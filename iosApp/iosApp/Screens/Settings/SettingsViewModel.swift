@@ -76,6 +76,12 @@ class SettingsViewModel {
         set { PlayerSettings.shared.preferredSubtitleLanguage = newValue }
     }
 
+    /// Used when a title has no subtitles in `editorSubtitleLanguage`.
+    var editorSubtitleBackupLanguage: String {
+        get { PlayerSettings.shared.preferredSubtitleBackupLanguage }
+        set { PlayerSettings.shared.preferredSubtitleBackupLanguage = newValue }
+    }
+
     var editorSubtitleMode: String {
         get { PlayerSettings.shared.preferredSubtitleMode }
         set { PlayerSettings.shared.preferredSubtitleMode = newValue }
@@ -115,6 +121,22 @@ class SettingsViewModel {
             currentValue: editorSubtitleLanguage,
             runtimeValues: []
         )
+    }
+
+    /// Every subtitle language except the main one.
+    var subtitleBackupLanguageOptions: [PlaybackLanguageOption] {
+        PlaybackLanguageOption.options(
+            for: .playbackSubtitleLanguage,
+            currentValue: editorSubtitleBackupLanguage,
+            runtimeValues: []
+        )
+        .filter { !SubtitleAutoResolver.languagesMatch($0.code, editorSubtitleLanguage) }
+    }
+
+    /// A backup only stands in for a chosen language, and Off shows nothing.
+    var subtitleBackupLanguageApplies: Bool {
+        editorSubtitleLanguage != PlaybackPrefSentinel.none
+            && editorSubtitleMode != SubtitleMode.off.rawValue
     }
 
     var metadataLanguageOptions: [PlaybackLanguageOption] {

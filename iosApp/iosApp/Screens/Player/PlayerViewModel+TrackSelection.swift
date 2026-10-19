@@ -624,6 +624,7 @@ extension PlayerViewModel {
             preferAccessibilityTracks: prefs.preferAccessibilityTracks,
             disableWhenNoLanguageMatch: prefs.disableWhenNoLanguageMatch,
             trackSignature: prefs.trackSignature,
+            fallbackLanguages: prefs.fallbackLanguages,
             availableSubtitles: allSubs,
             currentAudioLanguage: audioLang
         ))
@@ -753,13 +754,19 @@ extension PlayerViewModel {
     }
 
     static func localSubtitlePrefs(_ settings: PlayerSettings) -> PrefsSnapshot {
-        PrefsSnapshot(
-            preferredLanguage: settings.preferredSubtitleLanguage == PlaybackPrefSentinel.none ? nil : settings.preferredSubtitleLanguage,
+        let language = settings.preferredSubtitleLanguage == PlaybackPrefSentinel.none
+            ? nil : settings.preferredSubtitleLanguage
+        let backup = settings.preferredSubtitleBackupLanguage
+        // A backup only stands in for a chosen language.
+        let fallback = language != nil && !backup.isEmpty && backup != PlaybackPrefSentinel.none ? [backup] : []
+        return PrefsSnapshot(
+            preferredLanguage: language,
             additionalPreferredLanguages: [],
             mode: SubtitleMode(rawValue: settings.preferredSubtitleMode),
             showForced: settings.showForcedSubtitles,
             forcedOnly: false, preferAccessibilityTracks: false,
-            disableWhenNoLanguageMatch: true, trackSignature: nil
+            disableWhenNoLanguageMatch: true, trackSignature: nil,
+            fallbackLanguages: fallback
         )
     }
 

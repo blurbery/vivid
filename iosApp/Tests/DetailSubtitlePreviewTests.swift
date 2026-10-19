@@ -11,18 +11,19 @@ import XCTest
 /// remembered subtitle mode, so it reads the same on Silo, Emby and Jellyfin.
 @MainActor
 final class DetailSubtitlePreviewTests: XCTestCase {
-    private var saved: (language: String, mode: String, forced: Bool, device: Bool, audio: String)!
+    private var saved: (language: String, mode: String, forced: Bool, device: Bool, audio: String, backup: String)!
 
     override func setUp() async throws {
         let settings = PlayerSettings.shared
         saved = (settings.preferredSubtitleLanguage, settings.preferredSubtitleMode,
                  settings.showForcedSubtitles, settings.subtitleMatchesSystemAppearance,
-                 settings.audioLanguage)
+                 settings.audioLanguage, settings.preferredSubtitleBackupLanguage)
         settings.setSubtitleMatchesSystemAppearance(false)
         settings.preferredSubtitleLanguage = "en"
         settings.preferredSubtitleMode = SubtitleMode.auto.rawValue
         settings.showForcedSubtitles = true
         settings.audioLanguage = "en"
+        settings.preferredSubtitleBackupLanguage = PlaybackPrefSentinel.none
     }
 
     override func tearDown() async throws {
@@ -31,6 +32,7 @@ final class DetailSubtitlePreviewTests: XCTestCase {
         settings.preferredSubtitleMode = saved.mode
         settings.showForcedSubtitles = saved.forced
         settings.audioLanguage = saved.audio
+        settings.preferredSubtitleBackupLanguage = saved.backup
         settings.setSubtitleMatchesSystemAppearance(saved.device)
     }
 
@@ -132,6 +134,18 @@ final class DetailSubtitlePreviewTests: XCTestCase {
         settings.subtitleSystemSelectionPreferences = .init(
             displayMode: .automatic, preferredLanguages: ["fr"], prefersAccessibilityTracks: false)
         XCTAssertEqual(label(film, audio: 1), "Auto: Off")
+    }
+
+    /// Arabic with an English backup, on an English film with only English
+    /// subtitles: the row promises the English track. With Language set to
+    /// None, the backup does nothing.
+    func testBackupLanguageShowsWhenTheMainLanguageIsMissing() throws {
+        let settings = PlayerSettings.shared
+        settings.preferredSubtitleLanguage = "ar"
+        settings.preferredSubtitleBackupLanguage = "en"
+        XCTAssertEqual(label(try film()), "Auto: English")
+        settings.preferredSubtitleLanguage = PlaybackPrefSentinel.none
+        XCTAssertEqual(label(try film()), "Auto: Off")
     }
 
     /// A bitmap subtitle file beside the media never plays, so the row

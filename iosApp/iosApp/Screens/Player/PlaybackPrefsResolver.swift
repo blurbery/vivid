@@ -57,6 +57,11 @@ struct SubtitleAutoResolver {
         /// matches the signature, select it regardless of language /
         /// mode.
         let trackSignature: SubtitleTrackSignature?
+        /// Backup languages, tried only when no track is in a preferred
+        /// language. They don't count as the viewer's language when Auto
+        /// compares the audio: an Arabic viewer with an English backup still
+        /// gets subtitles for English audio.
+        let fallbackLanguages: [String]
         /// Tracks we can choose from (already-discovered embedded +
         /// sidecar entries).
         let availableSubtitles: [PlayerTrack]
@@ -75,6 +80,7 @@ struct SubtitleAutoResolver {
             preferAccessibilityTracks: Bool = false,
             disableWhenNoLanguageMatch: Bool = false,
             trackSignature: SubtitleTrackSignature?,
+            fallbackLanguages: [String] = [],
             availableSubtitles: [PlayerTrack],
             currentAudioLanguage: String?
         ) {
@@ -86,6 +92,7 @@ struct SubtitleAutoResolver {
             self.preferAccessibilityTracks = preferAccessibilityTracks
             self.disableWhenNoLanguageMatch = disableWhenNoLanguageMatch
             self.trackSignature = trackSignature
+            self.fallbackLanguages = fallbackLanguages
             self.availableSubtitles = availableSubtitles
             self.currentAudioLanguage = currentAudioLanguage
         }
@@ -179,6 +186,20 @@ struct SubtitleAutoResolver {
         // working" minutes into any dialogue scene.
         if let pick = bestLanguageMatch(
             preferredLanguages,
+            in: readableSubtitles,
+            preferForced: false,
+            preferAccessibility: inputs.preferAccessibilityTracks
+        ) {
+            return .select(pick)
+        }
+
+        // Nothing in the viewer's language: the backup language, full track
+        // first, before any other fallback.
+        let backupLanguages = inputs.fallbackLanguages.filter { backup in
+            !backup.isEmpty && !preferredLanguages.contains(where: { languagesMatch($0, backup) })
+        }
+        if !backupLanguages.isEmpty, let pick = bestLanguageMatch(
+            backupLanguages,
             in: readableSubtitles,
             preferForced: false,
             preferAccessibility: inputs.preferAccessibilityTracks

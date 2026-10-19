@@ -49,6 +49,20 @@ struct SubtitleSettingsView: View {
             .pickerStyle(.navigationLink)
             #endif
 
+            Picker("Backup Language", selection: $viewModel.editorSubtitleBackupLanguage) {
+                Text("None").tag(PlaybackPrefSentinel.none)
+                ForEach(viewModel.subtitleBackupLanguageOptions) { option in
+                    Text(option.label).tag(option.code)
+                }
+            }
+            .foregroundStyle(Color.vividOnSurface)
+            #if os(macOS)
+            .pickerStyle(.menu)
+            #else
+            .pickerStyle(.navigationLink)
+            #endif
+            .disabled(!viewModel.subtitleBackupLanguageApplies)
+
             Picker("Behavior", selection: $viewModel.editorSubtitleMode) {
                 ForEach(SubtitleMode.allCases, id: \.rawValue) { mode in
                     Text(mode.displayLabel).tag(mode.rawValue)
@@ -79,7 +93,7 @@ struct SubtitleSettingsView: View {
                 if viewModel.subtitleMatchesSystemAppearance {
                     Text("Language, display behavior, forced captions, and CC/SDH preference follow this device's Accessibility settings.")
                 } else {
-                    Text("Selects matching subtitles embedded in the media. Preferences are saved on this device for the current profile.")
+                    Text("Selects matching subtitles embedded in the media. Backup Language is used when a title has no subtitles in your language. Preferences are saved on this device for the current profile.")
                 }
             }
             .foregroundStyle(Color.vividSecondaryText)

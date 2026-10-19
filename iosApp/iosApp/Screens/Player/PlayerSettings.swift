@@ -107,6 +107,10 @@ final class PlayerSettings {
     var preferredSubtitleLanguage: String = PlaybackPrefSentinel.none {
         didSet { defaults.set(preferredSubtitleLanguage, forKey: Self.cacheKey("vivid.subtitle.language")) }
     }
+    /// Used only when a title has no subtitles in `preferredSubtitleLanguage`.
+    var preferredSubtitleBackupLanguage: String = PlaybackPrefSentinel.none {
+        didSet { defaults.set(preferredSubtitleBackupLanguage, forKey: Self.cacheKey("vivid.subtitle.backupLanguage")) }
+    }
     var preferredSubtitleMode: String = "auto" {
         didSet { defaults.set(preferredSubtitleMode, forKey: Self.cacheKey("vivid.subtitle.mode")) }
     }
@@ -583,6 +587,7 @@ final class PlayerSettings {
         cachePlaybackDefaults(for: Self.currentScopeIdentifier)
         applyCachedSettingsForCurrentScope()
         preferredSubtitleLanguage = PlaybackPrefSentinel.none
+        preferredSubtitleBackupLanguage = PlaybackPrefSentinel.none
         preferredSubtitleMode = "auto"
         showForcedSubtitles = true
     }
@@ -601,6 +606,7 @@ final class PlayerSettings {
     private func applyCachedSettingsForCurrentScope() {
         fallbackModeID = defaults.string(forKey: Self.cacheKey("vivid.quality.fallbackMode"))
         preferredSubtitleLanguage = defaults.string(forKey: Self.cacheKey("vivid.subtitle.language")) ?? PlaybackPrefSentinel.none
+        preferredSubtitleBackupLanguage = defaults.string(forKey: Self.cacheKey("vivid.subtitle.backupLanguage")) ?? PlaybackPrefSentinel.none
         preferredSubtitleMode = defaults.string(forKey: Self.cacheKey("vivid.subtitle.mode")) ?? "auto"
         showForcedSubtitles = Self.cachedBool(defaults, key: "vivid.subtitle.forced", defaultValue: true)
 

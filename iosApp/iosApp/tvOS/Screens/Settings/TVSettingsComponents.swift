@@ -244,6 +244,14 @@ enum TVSettingsOptions {
         )
     }
 
+    static func subtitleBackupLanguage(_ languages: [PlaybackLanguageOption]) -> [TVSettingsOption] {
+        languageOptions(
+            languages,
+            unsetID: PlaybackPrefSentinel.none,
+            unsetLabel: "None"
+        )
+    }
+
     private static func languageOptions(
         _ languages: [PlaybackLanguageOption],
         unsetID: String,

@@ -425,4 +425,51 @@ final class SubtitleAutoResolverTests: XCTestCase {
         XCTAssertEqual(SubtitleAutoResolver.resolve(inputs(preferredLanguage: nil, mode: .always, showForced: true,
             tracks: [full], audioLanguage: nil, forcedOnly: true)), .disable)
     }
+
+    // MARK: - Backup language
+
+    private func backupInputs(mode: SubtitleMode = .auto, tracks: [PlayerTrack], audio: String?) -> SubtitleAutoResolver.Inputs {
+        SubtitleAutoResolver.Inputs(
+            preferredLanguage: "ar", mode: mode, showForced: true,
+            disableWhenNoLanguageMatch: true, trackSignature: nil,
+            fallbackLanguages: ["en"], availableSubtitles: tracks, currentAudioLanguage: audio
+        )
+    }
+
+    /// Arabic with an English backup: an English film without Arabic
+    /// subtitles plays the English ones. English audio isn't the viewer's
+    /// language, so Auto still shows subtitles.
+    func testBackupLanguageFillsInWhenTheMainLanguageIsMissing() {
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english], audio: "eng")), .select(english))
+    }
+
+    /// The main language always wins, even as a CC/SDH track against a plain
+    /// backup track.
+    func testMainLanguageBeatsTheBackup() {
+        let arabicSDH = track(id: 5, lang: "ara", hearingImpaired: true)
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english, arabicSDH], audio: "eng")), .select(arabicSDH))
+    }
+
+    /// Audio already in the main language: Auto plays only its forced track,
+    /// and the backup isn't used.
+    func testBackupIsNotUsedWhenTheAudioIsInTheMainLanguage() {
+        let arabicForced = track(id: 6, lang: "ara", forced: true)
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english, arabicForced], audio: "ara")), .select(arabicForced))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [english], audio: "ara")), .disable)
+    }
+
+    func testBackupFollowsAlwaysAndOff() {
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(mode: .always, tracks: [english], audio: "ara")), .select(english))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(mode: .off, tracks: [english], audio: "eng")), .disable)
+    }
+
+    /// Neither language present: no subtitles.
+    func testNoMainOrBackupTrackLeavesSubtitlesOff() {
+        let french = track(id: 7, lang: "fra")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [french], audio: "eng")), .disable)
+    }
 }
