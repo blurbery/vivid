@@ -362,4 +362,67 @@ final class SubtitleAutoResolverTests: XCTestCase {
         XCTAssertNil(SubtitleAutoResolver.policyAudioLanguage(live: "und", catalog: [], ordinal: 0))
     }
 
+
+    // MARK: - Show Forced Subtitles and forced detection
+
+    /// With Show Forced Subtitles off, a forced track is never picked, even as
+    /// the language's only track: foreign audio plays without subtitles.
+    func testForcedToggleOffNeverPicksTheOnlyForcedTrack() {
+        let forced = track(id: 3, lang: "eng", forced: true)
+        let foreignAudio = inputs(preferredLanguage: "en", mode: .auto, showForced: false,
+                                  tracks: [forced], audioLanguage: "ja", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(foreignAudio), .disable)
+        let always = inputs(preferredLanguage: "en", mode: .always, showForced: false,
+                            tracks: [forced], audioLanguage: "en", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(always), .disable)
+    }
+
+    /// With the toggle on, the language's only forced track still plays.
+    func testForcedToggleOnKeepsTheOnlyForcedTrackAsFallback() {
+        let forced = track(id: 3, lang: "eng", forced: true)
+        let always = inputs(preferredLanguage: "en", mode: .always, showForced: true,
+                            tracks: [forced], audioLanguage: "en", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(always), .select(forced))
+    }
+
+    /// Many files name the forced track without flagging it. Auto with English
+    /// audio picks it, and Always still prefers the full track.
+    func testTitleOnlyForcedTrackCountsAsForced() {
+        let full = track(id: 4, lang: "eng", title: "English")
+        let titled = track(id: 3, lang: "eng", title: "English Forced")
+        let auto = inputs(preferredLanguage: "en", mode: .auto, showForced: true,
+                          tracks: [titled, full], audioLanguage: "eng", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(auto), .select(titled))
+        let always = inputs(preferredLanguage: "en", mode: .always, showForced: true,
+                            tracks: [titled, full], audioLanguage: "eng", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(always), .select(full))
+    }
+
+    func testForcedTitleDetectionNeedsTheWholeWord() {
+        XCTAssertTrue(SubtitleAutoResolver.titleIndicatesForced("Forced"))
+        XCTAssertTrue(SubtitleAutoResolver.titleIndicatesForced("Signs & Songs (Forced)"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced("English (Non-Forced)"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced("Not Forced"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced("Unforced Errors"))
+        XCTAssertFalse(SubtitleAutoResolver.titleIndicatesForced(nil))
+    }
+
+    /// Off means no subtitles, forced ones included.
+    func testOffDisablesEvenWithForcedWanted() {
+        let forced = track(id: 3, lang: "eng", forced: true)
+        let off = inputs(preferredLanguage: "en", mode: .off, showForced: true,
+                         tracks: [forced], audioLanguage: "eng", disableWhenNoLanguageMatch: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(off), .disable)
+    }
+
+    /// A carried forced pick with no language takes this episode's forced
+    /// track, and plays nothing when the episode has none.
+    func testForcedOnlyWithoutLanguageTakesAnyForcedTrack() {
+        let full = track(id: 4, lang: nil)
+        let forced = track(id: 3, lang: nil, forced: true)
+        XCTAssertEqual(SubtitleAutoResolver.resolve(inputs(preferredLanguage: nil, mode: .always, showForced: true,
+            tracks: [full, forced], audioLanguage: nil, forcedOnly: true)), .select(forced))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(inputs(preferredLanguage: nil, mode: .always, showForced: true,
+            tracks: [full], audioLanguage: nil, forcedOnly: true)), .disable)
+    }
 }

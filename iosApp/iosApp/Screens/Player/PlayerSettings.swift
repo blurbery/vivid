@@ -1,6 +1,9 @@
 import AVFoundation
 import Foundation
 import SwiftUI
+#if os(iOS) || os(tvOS)
+import UIKit
+#endif
 
 /// How the iOS player should manage screen orientation while playback is
 /// visible. This is persisted so the next session reuses the user's choice.
@@ -415,14 +418,30 @@ final class PlayerSettings {
         ) { [weak self] _ in
             self?.refreshSubtitleSystemAppearance()
         }
+        #if os(iOS) || os(tvOS)
+        // Caption settings only change outside Vivid (Accessibility, or an
+        // AVKit app's subtitle menu on Apple TV). Read them again on the way
+        // back in rather than relying on the change notification alone.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshSubtitleSystemAppearance()
+        }
+        #endif
     }
 
     /// Re-read the system caption preferences. Idempotent; also called by
     /// the player when the system posts a settings-changed notification so
     /// re-application never races this class's own observer.
     func refreshSubtitleSystemAppearance() {
-        subtitleSystemAppearance = SystemCaptionAppearance.current()
-        subtitleSystemSelectionPreferences = SystemCaptionSelectionPreferences.current()
+        // Assign only real changes, so a return to the app doesn't redraw
+        // every view that reads them.
+        let appearance = SystemCaptionAppearance.current()
+        if appearance != subtitleSystemAppearance { subtitleSystemAppearance = appearance }
+        let selection = SystemCaptionSelectionPreferences.current()
+        if selection != subtitleSystemSelectionPreferences { subtitleSystemSelectionPreferences = selection }
     }
 
     /// Reload preferences from this device after an account/profile change.

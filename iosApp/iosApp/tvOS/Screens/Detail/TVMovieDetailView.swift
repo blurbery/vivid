@@ -21,7 +21,6 @@ struct TVMovieDetailView<BelowSynopsis: View>: View {
     /// The server override was just cleared, but `detail.effectiveSubtitle*`
     /// still describes the old manual pick until the next refetch — suppress
     /// it so the "Auto: …" preview doesn't echo the cleared selection.
-    var subtitleOverrideCleared: Bool = false
     let seasons: [Season]
     let selectedSeason: Season?
     let seasonEpisodes: [EpisodeListItem]
@@ -117,9 +116,6 @@ TVDetailHero(
                                 selectedVersionFileId: selectedVersionFileId,
                                 selectedAudioTrackIndex: selectedAudioTrackIndex,
                                 selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-                                subtitleMode: subtitleOverrideCleared
-                                    ? nil
-                                    : detail.effectiveSubtitleMode,
                                 subtitleContext: Self.subtitleContext(for: detail)
                             ),
                             usesCompactMetadata: true,
@@ -207,9 +203,6 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                                 selectedVersionFileId: selectedVersionFileId,
                                 selectedAudioTrackIndex: selectedAudioTrackIndex,
                                 selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-                                subtitleMode: subtitleOverrideCleared
-                                    ? nil
-                                    : detail.effectiveSubtitleMode,
                                 subtitleContext: Self.subtitleContext(for: detail)
                             ),
                             extendsBackdropFadeBelowHero: true,
@@ -306,9 +299,6 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
                     selectedVersionFileId: selectedVersionFileId,
                     selectedAudioTrackIndex: selectedAudioTrackIndex,
                     selectedSubtitleTrackIndex: selectedSubtitleTrackIndex,
-                    subtitleMode: subtitleOverrideCleared
-                        ? nil
-                        : detail.effectiveSubtitleMode,
                     onSelectVersion: onSelectVersion,
                     onSelectAudioTrack: onSelectAudioTrack,
                     onSelectSubtitleTrack: onSelectSubtitleTrack,

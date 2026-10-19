@@ -134,13 +134,25 @@ enum SystemCaptionAppearance {
         let descriptor = MACaptionAppearanceCopyFontDescriptorForStyle(
             .user, &behavior, .default
         ).takeRetainedValue()
-        if let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String,
-           !family.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let family = fontFamilyName(of: descriptor) {
             result.fontFamilyName = valueForMatchingDeviceSettings(family, behavior: behavior)
         }
         if behavior == .useValue { result.contentOverrides.insert(.font) }
 
         return result
+    }
+
+    /// The family of the caption font chosen in Accessibility. The descriptor
+    /// MediaAccessibility returns names the font ("TrebuchetMS-Bold") but not
+    /// its family, so resolve it to a real font first. Apple's private system
+    /// faces (".AppleSystemUIFont", the default caption font) can't be named
+    /// to libass or SwiftUI, so they stay on Vivid's sans-serif.
+    static func fontFamilyName(of descriptor: CTFontDescriptor) -> String? {
+        let named = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String
+        let family = named ?? (CTFontCopyFamilyName(CTFontCreateWithFontDescriptor(descriptor, 0, nil)) as String)
+        let trimmed = family.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix(".") else { return nil }
+        return trimmed
     }
 
     /// Resolve a value for Vivid's explicit "Use Device Settings" mode.

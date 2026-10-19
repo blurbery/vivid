@@ -29,7 +29,6 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
     /// `effectiveSubtitle*` still describes the old manual pick until the
     /// next refetch — suppress it so the "Auto: …" preview doesn't echo the
     /// cleared selection.
-    var nextUpSubtitleOverrideCleared: Bool = false
     let onPlayEpisode: (_ contentId: String, _ fileId: Int?, _ startFromBeginning: Bool) -> Void
     let onEpisodeTap: (_ contentId: String) -> Void
     let onSetEpisodeWatched: (_ contentId: String, _ played: Bool) async -> Bool
@@ -82,9 +81,6 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                             selectedVersionFileId: selectedNextUpFileId,
                             selectedAudioTrackIndex: selectedNextUpAudioTrackIndex,
                             selectedSubtitleTrackIndex: selectedNextUpSubtitleTrackIndex,
-                            subtitleMode: nextUpSubtitleOverrideCleared
-                                ? nil
-                                : nextUpPlaybackDetail?.effectiveSubtitleMode,
                             subtitleContext: nextUpPlaybackDetail.map(Self.subtitleContext(for:))
                         ),
                         actions: { actionColumn },
@@ -161,9 +157,6 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
                         selectedVersionFileId: selectedNextUpFileId,
                         selectedAudioTrackIndex: selectedNextUpAudioTrackIndex,
                         selectedSubtitleTrackIndex: selectedNextUpSubtitleTrackIndex,
-                        subtitleMode: nextUpSubtitleOverrideCleared
-                            ? nil
-                            : nextUpPlaybackDetail?.effectiveSubtitleMode,
                         onSelectVersion: onSelectNextUpVersion,
                         onSelectAudioTrack: onSelectNextUpAudioTrack,
                         onSelectSubtitleTrack: onSelectNextUpSubtitleTrack,

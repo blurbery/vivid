@@ -3,12 +3,13 @@ import Foundation
 /// State container for the iOS settings screen.
 ///
 /// Two scopes meet here. Playback choices that belong to *this device* (quality,
-/// skip behaviour, sync offsets) go through ``PlayerSettings`` at
-/// `profile_device`. The subtitle-language / behavior / forced trio and the
-/// metadata language are the *profile's* choices and go through
-/// ``ProfileSettingsWriter`` at `profile` — the same keys, scope and wire
-/// values the web and Android clients use, so an edit made on any of them reads
-/// back the same on the others. The tvOS screen is the twin of this one.
+/// skip behaviour, sync offsets) and the subtitle language, behaviour and
+/// forced trio go through ``PlayerSettings``, saved on this device for the
+/// current profile. The subtitle trio is the only input to automatic subtitle
+/// choice on every server; no server-side subtitle setting is read or written.
+/// The metadata language is the *profile's* choice and goes through
+/// ``ProfileSettingsWriter`` at `profile`. The tvOS screen is the twin of this
+/// one.
 @Observable
 class SettingsViewModel {
     var userInfo: UserInfo?

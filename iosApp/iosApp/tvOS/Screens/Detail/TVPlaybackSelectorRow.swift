@@ -10,7 +10,6 @@ struct TVPlaybackActionSelectors: View {
     let selectedVersionFileId: Int?
     let selectedAudioTrackIndex: Int?
     let selectedSubtitleTrackIndex: Int?
-    var subtitleMode: String? = nil
     let onSelectVersion: (Int?) -> Void
     let onSelectAudioTrack: (Int?) -> Void
     let onSelectSubtitleTrack: (Int?) -> Void
@@ -84,9 +83,19 @@ struct TVPlaybackActionSelectors: View {
         }
     }
 
+    /// What playback picks from Settings > Subtitles while nothing is chosen
+    /// here, the same answer on every server.
     private var subtitleFallback: String {
-        selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
-            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+        selectedSubtitleTrackIndex == -1 ? "Off" : selectedSubtitleTrackIndex == nil
+            ? DetailPlaybackFormatting.automaticSubtitleLabel(
+                version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex)
+            : "On"
+    }
+
+    private var hasSubtitleChoice: Bool {
+        guard let context = fileSubtitleContext else { return false }
+        return LucidSubtitleInventory.shared.choice(context: context) != nil
+            || OpenSubtitlesStore.shared.stagedLabel(context: context) != nil
     }
 
     private var subtitleMenu: some View {
@@ -103,9 +112,10 @@ struct TVPlaybackActionSelectors: View {
                 }
                 onSelectSubtitleTrack(nil)
             } label: {
-                let label = LucidSubtitleInventory.shared.selectionLabel(context: fileSubtitleContext, fallback: subtitleFallback)
-                if label == "Auto" { Label("Auto", systemImage: "checkmark") }
-                else { Text("Auto") }
+                menuItem(title: "Auto",
+                         detail: DetailPlaybackFormatting.automaticSubtitleOutcome(
+                             version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex),
+                         isSelected: !hasSubtitleChoice)
             }
             if subtitleLoading {
                 Text("Reading subtitles…")
@@ -118,7 +128,7 @@ struct TVPlaybackActionSelectors: View {
                     if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(nil, context: context) }
                 } label: {
                     let choice = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
-                    let isOff = choice.map { $0.trackID == nil } ?? (subtitleFallback == "Off")
+                    let isOff = choice.map { $0.trackID == nil } ?? false
                     if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
                     else { Text("Off") }
                 }
@@ -227,11 +237,12 @@ struct TVPlaybackSelectionSummary: Equatable {
         selectedVersionFileId: Int?,
         selectedAudioTrackIndex: Int?,
         selectedSubtitleTrackIndex: Int?,
-        subtitleMode: String?,
         subtitleContext: OpenSubtitlePlaybackContext? = nil
     ) -> TVPlaybackSelectionSummary {
-        let fallback = selectedSubtitleTrackIndex == -1 || (selectedSubtitleTrackIndex == nil && (subtitleMode ?? PlayerSettings.shared.preferredSubtitleMode) == "off")
-            ? "Off" : selectedSubtitleTrackIndex == nil ? "Auto" : "On"
+        let fallback = selectedSubtitleTrackIndex == -1 ? "Off" : selectedSubtitleTrackIndex == nil
+            ? DetailPlaybackFormatting.automaticSubtitleLabel(
+                version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex)
+            : "On"
         guard let currentVersion else {
             return TVPlaybackSelectionSummary(
                 version: nil,

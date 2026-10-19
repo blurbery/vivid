@@ -1138,7 +1138,9 @@ enum LucidSubtitleStyle {
         let back = a.captionWindowOpacity > 0 ? a.captionWindowColor : a.backgroundColor
         let opacity = a.captionWindowOpacity > 0 ? a.captionWindowOpacity : a.backgroundOpacity
         let edge = a.systemTextEdgeStyle
-        let outline = a.textOutline || edge == .uniform
+        // A device edge style decides the outline itself, as in the text
+        // overlay: raised and depressed edges are drawn as a shadow only.
+        let outline = edge.map { $0 == .uniform } ?? a.textOutline
         let shadow = a.backgroundStyle == .shadow || edge == .dropShadow || edge == .raised || edge == .depressed
         return [
             "sub-ass-override": "no", "secondary-sub-ass-override": "no",
@@ -1146,7 +1148,9 @@ enum LucidSubtitleStyle {
             "sub-font-size": String((a.systemRelativeFontScale.map { SubtitleAppearance.default.fontSize.pointSize * $0 } ?? a.fontSize.pointSize) * 720 / 1080),
             "sub-color": colour(a.fontColor, opacity: a.fontOpacity),
             "sub-border-style": boxed ? "background-box" : "outline-and-shadow",
-            "sub-back-color": colour(back, opacity: boxed || shadow ? opacity : 0),
+            // Without a box this is the shadow's colour: black at 85%, as the
+            // text overlay draws it, not the (unused) box colour and opacity.
+            "sub-back-color": boxed ? colour(back, opacity: opacity) : shadow ? "#D9000000" : colour(back, opacity: 0),
             "sub-outline-color": a.textOutlineColor,
             "sub-outline-size": outline ? "1.33" : "0",
             "sub-shadow-offset": boxed ? "4" : shadow ? "2" : "0",

@@ -21,7 +21,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
     let nextUpPlaybackDetail: ItemDetail?
     let isLoadingNextUpPlaybackDetail: Bool
     let didLoadNextUpPlaybackDetail: Bool
-    var nextUpSubtitleOverrideCleared = false
     let trailerEntries: [TrailerRailEntry]
     let onSelectTrailer: (TrailerRailEntry) -> Void
     let supportsTrailerFetch: Bool
@@ -126,9 +125,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                 selectedVersionFileId: selectedNextUpFileId,
                 selectedAudioTrackIndex: selectedNextUpAudioTrackIndex,
                 selectedSubtitleTrackIndex: selectedNextUpSubtitleTrackIndex,
-                subtitleMode: nextUpSubtitleOverrideCleared
-                    ? nil
-                    : matchingPlaybackDetail?.effectiveSubtitleMode,
                 subtitleContext: matchingPlaybackDetail.map(Self.subtitleContext(for:))
             ),
             usesCompactMetadata: true,
@@ -226,9 +222,6 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
                     selectedVersionFileId: selectedNextUpFileId,
                     selectedAudioTrackIndex: selectedNextUpAudioTrackIndex,
                     selectedSubtitleTrackIndex: selectedNextUpSubtitleTrackIndex,
-                    subtitleMode: nextUpSubtitleOverrideCleared
-                        ? nil
-                        : matchingPlaybackDetail?.effectiveSubtitleMode,
                     onSelectVersion: onSelectNextUpVersion,
                     onSelectAudioTrack: onSelectNextUpAudioTrack,
                     onSelectSubtitleTrack: onSelectNextUpSubtitleTrack,

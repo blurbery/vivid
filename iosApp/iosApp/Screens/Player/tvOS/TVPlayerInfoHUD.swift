@@ -1102,6 +1102,10 @@ private struct SubtitleAppearanceDialog: View {
                         .focused($focusedField, equals: .matchSystem)
                         .id(Field.matchSystem)
 
+                        // The device's caption style is in charge while Use
+                        // Device Settings is on; editing here would silently
+                        // turn it off, so these rows wait, as in Settings.
+                        Group {
                         HUDSettingRow(
                             label: "Style",
                             value: viewModel.settings.subtitleAppearance.backgroundStyle.label
@@ -1301,6 +1305,8 @@ private struct SubtitleAppearanceDialog: View {
                         }
                         .focused($focusedField, equals: .position)
                         .id(Field.position)
+                        }
+                        .disabled(viewModel.settings.subtitleMatchesSystemAppearance)
                     }
                     .padding(.trailing, 8)
                 }
@@ -1316,7 +1322,7 @@ private struct SubtitleAppearanceDialog: View {
             )
             .shadow(color: .black.opacity(0.6), radius: 26, y: 14)
             .focusSection()
-            .defaultFocus($focusedField, .style)
+            .defaultFocus($focusedField, viewModel.settings.subtitleMatchesSystemAppearance ? .matchSystem : .style)
             .disabled(activePicker != nil)
             .opacity(activePicker != nil ? 0.28 : 1)
 

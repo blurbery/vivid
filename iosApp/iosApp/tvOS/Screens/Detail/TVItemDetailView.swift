@@ -18,8 +18,6 @@ struct TVItemDetailView: View {
     /// the server override is cleared with a fire-and-forget DELETE, but the
     /// already-fetched detail still carries the old `effectiveSubtitle*`, so
     /// the selector must stop feeding it to the "Auto: …" preview.
-    @State private var didClearSubtitleOverride = false
-    @State private var didClearNextUpSubtitleOverride = false
     @State private var nextUpPlaybackDetail: ItemDetail?
     /// Pin playback independently of browsing; nil uses the suggested episode.
     @State private var activeSeriesEpisodeContentId: String?
@@ -97,7 +95,6 @@ struct TVItemDetailView: View {
         .onAppear {
             Self.focusLogger.debug("itemDetail.appear contentId=\(contentId, privacy: .public) pathDepth=\(router.path.count, privacy: .public)")
             allowRemoteTrailers = TVTrailerLaunch.canDisplayRemoteCards()
-            seedSubtitleOverrideIfNeeded()
             // Returning from the player (or an extra) resumes a poll that
             // `onDisappear` cancelled — without re-POSTing, since the server
             // already spent the item's weekly slot. Precedent:
@@ -151,8 +148,6 @@ struct TVItemDetailView: View {
             } else if !hasLoadedDetailVisit {
                 viewModel.jellyfinResumeEpisode = nil
             }
-            didClearSubtitleOverride = false
-            didClearNextUpSubtitleOverride = false
             nextUpPlaybackDetail = nil
             episodeSeriesDetail = nil
             failedSeriesRedirectEpisodeContentId = nil
@@ -176,7 +171,6 @@ struct TVItemDetailView: View {
                 pendingSeriesNavigationContext = nil
                 viewModel.initialResumeSeasonNumber = nil
             }
-            seedSubtitleOverrideIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .tvPlaybackStateDidRefresh)) { note in
             guard let event = note.object as? TVPlaybackStateRefreshEvent else { return }
@@ -359,7 +353,6 @@ struct TVItemDetailView: View {
                 selectedNextUpAudioTrackIndex: preferredNextUpAudioTrackIndex,
                 selectedNextUpSubtitleTrackIndex: preferredNextUpSubtitleTrackIndex,
                 nextUpPlaybackDetail: nextUpPlaybackDetail,
-                nextUpSubtitleOverrideCleared: didClearNextUpSubtitleOverride,
                 onPlayEpisode: { id, fileId, startFromBeginning in
                     pendingCompletionRefresh = nil
                     let episode = viewModel.episodes.first { $0.contentId == id }
@@ -430,7 +423,6 @@ struct TVItemDetailView: View {
                     )
                 },
                 onSelectNextUpSubtitleTrack: { index in
-                    didClearNextUpSubtitleOverride = (index == nil)
                     preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
                         for: nextUpPlaybackDetail,
                         versionFileId: preferredNextUpFileId,
@@ -492,7 +484,6 @@ struct TVItemDetailView: View {
                 nextUpPlaybackDetail: nextUpPlaybackDetail,
                 isLoadingNextUpPlaybackDetail: isLoadingNextUpPlaybackDetail,
                 didLoadNextUpPlaybackDetail: didLoadNextUpPlaybackDetail,
-                nextUpSubtitleOverrideCleared: didClearNextUpSubtitleOverride,
                 trailerEntries: trailerEntries(for: detail),
                 onSelectTrailer: playTrailer,
                 supportsTrailerFetch: false,
@@ -586,7 +577,6 @@ struct TVItemDetailView: View {
                     )
                 },
                 onSelectNextUpSubtitleTrack: { index in
-                    didClearNextUpSubtitleOverride = (index == nil)
                     preferredNextUpSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
                         for: nextUpPlaybackDetail,
                         versionFileId: preferredNextUpFileId,
@@ -637,7 +627,6 @@ struct TVItemDetailView: View {
                 selectedVersionFileId: preferredVersionFileId,
                 selectedAudioTrackIndex: preferredAudioTrackIndex,
                 selectedSubtitleTrackIndex: preferredSubtitleTrackIndex,
-                subtitleOverrideCleared: didClearSubtitleOverride,
                 seasons: viewModel.seasons,
                 selectedSeason: viewModel.selectedSeason,
                 seasonEpisodes: viewModel.episodes,
@@ -700,7 +689,6 @@ struct TVItemDetailView: View {
                     )
                 },
                 onSelectSubtitleTrack: { index in
-                    didClearSubtitleOverride = (index == nil)
                     viewModel.preferredSubtitleTrackWasManuallySelected = true
                     preferredSubtitleTrackIndex = sanitizedSubtitleTrackIndex(
                         for: detail,
@@ -965,33 +953,10 @@ struct TVItemDetailView: View {
 
     // MARK: - Track-choice persistence
     //
-    // Selector picks are remembered server-side (web-app parity):
-    // episodes key by series id so one choice covers the series, movies
-    // by their own content id. "Auto" (nil) clears the override so the
-    // library/profile cascade applies again.
-
-    /// Reflect a server-remembered subtitle override in the selector on
-    /// entry. `preferredSubtitleTrackIndex` is per-visit state, so
-    /// without this the selector always reopens on "Auto" even though
-    /// the pick was persisted; audio doesn't need an equivalent because
-    /// `resolvedAudioOrdinal` falls back to `effectiveAudioTrackIndex`.
-    private func seedSubtitleOverrideIfNeeded() {
-        if PlayerSettings.shared.subtitleMatchesSystemAppearance {
-            if !viewModel.preferredSubtitleTrackWasManuallySelected {
-                preferredSubtitleTrackIndex = nil
-            }
-            return
-        }
-        guard !viewModel.preferredSubtitleTrackWasManuallySelected,
-              preferredSubtitleTrackIndex == nil,
-              let detail = viewModel.detail else { return }
-        preferredSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-            version: effectiveVersion(for: detail, versionFileId: preferredVersionFileId),
-            signature: detail.effectiveSubtitleTrackSignature,
-            mode: detail.effectiveSubtitleMode,
-            usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
-        )
-    }
+    // Audio picks are remembered server-side (web-app parity): episodes key
+    // by series id so one choice covers the series, movies by their own
+    // content id. Subtitles always start from Settings > Subtitles, on every
+    // server, so the detail page never seeds a remembered subtitle.
 
     private func prefKey(for detail: ItemDetail?) -> String? {
         TrackSelectionPersistence.prefKey(seriesId: detail?.seriesId, contentId: detail?.contentId)
@@ -1060,7 +1025,6 @@ struct TVItemDetailView: View {
             preferredNextUpFileId = nil
             preferredNextUpAudioTrackIndex = nil
             preferredNextUpSubtitleTrackIndex = nil
-            didClearNextUpSubtitleOverride = false
             return
         }
 
@@ -1070,7 +1034,6 @@ struct TVItemDetailView: View {
         preferredNextUpFileId = nil
         preferredNextUpAudioTrackIndex = nil
         preferredNextUpSubtitleTrackIndex = nil
-        didClearNextUpSubtitleOverride = false
 
         do {
             let item = try await MetadataRequestPool.shared.itemDetail(contentId: nextUp.contentId)
@@ -1078,14 +1041,6 @@ struct TVItemDetailView: View {
             let enriched = await enrichPlaybackMetadata(for: item, contentId: nextUp.contentId)
             guard !Task.isCancelled else { return }
             nextUpPlaybackDetail = enriched
-            if let enriched {
-                preferredNextUpSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-                    version: effectiveVersion(for: enriched, versionFileId: nil),
-                    signature: enriched.effectiveSubtitleTrackSignature,
-                    mode: enriched.effectiveSubtitleMode,
-                    usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
-                )
-            }
             didLoadNextUpPlaybackDetail = true
         } catch {
             guard !Task.isCancelled else { return }
@@ -1122,7 +1077,6 @@ struct TVItemDetailView: View {
             preferredNextUpFileId = nil
             preferredNextUpAudioTrackIndex = nil
             preferredNextUpSubtitleTrackIndex = nil
-            didClearNextUpSubtitleOverride = false
             return
         }
 
@@ -1140,15 +1094,6 @@ struct TVItemDetailView: View {
         preferredNextUpFileId = nil
         preferredNextUpAudioTrackIndex = nil
         preferredNextUpSubtitleTrackIndex = nil
-        didClearNextUpSubtitleOverride = false
-        if let usableCached {
-            preferredNextUpSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-                version: effectiveVersion(for: usableCached, versionFileId: nil),
-                signature: usableCached.effectiveSubtitleTrackSignature,
-                mode: usableCached.effectiveSubtitleMode,
-                usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
-            )
-        }
 
         do {
             async let watch = try? MetadataRequestPool.shared.watchDetail(contentId: nextUp.contentId)
@@ -1180,17 +1125,6 @@ struct TVItemDetailView: View {
                 resolved = nextUpPlaybackDetail ?? item
             }
             nextUpPlaybackDetail = resolved
-            // The now-interactive controls may have been changed while watch
-            // metadata loaded. Do not replace an explicit choice or Auto reset.
-            if let resolved, preferredNextUpSubtitleTrackIndex == nil,
-               !didClearNextUpSubtitleOverride {
-                preferredNextUpSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-                    version: effectiveVersion(for: resolved, versionFileId: nil),
-                    signature: resolved.effectiveSubtitleTrackSignature,
-                    mode: resolved.effectiveSubtitleMode,
-                    usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
-                )
-            }
             didLoadNextUpPlaybackDetail = true
         } catch {
             guard !Task.isCancelled else { return }

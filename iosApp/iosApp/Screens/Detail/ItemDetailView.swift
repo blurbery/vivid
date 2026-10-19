@@ -320,7 +320,6 @@ private struct ItemDetailPhoneContent: View {
             refreshOnPlayerDismiss = false
             detailScrollState.prepare(for: contentId)
             await viewModel.loadDetail(contentId: contentId)
-            seedSubtitleOverrideIfNeeded()
         }
         .onAppear {
             // Coming back from the player (or an extra) resumes a poll that
@@ -328,7 +327,6 @@ private struct ItemDetailPhoneContent: View {
             // already spent the item's weekly slot. Precedent:
             // `PersonDetailView.resumeMetadataRefreshIfNeeded`.
             viewModel.resumeTrailerFetchIfNeeded()
-            seedSubtitleOverrideIfNeeded()
         }
         .onDisappear {
             // The trailer poll isn't owned by `.task`, so it would otherwise
@@ -342,12 +340,10 @@ private struct ItemDetailPhoneContent: View {
             refreshOnPlayerDismiss = false
             Task {
                 await viewModel.loadDetail(contentId: contentId)
-                // A track picked inside the player persisted server-side;
-                // drop the pre-play selector state so the reloaded pref
-                // re-seeds and the selector reflects the latest pick.
+                // A pick made for that viewing doesn't outlive it: the
+                // selector goes back to following Settings > Subtitles.
                 preferredSubtitleTrackIndex = nil
                 preferredSubtitleTrackWasManuallySelected = false
-                seedSubtitleOverrideIfNeeded()
             }
         }
         #if os(iOS)
@@ -366,7 +362,6 @@ private struct ItemDetailPhoneContent: View {
                 viewModel.applyCompletedPlayback(contentIds: event.completedContentIds)
                 preferredSubtitleTrackIndex = nil
                 preferredSubtitleTrackWasManuallySelected = false
-                seedSubtitleOverrideIfNeeded()
             }
         }
         #endif
@@ -975,33 +970,10 @@ private struct ItemDetailPhoneContent: View {
 
     // MARK: - Track-choice persistence
     //
-    // Selector picks are remembered server-side (web-app parity):
-    // episodes key by series id so one choice covers the series, movies
-    // by their own content id. "Auto" (nil) clears the override so the
-    // library/profile cascade applies again.
-
-    /// Reflect a server-remembered subtitle override in the selector on
-    /// entry. `preferredSubtitleTrackIndex` is per-visit state, so
-    /// without this the selector always reopens on "Auto" even though
-    /// the pick was persisted; audio doesn't need an equivalent because
-    /// `resolvedAudioOrdinal` falls back to `effectiveAudioTrackIndex`.
-    private func seedSubtitleOverrideIfNeeded() {
-        if PlayerSettings.shared.subtitleMatchesSystemAppearance {
-            if !preferredSubtitleTrackWasManuallySelected {
-                preferredSubtitleTrackIndex = nil
-            }
-            return
-        }
-        guard !preferredSubtitleTrackWasManuallySelected,
-              preferredSubtitleTrackIndex == nil,
-              let detail = viewModel.detail else { return }
-        preferredSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-            version: effectiveVersion(for: detail, versionFileId: preferredVersionFileId),
-            signature: detail.effectiveSubtitleTrackSignature,
-            mode: detail.effectiveSubtitleMode,
-            usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
-        )
-    }
+    // Audio picks are remembered server-side (web-app parity): episodes key
+    // by series id so one choice covers the series, movies by their own
+    // content id. Subtitles always start from Settings > Subtitles, on every
+    // server, so the detail page never seeds a remembered subtitle.
 
     private func prefKey(for detail: ItemDetail) -> String? {
         TrackSelectionPersistence.prefKey(seriesId: detail.seriesId, contentId: detail.contentId)
@@ -1111,7 +1083,6 @@ private struct ItemDetailPhoneContent: View {
             nextUpWatchDetail = WatchDetail(catalogItem: item)
         }
         isLoadingNextUpWatchDetail = nextUpWatchDetail == nil
-        seedNextUpSubtitleSelection()
         let selectionRevision = nextUpSelectionRevision
 
         defer {
@@ -1153,7 +1124,6 @@ private struct ItemDetailPhoneContent: View {
                     // A full watch response always wins, irrespective of arrival order.
                     if nextUpWatchDetail == nil, nextUpSelectionRevision == selectionRevision {
                         nextUpWatchDetail = preview
-                        seedNextUpSubtitleSelection()
                         isLoadingNextUpWatchDetail = false
                     }
                 case .playback(let watchDetail):
@@ -1163,7 +1133,6 @@ private struct ItemDetailPhoneContent: View {
                     // Background preferences must not reset a manual track/version pick.
                     if nextUpSelectionRevision == selectionRevision {
                         nextUpWatchDetail = watchDetail
-                        seedNextUpSubtitleSelection()
                     }
                     isLoadingNextUpWatchDetail = false
                     group.cancelAll()
@@ -1195,16 +1164,6 @@ private struct ItemDetailPhoneContent: View {
         guard !Task.isCancelled, nextUpWatchRequestID == requestID else { return }
         viewModel.prefetchSeasonsAfterPlaybackSelectors()
         #endif
-    }
-
-    private func seedNextUpSubtitleSelection() {
-        guard let watchDetail = nextUpWatchDetail else { return }
-        preferredNextUpSubtitleTrackIndex = DetailPlaybackFormatting.launchPreferredSubtitleIndex(
-            version: effectiveVersion(for: watchDetail, versionFileId: nil),
-            signature: watchDetail.effectiveSubtitleTrackSignature,
-            mode: watchDetail.effectiveSubtitleMode,
-            usesDeviceSettings: PlayerSettings.shared.subtitleMatchesSystemAppearance
-        )
     }
 
     private func presentPlayerFromDetail(

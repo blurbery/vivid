@@ -70,6 +70,8 @@ struct SubtitleSettingsView: View {
             )
             .foregroundStyle(Color.vividOnSurface)
             .tint(.white)
+            // Off means no subtitles at all, forced ones included (as on Apple TV).
+            .disabled(viewModel.editorSubtitleMode == SubtitleMode.off.rawValue)
         } header: {
             PhoneSettingsSectionHeader("Embedded Subtitles")
         } footer: {
@@ -141,11 +143,7 @@ struct SubtitleSettingsView: View {
                 } else {
                     Text("Using Vivid’s default appearance. Turn on Custom Appearance to adjust it.")
                 }
-                if viewModel.subtitleMatchesSystemAppearance {
-                    Text("Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
-                } else {
-                    Text("Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
-                }
+                Text("Appearance controls apply to text subtitles. Styled ASS and image-based subtitles retain their authored appearance and placement.")
             }
             .foregroundStyle(Color.vividSecondaryText)
         }
