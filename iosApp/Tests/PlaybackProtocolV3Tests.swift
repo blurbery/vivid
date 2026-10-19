@@ -1190,6 +1190,36 @@ final class PlaybackProtocolV3Tests: XCTestCase {
         XCTAssertEqual(candidates.map(\.ffIndex), [nil, nil, 3, 4])
     }
 
+    func testSiloExternalOrdinalAgreesWithStoredSubtitlesInThePlan() {
+        func entry(_ index: Int, _ source: String, label: String) -> PlaybackV3SubtitleInventoryItem {
+            PlaybackV3SubtitleInventoryItem(
+                trackId: "file:42:subtitle:\(index)", combinedIndex: index, source: source, codec: "srt",
+                language: "en", label: label, forced: false, default: false, hearingImpaired: false,
+                delivery: "sidecar", url: "/stream/session-v3/subtitles/\(index).vtt?file_id=42", fontBundleUrl: nil)
+        }
+        let catalog = [
+            makeSubtitle(index: 2, codec: "subrip", external: false, path: nil),
+            makeSubtitle(index: nil, codec: "srt", external: true, path: "a.en.srt"),
+            makeSubtitle(index: nil, codec: "srt", external: true, path: "b.en.srt")
+        ]
+        // Silo's combined index: external files, embedded tracks, then the
+        // subtitles it stores, one of which happens to share a file's name.
+        let plan = makePlan(container: "mkv", subtitleInventory: [
+            entry(0, "external", label: "a.en.srt"),
+            entry(1, "external", label: "b.en.srt"),
+            entry(2, "embedded", label: "en"),
+            entry(3, "downloaded", label: "a.en.srt"),
+            entry(4, "downloaded", label: "Movie (opensubtitles)")
+        ])
+        for ordinal in [0, 1] {
+            XCTAssertTrue(ServerSubtitleSidecars.siloOrdinalAgrees(
+                SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: ordinal), plan: plan, catalog: catalog))
+        }
+        XCTAssertFalse(ServerSubtitleSidecars.siloOrdinalAgrees(
+            SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: 3), plan: plan, catalog: catalog),
+            "a stored subtitle's index never names one of the file's own subtitle files")
+    }
+
     func testInitialAutoSubtitleIntentKeepsEmbeddedStreamZero() {
         // `index,omitempty` drops a zero stream index on the wire; an embedded
         // row with no index is stream 0 and must stay a candidate.

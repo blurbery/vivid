@@ -66,6 +66,11 @@ enum SubtitleTrackCandidates {
 /// rows are keyed by the server stream index, which the player mounts. Silo
 /// rows are keyed by position among the file's external files, which is the
 /// playback plan's combined index, and the player fetches one only when chosen.
+///
+/// Silo also stores subtitles of its own for a file: downloaded from a
+/// provider, uploaded, or made by its AI. The plan lists them after the file's
+/// own tracks, and the player fetches them the same way. The catalogue doesn't
+/// list them, so detail pages read them from Silo (`SiloStoredSubtitles`).
 enum ServerSubtitleSidecars {
     static let mountableCodecs: Set<String> = ["srt", "ass", "ssa", "vtt", "subrip", "webvtt"]
     static let siloTextCodecs: Set<String> = ["srt", "subrip", "vtt", "webvtt", "ass", "ssa"]
@@ -82,14 +87,38 @@ enum ServerSubtitleSidecars {
         }
     }
 
+    /// Silo inventory items the player fetches itself when chosen: text files
+    /// beside the media, and text subtitles Silo stores.
+    static func isSiloLocalSidecar(_ item: PlaybackV3SubtitleInventoryItem) -> Bool {
+        ["external", "downloaded"].contains(item.source) && item.delivery == "sidecar"
+            && item.codec.map { siloTextCodecs.contains($0.lowercased()) } == true
+    }
+
+    /// The stored subtitle a Silo sidecar URL serves. Silo pins the URL to the
+    /// subtitle's row, because removing an earlier stored subtitle moves the
+    /// later ones to a different combined index.
+    static func storedSubtitleID(in url: URL) -> Int? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .first { $0.name == "downloaded_subtitle_id" }?.value
+            .flatMap { Int($0) }
+    }
+
+    /// The player's row for a stored subtitle, found by its row rather than
+    /// its position.
+    static func sidecarTrackID(storedSubtitleID: Int, in sidecars: [Int64: ExternalSubtitleTrack]) -> Int64? {
+        sidecars.filter { storedSubtitleID == self.storedSubtitleID(in: $0.value.url) }.keys.min()
+    }
+
+    /// `fileID` reads the subtitles Silo stores for that file, once a detail
+    /// page has loaded them.
     @MainActor
-    static func detailRows(_ tracks: [SubtitleTrack]?) -> [PlayerTrack] {
+    static func detailRows(_ tracks: [SubtitleTrack]?, fileID: Int? = nil) -> [PlayerTrack] {
         let tracks = tracks ?? []
         if MediaServerProvider.active == .silo {
             return tracks.filter { $0.external == true }.enumerated().compactMap { ordinal, track in
                 guard let codec = track.codec, siloTextCodecs.contains(codec.lowercased()) else { return nil }
                 return row(track, index: ordinal, codec: format(codec))
-            }
+            } + storedRows(SiloStoredSubtitles.shared.subtitles(fileID: fileID), catalog: tracks)
         }
         return tracks.compactMap { track in
             guard track.external == true, let index = track.index, index >= 0,
@@ -116,6 +145,52 @@ enum ServerSubtitleSidecars {
               let label = item.label else { return false }
         // Silo labels an external file by its title, embedded title or file name.
         return [row.title, row.embeddedTitle, row.externalPath].contains(label)
+    }
+
+    /// Rows for the text subtitles Silo stores, as the player lists them:
+    /// after the file's own tracks, with the plan's label and no forced or
+    /// default flag. Each is keyed by the combined index Silo gives it, which
+    /// follows every catalogue track, embedded or external.
+    static func storedRows(_ stored: [SiloStoredSubtitle], catalog: [SubtitleTrack]?) -> [PlayerTrack] {
+        let base = catalog?.count ?? 0
+        return stored.enumerated().compactMap { offset, subtitle in
+            guard let codec = subtitle.format, siloTextCodecs.contains(codec.lowercased()) else { return nil }
+            let index = base + offset
+            return PlayerTrack(
+                trackId: SubtitleTrackIdSpace.makeSidecarTrackId(urlIndex: index),
+                kind: .sub,
+                title: subtitle.planLabel,
+                lang: subtitle.language,
+                codec: format(codec),
+                audioChannelCount: nil,
+                bitrate: nil,
+                isDefault: false,
+                isForced: false,
+                isHearingImpaired: subtitle.hearingImpaired,
+                isExternal: true,
+                isSelected: false,
+                ffIndex: nil,
+                srcId: index
+            )
+        }
+    }
+
+    /// The stored subtitle a Silo detail row names, once the page has loaded
+    /// the file's stored subtitles.
+    @MainActor
+    static func detailStoredSubtitleID(_ trackID: Int64, catalog: [SubtitleTrack]?, fileID: Int?) -> Int? {
+        guard MediaServerProvider.active == .silo else { return nil }
+        return storedSubtitleID(forDetailRow: trackID, stored: SiloStoredSubtitles.shared.subtitles(fileID: fileID),
+                                catalog: catalog)
+    }
+
+    /// The stored subtitle a detail row from `storedRows` names, or nil for
+    /// any other row.
+    static func storedSubtitleID(forDetailRow trackID: Int64, stored: [SiloStoredSubtitle],
+                                 catalog: [SubtitleTrack]?) -> Int? {
+        guard SubtitleTrackIdSpace.isSidecar(trackID) else { return nil }
+        let offset = SubtitleTrackIdSpace.sidecarIndex(from: trackID) - (catalog?.count ?? 0)
+        return stored.indices.contains(offset) ? stored[offset].id : nil
     }
 
     private static func row(_ track: SubtitleTrack, index: Int, codec: String) -> PlayerTrack {

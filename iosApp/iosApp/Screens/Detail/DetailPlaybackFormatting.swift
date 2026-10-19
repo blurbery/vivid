@@ -296,7 +296,8 @@ enum DetailPlaybackFormatting {
                 settings: settings
             )
         )
-        return automaticSubtitle(version: version, context: context)
+        return automaticSubtitle(version: version, context: context,
+                                 stored: SiloStoredSubtitles.shared.subtitles(fileID: version?.fileId))
             .map { subtitleShortLabel($0.track, ordinal: $0.ordinal) } ?? "Off"
     }
 
@@ -321,13 +322,17 @@ enum DetailPlaybackFormatting {
     }
 
     /// The track `SubtitleAutoResolver` picks from this file's catalogue
-    /// tracks, or nil for no subtitles. The candidates, their order and their
-    /// identities are the player's (`SubtitleTrackCandidates`), and a server
-    /// subtitle file the player can't render is left out. `ordinal` is the
-    /// catalogue offset, so "Track N" labels match `subtitleOptions`.
+    /// tracks and the text subtitles Silo stores for it (`stored`), or nil
+    /// for no subtitles. The candidates, their order and their identities are
+    /// the player's (`SubtitleTrackCandidates`, then
+    /// `ServerSubtitleSidecars.storedRows`), and a server subtitle file the
+    /// player can't render is left out. `ordinal` is the catalogue offset, so
+    /// "Track N" labels match `subtitleOptions`; a stored subtitle's follows
+    /// the catalogue's.
     static func automaticSubtitle(
         version: FileVersion?,
-        context: SubtitleAutoContext
+        context: SubtitleAutoContext,
+        stored: [SiloStoredSubtitle] = []
     ) -> (track: SubtitleTrack, ordinal: Int)? {
         let catalog = Array((version?.subtitleTracks ?? []).enumerated())
         let playable = catalog.filter {
@@ -336,6 +341,8 @@ enum DetailPlaybackFormatting {
         let ordered = playable.filter { $0.element.external == true }
             + playable.filter { $0.element.external != true }
         let candidates = SubtitleTrackCandidates.playerTracks(from: ordered.map(\.element))
+        // The player lists Silo's stored subtitles after the file's own tracks.
+        let storedCandidates = ServerSubtitleSidecars.storedRows(stored, catalog: version?.subtitleTracks)
         let pick = SubtitleAutoResolver.resolve(.init(
             preferredLanguage: context.preferredLanguage,
             additionalPreferredLanguages: context.additionalPreferredLanguages,
@@ -347,14 +354,18 @@ enum DetailPlaybackFormatting {
             disableWhenNoLanguageMatch: context.disableWhenNoLanguageMatch,
             trackSignature: context.signature,
             fallbackLanguages: context.fallbackLanguages,
-            availableSubtitles: candidates,
+            availableSubtitles: candidates + storedCandidates,
             currentAudioLanguage: context.audioLanguage
         ))
-        guard case .select(let track) = pick,
-              let position = candidates.firstIndex(where: { $0.trackId == track.trackId }) else {
-            return nil
+        guard case .select(let track) = pick else { return nil }
+        if let position = candidates.firstIndex(where: { $0.trackId == track.trackId }) {
+            return (ordered[position].element, ordered[position].offset)
         }
-        return (ordered[position].element, ordered[position].offset)
+        guard let stored = storedCandidates.first(where: { $0.trackId == track.trackId }) else { return nil }
+        return (SubtitleTrack(index: nil, codec: stored.codec, language: stored.lang, title: stored.title,
+                              embeddedTitle: nil, forced: false, hearingImpaired: stored.isHearingImpaired,
+                              isDefault: false, external: true, externalPath: nil),
+                stored.srcId ?? catalog.count)
     }
 
     static func subtitleOptions(
