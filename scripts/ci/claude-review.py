@@ -406,11 +406,15 @@ def main():
     files_read = set().union(*(run["files_read"] for _, run in passes))
     summaries = [run["summary"] for _, run in passes if run["summary"]]
     cost = sum(run["cost"] for _, run in passes)
+    # A pass stopped by a limit, a refusal or an error outranks one that only
+    # ended without a summary, so the workflow knows the review is incomplete.
+    stops = [run["stopped"] for _, run in passes if run["stopped"]]
+    stopped = next((stop for stop in stops if stop != "no_summary"), next(iter(stops), None))
 
     result = {
         "summary": "\n\n".join(summaries) or "The review stopped before Claude wrote a summary.",
         "findings": findings,
-        "stopped": next((run["stopped"] for _, run in passes if run["stopped"]), None),
+        "stopped": stopped,
         "turns": sum(run["turns"] for _, run in passes),
         "tool_calls": sum(run["tool_calls"] for _, run in passes),
         "files_read": sorted(files_read),
