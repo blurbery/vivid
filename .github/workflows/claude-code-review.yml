@@ -158,6 +158,7 @@ jobs:
           fi
           # A manual run reviews the whole PR, or the commits after "since",
           # even when they've been reviewed already.
+          prev_sha=$last_sha
           if [ "$EVENT" = workflow_dispatch ]; then last_sha=""; fi
           if [ "$last_sha" = "$HEAD_SHA" ]; then
             echo "::notice::This commit has already been reviewed."
@@ -193,6 +194,18 @@ jobs:
           if [ "${#files[@]}" -gt 0 ]; then
             git diff "$from" "$HEAD_SHA" -- "${files[@]}" > "$dir/diff.patch"
           fi
+          # What the marker records afterwards: the commit up to which
+          # everything has been reviewed. A review that stops early leaves the
+          # earlier marker as it was (dropped after a force-push), and a
+          # "since" run that leaves unreviewed commits before it doesn't move it.
+          kept=""
+          if [ -n "$prev_sha" ] && git merge-base --is-ancestor "$prev_sha" "$HEAD_SHA" 2>/dev/null; then kept=$prev_sha; fi
+          done_marker=$HEAD_SHA
+          if [ -n "$SINCE" ] && [ "$from" != "$merge_base" ] \
+            && ! { [ -n "$kept" ] && git merge-base --is-ancestor "$from" "$kept"; }; then
+            done_marker=$kept
+          fi
+
           if [ ! -s "$dir/diff.patch" ]; then
             # A manual run fails instead, so it doesn't look as if it reviewed something.
             if [ "$EVENT" = workflow_dispatch ]; then echo "::error::Nothing to review since ${from:0:7}."; exit 1; fi
@@ -212,6 +225,8 @@ jobs:
             echo "from=$from"
             echo "merge_base=$merge_base"
             echo "comment_id=$comment_id"
+            echo "done_marker=$done_marker"
+            echo "stop_marker=$kept"
           } >> "$GITHUB_OUTPUT"
       - name: Review with Claude
         id: claude
@@ -256,6 +271,8 @@ jobs:
           MODE: ${{ steps.prep.outputs.mode }}
           FROM: ${{ steps.prep.outputs.from }}
           COMMENT_ID: ${{ steps.prep.outputs.comment_id }}
+          DONE_MARKER: ${{ steps.prep.outputs.done_marker }}
+          STOP_MARKER: ${{ steps.prep.outputs.stop_marker }}
         run: |
           set -euo pipefail
           review="$RUNNER_TEMP/review.json"
@@ -295,12 +312,10 @@ jobs:
             *) note="" ;;
           esac
           # A review that stopped early hasn't covered the head, so the marker
-          # keeps the commit reviewed before it (none for a whole-PR review)
-          # and the next run picks up what this one missed.
-          marker_sha=$HEAD_SHA
-          if [ -n "$note" ]; then
-            if [ "$MODE" = incremental ]; then marker_sha=$FROM; else marker_sha=""; fi
-          fi
+          # keeps the commit reviewed before it and the next run picks up what
+          # this one missed.
+          marker_sha=$DONE_MARKER
+          if [ -n "$note" ]; then marker_sha=$STOP_MARKER; fi
           footer=$(jq -r '"\(.model), \(.effort) effort, \(.turns) turn\(if .turns == 1 then "" else "s" end), about US$\(.cost_usd * 100 | round / 100) of API credit"' "$review")
 
           {
