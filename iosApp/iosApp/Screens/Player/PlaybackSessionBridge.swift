@@ -729,6 +729,7 @@ actor PlaybackSessionBridge {
 
     private var embyPlayback: EmbyPlayback?
     private var jellyfinPlayback: JellyfinPlayback?
+    private var playingTracksGeneration: UInt64 = 0
     private var jellyfinStartAttempt = UUID()
     private var jellyfinTransitionInProgress = false
     private var jellyfinTransitionPlayback: JellyfinPlayback?
@@ -763,6 +764,19 @@ actor PlaybackSessionBridge {
         try? await playback.ping()
     }
 
+    /// The tracks playing in an Emby or Jellyfin session, for its progress
+    /// reports. Silo and downloads report positions only. Updates can arrive
+    /// out of order, so an older `generation` never replaces a newer one.
+    func updatePlayingTracks(_ tracks: MediaServerPlayingTracks, sessionID: String, generation: UInt64) async {
+        guard generation > playingTracksGeneration else { return }
+        playingTracksGeneration = generation
+        if let playback = jellyfinPlayback, playback.playSessionID == sessionID {
+            await playback.update(playingTracks: tracks)
+        } else if let playback = embyPlayback, playback.playSessionID == sessionID {
+            await playback.update(playingTracks: tracks)
+        }
+    }
+
     func embyStreamRequest(sessionID: String) async -> StreamRequest? {
         guard let playback = embyPlayback, playback.playSessionID == sessionID else { return nil }
         do { try await playback.connection.validate(); return playback.stream } catch { return nil }
@@ -777,6 +791,7 @@ actor PlaybackSessionBridge {
         contentId: String,
         preferredFileId: Int? = nil,
         preferredAudioTrackIndex: Int? = nil,
+        viewingAudioLanguage: String? = nil,
         preferredSubtitleTrackIndex: Int? = nil,
         preferredProtocolV3SubtitleIndex: Int? = nil,
         initialSubtitlePreferences: InitialProtocolV3SubtitlePreferences? = nil,
@@ -877,10 +892,16 @@ actor PlaybackSessionBridge {
             )
         }
         let selectedVersion = initiallySelectedVersion
+        // A pick, else the language picked earlier in this viewing, else
+        // Settings > Playback > Audio Language.
         let resolvedAudioTrackIndex = VividInitialAudioPreference.selectedOrdinal(
             manual: preferredAudioTrackIndex,
             tracks: selectedVersion.audioTracks ?? [],
-            preferredLanguage: playerSettings.audioLanguage
+            preferredLanguage: VividInitialAudioPreference.preferredLanguage(
+                viewing: viewingAudioLanguage,
+                settings: playerSettings.audioLanguage,
+                tracks: selectedVersion.audioTracks ?? []
+            )
         )
         let selectedAudioLanguage = resolvedAudioTrackIndex.flatMap { ordinal in
             guard let tracks = selectedVersion.audioTracks, tracks.indices.contains(ordinal) else { return nil as String? }

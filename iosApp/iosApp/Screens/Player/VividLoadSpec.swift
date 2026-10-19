@@ -34,6 +34,22 @@ enum VividInitialAudioPreference {
         return compatible.first(where: { tracks[$0].isDefault == true }) ?? compatible.first ?? defaultIndex
     }
 
+    /// The language automatic audio aims for: one picked earlier in this
+    /// viewing, when the file has a track in it, otherwise Settings >
+    /// Playback > Audio Language. So a viewer who switches an episode to
+    /// Japanese gets Japanese in the next one, and a next episode without
+    /// Japanese falls back to Settings rather than straight to English.
+    static func preferredLanguage(viewing: String?, settings: String, tracks: [AudioTrack]) -> String {
+        guard let viewing = viewing?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !viewing.isEmpty,
+              tracks.contains(where: { track in
+                  track.language.map { SubtitleAutoResolver.languagesMatch($0, viewing) } == true
+              }) else {
+            return settings
+        }
+        return viewing
+    }
+
     static func languages(
         selectedOrdinal: Int?,
         tracks: [AudioTrack],

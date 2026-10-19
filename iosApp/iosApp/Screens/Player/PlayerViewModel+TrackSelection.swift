@@ -20,10 +20,11 @@ extension PlayerViewModel {
             // be applied locally before its plan arrives. The selection is
             // published optimistically because the replan reads it back, but
             // nothing is kept or recorded until the replan is actually under
-            // way — a dropped switch must not be filed as a success.
+            // way: a dropped switch must not be filed as a success.
             let priorAudioId = selectedAudioId
             let priorPendingAudioFfIndex = pendingAudioFfIndex
             let priorAudioPicked = audioPickedForCurrentItem
+            let pickedLanguage = viewingAudioLanguage(for: track)
             pendingAudioFfIndex = nil
             selectedAudioId = track.trackId
             audioPickedForCurrentItem = true
@@ -48,6 +49,7 @@ extension PlayerViewModel {
                 scheduleHideControls()
                 return
             }
+            viewingAudioLanguage = pickedLanguage
             recordAudioTrackSelectionBreadcrumb(
                 track.trackId,
                 reason: "user_selection",
@@ -56,6 +58,7 @@ extension PlayerViewModel {
             scheduleHideControls()
             return
         }
+        viewingAudioLanguage = viewingAudioLanguage(for: track)
         pendingAudioFfIndex = nil
         selectedAudioId = track.trackId
         audioPickedForCurrentItem = true
@@ -200,6 +203,30 @@ extension PlayerViewModel {
         persistSubtitleSelection(nil)
         applySubtitleTrackSelection(nil, reason: "user_selection")
         scheduleHideControls()
+    }
+
+    /// The language an audio pick carries to next episodes in this viewing.
+    func viewingAudioLanguage(for track: PlayerTrack) -> String? {
+        let linesUp = audioTracks.count == (currentSelectedVersion?.audioTracks?.count ?? 0)
+        return Self.viewingAudioLanguage(
+            stream: track.normalizedLanguageCode,
+            catalog: linesUp ? currentSelectedVersion?.audioTracks ?? [] : [],
+            ordinal: audioSelectionIndex(for: track)
+        )
+    }
+
+    /// The stream's language tag, or the catalogue's language for that track
+    /// when the stream has none. Nil when neither names a language, so the
+    /// next episode follows Settings.
+    static func viewingAudioLanguage(stream: String?, catalog: [AudioTrack], ordinal: Int?) -> String? {
+        if let stream, !stream.isEmpty { return stream }
+        guard let ordinal, catalog.indices.contains(ordinal),
+              let language = catalog[ordinal].language?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !language.isEmpty,
+              language.caseInsensitiveCompare("und") != .orderedSame else {
+            return nil
+        }
+        return language
     }
 
     /// Keeps an explicit subtitle pick (or "Off" when `track` is nil) for
@@ -602,19 +629,60 @@ extension PlayerViewModel {
         applyAutoSubtitle(pick)
     }
 
-    /// The catalogue ordinal of the audio that's playing. The engine's ordinal
-    /// counts only when its list lines up with the catalogue's, since a
+    /// The catalogue ordinal of the engine's selected audio track. It counts
+    /// only when the engine's list lines up with the catalogue's, since a
     /// transcode can carry fewer audio tracks than the file.
-    private var catalogAudioOrdinalForSubtitlePolicy: Int? {
-        if let selected = audioTracks.first(where: { $0.trackId == selectedAudioId }),
-           audioTracks.count == (currentSelectedVersion?.audioTracks?.count ?? 0),
-           let ordinal = audioSelectionIndex(for: selected) {
-            return ordinal
+    var engineCatalogAudioOrdinal: Int? {
+        guard let selected = audioTracks.first(where: { $0.trackId == selectedAudioId }),
+              audioTracks.count == (currentSelectedVersion?.audioTracks?.count ?? 0) else {
+            return nil
         }
-        // The plan and the load request describe the audio the item started
-        // with, not a track the viewer has switched to since.
+        return audioSelectionIndex(for: selected)
+    }
+
+    /// The playing tracks as an Emby or Jellyfin report names them.
+    var playingTracksForServer: MediaServerPlayingTracks {
+        let subtitle: MediaServerPlayingTracks.Subtitle?
+        if let selectedSubtitleId {
+            if SubtitleTrackIdSpace.isSidecar(selectedSubtitleId) {
+                subtitle = .serverStream(SubtitleTrackIdSpace.sidecarIndex(from: selectedSubtitleId))
+            } else if let track = subtitleTracks.first(where: { $0.trackId == selectedSubtitleId }) {
+                // An OpenSubtitles file is the viewer's own; the server has none.
+                subtitle = track.isExternal ? .off : track.ffIndex.map { .embedded($0) }
+            } else {
+                subtitle = nil
+            }
+        } else {
+            subtitle = .off
+        }
+        return MediaServerPlayingTracks(audioOrdinal: engineCatalogAudioOrdinal, subtitle: subtitle)
+    }
+
+    /// Hands the playing tracks to the Emby or Jellyfin session, so its next
+    /// progress report names them. Silo plans carry their own tracks.
+    func reportPlayingTracksToServer() {
+        // Empty lists mean a load is being torn down or hasn't published its
+        // tracks yet; the outgoing session's last report keeps what played.
+        guard offlinePlaybackContext == nil,
+              activePreparedProtocolV3 == nil,
+              !audioTracks.isEmpty || !subtitleTracks.isEmpty,
+              let sessionID = activePlaybackSessionId else { return }
+        let tracks = playingTracksForServer
+        playingTracksGeneration &+= 1
+        let generation = playingTracksGeneration
+        Task { [sessionBridge] in
+            await sessionBridge.updatePlayingTracks(tracks, sessionID: sessionID, generation: generation)
+        }
+    }
+
+    /// The catalogue ordinal of the audio that's playing.
+    private var catalogAudioOrdinalForSubtitlePolicy: Int? {
+        if let ordinal = engineCatalogAudioOrdinal { return ordinal }
+        // The plan and the load describe the audio the item started with, not
+        // a track the viewer has switched to since.
         guard !audioPickedForCurrentItem else { return nil }
         return activePreparedProtocolV3?.plan.selectedTracks.audio?.index
+            ?? loadAudioOrdinal
             ?? lastLoadRequest?.preferredAudioTrackIndex
     }
 

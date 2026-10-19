@@ -53,7 +53,10 @@ enum OfflinePlaybackBuilder {
     static func loadPreparedPlayback(
         downloadId: String,
         startFromBeginning: Bool,
-        resumePositionOverride: Double?
+        resumePositionOverride: Double?,
+        preferredAudioTrackIndex: Int? = nil,
+        viewingAudioLanguage: String? = nil,
+        audioLanguage: String? = nil
     ) async throws -> OfflinePreparedPlayback {
         let manager = DownloadManager.shared
         guard let record = manager.record(id: downloadId), record.isPlayableOffline else {
@@ -80,7 +83,10 @@ enum OfflinePlaybackBuilder {
                 explicitPosition: resumePositionOverride,
                 storedPosition: manager.localProgress(forMediaItemId: leafId)?.position,
                 duration: manifest.durationSeconds
-            )
+            ),
+            preferredAudioTrackIndex: preferredAudioTrackIndex,
+            viewingAudioLanguage: viewingAudioLanguage,
+            audioLanguage: audioLanguage
         )
         let posterFileURL = record.posterFilename.flatMap {
             manager.absoluteFileURL(for: record, filename: $0)
@@ -114,6 +120,31 @@ enum OfflinePlaybackBuilder {
         return candidate >= max(0, duration - nearEndResumeSuppressionSeconds) ? 0 : candidate
     }
 
+    /// The audio a download starts with, chosen as streaming chooses it: a
+    /// pick, then the language picked earlier in this viewing, then Settings >
+    /// Playback > Audio Language (`VividInitialAudioPreference`), over the
+    /// tracks the downloaded file carries. Not the track the server had
+    /// chosen when the file was downloaded. Without a track list, or without
+    /// the settings (`audioLanguage` nil), the manifest's choice stands.
+    static func selectedAudioTrackIndex(
+        manifest: OfflineManifest,
+        tracks: [AudioTrack],
+        preferredAudioTrackIndex: Int?,
+        viewingAudioLanguage: String?,
+        audioLanguage: String?
+    ) -> Int? {
+        guard !tracks.isEmpty, let audioLanguage else { return manifest.selectedAudioTrackIndex }
+        return VividInitialAudioPreference.selectedOrdinal(
+            manual: preferredAudioTrackIndex.flatMap { tracks.indices.contains($0) ? $0 : nil },
+            tracks: tracks,
+            preferredLanguage: VividInitialAudioPreference.preferredLanguage(
+                viewing: viewingAudioLanguage,
+                settings: audioLanguage,
+                tracks: tracks
+            )
+        )
+    }
+
     /// Map the manifest's audio tracks into the catalog `AudioTrack` shape the
     /// player and detail views read.
     ///
@@ -124,8 +155,7 @@ enum OfflinePlaybackBuilder {
     ///
     /// `embeddedTitle` stays nil because the server already collapsed the
     /// cleaned and embedded titles into one field; echoing the same string back
-    /// as both would corrupt the audio-pref signature that compares them
-    /// separately.
+    /// as both would claim the file carries two titles.
     private static func audioTracks(from manifest: OfflineManifest) -> [AudioTrack]? {
         manifest.audioTracks.map { tracks in
             tracks.map { track in
@@ -172,8 +202,12 @@ enum OfflinePlaybackBuilder {
         manifest: OfflineManifest,
         mediaURL: URL,
         subtitleURLs: [SubtitleUrl],
-        resumePosition: Double?
+        resumePosition: Double?,
+        preferredAudioTrackIndex: Int? = nil,
+        viewingAudioLanguage: String? = nil,
+        audioLanguage: String? = nil
     ) -> PreparedPlayback {
+        let audioTracks = audioTracks(from: manifest)
         let version = FileVersion(
             fileId: manifest.mediaFileId,
             fileName: nil,
@@ -188,7 +222,7 @@ enum OfflinePlaybackBuilder {
             // VividEngine probes the actual downloaded file. The manifest
             // intentionally does not pretend to describe delivered streams.
             videoTracks: nil,
-            audioTracks: audioTracks(from: manifest),
+            audioTracks: audioTracks,
             subtitleTracks: nil,
             chapters: nil,
             intro: manifest.intro,
@@ -210,7 +244,13 @@ enum OfflinePlaybackBuilder {
             position: resumePosition ?? 0,
             isPaused: false,
             streamUrl: mediaURL.absoluteString,
-            audioTrackIndex: manifest.selectedAudioTrackIndex,
+            audioTrackIndex: selectedAudioTrackIndex(
+                manifest: manifest,
+                tracks: audioTracks ?? [],
+                preferredAudioTrackIndex: preferredAudioTrackIndex,
+                viewingAudioLanguage: viewingAudioLanguage,
+                audioLanguage: audioLanguage
+            ),
             durationSeconds: manifest.durationSeconds,
             timelineOffsetSeconds: 0,
             subtitleUrls: subtitleURLs.isEmpty ? nil : subtitleURLs,
