@@ -1087,10 +1087,21 @@ final class JellyfinAdapterTests: XCTestCase {
         XCTAssertNil(stop["PositionTicks"])
 
         let reporting = JellyfinPlayback(connection:adapter.connection,itemID:item,sourceID:source,playSessionID:"reporting",
-            stream:playback.stream,method:"DirectPlay",audioIndex:2,subtitleIndex:nil,position:0)
+            stream:playback.stream,method:"DirectPlay",audioIndex:2,subtitleIndex:nil,position:0,
+            audioStreamIndexes:[2,3])
         try await reporting.report(position:65,isPaused:false)
+        let started = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as? [String:Any])
+        XCTAssertEqual(started["AudioStreamIndex"] as? Int, 2)
+        XCTAssertEqual(started["SubtitleStreamIndex"] as? Int, -1)
+        // After a switch to the second audio track and a server subtitle file,
+        // progress names them rather than the tracks the session started with.
+        reporting.update(playingTracks: .init(audioOrdinal: 1, subtitle: .serverStream(6)))
+        try await reporting.report(position:68,isPaused:false)
+        let switched = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as? [String:Any])
+        XCTAssertEqual(switched["AudioStreamIndex"] as? Int, 3)
+        XCTAssertEqual(switched["SubtitleStreamIndex"] as? Int, 6)
         try await reporting.report(position:70,isPaused:true,stopping:true)
-        XCTAssertEqual(requests.suffix(3).map { $0.url!.path }, ["/jellyfin/Sessions/Playing","/jellyfin/Sessions/Playing/Progress","/jellyfin/Sessions/Playing/Stopped"])
+        XCTAssertEqual(requests.suffix(4).map { $0.url!.path }, ["/jellyfin/Sessions/Playing","/jellyfin/Sessions/Playing/Progress","/jellyfin/Sessions/Playing/Progress","/jellyfin/Sessions/Playing/Stopped"])
         let final = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as? [String:Any])
         XCTAssertEqual(final["PositionTicks"] as? Int64, 700_000_000)
     }

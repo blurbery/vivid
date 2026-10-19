@@ -107,17 +107,27 @@ extension PlayerViewModel {
             || preferredSidecarSubtitleTrackId != nil
             || preferredProtocolV3SubtitleIndex != nil
         audioPickedForCurrentItem = false
+        loadAudioOrdinal = nil
         prefsForCurrentItem = nil
         prefsResolvedForCurrentItem = false
     }
 
+    /// The catalogue ordinal of the audio playing now, for a reload of the
+    /// same item. A transcode can carry fewer audio tracks than the file, so
+    /// its engine ordinal 0 isn't the file's first track; then the load's own
+    /// audio is what's playing, as nothing else could be picked.
     func resolvedAudioTrackIndexForResume() -> Int? {
-        guard let selectedAudioId,
-              let selected = audioTracks.first(where: { $0.trackId == selectedAudioId }),
-              let selectionIndex = audioSelectionIndex(for: selected) else {
-            return lastLoadRequest?.preferredAudioTrackIndex
+        if let ordinal = engineCatalogAudioOrdinal { return ordinal }
+        // An older download's manifest lists no audio, so there's nothing for
+        // the engine's tracks to line up with: its own ordinal stands.
+        if (currentSelectedVersion?.audioTracks ?? []).isEmpty,
+           let selected = audioTracks.first(where: { $0.trackId == selectedAudioId }),
+           let ordinal = audioSelectionIndex(for: selected) {
+            return ordinal
         }
-        return selectionIndex
+        return activePreparedProtocolV3?.plan.selectedTracks.audio?.index
+            ?? loadAudioOrdinal
+            ?? lastLoadRequest?.preferredAudioTrackIndex
     }
 
     func subtitleUsesMovieTimeline(_ trackID: Int64?, slot: SubtitleSlot = .primary) -> Bool {
@@ -327,6 +337,11 @@ extension PlayerViewModel {
             preferredSidecarSubtitleTrackId: request.preferredSidecarSubtitleTrackId,
             preferredProtocolV3SubtitleIndex: request.preferredProtocolV3SubtitleIndex
         )
+        if request.keepsAutomaticSubtitles {
+            // The carried subtitle is Auto's, so an audio switch after the
+            // reload still runs Auto again.
+            hasExplicitSubtitleChoice = false
+        }
 
         // The prior item's timer reads bridge state at each tick. Stop it
         // before a replacement session becomes provisional or it can publish
@@ -415,7 +430,10 @@ extension PlayerViewModel {
                     let offline = try await OfflinePlaybackBuilder.loadPreparedPlayback(
                         downloadId: offlineDownloadId,
                         startFromBeginning: request.startFromBeginning,
-                        resumePositionOverride: resumePositionOverride
+                        resumePositionOverride: resumePositionOverride,
+                        preferredAudioTrackIndex: request.preferredAudioTrackIndex,
+                        viewingAudioLanguage: self.viewingAudioLanguage,
+                        audioLanguage: self.settings.audioLanguage
                     )
                     preparedOfflineContext = OfflinePlaybackContext(
                         downloadId: offline.downloadId,
@@ -633,12 +651,14 @@ extension PlayerViewModel {
     ) async throws -> PreparedPlayback {
         // A bitmap pick is drawn in by Emby or Jellyfin when they transcode.
         let serverBurnInSubtitleIndex = serverBurnInCandidate(for: request)
+        let viewingAudioLanguage = viewingAudioLanguage
         if let timeout {
             let startTask = Task<PreparedPlayback, Error> { [sessionBridge] in
                 try await sessionBridge.startSession(
                     contentId: request.contentId,
                     preferredFileId: request.preferredFileId,
                     preferredAudioTrackIndex: request.preferredAudioTrackIndex,
+                    viewingAudioLanguage: viewingAudioLanguage,
                     preferredSubtitleTrackIndex: -1,
                     preferredProtocolV3SubtitleIndex: -1,
                     initialSubtitlePreferences: nil,
@@ -670,6 +690,7 @@ extension PlayerViewModel {
                 contentId: request.contentId,
                 preferredFileId: request.preferredFileId,
                 preferredAudioTrackIndex: request.preferredAudioTrackIndex,
+                viewingAudioLanguage: viewingAudioLanguage,
                 preferredSubtitleTrackIndex: -1,
                 preferredProtocolV3SubtitleIndex: -1,
                 initialSubtitlePreferences: nil,
@@ -815,7 +836,7 @@ extension PlayerViewModel {
         let durationHint = duration.isFinite && duration > 0
             ? duration
             : (currentSelectedVersion?.duration ?? 0)
-        let renewalRequest = lastLoadRequest.copyForRecovery(
+        var renewal = lastLoadRequest.copyForRecovery(
             preferredFileId: currentSelectedVersion?.fileId ?? lastLoadRequest.preferredFileId,
             preferredAudioTrackIndex: resolvedAudioTrackIndexForResume(),
             preferredSubtitleTrackIndex: resolvedSubtitleTrackIndexForResume(),
@@ -823,6 +844,8 @@ extension PlayerViewModel {
             offlineDownloadId: nil,
             serverSubtitlesDisabled: hasDisabledServerSubtitlesForResume
         )
+        renewal.keepsAutomaticSubtitles = !hasExplicitSubtitleChoice
+        let renewalRequest = renewal
 
         Self.logger.warning(
             "Renewing stale playback session \(staleSessionId, privacy: .public) reason=\(reason, privacy: .public) position=\(resumePosition, privacy: .public)"
@@ -903,8 +926,12 @@ extension PlayerViewModel {
         )
         request.prefersLastUsedVersion = prefersLastUsedVersion
         // A title started from outside the player is a new viewing, so
-        // Settings > Subtitles applies again.
+        // Settings > Subtitles and Audio Language apply again. An audio track
+        // picked on the detail page carries its language to next episodes,
+        // as a pick in the player does.
         viewingSubtitlePrefs = nil
+        viewingAudioLanguage = nil
+        viewingAudioSeedOrdinal = preferredAudioTrackIndex
         beginFreshLoad(
             request: request,
             progressPosition: currentTime,

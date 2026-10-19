@@ -459,17 +459,16 @@ final class TVContinueWatchingPlaybackMetadataStore {
         )
     }
 
+    /// The track resuming will play, chosen by the player's own rule from
+    /// Settings > Playback > Audio Language, as on the detail pages.
     private static func selectedAudioTrack(in version: FileVersion) -> AudioTrack? {
-        guard let tracks = version.audioTracks, !tracks.isEmpty else { return nil }
-        if let effective = version.effectiveAudioTrackIndex {
-            if let streamMatch = tracks.first(where: { $0.index == effective }) {
-                return streamMatch
-            }
-            if tracks.indices.contains(effective) {
-                return tracks[effective]
-            }
-        }
-        return tracks.first(where: { $0.isDefault == true }) ?? tracks.first
+        guard let tracks = version.audioTracks,
+              let ordinal = DetailPlaybackFormatting.resolvedAudioOrdinal(
+                  version: version,
+                  selectedAudioTrackIndex: nil
+              ),
+              tracks.indices.contains(ordinal) else { return nil }
+        return tracks[ordinal]
     }
 
     private static func compactAudioLayout(_ track: AudioTrack?) -> String? {

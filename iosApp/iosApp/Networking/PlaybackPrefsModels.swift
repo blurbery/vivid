@@ -7,20 +7,19 @@
 //  and profile default (lowest). The cascade is resolved server-side
 //  and surfaced via the `effective_*` fields on `WatchDetail`, so the
 //  client only re-reads the raw prefs when the user is editing them in
-//  Settings or saving a per-series audio override.
+//  Settings.
 //
-//  Subtitles don't use any of this: Settings > Subtitles on the device
-//  decides them on every server, so the app never reads or writes
-//  `/api/v1/subtitle-prefs/{series_id}` or the `effective_subtitle_*`
-//  fields to choose a track.
+//  Audio and subtitles don't use any of this: Settings > Playback >
+//  Audio Language and Settings > Subtitles on the device decide them on
+//  every server, and a pick lasts only for the viewing. The app never
+//  reads or writes `/api/v1/audio-prefs/{series_id}` or
+//  `/api/v1/subtitle-prefs/{series_id}`, and never uses the
+//  `effective_audio_*` or `effective_subtitle_*` fields to choose a track.
 //
 //  Endpoints in play:
 //    GET    /api/v1/library-playback-prefs           — list all
 //    PUT    /api/v1/library-playback-prefs/{id}      — set one
 //    DELETE /api/v1/library-playback-prefs/{id}      — clear one
-//    GET    /api/v1/audio-prefs/{series_id}          — per-series audio
-//    PUT    /api/v1/audio-prefs/{series_id}          — set per-series
-//    DELETE /api/v1/audio-prefs/{series_id}          — clear per-series
 //
 
 import Foundation
@@ -62,66 +61,6 @@ struct SubtitleTrackSignature: Codable, Hashable {
         label = try c.decodeIfPresent(String.self, forKey: .label)
         forced = try c.decodeIfPresent(Bool.self, forKey: .forced) ?? false
         hearingImpaired = try c.decodeIfPresent(Bool.self, forKey: .hearingImpaired) ?? false
-    }
-}
-
-/// Audio counterpart to `SubtitleTrackSignature`. Layout + channels let
-/// the server prefer "5.1 English Atmos" over "stereo English commentary"
-/// across episodes.
-struct AudioTrackSignature: Codable, Hashable {
-    let language: String?
-    let title: String?
-    let embeddedTitle: String?
-    let codec: String?
-    let layout: String?
-    let channels: Int?
-    let isDefault: Bool
-
-    init(
-        language: String? = nil,
-        title: String? = nil,
-        embeddedTitle: String? = nil,
-        codec: String? = nil,
-        layout: String? = nil,
-        channels: Int? = nil,
-        isDefault: Bool = false
-    ) {
-        self.language = language
-        self.title = title
-        self.embeddedTitle = embeddedTitle
-        self.codec = codec
-        self.layout = layout
-        self.channels = channels
-        self.isDefault = isDefault
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case language, title
-        case embeddedTitle = "embedded_title"
-        case codec, layout, channels
-        case isDefault = "default"
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        language = try c.decodeIfPresent(String.self, forKey: .language)
-        title = try c.decodeIfPresent(String.self, forKey: .title)
-        embeddedTitle = try c.decodeIfPresent(String.self, forKey: .embeddedTitle)
-        codec = try c.decodeIfPresent(String.self, forKey: .codec)
-        layout = try c.decodeIfPresent(String.self, forKey: .layout)
-        channels = try c.decodeIfPresent(Int.self, forKey: .channels)
-        isDefault = try c.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encodeIfPresent(language, forKey: .language)
-        try c.encodeIfPresent(title, forKey: .title)
-        try c.encodeIfPresent(embeddedTitle, forKey: .embeddedTitle)
-        try c.encodeIfPresent(codec, forKey: .codec)
-        try c.encodeIfPresent(layout, forKey: .layout)
-        try c.encodeIfPresent(channels, forKey: .channels)
-        try c.encode(isDefault, forKey: .isDefault)
     }
 }
 
@@ -232,10 +171,4 @@ enum SubtitleMode: String, CaseIterable, Codable, Hashable {
         case .off:    return "Never show subtitles."
         }
     }
-}
-
-struct AudioPrefRequest: Codable {
-    let audioTrackIndex: Int
-    let audioLanguage: String
-    let trackSignature: AudioTrackSignature?
 }

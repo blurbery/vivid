@@ -18,9 +18,15 @@ extension PlayerViewModel {
         Self.logger.info("Retrying playback for contentId=\(last.contentId, privacy: .public)")
         // A load that never opened is repeated as it was. Once the item has
         // played, resume where it stopped rather than repeat a Play from
-        // Beginning, which would ignore `currentTime`.
+        // Beginning, which would ignore `currentTime`, and with the audio
+        // that was playing, which may be a track switched to since.
+        var request = last
+        if hasStartedPlayback {
+            request = last.resumingInPlace()
+            request.preferredAudioTrackIndex = resolvedAudioTrackIndexForResume()
+        }
         beginFreshLoad(
-            request: hasStartedPlayback ? last.resumingInPlace() : last,
+            request: request,
             progressPosition: currentTime,
             resumePositionOverride: currentTime,
             allowNearEndResume: true
@@ -148,6 +154,7 @@ extension PlayerViewModel {
             serverSubtitlesDisabled: hasDisabledServerSubtitlesForResume
         )
         request.preferredQualityOverride = resolvedQualityId
+        request.keepsAutomaticSubtitles = !hasExplicitSubtitleChoice
         // A new choice derives its own cap; a cap carried from earlier
         // playback must not apply to it.
         request.carriedBandwidthCap = nil

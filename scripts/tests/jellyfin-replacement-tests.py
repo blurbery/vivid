@@ -82,6 +82,7 @@ enum CarriedBandwidthCap { case savedSetting; case inEffect(Int?) }
 enum AppleQualityAxes { static func resolvedBitrateCap(qualityOverride: String?, carriedCap: CarriedBandwidthCap?, fallbackBitrateKbps: Int?) -> Int? { nil } }
 enum VividInitialAudioPreference {
     static func selectedOrdinal(manual: Int?, tracks: [AudioTrack], preferredLanguage: String?) -> Int? { manual }
+    static func preferredLanguage(viewing: String?, settings: String?, tracks: [AudioTrack]) -> String? { viewing ?? settings }
 }
 enum ServerSubtitleBurnIn { static func bitmapStreamIndex(_ index: Int?, in version: FileVersion) -> Int? { nil } }
 actor TokenStore { static let shared = TokenStore(); func getProfileId() -> String? { "profile" } }

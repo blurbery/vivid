@@ -11,15 +11,25 @@ final class JellyfinPlayback {
     let method: String
     let audioIndex: Int?
     let subtitleIndex: Int?
+    /// The server stream index of each catalogue audio track, by ordinal.
+    let audioStreamIndexes: [Int?]
+    /// What's playing now, once the player has said; reports name these.
+    private(set) var playingTracks: MediaServerPlayingTracks?
     private var lastPosition: Double
     private var started = false
     private var stopped = false
 
     init(connection: JellyfinConnection, itemID: String, sourceID: String, playSessionID: String,
-         stream: StreamRequest, method: String, audioIndex: Int?, subtitleIndex: Int?, position: Double) {
+         stream: StreamRequest, method: String, audioIndex: Int?, subtitleIndex: Int?, position: Double,
+         audioStreamIndexes: [Int?] = []) {
         self.connection = connection; self.itemID = itemID; self.sourceID = sourceID
         self.playSessionID = playSessionID; self.stream = stream; self.method = method
         self.audioIndex = audioIndex; self.subtitleIndex = subtitleIndex; lastPosition = position
+        self.audioStreamIndexes = audioStreamIndexes
+    }
+
+    func update(playingTracks: MediaServerPlayingTracks) {
+        self.playingTracks = playingTracks
     }
 
     nonisolated static func ticks(_ seconds: Double) -> Int64 {
@@ -147,7 +157,8 @@ final class JellyfinPlayback {
             audioTrackIndex:audioOrdinal, durationSeconds:version.duration, subtitleUrls:subtitles,
             playbackInfo:PlaybackInfo(streamType:direct ? "direct" : "hls", transcodeAudio:!direct, videoCodec:direct ? version.codecVideo : "h264", audioCodec:direct ? version.codecAudio : "aac"))
         let playback = JellyfinPlayback(connection:connection,itemID:detail.contentId,sourceID:sourceID,playSessionID:playSessionID,
-            stream:stream,method:method,audioIndex:audioIndex,subtitleIndex:transcodeSubtitles?.burnedIndex ?? subtitleIndex,position:start)
+            stream:stream,method:method,audioIndex:audioIndex,subtitleIndex:transcodeSubtitles?.burnedIndex ?? subtitleIndex,position:start,
+            audioStreamIndexes:audioStreams.map { $0["Index"] as? Int })
         try await connection.validate()
         return (PreparedPlayback(watchDetail:detail,selectedVersion:version,session:session,activeQualityId:quality ?? ApplePlaybackQuality.autoId, bandwidthCap:.inEffect(bitrateKbps), nativeAudioStreamIndex:direct ? audioIndex.flatMap(Int32.init(exactly:)) : nil, nativeHLS:!direct, transcodeSubtitles:transcodeSubtitles, nativeQualityOptions:playable["SupportsTranscoding"] as? Bool == true ? ApplePlaybackQuality.settingsOptions : [ApplePlaybackQuality.auto,ApplePlaybackQuality.original]),playback)
     }
@@ -180,10 +191,13 @@ final class JellyfinPlayback {
     func report(position: Double, isPaused: Bool, stopping: Bool = false) async throws {
         guard !stopped else { return }
         lastPosition = position.isFinite ? max(0,position) : lastPosition
+        let streams = (playingTracks ?? MediaServerPlayingTracks()).streamIndexes(
+            audioStreamIndexes: audioStreamIndexes, directPlay: method == "DirectPlay",
+            initialAudio: audioIndex, initialSubtitle: subtitleIndex)
         var body: [String:Any] = ["ItemId":itemID, "MediaSourceId":sourceID, "PlaySessionId":playSessionID,
             "PositionTicks":Self.ticks(lastPosition), "IsPaused":isPaused, "CanSeek":true, "PlayMethod":method,
-            "SubtitleStreamIndex":subtitleIndex ?? -1]
-        if let audioIndex { body["AudioStreamIndex"] = audioIndex }
+            "SubtitleStreamIndex":streams.subtitle]
+        if let audio = streams.audio { body["AudioStreamIndex"] = audio }
         if !started, !stopping {
             _ = try await connection.request("POST", "/Sessions/Playing", body:body)
             started = true

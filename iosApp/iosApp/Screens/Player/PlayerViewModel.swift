@@ -346,8 +346,12 @@ class PlayerViewModel {
     /// do not depend on `currentTime` and re-render on every time tick.
     private(set) var skipWindow = PlayerSkipWindow()
     var introAutoSkipCountdownSeconds: Int?
-    var selectedAudioId: Int64?
-    var selectedSubtitleId: Int64?
+    var selectedAudioId: Int64? {
+        didSet { if selectedAudioId != oldValue { reportPlayingTracksToServer() } }
+    }
+    var selectedSubtitleId: Int64? {
+        didSet { if selectedSubtitleId != oldValue { reportPlayingTracksToServer() } }
+    }
     var selectedSecondarySubtitleId: Int64?
     var qualityOptions: [ApplePlaybackQualityOption] = [ApplePlaybackQuality.auto]
     var selectableQualityOptions: [ApplePlaybackQualityOption] {
@@ -768,9 +772,23 @@ class PlayerViewModel {
     /// this viewing, including next episodes that play on from here, while
     /// Settings > Subtitles stays the default for anything started afresh.
     var viewingSubtitlePrefs: PrefsSnapshot?
+    /// The language of an audio pick made in this viewing, in the player or
+    /// on the detail page. Next episodes that play on start in it when they
+    /// have it; anything started afresh goes back to Settings > Playback >
+    /// Audio Language.
+    var viewingAudioLanguage: String?
+    /// A detail-page audio pick whose language is read once its file is
+    /// known, at the start of the load.
+    var viewingAudioSeedOrdinal: Int?
     /// The viewer switched audio during the current item, so the load's own
     /// audio ordinal no longer says which track is playing.
     var audioPickedForCurrentItem = false
+    /// The catalogue ordinal of the audio the current load asked for: the
+    /// track sent to Emby or Jellyfin, or chosen for a download. Silo's plan
+    /// says the same through `activePreparedProtocolV3`.
+    var loadAudioOrdinal: Int?
+    /// Orders the playing-track updates handed to an Emby or Jellyfin session.
+    var playingTracksGeneration: UInt64 = 0
     /// Set after the resolver has fired once for the current item so we
     /// don't keep re-evaluating (and overriding the user) on every
     /// subsequent track-list update.
@@ -789,7 +807,7 @@ class PlayerViewModel {
     struct LoadRequest {
         let contentId: String
         let preferredFileId: Int?
-        let preferredAudioTrackIndex: Int?
+        var preferredAudioTrackIndex: Int?
         let preferredSubtitleTrackIndex: Int?
         let preferredSidecarSubtitleTrackId: Int64?
         var startFromBeginning: Bool
@@ -812,6 +830,10 @@ class PlayerViewModel {
         /// Continue Watching only: select the server's last-used source file
         /// before applying the profile-wide automatic quality preference.
         var prefersLastUsedVersion = false
+        /// A reload of the same item whose subtitle indexes carry what Auto
+        /// chose, so it stays on screen. The choice stays Auto's: switching
+        /// audio afterwards still runs Auto again.
+        var keepsAutomaticSubtitles = false
 
         /// The same request, resuming at the reload's own position. A Play from
         /// Beginning ignores any resume override, so a retry or seek reload of
