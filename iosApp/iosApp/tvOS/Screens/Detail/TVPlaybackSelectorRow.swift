@@ -69,6 +69,17 @@ struct TVPlaybackActionSelectors: View {
         ServerSubtitleSidecars.detailRows(currentVersion?.subtitleTracks)
     }
 
+    private var subtitleOffButton: some View {
+        Button {
+            if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(nil, context: context) }
+        } label: {
+            let choice = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
+            let isOff = choice.map { $0.trackID == nil } ?? false
+            if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
+            else { Text("Off") }
+        }
+    }
+
     private func subtitleTrackButton(_ track: PlayerTrack) -> some View {
         Button {
             if let context = fileSubtitleContext {
@@ -121,17 +132,12 @@ struct TVPlaybackActionSelectors: View {
                 Text("Reading subtitles…")
             } else if subtitleError {
                 Button("Retry Reading Subtitles") { subtitleRetry += 1 }
+                // Off doesn't depend on reading the file.
+                subtitleOffButton
                 // Server files come from the catalogue, not the file read.
                 ForEach(LucidSubtitleInventory.ordered(serverSubtitleRows)) { subtitleTrackButton($0) }
             } else {
-                Button {
-                    if let context = fileSubtitleContext { LucidSubtitleInventory.shared.choose(nil, context: context) }
-                } label: {
-                    let choice = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }
-                    let isOff = choice.map { $0.trackID == nil } ?? false
-                    if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
-                    else { Text("Off") }
-                }
+                subtitleOffButton
                 ForEach(LucidSubtitleInventory.ordered(subtitleTracks + serverSubtitleRows)) { subtitleTrackButton($0) }
                 if subtitleTracks.isEmpty && serverSubtitleRows.isEmpty { Text("No subtitles") }
             }
