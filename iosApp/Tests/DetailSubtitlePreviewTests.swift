@@ -126,7 +126,10 @@ final class DetailSubtitlePreviewTests: XCTestCase {
         XCTAssertEqual(label(film), "English")
         settings.subtitleSystemSelectionPreferences = .init(
             displayMode: .forcedOnly, preferredLanguages: ["en"], prefersAccessibilityTracks: false)
-        XCTAssertEqual(label(film, audio: 1), "Auto: English (Forced)")
+        // Forced Only follows the audio: English audio gets the forced English
+        // track, Japanese audio has no forced Japanese track.
+        XCTAssertEqual(label(film), "Auto: English (Forced)")
+        XCTAssertEqual(label(film, audio: 1), "Auto: Off")
         settings.subtitleSystemSelectionPreferences = .init(
             displayMode: .automatic, preferredLanguages: ["en"], prefersAccessibilityTracks: false)
         XCTAssertEqual(label(film), "Auto: English (Forced)")
@@ -163,6 +166,29 @@ final class DetailSubtitlePreviewTests: XCTestCase {
         XCTAssertEqual(settings.preferredSubtitleBackupLanguage, "en")
         viewModel.editorSubtitleLanguage = "en"
         XCTAssertEqual(settings.preferredSubtitleBackupLanguage, PlaybackPrefSentinel.none)
+    }
+
+    /// Always with Language set to None shows subtitles rather than nothing.
+    func testAlwaysWithoutLanguageShowsATrack() throws {
+        let settings = PlayerSettings.shared
+        settings.preferredSubtitleLanguage = PlaybackPrefSentinel.none
+        settings.preferredSubtitleMode = SubtitleMode.always.rawValue
+        XCTAssertEqual(label(try film()), "English")
+        settings.preferredSubtitleMode = SubtitleMode.auto.rawValue
+        XCTAssertEqual(label(try film()), "Auto: Off")
+    }
+
+    /// Use Device Settings on Automatic follows the device's language, as
+    /// Apple's Automatic does, not the history of caption languages.
+    func testDeviceAutomaticFollowsTheDeviceLanguage() throws {
+        let settings = PlayerSettings.shared
+        settings.setSubtitleMatchesSystemAppearance(true)
+        settings.subtitleSystemSelectionPreferences = .init(
+            displayMode: .automatic, preferredLanguages: ["es"], prefersAccessibilityTracks: false,
+            deviceLanguages: ["en-AU"])
+        let film = try film()
+        XCTAssertEqual(label(film), "Auto: English (Forced)")
+        XCTAssertEqual(label(film, audio: 1), "Auto: English")
     }
 
     /// A bitmap subtitle file beside the media never plays, so the row

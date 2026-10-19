@@ -621,6 +621,7 @@ extension PlayerViewModel {
             mode: prefs.mode,
             showForced: prefs.showForced,
             forcedOnly: prefs.forcedOnly,
+            forcedFollowsAudio: prefs.forcedFollowsAudio,
             preferAccessibilityTracks: prefs.preferAccessibilityTracks,
             disableWhenNoLanguageMatch: prefs.disableWhenNoLanguageMatch,
             trackSignature: prefs.trackSignature,
@@ -720,12 +721,16 @@ extension PlayerViewModel {
                 forcedOnly: true,
                 preferAccessibilityTracks: system.prefersAccessibilityTracks,
                 disableWhenNoLanguageMatch: true,
-                trackSignature: nil
+                trackSignature: nil,
+                forcedFollowsAudio: true
             )
         case .automatic:
+            // Apple's Automatic shows subtitles in the device's language when
+            // the audio isn't in it. The caption languages are a history of
+            // past picks and don't decide it.
             return PrefsSnapshot(
-                preferredLanguage: firstLanguage,
-                additionalPreferredLanguages: remainingLanguages,
+                preferredLanguage: system.deviceLanguages.first ?? firstLanguage,
+                additionalPreferredLanguages: system.deviceLanguages.isEmpty ? remainingLanguages : [],
                 mode: .auto,
                 showForced: true,
                 forcedOnly: false,
@@ -757,15 +762,22 @@ extension PlayerViewModel {
         let language = settings.preferredSubtitleLanguage == PlaybackPrefSentinel.none
             ? nil : settings.preferredSubtitleLanguage
         let backup = settings.preferredSubtitleBackupLanguage
+        let mode = SubtitleMode(rawValue: settings.preferredSubtitleMode)
+        // Always with Language set to None still shows subtitles: in the
+        // device's language when the file has it, otherwise the file's own
+        // default track.
+        let alwaysWithoutLanguage = language == nil && mode == .always
         // A backup only stands in for a chosen language.
-        let fallback = language != nil && !backup.isEmpty && backup != PlaybackPrefSentinel.none ? [backup] : []
+        let fallback = alwaysWithoutLanguage
+            ? Locale.preferredLanguages
+            : language != nil && !backup.isEmpty && backup != PlaybackPrefSentinel.none ? [backup] : []
         return PrefsSnapshot(
             preferredLanguage: language,
             additionalPreferredLanguages: [],
-            mode: SubtitleMode(rawValue: settings.preferredSubtitleMode),
+            mode: mode,
             showForced: settings.showForcedSubtitles,
             forcedOnly: false, preferAccessibilityTracks: false,
-            disableWhenNoLanguageMatch: true, trackSignature: nil,
+            disableWhenNoLanguageMatch: !alwaysWithoutLanguage, trackSignature: nil,
             fallbackLanguages: fallback
         )
     }

@@ -22,6 +22,10 @@ struct SystemCaptionSelectionPreferences: Equatable {
     var preferredLanguages: [String]
     /// True when Apple asks players to prefer CC/SDH accessibility tracks.
     var prefersAccessibilityTracks: Bool
+    /// The device's languages (`Locale.preferredLanguages`). Apple's
+    /// Automatic compares the audio with, and shows subtitles in, the first
+    /// of these rather than the caption languages above.
+    var deviceLanguages: [String] = []
 
     static func current() -> SystemCaptionSelectionPreferences {
         let displayMode: DisplayMode
@@ -49,7 +53,8 @@ struct SystemCaptionSelectionPreferences: Equatable {
         return SystemCaptionSelectionPreferences(
             displayMode: displayMode,
             preferredLanguages: languages,
-            prefersAccessibilityTracks: !accessibilityCharacteristics.isDisjoint(with: characteristics)
+            prefersAccessibilityTracks: !accessibilityCharacteristics.isDisjoint(with: characteristics),
+            deviceLanguages: Locale.preferredLanguages
         )
     }
 }

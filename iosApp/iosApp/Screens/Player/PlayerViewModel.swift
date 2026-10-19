@@ -759,6 +759,8 @@ class PlayerViewModel {
         /// Settings > Subtitles > Backup Language: tried only when no track
         /// is in a preferred language.
         var fallbackLanguages: [String] = []
+        /// Apple's Forced Only: the forced track follows the audio's language.
+        var forcedFollowsAudio = false
     }
     /// A subtitle pick, or Off, made in the player. It holds for the rest of
     /// this viewing, including next episodes that play on from here, while
