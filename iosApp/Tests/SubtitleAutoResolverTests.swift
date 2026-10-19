@@ -472,4 +472,18 @@ final class SubtitleAutoResolverTests: XCTestCase {
         let french = track(id: 7, lang: "fra")
         XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [french], audio: "eng")), .disable)
     }
+
+    /// Arabic with an English backup, and the file's only Arabic track is
+    /// signs-only: the English full track wins, so the dialogue can be
+    /// followed. Without a backup the forced Arabic track is still the pick.
+    func testBackupFullTrackBeatsAForcedOnlyMainTrack() {
+        let arabicForced = track(id: 6, lang: "ara", forced: true)
+        let english = track(id: 4, lang: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [arabicForced, english], audio: "eng")), .select(english))
+        XCTAssertEqual(SubtitleAutoResolver.resolve(backupInputs(tracks: [arabicForced], audio: "eng")), .select(arabicForced))
+        let noBackup = SubtitleAutoResolver.Inputs(
+            preferredLanguage: "ar", mode: .auto, showForced: true, disableWhenNoLanguageMatch: true,
+            trackSignature: nil, availableSubtitles: [arabicForced, english], currentAudioLanguage: "eng")
+        XCTAssertEqual(SubtitleAutoResolver.resolve(noBackup), .select(arabicForced))
+    }
 }

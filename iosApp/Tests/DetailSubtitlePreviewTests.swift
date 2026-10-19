@@ -148,6 +148,23 @@ final class DetailSubtitlePreviewTests: XCTestCase {
         XCTAssertEqual(label(try film()), "Auto: Off")
     }
 
+    /// Setting Language to the backup's language clears the backup, so the
+    /// Backup Language picker never points at a row it doesn't list.
+    func testChoosingTheBackupAsLanguageClearsTheBackup() {
+        let settings = PlayerSettings.shared
+        settings.preferredSubtitleLanguage = "ar"
+        settings.preferredSubtitleBackupLanguage = "en"
+        #if os(tvOS)
+        let viewModel = TVSettingsViewModel()
+        #else
+        let viewModel = SettingsViewModel()
+        #endif
+        viewModel.editorSubtitleLanguage = "fr"
+        XCTAssertEqual(settings.preferredSubtitleBackupLanguage, "en")
+        viewModel.editorSubtitleLanguage = "en"
+        XCTAssertEqual(settings.preferredSubtitleBackupLanguage, PlaybackPrefSentinel.none)
+    }
+
     /// A bitmap subtitle file beside the media never plays, so the row
     /// doesn't promise it.
     func testServerBitmapSubtitleFileIsNotPromised() throws {

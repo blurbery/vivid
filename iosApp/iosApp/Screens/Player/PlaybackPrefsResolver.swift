@@ -180,6 +180,27 @@ struct SubtitleAutoResolver {
             return .disable
         }
 
+        let backupLanguages = inputs.fallbackLanguages.filter { backup in
+            !backup.isEmpty && !preferredLanguages.contains(where: { languagesMatch($0, backup) })
+        }
+
+        // With a backup language, a full-dialogue track in it beats a
+        // signs-only forced track in the viewer's language: the viewer wants
+        // to follow the dialogue.
+        if !backupLanguages.isEmpty {
+            let fullDialogue = readableSubtitles.filter { !isForced($0) }
+            for languages in [preferredLanguages, backupLanguages] {
+                if let pick = bestLanguageMatch(
+                    languages,
+                    in: fullDialogue,
+                    preferForced: false,
+                    preferAccessibility: inputs.preferAccessibilityTracks
+                ) {
+                    return .select(pick)
+                }
+            }
+        }
+
         // The user wants readable subs in this language: always the
         // full-dialogue track. `showForced` must NOT steal this pick —
         // a forced track is signs-only and reads as "subtitles stopped
@@ -193,11 +214,8 @@ struct SubtitleAutoResolver {
             return .select(pick)
         }
 
-        // Nothing in the viewer's language: the backup language, full track
-        // first, before any other fallback.
-        let backupLanguages = inputs.fallbackLanguages.filter { backup in
-            !backup.isEmpty && !preferredLanguages.contains(where: { languagesMatch($0, backup) })
-        }
+        // Nothing in the viewer's language: the backup language's track,
+        // before any other fallback.
         if !backupLanguages.isEmpty, let pick = bestLanguageMatch(
             backupLanguages,
             in: readableSubtitles,

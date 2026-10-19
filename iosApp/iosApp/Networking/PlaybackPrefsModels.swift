@@ -7,15 +7,17 @@
 //  and profile default (lowest). The cascade is resolved server-side
 //  and surfaced via the `effective_*` fields on `WatchDetail`, so the
 //  client only re-reads the raw prefs when the user is editing them in
-//  Settings or saving a per-series override from the player.
+//  Settings or saving a per-series audio override.
+//
+//  Subtitles don't use any of this: Settings > Subtitles on the device
+//  decides them on every server, so the app never reads or writes
+//  `/api/v1/subtitle-prefs/{series_id}` or the `effective_subtitle_*`
+//  fields to choose a track.
 //
 //  Endpoints in play:
 //    GET    /api/v1/library-playback-prefs           — list all
 //    PUT    /api/v1/library-playback-prefs/{id}      — set one
 //    DELETE /api/v1/library-playback-prefs/{id}      — clear one
-//    GET    /api/v1/subtitle-prefs/{series_id}       — per-series sub
-//    PUT    /api/v1/subtitle-prefs/{series_id}       — set per-series
-//    DELETE /api/v1/subtitle-prefs/{series_id}       — clear per-series
 //    GET    /api/v1/audio-prefs/{series_id}          — per-series audio
 //    PUT    /api/v1/audio-prefs/{series_id}          — set per-series
 //    DELETE /api/v1/audio-prefs/{series_id}          — clear per-series

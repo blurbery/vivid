@@ -75,7 +75,7 @@ struct TVSubtitleSettingsPane: View {
         if viewModel.subtitleMatchesSystemAppearance {
             TVSettingsFooter("Language, display behavior, forced captions, and CC/SDH preference follow this Apple TV's Accessibility settings.")
         } else {
-            TVSettingsFooter("Subtitles are read from the media. Backup Language is used when a title has no subtitles in your language. Preferences are saved in Vivid for this profile on this Apple TV.")
+            TVSettingsFooter("Subtitles are read from the media. Backup Language is used when full subtitles would play but the title has none in your language. Preferences are saved in Vivid for this profile on this Apple TV.")
         }
 
     }

@@ -93,7 +93,7 @@ struct SubtitleSettingsView: View {
                 if viewModel.subtitleMatchesSystemAppearance {
                     Text("Language, display behavior, forced captions, and CC/SDH preference follow this device's Accessibility settings.")
                 } else {
-                    Text("Selects matching subtitles embedded in the media. Backup Language is used when a title has no subtitles in your language. Preferences are saved on this device for the current profile.")
+                    Text("Selects matching subtitles embedded in the media. Backup Language is used when full subtitles would play but the title has none in your language. Preferences are saved on this device for the current profile.")
                 }
             }
             .foregroundStyle(Color.vividSecondaryText)

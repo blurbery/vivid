@@ -49,7 +49,13 @@ final class TVSettingsViewModel {
 
     var editorSubtitleLanguage: String {
         get { PlayerSettings.shared.preferredSubtitleLanguage }
-        set { PlayerSettings.shared.preferredSubtitleLanguage = newValue }
+        set {
+            PlayerSettings.shared.preferredSubtitleLanguage = newValue
+            // A backup in the same language would be a second copy of it.
+            if SubtitleAutoResolver.languagesMatch(PlayerSettings.shared.preferredSubtitleBackupLanguage, newValue) {
+                PlayerSettings.shared.preferredSubtitleBackupLanguage = PlaybackPrefSentinel.none
+            }
+        }
     }
 
     /// Used when a title has no subtitles in `editorSubtitleLanguage`.
