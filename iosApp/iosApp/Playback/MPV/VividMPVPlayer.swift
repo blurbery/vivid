@@ -148,6 +148,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     /// and drawn by libass while Picture in Picture runs (iOS).
     private var pictureInPictureFiles: [Int: URL] = [:]
     private var pictureInPictureTexts: [Int: String] = [:]
+    private var pictureInPictureCopying: Set<Int> = []
     private var externalCues: [Int: VividSubtitleCueCursor] = [:]
     private struct CuePublication: Equatable {
         let trackID: Int?
@@ -1013,22 +1014,34 @@ final class VividMPVPlayer: NSObject, ObservableObject {
     /// Gives Lucid a copy of a chosen text file the overlay draws, without
     /// selecting it, so libass can draw it into Picture in Picture. Only
     /// chosen files, so a title with many server subtitle files doesn't open
-    /// them all.
+    /// them all. The text is kept until the copy is added, so a failed copy
+    /// is tried again the next time the file is chosen.
     private func addPictureInPictureCopy(_ id: Int) {
         #if os(iOS)
-        guard let core, !core.audioOnly, let text = pictureInPictureTexts.removeValue(forKey: id),
-              let track = externalTracks[id] else { return }
+        guard let core, !core.audioOnly, let text = pictureInPictureTexts[id], let track = externalTracks[id],
+              pictureInPictureCopying.insert(id).inserted else { return }
         let hint = track.formatHint?.lowercased() ?? track.url.pathExtension.lowercased()
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("vivid-subtitle-" + UUID().uuidString)
             .appendingPathExtension(["vtt", "webvtt"].contains(hint) ? "vtt" : "srt")
-        guard (try? text.write(to: file, atomically: true, encoding: .utf8)) != nil else { return }
+        guard (try? text.write(to: file, atomically: true, encoding: .utf8)) != nil else {
+            pictureInPictureCopying.remove(id)
+            trace?.event("mpv_pip_subtitle_copy_failed")
+            return
+        }
         let token = generation
         core.commandAsync(["sub-add", file.path, "auto"]) { [weak self] result in
             Task { @MainActor [weak self] in
-                guard let self, self.generation == token, case .success = result else {
+                guard let self, self.generation == token else {
                     try? FileManager.default.removeItem(at: file)
                     return
                 }
+                self.pictureInPictureCopying.remove(id)
+                guard case .success = result else {
+                    try? FileManager.default.removeItem(at: file)
+                    self.trace?.event("mpv_pip_subtitle_copy_failed")
+                    return
+                }
+                self.pictureInPictureTexts[id] = nil
                 self.pictureInPictureFiles[id] = file
                 self.readTracks()
             }
@@ -1100,7 +1113,7 @@ final class VividMPVPlayer: NSObject, ObservableObject {
         initialAudioApplied = false
         for file in nativeExternalFiles.values { try? FileManager.default.removeItem(at: file) }
         for file in pictureInPictureFiles.values { try? FileManager.default.removeItem(at: file) }
-        nativeExternalFiles = [:]; pictureInPictureFiles = [:]; pictureInPictureTexts = [:]
+        nativeExternalFiles = [:]; pictureInPictureFiles = [:]; pictureInPictureTexts = [:]; pictureInPictureCopying = []
         rawTracks = []; videoTrack = [:]; externalTracks = [:]; externalCues = [:]
         for task in subtitleTasks.values { task.cancel() }; subtitleTasks = [:]
         isLoadingSubtitles = false
