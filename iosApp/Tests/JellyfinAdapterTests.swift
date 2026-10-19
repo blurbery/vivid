@@ -1094,6 +1094,48 @@ final class JellyfinAdapterTests: XCTestCase {
         let final = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(requests.last?.httpBody)) as? [String:Any])
         XCTAssertEqual(final["PositionTicks"] as? Int64, 700_000_000)
     }
+
+    /// A transcode carries only text subtitles beside it, so a PGS pick is
+    /// asked for again as a burn-in once the server says it will transcode.
+    @MainActor
+    func testATranscodeDrawsABitmapPickInAndMountsOnlyTextBeside() async throws {
+        var bodies: [[String:Any]] = []
+        let media: [String:Any] = ["Id":source,"Container":"mkv","RunTimeTicks":6_000_000_000,
+            "SupportsDirectPlay":false,"SupportsTranscoding":true,
+            "MediaStreams":[["Type":"Video","Index":0,"Codec":"hevc","Width":3840,"Height":2160],
+                            ["Type":"Audio","Index":1,"Codec":"truehd"],
+                            ["Type":"Subtitle","Index":2,"Codec":"subrip","Language":"eng"],
+                            ["Type":"Subtitle","Index":3,"Codec":"PGSSUB","Language":"eng","IsForced":true]]]
+        let adapter = adapter { request in
+            guard request.url!.path.hasSuffix("/PlaybackInfo") else { return (200, [:]) }
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            bodies.append(body)
+            let index = body["SubtitleStreamIndex"] as? Int ?? -1
+            let session = index < 0 ? "probe" : "burned"
+            var playable = media
+            playable["TranscodingUrl"] = "/videos/\(self.item)/master.m3u8?MediaSourceId=\(self.source)&PlaySessionId=\(session)"
+                + (index < 0 ? "&TranscodeReasons=ContainerBitrateExceedsLimit" : "&SubtitleStreamIndex=\(index)&SubtitleMethod=Encode")
+                + "&api_key=secret"
+            return (200, ["MediaSources":[playable],"PlaySessionId":session])
+        }
+        let raw: [String:Any] = ["Id":item,"Name":"Example","Type":"Movie","MediaSources":[media]]
+        let detail: WatchDetail = try JellyfinAdapter.decode(adapter.watch(raw, preferences:[:]))
+        let metadata = JellyfinPlayback.Metadata(connection:adapter.connection,raw:raw,detail:detail)
+        let version = try XCTUnwrap(detail.versions.first)
+        let burnIn = ServerSubtitleBurnIn.bitmapStreamIndex(3, in: version)
+        XCTAssertEqual(burnIn, 3)
+        let (prepared, playback) = try await JellyfinPlayback.prepare(metadata:metadata,detail:detail,version:version,start:10,
+            audioOrdinal:0,subtitleIndex:nil,bitrateKbps:4_000,quality:"720p",burnInSubtitleIndex:burnIn)
+        XCTAssertEqual(bodies.map { $0["SubtitleStreamIndex"] as? Int }, [-1, 3])
+        XCTAssertEqual(prepared.session.playMethod, "Transcode")
+        XCTAssertEqual(prepared.session.sessionId, "burned")
+        XCTAssertEqual(playback.subtitleIndex, 3, "Progress reports name the burned-in stream")
+        let query = try XCTUnwrap(playback.stream.url.query)
+        XCTAssertTrue(query.contains("SubtitleMethod=Encode"))
+        XCTAssertFalse(query.contains("api_key"))
+        XCTAssertEqual(prepared.transcodeSubtitles, ServerTranscodeSubtitles(burnedIndex: 3, failedIndex: nil, copiesVideo: false))
+        XCTAssertEqual(prepared.session.subtitleUrls?.map(\.index), [2], "Only text travels beside the transcode")
+    }
 }
 
 private final class JellyfinRequestStub: URLProtocol {

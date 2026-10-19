@@ -171,7 +171,7 @@ extension PlayerViewModel {
     }
 
     func selectSubtitle(_ track: PlayerTrack) {
-        guard isSelectableSubtitle(track) else { return }
+        guard isServerBurnInRow(track.trackId) || isSelectableSubtitle(track) else { return }
         #if os(iOS) || os(tvOS)
         openSubtitleFiles.selectedID = openSubtitleIDs.contains(track.trackId) ? track.trackId : nil
         rememberOpenSubtitleChoice(openSubtitleFiles.selectedID)
@@ -183,6 +183,10 @@ extension PlayerViewModel {
         if selectedSecondarySubtitleId == track.trackId { disableSecondarySubtitles() }
         selectedSubtitleId = track.trackId
         if !track.isExternal || SubtitleTrackIdSpace.isSidecar(track.trackId) { persistSubtitleSelection(track) }
+        if reloadForServerBurnInIfNeeded(reason: "user_selection") {
+            scheduleHideControls()
+            return
+        }
         applySubtitleTrackSelection(track.trackId, reason: "user_selection")
         scheduleHideControls()
     }
@@ -200,6 +204,10 @@ extension PlayerViewModel {
         selectedSubtitleId = nil
         disableSecondarySubtitles()
         persistSubtitleSelection(nil)
+        if reloadForServerBurnInIfNeeded(reason: "user_selection") {
+            scheduleHideControls()
+            return
+        }
         applySubtitleTrackSelection(nil, reason: "user_selection")
         scheduleHideControls()
     }
@@ -401,23 +409,30 @@ extension PlayerViewModel {
         selectAudio(audioTracks[nextIndex])
     }
 
+    /// Cycling and toggling skip burn-in rows: each of those restarts the
+    /// server's transcode.
+    private var quickSwitchSubtitleTracks: [PlayerTrack] {
+        subtitleTracks.filter { !isServerBurnInRow($0.trackId) }
+    }
+
     func cycleSubtitleTrack() {
-        guard !subtitleTracks.isEmpty else { return }
+        let tracks = quickSwitchSubtitleTracks
+        guard !tracks.isEmpty else { return }
 
         if selectedSubtitleId == nil {
-            selectSubtitle(subtitleTracks[0])
+            selectSubtitle(tracks[0])
             return
         }
 
         guard let selectedSubtitleId,
-              let currentIndex = subtitleTracks.firstIndex(where: { $0.trackId == selectedSubtitleId }) else {
+              let currentIndex = tracks.firstIndex(where: { $0.trackId == selectedSubtitleId }) else {
             disableSubtitles()
             return
         }
 
-        let nextIndex = subtitleTracks.index(after: currentIndex)
-        if nextIndex < subtitleTracks.count {
-            selectSubtitle(subtitleTracks[nextIndex])
+        let nextIndex = tracks.index(after: currentIndex)
+        if nextIndex < tracks.count {
+            selectSubtitle(tracks[nextIndex])
         } else {
             disableSubtitles()
         }
@@ -426,7 +441,7 @@ extension PlayerViewModel {
     func toggleSubtitles() {
         if selectedSubtitleId != nil {
             disableSubtitles()
-        } else if let first = subtitleTracks.first {
+        } else if let first = quickSwitchSubtitleTracks.first {
             selectSubtitle(first)
         }
     }
@@ -467,7 +482,8 @@ extension PlayerViewModel {
                 localExternalSubtitlePick = nil
             }
         }
-        vividPlaybackController.selectSubtitleTrack(id: trackId)
+        // A burn-in row is drawn by the server, so the engine shows nothing.
+        vividPlaybackController.selectSubtitleTrack(id: isServerBurnInRow(trackId) ? nil : trackId)
     }
 
     // MARK: - Track-selection breadcrumbs
@@ -604,7 +620,7 @@ extension PlayerViewModel {
         // `loadVivid` re-enters `adoptVividInventory` once it is.
         guard isVividLoadEstablished else { return }
 
-        let allSubs = subtitleTracks
+        let allSubs = subtitleTracksForAutomaticPick
         guard !allSubs.isEmpty else {
             prefsResolvedForCurrentItem = false
             return
@@ -680,7 +696,7 @@ extension PlayerViewModel {
             showForced: false,
             disableWhenNoLanguageMatch: false,
             trackSignature: nil,
-            availableSubtitles: subtitleTracks,
+            availableSubtitles: subtitleTracksForAutomaticPick,
             currentAudioLanguage: audioTracks
                 .first(where: { $0.trackId == selectedAudioId })?
                 .lang
@@ -793,11 +809,13 @@ extension PlayerViewModel {
             localExternalSubtitlePick = nil
             if selectedSubtitleId != nil {
                 selectedSubtitleId = nil
+                if reloadForServerBurnInIfNeeded(reason: "auto_preference") { return }
                 applySubtitleTrackSelection(nil, reason: "auto_preference")
             }
         case .select(let track):
             if selectedSubtitleId != track.trackId {
                 selectedSubtitleId = track.trackId
+                if reloadForServerBurnInIfNeeded(reason: "auto_preference") { return }
                 applySubtitleTrackSelection(track.trackId, reason: "auto_preference")
             }
         }

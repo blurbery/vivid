@@ -358,7 +358,9 @@ extension PlayerViewModel {
                 ffIndex: nil, srcId: SubtitleTrackIdSpace.sidecarIndex(from: id))
         }
         let publishedSubtitleTracks = vividSubtitleTracks + lazySidecarRows
-        subtitleTracks = publishedSubtitleTracks
+        // Bitmap tracks an Emby or Jellyfin transcode can draw in come last,
+        // so a text track in the same language wins an automatic pick.
+        subtitleTracks = publishedSubtitleTracks + refreshServerBurnInRows()
         if engine.isSessionReady, let context = openSubtitleContext {
             LucidSubtitleInventory.shared.record(contentID: context.contentID,
                 fileID: currentSelectedVersion?.fileId, tracks: publishedSubtitleTracks)
@@ -382,6 +384,7 @@ extension PlayerViewModel {
         // reach the engine before its decode route exists. Hold it until the
         // load is established; `loadVivid` re-enters this method at that point.
         let loadIsEstablished = isVividLoadEstablished
+        reassertServerBurnedInSubtitle(loadIsEstablished: loadIsEstablished)
 
         // Catalog fallback rows are picker state for server-owned replans; only
         // a track Vivid actually published may drive its local selection API.
