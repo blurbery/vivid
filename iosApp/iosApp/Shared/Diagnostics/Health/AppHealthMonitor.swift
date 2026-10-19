@@ -24,6 +24,14 @@ enum AppHealthMonitor {
 
     private static let markerKey = "vivid.health.exitMarker"
     private static let backgroundContextKey = "vivid.health.backgroundContext"
+    /// The marker and background context have their own store. The marker is
+    /// rewritten every 30 seconds and after every hang, and a write to the
+    /// standard store wakes iCloud preference sync, whose capture runs on the
+    /// main thread, so a slow capture could cause a hang whose marker write
+    /// started the next one. Nil only if the system refuses the suite, which
+    /// leaves exit detection off rather than falling back to the standard
+    /// store.
+    static let store = UserDefaults(suiteName: "com.blurbery.vivid.health")
     /// A run of hangs is one problem; cap how many one session can record.
     private static let maxWatchdogReportsPerSession = 10
     /// Opening can briefly block on a slow device behind the splash screen,
@@ -75,12 +83,18 @@ enum AppHealthMonitor {
             $0.bootTime = bootTime
         }
 
-        let previous = UserDefaults.standard.data(forKey: markerKey)
+        // Earlier builds kept both in the standard store. They are still read
+        // once, so a crash just before an update keeps what the app was
+        // doing, then removed.
+        let previous = (store?.data(forKey: markerKey) ?? UserDefaults.standard.data(forKey: markerKey))
             .flatMap { try? JSONDecoder().decode(AppHealthExitMarker.self, from: $0) }
-        UserDefaults.standard.removeObject(forKey: markerKey)
-        let backgroundContext = UserDefaults.standard.data(forKey: backgroundContextKey)
+        store?.removeObject(forKey: markerKey)
+        let backgroundContext = (store?.data(forKey: backgroundContextKey) ?? UserDefaults.standard.data(forKey: backgroundContextKey))
             .flatMap { try? JSONDecoder().decode(AppHealthBackgroundContext.self, from: $0) }
-        UserDefaults.standard.removeObject(forKey: backgroundContextKey)
+        store?.removeObject(forKey: backgroundContextKey)
+        for key in [markerKey, backgroundContextKey] where UserDefaults.standard.object(forKey: key) != nil {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         let crash = AppHealthCrashCapture.collectPrevious()
         if !debuggerAttached { AppHealthCrashCapture.install() }
         let previousEvents = AppHealthTrail.collectPrevious()
@@ -151,11 +165,11 @@ enum AppHealthMonitor {
             $0.armedAt = nil
             $0.hangInProgressMs = nil
         }
-        UserDefaults.standard.removeObject(forKey: markerKey)
+        store?.removeObject(forKey: markerKey)
         AppHealthCrashCapture.processSurvived()
         let background = AppHealthBackgroundContext(pid: getpid(), context: AppHealthContext.snapshot())
         if let data = try? JSONEncoder().encode(background) {
-            UserDefaults.standard.set(data, forKey: backgroundContextKey)
+            store?.set(data, forKey: backgroundContextKey)
         }
         AppHealthTrail.flushSoon()
     }
@@ -437,7 +451,7 @@ enum AppHealthMonitor {
             hangInProgressMs: current.hangInProgressMs
         )
         guard let data = try? JSONEncoder().encode(marker) else { return }
-        UserDefaults.standard.set(data, forKey: markerKey)
+        store?.set(data, forKey: markerKey)
     }
 }
 

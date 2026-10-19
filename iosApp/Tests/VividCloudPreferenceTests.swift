@@ -119,4 +119,22 @@ final class VividCloudPreferenceTests: XCTestCase {
             XCTAssertTrue(VividCloudPreferencePolicy.isSharedSetting(key))
         }
     }
+
+    /// The health monitor rewrites its exit marker every 30 seconds and after
+    /// every hang. Those writes must not wake the capture, but every store a
+    /// synced preference lives in still must.
+    func testHealthMonitorWritesDoNotWakeCapture() throws {
+        let health = try XCTUnwrap(AppHealthMonitor.store)
+        XCTAssertFalse(health === UserDefaults.standard)
+        let key = "vivid.tests.healthStoreChange"
+        defer { health.removeObject(forKey: key) }
+        let posted = expectation(forNotification: UserDefaults.didChangeNotification, object: health)
+        health.set(UUID().uuidString, forKey: key)
+        wait(for: [posted], timeout: 2)
+
+        XCTAssertFalse(VividCloudPreferences.capturesChange(from: health))
+        XCTAssertTrue(VividCloudPreferences.capturesChange(from: UserDefaults.standard))
+        XCTAssertTrue(VividCloudPreferences.capturesChange(from: SharedStorage.suite))
+        XCTAssertTrue(VividCloudPreferences.capturesChange(from: nil))
+    }
 }

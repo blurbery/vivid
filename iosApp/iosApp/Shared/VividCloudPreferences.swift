@@ -80,9 +80,17 @@ final class VividCloudPreferences {
     }
     func startObserving() {
         guard observer == nil else { return }
-        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] notification in
+            guard Self.capturesChange(from: notification.object) else { return }
             Task { @MainActor in self?.schedule() }
         }
+    }
+    /// The health monitor's store never holds a synced preference, and it is
+    /// written every 30 seconds and after every hang. Capturing on each of
+    /// those writes kept the main thread busy during playback.
+    nonisolated static func capturesChange(from object: Any?) -> Bool {
+        guard let changed = object as? UserDefaults, let health = AppHealthMonitor.store else { return true }
+        return changed !== health
     }
     func schedule() {
         guard !applying else { return }
@@ -408,6 +416,8 @@ final class VividCloudPreferences {
     }
 
     func capture(accounts: [TVSavedAccount]) throws -> [String: VividCloudPreference] {
+        let started = DispatchTime.now()
+        defer { Self.recordSlowCapture(milliseconds: LaunchTimeline.milliseconds(since: started), accounts: accounts.count) }
         try load()
         var values: [String: Data] = [:]
         let keys = defaultsKeys(accounts: accounts)
@@ -444,6 +454,20 @@ final class VividCloudPreferences {
         capturedOnce = true
         if changed { try persist() }
         return entries
+    }
+    /// Capture reads Keychain and both settings stores on the main thread, so
+    /// a slow pass is logged where a freeze report will show it.
+    private static let slowCaptureThresholdMs = 250
+    private static func recordSlowCapture(milliseconds: Int, accounts: Int) {
+        guard milliseconds >= slowCaptureThresholdMs else { return }
+        DiagTrace.breadcrumb(
+            .essential,
+            level: .warning,
+            category: .lifecycle,
+            tag: "CloudPreferences",
+            message: "preference capture slow",
+            attrs: ["duration_ms": .int(milliseconds), "accounts": .int(accounts)]
+        )
     }
     func reconcile(_ remote: [String: VividCloudPreference], accounts: [TVSavedAccount]) throws -> [String: VividCloudPreference] {
         try load()
