@@ -72,6 +72,8 @@ struct PhonePlaybackSelectorRow: View {
         if currentVersion != nil, !selectorKinds.isEmpty {
             selectorCard
                 .task { await ProfilePrefsStore.shared.hydrateIfNeeded() }
+                // Silo's stored subtitles join the menu and the Auto preview.
+                .task(id: currentVersion?.fileId) { await SiloStoredSubtitles.shared.load(fileID: currentVersion?.fileId) }
                 .openSubtitlesDetailSearch(fileID: currentVersion?.fileId, serverSubtitles: currentVersion?.subtitleTracks,
                     automaticSubtitle: DetailPlaybackFormatting.automaticSubtitleOutcome(
                         version: currentVersion, selectedAudioTrackIndex: selectedAudioTrackIndex),

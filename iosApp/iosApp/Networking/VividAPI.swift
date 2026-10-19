@@ -534,6 +534,12 @@ actor VividAPI {
         try await http.get("/api/v1/watch/\(contentId)", query: await imageSizeQuery)
     }
 
+    /// Subtitles Silo stores for a file (downloaded, uploaded or AI-made),
+    /// which the catalogue's subtitle tracks leave out.
+    func storedSubtitles(fileID: Int) async throws -> SiloStoredSubtitleList {
+        try await http.get("/api/v1/subtitles/\(fileID)")
+    }
+
     func person(id: Int) async throws -> Person {
         try await http.get("/api/v1/people/\(id)")
     }

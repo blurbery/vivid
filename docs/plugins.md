@@ -212,6 +212,7 @@ This works with Silo, Emby and Jellyfin on iPhone, iPad and Apple TV.
 - Each download counts towards OpenSubtitles' download limit. Vivid connects with the API key only and doesn't sign in to your OpenSubtitles account, so account allowances don't apply.
 - Searches use the title, plus the season and episode for episodes. They don't match your exact file, so choose a release that matches yours. If the timing is still off, use **Subtitle Delay** in the player settings. It moves that subtitle up to 10 seconds either way and remembers the setting.
 - Downloaded subtitles stay on your device. Nothing is uploaded to your server.
+- Subtitles your Silo server stores for a file (downloaded, uploaded or made by Silo's AI) don't need the plugin. They're listed in the Subtitles menus with the file's own tracks.
 
 ### If something goes wrong
 

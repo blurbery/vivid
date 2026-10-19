@@ -989,13 +989,18 @@ class PlayerViewModel {
     #if os(iOS) || os(tvOS)
     var openSubtitleFiles = OpenSubtitleSessionFiles()
     #endif
-    /// Silo external subtitle files for the current load, by sidecar track ID.
-    /// They're fetched only when chosen, because each fetch can start a
-    /// server subtitle sync job.
+    /// Silo subtitle files for the current load, by sidecar track ID: text
+    /// files beside the media, and text subtitles Silo stores (downloaded,
+    /// uploaded or AI-made). They're fetched only when chosen, because each
+    /// fetch can start a server subtitle sync job.
     var lazySubtitleSidecars: [Int64: ExternalSubtitleTrack] = [:]
-    /// A Silo external file picked on this device. Silo never sees it, so
-    /// replacement loads of the same file re-apply it here.
-    var localExternalSubtitlePick: (trackID: Int64, contentID: String, fileID: Int?)?
+    /// The request the current load's Silo subtitle files resolve against, so
+    /// a subtitle Silo finishes making mid-playback can be offered too.
+    var lazySubtitleSidecarRequest: StreamRequest?
+    /// A Silo subtitle file picked on this device. Silo never sees it, so
+    /// replacement loads of the same file re-apply it here. `storedID` names a
+    /// stored subtitle, which another plan can list at a different index.
+    var localExternalSubtitlePick: (trackID: Int64, contentID: String, fileID: Int?, storedID: Int?)?
 
     init() {
         do {

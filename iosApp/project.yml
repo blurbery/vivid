@@ -131,6 +131,8 @@ targets:
       - path: Tests/SubtitleAutoSelectionTests.swift
       # The detail page's subtitle row, from the same settings and resolver.
       - path: Tests/DetailSubtitlePreviewTests.swift
+      # Subtitles Silo stores, in the player, the detail menus and Auto.
+      - path: Tests/SiloStoredSubtitleTests.swift
       - path: Tests/Fixtures/v3_h264_aac.mp4
         buildPhase: resources
     dependencies:

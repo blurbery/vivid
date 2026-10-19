@@ -454,7 +454,7 @@ extension PlayerViewModel {
             "[CMP-SUB] apply primary selection trackId=\(trackId.map(String.init) ?? "nil", privacy: .public) route=\(self.activeRouteLabel, privacy: .public)"
         )
         recordSubtitleTrackSelectionBreadcrumb(trackId, reason: reason, viaServerReplan: false)
-        // A Silo external file is fetched only once it's actually chosen, and
+        // A Silo subtitle file is fetched only once it's actually chosen, and
         // remembered so replacement loads re-apply it. A reload's interim Off
         // (nil) leaves the pick alone; an explicit Off clears it.
         if let trackId {
@@ -462,7 +462,9 @@ extension PlayerViewModel {
                 if !vividPlaybackController.containsSubtitle(appTrackID: trackId) {
                     vividPlaybackController.addExternalSubtitleTrack(sidecar, appTrackID: trackId)
                 }
-                localExternalSubtitlePick = currentWatchDetail.map { (trackId, $0.contentId, currentSelectedVersion?.fileId) }
+                localExternalSubtitlePick = currentWatchDetail.map {
+                    (trackId, $0.contentId, currentSelectedVersion?.fileId, ServerSubtitleSidecars.storedSubtitleID(in: sidecar.url))
+                }
             } else {
                 localExternalSubtitlePick = nil
             }
