@@ -19,12 +19,40 @@ extension PlayerViewModel {
             break
         case .chapterThumbnailReady:
             break
+        case .subtitleReady:
+            offerReadySiloSubtitle(event.payload)
         case .subtitleTranslationStarted, .subtitleTranslationCues,
-             .subtitleTranslationCompleted, .subtitleTranslationFailed, .subtitleReady:
+             .subtitleTranslationCompleted, .subtitleTranslationFailed:
+            // Silo sends these only to the session that asked for a live
+            // translation, which Vivid doesn't do.
             break
         case .unknown(let raw):
             Self.logger.debug("[CMP-RT] ignoring unknown realtime event \(raw, privacy: .public)")
         }
+    }
+
+    /// Silo says when it has finished making a subtitle for the playing file
+    /// (AI transcription or translation), with the place the next plan will
+    /// list it. It's offered as a row straight away and fetched only when
+    /// chosen, like the plan's own stored subtitles.
+    @MainActor
+    func offerReadySiloSubtitle(_ payload: PlaybackRealtimePayload) {
+        guard let request = lazySubtitleSidecarRequest, let plan = activePreparedProtocolV3?.plan,
+              let item = Self.readySiloSubtitle(payload, fileID: plan.effectiveMediaFileId),
+              offerSiloSidecar(item, request: request, nativeApiMajor: plan.nativeApiMajor) else { return }
+        adoptVividInventory()
+    }
+
+    /// The stored subtitle a `subtitle_ready` event names for this file, or
+    /// nil when the event names none. An older Silo sends no `track`.
+    static func readySiloSubtitle(_ payload: PlaybackRealtimePayload, fileID: Int) -> PlaybackV3SubtitleInventoryItem? {
+        guard payload.int(forKeys: "file_id") == fileID, let track = payload["track"],
+              case .object = track, let data = try? JSONEncoder().encode(track) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let item = try? decoder.decode(PlaybackV3SubtitleInventoryItem.self, from: data),
+              item.source == "downloaded" else { return nil }
+        return item
     }
 
     @MainActor

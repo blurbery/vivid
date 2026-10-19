@@ -29,6 +29,8 @@ struct TVPlaybackActionSelectors: View {
             audioMenu
             subtitleMenu
         }
+        // Silo's stored subtitles join the menu and the Auto preview.
+        .task(id: currentVersion?.fileId) { await SiloStoredSubtitles.shared.load(fileID: currentVersion?.fileId) }
     }
 
     private var audioMenu: some View {
@@ -64,9 +66,9 @@ struct TVPlaybackActionSelectors: View {
         return context
     }
 
-    /// Server subtitle files beside the media.
+    /// Server subtitle files beside the media, and subtitles Silo stores.
     private var serverSubtitleRows: [PlayerTrack] {
-        ServerSubtitleSidecars.detailRows(currentVersion?.subtitleTracks)
+        ServerSubtitleSidecars.detailRows(currentVersion?.subtitleTracks, fileID: currentVersion?.fileId)
     }
 
     private var subtitleOffButton: some View {
@@ -84,7 +86,10 @@ struct TVPlaybackActionSelectors: View {
         Button {
             if let context = fileSubtitleContext {
                 LucidSubtitleInventory.shared.choose(track.trackId,
-                    label: track.isExternal ? track.languageFirstPrimaryLabel : nil, context: context)
+                    label: track.isExternal ? track.languageFirstPrimaryLabel : nil,
+                    storedSubtitleID: ServerSubtitleSidecars.detailStoredSubtitleID(track.trackId,
+                        catalog: currentVersion?.subtitleTracks, fileID: currentVersion?.fileId),
+                    context: context)
             }
         } label: {
             let chosen = fileSubtitleContext.flatMap { LucidSubtitleInventory.shared.choice(context: $0) }

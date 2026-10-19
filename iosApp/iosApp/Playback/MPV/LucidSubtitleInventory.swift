@@ -9,8 +9,10 @@ final class LucidSubtitleInventory {
     static let shared = LucidSubtitleInventory()
     private struct Key: Hashable { let scope: String; let content: String; let file: Int }
     private struct Entry { let tracks: [PlayerTrack]; let expires: Date }
-    /// `label` names a server subtitle file, which the embedded reader never lists.
-    struct Choice { let trackID: Int64?; var label: String? = nil }
+    /// `label` names a server subtitle file, which the embedded reader never
+    /// lists. `storedSubtitleID` names a subtitle Silo stores, which the
+    /// player finds by that ID because its index can change.
+    struct Choice { let trackID: Int64?; var label: String? = nil; var storedSubtitleID: Int? = nil }
     private var entries: [Key: Entry] = [:]
     private var choices: [Key: Choice] = [:]
 
@@ -24,9 +26,9 @@ final class LucidSubtitleInventory {
         if entries.count >= 8, entries[key] == nil { entries.removeAll() }
         entries[key] = Entry(tracks: tracks.filter { !$0.isExternal }, expires: Date().addingTimeInterval(300))
     }
-    func choose(_ id: Int64?, label: String? = nil, context: OpenSubtitlePlaybackContext) {
+    func choose(_ id: Int64?, label: String? = nil, storedSubtitleID: Int? = nil, context: OpenSubtitlePlaybackContext) {
         guard let key = key(context.contentID, context.fileID) else { return }
-        choices = [key: Choice(trackID: id, label: label)]
+        choices = [key: Choice(trackID: id, label: label, storedSubtitleID: storedSubtitleID)]
         OpenSubtitlesStore.shared.clearStaged(context: context)
         OpenSubtitlesStore.shared.forgetSelection(contentID: context.contentID, fileID: context.fileID)
     }
