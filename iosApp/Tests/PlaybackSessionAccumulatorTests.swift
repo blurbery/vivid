@@ -100,6 +100,35 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         XCTAssertEqual(session.timeline.first?.faults, ["decode_error": 1])
     }
 
+    /// Every played minute keeps its highest memory reading, so a quiet
+    /// session still shows memory climbing towards the system's limit.
+    func testEveryMinuteKeepsItsHighestMemoryReading() {
+        var session = playing()
+        for second in stride(from: 1.0, through: 179, by: 1) {
+            session.tick(at: second)
+            session.memory(mb: 600 + Int(second))
+        }
+        session.memory(mb: nil) // an unreadable sample changes nothing
+        XCTAssertEqual(session.timeline.map(\.minute), [0, 1, 2])
+        XCTAssertEqual(session.timeline.map(\.memoryMB), [659, 719, 779])
+        XCTAssertTrue(session.timeline.allSatisfy(\.isQuiet), "memory use isn't a problem")
+    }
+
+    func testSummaryShowsFirstAndHighestMemory() throws {
+        var report = PlaybackSessionReport(
+            startedAt: Date(), updatedAt: Date(),
+            app: AppHealthAppInfo(version: "0.14.3", build: "78", os: "tvOS 27.0", device: "AppleTV14,1"),
+            setup: .init(), media: .init(), totals: .init(), timeline: [], notMeasured: [])
+        XCTAssertNil(report.memorySummary)
+        report.timeline = [.init(minute: 0, memoryMB: 640), .init(minute: 9, memoryMB: 1690), .init(minute: 10, memoryMB: 1500)]
+        XCTAssertEqual(report.memorySummary, "640 MB in minute 0, highest 1690 MB in minute 9")
+        XCTAssertTrue(report.summaryRows.contains { $0.label == "Memory" && $0.value == report.memorySummary })
+
+        // A minute saved before readings existed still loads, without one.
+        let old = #"{"minute":2,"droppedFrames":9,"decoderDroppedFrames":0,"delayedFrames":0,"rebufferSeconds":0,"stallSeconds":0,"faults":{}}"#
+        XCTAssertNil(try JSONDecoder().decode(PlaybackSessionReport.Minute.self, from: Data(old.utf8)).memoryMB)
+    }
+
     @MainActor
     func testFiveHourSessionWithProblemsEveryMinuteStaysSmall() throws {
         var session = playing()
@@ -107,6 +136,7 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
         var dropped = 0
         for second in stride(from: 6.0, through: 5 * 3600, by: 1) {
             session.tick(at: second)
+            session.memory(mb: 700 + Int(second) / 60)
             if Int(second) % 60 == 30 {
                 dropped += 3
                 session.counter(.dropped, value: dropped, at: second)

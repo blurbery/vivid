@@ -157,6 +157,7 @@ final class PlaybackSessionRecorder {
         accumulator?.counter(.decoderDropped, value: decoderDropped, at: time)
         accumulator?.counter(.delayed, value: delayed, at: time)
         accumulator?.networkKbps(networkKbps)
+        accumulator?.memory(mb: AppHealthMemory.footprintMB())
         if let displayFps, displayFps > 0 { report?.setup.displayRefreshHz = (displayFps * 1000).rounded() / 1000 }
         accumulator?.tick(at: time)
         if time - lastSave >= Self.saveInterval { save() }
@@ -197,8 +198,9 @@ final class PlaybackSessionRecorder {
         return result
     }
 
-    /// Drops the oldest problem minutes until the record fits. Only a very
-    /// long session with many kinds of fault every minute gets near this.
+    /// Drops the oldest minutes until the record fits. Every played minute
+    /// carries a memory reading, so only a session of several hours, or one
+    /// with many kinds of fault every minute, gets near this.
     nonisolated static func bounded(_ report: PlaybackSessionReport) -> PlaybackSessionReport {
         var result = report
         while !result.timeline.isEmpty, (encode(result)?.count ?? 0) > maxEncodedBytes {
