@@ -311,6 +311,11 @@ private struct LucidDetailSubtitleMenu: View {
         }
         TrackSelectionRow(name: "Off", attributes: nil,
                           isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
+        // The OpenSubtitles file playback will use, downloaded here or
+        // remembered from an earlier viewing. Choosing it keeps it.
+        if let name = context.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) {
+            TrackSelectionRow(name: "OpenSubtitles · " + name, attributes: nil, isSelected: true) { dismiss() }
+        }
     }
     private func trackRow(_ track: PlayerTrack) -> some View {
         TrackSelectionRow(name: track.languageFirstPrimaryLabel,

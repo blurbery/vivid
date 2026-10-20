@@ -82,6 +82,15 @@ struct TVPlaybackActionSelectors: View {
         }
     }
 
+    /// The OpenSubtitles file playback will use: one downloaded here, or the
+    /// one remembered from an earlier viewing. It's listed so it can be seen
+    /// as kept, and choosing it keeps it.
+    @ViewBuilder private var openSubtitleFileButton: some View {
+        if let name = fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) {
+            Button {} label: { menuItem(title: "OpenSubtitles · " + name, detail: "", isSelected: true) }
+        }
+    }
+
     private func subtitleTrackButton(_ track: PlayerTrack) -> some View {
         Button {
             if let context = fileSubtitleContext {
@@ -134,15 +143,18 @@ struct TVPlaybackActionSelectors: View {
                          isSelected: !hasSubtitleChoice)
             }
             if subtitleLoading {
+                openSubtitleFileButton
                 Text("Reading subtitles…")
             } else if subtitleError {
                 Button("Retry Reading Subtitles") { subtitleRetry += 1 }
-                // Off doesn't depend on reading the file.
+                // Off and the OpenSubtitles file don't depend on reading the file.
                 subtitleOffButton
+                openSubtitleFileButton
                 // Server files come from the catalogue, not the file read.
                 ForEach(LucidSubtitleInventory.ordered(serverSubtitleRows)) { subtitleTrackButton($0) }
             } else {
                 subtitleOffButton
+                openSubtitleFileButton
                 ForEach(LucidSubtitleInventory.ordered(subtitleTracks + serverSubtitleRows)) { subtitleTrackButton($0) }
                 if subtitleTracks.isEmpty && serverSubtitleRows.isEmpty { Text("No subtitles") }
             }
