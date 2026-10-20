@@ -31,6 +31,9 @@ struct TVPlaybackActionSelectors: View {
         }
         // Silo's stored subtitles join the menu and the Auto preview.
         .task(id: currentVersion?.fileId) { await SiloStoredSubtitles.shared.load(fileID: currentVersion?.fileId) }
+        // Nothing else may have loaded the store since launch, and the
+        // remembered OpenSubtitles file's row, tick and label read it.
+        .task { OpenSubtitlesStore.shared.reload() }
     }
 
     private var audioMenu: some View {
