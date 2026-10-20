@@ -31,6 +31,9 @@ struct TVPlaybackActionSelectors: View {
         }
         // Silo's stored subtitles join the menu and the Auto preview.
         .task(id: currentVersion?.fileId) { await SiloStoredSubtitles.shared.load(fileID: currentVersion?.fileId) }
+        // Nothing else may have loaded the store since launch, and the
+        // remembered OpenSubtitles file's row, tick and label read it.
+        .task { OpenSubtitlesStore.shared.reload() }
     }
 
     private var audioMenu: some View {
@@ -79,6 +82,15 @@ struct TVPlaybackActionSelectors: View {
             let isOff = choice.map { $0.trackID == nil } ?? false
             if isOff && fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) == nil { Label("Off", systemImage: "checkmark") }
             else { Text("Off") }
+        }
+    }
+
+    /// The OpenSubtitles file playback will use: one downloaded here, or the
+    /// one remembered from an earlier viewing. It's listed so it can be seen
+    /// as kept, and choosing it keeps it.
+    @ViewBuilder private var openSubtitleFileButton: some View {
+        if let name = fileSubtitleContext.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) {
+            Button {} label: { menuItem(title: "OpenSubtitles · " + name, detail: "", isSelected: true) }
         }
     }
 
@@ -134,15 +146,18 @@ struct TVPlaybackActionSelectors: View {
                          isSelected: !hasSubtitleChoice)
             }
             if subtitleLoading {
+                openSubtitleFileButton
                 Text("Reading subtitles…")
             } else if subtitleError {
                 Button("Retry Reading Subtitles") { subtitleRetry += 1 }
-                // Off doesn't depend on reading the file.
+                // Off and the OpenSubtitles file don't depend on reading the file.
                 subtitleOffButton
+                openSubtitleFileButton
                 // Server files come from the catalogue, not the file read.
                 ForEach(LucidSubtitleInventory.ordered(serverSubtitleRows)) { subtitleTrackButton($0) }
             } else {
                 subtitleOffButton
+                openSubtitleFileButton
                 ForEach(LucidSubtitleInventory.ordered(subtitleTracks + serverSubtitleRows)) { subtitleTrackButton($0) }
                 if subtitleTracks.isEmpty && serverSubtitleRows.isEmpty { Text("No subtitles") }
             }

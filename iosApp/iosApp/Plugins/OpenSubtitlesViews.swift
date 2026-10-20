@@ -198,7 +198,10 @@ private struct OpenSubtitleDetailSearch: ViewModifier {
         return context
     }
     func body(content: Content) -> some View {
-        content.sheet(isPresented: $isPresented) {
+        // Nothing else may have loaded the store since launch, and the
+        // remembered file's label and row read it.
+        content.task { OpenSubtitlesStore.shared.reload() }
+        .sheet(isPresented: $isPresented) {
             LucidDetailSubtitleMenu(context: context,
                                     serverRows: ServerSubtitleSidecars.detailRows(serverSubtitles, fileID: fileID),
                                     storedSubtitleID: { [serverSubtitles, fileID] in
@@ -311,6 +314,11 @@ private struct LucidDetailSubtitleMenu: View {
         }
         TrackSelectionRow(name: "Off", attributes: nil,
                           isSelected: !selectionIsAutomatic && selectedID == nil && !hasStagedSelection) { select(nil) }
+        // The OpenSubtitles file playback will use, downloaded here or
+        // remembered from an earlier viewing. Choosing it keeps it.
+        if let name = context.flatMap({ OpenSubtitlesStore.shared.stagedLabel(context: $0) }) {
+            TrackSelectionRow(name: "OpenSubtitles · " + name, attributes: nil, isSelected: true) { dismiss() }
+        }
     }
     private func trackRow(_ track: PlayerTrack) -> some View {
         TrackSelectionRow(name: track.languageFirstPrimaryLabel,
