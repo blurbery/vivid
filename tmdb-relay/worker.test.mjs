@@ -59,7 +59,7 @@ test('every path the app uses is accepted', async () => {
     `/3/discover/movie?${discover}&with_companies=420&primary_release_date.gte=2025-10-18&primary_release_date.lte=2026-10-18`,
     `/3/discover/tv?${discover}&first_air_date.gte=2026-10-23&first_air_date.lte=2026-12-22`,
     `/3/discover/movie?${discover}&primary_release_date.gte=2026-10-23&primary_release_date.lte=2026-12-22`,
-    '/tvmaze/shows/82/episodes',
+    '/3/tv/1399/external_ids', '/tvmaze/shows/82/episodes',
   ]) {
     const response = await run(path, makeEnv());
     assert.equal(response.status, 200, path);

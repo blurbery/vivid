@@ -3,7 +3,9 @@ import SwiftUI
 struct ServiceAcknowledgementsView: View {
     private struct Credit: Identifiable {
         let name: String
-        let image: String
+        /// A bundled logo, or nil for `systemImage`.
+        var image: String?
+        var systemImage = ""
         let thanks: String
         let website: String
         var id: String { name }
@@ -18,7 +20,10 @@ struct ServiceAcknowledgementsView: View {
                website: "introdb.app"),
         Credit(name: "TMDB", image: "TMDbAttributionLogo",
                thanks: "Thank you for the movie and TV metadata and artwork. This product uses the TMDB API but is not endorsed or certified by TMDB.",
-               website: "themoviedb.org")
+               website: "themoviedb.org"),
+        Credit(name: "TVmaze", image: nil, systemImage: "calendar",
+               thanks: "Thank you for the episode air times in the Calendar, used under CC BY-SA 4.0.",
+               website: "tvmaze.com")
     ]
 
     private var columns: [GridItem] {
@@ -96,9 +101,13 @@ struct ServiceAcknowledgementsView: View {
 
     private func creditCard(_ credit: Credit) -> some View {
         VStack(spacing: cardSpacing) {
-            Image(credit.image)
-                .resizable()
-                .scaledToFit()
+            Group {
+                if let image = credit.image {
+                    Image(image).resizable().scaledToFit()
+                } else {
+                    Image(systemName: credit.systemImage).resizable().scaledToFit().padding(12)
+                }
+            }
                 #if os(tvOS)
                 .frame(width: TVSettingsLayout.scaled(120), height: TVSettingsLayout.scaled(56))
                 #else

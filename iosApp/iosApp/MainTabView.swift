@@ -185,6 +185,7 @@ struct MainTabLibrarySnapshot: Equatable {
 
 struct MainTabView: View {
     @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.showDownloadsTab")) private var showDownloadsTab = true
+    @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.showCalendarTab")) private var showCalendarTab = true
     @State private var tabBarScroll = MobileTabBarScrollState()
     @State private var showsSearchPage = false
     @State private var showsSettingsPage = false
@@ -295,6 +296,10 @@ struct MainTabView: View {
             selectedDestinationID = resolvedVisibleMainTabDestination(selectedDestinationID, visibleDestinations: visibleDestinations)
             tabBarScroll.reset()
         }
+        .onChange(of: showCalendarTab) { _, _ in
+            selectedDestinationID = resolvedVisibleMainTabDestination(selectedDestinationID, visibleDestinations: visibleDestinations)
+            tabBarScroll.reset()
+        }
         .onChange(of: uiCustomization.primaryMenu) { _, _ in
             selectedDestinationID = resolvedVisibleMainTabDestination(
                 selectedDestinationID,
@@ -362,6 +367,11 @@ struct MainTabView: View {
             )
         )
         #if !os(tvOS)
+        // Calendar always sits just before Downloads.
+        if showCalendarTab,
+           !destinations.contains(where: { $0.id == .app(.calendar) }) {
+            destinations.append(.app(.calendar))
+        }
         if showDownloadsTab,
            !destinations.contains(where: { $0.id == .app(.downloads) }) {
             destinations.append(.app(.downloads))
@@ -749,6 +759,13 @@ struct MainTabView: View {
 
         case .recommendations:
             RecommendationsView()
+
+        case .calendar:
+            #if os(iOS)
+            CalendarView()
+            #else
+            EmptyView()
+            #endif
 
         case .downloads:
             #if os(tvOS)

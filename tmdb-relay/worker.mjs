@@ -32,7 +32,8 @@ const day = /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/;
 // else, including TMDb's own account and authentication endpoints, is a 404.
 const routes = [
   {path: new RegExp(`^movie/${id}(/videos)?$`), query: {}},
-  {path: new RegExp(`^tv/${id}(/videos|/season/[0-9]{1,4}/videos)?$`), query: {}},
+  // `external_ids` finds a series' TVDB or IMDb ID for its TVmaze air times.
+  {path: new RegExp(`^tv/${id}(/videos|/season/[0-9]{1,4}/videos|/external_ids)?$`), query: {}},
   {path: new RegExp(`^(collection|company|network)/${id}$`), query: {}},
   {path: /^find\/tt[0-9]{7,10}$/, query: {external_source: /^imdb_id$/}, required: ['external_source']},
   {
