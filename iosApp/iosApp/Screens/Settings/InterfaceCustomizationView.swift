@@ -25,6 +25,7 @@ func offsetPrimaryMenuEditorItem(
 struct InterfaceCustomizationView: View {
     var menuOnly = false
     @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.showDownloadsTab")) private var showDownloadsTab = true
+    @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.showCalendarTab")) private var showCalendarTab = true
     @State private var previewSelection: String?
     @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.swapMenuUtilities")) private var utilitiesSwapped = false
     @State private var preferences = UICustomizationPreferences.shared
@@ -65,7 +66,15 @@ struct InterfaceCustomizationView: View {
                         Spacer()
                     }.frame(minHeight: 44).foregroundStyle(.white)
                 }.accessibilityLabel(showDownloadsTab ? "Hide Downloads tab" : "Show Downloads tab")
+                Button { showCalendarTab.toggle() } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: showCalendarTab ? "eye.fill" : "eye.slash.fill").frame(width: 32)
+                        Label("Calendar", systemImage: "calendar")
+                        Spacer()
+                    }.frame(minHeight: 44).foregroundStyle(.white)
+                }.accessibilityLabel(showCalendarTab ? "Hide Calendar tab" : "Show Calendar tab")
             } header: { PhoneSettingsSectionHeader("Downloads") }
+            footer: { Text("Calendar sits just before Downloads in the tab bar.") }
             #endif
             if let message = preferences.capabilityMessage {
                 Section {
@@ -248,6 +257,7 @@ struct InterfaceCustomizationView: View {
             primaryMenu: preferences.primaryMenu,
             availableLibraries: libraries
         )
+        if showCalendarTab { destinations.append(.app(.calendar)) }
         if showDownloadsTab { destinations.append(.app(.downloads)) }
         return destinations.map { .init(id: String(describing: $0.id), title: $0.title, icon: $0.icon, selectedIcon: $0.selectedIcon) }
     }

@@ -255,7 +255,7 @@ final class VividCloudPreferences {
             }
             keys.formUnion(candidateKeys.filter { $0.hasPrefix("vivid.browsePrefs." + suffix + ".") && ($0.hasSuffix(".state") || $0.hasSuffix(".preserve")) })
             let scope = Data("\(account.serverID)|\(profile)".utf8).base64EncodedString()
-            keys.formUnion(["vivid.mobile.swapMenuUtilities.profile.\(scope)", "vivid.mobile.showDownloadsTab.profile.\(scope)"])
+            keys.formUnion(["vivid.mobile.swapMenuUtilities.profile.\(scope)", "vivid.mobile.showDownloadsTab.profile.\(scope)", "vivid.mobile.showCalendarTab.profile.\(scope)"])
         }
         return keys
     }

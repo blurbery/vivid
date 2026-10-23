@@ -328,11 +328,15 @@ final class TVTMDbStore {
             let name: String?
             let releaseDate: String?
             let firstAirDate: String?
+            /// The Calendar's Trending posters and details.
+            let posterPath: String?
+            let overview: String?
 
             private enum CodingKeys: String, CodingKey {
-                case id, popularity, title, name
+                case id, popularity, title, name, overview
                 case releaseDate = "release_date"
                 case firstAirDate = "first_air_date"
+                case posterPath = "poster_path"
             }
         }
         let results: [Result]

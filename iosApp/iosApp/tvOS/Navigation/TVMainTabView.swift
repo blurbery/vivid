@@ -44,6 +44,10 @@ struct TVMainTabView: View {
     @State private var selectedRoot: TVRootDestination = .home
     /// Selection within the current For You page.
     @State private var forYouSection: TVPersonalRootDestination = .watchlist
+    /// Selection within the Calendar page.
+    @State private var calendarPage: TVCalendarView.Page = .upcoming
+    /// The same profile setting as the iPhone and iPad Calendar tab.
+    @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.showCalendarTab")) private var showCalendarTab = true
     /// Seeded from the startup prefetch so the bar's first frame already
     /// shows the active profile's avatar instead of filling it in late.
     @State private var profileStore = CurrentProfileStore.shared
@@ -322,6 +326,13 @@ struct TVMainTabView: View {
                 isTopMenuFocused: isTopMenuFocused,
                 onTopMenuFocusRequest: { focusTopMenuIfVisible() }
             )
+        case .calendar:
+            TVCalendarView(
+                page: $calendarPage,
+                focusRequest: contentFocusRequest,
+                isTopMenuFocused: isTopMenuFocused,
+                onTopMenuFocusRequest: { focusTopMenuIfVisible() }
+            )
         case .libraryType(let type):
             let active = activeLibrary(for: type)
             Group {
@@ -369,6 +380,15 @@ struct TVMainTabView: View {
             if let root, !roots.contains(root) { roots.append(root) }
         }
         if !roots.contains(.home) { roots.insert(.home, at: 0) }
+        // Calendar has a fixed place: after For You, or at the end of the bar
+        // when For You is hidden.
+        if showCalendarTab {
+            if let forYou = roots.firstIndex(of: .recommendations) {
+                roots.insert(.calendar, at: forYou + 1)
+            } else {
+                roots.append(.calendar)
+            }
+        }
         return roots
     }
 

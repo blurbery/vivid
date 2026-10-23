@@ -86,7 +86,7 @@ struct PhoneTMDbSettingsView: View {
 
     var body: some View {
         List {
-            SettingsPageHeader(title: "TMDb", subtitle: "Trailers, TMDB ratings, collections and Studios & Networks come from TMDB through Vivid. There's nothing to set up.", systemImage: "film.stack")
+            SettingsPageHeader(title: "TMDb", subtitle: "Trailers, TMDB ratings, collections, Studios & Networks, the Calendar's Trending and any air dates TVmaze doesn't have come from TMDB through Vivid. There's nothing to set up.", systemImage: "film.stack")
                 .settingsPageHeaderRow()
             Section {
                 LabeledContent("Status") {
