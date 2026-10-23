@@ -820,14 +820,26 @@ struct LibraryCollectionDetailView: View {
 #if os(iOS)
 struct MobileForYouCollections: View {
     @Environment(\.forYouScrollHeader) private var scrollHeader
+    /// The For You Filter choice for Collections, matched on the device.
+    var filter = PersonalListFilter()
+
+    /// Show and Anime come from the libraries a collection is in. Emby and
+    /// Jellyfin load one list for every library here, so they offer only A–Z.
+    static var filterChoices: PersonalListFilter.Choices {
+        MediaServerProvider.active.usesNativeUser ? [] : [.show, .anime]
+    }
+
     private struct Entry: Identifiable {
         let libraryID: Int
         let collection: LibraryCollection
-        var id: String { "\(libraryID):\(collection.kind?.rawValue ?? "regular"):\(collection.id)" }
+        var key: String { MobileForYouCollections.key(collection.kind ?? .regular, collection.id) }
+        var id: String { "\(libraryID):\(key)" }
     }
 
     @State private var personal = CollectionsViewModel()
     @State private var entries: [Entry] = []
+    /// Every library each collection is in, by `key`, for Show and Anime.
+    @State private var collectionLibraries: [String: [Library]] = [:]
     @State private var isLoading = true
     @State private var error: ErrorState?
     /// Emby and Jellyfin loads are numbered so an older response never
@@ -854,11 +866,27 @@ struct MobileForYouCollections: View {
         return AdaptiveColumns.fittedPosterWidth(containerWidth: gridWidth, columnCount: columnCount, spacing: 12, maximumWidth: nil)
     }
 
+    private static func key(_ kind: LibraryCollectionKind, _ id: String) -> String { "\(kind.rawValue):\(id)" }
+
+    private var activeFilter: PersonalListFilter { filter.limited(to: Self.filterChoices) }
+
+    /// A personal collection's libraries are known only when it is also
+    /// shared into the server's collections.
+    private var visiblePersonal: [UserCollection] {
+        personal.collections.filter {
+            activeFilter.matchesCollection(named: $0.name, in: collectionLibraries[Self.key(.userCollections, $0.id)] ?? [])
+        }
+    }
+
+    private var visibleEntries: [Entry] {
+        entries.filter { activeFilter.matchesCollection(named: $0.collection.name, in: collectionLibraries[$0.key] ?? []) }
+    }
+
     var body: some View {
         ScrollView {
             scrollHeader
             LazyVStack(spacing: 16) {
-                ForEach(personal.collections) { collection in
+                ForEach(visiblePersonal) { collection in
                     Button {
                         router.navigate(to: .collectionDetail(collectionId: collection.id))
                     } label: {
@@ -874,7 +902,7 @@ struct MobileForYouCollections: View {
                     }.buttonStyle(.plain)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount), spacing: 16) {
-                    ForEach(entries) { entry in
+                    ForEach(visibleEntries) { entry in
                         NavigationLink(value: Route.libraryCollection(
                             libraryId: entry.libraryID,
                             collectionId: entry.collection.id,
@@ -891,8 +919,12 @@ struct MobileForYouCollections: View {
                 if isLoading { ProgressView().tint(.white) }
                 if let error {
                     ErrorView(state: error, onRetry: { Task { await load() } })
-                } else if !isLoading && entries.isEmpty && personal.collections.isEmpty {
-                    EmptyStateView(icon: "square.stack", title: "No collections", subtitle: "Your collections will appear here.")
+                } else if !isLoading && visibleEntries.isEmpty && visiblePersonal.isEmpty {
+                    if activeFilter.isActive {
+                        EmptyStateView(icon: "line.3.horizontal.decrease", title: "No collections match these filters")
+                    } else {
+                        EmptyStateView(icon: "square.stack", title: "No collections", subtitle: "Your collections will appear here.")
+                    }
                 }
             }.padding(16)
         }
@@ -999,14 +1031,18 @@ struct MobileForYouCollections: View {
     ) {
         var loaded: [Entry] = []
         var seen = Set<String>()
+        var librariesByKey: [String: [Library]] = [:]
         for library in libraries {
             for collection in sectionsByLibrary[library.id, default: []].flatMap(\.collections) {
+                let key = Self.key(collection.kind ?? .regular, collection.id)
+                if !librariesByKey[key, default: []].contains(library) { librariesByKey[key, default: []].append(library) }
                 if collection.kind == .userCollections,
                    personalIDs.contains(collection.id) { continue }
                 let entry = Entry(libraryID: library.id, collection: collection)
                 if seen.insert(entry.id).inserted { loaded.append(entry) }
             }
         }
+        collectionLibraries = librariesByKey
         entries = loaded.sorted {
             $0.collection.name.localizedStandardCompare($1.collection.name) == .orderedAscending
         }

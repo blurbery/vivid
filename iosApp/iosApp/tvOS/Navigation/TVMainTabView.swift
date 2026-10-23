@@ -686,7 +686,12 @@ private struct TVForYouView: View {
     @FocusState private var alphabetFocused: Bool
     @FocusState private var filterFocused: Bool
     private var selectedPrefix: String? { prefixes[selection] }
-    private var selectedFilter: PersonalListFilter { filters[selection] ?? PersonalListFilter() }
+    private var selectedChoices: PersonalListFilter.Choices {
+        selection == .collections ? TVLibraryCollectionsView.filterChoices : .all
+    }
+    private var selectedFilter: PersonalListFilter {
+        (filters[selection] ?? PersonalListFilter()).limited(to: selectedChoices)
+    }
     private var cacheKey: String {
         "personal:tvForYou:\(selection):prefix=\(selectedPrefix ?? "all"):\(selectedFilter.cacheKey)"
     }
@@ -708,6 +713,7 @@ private struct TVForYouView: View {
                     library: nil,
                     combinedLibraries: libraries,
                     namePrefix: selectedPrefix,
+                    filter: selectedFilter,
                     suppressesEdgeShading: true,
                     topContentInset: 0,
                     fixedColumnCount: 7,
@@ -785,9 +791,7 @@ private struct TVForYouView: View {
                     .accessibilityAddTraits(selection == tab ? .isSelected : [])
                 }
                 Spacer(minLength: 0)
-                if selection != .collections {
-                    filterMenu
-                }
+                filterMenu
                 TVAlphabetMenu(selected: selectedPrefix) { prefix in
                     prefixes[selection] = prefix
                 }
@@ -807,12 +811,13 @@ private struct TVForYouView: View {
             }
     }
 
-    /// Watchlist and Favourites only; Collections keeps just A–Z.
+    /// A–Z has its own menu beside this one.
     private var filterMenu: some View {
         Menu {
             PersonalListFilterMenuContent(
                 filter: Binding(get: { selectedFilter }, set: { filters[selection] = $0 }),
-                showsAlphabet: false
+                showsAlphabet: false,
+                choices: selectedChoices
             )
         } label: {
             Label(

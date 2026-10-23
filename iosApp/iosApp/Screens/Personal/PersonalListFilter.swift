@@ -1,9 +1,19 @@
 import SwiftUI
 
-/// The For You Watchlist and Favourites filter. Show, Original Language and
-/// A–Z are sent to the server; Anime is resolved on the device because no
-/// server can exclude a library from a personal list.
+/// The For You Watchlist, Favourites and Collections filter. For the lists,
+/// Show, Original Language and A–Z are sent to the server; Anime is resolved
+/// on the device because no server can exclude a library from a personal
+/// list. Collections are matched on the device (see `matchesCollection`).
 struct PersonalListFilter: Hashable {
+    /// The choices a Filter menu offers, apart from A–Z.
+    struct Choices: OptionSet, Hashable {
+        let rawValue: Int
+        static let show = Choices(rawValue: 1 << 0)
+        static let originalLanguage = Choices(rawValue: 1 << 1)
+        static let anime = Choices(rawValue: 1 << 2)
+        static let all: Choices = [.show, .originalLanguage, .anime]
+    }
+
     enum Show: String, CaseIterable, Identifiable {
         case all = "All"
         case movies = "Movies"
@@ -82,6 +92,51 @@ struct PersonalListFilter: Hashable {
             query["order"] = CatalogSortOrder.asc.rawValue
         }
     }
+
+    /// This filter without the choices a menu doesn't offer, so one left
+    /// over from another list or server never filters or adds to the badge.
+    func limited(to choices: Choices) -> PersonalListFilter {
+        var limited = self
+        if !choices.contains(.show) { limited.show = .all }
+        if !choices.contains(.originalLanguage) { limited.originalLanguage = nil }
+        if !choices.contains(.anime) { limited.anime = .any }
+        return limited
+    }
+
+    /// Whether a collection matches, from its name and every library it is
+    /// in. A collection has no media type or language of its own, so Show
+    /// and Anime come from those libraries: Movies or Series means it is in a
+    /// library of that type (a mixed library counts as neither), and Only
+    /// anime means it is in an anime library. Without its libraries, a
+    /// collection only matches A–Z. Original Language is not used.
+    func matchesCollection(named name: String, in libraries: [Library]) -> Bool {
+        if let namePrefix, !Self.name(name, startsWith: namePrefix) { return false }
+        guard show != .all || anime != .any else { return true }
+        guard !libraries.isEmpty else { return false }
+        switch show {
+        case .all: break
+        case .movies: if !libraries.contains(where: \.isMovieLibrary) { return false }
+        case .series: if !libraries.contains(where: \.isSeriesLibrary) { return false }
+        }
+        let isAnime = libraries.contains(where: PersonalListLoader.isAnimeLibrary)
+        switch anime {
+        case .any: return true
+        case .only: return isAnime
+        case .hide: return !isAnime
+        }
+    }
+
+    /// The A–Z rule for names matched on the device: accents and case are
+    /// ignored, and "#" is anything that doesn't start with A to Z.
+    static func name(_ name: String, startsWith prefix: String) -> Bool {
+        let title = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if prefix == "#" {
+            guard let first = title.unicodeScalars.first else { return false }
+            return !(65...90).contains(Int(first.value))
+        }
+        return title.hasPrefix(prefix)
+    }
 }
 
 /// Loads a filtered Watchlist or Favourites list for For You.
@@ -115,7 +170,7 @@ enum PersonalListLoader {
     }
 
     /// A library whose name includes "Anime", such as "Movies Anime".
-    static func isAnimeLibrary(_ library: Library) -> Bool {
+    nonisolated static func isAnimeLibrary(_ library: Library) -> Bool {
         library.name.localizedCaseInsensitiveContains("anime")
     }
 
@@ -164,17 +219,21 @@ enum PersonalListLoader {
 struct PersonalListFilterMenuContent: View {
     @Binding var filter: PersonalListFilter
     let showsAlphabet: Bool
+    /// Collections leave out the choices they can't match.
+    var choices: PersonalListFilter.Choices = .all
 
     private let letters = ["#"] + (65...90).compactMap { UnicodeScalar($0).map(String.init) }
 
     var body: some View {
-        Section("Show") {
-            ForEach(PersonalListFilter.Show.allCases) { show in
-                Button { filter.show = show } label: { item(show.rawValue, selected: filter.show == show) }
+        if choices.contains(.show) {
+            Section("Show") {
+                ForEach(PersonalListFilter.Show.allCases) { show in
+                    Button { filter.show = show } label: { item(show.rawValue, selected: filter.show == show) }
+                }
             }
         }
         Section {
-            if PersonalListFilter.supportsOriginalLanguage {
+            if choices.contains(.originalLanguage), PersonalListFilter.supportsOriginalLanguage {
                 Menu {
                     Button { filter.originalLanguage = nil } label: { item("Any", selected: filter.originalLanguage == nil) }
                     ForEach(PersonalListFilter.languages, id: \.code) { language in
@@ -187,13 +246,15 @@ struct PersonalListFilterMenuContent: View {
                     if let code = filter.originalLanguage { Text(PersonalListFilter.languageName(code)) }
                 }
             }
-            Menu {
-                ForEach(PersonalListFilter.Anime.allCases) { anime in
-                    Button { filter.anime = anime } label: { item(anime.rawValue, selected: filter.anime == anime) }
+            if choices.contains(.anime) {
+                Menu {
+                    ForEach(PersonalListFilter.Anime.allCases) { anime in
+                        Button { filter.anime = anime } label: { item(anime.rawValue, selected: filter.anime == anime) }
+                    }
+                } label: {
+                    Text("Anime")
+                    if filter.anime != .any { Text(filter.anime.rawValue) }
                 }
-            } label: {
-                Text("Anime")
-                if filter.anime != .any { Text(filter.anime.rawValue) }
             }
             if showsAlphabet {
                 Menu {

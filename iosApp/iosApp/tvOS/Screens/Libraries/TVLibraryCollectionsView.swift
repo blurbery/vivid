@@ -9,6 +9,9 @@ struct TVLibraryCollectionsView: View {
     let library: Library?
     var combinedLibraries: [Library] = []
     var namePrefix: String? = nil
+    /// The For You Filter choice, matched on the device. A–Z comes from
+    /// `namePrefix` instead.
+    var filter = PersonalListFilter()
     var suppressesEdgeShading = false
     var topContentInset: CGFloat = VividTheme.Skyline.libraryContentTopInset
     var fixedColumnCount: Int? = nil
@@ -43,9 +46,14 @@ struct TVLibraryCollectionsView: View {
         }
     }
 
+    /// Show and Anime come from the libraries a collection is in, which
+    /// every server reports here because collections load per library.
+    static let filterChoices: PersonalListFilter.Choices = [.show, .anime]
+
     private struct CachedCollections {
         let sections: [LibraryCollectionSection]
         let libraryIds: [String: Int]
+        let libraries: [String: [Library]]
     }
     private var cacheKey: String {
         "personal:tvCollections:\(library == nil ? "combined" : "library"):\(sourceLibraries.map { String($0.id) }.joined(separator: ","))"
@@ -60,17 +68,21 @@ struct TVLibraryCollectionsView: View {
     let onMoveUp: (() -> Void)?
 
     @State private var collectionSections: [LibraryCollectionSection] = []
+    /// The Filter choice with this page's A–Z selection.
+    private var activeFilter: PersonalListFilter {
+        var active = filter.limited(to: Self.filterChoices)
+        active.namePrefix = namePrefix
+        return active
+    }
     private var displayedSections: [LibraryCollectionSection] {
-        guard let namePrefix else { return collectionSections }
+        let active = activeFilter
+        guard active.isActive else { return collectionSections }
         return collectionSections.compactMap { section in
             let matching = section.collections.filter { collection in
-                let title = collection.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-                if namePrefix == "#" {
-                    guard let first = title.unicodeScalars.first else { return false }
-                    return !(65...90).contains(Int(first.value))
-                }
-                return title.hasPrefix(namePrefix)
+                active.matchesCollection(
+                    named: collection.name,
+                    in: collectionLibraries[collectionKey(collection, kind: section.kind)] ?? []
+                )
             }
             guard !matching.isEmpty else { return nil }
             return LibraryCollectionSection(id: section.id, name: section.name, kind: section.kind, collections: matching)
@@ -80,6 +92,9 @@ struct TVLibraryCollectionsView: View {
     @State private var isLoadingCollections = true
     @State private var collectionsError: ErrorState?
     @State private var collectionLibraryIds: [String: Int] = [:]
+    /// Every library each collection is in, for Show and Anime.
+    /// `collectionLibraryIds` keeps only the first one, for navigation.
+    @State private var collectionLibraries: [String: [Library]] = [:]
     @State private var uiCustomization = UICustomizationPreferences.shared
 
     @State private var hasPendingFocusClaim = false
@@ -221,9 +236,11 @@ struct TVLibraryCollectionsView: View {
                 ErrorView(state: collectionsError, onRetry: { Task { await loadCollections() } })
             } else {
                 EmptyStateView(
-                    icon: "square.stack",
-                    title: namePrefix == nil ? "No collections yet" : "No collections starting with \(namePrefix!)",
-                    subtitle: namePrefix == nil ? "Collections created on the server will appear here." : "Choose another letter or All."
+                    icon: filtersOtherThanAlphabet ? "line.3.horizontal.decrease" : "square.stack",
+                    title: emptyTitle,
+                    subtitle: filtersOtherThanAlphabet
+                        ? nil
+                        : (namePrefix == nil ? "Collections created on the server will appear here." : "Choose another letter or All.")
                 )
             }
         }
@@ -232,7 +249,7 @@ struct TVLibraryCollectionsView: View {
         .focusable(true)
         .focused($isEmptyContentFocused)
         .focusEffectDisabled()
-        .accessibilityLabel(isLoadingCollections ? "Loading collections" : "No collections yet")
+        .accessibilityLabel(isLoadingCollections ? "Loading collections" : emptyTitle)
         .onMoveCommand { direction in
             if direction == .up {
                 onMoveUp?()
@@ -244,6 +261,16 @@ struct TVLibraryCollectionsView: View {
             guard displayedSections.isEmpty, !isTopMenuFocused else { return }
             isEmptyContentFocused = true
         }
+    }
+
+    private var filtersOtherThanAlphabet: Bool {
+        activeFilter.show != .all || activeFilter.anime != .any
+    }
+
+    private var emptyTitle: String {
+        if filtersOtherThanAlphabet { return "No collections match these filters" }
+        if let namePrefix { return "No collections starting with \(namePrefix)" }
+        return "No collections yet"
     }
 
     // MARK: - Focus hand-down
@@ -283,6 +310,7 @@ struct TVLibraryCollectionsView: View {
         if let cached: CachedCollections = ResponseCache.shared.get(cacheKey) {
             collectionSections = cached.sections
             collectionLibraryIds = cached.libraryIds
+            collectionLibraries = cached.libraries
             isLoadingCollections = false
         }
 
@@ -334,6 +362,7 @@ struct TVLibraryCollectionsView: View {
     ) {
         var sections: [LibraryCollectionSection] = []
         var sources: [String: Int] = [:]
+        var libraries: [String: [Library]] = [:]
         var combined: [LibraryCollectionKind: [LibraryCollection]] = [:]
         var seen = Set<String>()
 
@@ -343,6 +372,7 @@ struct TVLibraryCollectionsView: View {
                 for collection in section.collections {
                     let kind = collection.kind ?? section.kind
                     let key = collectionKey(collection, kind: kind)
+                    if !libraries[key, default: []].contains(source) { libraries[key, default: []].append(source) }
                     guard seen.insert(key).inserted else { continue }
                     sources[key] = source.id
                     combined[kind, default: []].append(collection)
@@ -367,9 +397,10 @@ struct TVLibraryCollectionsView: View {
         }
 
         collectionLibraryIds = sources
+        collectionLibraries = libraries
         collectionSections = sections
         ResponseCache.shared.set(
-            CachedCollections(sections: sections, libraryIds: sources),
+            CachedCollections(sections: sections, libraryIds: sources, libraries: libraries),
             for: cacheKey
         )
     }
