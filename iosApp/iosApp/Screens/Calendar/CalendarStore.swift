@@ -226,9 +226,11 @@ final class CalendarStore {
         }
 
         // Continue Watching and Next Up, from Home's cache when it has one.
-        // Building Home again is slow on Emby.
+        // Building Home again is slow on Emby, so a miss goes through Home's
+        // own fetch, which fills that cache for the next visit and joins a
+        // fetch already running.
         var home: SectionsResponse? = ResponseCache.shared.get(CacheKey.homeSections)
-        if home == nil { home = try? await VividAPI.shared.homeSections() }
+        if home == nil { home = try? await StartupContentPrefetcher.fetchHomeSections() }
         var anySource = home != nil
         for section in home?.sections ?? [] where ["continue_watching", "next_up"].contains(section.sectionType) {
             for item in section.items {
