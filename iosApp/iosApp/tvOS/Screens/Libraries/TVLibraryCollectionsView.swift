@@ -3,13 +3,13 @@ import SwiftUI
 
 /// `Collections` pill content of a library tab: a vertical grid of every
 /// collection in the scoped library (Skyline §6.3). Pressing a card pushes
-/// the existing collection detail screen.
+/// the existing collection detail screen. The caller owns the scroll view,
+/// so For You keeps its sub-tab row mounted above this grid.
 struct TVLibraryCollectionsView: View {
-    @Environment(\.forYouScrollHeader) private var scrollHeader
     let library: Library?
     var combinedLibraries: [Library] = []
-    var namePrefix: String? = nil
-    var suppressesEdgeShading = false
+    /// The For You Filter choice, matched on the device.
+    var filter = PersonalListFilter()
     var topContentInset: CGFloat = VividTheme.Skyline.libraryContentTopInset
     var fixedColumnCount: Int? = nil
     @State private var availableWidth: CGFloat = 1760
@@ -60,17 +60,18 @@ struct TVLibraryCollectionsView: View {
     let onMoveUp: (() -> Void)?
 
     @State private var collectionSections: [LibraryCollectionSection] = []
+    private var activeFilter: PersonalListFilter { filter.limited(to: .collections) }
     private var displayedSections: [LibraryCollectionSection] {
-        guard let namePrefix else { return collectionSections }
+        let active = activeFilter
+        guard active.isActive else { return collectionSections }
+        let profileID = ServerRegistry.shared.activeProfileId
         return collectionSections.compactMap { section in
             let matching = section.collections.filter { collection in
-                let title = collection.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-                if namePrefix == "#" {
-                    guard let first = title.unicodeScalars.first else { return false }
-                    return !(65...90).contains(Int(first.value))
-                }
-                return title.hasPrefix(namePrefix)
+                active.matchesCollection(
+                    kind: collection.kind ?? section.kind,
+                    creatorProfileID: collection.creatorProfileId,
+                    activeProfileID: profileID
+                )
             }
             guard !matching.isEmpty else { return nil }
             return LibraryCollectionSection(id: section.id, name: section.name, kind: section.kind, collections: matching)
@@ -91,20 +92,14 @@ struct TVLibraryCollectionsView: View {
     @Namespace private var collectionsFocusNamespace
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            scrollHeader
-            LazyVStack(spacing: 44, pinnedViews: []) {
-                Color.clear
-                    .frame(height: topContentInset)
+        LazyVStack(spacing: 44, pinnedViews: []) {
+            Color.clear
+                .frame(height: topContentInset)
 
-                gridContent
-            }
-            .padding(.bottom, VividTheme.largePadding)
+            gridContent
         }
-        .contentMargins(.top, 28, for: .scrollContent)
-        .scrollClipDisabled()
-        .modifier(TVPersonalScrollAppearance(enabled: suppressesEdgeShading))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.bottom, VividTheme.largePadding)
+        .frame(maxWidth: .infinity)
         .onChange(of: artworkEntries) { _, entries in artworkWindow.update(entries) }
         .onAppear { artworkWindow.update(artworkEntries) }
         .onDisappear { artworkWindow.clear() }
@@ -221,9 +216,9 @@ struct TVLibraryCollectionsView: View {
                 ErrorView(state: collectionsError, onRetry: { Task { await loadCollections() } })
             } else {
                 EmptyStateView(
-                    icon: "square.stack",
-                    title: namePrefix == nil ? "No collections yet" : "No collections starting with \(namePrefix!)",
-                    subtitle: namePrefix == nil ? "Collections created on the server will appear here." : "Choose another letter or All."
+                    icon: activeFilter.isActive ? "line.3.horizontal.decrease" : "square.stack",
+                    title: emptyTitle,
+                    subtitle: activeFilter.isActive ? nil : "Collections created on the server will appear here."
                 )
             }
         }
@@ -232,7 +227,7 @@ struct TVLibraryCollectionsView: View {
         .focusable(true)
         .focused($isEmptyContentFocused)
         .focusEffectDisabled()
-        .accessibilityLabel(isLoadingCollections ? "Loading collections" : "No collections yet")
+        .accessibilityLabel(isLoadingCollections ? "Loading collections" : emptyTitle)
         .onMoveCommand { direction in
             if direction == .up {
                 onMoveUp?()
@@ -244,6 +239,10 @@ struct TVLibraryCollectionsView: View {
             guard displayedSections.isEmpty, !isTopMenuFocused else { return }
             isEmptyContentFocused = true
         }
+    }
+
+    private var emptyTitle: String {
+        activeFilter.isActive ? "No collections match these filters" : "No collections yet"
     }
 
     // MARK: - Focus hand-down

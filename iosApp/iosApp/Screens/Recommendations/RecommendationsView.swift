@@ -60,7 +60,7 @@ struct RecommendationsView: View {
             Group {
                 switch mobileSelection {
                 case "Favourites": FavoritesView(showsNavigationTitle: false, filter: mobileFilter(for: "Favourites"))
-                case "Collections": MobileForYouCollections()
+                case "Collections": MobileForYouCollections(filter: mobileFilter(for: "Collections"))
                 default: WatchlistView(showsNavigationTitle: false, filter: mobileFilter(for: "Watchlist"))
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -83,7 +83,9 @@ struct RecommendationsView: View {
                 }
             }.padding(5).vividGlass(in: Capsule())
             .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
-            if mobileSelection != "Collections" {
+            // Emby and Jellyfin collections are all the server's, so
+            // Collections has nothing to filter there.
+            if mobileSelection != "Collections" || !PersonalListFilter.Choices.collections.isEmpty {
                 mobileFilterMenu
             }
         }
@@ -92,11 +94,16 @@ struct RecommendationsView: View {
             .padding(.top, 12)
     }
 
-    private func mobileFilter(for list: String) -> PersonalListFilter {
-        mobileFilters[list] ?? PersonalListFilter()
+    private func mobileFilterChoices(for list: String) -> PersonalListFilter.Choices {
+        list == "Collections" ? .collections : .lists
     }
 
-    /// Watchlist and Favourites only. A–Z lives inside this menu on iPhone and iPad.
+    private func mobileFilter(for list: String) -> PersonalListFilter {
+        (mobileFilters[list] ?? PersonalListFilter()).limited(to: mobileFilterChoices(for: list))
+    }
+
+    /// A–Z lives inside this menu on iPhone and iPad. Collections has none,
+    /// because most collection names start with "Movies" or "TV Shows".
     private var mobileFilterMenu: some View {
         let filter = mobileFilter(for: mobileSelection)
         return Menu {
@@ -105,7 +112,8 @@ struct RecommendationsView: View {
                     get: { mobileFilter(for: mobileSelection) },
                     set: { mobileFilters[mobileSelection] = $0; chromeScrollState.reset() }
                 ),
-                showsAlphabet: true
+                showsAlphabet: mobileSelection != "Collections",
+                choices: mobileFilterChoices(for: mobileSelection)
             )
         } label: {
             Image(systemName: "line.3.horizontal.decrease")

@@ -820,6 +820,9 @@ struct LibraryCollectionDetailView: View {
 #if os(iOS)
 struct MobileForYouCollections: View {
     @Environment(\.forYouScrollHeader) private var scrollHeader
+    /// The For You Filter choice for Collections, matched on the device.
+    var filter = PersonalListFilter()
+
     private struct Entry: Identifiable {
         let libraryID: Int
         let collection: LibraryCollection
@@ -854,11 +857,29 @@ struct MobileForYouCollections: View {
         return AdaptiveColumns.fittedPosterWidth(containerWidth: gridWidth, columnCount: columnCount, spacing: 12, maximumWidth: nil)
     }
 
+    private var activeFilter: PersonalListFilter { filter.limited(to: .collections) }
+
+    /// The rows above the grid are this profile's own collections.
+    private var visiblePersonal: [UserCollection] {
+        [.all, .mine].contains(activeFilter.source) ? personal.collections : []
+    }
+
+    private var visibleEntries: [Entry] {
+        let profileID = ServerRegistry.shared.activeProfileId
+        return entries.filter {
+            activeFilter.matchesCollection(
+                kind: $0.collection.kind ?? .regular,
+                creatorProfileID: $0.collection.creatorProfileId,
+                activeProfileID: profileID
+            )
+        }
+    }
+
     var body: some View {
         ScrollView {
             scrollHeader
             LazyVStack(spacing: 16) {
-                ForEach(personal.collections) { collection in
+                ForEach(visiblePersonal) { collection in
                     Button {
                         router.navigate(to: .collectionDetail(collectionId: collection.id))
                     } label: {
@@ -874,7 +895,7 @@ struct MobileForYouCollections: View {
                     }.buttonStyle(.plain)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount), spacing: 16) {
-                    ForEach(entries) { entry in
+                    ForEach(visibleEntries) { entry in
                         NavigationLink(value: Route.libraryCollection(
                             libraryId: entry.libraryID,
                             collectionId: entry.collection.id,
@@ -891,8 +912,12 @@ struct MobileForYouCollections: View {
                 if isLoading { ProgressView().tint(.white) }
                 if let error {
                     ErrorView(state: error, onRetry: { Task { await load() } })
-                } else if !isLoading && entries.isEmpty && personal.collections.isEmpty {
-                    EmptyStateView(icon: "square.stack", title: "No collections", subtitle: "Your collections will appear here.")
+                } else if !isLoading && visibleEntries.isEmpty && visiblePersonal.isEmpty {
+                    if activeFilter.isActive {
+                        EmptyStateView(icon: "line.3.horizontal.decrease", title: "No collections match these filters")
+                    } else {
+                        EmptyStateView(icon: "square.stack", title: "No collections", subtitle: "Your collections will appear here.")
+                    }
                 }
             }.padding(16)
         }
