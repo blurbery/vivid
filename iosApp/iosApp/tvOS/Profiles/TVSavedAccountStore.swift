@@ -879,6 +879,7 @@ final class TVSavedAccountStore {
             self.activeID = nil
             persist()
         }
+        for account in selected { CalendarStore.deleteSavedData(serverID: account.serverID, accountID: account.userID) }
         do {
             for account in selected { try await TVHomeMetadataCache.shared.deleteAccountCache(account) }
         } catch {
@@ -981,6 +982,7 @@ final class TVSavedAccountStore {
             let matching = accounts.filter { VividCloudAccountIdentity.key(for: $0) == identity }
             var cacheCleanupFailed = false
             for account in matching {
+                CalendarStore.deleteSavedData(serverID: account.serverID, accountID: account.userID)
                 do { try await TVHomeMetadataCache.shared.deleteAccountCache(account) }
                 catch { cacheCleanupFailed = true; self.error = "Couldn’t clear a deleted account’s cache. Vivid will retry on the next sync." }
             }

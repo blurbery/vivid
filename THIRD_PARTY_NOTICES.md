@@ -36,7 +36,7 @@ The logos identify their respective projects and are not presented as Vivid-owne
 
 ## Air times
 
-The iPhone and iPad Calendar uses [TVmaze](https://www.tvmaze.com)'s public API for episode air times, through Vivid's relay. TVmaze's data is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), which asks for credit with a link back. TVmaze is credited in Acknowledgements on both platforms, with a symbol rather than its logo, and under the Calendar's Upcoming list. Vivid shows the air times and doesn't redistribute TVmaze's data. It is an external service, not a bundled SDK or database.
+The Calendar uses [TVmaze](https://www.tvmaze.com)'s public API for episode air times, through Vivid's relay. TVmaze's data is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), which asks for credit with a link back. TVmaze is credited in Acknowledgements on both platforms, with a symbol rather than its logo, and under the Calendar's Upcoming list. Vivid shows the air times and doesn't redistribute TVmaze's data. It is an external service, not a bundled SDK or database.
 
 ## Server and service names
 

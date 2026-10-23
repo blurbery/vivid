@@ -21,13 +21,18 @@ enum VividCacheScope {
         SharedDefaults.shared.string(forKey: "vivid.cache.account." + serverID)
     }
 
-    static var current: String? {
+    /// The server, server user and profile the live session belongs to.
+    static var currentIdentity: (serverID: String, accountID: String, profileID: String)? {
         let defaults = SharedDefaults.shared
         guard let server = defaults.string(forKey: SharedStorage.activeServerIdKey),
               let account = defaults.string(forKey: "vivid.cache.account." + server),
               let profile = defaults.string(forKey: SharedStorage.profileIdKey),
               !server.isEmpty, !account.isEmpty, !profile.isEmpty else { return nil }
-        return key(serverID: server, accountID: account, profileID: profile)
+        return (server, account, profile)
+    }
+
+    static var current: String? {
+        currentIdentity.map { key(serverID: $0.serverID, accountID: $0.accountID, profileID: $0.profileID) }
     }
 
     // Pre-login artwork has no persistent owner and must not reuse an old

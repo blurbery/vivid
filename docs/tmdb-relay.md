@@ -10,7 +10,7 @@
 
 Vivid uses TMDb for trailers, the TMDb rating, movie collection rows, Studios & Networks and IMDb-to-TMDb lookups on Emby and Jellyfin. A TMDb key can't be kept secret inside an app, so Vivid doesn't ship one. Instead, the app sends every TMDb request to a small Cloudflare Worker at `tmdb.vividapp.co`. The Worker adds Vivid's TMDb read access token, forwards the request to `api.themoviedb.org` and caches the answer at the edge for a day. The app never holds a TMDb key. A personal key an earlier version of Vivid saved for any saved profile is deleted from Keychain, and the encrypted iCloud vault records the deletion so the person's other devices delete theirs too. A key arriving from the vault is never restored.
 
-The same Worker answers the iPhone and iPad Calendar's TVmaze air-time lookups under `/tvmaze/`, described [below](#tvmaze). TVmaze needs no key; going through the relay keeps the person's address from TVmaze and shares one cache.
+The same Worker answers the Calendar's TVmaze air-time lookups under `/tvmaze/`, described [below](#tvmaze). TVmaze needs no key; going through the relay keeps the person's address from TVmaze and shares one cache.
 
 The source is in [`tmdb-relay/`](../tmdb-relay). It is separate from the website and the [diagnostics relay](diagnostics-relay.md).
 

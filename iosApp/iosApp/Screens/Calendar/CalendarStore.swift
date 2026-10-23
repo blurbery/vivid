@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 
@@ -5,7 +6,7 @@ import Observation
 /// history that airs soon.
 struct UpcomingEpisode: Identifiable, Hashable, Sendable {
     /// Where the series came from, most personal first.
-    enum Source: Int, Comparable, Hashable, Sendable {
+    enum Source: Int, Codable, Comparable, Hashable, Sendable {
         case continueWatching, watchlist, history
 
         var label: String {
@@ -38,8 +39,8 @@ struct UpcomingEpisode: Identifiable, Hashable, Sendable {
 }
 
 /// A popular movie or series from TMDb that comes out soon.
-struct TrendingTitle: Identifiable, Hashable, Sendable {
-    enum Kind: String, Sendable { case movie, series }
+struct TrendingTitle: Identifiable, Hashable, Codable, Sendable {
+    enum Kind: String, Codable, Sendable { case movie, series }
 
     let tmdbId: Int
     let kind: Kind
@@ -57,6 +58,11 @@ struct TrendingTitle: Identifiable, Hashable, Sendable {
 /// falling back to TMDb's next air date. Trending is TMDb's popular upcoming
 /// titles. Everything belongs to one server and profile, so a switch drops
 /// the old lists and any answer still on its way.
+///
+/// Each series' air dates are kept on the device for that profile, and the
+/// list is rebuilt from them and the profile's current series on every visit.
+/// So a show added to or taken off the Watchlist shows or goes at once, while
+/// only new series and ones that are due are looked up again.
 @Observable @MainActor
 final class CalendarStore {
     static let shared = CalendarStore()
@@ -70,6 +76,12 @@ final class CalendarStore {
     nonisolated static let maxSeries = 60
     /// Keeps a daily show from flooding the list.
     nonisolated static let maxEpisodesPerSeries = 6
+    /// How long a series' air dates are kept before it's looked up again. It
+    /// still shows while that runs. The relay keeps TVmaze's answers for 6
+    /// hours, so sooner would mostly get the same answer.
+    nonisolated static let seriesLifetime: TimeInterval = 12 * 60 * 60
+    /// A stand-in saved while TVmaze or TMDb was busy is tried again sooner.
+    nonisolated static let retryLifetime: TimeInterval = 30 * 60
 
     private(set) var upcoming: [UpcomingEpisode] = []
     private(set) var trendingSeries: [TrendingTitle] = []
@@ -88,55 +100,101 @@ final class CalendarStore {
     /// server or profile switch cancels it and starts its own.
     private var upcomingLoad: (context: String, task: Task<Void, Never>)?
     private var trendingLoad: (context: String, task: Task<Void, Never>)?
-    private var upcomingContext: String?
-    private var upcomingLoadedAt: Date?
-    private var trendingContext: String?
-    private var trendingLoadedAt: Date?
+    /// The server and profile the lists and `saved` belong to.
+    @ObservationIgnored private var loadedContext: String?
+    @ObservationIgnored private var saved = Saved()
+    @ObservationIgnored private var savedURL: URL?
+    @ObservationIgnored private var trendingLoadedAt: Date?
     private let session = URLSession(configuration: .ephemeral)
 
     private var context: String { TVTMDbStore.shared.contextKey }
+
+    /// Picks up a server or profile switch: drops the old lists and any load
+    /// still on its way, and shows what's saved for the new profile.
+    private func prepare(_ context: String) {
+        guard loadedContext != context else { return }
+        loadedContext = context
+        upcomingLoad?.task.cancel()
+        upcomingLoad = nil
+        trendingLoad?.task.cancel()
+        trendingLoad = nil
+        savedURL = Self.savedFileURL()
+        saved = Self.read(savedURL)
+        upcoming = Self.upcoming(for: saved.candidates, saved: saved.series, window: Self.upcomingWindow())
+        upcomingFailed = false
+        let today = Calendar.current.startOfDay(for: Date())
+        trendingSeries = saved.trendingSeries.filter { $0.day >= today }
+        trendingMovies = saved.trendingMovies.filter { $0.day >= today }
+        trendingLoadedAt = saved.trendingSavedAt
+        trendingSeriesFailed = false
+        trendingMoviesFailed = false
+    }
 
     // MARK: Upcoming
 
     func loadUpcoming(force: Bool = false) async {
         let context = context
-        if upcomingContext != context {
-            upcomingContext = context
-            upcoming = ResponseCache.shared.get(Self.upcomingCacheKey(context)) ?? []
-            upcomingLoadedAt = nil
-            upcomingFailed = false
-        }
+        prepare(context)
         if let upcomingLoad, upcomingLoad.context == context {
             await upcomingLoad.task.value
             return
         }
-        if !force, let upcomingLoadedAt, Date().timeIntervalSince(upcomingLoadedAt) < 30 * 60 { return }
         guard TVTMDbStore.shared.isConfigured else { return }
-        upcomingLoad?.task.cancel()
-        let task = Task { await fetchUpcoming(context: context) }
+        let task = Task { await fetchUpcoming(context: context, force: force) }
         upcomingLoad = (context, task)
         await task.value
         if upcomingLoad?.task == task { upcomingLoad = nil }
     }
 
-    private func fetchUpcoming(context: String) async {
+    /// Reads the profile's series on every visit and shows the list from what's
+    /// saved straight away, so a series taken off the Watchlist goes at once.
+    /// Then looks up the new and due series, or every one when forced.
+    private func fetchUpcoming(context: String, force: Bool) async {
+        let candidates: [Candidate]
         do {
-            let candidates = try await Self.candidateSeries()
-            let episodes = await upcomingEpisodes(for: candidates, context: context)
-            guard self.context == context, !Task.isCancelled else { return }
-            upcoming = episodes
-            upcomingLoadedAt = Date()
-            upcomingFailed = false
-            ResponseCache.shared.set(episodes, for: Self.upcomingCacheKey(context))
+            candidates = try await Self.candidateSeries()
         } catch {
             guard self.context == context else { return }
             if upcoming.isEmpty { upcomingFailed = true }
+            return
         }
+        guard self.context == context, !Task.isCancelled else { return }
+        saved.candidates = candidates
+        upcoming = Self.upcoming(for: candidates, saved: saved.series, window: Self.upcomingWindow())
+        upcomingFailed = false
+
+        let due = Self.seriesToLookUp(candidates, saved: saved.series, now: Date(), force: force)
+        if !due.isEmpty {
+            let found = await lookUp(due, context: context)
+            guard self.context == context, !Task.isCancelled else { return }
+            let now = Date()
+            for (contentId, lookup) in found {
+                switch lookup {
+                case .complete(let series):
+                    saved.series[contentId] = series
+                case .partial(let series):
+                    // Air dates saved before beat a stand-in, which may have
+                    // no time or nothing at all.
+                    if saved.series[contentId]?.episodes.isEmpty == false {
+                        saved.series[contentId]?.refreshAfter = now.addingTimeInterval(Self.retryLifetime)
+                    } else {
+                        saved.series[contentId] = series
+                    }
+                case .failed:
+                    break
+                }
+            }
+            upcoming = Self.upcoming(for: candidates, saved: saved.series, window: Self.upcomingWindow())
+        }
+        // Keeps the file small: a series that's gone and due would be looked
+        // up again anyway.
+        let current = Set(candidates.map(\.contentId))
+        let now = Date()
+        saved.series = saved.series.filter { current.contains($0.key) || $0.value.refreshAfter > now }
+        save()
     }
 
-    private static func upcomingCacheKey(_ context: String) -> String { "calendar:upcoming:\(context)" }
-
-    private struct Candidate: Sendable {
+    struct Candidate: Codable, Hashable, Sendable {
         let contentId: String
         var source: UpcomingEpisode.Source
     }
@@ -202,31 +260,52 @@ final class CalendarStore {
         return ranked.prefix(maxSeries).map { Candidate(contentId: $0.element, source: sources[$0.element]!) }
     }
 
-    /// Two or three series at a time: TVmaze's limit is per address, and every
-    /// device shares the relay's. A show in two libraries is listed once, from
-    /// its most personal source.
-    private func upcomingEpisodes(for candidates: [Candidate], context: String) async -> [UpcomingEpisode] {
-        let window = Self.upcomingWindow()
-        var found: [Int: SeriesEpisodes] = [:]
-        var next = 0
-        await withTaskGroup(of: (Int, SeriesEpisodes).self) { group in
-            func start() {
-                guard next < candidates.count else { return }
-                let index = next
-                next += 1
-                group.addTask { (index, await self.episodes(for: candidates[index], window: window)) }
-            }
-            for _ in 0..<3 { start() }
-            for await (index, series) in group {
-                found[index] = series
-                if self.context == context, !Task.isCancelled { start() }
-            }
+    /// What's saved for one series: enough to list it without asking the
+    /// server or TVmaze again.
+    struct SavedSeries: Codable, Sendable {
+        struct Episode: Codable, Sendable {
+            let season: Int?
+            let number: Int?
+            let name: String?
+            let day: Date
+            let airsAt: Date?
         }
+
+        /// The show itself, by its TVDB, IMDb or TMDb ID or else its name.
+        let show: String
+        let seriesContentId: String
+        let title: String
+        let posterUrl: String?
+        let posterThumbhash: String?
+        /// A few more than are shown, so ones that air while it's saved are
+        /// replaced by the next.
+        let episodes: [Episode]
+        /// When it's looked up again.
+        var refreshAfter: Date
+    }
+
+    /// The list from the profile's series as they are now and what's saved
+    /// for them. A series no longer in Continue Watching, the Watchlist or
+    /// history drops out even though its air dates are kept, and each one
+    /// shows where it comes from now. A show in two libraries is listed once,
+    /// from its most personal source.
+    nonisolated static func upcoming(
+        for candidates: [Candidate], saved: [String: SavedSeries], window: DateInterval
+    ) -> [UpcomingEpisode] {
         var shows = Set<String>()
         var results: [UpcomingEpisode] = []
-        for index in candidates.indices {
-            guard let series = found[index], !series.episodes.isEmpty, shows.insert(series.show).inserted else { continue }
-            results.append(contentsOf: series.episodes)
+        for candidate in candidates {
+            guard let series = saved[candidate.contentId] else { continue }
+            let episodes = series.episodes.filter { window.contains($0.day) }.prefix(maxEpisodesPerSeries)
+            guard !episodes.isEmpty, shows.insert(series.show).inserted else { continue }
+            results += episodes.map {
+                UpcomingEpisode(
+                    seriesContentId: series.seriesContentId, seriesTitle: series.title,
+                    posterUrl: series.posterUrl, posterThumbhash: series.posterThumbhash,
+                    season: $0.season, number: $0.number, name: $0.name, day: $0.day, airsAt: $0.airsAt,
+                    source: candidate.source
+                )
+            }
         }
         return results.sorted {
             if $0.day != $1.day { return $0.day < $1.day }
@@ -239,69 +318,121 @@ final class CalendarStore {
         }
     }
 
+    /// The series with nothing saved yet or that are due, or all of them.
+    nonisolated static func seriesToLookUp(
+        _ candidates: [Candidate], saved: [String: SavedSeries], now: Date, force: Bool
+    ) -> [Candidate] {
+        candidates.filter { force || (saved[$0.contentId]?.refreshAfter ?? .distantPast) <= now }
+    }
+
     private static func upcomingWindow() -> DateInterval {
         let start = Calendar.current.startOfDay(for: Date())
         let end = Calendar.current.date(byAdding: .day, value: upcomingDays, to: start) ?? start
         return DateInterval(start: start, end: end)
     }
 
-    private struct SeriesEpisodes: Sendable {
-        /// The show itself, by its TVDB, IMDb or TMDb ID or else its name.
-        let show: String
-        let episodes: [UpcomingEpisode]
+    private enum Lookup: Sendable {
+        /// Every answer came back, including TVmaze not knowing the show.
+        case complete(SavedSeries)
+        /// TVmaze or TMDb was busy or unreachable, so this is a stand-in.
+        case partial(SavedSeries)
+        /// The server's details for the series didn't load.
+        case failed
     }
 
-    private func episodes(for candidate: Candidate, window: DateInterval) async -> SeriesEpisodes {
-        let none = SeriesEpisodes(show: candidate.contentId, episodes: [])
-        guard let detail = try? await MetadataRequestPool.shared.itemDetail(contentId: candidate.contentId),
-              VividMediaType.isSeries(detail.type) else { return none }
-        if let status = detail.showStatus?.lowercased(), ["ended", "canceled", "cancelled"].contains(status) { return none }
+    /// Three series at a time: TVmaze's limit is per address, and every
+    /// device shares the relay's.
+    private func lookUp(_ candidates: [Candidate], context: String) async -> [String: Lookup] {
+        let window = Self.upcomingWindow()
+        var found: [String: Lookup] = [:]
+        var next = 0
+        await withTaskGroup(of: (String, Lookup).self) { group in
+            func start() {
+                guard next < candidates.count else { return }
+                let contentId = candidates[next].contentId
+                next += 1
+                group.addTask { (contentId, await self.lookUp(contentId, window: window)) }
+            }
+            for _ in 0..<3 { start() }
+            for await (contentId, lookup) in group {
+                found[contentId] = lookup
+                if self.context == context, !Task.isCancelled { start() }
+            }
+        }
+        return found
+    }
+
+    private func lookUp(_ contentId: String, window: DateInterval) async -> Lookup {
+        guard let detail = try? await MetadataRequestPool.shared.itemDetail(contentId: contentId) else { return .failed }
         let show = [("tvdb", detail.tvdbId), ("imdb", detail.imdbId), ("tmdb", detail.tmdbId)]
             .first { !($0.1 ?? "").isEmpty }.map { "\($0.0):\($0.1!)" } ?? "title:\(detail.title.lowercased())"
-        func episode(season: Int?, number: Int?, name: String?, day: Date, airsAt: Date?) -> UpcomingEpisode {
-            UpcomingEpisode(
-                seriesContentId: detail.contentId, seriesTitle: detail.title,
+        func series(_ episodes: [SavedSeries.Episode], complete: Bool) -> Lookup {
+            let saved = SavedSeries(
+                show: show, seriesContentId: detail.contentId, title: detail.title,
                 posterUrl: detail.posterUrl, posterThumbhash: detail.posterThumbhash,
-                season: season, number: number, name: name, day: day, airsAt: airsAt, source: candidate.source
+                episodes: Array(episodes.prefix(Self.maxEpisodesPerSeries * 2)),
+                refreshAfter: Date().addingTimeInterval(complete ? Self.seriesLifetime : Self.retryLifetime)
             )
+            return complete ? .complete(saved) : .partial(saved)
+        }
+        guard VividMediaType.isSeries(detail.type) else { return series([], complete: true) }
+        if let status = detail.showStatus?.lowercased(), ["ended", "canceled", "cancelled"].contains(status) {
+            return series([], complete: true)
         }
 
-        if let showID = await tvmazeID(for: detail),
-           let seasons: [TVmazeSeason] = try? await get(Self.tvmazeBase + "shows/\(showID)/seasons") {
-            // Only the seasons that overlap the window: a long daily show's
-            // whole episode list runs to several megabytes. A day either side
-            // covers seasons dated in another time zone.
-            let current = seasons.filter { season in
-                guard let premiere = Self.localDay(season.premiereDate) else { return false }
-                let lastDay = Self.localDay(season.endDate)
-                return premiere <= window.end.addingTimeInterval(86_400)
-                    && (lastDay.map { $0 >= window.start.addingTimeInterval(-86_400) } ?? true)
-            }
-            // A season that fails could hold the next episodes, so TMDb's date
-            // stands in unless every season loaded.
-            var upcoming: [UpcomingEpisode] = []
-            var loaded = true
-            for season in current.suffix(2) {
-                guard let schedule: [TVmazeEpisode] = try? await get(Self.tvmazeBase + "seasons/\(season.id)/episodes") else {
-                    loaded = false
-                    break
+        var tvmazeAnswered = true
+        switch await tvmazeID(for: detail) {
+        case .found(let showID):
+            if let seasons: [TVmazeSeason] = try? await get(Self.tvmazeBase + "shows/\(showID)/seasons") {
+                // Only the seasons that overlap the window: a long daily show's
+                // whole episode list runs to several megabytes. A day either
+                // side covers seasons dated in another time zone.
+                let current = seasons.filter { season in
+                    guard let premiere = Self.localDay(season.premiereDate) else { return false }
+                    let lastDay = Self.localDay(season.endDate)
+                    return premiere <= window.end.addingTimeInterval(86_400)
+                        && (lastDay.map { $0 >= window.start.addingTimeInterval(-86_400) } ?? true)
                 }
-                upcoming += schedule.compactMap { item -> UpcomingEpisode? in
-                    guard let airing = item.airing, window.contains(airing.day) else { return nil }
-                    return episode(season: item.season, number: item.number, name: item.name, day: airing.day, airsAt: airing.time)
+                // A season that fails could hold the next episodes, so TMDb's
+                // date stands in unless every season loaded.
+                var episodes: [SavedSeries.Episode] = []
+                var loaded = true
+                for season in current.suffix(2) {
+                    guard let schedule: [TVmazeEpisode] = try? await get(Self.tvmazeBase + "seasons/\(season.id)/episodes") else {
+                        loaded = false
+                        break
+                    }
+                    episodes += schedule.compactMap { item in
+                        guard let airing = item.airing, window.contains(airing.day) else { return nil }
+                        return SavedSeries.Episode(season: item.season, number: item.number, name: item.name, day: airing.day, airsAt: airing.time)
+                    }
                 }
+                if loaded { return series(episodes, complete: true) }
             }
-            if loaded {
-                return SeriesEpisodes(show: show, episodes: Array(upcoming.prefix(Self.maxEpisodesPerSeries)))
-            }
+            tvmazeAnswered = false
+        case .none:
+            break
+        case .unavailable:
+            tvmazeAnswered = false
         }
 
         // Without TVmaze, TMDb knows the next episode's day but not its time.
-        guard let tmdbID = Int(detail.tmdbId ?? ""), tmdbID > 0,
-              let series: TMDbSeries = try? await get(TVTMDbStore.relayBase + "tv/\(tmdbID)"),
-              let next = series.next_episode_to_air, let day = Self.localDay(next.air_date),
-              window.contains(day) else { return SeriesEpisodes(show: show, episodes: []) }
-        return SeriesEpisodes(show: show, episodes: [episode(season: next.season_number, number: next.episode_number, name: next.name, day: day, airsAt: nil)])
+        guard let tmdbID = Int(detail.tmdbId ?? ""), tmdbID > 0 else { return series([], complete: tvmazeAnswered) }
+        let tmdb: TMDbSeries
+        do {
+            tmdb = try await get(TVTMDbStore.relayBase + "tv/\(tmdbID)")
+        } catch RelayError.notFound {
+            return series([], complete: tvmazeAnswered)
+        } catch {
+            return series([], complete: false)
+        }
+        guard let next = tmdb.next_episode_to_air, let day = Self.localDay(next.air_date), window.contains(day) else {
+            return series([], complete: tvmazeAnswered)
+        }
+        return series(
+            [SavedSeries.Episode(season: next.season_number, number: next.episode_number, name: next.name, day: day, airsAt: nil)],
+            complete: tvmazeAnswered
+        )
     }
 
     // MARK: TVmaze
@@ -347,54 +478,59 @@ final class CalendarStore {
     private var tvmazeMisses: [String: Date] = (UserDefaults.standard.dictionary(forKey: CalendarStore.tvmazeMissesKey) as? [String: Date] ?? [:])
         .filter { Date().timeIntervalSince($0.value) < CalendarStore.tvmazeMissLifetime }
 
-    private func tvmazeID(for detail: ItemDetail) async -> Int? {
+    private enum TVmazeMatch {
+        case found(Int)
+        /// No ID to look up by, or TVmaze has no show for it.
+        case none
+        /// The relay, TVmaze or TMDb was busy or unreachable.
+        case unavailable
+    }
+
+    private func tvmazeID(for detail: ItemDetail) async -> TVmazeMatch {
         var tvdb = detail.tvdbId.flatMap(Int.init).flatMap { $0 > 0 ? String($0) : nil }
         var imdb = detail.imdbId.flatMap { $0.range(of: "^tt[0-9]{7,10}$", options: .regularExpression) != nil ? $0 : nil }
-        if tvdb == nil, imdb == nil, let tmdbID = Int(detail.tmdbId ?? ""), tmdbID > 0,
-           let ids: TMDbExternalIDs = try? await get(TVTMDbStore.relayBase + "tv/\(tmdbID)/external_ids") {
-            tvdb = ids.tvdb_id.flatMap { $0 > 0 ? String($0) : nil }
-            imdb = ids.imdb_id.flatMap { $0.range(of: "^tt[0-9]{7,10}$", options: .regularExpression) != nil ? $0 : nil }
+        if tvdb == nil, imdb == nil, let tmdbID = Int(detail.tmdbId ?? ""), tmdbID > 0 {
+            do {
+                let ids: TMDbExternalIDs = try await get(TVTMDbStore.relayBase + "tv/\(tmdbID)/external_ids")
+                tvdb = ids.tvdb_id.flatMap { $0 > 0 ? String($0) : nil }
+                imdb = ids.imdb_id.flatMap { $0.range(of: "^tt[0-9]{7,10}$", options: .regularExpression) != nil ? $0 : nil }
+            } catch RelayError.notFound {
+            } catch {
+                return .unavailable
+            }
         }
         for (name, value) in [("thetvdb", tvdb), ("imdb", imdb)] {
             guard let value else { continue }
             let key = "\(name):\(value)"
-            if let known = tvmazeIDs[key] { return known }
+            if let known = tvmazeIDs[key] { return .found(known) }
             if let missed = tvmazeMisses[key], Date().timeIntervalSince(missed) < Self.tvmazeMissLifetime { continue }
             do {
                 let show: TVmazeShow = try await get(Self.tvmazeBase + "lookup/shows?\(name)=\(value)")
                 tvmazeIDs[key] = show.id
                 UserDefaults.standard.set(tvmazeIDs, forKey: Self.tvmazeIDsKey)
-                return show.id
+                return .found(show.id)
             } catch RelayError.notFound {
                 tvmazeMisses[key] = Date()
                 UserDefaults.standard.set(tvmazeMisses, forKey: Self.tvmazeMissesKey)
             } catch {
                 // Busy or unreachable: TMDb's date stands in this time.
-                return nil
+                return .unavailable
             }
         }
-        return nil
+        return .none
     }
 
     // MARK: Trending
 
     func loadTrending(force: Bool = false) async {
         let context = context
-        if trendingContext != context {
-            trendingContext = context
-            trendingSeries = []
-            trendingMovies = []
-            trendingLoadedAt = nil
-            trendingSeriesFailed = false
-            trendingMoviesFailed = false
-        }
+        prepare(context)
         if let trendingLoad, trendingLoad.context == context {
             await trendingLoad.task.value
             return
         }
         if !force, let trendingLoadedAt, Date().timeIntervalSince(trendingLoadedAt) < 6 * 60 * 60 { return }
         guard TVTMDbStore.shared.isConfigured else { return }
-        trendingLoad?.task.cancel()
         let task = Task { await fetchTrending(context: context) }
         trendingLoad = (context, task)
         await task.value
@@ -409,12 +545,22 @@ final class CalendarStore {
         async let movies = trending(media: "movie", kind: .movie, query: ["primary_release_date.gte": from, "primary_release_date.lte": to])
         let (seriesResult, moviesResult) = await (series, movies)
         guard self.context == context, !Task.isCancelled else { return }
-        if let seriesResult { trendingSeries = seriesResult }
-        if let moviesResult { trendingMovies = moviesResult }
+        if let seriesResult {
+            trendingSeries = seriesResult
+            saved.trendingSeries = seriesResult
+        }
+        if let moviesResult {
+            trendingMovies = moviesResult
+            saved.trendingMovies = moviesResult
+        }
         // A list that failed is tried again on the next visit, not in 6 hours.
         trendingSeriesFailed = seriesResult == nil
         trendingMoviesFailed = moviesResult == nil
-        if !trendingFailed { trendingLoadedAt = Date() }
+        if !trendingFailed {
+            trendingLoadedAt = Date()
+            saved.trendingSavedAt = trendingLoadedAt
+        }
+        save()
     }
 
     /// Two pages of the most popular titles in the window. Results without
@@ -438,6 +584,62 @@ final class CalendarStore {
             if (result.totalPages ?? 1) <= page { break }
         }
         return titles
+    }
+
+    // MARK: Saved on the device
+
+    /// One profile's Calendar, in the Caches folder, so the system can clear
+    /// it when space runs low: which series are in its Continue Watching,
+    /// Watchlist and history, their titles, posters and air dates, and
+    /// Trending.
+    private struct Saved: Codable {
+        /// Saved days are local, so another time zone starts again.
+        var timeZone = TimeZone.current.identifier
+        var candidates: [Candidate] = []
+        var series: [String: SavedSeries] = [:]
+        var trendingSeries: [TrendingTitle] = []
+        var trendingMovies: [TrendingTitle] = []
+        var trendingSavedAt: Date?
+    }
+
+    /// Reads and writes in order, off the main thread.
+    nonisolated private static let files = DispatchQueue(label: "co.vividapp.calendar.saved", qos: .utility)
+
+    /// A folder for each server account, so deleting the account removes
+    /// every profile's file.
+    nonisolated private static func folder(serverID: String, accountID: String) -> URL? {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let account = SHA256.hash(data: Data("\(serverID)\n\(accountID)".utf8)).map { String(format: "%02x", $0) }.joined()
+        return caches.appendingPathComponent("Vivid/Calendar/v1/\(account)", isDirectory: true)
+    }
+
+    nonisolated private static func savedFileURL() -> URL? {
+        guard let identity = VividCacheScope.currentIdentity,
+              let folder = folder(serverID: identity.serverID, accountID: identity.accountID) else { return nil }
+        let scope = VividCacheScope.key(serverID: identity.serverID, accountID: identity.accountID, profileID: identity.profileID)
+        return folder.appendingPathComponent(scope + ".json")
+    }
+
+    nonisolated private static func read(_ url: URL?) -> Saved {
+        guard let url else { return Saved() }
+        let data = files.sync { try? Data(contentsOf: url) }
+        guard let data, let saved = try? JSONDecoder().decode(Saved.self, from: data),
+              saved.timeZone == TimeZone.current.identifier else { return Saved() }
+        return saved
+    }
+
+    private func save() {
+        guard let url = savedURL, let data = try? JSONEncoder().encode(saved) else { return }
+        Self.files.async {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// Removes what the Calendar keeps for every profile of a deleted account.
+    nonisolated static func deleteSavedData(serverID: String, accountID: String) {
+        guard let folder = folder(serverID: serverID, accountID: accountID) else { return }
+        files.async { try? FileManager.default.removeItem(at: folder) }
     }
 
     // MARK: Requests and dates
