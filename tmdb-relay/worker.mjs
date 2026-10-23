@@ -1,14 +1,17 @@
 // Answers Vivid's TMDb lookups with Vivid's own TMDb read access token, so
-// people don't need a TMDb key of their own. Only the requests the app makes
-// are accepted, and answers are cached at the edge for a day.
+// people don't need a TMDb key of their own, and the Calendar's TVmaze air
+// times, so TVmaze never sees anyone's address. Only the requests the app
+// makes are accepted, and answers are cached at the edge.
 //
-// GET /3/<TMDb path>?<query>  the same path and query the app would send to TMDb
+// GET /3/<TMDb path>?<query>         the same path and query the app would send to TMDb
+// GET /tvmaze/<TVmaze path>?<query>  the same for TVmaze's public API, which needs no key
 //
 // The client IP is used only as a rate-limit key. It isn't stored, logged or
-// sent to TMDb, and nothing from the client's request is forwarded except the
-// path and the checked query.
+// sent upstream, and nothing from the client's request is forwarded except
+// the path and the checked query.
 
 const upstream = 'https://api.themoviedb.org/3/';
+const tvmazeUpstream = 'https://api.tvmaze.com/';
 
 export const limits = Object.freeze({
   // TMDb allows caching for up to six months. A day keeps ratings and
@@ -48,9 +51,32 @@ const routes = [
       'air_date.lte': day,
       'primary_release_date.gte': day,
       'primary_release_date.lte': day,
+      // The Calendar's series coming soon.
+      'first_air_date.gte': day,
+      'first_air_date.lte': day,
     },
     required: ['sort_by', 'include_adult', 'page'],
   },
+];
+
+// TVmaze, for the Calendar's episode air times. A lookup matches a show by
+// exactly one ID; its episodes carry UTC air times.
+const tvmazeLookup = /^lookup\/shows$/;
+const tvmazeRoutes = [
+  {
+    path: tvmazeLookup,
+    query: {thetvdb: new RegExp(`^${id}$`), imdb: /^tt[0-9]{7,10}$/},
+    oneOf: ['thetvdb', 'imdb'],
+    // A show's TVmaze ID doesn't change.
+    cacheSeconds: 7 * 24 * 60 * 60,
+  },
+  // TVmaze refreshes its own answers hourly, and air times can move.
+  {path: new RegExp(`^shows/${id}/episodes$`), query: {}, cacheSeconds: 6 * 60 * 60},
+];
+
+const services = [
+  {prefix: '/3/', upstream, routes, tmdb: true},
+  {prefix: '/tvmaze/', upstream: tvmazeUpstream, routes: tvmazeRoutes, tmdb: false},
 ];
 
 const json = (status, body, extra = {}) => new Response(JSON.stringify(body), {
@@ -69,16 +95,27 @@ export function checkedQuery(route, params) {
     names.add(name);
   }
   if ((route.required ?? []).some(name => !names.has(name))) return null;
+  if (route.oneOf && route.oneOf.filter(name => names.has(name)).length !== 1) return null;
   if (names.has('page') && Number(params.get('page')) > limits.maxPage) return null;
   return entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join('&');
 }
 
+const cacheable = (body, seconds) => new Response(body, {
+  status: 200,
+  headers: {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': `public, max-age=${seconds}`,
+    'X-Content-Type-Options': 'nosniff',
+  },
+});
+
 export async function handle(request, env, ctx, {fetcher = fetch, cache = globalThis.caches?.default} = {}) {
   const url = new URL(request.url);
-  if (!url.pathname.startsWith('/3/')) return json(404, {error: 'not_found'});
-  const path = url.pathname.slice(3);
-  const route = routes.find(candidate => candidate.path.test(path));
+  const service = services.find(candidate => url.pathname.startsWith(candidate.prefix));
+  if (!service) return json(404, {error: 'not_found'});
+  const path = url.pathname.slice(service.prefix.length);
+  const route = service.routes.find(candidate => candidate.path.test(path));
   if (!route) return json(404, {error: 'not_found'});
   if (request.method !== 'GET') return json(405, {error: 'method_not_allowed'}, {Allow: 'GET'});
   const query = checkedQuery(route, url.searchParams);
@@ -89,23 +126,32 @@ export async function handle(request, env, ctx, {fetcher = fetch, cache = global
   const {success} = await env.RATE_LIMITER.limit({key: client});
   if (!success) return json(429, {error: 'rate_limited'}, {'Retry-After': '60'});
 
-  const target = upstream + path + (query ? `?${query}` : '');
+  const target = service.upstream + path + (query ? `?${query}` : '');
   // Keyed on the relay's own normalised URL. The token is never part of the
   // key or the answer.
-  const cacheKey = new Request(`${url.origin}/3/${path}${query ? `?${query}` : ''}`);
+  const cacheKey = new Request(`${url.origin}${service.prefix}${path}${query ? `?${query}` : ''}`);
   const cached = await cache?.match(cacheKey);
   if (cached) return cached;
 
-  if (!env.TMDB_READ_TOKEN) return json(503, {error: 'unavailable'}, {'Retry-After': '300'});
+  if (service.tmdb && !env.TMDB_READ_TOKEN) return json(503, {error: 'unavailable'}, {'Retry-After': '300'});
+  const headers = service.tmdb
+    ? {Authorization: `Bearer ${env.TMDB_READ_TOKEN}`, Accept: 'application/json'}
+    : {Accept: 'application/json', 'User-Agent': 'Vivid relay (+https://vividapp.co)'};
   let response;
   try {
-    response = await fetcher(target, {
-      headers: {Authorization: `Bearer ${env.TMDB_READ_TOKEN}`, Accept: 'application/json'},
-      redirect: 'manual',
-      signal: AbortSignal.timeout(limits.timeoutMs),
-    });
+    response = await fetcher(target, {headers, redirect: 'manual', signal: AbortSignal.timeout(limits.timeoutMs)});
   } catch {
     return json(502, {error: 'upstream_unavailable'}, {'Retry-After': '30'});
+  }
+  const seconds = route.cacheSeconds ?? limits.cacheSeconds;
+  // TVmaze answers a lookup with a redirect to the show. The show's ID is all
+  // the app needs, so the redirect is never followed.
+  if (!service.tmdb && tvmazeLookup.test(path) && (response.status === 301 || response.status === 302)) {
+    const match = /^https:\/\/api\.tvmaze\.com\/shows\/([1-9][0-9]{0,9})$/.exec(response.headers.get('Location') ?? '');
+    if (!match) return json(502, {error: 'upstream_error'}, {'Retry-After': '30'});
+    const answer = cacheable(JSON.stringify({id: Number(match[1])}), seconds);
+    if (cache) ctx.waitUntil(cache.put(cacheKey, answer.clone()).catch(() => {}));
+    return answer;
   }
   if (response.status === 404) return json(404, {error: 'not_found'});
   if (response.status === 429) {
@@ -113,7 +159,7 @@ export async function handle(request, env, ctx, {fetcher = fetch, cache = global
     return json(429, {error: 'rate_limited'}, {'Retry-After': retry});
   }
   // A rejected token is the relay's problem, never the app's key.
-  if (response.status === 401 || response.status === 403) {
+  if (service.tmdb && (response.status === 401 || response.status === 403)) {
     console.error('upstream_auth', response.status);
     return json(503, {error: 'unavailable'}, {'Retry-After': '300'});
   }
@@ -122,14 +168,7 @@ export async function handle(request, env, ctx, {fetcher = fetch, cache = global
   if (length > limits.maxBytes) return json(502, {error: 'too_large'});
 
   // The body streams through unparsed, which keeps CPU time tiny.
-  const answer = new Response(response.body, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': `public, max-age=${limits.cacheSeconds}`,
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
+  const answer = cacheable(response.body, seconds);
   if (cache) ctx.waitUntil(cache.put(cacheKey, answer.clone()).catch(() => {}));
   return answer;
 }
