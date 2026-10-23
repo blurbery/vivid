@@ -69,6 +69,16 @@ final class CalendarListTests: XCTestCase {
         XCTAssertEqual(merged.first?.source, .watchlist)
     }
 
+    /// A series shown from Continue Watching last time that's also in
+    /// history stays when history fails, even after it leaves Continue
+    /// Watching.
+    func testFailedSourceKeepsSeriesShownFromAnotherList() {
+        let previous = [CalendarStore.Candidate(contentId: "a", sources: [.continueWatching, .history])]
+        let merged = CalendarStore.candidates([], carryingOver: previous, from: [.history])
+        XCTAssertEqual(merged.map(\.contentId), ["a"])
+        XCTAssertEqual(merged.first?.source, .history)
+    }
+
     func testNewAndDueSeriesAreLookedUpAndOthersAreNot() {
         let now = Date()
         let series = [

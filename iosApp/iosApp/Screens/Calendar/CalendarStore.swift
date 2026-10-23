@@ -198,7 +198,21 @@ final class CalendarStore {
 
     struct Candidate: Codable, Hashable, Sendable {
         let contentId: String
-        var source: UpcomingEpisode.Source
+        /// Every list the series is in, so one that fails to load next time
+        /// can keep it.
+        var sources: Set<UpcomingEpisode.Source>
+
+        init(contentId: String, sources: Set<UpcomingEpisode.Source>) {
+            self.contentId = contentId
+            self.sources = sources
+        }
+
+        init(contentId: String, source: UpcomingEpisode.Source) {
+            self.init(contentId: contentId, sources: [source])
+        }
+
+        /// The most personal list, shown on its rows.
+        var source: UpcomingEpisode.Source { sources.min() ?? .history }
     }
 
     /// A catalogue item with the series link `BrowseItem` leaves out.
@@ -217,15 +231,11 @@ final class CalendarStore {
     /// leaves the others.
     private static func candidateSeries() async throws -> (candidates: [Candidate], failed: Set<UpcomingEpisode.Source>) {
         var order: [String] = []
-        var sources: [String: UpcomingEpisode.Source] = [:]
+        var sources: [String: Set<UpcomingEpisode.Source>] = [:]
         func add(_ id: String?, _ source: UpcomingEpisode.Source) {
             guard let id, !id.isEmpty else { return }
-            if let existing = sources[id] {
-                if source < existing { sources[id] = source }
-            } else {
-                sources[id] = source
-                order.append(id)
-            }
+            if sources[id] == nil { order.append(id) }
+            sources[id, default: []].insert(source)
         }
 
         // Continue Watching and Next Up, from Home's cache when it has one.
@@ -260,7 +270,7 @@ final class CalendarStore {
             failed.insert(.history)
         }
         guard failed.count < 3 else { throw URLError(.cannotLoadFromNetwork) }
-        return (ranked(order.map { Candidate(contentId: $0, source: sources[$0]!) }), failed)
+        return (ranked(order.map { Candidate(contentId: $0, sources: sources[$0]!) }), failed)
     }
 
     /// Most personal source first, keeping each source's own order, up to
@@ -272,23 +282,26 @@ final class CalendarStore {
         return Array(sorted.map(\.element).prefix(maxSeries))
     }
 
-    /// The profile's series, with the last list's series from a source that
-    /// didn't load carried over, so a busy Watchlist or history read doesn't
-    /// drop its series. A series also in a source that loaded keeps the more
-    /// personal of the two. With every source loaded, it's the list as it is
-    /// now, so a series taken off the Watchlist goes at once.
+    /// The profile's series, with every series the last list had in a source
+    /// that didn't load carried over, so a busy Watchlist or history read
+    /// doesn't drop its series. Only the failed sources come over: the ones
+    /// that loaded say where each series is now. With every source loaded,
+    /// it's the list as it is now, so a series taken off the Watchlist goes at
+    /// once.
     nonisolated static func candidates(
         _ current: [Candidate], carryingOver previous: [Candidate], from failed: Set<UpcomingEpisode.Source>
     ) -> [Candidate] {
         guard !failed.isEmpty else { return current }
         var merged = current
         var positions = Dictionary(current.enumerated().map { ($1.contentId, $0) }, uniquingKeysWith: { first, _ in first })
-        for candidate in previous where failed.contains(candidate.source) {
+        for candidate in previous {
+            let kept = candidate.sources.intersection(failed)
+            guard !kept.isEmpty else { continue }
             if let position = positions[candidate.contentId] {
-                merged[position].source = min(merged[position].source, candidate.source)
+                merged[position].sources.formUnion(kept)
             } else {
                 positions[candidate.contentId] = merged.count
-                merged.append(candidate)
+                merged.append(Candidate(contentId: candidate.contentId, sources: kept))
             }
         }
         return ranked(merged)
