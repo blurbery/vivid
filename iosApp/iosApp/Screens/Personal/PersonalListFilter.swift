@@ -107,12 +107,13 @@ struct PersonalListFilter: Hashable {
     /// in. A collection has no media type or language of its own, so Show
     /// and Anime come from those libraries: Movies or Series means it is in a
     /// library of that type (a mixed library counts as neither), and Only
-    /// anime means it is in an anime library. Without its libraries, a
-    /// collection only matches A–Z. Original Language is not used.
+    /// anime means it is in an anime library. A collection with no known
+    /// library can't be a movie, series or anime collection, so Movies,
+    /// Series and Only anime hide it and Hide anime keeps it. Original
+    /// Language is not used.
     func matchesCollection(named name: String, in libraries: [Library]) -> Bool {
         if let namePrefix, !Self.name(name, startsWith: namePrefix) { return false }
         guard show != .all || anime != .any else { return true }
-        guard !libraries.isEmpty else { return false }
         switch show {
         case .all: break
         case .movies: if !libraries.contains(where: \.isMovieLibrary) { return false }

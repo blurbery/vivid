@@ -871,7 +871,8 @@ struct MobileForYouCollections: View {
     private var activeFilter: PersonalListFilter { filter.limited(to: Self.filterChoices) }
 
     /// A personal collection's libraries are known only when it is also
-    /// shared into the server's collections.
+    /// shared into the server's collections. Without them it shows unless
+    /// Show or Only anime is on.
     private var visiblePersonal: [UserCollection] {
         personal.collections.filter {
             activeFilter.matchesCollection(named: $0.name, in: collectionLibraries[Self.key(.userCollections, $0.id)] ?? [])
