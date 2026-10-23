@@ -252,12 +252,29 @@ final class CalendarStore {
         }
 
         if let showID = await tvmazeID(for: detail),
-           let schedule: [TVmazeEpisode] = try? await get(Self.tvmazeBase + "shows/\(showID)/episodes") {
-            let upcoming = schedule.compactMap { item -> UpcomingEpisode? in
-                guard let airing = item.airing, window.contains(airing.day) else { return nil }
-                return episode(season: item.season, number: item.number, name: item.name, day: airing.day, airsAt: airing.time)
+           let seasons: [TVmazeSeason] = try? await get(Self.tvmazeBase + "shows/\(showID)/seasons") {
+            // Only the seasons that overlap the window: a long daily show's
+            // whole episode list runs to several megabytes. A day either side
+            // covers seasons dated in another time zone.
+            let current = seasons.filter { season in
+                guard let premiere = Self.localDay(season.premiereDate) else { return false }
+                let lastDay = Self.localDay(season.endDate)
+                return premiere <= window.end.addingTimeInterval(86_400)
+                    && (lastDay.map { $0 >= window.start.addingTimeInterval(-86_400) } ?? true)
             }
-            return SeriesEpisodes(show: show, episodes: Array(upcoming.prefix(Self.maxEpisodesPerSeries)))
+            var upcoming: [UpcomingEpisode] = []
+            var loaded = current.isEmpty
+            for season in current.suffix(2) {
+                guard let schedule: [TVmazeEpisode] = try? await get(Self.tvmazeBase + "seasons/\(season.id)/episodes") else { continue }
+                loaded = true
+                upcoming += schedule.compactMap { item -> UpcomingEpisode? in
+                    guard let airing = item.airing, window.contains(airing.day) else { return nil }
+                    return episode(season: item.season, number: item.number, name: item.name, day: airing.day, airsAt: airing.time)
+                }
+            }
+            if loaded {
+                return SeriesEpisodes(show: show, episodes: Array(upcoming.prefix(Self.maxEpisodesPerSeries)))
+            }
         }
 
         // Without TVmaze, TMDb knows the next episode's day but not its time.
@@ -271,6 +288,11 @@ final class CalendarStore {
     // MARK: TVmaze
 
     private struct TVmazeShow: Decodable { let id: Int }
+    private struct TVmazeSeason: Decodable {
+        let id: Int
+        let premiereDate: String?
+        let endDate: String?
+    }
     private struct TVmazeEpisode: Decodable {
         let season: Int?
         let number: Int?
@@ -298,8 +320,13 @@ final class CalendarStore {
     /// TVmaze IDs found before, by TVDB or IMDb ID. They don't change.
     private static let tvmazeIDsKey = "vivid.calendar.tvmazeIDs.v1"
     private var tvmazeIDs: [String: Int] = UserDefaults.standard.dictionary(forKey: CalendarStore.tvmazeIDsKey) as? [String: Int] ?? [:]
-    /// Lookups TVmaze had no show for, this session.
-    private var tvmazeMisses: Set<String> = []
+    /// Lookups TVmaze had no show for, and when. The relay doesn't cache a
+    /// miss, so they're kept for a few days rather than asked again on every
+    /// refresh, which would spend the TVmaze limit every device shares.
+    private static let tvmazeMissesKey = "vivid.calendar.tvmazeMisses.v1"
+    private static let tvmazeMissLifetime: TimeInterval = 3 * 24 * 60 * 60
+    private var tvmazeMisses: [String: Date] = (UserDefaults.standard.dictionary(forKey: CalendarStore.tvmazeMissesKey) as? [String: Date] ?? [:])
+        .filter { Date().timeIntervalSince($0.value) < CalendarStore.tvmazeMissLifetime }
 
     private func tvmazeID(for detail: ItemDetail) async -> Int? {
         var tvdb = detail.tvdbId.flatMap(Int.init).flatMap { $0 > 0 ? String($0) : nil }
@@ -313,14 +340,15 @@ final class CalendarStore {
             guard let value else { continue }
             let key = "\(name):\(value)"
             if let known = tvmazeIDs[key] { return known }
-            if tvmazeMisses.contains(key) { continue }
+            if let missed = tvmazeMisses[key], Date().timeIntervalSince(missed) < Self.tvmazeMissLifetime { continue }
             do {
                 let show: TVmazeShow = try await get(Self.tvmazeBase + "lookup/shows?\(name)=\(value)")
                 tvmazeIDs[key] = show.id
                 UserDefaults.standard.set(tvmazeIDs, forKey: Self.tvmazeIDsKey)
                 return show.id
             } catch RelayError.notFound {
-                tvmazeMisses.insert(key)
+                tvmazeMisses[key] = Date()
+                UserDefaults.standard.set(tvmazeMisses, forKey: Self.tvmazeMissesKey)
             } catch {
                 // Busy or unreachable: TMDb's date stands in this time.
                 return nil
@@ -353,16 +381,13 @@ final class CalendarStore {
         guard self.context == context, !Task.isCancelled else { return }
         if let seriesResult { trendingSeries = seriesResult }
         if let moviesResult { trendingMovies = moviesResult }
-        if seriesResult != nil || moviesResult != nil {
-            trendingLoadedAt = Date()
-            trendingFailed = false
-        } else if trendingSeries.isEmpty, trendingMovies.isEmpty {
-            trendingFailed = true
-        }
+        // A half that failed is tried again on the next visit, not in 6 hours.
+        trendingFailed = seriesResult == nil || moviesResult == nil
+        if !trendingFailed { trendingLoadedAt = Date() }
     }
 
-    /// Two pages of the most popular titles in the window, poster or not
-    /// left out.
+    /// Two pages of the most popular titles in the window. Results without
+    /// a poster or a date are left out.
     private func trending(media: String, kind: TrendingTitle.Kind, query: [String: String]) async -> [TrendingTitle]? {
         var titles: [TrendingTitle] = []
         var seen = Set<Int>()

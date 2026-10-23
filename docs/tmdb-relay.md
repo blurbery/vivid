@@ -49,13 +49,14 @@ Only `GET /tvmaze/<path>` for these TVmaze paths, each with only this query:
 | Path | Query | Used for | Cached for |
 | --- | --- | --- | --- |
 | `lookup/shows` | exactly one of `thetvdb={id}` or `imdb=tt…` | The TVmaze show for a series | 7 days |
-| `shows/{id}/episodes` | none | The show's episodes with UTC air times | 6 hours |
+| `shows/{id}/seasons` | none | The show's seasons with their dates, so the app reads only the ones that overlap the Calendar | 6 hours |
+| `seasons/{id}/episodes` | none | A season's episodes with UTC air times. A long daily show's whole episode list runs to several megabytes, so the app never asks for it | 6 hours |
 
 TVmaze answers a lookup with a redirect to the show. The relay never follows it: it answers `{"id": N}` from the redirect's `Location`, and only when that points at `api.tvmaze.com/shows/{id}`. Anything else under `/tvmaze/` gets `404`, and the same `400`, `405`, `429` and `502` rules apply as for TMDb. Requests carry Vivid's own `User-Agent` and no token. TVmaze allows about 20 calls every 10 seconds per address, and every device shares the relay's, so the app reads three series at a time, keeps each show's TVmaze ID on the device and uses TMDb's date when TVmaze is busy. TVmaze's data is CC BY-SA 4.0; the app credits it under the Calendar and in Acknowledgements.
 
 ## Privacy
 
-The client's address is used only as the rate-limit key. It isn't stored, logged or sent to TMDb. Workers observability is off, so request details aren't retained. Answers are cached by Cloudflare for up to a day, keyed only by the TMDb path and query. TMDb's terms allow caching for up to six months.
+The client's address is used only as the rate-limit key. It isn't stored, logged or sent to TMDb. Workers observability is off, so request details aren't retained. TMDb answers are cached by Cloudflare for up to a day and TVmaze answers for the times in the [TVmaze](#tvmaze) table, keyed only by the path and query. TMDb's terms allow caching for up to six months.
 
 The relay sees which TMDb, TVDB or IMDb IDs are looked up, which Studios & Networks lists are read and which TVmaze shows the Calendar asks for. TVmaze never receives the client's address. Libraries, watch history, account details and media-server addresses never reach it: Studios & Networks matches TMDb's lists with the library on the device. The in-app Privacy Policy and the [website privacy policy](../website/public/privacy.html) describe this for users.
 

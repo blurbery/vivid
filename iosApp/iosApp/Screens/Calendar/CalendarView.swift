@@ -284,15 +284,31 @@ struct CalendarView: View {
                 trendingRail("New series coming soon", titles: store.trendingSeries)
                 trendingRail("Movies coming soon", titles: store.trendingMovies)
             case .movies:
-                trendingGrid(store.trendingMovies)
+                filteredTrending(store.trendingMovies)
             case .series:
-                trendingGrid(store.trendingSeries)
+                filteredTrending(store.trendingSeries)
             }
             Text("From TMDb, most popular first.")
                 .font(.vividSmall)
                 .foregroundStyle(Color.vividSecondaryText)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
+        }
+    }
+
+    /// One filter's grid. Its list can be empty while the other has titles,
+    /// or failed to load on its own.
+    @ViewBuilder
+    private func filteredTrending(_ titles: [TrendingTitle]) -> some View {
+        if titles.isEmpty {
+            EmptyStateView(
+                icon: store.trendingFailed ? "wifi.exclamationmark" : "sparkles",
+                title: store.trendingFailed ? "Couldn't load what's coming" : "Nothing coming soon",
+                subtitle: store.trendingFailed ? "Pull down to try again." : nil
+            )
+            .frame(minHeight: 320)
+        } else {
+            trendingGrid(titles)
         }
     }
 

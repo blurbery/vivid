@@ -61,7 +61,9 @@ const routes = [
 ];
 
 // TVmaze, for the Calendar's episode air times. A lookup matches a show by
-// exactly one ID; its episodes carry UTC air times.
+// exactly one ID. The app reads a show's seasons, then the episodes of the
+// seasons it needs, which carry UTC air times: a long daily show's whole
+// episode list runs to several megabytes.
 const tvmazeLookup = /^lookup\/shows$/;
 const tvmazeRoutes = [
   {
@@ -72,7 +74,7 @@ const tvmazeRoutes = [
     cacheSeconds: 7 * 24 * 60 * 60,
   },
   // TVmaze refreshes its own answers hourly, and air times can move.
-  {path: new RegExp(`^shows/${id}/episodes$`), query: {}, cacheSeconds: 6 * 60 * 60},
+  {path: new RegExp(`^(shows/${id}/seasons|seasons/${id}/episodes)$`), query: {}, cacheSeconds: 6 * 60 * 60},
 ];
 
 const services = [

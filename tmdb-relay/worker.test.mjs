@@ -59,7 +59,7 @@ test('every path the app uses is accepted', async () => {
     `/3/discover/movie?${discover}&with_companies=420&primary_release_date.gte=2025-10-18&primary_release_date.lte=2026-10-18`,
     `/3/discover/tv?${discover}&first_air_date.gte=2026-10-23&first_air_date.lte=2026-12-22`,
     `/3/discover/movie?${discover}&primary_release_date.gte=2026-10-23&primary_release_date.lte=2026-12-22`,
-    '/3/tv/1399/external_ids', '/tvmaze/shows/82/episodes',
+    '/3/tv/1399/external_ids', '/tvmaze/shows/82/seasons', '/tvmaze/seasons/307/episodes',
   ]) {
     const response = await run(path, makeEnv());
     assert.equal(response.status, 200, path);
@@ -165,13 +165,13 @@ test('an oversized answer is refused', async () => {
 
 test('TVmaze requests go to TVmaze without the TMDb token and are cached', async () => {
   const env = makeEnv({upstream: () => new Response('[{"id":4952,"airstamp":"2011-04-18T01:00:00+00:00"}]', {status: 200})});
-  const response = await run('/tvmaze/shows/82/episodes', env);
+  const response = await run('/tvmaze/seasons/307/episodes', env);
   assert.equal(response.status, 200);
-  assert.equal(env.calls[0].url, 'https://api.tvmaze.com/shows/82/episodes');
+  assert.equal(env.calls[0].url, 'https://api.tvmaze.com/seasons/307/episodes');
   assert.equal(env.calls[0].init.headers.Authorization, undefined);
   assert.equal(env.calls[0].init.redirect, 'manual');
   assert.match(response.headers.get('Cache-Control'), /max-age=21600/);
-  await run('/tvmaze/shows/82/episodes', env);
+  await run('/tvmaze/seasons/307/episodes', env);
   assert.equal(env.calls.length, 1, 'the second request is served from the cache');
 });
 
@@ -191,11 +191,11 @@ test('a TVmaze lookup answers with the show ID from the redirect', async () => {
 
 test('other TVmaze paths and queries are refused without reaching TVmaze', async () => {
   const env = makeEnv();
-  for (const path of ['/tvmaze/search/shows?q=x', '/tvmaze/shows/82', '/tvmaze/people/1', '/tvmaze/schedule', '/tvmaze/shows/0/episodes']) {
+  for (const path of ['/tvmaze/search/shows?q=x', '/tvmaze/shows/82', '/tvmaze/shows/82/episodes', '/tvmaze/people/1', '/tvmaze/schedule', '/tvmaze/shows/0/seasons', '/tvmaze/seasons/0/episodes']) {
     assert.equal((await run(path, env)).status, 404, path);
   }
   for (const path of ['/tvmaze/lookup/shows', '/tvmaze/lookup/shows?thetvdb=1&imdb=tt0944947', '/tvmaze/lookup/shows?tvrage=1',
-    '/tvmaze/lookup/shows?imdb=0944947', '/tvmaze/shows/82/episodes?specials=1']) {
+    '/tvmaze/lookup/shows?imdb=0944947', '/tvmaze/seasons/307/episodes?specials=1']) {
     assert.equal((await run(path, env)).status, 400, path);
   }
   assert.equal(env.calls.length, 0);
