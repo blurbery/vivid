@@ -83,7 +83,11 @@ struct RecommendationsView: View {
                 }
             }.padding(5).vividGlass(in: Capsule())
             .frame(maxWidth: UIDevice.current.userInterfaceIdiom == .pad ? 520 : .infinity)
-            mobileFilterMenu
+            // Emby and Jellyfin collections are all the server's, so
+            // Collections has nothing to filter there.
+            if mobileSelection != "Collections" || !PersonalListFilter.Choices.collections.isEmpty {
+                mobileFilterMenu
+            }
         }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
@@ -91,14 +95,15 @@ struct RecommendationsView: View {
     }
 
     private func mobileFilterChoices(for list: String) -> PersonalListFilter.Choices {
-        list == "Collections" ? MobileForYouCollections.filterChoices : .all
+        list == "Collections" ? .collections : .lists
     }
 
     private func mobileFilter(for list: String) -> PersonalListFilter {
         (mobileFilters[list] ?? PersonalListFilter()).limited(to: mobileFilterChoices(for: list))
     }
 
-    /// A–Z lives inside this menu on iPhone and iPad.
+    /// A–Z lives inside this menu on iPhone and iPad. Collections has none,
+    /// because most collection names start with "Movies" or "TV Shows".
     private var mobileFilterMenu: some View {
         let filter = mobileFilter(for: mobileSelection)
         return Menu {
@@ -107,7 +112,7 @@ struct RecommendationsView: View {
                     get: { mobileFilter(for: mobileSelection) },
                     set: { mobileFilters[mobileSelection] = $0; chromeScrollState.reset() }
                 ),
-                showsAlphabet: true,
+                showsAlphabet: mobileSelection != "Collections",
                 choices: mobileFilterChoices(for: mobileSelection)
             )
         } label: {

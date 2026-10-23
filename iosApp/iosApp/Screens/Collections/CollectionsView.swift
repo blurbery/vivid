@@ -823,23 +823,14 @@ struct MobileForYouCollections: View {
     /// The For You Filter choice for Collections, matched on the device.
     var filter = PersonalListFilter()
 
-    /// Show and Anime come from the libraries a collection is in. Emby and
-    /// Jellyfin load one list for every library here, so they offer only A–Z.
-    static var filterChoices: PersonalListFilter.Choices {
-        MediaServerProvider.active.usesNativeUser ? [] : [.show, .anime]
-    }
-
     private struct Entry: Identifiable {
         let libraryID: Int
         let collection: LibraryCollection
-        var key: String { MobileForYouCollections.key(collection.kind ?? .regular, collection.id) }
-        var id: String { "\(libraryID):\(key)" }
+        var id: String { "\(libraryID):\(collection.kind?.rawValue ?? "regular"):\(collection.id)" }
     }
 
     @State private var personal = CollectionsViewModel()
     @State private var entries: [Entry] = []
-    /// Every library each collection is in, by `key`, for Show and Anime.
-    @State private var collectionLibraries: [String: [Library]] = [:]
     @State private var isLoading = true
     @State private var error: ErrorState?
     /// Emby and Jellyfin loads are numbered so an older response never
@@ -866,21 +857,22 @@ struct MobileForYouCollections: View {
         return AdaptiveColumns.fittedPosterWidth(containerWidth: gridWidth, columnCount: columnCount, spacing: 12, maximumWidth: nil)
     }
 
-    private static func key(_ kind: LibraryCollectionKind, _ id: String) -> String { "\(kind.rawValue):\(id)" }
+    private var activeFilter: PersonalListFilter { filter.limited(to: .collections) }
 
-    private var activeFilter: PersonalListFilter { filter.limited(to: Self.filterChoices) }
-
-    /// A personal collection's libraries are known only when it is also
-    /// shared into the server's collections. Without them it shows unless
-    /// Show or Only anime is on.
+    /// The rows above the grid are this profile's own collections.
     private var visiblePersonal: [UserCollection] {
-        personal.collections.filter {
-            activeFilter.matchesCollection(named: $0.name, in: collectionLibraries[Self.key(.userCollections, $0.id)] ?? [])
-        }
+        [.all, .mine].contains(activeFilter.source) ? personal.collections : []
     }
 
     private var visibleEntries: [Entry] {
-        entries.filter { activeFilter.matchesCollection(named: $0.collection.name, in: collectionLibraries[$0.key] ?? []) }
+        let profileID = ServerRegistry.shared.activeProfileId
+        return entries.filter {
+            activeFilter.matchesCollection(
+                kind: $0.collection.kind ?? .regular,
+                creatorProfileID: $0.collection.creatorProfileId,
+                activeProfileID: profileID
+            )
+        }
     }
 
     var body: some View {
@@ -1032,18 +1024,14 @@ struct MobileForYouCollections: View {
     ) {
         var loaded: [Entry] = []
         var seen = Set<String>()
-        var librariesByKey: [String: [Library]] = [:]
         for library in libraries {
             for collection in sectionsByLibrary[library.id, default: []].flatMap(\.collections) {
-                let key = Self.key(collection.kind ?? .regular, collection.id)
-                if !librariesByKey[key, default: []].contains(library) { librariesByKey[key, default: []].append(library) }
                 if collection.kind == .userCollections,
                    personalIDs.contains(collection.id) { continue }
                 let entry = Entry(libraryID: library.id, collection: collection)
                 if seen.insert(entry.id).inserted { loaded.append(entry) }
             }
         }
-        collectionLibraries = librariesByKey
         entries = loaded.sorted {
             $0.collection.name.localizedStandardCompare($1.collection.name) == .orderedAscending
         }

@@ -3,16 +3,13 @@ import SwiftUI
 
 /// `Collections` pill content of a library tab: a vertical grid of every
 /// collection in the scoped library (Skyline §6.3). Pressing a card pushes
-/// the existing collection detail screen.
+/// the existing collection detail screen. The caller owns the scroll view,
+/// so For You keeps its sub-tab row mounted above this grid.
 struct TVLibraryCollectionsView: View {
-    @Environment(\.forYouScrollHeader) private var scrollHeader
     let library: Library?
     var combinedLibraries: [Library] = []
-    var namePrefix: String? = nil
-    /// The For You Filter choice, matched on the device. A–Z comes from
-    /// `namePrefix` instead.
+    /// The For You Filter choice, matched on the device.
     var filter = PersonalListFilter()
-    var suppressesEdgeShading = false
     var topContentInset: CGFloat = VividTheme.Skyline.libraryContentTopInset
     var fixedColumnCount: Int? = nil
     @State private var availableWidth: CGFloat = 1760
@@ -46,14 +43,9 @@ struct TVLibraryCollectionsView: View {
         }
     }
 
-    /// Show and Anime come from the libraries a collection is in, which
-    /// every server reports here because collections load per library.
-    static let filterChoices: PersonalListFilter.Choices = [.show, .anime]
-
     private struct CachedCollections {
         let sections: [LibraryCollectionSection]
         let libraryIds: [String: Int]
-        let libraries: [String: [Library]]
     }
     private var cacheKey: String {
         "personal:tvCollections:\(library == nil ? "combined" : "library"):\(sourceLibraries.map { String($0.id) }.joined(separator: ","))"
@@ -68,20 +60,17 @@ struct TVLibraryCollectionsView: View {
     let onMoveUp: (() -> Void)?
 
     @State private var collectionSections: [LibraryCollectionSection] = []
-    /// The Filter choice with this page's A–Z selection.
-    private var activeFilter: PersonalListFilter {
-        var active = filter.limited(to: Self.filterChoices)
-        active.namePrefix = namePrefix
-        return active
-    }
+    private var activeFilter: PersonalListFilter { filter.limited(to: .collections) }
     private var displayedSections: [LibraryCollectionSection] {
         let active = activeFilter
         guard active.isActive else { return collectionSections }
+        let profileID = ServerRegistry.shared.activeProfileId
         return collectionSections.compactMap { section in
             let matching = section.collections.filter { collection in
                 active.matchesCollection(
-                    named: collection.name,
-                    in: collectionLibraries[collectionKey(collection, kind: section.kind)] ?? []
+                    kind: collection.kind ?? section.kind,
+                    creatorProfileID: collection.creatorProfileId,
+                    activeProfileID: profileID
                 )
             }
             guard !matching.isEmpty else { return nil }
@@ -92,9 +81,6 @@ struct TVLibraryCollectionsView: View {
     @State private var isLoadingCollections = true
     @State private var collectionsError: ErrorState?
     @State private var collectionLibraryIds: [String: Int] = [:]
-    /// Every library each collection is in, for Show and Anime.
-    /// `collectionLibraryIds` keeps only the first one, for navigation.
-    @State private var collectionLibraries: [String: [Library]] = [:]
     @State private var uiCustomization = UICustomizationPreferences.shared
 
     @State private var hasPendingFocusClaim = false
@@ -106,20 +92,14 @@ struct TVLibraryCollectionsView: View {
     @Namespace private var collectionsFocusNamespace
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            scrollHeader
-            LazyVStack(spacing: 44, pinnedViews: []) {
-                Color.clear
-                    .frame(height: topContentInset)
+        LazyVStack(spacing: 44, pinnedViews: []) {
+            Color.clear
+                .frame(height: topContentInset)
 
-                gridContent
-            }
-            .padding(.bottom, VividTheme.largePadding)
+            gridContent
         }
-        .contentMargins(.top, 28, for: .scrollContent)
-        .scrollClipDisabled()
-        .modifier(TVPersonalScrollAppearance(enabled: suppressesEdgeShading))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.bottom, VividTheme.largePadding)
+        .frame(maxWidth: .infinity)
         .onChange(of: artworkEntries) { _, entries in artworkWindow.update(entries) }
         .onAppear { artworkWindow.update(artworkEntries) }
         .onDisappear { artworkWindow.clear() }
@@ -236,11 +216,9 @@ struct TVLibraryCollectionsView: View {
                 ErrorView(state: collectionsError, onRetry: { Task { await loadCollections() } })
             } else {
                 EmptyStateView(
-                    icon: filtersOtherThanAlphabet ? "line.3.horizontal.decrease" : "square.stack",
+                    icon: activeFilter.isActive ? "line.3.horizontal.decrease" : "square.stack",
                     title: emptyTitle,
-                    subtitle: filtersOtherThanAlphabet
-                        ? nil
-                        : (namePrefix == nil ? "Collections created on the server will appear here." : "Choose another letter or All.")
+                    subtitle: activeFilter.isActive ? nil : "Collections created on the server will appear here."
                 )
             }
         }
@@ -263,14 +241,8 @@ struct TVLibraryCollectionsView: View {
         }
     }
 
-    private var filtersOtherThanAlphabet: Bool {
-        activeFilter.show != .all || activeFilter.anime != .any
-    }
-
     private var emptyTitle: String {
-        if filtersOtherThanAlphabet { return "No collections match these filters" }
-        if let namePrefix { return "No collections starting with \(namePrefix)" }
-        return "No collections yet"
+        activeFilter.isActive ? "No collections match these filters" : "No collections yet"
     }
 
     // MARK: - Focus hand-down
@@ -310,7 +282,6 @@ struct TVLibraryCollectionsView: View {
         if let cached: CachedCollections = ResponseCache.shared.get(cacheKey) {
             collectionSections = cached.sections
             collectionLibraryIds = cached.libraryIds
-            collectionLibraries = cached.libraries
             isLoadingCollections = false
         }
 
@@ -362,7 +333,6 @@ struct TVLibraryCollectionsView: View {
     ) {
         var sections: [LibraryCollectionSection] = []
         var sources: [String: Int] = [:]
-        var libraries: [String: [Library]] = [:]
         var combined: [LibraryCollectionKind: [LibraryCollection]] = [:]
         var seen = Set<String>()
 
@@ -372,7 +342,6 @@ struct TVLibraryCollectionsView: View {
                 for collection in section.collections {
                     let kind = collection.kind ?? section.kind
                     let key = collectionKey(collection, kind: kind)
-                    if !libraries[key, default: []].contains(source) { libraries[key, default: []].append(source) }
                     guard seen.insert(key).inserted else { continue }
                     sources[key] = source.id
                     combined[kind, default: []].append(collection)
@@ -397,10 +366,9 @@ struct TVLibraryCollectionsView: View {
         }
 
         collectionLibraryIds = sources
-        collectionLibraries = libraries
         collectionSections = sections
         ResponseCache.shared.set(
-            CachedCollections(sections: sections, libraryIds: sources, libraries: libraries),
+            CachedCollections(sections: sections, libraryIds: sources),
             for: cacheKey
         )
     }

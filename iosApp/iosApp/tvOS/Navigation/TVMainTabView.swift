@@ -687,7 +687,7 @@ private struct TVForYouView: View {
     @FocusState private var filterFocused: Bool
     private var selectedPrefix: String? { prefixes[selection] }
     private var selectedChoices: PersonalListFilter.Choices {
-        selection == .collections ? TVLibraryCollectionsView.filterChoices : .all
+        selection == .collections ? .collections : .lists
     }
     private var selectedFilter: PersonalListFilter {
         (filters[selection] ?? PersonalListFilter()).limited(to: selectedChoices)
@@ -707,55 +707,53 @@ private struct TVForYouView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
-
-            if selection == .collections {
-                TVLibraryCollectionsView(
-                    library: nil,
-                    combinedLibraries: libraries,
-                    namePrefix: selectedPrefix,
-                    filter: selectedFilter,
-                    suppressesEdgeShading: true,
-                    topContentInset: 0,
-                    fixedColumnCount: 7,
-                    isTopMenuFocused: isTopMenuFocused || focusedTab != nil || alphabetFocused || filterFocused,
-                    onMoveUp: nil
-                )
-                .environment(\.forYouScrollHeader, AnyView(sectionTabs))
-            } else {
-                ScrollView {
-                    sectionTabs
-                        .padding(.bottom, 32)
-                    if let error, items.isEmpty {
-                        ErrorView(state: error, onRetry: { Task { await reload() } })
-                    } else if items.isEmpty && !isLoading {
-                        EmptyStateView(
-                            icon: selectedFilter.isActive
-                                ? "line.3.horizontal.decrease"
-                                : (selection == .watchlist ? "bookmark" : "heart"),
-                            title: selectedFilter.isActive
-                                ? "No titles match these filters"
-                                : "Your \(selection.title.lowercased()) is empty",
-                            subtitle: nil
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 360)
-                        .focusable()
-                    } else {
-                        TVCatalogGrid(
-                            items: items,
-                            isLoading: isLoading,
-                            hasMore: hasMore,
-                            onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
-                            onNearEnd: { _ in Task { await loadMore() } },
-                            fixedColumnCount: 7
-                        )
-                        .padding(.horizontal, VividTheme.safePadding)
-                        .padding(.bottom, 48)
-                    }
+            // One scroll view for every sub-tab keeps the tab row mounted, so
+            // selecting Collections leaves focus on Collections instead of
+            // rebuilding the row and dropping focus onto Watchlist.
+            ScrollView {
+                sectionTabs
+                    .padding(.bottom, selection == .collections ? 0 : 32)
+                if selection == .collections {
+                    TVLibraryCollectionsView(
+                        library: nil,
+                        combinedLibraries: libraries,
+                        filter: selectedFilter,
+                        topContentInset: 0,
+                        fixedColumnCount: 7,
+                        isTopMenuFocused: isTopMenuFocused || focusedTab != nil || alphabetFocused || filterFocused,
+                        onMoveUp: nil
+                    )
+                } else if let error, items.isEmpty {
+                    ErrorView(state: error, onRetry: { Task { await reload() } })
+                } else if items.isEmpty && !isLoading {
+                    EmptyStateView(
+                        icon: selectedFilter.isActive
+                            ? "line.3.horizontal.decrease"
+                            : (selection == .watchlist ? "bookmark" : "heart"),
+                        title: selectedFilter.isActive
+                            ? "No titles match these filters"
+                            : "Your \(selection.title.lowercased()) is empty",
+                        subtitle: nil
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 360)
+                    .focusable()
+                } else {
+                    TVCatalogGrid(
+                        items: items,
+                        isLoading: isLoading,
+                        hasMore: hasMore,
+                        onItemTap: { router.navigate(to: .itemDetail(browseItem: $0)) },
+                        onNearEnd: { _ in Task { await loadMore() } },
+                        fixedColumnCount: 7
+                    )
+                    .padding(.horizontal, VividTheme.safePadding)
+                    .padding(.bottom, 48)
                 }
-                .contentMargins(.top, 28, for: .scrollContent)
-                .scrollClipDisabled()
-                .modifier(TVPersonalScrollAppearance())
             }
+            .contentMargins(.top, 28, for: .scrollContent)
+            .scrollClipDisabled()
+            .scrollIndicators(selection == .collections ? .hidden : .automatic)
+            .modifier(TVPersonalScrollAppearance())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.top, 176)
@@ -791,11 +789,19 @@ private struct TVForYouView: View {
                     .accessibilityAddTraits(selection == tab ? .isSelected : [])
                 }
                 Spacer(minLength: 0)
-                filterMenu
-                TVAlphabetMenu(selected: selectedPrefix) { prefix in
-                    prefixes[selection] = prefix
+                // Emby and Jellyfin collections are all the server's, so
+                // Collections has nothing to filter there.
+                if !selectedChoices.isEmpty {
+                    filterMenu
                 }
-                .focused($alphabetFocused)
+                // Most collection names start with "Movies" or "TV Shows",
+                // so A–Z doesn't help on Collections.
+                if selection != .collections {
+                    TVAlphabetMenu(selected: selectedPrefix) { prefix in
+                        prefixes[selection] = prefix
+                    }
+                    .focused($alphabetFocused)
+                }
             }
             .padding(.horizontal, VividTheme.safePadding)
             // Up and Down between the tabs and the posters are native, so a

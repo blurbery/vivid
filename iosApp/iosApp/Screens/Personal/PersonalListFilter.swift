@@ -3,7 +3,7 @@ import SwiftUI
 /// The For You Watchlist, Favourites and Collections filter. For the lists,
 /// Show, Original Language and A–Z are sent to the server; Anime is resolved
 /// on the device because no server can exclude a library from a personal
-/// list. Collections are matched on the device (see `matchesCollection`).
+/// list. Collections only use Source, matched on the device.
 struct PersonalListFilter: Hashable {
     /// The choices a Filter menu offers, apart from A–Z.
     struct Choices: OptionSet, Hashable {
@@ -11,7 +11,24 @@ struct PersonalListFilter: Hashable {
         static let show = Choices(rawValue: 1 << 0)
         static let originalLanguage = Choices(rawValue: 1 << 1)
         static let anime = Choices(rawValue: 1 << 2)
-        static let all: Choices = [.show, .originalLanguage, .anime]
+        static let source = Choices(rawValue: 1 << 3)
+        /// Watchlist and Favourites.
+        static let lists: Choices = [.show, .originalLanguage, .anime]
+        /// Only Silo has collections other than the server's own.
+        static var collections: Choices { MediaServerProvider.active.usesNativeUser ? [] : [.source] }
+    }
+
+    /// Who a collection comes from.
+    enum Source: String, CaseIterable, Identifiable {
+        case all = "All"
+        /// A collection set up on the server.
+        case server = "Server"
+        /// A personal collection another profile shares into the library.
+        case shared = "Shared"
+        /// This profile's own personal collections.
+        case mine = "Mine"
+
+        var id: Self { self }
     }
 
     enum Show: String, CaseIterable, Identifiable {
@@ -44,18 +61,20 @@ struct PersonalListFilter: Hashable {
     var anime: Anime = .any
     /// iPhone and iPad keep A–Z inside this menu; Apple TV has its own A–Z menu.
     var namePrefix: String?
+    var source: Source = .all
 
     var activeCount: Int {
         (show == .all ? 0 : 1)
             + (originalLanguage == nil ? 0 : 1)
             + (anime == .any ? 0 : 1)
             + (namePrefix == nil ? 0 : 1)
+            + (source == .all ? 0 : 1)
     }
 
     var isActive: Bool { activeCount > 0 }
 
     var cacheKey: String {
-        "show=\(show.rawValue):lang=\(originalLanguage ?? "any"):anime=\(anime.rawValue):prefix=\(namePrefix ?? "all")"
+        "show=\(show.rawValue):lang=\(originalLanguage ?? "any"):anime=\(anime.rawValue):prefix=\(namePrefix ?? "all"):source=\(source.rawValue)"
     }
 
     /// Only Silo reports each title's original language.
@@ -100,43 +119,20 @@ struct PersonalListFilter: Hashable {
         if !choices.contains(.show) { limited.show = .all }
         if !choices.contains(.originalLanguage) { limited.originalLanguage = nil }
         if !choices.contains(.anime) { limited.anime = .any }
+        if !choices.contains(.source) { limited.source = .all }
         return limited
     }
 
-    /// Whether a collection matches, from its name and every library it is
-    /// in. A collection has no media type or language of its own, so Show
-    /// and Anime come from those libraries: Movies or Series means it is in a
-    /// library of that type (a mixed library counts as neither), and Only
-    /// anime means it is in an anime library. A collection with no known
-    /// library can't be a movie, series or anime collection, so Movies,
-    /// Series and Only anime hide it and Hide anime keeps it. Original
-    /// Language is not used.
-    func matchesCollection(named name: String, in libraries: [Library]) -> Bool {
-        if let namePrefix, !Self.name(name, startsWith: namePrefix) { return false }
-        guard show != .all || anime != .any else { return true }
-        switch show {
-        case .all: break
-        case .movies: if !libraries.contains(where: \.isMovieLibrary) { return false }
-        case .series: if !libraries.contains(where: \.isSeriesLibrary) { return false }
+    /// Whether a library collection matches Source. A user collection is
+    /// Mine when `activeProfileID` made it and Shared otherwise.
+    func matchesCollection(kind: LibraryCollectionKind, creatorProfileID: String?, activeProfileID: String?) -> Bool {
+        let isMine = creatorProfileID != nil && creatorProfileID == activeProfileID
+        switch source {
+        case .all: return true
+        case .server: return kind == .regular
+        case .shared: return kind == .userCollections && !isMine
+        case .mine: return kind == .userCollections && isMine
         }
-        let isAnime = libraries.contains(where: PersonalListLoader.isAnimeLibrary)
-        switch anime {
-        case .any: return true
-        case .only: return isAnime
-        case .hide: return !isAnime
-        }
-    }
-
-    /// The A–Z rule for names matched on the device: accents and case are
-    /// ignored, and "#" is anything that doesn't start with A to Z.
-    static func name(_ name: String, startsWith prefix: String) -> Bool {
-        let title = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if prefix == "#" {
-            guard let first = title.unicodeScalars.first else { return false }
-            return !(65...90).contains(Int(first.value))
-        }
-        return title.hasPrefix(prefix)
     }
 }
 
@@ -171,7 +167,7 @@ enum PersonalListLoader {
     }
 
     /// A library whose name includes "Anime", such as "Movies Anime".
-    nonisolated static func isAnimeLibrary(_ library: Library) -> Bool {
+    static func isAnimeLibrary(_ library: Library) -> Bool {
         library.name.localizedCaseInsensitiveContains("anime")
     }
 
@@ -220,12 +216,18 @@ enum PersonalListLoader {
 struct PersonalListFilterMenuContent: View {
     @Binding var filter: PersonalListFilter
     let showsAlphabet: Bool
-    /// Collections leave out the choices they can't match.
-    var choices: PersonalListFilter.Choices = .all
+    var choices: PersonalListFilter.Choices = .lists
 
     private let letters = ["#"] + (65...90).compactMap { UnicodeScalar($0).map(String.init) }
 
     var body: some View {
+        if choices.contains(.source) {
+            Section("Source") {
+                ForEach(PersonalListFilter.Source.allCases) { source in
+                    Button { filter.source = source } label: { item(source.rawValue, selected: filter.source == source) }
+                }
+            }
+        }
         if choices.contains(.show) {
             Section("Show") {
                 ForEach(PersonalListFilter.Show.allCases) { show in
