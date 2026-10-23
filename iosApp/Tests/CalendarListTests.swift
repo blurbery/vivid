@@ -42,6 +42,33 @@ final class CalendarListTests: XCTestCase {
         XCTAssertEqual(after.map(\.seriesContentId), ["b"])
     }
 
+    /// With every source read, the list is the profile's as it is now.
+    func testSeriesTakenOffTheWatchlistIsNotCarriedOverWhenEverySourceLoaded() {
+        let previous = [candidate("a", .watchlist), candidate("b", .watchlist)]
+        let merged = CalendarStore.candidates([candidate("b", .watchlist)], carryingOver: previous, from: [])
+        XCTAssertEqual(merged.map(\.contentId), ["b"])
+    }
+
+    /// A Watchlist read that fails keeps the Watchlist's series from the
+    /// last list rather than dropping them.
+    func testFailedSourceKeepsItsSeriesFromTheLastList() {
+        let previous = [candidate("cw", .continueWatching), candidate("w", .watchlist), candidate("h", .history)]
+        let merged = CalendarStore.candidates(
+            [candidate("cw", .continueWatching), candidate("h", .history)], carryingOver: previous, from: [.watchlist]
+        )
+        XCTAssertEqual(merged.map(\.contentId), ["cw", "w", "h"])
+        XCTAssertEqual(merged.map(\.source), [.continueWatching, .watchlist, .history])
+    }
+
+    /// A series in a failed source that's also in one that loaded keeps the
+    /// more personal source, and only the failed source's series come over.
+    func testCarriedOverSeriesKeepsTheMorePersonalSource() {
+        let previous = [candidate("a", .watchlist), candidate("gone", .history)]
+        let merged = CalendarStore.candidates([candidate("a", .history)], carryingOver: previous, from: [.watchlist])
+        XCTAssertEqual(merged.map(\.contentId), ["a"])
+        XCTAssertEqual(merged.first?.source, .watchlist)
+    }
+
     func testNewAndDueSeriesAreLookedUpAndOthersAreNot() {
         let now = Date()
         let series = [

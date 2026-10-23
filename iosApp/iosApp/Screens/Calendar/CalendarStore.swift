@@ -150,17 +150,19 @@ final class CalendarStore {
     /// saved straight away, so a series taken off the Watchlist goes at once.
     /// Then looks up the new and due series, or every one when forced.
     private func fetchUpcoming(context: String, force: Bool) async {
-        let candidates: [Candidate]
+        let read: (candidates: [Candidate], failed: Set<UpcomingEpisode.Source>)
         do {
-            candidates = try await Self.candidateSeries()
+            read = try await Self.candidateSeries()
         } catch {
             guard self.context == context else { return }
             if upcoming.isEmpty { upcomingFailed = true }
             return
         }
         guard self.context == context, !Task.isCancelled else { return }
+        let candidates = Self.candidates(read.candidates, carryingOver: saved.candidates, from: read.failed)
+        let window = Self.upcomingWindow()
         saved.candidates = candidates
-        upcoming = Self.upcoming(for: candidates, saved: saved.series, window: Self.upcomingWindow())
+        upcoming = Self.upcoming(for: candidates, saved: saved.series, window: window)
         upcomingFailed = false
 
         let due = Self.seriesToLookUp(candidates, saved: saved.series, now: Date(), force: force)
@@ -174,8 +176,8 @@ final class CalendarStore {
                     saved.series[contentId] = series
                 case .partial(let series):
                     // Air dates saved before beat a stand-in, which may have
-                    // no time or nothing at all.
-                    if saved.series[contentId]?.episodes.isEmpty == false {
+                    // no time or nothing at all, while any are still to come.
+                    if saved.series[contentId]?.episodes.contains(where: { window.contains($0.day) }) == true {
                         saved.series[contentId]?.refreshAfter = now.addingTimeInterval(Self.retryLifetime)
                     } else {
                         saved.series[contentId] = series
@@ -184,7 +186,7 @@ final class CalendarStore {
                     break
                 }
             }
-            upcoming = Self.upcoming(for: candidates, saved: saved.series, window: Self.upcomingWindow())
+            upcoming = Self.upcoming(for: candidates, saved: saved.series, window: window)
         }
         // Keeps the file small: a series that's gone and due would be looked
         // up again anyway.
@@ -210,9 +212,10 @@ final class CalendarStore {
         let items: [CatalogEntry]
     }
 
-    /// The profile's series, most personal source first. Each source is read
-    /// on its own, so one that fails still leaves the others.
-    private static func candidateSeries() async throws -> [Candidate] {
+    /// The profile's series, most personal source first, and the sources that
+    /// didn't load. Each source is read on its own, so one that fails still
+    /// leaves the others.
+    private static func candidateSeries() async throws -> (candidates: [Candidate], failed: Set<UpcomingEpisode.Source>) {
         var order: [String] = []
         var sources: [String: UpcomingEpisode.Source] = [:]
         func add(_ id: String?, _ source: UpcomingEpisode.Source) {
@@ -231,7 +234,7 @@ final class CalendarStore {
         // fetch already running.
         var home: SectionsResponse? = ResponseCache.shared.get(CacheKey.homeSections)
         if home == nil { home = try? await StartupContentPrefetcher.fetchHomeSections() }
-        var anySource = home != nil
+        var failed: Set<UpcomingEpisode.Source> = home == nil ? [.continueWatching] : []
         for section in home?.sections ?? [] where ["continue_watching", "next_up"].contains(section.sectionType) {
             for item in section.items {
                 add(VividMediaType.isSeries(item.type) ? item.contentId : item.seriesId, .continueWatching)
@@ -245,21 +248,50 @@ final class CalendarStore {
             "source": "history", "offset": "0", "limit": "150", "include_total": "false",
         ], as: CatalogPage.self)
         if let watchlist = await watchlist {
-            anySource = true
             for item in watchlist.items { add(item.contentId, .watchlist) }
+        } else {
+            failed.insert(.watchlist)
         }
         if let history = await history {
-            anySource = true
             for item in history.items {
                 add(VividMediaType.isSeries(item.type) ? item.contentId : item.seriesId, .history)
             }
+        } else {
+            failed.insert(.history)
         }
-        guard anySource else { throw URLError(.cannotLoadFromNetwork) }
-        let ranked = order.enumerated().sorted {
-            let lhs = sources[$0.element]!, rhs = sources[$1.element]!
-            return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+        guard failed.count < 3 else { throw URLError(.cannotLoadFromNetwork) }
+        return (ranked(order.map { Candidate(contentId: $0, source: sources[$0]!) }), failed)
+    }
+
+    /// Most personal source first, keeping each source's own order, up to
+    /// `maxSeries`.
+    nonisolated private static func ranked(_ candidates: [Candidate]) -> [Candidate] {
+        let sorted = candidates.enumerated().sorted {
+            $0.element.source == $1.element.source ? $0.offset < $1.offset : $0.element.source < $1.element.source
         }
-        return ranked.prefix(maxSeries).map { Candidate(contentId: $0.element, source: sources[$0.element]!) }
+        return Array(sorted.map(\.element).prefix(maxSeries))
+    }
+
+    /// The profile's series, with the last list's series from a source that
+    /// didn't load carried over, so a busy Watchlist or history read doesn't
+    /// drop its series. A series also in a source that loaded keeps the more
+    /// personal of the two. With every source loaded, it's the list as it is
+    /// now, so a series taken off the Watchlist goes at once.
+    nonisolated static func candidates(
+        _ current: [Candidate], carryingOver previous: [Candidate], from failed: Set<UpcomingEpisode.Source>
+    ) -> [Candidate] {
+        guard !failed.isEmpty else { return current }
+        var merged = current
+        var positions = Dictionary(current.enumerated().map { ($1.contentId, $0) }, uniquingKeysWith: { first, _ in first })
+        for candidate in previous where failed.contains(candidate.source) {
+            if let position = positions[candidate.contentId] {
+                merged[position].source = min(merged[position].source, candidate.source)
+            } else {
+                positions[candidate.contentId] = merged.count
+                merged.append(candidate)
+            }
+        }
+        return ranked(merged)
     }
 
     /// What's saved for one series: enough to list it without asking the
