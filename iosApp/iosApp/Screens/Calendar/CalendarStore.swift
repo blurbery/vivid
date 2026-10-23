@@ -74,15 +74,20 @@ final class CalendarStore {
     private(set) var upcoming: [UpcomingEpisode] = []
     private(set) var trendingSeries: [TrendingTitle] = []
     private(set) var trendingMovies: [TrendingTitle] = []
-    var isLoadingUpcoming: Bool { loadingUpcoming == context }
-    var isLoadingTrending: Bool { loadingTrending == context }
+    var isLoadingUpcoming: Bool { upcomingLoad?.context == context }
+    var isLoadingTrending: Bool { trendingLoad?.context == context }
     private(set) var upcomingFailed = false
-    private(set) var trendingFailed = false
+    private(set) var trendingSeriesFailed = false
+    private(set) var trendingMoviesFailed = false
+    /// Either Trending list failed, so an empty page can offer a retry.
+    var trendingFailed: Bool { trendingSeriesFailed || trendingMoviesFailed }
 
-    /// The server and profile each load is for, so a switch can start its
-    /// own load while an older one finishes and is dropped.
-    private var loadingUpcoming: String?
-    private var loadingTrending: String?
+    /// Each load in flight, with the server and profile it's for. The store
+    /// owns it, so switching sub-tabs or leaving the page doesn't cancel it,
+    /// and another call waits for it rather than starting a second one. A
+    /// server or profile switch cancels it and starts its own.
+    private var upcomingLoad: (context: String, task: Task<Void, Never>)?
+    private var trendingLoad: (context: String, task: Task<Void, Never>)?
     private var upcomingContext: String?
     private var upcomingLoadedAt: Date?
     private var trendingContext: String?
@@ -101,10 +106,20 @@ final class CalendarStore {
             upcomingLoadedAt = nil
             upcomingFailed = false
         }
+        if let upcomingLoad, upcomingLoad.context == context {
+            await upcomingLoad.task.value
+            return
+        }
         if !force, let upcomingLoadedAt, Date().timeIntervalSince(upcomingLoadedAt) < 30 * 60 { return }
-        guard loadingUpcoming != context, TVTMDbStore.shared.isConfigured else { return }
-        loadingUpcoming = context
-        defer { if loadingUpcoming == context { loadingUpcoming = nil } }
+        guard TVTMDbStore.shared.isConfigured else { return }
+        upcomingLoad?.task.cancel()
+        let task = Task { await fetchUpcoming(context: context) }
+        upcomingLoad = (context, task)
+        await task.value
+        if upcomingLoad?.task == task { upcomingLoad = nil }
+    }
+
+    private func fetchUpcoming(context: String) async {
         do {
             let candidates = try await Self.candidateSeries()
             let episodes = await upcomingEpisodes(for: candidates, context: context)
@@ -262,11 +277,15 @@ final class CalendarStore {
                 return premiere <= window.end.addingTimeInterval(86_400)
                     && (lastDay.map { $0 >= window.start.addingTimeInterval(-86_400) } ?? true)
             }
+            // A season that fails could hold the next episodes, so TMDb's date
+            // stands in unless every season loaded.
             var upcoming: [UpcomingEpisode] = []
-            var loaded = current.isEmpty
+            var loaded = true
             for season in current.suffix(2) {
-                guard let schedule: [TVmazeEpisode] = try? await get(Self.tvmazeBase + "seasons/\(season.id)/episodes") else { continue }
-                loaded = true
+                guard let schedule: [TVmazeEpisode] = try? await get(Self.tvmazeBase + "seasons/\(season.id)/episodes") else {
+                    loaded = false
+                    break
+                }
                 upcoming += schedule.compactMap { item -> UpcomingEpisode? in
                     guard let airing = item.airing, window.contains(airing.day) else { return nil }
                     return episode(season: item.season, number: item.number, name: item.name, day: airing.day, airsAt: airing.time)
@@ -366,12 +385,23 @@ final class CalendarStore {
             trendingSeries = []
             trendingMovies = []
             trendingLoadedAt = nil
-            trendingFailed = false
+            trendingSeriesFailed = false
+            trendingMoviesFailed = false
+        }
+        if let trendingLoad, trendingLoad.context == context {
+            await trendingLoad.task.value
+            return
         }
         if !force, let trendingLoadedAt, Date().timeIntervalSince(trendingLoadedAt) < 6 * 60 * 60 { return }
-        guard loadingTrending != context, TVTMDbStore.shared.isConfigured else { return }
-        loadingTrending = context
-        defer { if loadingTrending == context { loadingTrending = nil } }
+        guard TVTMDbStore.shared.isConfigured else { return }
+        trendingLoad?.task.cancel()
+        let task = Task { await fetchTrending(context: context) }
+        trendingLoad = (context, task)
+        await task.value
+        if trendingLoad?.task == task { trendingLoad = nil }
+    }
+
+    private func fetchTrending(context: String) async {
         let start = Calendar.current.startOfDay(for: Date())
         let end = Calendar.current.date(byAdding: .day, value: Self.trendingDays, to: start) ?? start
         let from = Self.dayString(start), to = Self.dayString(end)
@@ -381,8 +411,9 @@ final class CalendarStore {
         guard self.context == context, !Task.isCancelled else { return }
         if let seriesResult { trendingSeries = seriesResult }
         if let moviesResult { trendingMovies = moviesResult }
-        // A half that failed is tried again on the next visit, not in 6 hours.
-        trendingFailed = seriesResult == nil || moviesResult == nil
+        // A list that failed is tried again on the next visit, not in 6 hours.
+        trendingSeriesFailed = seriesResult == nil
+        trendingMoviesFailed = moviesResult == nil
         if !trendingFailed { trendingLoadedAt = Date() }
     }
 

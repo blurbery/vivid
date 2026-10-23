@@ -284,9 +284,9 @@ struct CalendarView: View {
                 trendingRail("New series coming soon", titles: store.trendingSeries)
                 trendingRail("Movies coming soon", titles: store.trendingMovies)
             case .movies:
-                filteredTrending(store.trendingMovies)
+                filteredTrending(store.trendingMovies, failed: store.trendingMoviesFailed)
             case .series:
-                filteredTrending(store.trendingSeries)
+                filteredTrending(store.trendingSeries, failed: store.trendingSeriesFailed)
             }
             Text("From TMDb, most popular first.")
                 .font(.vividSmall)
@@ -299,12 +299,12 @@ struct CalendarView: View {
     /// One filter's grid. Its list can be empty while the other has titles,
     /// or failed to load on its own.
     @ViewBuilder
-    private func filteredTrending(_ titles: [TrendingTitle]) -> some View {
+    private func filteredTrending(_ titles: [TrendingTitle], failed: Bool) -> some View {
         if titles.isEmpty {
             EmptyStateView(
-                icon: store.trendingFailed ? "wifi.exclamationmark" : "sparkles",
-                title: store.trendingFailed ? "Couldn't load what's coming" : "Nothing coming soon",
-                subtitle: store.trendingFailed ? "Pull down to try again." : nil
+                icon: failed ? "wifi.exclamationmark" : "sparkles",
+                title: failed ? "Couldn't load what's coming" : "Nothing coming soon",
+                subtitle: failed ? "Pull down to try again." : nil
             )
             .frame(minHeight: 320)
         } else {

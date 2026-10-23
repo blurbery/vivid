@@ -564,13 +564,16 @@ private struct TVMenuCustomizationSheet: View {
                 }
 
                 // Calendar isn't reordered with the destinations above: when
-                // it's shown, it always sits just after For You.
+                // it's shown, it always sits just after For You, or at the
+                // end when For You is hidden.
                 sectionHeader("CALENDAR")
                 TVSettingsGroup {
                     HStack(spacing: TVSettingsLayout.scaled(12)) {
                         TVSettingsRowLabel(
                             title: "Calendar",
-                            detail: showCalendarTab ? "Shown in the tab bar, just after For You." : "Hidden from the tab bar."
+                            detail: !showCalendarTab ? "Hidden from the tab bar."
+                                : visibleItems.contains(.builtin(.forYou)) ? "Shown in the tab bar, just after For You."
+                                : "Shown at the end of the tab bar."
                         )
                         Spacer(minLength: TVSettingsLayout.scaled(12))
                         Button {
