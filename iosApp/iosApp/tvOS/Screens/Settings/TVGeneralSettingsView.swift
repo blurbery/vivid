@@ -504,6 +504,7 @@ private struct TVHomeSectionsControlButtonBody: View {
 
 private struct TVMenuCustomizationSheet: View {
     @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.swapMenuUtilities")) private var utilitiesSwapped = false
+    @AppStorage(MobileProfilePreferenceKeys.key("vivid.mobile.showCalendarTab")) private var showCalendarTab = true
     let libraries: [Library]
     @State private var preferences = UICustomizationPreferences.shared
     @Environment(\.dismiss) private var dismiss
@@ -562,6 +563,32 @@ private struct TVMenuCustomizationSheet: View {
                     .disabled(!familyMenuMutationsEnabled)
                 }
 
+                // Calendar isn't reordered with the destinations above: when
+                // it's shown, it always sits just after For You.
+                sectionHeader("CALENDAR")
+                TVSettingsGroup {
+                    HStack(spacing: TVSettingsLayout.scaled(12)) {
+                        TVSettingsRowLabel(
+                            title: "Calendar",
+                            detail: showCalendarTab ? "Shown in the tab bar, just after For You." : "Hidden from the tab bar."
+                        )
+                        Spacer(minLength: TVSettingsLayout.scaled(12))
+                        Button {
+                            showCalendarTab.toggle()
+                        } label: {
+                            Image(systemName: showCalendarTab ? "eye" : "eye.slash")
+                                .frame(width: TVSettingsLayout.scaled(44), height: TVSettingsLayout.scaled(44))
+                        }
+                        .buttonStyle(TVHomeSectionsControlButtonStyle(compact: true))
+                        .accessibilityLabel(showCalendarTab ? "Hide Calendar" : "Show Calendar")
+                    }
+                    .padding(.horizontal, TVSettingsLayout.scaled(24))
+                    .padding(.vertical, TVSettingsLayout.scaled(12))
+                    .background(Rectangle().fill(TVSettingsPalette.groupFill))
+                    .overlay { Rectangle().strokeBorder(Color.vividChromeRestingBorder, lineWidth: 1) }
+                }
+                .focusSection()
+
                 TVSettingsFooter("Changes save automatically. Home stays visible; press Back to return.")
             }
             .frame(maxWidth: TVSettingsLayout.contentWidth, alignment: .leading)
@@ -577,13 +604,13 @@ private struct TVMenuCustomizationSheet: View {
             Image(systemName: utilitiesSwapped ? "person.crop.circle.fill" : "magnifyingglass")
                 .frame(width: TVSettingsLayout.scaled(42))
             Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: TVSettingsLayout.scaled(24))
-            ForEach(visibleItems) { item in
-                Text(item.title)
+            ForEach(previewTitles, id: \.self) { title in
+                Text(title)
                     .font(.tvSettings(20, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.6)
                     .padding(.horizontal, TVSettingsLayout.scaled(12)).padding(.vertical, TVSettingsLayout.scaled(9))
-                    .foregroundStyle(item == .builtin(.home) ? Color.black : Color.white)
-                    .background(item == .builtin(.home) ? Color.white : Color.clear, in: Capsule())
+                    .foregroundStyle(title == "Home" ? Color.black : Color.white)
+                    .background(title == "Home" ? Color.white : Color.clear, in: Capsule())
             }
             Rectangle().fill(.white.opacity(0.22)).frame(width: 1, height: TVSettingsLayout.scaled(24))
             Image(systemName: utilitiesSwapped ? "magnifyingglass" : "person.crop.circle.fill")
@@ -595,6 +622,19 @@ private struct TVMenuCustomizationSheet: View {
         .padding(.vertical, TVSettingsLayout.scaled(28))
         .allowsHitTesting(false)
         .accessibilityLabel("Tab bar preview")
+    }
+
+    /// The bar as it will look, with Calendar in its fixed place.
+    private var previewTitles: [String] {
+        var titles = visibleItems.map(\.title)
+        if showCalendarTab {
+            if let forYou = visibleItems.firstIndex(of: .builtin(.forYou)) {
+                titles.insert("Calendar", at: forYou + 1)
+            } else {
+                titles.append("Calendar")
+            }
+        }
+        return titles
     }
 
     private var visibleItems: [PrimaryMenuItem] {

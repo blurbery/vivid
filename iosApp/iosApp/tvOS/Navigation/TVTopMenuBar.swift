@@ -40,12 +40,14 @@ enum TVLibraryTabType: String, CaseIterable, Hashable {
 enum TVRootDestination: Hashable {
     case home
     case recommendations
+    case calendar
     case libraryType(TVLibraryTabType)
 
     var title: String {
         switch self {
         case .home: return "Home"
         case .recommendations: return "For You"
+        case .calendar: return "Calendar"
         case .libraryType(let type): return type.title
         }
     }
@@ -242,7 +244,7 @@ struct TVTopMenuBar: View {
         .background(TVFocusDebugTabFramePublisher(isSelected: selectedRoot == root))
         #endif
         .accessibilityLabel("\(root.title), tab, \(index + 1) of \(count)")
-        .accessibilityHint(root == .recommendations ? "Open Watchlist, Favourites, or Collections" : "Open page")
+        .accessibilityHint(root == .recommendations ? "Open Watchlist, Favourites, or Collections" : root == .calendar ? "Open Upcoming or Trending" : "Open page")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
