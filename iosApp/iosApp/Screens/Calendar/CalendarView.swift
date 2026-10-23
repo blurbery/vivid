@@ -13,6 +13,11 @@ struct CalendarView: View {
     @State private var page: Page = .upcoming
     @State private var trendingFilter: TrendingFilter = .all
     @State private var selectedTitle: TrendingTitle?
+    @State private var showsMonth = false
+    /// The day picked in the month view, used once it closes.
+    @State private var monthPick: Date?
+    /// Trending narrowed to one day from its month view.
+    @State private var trendingDay: Date?
     /// Feeds the shared glass strip behind the status bar, as on For You.
     @State private var chromeScrollState = PageChromeScrollState()
     @Environment(AppRouter.self) private var router
@@ -23,7 +28,7 @@ struct CalendarView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    header(proxy)
+                    header
                         .id("top")
                     switch page {
                     case .upcoming: upcoming(proxy)
@@ -37,6 +42,19 @@ struct CalendarView: View {
                 .padding(.bottom, 32)
             }
             .reportsPageChromeScroll()
+            .sheet(isPresented: $showsMonth, onDismiss: {
+                guard let day = monthPick else { return }
+                monthPick = nil
+                switch page {
+                case .upcoming:
+                    withAnimation { proxy.scrollTo(day, anchor: .top) }
+                case .trending:
+                    trendingDay = day
+                    withAnimation { proxy.scrollTo("top", anchor: .top) }
+                }
+            }) {
+                monthSheet
+            }
         }
         .modifier(MobileTopScrollEdgeModifier())
         .environment(chromeScrollState)
@@ -61,7 +79,7 @@ struct CalendarView: View {
 
     // MARK: Header
 
-    private func header(_ proxy: ScrollViewProxy) -> some View {
+    private var header: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(Page.allCases, id: \.self) { item in
@@ -79,8 +97,7 @@ struct CalendarView: View {
             .vividGlass(in: Capsule())
             .frame(maxWidth: isPad ? 520 : .infinity)
             Button {
-                page = .upcoming
-                withAnimation { proxy.scrollTo("top", anchor: .top) }
+                showsMonth = true
             } label: {
                 Image(systemName: "calendar")
                     .font(.system(size: 17, weight: .semibold))
@@ -88,7 +105,26 @@ struct CalendarView: View {
                     .frame(width: 50, height: 50)
                     .vividGlass(in: Circle())
             }
-            .accessibilityLabel("Today")
+            .accessibilityLabel("Month")
+            .accessibilityHint(page == .upcoming ? "Shows the months ahead, to jump to a day" : "Shows the months ahead, to see what's coming out on a day")
+        }
+    }
+
+    /// Upcoming's month marks days with new episodes; Trending's marks
+    /// release days for the titles its filter shows.
+    private var monthSheet: some View {
+        let isUpcoming = page == .upcoming
+        return CalendarMonthSheet(
+            markedDays: Set(isUpcoming ? store.upcoming.map(\.day) : trendingTitles.map(\.day)),
+            windowDays: isUpcoming ? CalendarStore.upcomingDays : CalendarStore.trendingDays,
+            caption: isUpcoming
+                ? "Dots mark days with new episodes. Tap one to jump to it."
+                : "Dots mark days with releases. Tap one to see what's coming out.",
+            markedValue: isUpcoming ? "New episodes" : "Releases",
+            unmarkedValue: isUpcoming ? "Nothing airing" : "Nothing coming out"
+        ) { day in
+            monthPick = day
+            showsMonth = false
         }
     }
 
@@ -219,6 +255,29 @@ struct CalendarView: View {
                 )
                 .frame(minHeight: 320)
             }
+        } else if let trendingDay {
+            HStack {
+                Text(dayTitle(trendingDay))
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1)
+                    .foregroundStyle(Color.vividSecondaryText)
+                Spacer()
+                Button { self.trendingDay = nil } label: {
+                    Text("Show all")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .foregroundStyle(.white)
+                        .background(Color.white.opacity(0.1), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            let titles = trendingTitles.filter { $0.day == trendingDay }
+            if titles.isEmpty {
+                EmptyStateView(icon: "calendar", title: "Nothing coming out that day", subtitle: "Choose another day or show all.")
+                    .frame(minHeight: 320)
+            } else {
+                trendingGrid(titles)
+            }
         } else {
             switch trendingFilter {
             case .all:
@@ -234,6 +293,15 @@ struct CalendarView: View {
                 .foregroundStyle(Color.vividSecondaryText)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
+        }
+    }
+
+    /// The titles the Trending filter shows.
+    private var trendingTitles: [TrendingTitle] {
+        switch trendingFilter {
+        case .all: store.trendingSeries + store.trendingMovies
+        case .movies: store.trendingMovies
+        case .series: store.trendingSeries
         }
     }
 
@@ -260,6 +328,123 @@ struct CalendarView: View {
                     .buttonStyle(.plain)
             }
         }
+    }
+}
+
+// MARK: - Month view
+
+/// The months a Calendar page covers, with a dot on each day that has
+/// something on it. Picking one of those days hands it back.
+private struct CalendarMonthSheet: View {
+    let markedDays: Set<Date>
+    /// How many days ahead the page looks, which sets the last month.
+    let windowDays: Int
+    let caption: String
+    /// What VoiceOver says for a day with and without a dot.
+    let markedValue: String
+    let unmarkedValue: String
+    let onPick: (Date) -> Void
+
+    @State private var month = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+    @Environment(\.dismiss) private var dismiss
+
+    private var calendar: Calendar { .current }
+    private var today: Date { calendar.startOfDay(for: Date()) }
+    private var firstMonth: Date { calendar.dateInterval(of: .month, for: today)?.start ?? today }
+    /// The month the page's window ends in.
+    private var lastMonth: Date {
+        let end = calendar.date(byAdding: .day, value: windowDays, to: today) ?? today
+        return calendar.dateInterval(of: .month, for: end)?.start ?? firstMonth
+    }
+
+    /// The month's days, after blanks for the days before the 1st in the
+    /// device's own first weekday.
+    private var cells: [Date?] {
+        guard let days = calendar.range(of: .day, in: .month, for: month) else { return [] }
+        let leading = (calendar.component(.weekday, from: month) - calendar.firstWeekday + 7) % 7
+        return Array(repeating: nil, count: leading)
+            + days.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: month) }
+    }
+
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let first = calendar.firstWeekday - 1
+        return Array(symbols[first...] + symbols[..<first])
+    }
+
+    var body: some View {
+        NavigationStack {
+            // The month and its arrows live in the bar, so a six-row month
+            // scrolls under them instead of pushing into the close button.
+            ScrollView {
+                VStack(spacing: 14) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 4) {
+                        ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                            Text(symbol)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.vividSecondaryText)
+                        }
+                        ForEach(Array(cells.enumerated()), id: \.offset) { _, day in
+                            if let day { dayCell(day) } else { Color.clear.frame(height: 42) }
+                        }
+                    }
+                    Text(caption)
+                        .font(.vividSmall)
+                        .foregroundStyle(Color.vividSecondaryText)
+                        .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .navigationTitle(month.formatted(.dateTime.month(.wide).year()))
+            .vividNavigationTitleDisplayMode(.inline)
+            .toolbar {
+                VividSheetCloseItem { dismiss() }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    monthButton("chevron.left", label: "Previous month", enabled: month > firstMonth, by: -1)
+                    monthButton("chevron.right", label: "Next month", enabled: month < lastMonth, by: 1)
+                }
+            }
+        }
+        .vividGlassSheet()
+    }
+
+    private func monthButton(_ symbol: String, label: String, enabled: Bool, by offset: Int) -> some View {
+        Button {
+            if let next = calendar.date(byAdding: .month, value: offset, to: month) { month = next }
+        } label: {
+            Image(systemName: symbol)
+        }
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func dayCell(_ day: Date) -> some View {
+        let isToday = day == today
+        let hasEpisodes = markedDays.contains(day)
+        let isPast = day < today
+        return Button {
+            guard hasEpisodes else { return }
+            onPick(day)
+        } label: {
+            VStack(spacing: 3) {
+                Text(day.formatted(.dateTime.day()))
+                    .font(.system(size: 16, weight: isToday || hasEpisodes ? .semibold : .regular))
+                    .foregroundStyle(isToday ? Color.black : (hasEpisodes ? .white : Color.vividSecondaryText))
+                    .frame(width: 34, height: 34)
+                    .background(isToday ? Color.white : .clear, in: Circle())
+                Circle()
+                    .fill(hasEpisodes ? Color.vividAccent : .clear)
+                    .frame(width: 5, height: 5)
+            }
+            .frame(maxWidth: .infinity, minHeight: 42)
+            .opacity(isPast ? 0.35 : 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+        .accessibilityValue(hasEpisodes ? markedValue : unmarkedValue)
     }
 }
 
