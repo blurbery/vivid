@@ -50,6 +50,20 @@ enum VividAppLanguage: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Whether Vivid has to reopen to show `language`: false when the choice
+    /// resolves to the language it already shows.
+    static func needsReopen(for language: VividAppLanguage) -> Bool {
+        let preferences = language == .system ? deviceLanguages : [language.rawValue]
+        let resolved = Bundle.preferredLocalizations(from: Bundle.main.localizations, forPreferences: preferences).first
+        return resolved != Bundle.main.preferredLocalizations.first
+    }
+
+    /// The device's language order, without Vivid's own override.
+    private static var deviceLanguages: [String] {
+        CFPreferencesCopyValue("AppleLanguages" as CFString, kCFPreferencesAnyApplication,
+                               kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? [String] ?? []
+    }
+
     /// The language Vivid is showing now, as TMDb names it, or `nil` for
     /// English, which is what TMDb answers without one.
     static var tmdbLanguage: String? {

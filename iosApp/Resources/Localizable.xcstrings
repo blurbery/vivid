@@ -48393,6 +48393,41 @@
         }
       }
     },
+    "Reopen Vivid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid neu öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a abrir Vivid"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rouvrir Vivid"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vividを再度開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新打开 Vivid"
+          }
+        }
+      }
+    },
     "Reopen this library exactly as you left it" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -70605,6 +70640,146 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vivid 会自动尝试安全的 HTTPS 连接。"
+          }
+        }
+      }
+    },
+    "Vivid will use %@ the next time it opens. Close Vivid in the app switcher, then open it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid verwendet beim nächsten Öffnen %@. Schließe Vivid im App-Umschalter und öffne es dann erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid usará %@ la próxima vez que se abra. Cierra Vivid en el selector de apps y vuelve a abrirlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid utilisera %@ à sa prochaine ouverture. Fermez Vivid dans le sélecteur d’apps, puis rouvrez-le."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次回Vividを開くと%@が使用されます。AppスイッチャーでVividを閉じてから、再度開いてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 下次打开时将使用 %@。请在 App 切换器中关闭 Vivid，然后重新打开。"
+          }
+        }
+      }
+    },
+    "Vivid will use %@ the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid verwendet beim nächsten Öffnen %@. Drücke zweimal die TV-Taste, wische auf Vivid nach oben und öffne es dann erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid usará %@ la próxima vez que se abra. Pulsa dos veces el botón TV, desliza Vivid hacia arriba y vuelve a abrirlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid utilisera %@ à sa prochaine ouverture. Appuyez deux fois sur le bouton TV, balayez Vivid vers le haut, puis rouvrez-le."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次回Vividを開くと%@が使用されます。TVボタンを2回押し、Vividを上にスワイプしてから、再度開いてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 下次打开时将使用 %@。请按两下 TV 按钮，向上轻扫 Vivid，然后重新打开。"
+          }
+        }
+      }
+    },
+    "Vivid will use this Apple TV’s language the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid verwendet beim nächsten Öffnen die Sprache dieses Apple TV. Drücke zweimal die TV-Taste, wische auf Vivid nach oben und öffne es dann erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid usará el idioma de este Apple TV la próxima vez que se abra. Pulsa dos veces el botón TV, desliza Vivid hacia arriba y vuelve a abrirlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid utilisera la langue de cet Apple TV à sa prochaine ouverture. Appuyez deux fois sur le bouton TV, balayez Vivid vers le haut, puis rouvrez-le."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次回Vividを開くと、このApple TVの言語が使用されます。TVボタンを2回押し、Vividを上にスワイプしてから、再度開いてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 下次打开时将使用此 Apple TV 的语言。请按两下 TV 按钮，向上轻扫 Vivid，然后重新打开。"
+          }
+        }
+      }
+    },
+    "Vivid will use this device’s language the next time it opens. Close Vivid in the app switcher, then open it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid verwendet beim nächsten Öffnen die Sprache dieses Geräts. Schließe Vivid im App-Umschalter und öffne es dann erneut."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid usará el idioma de este dispositivo la próxima vez que se abra. Cierra Vivid en el selector de apps y vuelve a abrirlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid utilisera la langue de cet appareil à sa prochaine ouverture. Fermez Vivid dans le sélecteur d’apps, puis rouvrez-le."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次回Vividを開くと、このデバイスの言語が使用されます。AppスイッチャーでVividを閉じてから、再度開いてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vivid 下次打开时将使用此设备的语言。请在 App 切换器中关闭 Vivid，然后重新打开。"
           }
         }
       }

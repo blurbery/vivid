@@ -21,6 +21,15 @@ struct TVGeneralSettingsPane: View {
     let detailFocus: FocusState<TVSettingsDetailFocus?>.Binding
     @Environment(\.scenePhase) private var scenePhase
     @State private var language = VividAppLanguage.saved
+    @State private var reopenLanguage: VividAppLanguage?
+
+    private func reopenMessage(for language: VividAppLanguage) -> Text {
+        if let name = language.nativeName {
+            Text("Vivid will use \(name) the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again.")
+        } else {
+            Text("Vivid will use this Apple TV’s language the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again.")
+        }
+    }
 
     /// Languages are named in their own language; only System is translated.
     private func languageLabel(_ language: VividAppLanguage) -> String {
@@ -37,7 +46,12 @@ struct TVGeneralSettingsPane: View {
                     options: VividAppLanguage.allCases.map { .init(id: $0.rawValue, label: languageLabel($0)) },
                     selection: Binding(
                         get: { language.rawValue },
-                        set: { if let value = VividAppLanguage(rawValue: $0) { language = value; VividAppLanguage.save(value) } }
+                        set: {
+                            guard let value = VividAppLanguage(rawValue: $0) else { return }
+                            language = value
+                            VividAppLanguage.save(value)
+                            reopenLanguage = VividAppLanguage.needsReopen(for: value) ? value : nil
+                        }
                     )
                 )
                 .focused(detailFocus, equals: .generalLanguage)
@@ -167,6 +181,11 @@ struct TVGeneralSettingsPane: View {
             studiosNetworks.refresh()
         }
         .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
+        .alert("Reopen Vivid", isPresented: Binding(get: { reopenLanguage != nil }, set: { if !$0 { reopenLanguage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let reopenLanguage { reopenMessage(for: reopenLanguage) }
+        }
         .task {
             await preferences.refresh()
         }

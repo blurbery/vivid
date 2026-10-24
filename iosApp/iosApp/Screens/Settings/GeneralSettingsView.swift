@@ -9,6 +9,7 @@ struct GeneralSettingsView: View {
     @State private var registry = ServerRegistry.shared
     @State private var homeCards = TVHomeCardPreferences.shared
     @State private var language = VividAppLanguage.saved
+    @State private var reopenLanguage: VividAppLanguage?
     var body: some View {
         List {
             SettingsPageHeader(title: "General", subtitle: "App-level options for this device.", systemImage: "gearshape").settingsPageHeaderRow()
@@ -19,7 +20,10 @@ struct GeneralSettingsView: View {
                         Text(verbatim: option.nativeName ?? option.rawValue).tag(option)
                     }
                 }
-                .onChange(of: language) { _, value in VividAppLanguage.save(value) }
+                .onChange(of: language) { _, value in
+                    VividAppLanguage.save(value)
+                    reopenLanguage = VividAppLanguage.needsReopen(for: value) ? value : nil
+                }
             } header: { PhoneSettingsSectionHeader("Language") } footer: {
                 Text("System follows this device’s language. A new choice takes effect after you close Vivid in the app switcher and open it again.")
             }
@@ -87,6 +91,15 @@ struct GeneralSettingsView: View {
         }
         .onAppear { homeSections.refresh() }
         .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
+        .alert("Reopen Vivid", isPresented: Binding(get: { reopenLanguage != nil }, set: { if !$0 { reopenLanguage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let name = reopenLanguage?.nativeName {
+                Text("Vivid will use \(name) the next time it opens. Close Vivid in the app switcher, then open it again.")
+            } else {
+                Text("Vivid will use this device’s language the next time it opens. Close Vivid in the app switcher, then open it again.")
+            }
+        }
         .settingsListChrome()
         .navigationTitle("")
         .vividNavigationTitleDisplayMode(.inline)
