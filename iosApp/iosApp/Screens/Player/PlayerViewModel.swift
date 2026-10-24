@@ -66,7 +66,7 @@ struct PlayerNextUpEpisode: Identifiable, Hashable {
 
     var id: String { contentId }
     var episodeLabel: String {
-        String(localized: "S\(seasonNumber):E\(episodeNumber)", comment: "Season and episode number, for example S1:E3")
+        String(localized: "S\(String(seasonNumber)):E\(String(episodeNumber))", comment: "Season and episode number, for example S1:E3")
     }
 
     init(episode: EpisodeListItem, seriesId: String?, seriesTitle: String?) {
@@ -79,7 +79,7 @@ struct PlayerNextUpEpisode: Identifiable, Hashable {
         if let trimmedTitle, !trimmedTitle.isEmpty {
             title = trimmedTitle
         } else {
-            title = String(localized: "Episode \(episode.episodeNumber)", comment: "Fallback title for an untitled episode")
+            title = String(localized: "Episode \(String(episode.episodeNumber))", comment: "Fallback title for an untitled episode")
         }
         overview = episode.overview
         runtime = episode.runtime
@@ -112,7 +112,7 @@ struct PlayerOnDeckItem: Identifiable, Hashable {
 
     var secondaryTitle: String? {
         guard let seasonNumber, let episodeNumber else { return nil }
-        let episodeLabel = String(localized: "S\(seasonNumber):E\(episodeNumber)", comment: "Season and episode number, for example S1:E3")
+        let episodeLabel = String(localized: "S\(String(seasonNumber)):E\(String(episodeNumber))", comment: "Season and episode number, for example S1:E3")
         if seriesTitle?.isEmpty == false, !title.isEmpty {
             return "\(episodeLabel) · \(title)"
         }

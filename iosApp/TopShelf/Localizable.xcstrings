@@ -1,32 +1,32 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ · S%lldE%lld" : {
+    "%@ · S%@E%@" : {
       "comment" : "Top Shelf episode tile: series name, then season and episode numbers",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · S%2$lldF%3$lld"
+            "value" : "%1$@ · S%2$@F%3$@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ · S%2$lldE%3$lld"
+            "value" : "%1$@ · S%2$@E%3$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · T%2$lldE%3$lld"
+            "value" : "%1$@ · T%2$@E%3$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ · S%2$lldÉ%3$lld"
+            "value" : "%1$@ · S%2$@É%3$@"
           }
         }
       }

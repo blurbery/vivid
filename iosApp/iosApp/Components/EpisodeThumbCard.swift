@@ -348,8 +348,8 @@ struct EpisodeThumbCard: View {
         #if os(tvOS)
         if isTVResumeCard || showsEpisodeDetails, EpisodeCardCaption.isEpisode(item) {
             let code = [
-                item.seasonNumber.map { String(localized: "S\($0)", comment: "Season number in an episode code, e.g. S1") },
-                item.episodeNumber.map { String(localized: "E\($0)", comment: "Episode number in an episode code, e.g. E2") }
+                item.seasonNumber.map { String(localized: "S\(String($0))", comment: "Season number in an episode code, e.g. S1") },
+                item.episodeNumber.map { String(localized: "E\(String($0))", comment: "Episode number in an episode code, e.g. E2") }
             ].compactMap { $0 }.joined(separator: " ")
             let parts = [code.isEmpty ? nil : code, EpisodeCardCaption.episodeTitle(for: item)]
                 .compactMap { $0 }

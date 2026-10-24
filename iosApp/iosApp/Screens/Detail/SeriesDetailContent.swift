@@ -333,7 +333,7 @@ struct SeriesDetailContent<BelowOverview: View>: View {
     /// Show "Play S2·E5" — the user can decide resume vs. restart in
     /// the confirmation dialog the button presents.
     private func playButtonLabel(for episode: EpisodeListItem) -> String {
-        String(localized: "Play S\(episode.seasonNumber)·E\(episode.episodeNumber)")
+        String(localized: "Play S\(String(episode.seasonNumber))·E\(String(episode.episodeNumber))")
     }
 
     private var resumeTimestamp: String {
@@ -474,12 +474,12 @@ struct SeriesDetailContent<BelowOverview: View>: View {
         return String(localized: "\(count) episodes")
     }
 
-    /// "S1 · E2 — Title", or "S1 · E2" when the episode has no title.
+    /// The season and episode code, then the title when the episode has one.
     private func nextUpEpisodeCaption(_ episode: EpisodeListItem) -> String {
         if let title = episode.title {
-            return String(localized: "S\(episode.seasonNumber) · E\(episode.episodeNumber) — \(title)")
+            return String(localized: "S\(String(episode.seasonNumber)) · E\(String(episode.episodeNumber)) — \(title)")
         }
-        return String(localized: "S\(episode.seasonNumber) · E\(episode.episodeNumber)")
+        return String(localized: "S\(String(episode.seasonNumber)) · E\(String(episode.episodeNumber))")
     }
 
     // MARK: - Cast

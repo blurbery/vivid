@@ -175,7 +175,7 @@ extension DownloadManager {
                 try await downloadEpisode(
                     seriesId: seriesId,
                     episodeId: episode.contentId,
-                    displayTitle: episode.title ?? String(localized: "Episode \(episode.episodeNumber)"),
+                    displayTitle: episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))"),
                     displaySubtitle: "S\(episode.seasonNumber) · E\(episode.episodeNumber)",
                     seriesTitle: seriesTitle,
                     posterThumbhash: posterThumbhash,
@@ -202,7 +202,7 @@ extension DownloadManager {
                     waiting.append(WaitingDownload(
                         id: candidate.contentId,
                         seriesId: seriesId,
-                        title: candidate.title ?? String(localized: "Episode \(candidate.episodeNumber)"),
+                        title: candidate.title ?? String(localized: "Episode \(String(candidate.episodeNumber))"),
                         subtitle: "S\(candidate.seasonNumber) · E\(candidate.episodeNumber)",
                         seriesTitle: seriesTitle,
                         seasonNumber: candidate.seasonNumber,

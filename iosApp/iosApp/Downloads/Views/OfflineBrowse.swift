@@ -105,7 +105,7 @@ struct OfflineSeriesBrowseView: View {
                     Button {
                         selectedSeasonNumber = season.seasonNumber
                     } label: {
-                        Text(season.isSpecials ? "Specials" : "Season \(season.seasonNumber)")
+                        Text(season.isSpecials ? "Specials" : "Season \(String(season.seasonNumber))")
                             .font(.system(size: 13.5, weight: .semibold))
                             .foregroundColor(isSelected ? .vividOnSurface : .vividSecondaryText)
                             .padding(.horizontal, 14)
@@ -174,12 +174,12 @@ struct OfflineSeriesBrowseView: View {
         }
         if let season = record.seasonNumber, season > 0 {
             return resume
-                ? String(localized: "Resume S\(season)·E\(episode)", comment: "Button that resumes a season and episode, e.g. Resume S1·E4")
-                : String(localized: "Play S\(season)·E\(episode)", comment: "Button that plays a season and episode, e.g. Play S1·E4")
+                ? String(localized: "Resume S\(String(season))·E\(String(episode))", comment: "Button that resumes a season and episode, e.g. Resume S1·E4")
+                : String(localized: "Play S\(String(season))·E\(String(episode))", comment: "Button that plays a season and episode, e.g. Play S1·E4")
         }
         return resume
-            ? String(localized: "Resume E\(episode)", comment: "Button that resumes an episode, e.g. Resume E4")
-            : String(localized: "Play E\(episode)", comment: "Button that plays an episode, e.g. Play E4")
+            ? String(localized: "Resume E\(String(episode))", comment: "Button that resumes an episode, e.g. Resume E4")
+            : String(localized: "Play E\(String(episode))", comment: "Button that plays an episode, e.g. Play E4")
     }
 
     private func play(_ record: DownloadRecord) {
@@ -401,8 +401,8 @@ struct OfflineDownloadDetailView: View {
     private func episodeEyebrow(_ record: DownloadRecord) -> String {
         let series = (record.seriesTitle ?? manifest?.seriesTitle ?? "").uppercased()
         let tag = [
-            record.seasonNumber.map { String(localized: "S\($0)", comment: "Season number abbreviation, e.g. S1") },
-            record.episodeNumber.map { String(localized: "E\($0)", comment: "Episode number abbreviation, e.g. E4") }
+            record.seasonNumber.map { String(localized: "S\(String($0))", comment: "Season number abbreviation, e.g. S1") },
+            record.episodeNumber.map { String(localized: "E\(String($0))", comment: "Episode number abbreviation, e.g. E4") }
         ]
             .compactMap { $0 }
             .joined(separator: " · ")

@@ -379,7 +379,7 @@ struct MovieDetailContent<BelowOverview: View>: View {
     private var episodeRailEyebrow: String {
         if let seasonNumber = selectedSeason?.seasonNumber ?? detail.seasonNumber,
            seasonNumber > 0 {
-            return String(localized: "Season \(seasonNumber)")
+            return String(localized: "Season \(String(seasonNumber))")
         }
         return String(localized: "This Season")
     }
@@ -442,8 +442,8 @@ struct MovieDetailContent<BelowOverview: View>: View {
         if detail.type == "episode",
            let season = detail.seasonNumber,
            let episode = detail.episodeNumber {
-            if season == 0 { return String(localized: "Play E\(episode)") }
-            return String(localized: "Play S\(season)·E\(episode)")
+            if season == 0 { return String(localized: "Play E\(String(episode))") }
+            return String(localized: "Play S\(String(season))·E\(String(episode))")
         }
         return String(localized: "Play")
     }

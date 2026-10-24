@@ -134,7 +134,7 @@ private struct PhoneEpisodeCard: View {
                 .buttonStyle(.plain)
                 .padding(.top, (stillHeight - 42) / 2)
                 .accessibilityLabel(
-                    "Play Season \(episode.seasonNumber), Episode \(episode.episodeNumber)"
+                    "Play Season \(String(episode.seasonNumber)), Episode \(String(episode.episodeNumber))"
                 )
             }
         }
@@ -145,7 +145,7 @@ private struct PhoneEpisodeCard: View {
             still
             if captionStyle.showsTitle {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("EPISODE \(episode.episodeNumber)")
+                    Text("EPISODE \(String(episode.episodeNumber))")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 

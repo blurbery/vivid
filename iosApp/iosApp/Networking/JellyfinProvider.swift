@@ -552,7 +552,7 @@ struct JellyfinAdapter {
             value["userData"] = state
             value["isSpecials"] = seasonNumber == 0
             if let seasonNumber, seasonNumber >= 0 {
-                value["title"] = seasonNumber == 0 ? String(localized: "Specials") : String(localized: "Season \(seasonNumber)")
+                value["title"] = seasonNumber == 0 ? String(localized: "Specials") : String(localized: "Season \(String(seasonNumber))")
             }
         }
         if kind == "episode" { value["seasonNumber"] = raw["ParentIndexNumber"] as? Int ?? 0; value["episodeNumber"] = raw["IndexNumber"] as? Int ?? 0; value["files"] = value["versions"] }

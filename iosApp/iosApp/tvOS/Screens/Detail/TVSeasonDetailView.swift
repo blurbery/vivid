@@ -221,13 +221,13 @@ struct TVSeasonDetailView<BelowSynopsis: View>: View {
     }
 
     private func playButtonSubtitle(for episode: EpisodeListItem) -> String {
-        String(localized: "S\(episode.seasonNumber):E\(episode.episodeNumber)")
+        String(localized: "S\(String(episode.seasonNumber)):E\(String(episode.episodeNumber))")
     }
 
     /// "S1 E2", built like the episode cards' code.
     private static func episodeCode(_ episode: EpisodeListItem) -> String {
-        String(localized: "S\(episode.seasonNumber)", comment: "Season number in an episode code, e.g. S1") + " "
-            + String(localized: "E\(episode.episodeNumber)", comment: "Episode number in an episode code, e.g. E2")
+        String(localized: "S\(String(episode.seasonNumber))", comment: "Season number in an episode code, e.g. S1") + " "
+            + String(localized: "E\(String(episode.episodeNumber))", comment: "Episode number in an episode code, e.g. E2")
     }
 
     private var effectiveNextUpVersion: FileVersion? {

@@ -234,14 +234,14 @@ struct TVSeriesDetailView<BelowSynopsis: View>: View {
 
     private func showPlayTitle(for episode: EpisodeListItem) -> String {
         episode.userData?.isInProgress == true
-            ? String(localized: "Resume S\(episode.seasonNumber):E\(episode.episodeNumber)")
-            : String(localized: "Play S\(episode.seasonNumber):E\(episode.episodeNumber)")
+            ? String(localized: "Resume S\(String(episode.seasonNumber)):E\(String(episode.episodeNumber))")
+            : String(localized: "Play S\(String(episode.seasonNumber)):E\(String(episode.episodeNumber))")
     }
 
     /// "S1 E2", built like the episode cards' code.
     private static func episodeCode(_ episode: EpisodeListItem) -> String {
-        String(localized: "S\(episode.seasonNumber)", comment: "Season number in an episode code, e.g. S1") + " "
-            + String(localized: "E\(episode.episodeNumber)", comment: "Episode number in an episode code, e.g. E2")
+        String(localized: "S\(String(episode.seasonNumber))", comment: "Season number in an episode code, e.g. S1") + " "
+            + String(localized: "E\(String(episode.episodeNumber))", comment: "Episode number in an episode code, e.g. E2")
     }
 
     private static func subtitleContext(for item: ItemDetail) -> OpenSubtitlePlaybackContext {

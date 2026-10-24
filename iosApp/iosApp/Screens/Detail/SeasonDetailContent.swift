@@ -199,7 +199,7 @@ struct SeasonDetailContent<BelowOverview: View>: View {
     /// Show "Play E5" — the user picks resume vs. restart in the
     /// confirmation dialog the button presents.
     private func playButtonLabel(for episode: EpisodeListItem) -> String {
-        String(localized: "Play E\(episode.episodeNumber)")
+        String(localized: "Play E\(String(episode.episodeNumber))")
     }
 
     private var resumeTimestamp: String {

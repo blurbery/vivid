@@ -255,10 +255,10 @@ extension TVMarqueeContent {
     private static func episodeToken(season: Int?, episode: Int?) -> String? {
         switch (season, episode) {
         case let (season?, episode?):
-            return String(localized: "S\(season)", comment: "Season number in an episode code, e.g. S1") + " "
-                + String(localized: "E\(episode)", comment: "Episode number in an episode code, e.g. E2")
-        case let (season?, nil): return String(localized: "Season \(season)")
-        case let (nil, episode?): return String(localized: "Episode \(episode)")
+            return String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1") + " "
+                + String(localized: "E\(String(episode))", comment: "Episode number in an episode code, e.g. E2")
+        case let (season?, nil): return String(localized: "Season \(String(season))")
+        case let (nil, episode?): return String(localized: "Episode \(String(episode))")
         default: return nil
         }
     }

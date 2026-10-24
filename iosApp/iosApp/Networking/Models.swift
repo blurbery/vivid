@@ -597,7 +597,7 @@ struct Season: Codable, Identifiable, Hashable {
         if isSpecials == true || seasonNumber == 0 {
             return title ?? String(localized: "Specials")
         }
-        return String(localized: "Season \(seasonNumber)")
+        return String(localized: "Season \(String(seasonNumber))")
     }
 
     init(from decoder: Decoder) throws {

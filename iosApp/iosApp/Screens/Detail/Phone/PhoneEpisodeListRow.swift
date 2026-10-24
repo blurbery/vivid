@@ -46,7 +46,7 @@ struct PhoneEpisodeListRow: View {
                     y: (thumbnailHeight - 38) / 2
                 )
                 .accessibilityLabel(
-                    "Play Season \(episode.seasonNumber), Episode \(episode.episodeNumber)"
+                    "Play Season \(String(episode.seasonNumber)), Episode \(String(episode.episodeNumber))"
                 )
             }
         }
@@ -82,7 +82,7 @@ struct PhoneEpisodeListRow: View {
 
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("EPISODE \(episode.episodeNumber)")
+            Text("EPISODE \(String(episode.episodeNumber))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

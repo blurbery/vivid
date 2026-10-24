@@ -531,7 +531,7 @@ private struct SeriesDownloadOptionsSheet: View {
 
                     if canDownloadSeason, let selectedSeason {
                         optionButton(
-                            title: "Download Season \(selectedSeason.seasonNumber)",
+                            title: "Download Season \(String(selectedSeason.seasonNumber))",
                             detail: rowDetail(episodes: selectedSeason.episodeCount),
                             icon: "arrow.down.square.on.square"
                         ) {
@@ -1109,7 +1109,7 @@ private struct SeriesEpisodeDownloadPicker: View {
                 selectionIndicator(for: episode)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(episode.title ?? String(localized: "Episode \(episode.episodeNumber)"))
+                    Text(episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))"))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.vividOnSurface)
                         .lineLimit(1)
@@ -1165,7 +1165,7 @@ private struct SeriesEpisodeDownloadPicker: View {
     }
 
     private func episodeDetailText(_ episode: EpisodeListItem) -> String {
-        var parts = [String(localized: "Episode \(episode.episodeNumber)")]
+        var parts = [String(localized: "Episode \(String(episode.episodeNumber))")]
         if let runtime = episode.runtime, runtime > 0 {
             parts.append(String(localized: "\(runtime) min"))
         }
@@ -1345,7 +1345,7 @@ struct SeriesMonitorSheet: View {
                     }
                     if mode == .specificSeasons {
                         ForEach(seasons) { season in
-                            Toggle("Season \(season.seasonNumber)", isOn: Binding(
+                            Toggle("Season \(String(season.seasonNumber))", isOn: Binding(
                                 get: { selectedSeasons.contains(season.seasonNumber) },
                                 set: { isOn in
                                     if isOn { selectedSeasons.insert(season.seasonNumber) }

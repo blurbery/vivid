@@ -215,7 +215,7 @@ private extension SectionItem {
     ) {
         contentId = episode.contentId
         type = "episode"
-        title = episode.title ?? String(localized: "Episode \(episode.episodeNumber)")
+        title = episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
         self.seriesId = seriesId
         self.seriesTitle = seriesTitle
         seasonNumber = episode.seasonNumber
@@ -352,8 +352,8 @@ struct TVEpisodeCard: View {
                         }
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("EPISODE \(episode.episodeNumber)").font(.system(size: 18)).foregroundStyle(.secondary)
-                    (episode.title.map { Text($0) } ?? Text("Episode \(episode.episodeNumber)")).font(.system(size: 24, weight: .semibold)).lineLimit(1)
+                    Text("EPISODE \(String(episode.episodeNumber))").font(.system(size: 18)).foregroundStyle(.secondary)
+                    (episode.title.map { Text($0) } ?? Text("Episode \(String(episode.episodeNumber))")).font(.system(size: 24, weight: .semibold)).lineLimit(1)
                     Text(episode.overview ?? "").font(.system(size: 20)).foregroundStyle(.secondary).lineLimit(2)
                         .frame(height: 52, alignment: .topLeading)
                     Text(DetailDateFormatting.abbreviatedDate(episode.airDate) ?? "")
@@ -430,7 +430,7 @@ struct TVEpisodeCard: View {
             Button {
                 onPlay(episode.contentId)
             } label: {
-                Label("Play S\(episode.seasonNumber):E\(episode.episodeNumber)", systemImage: "play.fill")
+                Label("Play S\(String(episode.seasonNumber)):E\(String(episode.episodeNumber))", systemImage: "play.fill")
             }
         }
 
@@ -511,7 +511,7 @@ private struct EpisodeCardLabel: View {
 
                     if !hidesEpisodeTitle {
                         HStack(alignment: .firstTextBaseline, spacing: 16) {
-                            (episode.title.map { Text($0) } ?? Text("Episode \(episode.episodeNumber)"))
+                            (episode.title.map { Text($0) } ?? Text("Episode \(String(episode.episodeNumber))"))
                                 .font(.system(size: 24, weight: .semibold))
                                 .foregroundStyle(titleColor)
                                 .lineLimit(1)
@@ -710,7 +710,7 @@ struct TVContinuousEpisodeShelf: View {
                             Button {
                                 selectSeason(season, using: proxy)
                             } label: {
-                                Text(season.seasonNumber == 0 ? "Specials" : "Season \(season.seasonNumber)")
+                                Text(season.seasonNumber == 0 ? "Specials" : "Season \(String(season.seasonNumber))")
                                     .font(.system(size: 22, weight: .semibold))
                                     .fixedSize()
                             }
@@ -771,7 +771,7 @@ struct TVContinuousEpisodeShelf: View {
 
                                 }
                             } else {
-                                Button("Load Season \(season.seasonNumber)") {
+                                Button("Load Season \(String(season.seasonNumber))") {
                                     pendingJump = season.id
                                     onSeason(season)
                                 }.frame(width: 400, height: 225)

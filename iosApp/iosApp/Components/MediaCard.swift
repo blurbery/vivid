@@ -39,8 +39,8 @@ func episodeRailAccessibilityLabel(
     isPlayed: Bool
 ) -> String {
     var components = [seasonNumber == 0
-        ? String(localized: "Specials, Episode \(episodeNumber)", comment: "Spoken episode position in the specials season")
-        : String(localized: "Season \(seasonNumber), Episode \(episodeNumber)", comment: "Spoken episode position")]
+        ? String(localized: "Specials, Episode \(String(episodeNumber))", comment: "Spoken episode position in the specials season")
+        : String(localized: "Season \(String(seasonNumber)), Episode \(String(episodeNumber))", comment: "Spoken episode position")]
     if let title, !title.isEmpty {
         components.append(title)
     }

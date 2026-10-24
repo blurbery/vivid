@@ -135,44 +135,44 @@
         }
       }
     },
-    "%@ (%lld×%lld display)" : {
+    "%@ (%@×%@ display)" : {
       "comment" : "Playback stats: coded size and the anamorphic display size",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ (Anzeige %2$lld×%3$lld)"
+            "value" : "%1$@ (Anzeige %2$@×%3$@)"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ (%2$lld×%3$lld display)"
+            "value" : "%1$@ (%2$@×%3$@ display)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ (visualización %2$lld×%3$lld)"
+            "value" : "%1$@ (visualización %2$@×%3$@)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ (affichage %2$lld×%3$lld)"
+            "value" : "%1$@ (affichage %2$@×%3$@)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@（表示サイズ %2$lld×%3$lld）"
+            "value" : "%1$@（表示サイズ %2$@×%3$@）"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@（显示为 %2$lld×%3$lld）"
+            "value" : "%1$@（显示为 %2$@×%3$@）"
           }
         }
       }
@@ -212,38 +212,38 @@
         }
       }
     },
-    "%@ (S%lldE%lld)" : {
+    "%@ (S%@E%@)" : {
       "comment" : "A series title with its season and episode, e.g. Exodus (S2E8)",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ (S%2$lldF%3$lld)"
+            "value" : "%1$@ (S%2$@F%3$@)"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ (S%2$lldE%3$lld)"
+            "value" : "%1$@ (S%2$@E%3$@)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ (T%2$lldE%3$lld)"
+            "value" : "%1$@ (T%2$@E%3$@)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ (S%2$lldÉ%3$lld)"
+            "value" : "%1$@ (S%2$@É%3$@)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@（S%2$lldE%3$lld）"
+            "value" : "%1$@（S%2$@E%3$@）"
           }
         }
       }
@@ -8066,41 +8066,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关于"
-          }
-        }
-      }
-    },
-    "About %@ per hour" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ca. %@ pro Stunde"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unos %@ por hora"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Environ %@ par heure"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1時間あたり約%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每小时约 %@"
           }
         }
       }
@@ -23562,37 +23527,37 @@
         }
       }
     },
-    "Download Season %lld" : {
+    "Download Season %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Staffel %lld laden"
+            "value" : "Staffel %@ laden"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargar temporada %lld"
+            "value" : "Descargar temporada %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Télécharger la saison %lld"
+            "value" : "Télécharger la saison %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーズン%lldをダウンロード"
+            "value" : "シーズン%@をダウンロード"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下载第 %lld 季"
+            "value" : "下载第 %@ 季"
           }
         }
       }
@@ -24705,44 +24670,44 @@
         }
       }
     },
-    "E%lld" : {
+    "E%@" : {
       "comment" : "Episode number abbreviation, e.g. E4\nEpisode number in an episode code, e.g. E2\nEpisode number, abbreviated, for example E3",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "F%lld"
+            "value" : "F%@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "É%lld"
+            "value" : "É%@"
           }
         }
       }
     },
-    "E%lld · %@" : {
+    "E%@ · %@" : {
       "comment" : "Episode number abbreviation and episode title, e.g. E4 · Pilot",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "F%1$lld · %2$@"
+            "value" : "F%1$@ · %2$@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "E%1$lld · %2$@"
+            "value" : "E%1$@ · %2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "É%1$lld · %2$@"
+            "value" : "É%1$@ · %2$@"
           }
         }
       }
@@ -24782,37 +24747,37 @@
         }
       }
     },
-    "EPISODE %lld" : {
+    "EPISODE %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FOLGE %lld"
+            "value" : "FOLGE %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "EPISODIO %lld"
+            "value" : "EPISODIO %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ÉPISODE %lld"
+            "value" : "ÉPISODE %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "エピソード%lld"
+            "value" : "エピソード%@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "第 %lld 集"
+            "value" : "第 %@ 集"
           }
         }
       }
@@ -25939,38 +25904,38 @@
         }
       }
     },
-    "Episode %lld" : {
+    "Episode %@" : {
       "comment" : "Fallback title for an untitled episode",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Folge %lld"
+            "value" : "Folge %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Episodio %lld"
+            "value" : "Episodio %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Épisode %lld"
+            "value" : "Épisode %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "エピソード%lld"
+            "value" : "エピソード%@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "第 %lld 集"
+            "value" : "第 %@ 集"
           }
         }
       }
@@ -26846,37 +26811,37 @@
         }
       }
     },
-    "File %lld" : {
+    "File %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Datei %lld"
+            "value" : "Datei %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Archivo %lld"
+            "value" : "Archivo %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fichier %lld"
+            "value" : "Fichier %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ファイル%lld"
+            "value" : "ファイル%@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "文件 %lld"
+            "value" : "文件 %@"
           }
         }
       }
@@ -28528,41 +28493,6 @@
         }
       }
     },
-    "Get a New %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ neu anfordern"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Obtener un %@ nuevo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Obtenir un nouveau %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新しい%@を取得"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "获取新的 %@"
-          }
-        }
-      }
-    },
     "Get a New Code" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28629,41 +28559,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "获取新 PIN 码"
-          }
-        }
-      }
-    },
-    "Get a new %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ neu anfordern"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Obtener un %@ nuevo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Obtenir un nouveau %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新しい%@を取得"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "获取新的 %@"
           }
         }
       }
@@ -32835,37 +32730,37 @@
         }
       }
     },
-    "Load Season %lld" : {
+    "Load Season %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Staffel %lld anzeigen"
+            "value" : "Staffel %@ anzeigen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cargar temporada %lld"
+            "value" : "Cargar temporada %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Charger la saison %lld"
+            "value" : "Charger la saison %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーズン%lldを読み込む"
+            "value" : "シーズン%@を読み込む"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "载入第 %lld 季"
+            "value" : "载入第 %@ 季"
           }
         }
       }
@@ -37298,37 +37193,37 @@
         }
       }
     },
-    "Network %lld" : {
+    "Network %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Netzwerk %lld"
+            "value" : "Netzwerk %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Red %lld"
+            "value" : "Red %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Réseau %lld"
+            "value" : "Réseau %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ネットワーク%lld"
+            "value" : "ネットワーク%@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "网络错误 %lld"
+            "value" : "网络错误 %@"
           }
         }
       }
@@ -40844,21 +40739,75 @@
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nur %lld Titel"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nur %lld Titel"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Nur %lld Titel"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Only %lld title"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Only %lld titles"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo %lld títulos"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Solo %lld título"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Solo %lld títulos"
+                }
+              }
+            }
           }
         },
         "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seulement %lld titres"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Seulement %lld titre"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Seulement %lld titres"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -43061,38 +43010,38 @@
         }
       }
     },
-    "Play E%lld" : {
+    "Play E%@" : {
       "comment" : "Button that plays an episode, e.g. Play E4",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "F%lld wiedergeben"
+            "value" : "F%@ wiedergeben"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reproducir E%lld"
+            "value" : "Reproducir E%@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lire É%lld"
+            "value" : "Lire É%@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "E%lldを再生"
+            "value" : "E%@を再生"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放 E%lld"
+            "value" : "播放 E%@"
           }
         }
       }
@@ -43132,126 +43081,126 @@
         }
       }
     },
-    "Play S%lld:E%lld" : {
+    "Play S%@:E%@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld:F%2$lld wiedergeben"
+            "value" : "S%1$@:F%2$@ wiedergeben"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Play S%1$lld:E%2$lld"
+            "value" : "Play S%1$@:E%2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reproducir T%1$lld:E%2$lld"
+            "value" : "Reproducir T%1$@:E%2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lire S%1$lld:É%2$lld"
+            "value" : "Lire S%1$@:É%2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld:E%2$lldを再生"
+            "value" : "S%1$@:E%2$@を再生"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放 S%1$lld:E%2$lld"
+            "value" : "播放 S%1$@:E%2$@"
           }
         }
       }
     },
-    "Play S%lld·E%lld" : {
+    "Play S%@·E%@" : {
       "comment" : "Button that plays a season and episode, e.g. Play S1·E4",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld·F%2$lld wiedergeben"
+            "value" : "S%1$@·F%2$@ wiedergeben"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Play S%1$lld·E%2$lld"
+            "value" : "Play S%1$@·E%2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reproducir T%1$lld·E%2$lld"
+            "value" : "Reproducir T%1$@·E%2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lire S%1$lld·É%2$lld"
+            "value" : "Lire S%1$@·É%2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld·E%2$lldを再生"
+            "value" : "S%1$@·E%2$@を再生"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放 S%1$lld·E%2$lld"
+            "value" : "播放 S%1$@·E%2$@"
           }
         }
       }
     },
-    "Play Season %lld, Episode %lld" : {
+    "Play Season %@, Episode %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Staffel %1$lld, Folge %2$lld wiedergeben"
+            "value" : "Staffel %1$@, Folge %2$@ wiedergeben"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Play Season %1$lld, Episode %2$lld"
+            "value" : "Play Season %1$@, Episode %2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reproducir temporada %1$lld, episodio %2$lld"
+            "value" : "Reproducir temporada %1$@, episodio %2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lire la saison %1$lld, épisode %2$lld"
+            "value" : "Lire la saison %1$@, épisode %2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーズン%1$lld、エピソード%2$lldを再生"
+            "value" : "シーズン%1$@、エピソード%2$@を再生"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放第 %1$lld 季第 %2$lld 集"
+            "value" : "播放第 %1$@ 季第 %2$@ 集"
           }
         }
       }
@@ -49620,121 +49569,121 @@
         }
       }
     },
-    "Resume E%lld" : {
+    "Resume E%@" : {
       "comment" : "Button that resumes an episode, e.g. Resume E4",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "F%lld fortsetzen"
+            "value" : "F%@ fortsetzen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reanudar E%lld"
+            "value" : "Reanudar E%@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reprendre É%lld"
+            "value" : "Reprendre É%@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "E%lldを再開"
+            "value" : "E%@を再開"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "继续播放 E%lld"
+            "value" : "继续播放 E%@"
           }
         }
       }
     },
-    "Resume S%lld:E%lld" : {
+    "Resume S%@:E%@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld:F%2$lld fortsetzen"
+            "value" : "S%1$@:F%2$@ fortsetzen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Resume S%1$lld:E%2$lld"
+            "value" : "Resume S%1$@:E%2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reanudar T%1$lld:E%2$lld"
+            "value" : "Reanudar T%1$@:E%2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reprendre S%1$lld:É%2$lld"
+            "value" : "Reprendre S%1$@:É%2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld:E%2$lldを再開"
+            "value" : "S%1$@:E%2$@を再開"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "继续播放 S%1$lld:E%2$lld"
+            "value" : "继续播放 S%1$@:E%2$@"
           }
         }
       }
     },
-    "Resume S%lld·E%lld" : {
+    "Resume S%@·E%@" : {
       "comment" : "Button that resumes a season and episode, e.g. Resume S1·E4",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld·F%2$lld fortsetzen"
+            "value" : "S%1$@·F%2$@ fortsetzen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Resume S%1$lld·E%2$lld"
+            "value" : "Resume S%1$@·E%2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reanudar T%1$lld·E%2$lld"
+            "value" : "Reanudar T%1$@·E%2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reprendre S%1$lld·É%2$lld"
+            "value" : "Reprendre S%1$@·É%2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "S%1$lld·E%2$lldを再開"
+            "value" : "S%1$@·E%2$@を再開"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "继续播放 S%1$lld·E%2$lld"
+            "value" : "继续播放 S%1$@·E%2$@"
           }
         }
       }
@@ -50514,6 +50463,18 @@
         }
       }
     },
+    "S%@" : {
+      "comment" : "Season number abbreviation, e.g. S1\nSeason number in an episode code, e.g. S1\nSeason number, abbreviated, for example S2",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "T%@"
+          }
+        }
+      }
+    },
     "S%@ E%@" : {
       "comment" : "Spaced episode code with zero-padded season and episode numbers, e.g. S01 E02",
       "extractionState" : "manual",
@@ -50544,6 +50505,106 @@
         }
       }
     },
+    "S%@ · E%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@ · F%2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "S%1$@ · E%2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "T%1$@ · E%2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@ · É%2$@"
+          }
+        }
+      }
+    },
+    "S%@ · E%@ — %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@ · F%2$@: %3$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "S%1$@ · E%2$@ — %3$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "T%1$@ · E%2$@: %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@ · É%2$@ : %3$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@ · E%2$@：%3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@ · E%2$@：%3$@"
+          }
+        }
+      }
+    },
+    "S%@:E%@" : {
+      "comment" : "Season and episode number, for example S1:E3",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@:F%2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "S%1$@:E%2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "T%1$@:E%2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$@:É%2$@"
+          }
+        }
+      }
+    },
     "S%@E%@" : {
       "comment" : "Episode code with zero-padded season and episode numbers, e.g. S01E02",
       "extractionState" : "manual",
@@ -50570,118 +50631,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "S%1$@É%2$@"
-          }
-        }
-      }
-    },
-    "S%lld" : {
-      "comment" : "Season number abbreviation, e.g. S1\nSeason number in an episode code, e.g. S1\nSeason number, abbreviated, for example S2",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "T%lld"
-          }
-        }
-      }
-    },
-    "S%lld · E%lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld · F%2$lld"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "S%1$lld · E%2$lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "T%1$lld · E%2$lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld · É%2$lld"
-          }
-        }
-      }
-    },
-    "S%lld · E%lld — %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld · F%2$lld: %3$@"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "S%1$lld · E%2$lld — %3$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "T%1$lld · E%2$lld: %3$@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld · É%2$lld : %3$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld · E%2$lld：%3$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld · E%2$lld：%3$@"
-          }
-        }
-      }
-    },
-    "S%lld:E%lld" : {
-      "comment" : "Season and episode number, for example S1:E3",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld:F%2$lld"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "S%1$lld:E%2$lld"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "T%1$lld:E%2$lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S%1$lld:É%2$lld"
           }
         }
       }
@@ -52227,114 +52176,114 @@
         }
       }
     },
-    "Season %lld" : {
+    "Season %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Staffel %lld"
+            "value" : "Staffel %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Temporada %lld"
+            "value" : "Temporada %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saison %lld"
+            "value" : "Saison %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーズン%lld"
+            "value" : "シーズン%@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "第 %lld 季"
+            "value" : "第 %@ 季"
           }
         }
       }
     },
-    "Season %lld Episodes" : {
+    "Season %@ Episodes" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Staffel %lld: Folgen"
+            "value" : "Staffel %@: Folgen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Episodios de la temporada %lld"
+            "value" : "Episodios de la temporada %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Épisodes de la saison %lld"
+            "value" : "Épisodes de la saison %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーズン%lldのエピソード"
+            "value" : "シーズン%@のエピソード"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "第 %lld 季分集"
+            "value" : "第 %@ 季分集"
           }
         }
       }
     },
-    "Season %lld, Episode %lld" : {
+    "Season %@, Episode %@" : {
       "comment" : "Spoken episode position",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Staffel %1$lld, Folge %2$lld"
+            "value" : "Staffel %1$@, Folge %2$@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Season %1$lld, Episode %2$lld"
+            "value" : "Season %1$@, Episode %2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Temporada %1$lld, episodio %2$lld"
+            "value" : "Temporada %1$@, episodio %2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saison %1$lld, épisode %2$lld"
+            "value" : "Saison %1$@, épisode %2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーズン%1$lld、エピソード%2$lld"
+            "value" : "シーズン%1$@、エピソード%2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "第 %1$lld 季第 %2$lld 集"
+            "value" : "第 %1$@ 季第 %2$@ 集"
           }
         }
       }
@@ -58004,38 +57953,38 @@
         }
       }
     },
-    "Specials, Episode %lld" : {
+    "Specials, Episode %@" : {
       "comment" : "Spoken episode position in the specials season",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Specials, Folge %lld"
+            "value" : "Specials, Folge %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Especiales, episodio %lld"
+            "value" : "Especiales, episodio %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Épisodes spéciaux, épisode %lld"
+            "value" : "Épisodes spéciaux, épisode %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "スペシャル、エピソード%lld"
+            "value" : "スペシャル、エピソード%@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "特别篇，第 %lld 集"
+            "value" : "特别篇，第 %@ 集"
           }
         }
       }
@@ -68079,38 +68028,38 @@
         }
       }
     },
-    "Up to %lldp" : {
+    "Up to %@p" : {
       "comment" : "Quality cap by video height, for example Up to 576p",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bis zu %lldp"
+            "value" : "Bis zu %@p"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hasta %lldp"
+            "value" : "Hasta %@p"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jusqu’à %lldp"
+            "value" : "Jusqu’à %@p"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最大%lldp"
+            "value" : "最大%@p"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最高 %lldp"
+            "value" : "最高 %@p"
           }
         }
       }
@@ -72897,7 +72846,7 @@
         }
       }
     },
-    "Your collections is empty" : {
+    "Your collections are empty" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
@@ -72967,7 +72916,7 @@
         }
       }
     },
-    "Your favourites is empty" : {
+    "Your favourites are empty" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {

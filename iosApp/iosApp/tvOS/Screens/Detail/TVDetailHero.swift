@@ -774,11 +774,11 @@ enum TVHeroMetadata {
     private static func episodeNumberLabel(from detail: ItemDetail) -> String? {
         let seasonPart: String?
         if let season = detail.seasonNumber {
-            seasonPart = season == 0 ? String(localized: "Specials") : String(localized: "Season \(season)")
+            seasonPart = season == 0 ? String(localized: "Specials") : String(localized: "Season \(String(season))")
         } else {
             seasonPart = nil
         }
-        let episodePart = detail.episodeNumber.flatMap { n in n > 0 ? String(localized: "Episode \(n)") : nil }
+        let episodePart = detail.episodeNumber.flatMap { n in n > 0 ? String(localized: "Episode \(String(n))") : nil }
 
         switch (seasonPart, episodePart) {
         case let (.some(s), .some(e)): return "\(s) \u{00B7} \(e)"

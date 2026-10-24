@@ -159,7 +159,7 @@ final class TVLibraryGridViewModel {
                 case EmbyError.signInRequired: facetsFailureReason = String(localized: "Sign-in required")
                 case EmbyError.invalidResponse: facetsFailureReason = String(localized: "Unexpected response")
                 case EmbyError.unsupportedFeature: facetsFailureReason = String(localized: "Unsupported request")
-                case let error as URLError: facetsFailureReason = String(localized: "Network \(error.code.rawValue)")
+                case let error as URLError: facetsFailureReason = String(localized: "Network \(String(error.code.rawValue))")
                 default: facetsFailureReason = String(localized: "Request failed")
                 }
             }

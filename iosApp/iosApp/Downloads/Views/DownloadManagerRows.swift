@@ -549,7 +549,7 @@ struct DownloadSeriesRow: View {
         let seasons = group.seasonCount
         let seasonPart = seasons > 1
             ? String(localized: "\(seasons) seasons")
-            : (group.seasons.first.map { $0.isSpecials ? String(localized: "Specials") : String(localized: "Season \($0.seasonNumber)") } ?? "")
+            : (group.seasons.first.map { $0.isSpecials ? String(localized: "Specials") : String(localized: "Season \(String($0.seasonNumber))") } ?? "")
         var parts = [String(localized: "\(group.episodeCount) episodes")]
         if !seasonPart.isEmpty { parts.append(seasonPart) }
         if group.allWatched {
@@ -562,7 +562,7 @@ struct DownloadSeriesRow: View {
 
     private func seasonHeader(_ season: DownloadSeasonGroup) -> some View {
         HStack {
-            Text(season.isSpecials ? "Specials" : "Season \(season.seasonNumber)")
+            Text(season.isSpecials ? "Specials" : "Season \(String(season.seasonNumber))")
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundColor(.vividOnSurface)
             Spacer()
@@ -623,7 +623,7 @@ struct DownloadEpisodeRow: View {
 
     private var title: String {
         if let episode = record.episodeNumber {
-            return String(localized: "E\(episode) · \(record.title ?? record.contentId)", comment: "Episode number abbreviation and episode title, e.g. E4 · Pilot")
+            return String(localized: "E\(String(episode)) · \(record.title ?? record.contentId)", comment: "Episode number abbreviation and episode title, e.g. E4 · Pilot")
         }
         return record.title ?? record.contentId
     }

@@ -315,7 +315,7 @@ enum VividPlaybackStatsProjection {
               pixelAspectRatio > 0,
               abs(pixelAspectRatio - 1) > 0.001 else { return coded }
         let displayWidth = Int((Double(width) * pixelAspectRatio).rounded())
-        return String(localized: "\(coded) (\(displayWidth)×\(Int(height)) display)", comment: "Playback stats: coded size and the anamorphic display size")
+        return String(localized: "\(coded) (\(String(displayWidth))×\(String(Int(height))) display)", comment: "Playback stats: coded size and the anamorphic display size")
     }
 
     private static func dynamicRangeLabel(

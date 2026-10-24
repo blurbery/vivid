@@ -309,7 +309,7 @@ enum ApplePlaybackQuality {
         case 480: return String(localized: "Up to 480p")
         default:
             return requestOptions.first(where: { $0.id == id })?.label
-                ?? (height > 0 ? String(localized: "Up to \(height)p", comment: "Quality cap by video height, for example Up to 576p") : id)
+                ?? (height > 0 ? String(localized: "Up to \(String(height))p", comment: "Quality cap by video height, for example Up to 576p") : id)
         }
     }
 

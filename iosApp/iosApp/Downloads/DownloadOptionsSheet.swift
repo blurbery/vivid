@@ -303,7 +303,7 @@ private struct DownloadVersionChoices {
            !fragment.isEmpty {
             return fragment
         }
-        return String(localized: "File \(version.fileId)")
+        return String(localized: "File \(String(version.fileId))")
     }
 }
 

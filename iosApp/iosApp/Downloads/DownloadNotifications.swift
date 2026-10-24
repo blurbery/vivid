@@ -49,7 +49,7 @@ enum DownloadNotifier {
         let base = record.seriesTitle ?? record.title
             ?? String(localized: "download.noun", defaultValue: "Download", comment: "Noun: one download that has no title. Not the Download button.")
         if let season = record.seasonNumber, let episode = record.episodeNumber {
-            return String(localized: "\(base) (S\(season)E\(episode))", comment: "A series title with its season and episode, e.g. Exodus (S2E8)")
+            return String(localized: "\(base) (S\(String(season))E\(String(episode)))", comment: "A series title with its season and episode, e.g. Exodus (S2E8)")
         }
         return base
     }

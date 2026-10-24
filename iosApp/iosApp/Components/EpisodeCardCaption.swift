@@ -50,8 +50,8 @@ enum EpisodeCardCaption {
         var parts: [String] = []
         if let season = item.seasonNumber, let episode = item.episodeNumber {
             parts.append(season == 0
-                ? String(localized: "Specials, Episode \(episode)", comment: "Spoken episode position in the specials season")
-                : String(localized: "Season \(season), Episode \(episode)", comment: "Spoken episode position"))
+                ? String(localized: "Specials, Episode \(String(episode))", comment: "Spoken episode position in the specials season")
+                : String(localized: "Season \(String(season)), Episode \(String(episode))", comment: "Spoken episode position"))
         }
         if let title = episodeTitle(for: item) {
             parts.append(title)

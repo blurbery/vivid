@@ -460,12 +460,12 @@ VStack(alignment: .leading, spacing: TVDetailLayout.bodySectionSpacing) {
 
     private var episodeSectionTitle: String {
         if let season = selectedSeason {
-            if season.seasonNumber > 0 { return String(localized: "Season \(season.seasonNumber) Episodes") }
+            if season.seasonNumber > 0 { return String(localized: "Season \(String(season.seasonNumber)) Episodes") }
             if let title = season.title { return String(localized: "\(title) Episodes") }
             return String(localized: "Specials Episodes")
         }
         if let seasonNumber = detail.seasonNumber, seasonNumber > 0 {
-            return String(localized: "Season \(seasonNumber) Episodes")
+            return String(localized: "Season \(String(seasonNumber)) Episodes")
         }
         return String(localized: "Episodes")
     }

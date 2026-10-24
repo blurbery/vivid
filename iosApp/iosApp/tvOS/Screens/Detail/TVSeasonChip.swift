@@ -24,7 +24,7 @@ struct TVSeasonChip: View {
     private var chipLabel: String {
         if let title = season.title, !title.isEmpty { return title }
         if season.seasonNumber == 0 { return String(localized: "Specials") }
-        return String(localized: "Season \(season.seasonNumber)")
+        return String(localized: "Season \(String(season.seasonNumber))")
     }
 }
 

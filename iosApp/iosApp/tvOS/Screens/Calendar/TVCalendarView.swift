@@ -280,8 +280,8 @@ private struct TVUpcomingEpisodeCard: View {
 
     private var episodeLine: String {
         var parts: [String] = []
-        if let season = episode.season { parts.append(String(localized: "S\(season)", comment: "Season number in an episode code, e.g. S1")) }
-        if let number = episode.number { parts.append(String(localized: "E\(number)", comment: "Episode number in an episode code, e.g. E2")) }
+        if let season = episode.season { parts.append(String(localized: "S\(String(season))", comment: "Season number in an episode code, e.g. S1")) }
+        if let number = episode.number { parts.append(String(localized: "E\(String(number))", comment: "Episode number in an episode code, e.g. E2")) }
         if let name = episode.name, !name.isEmpty { parts.append(name) }
         return parts.joined(separator: " · ")
     }

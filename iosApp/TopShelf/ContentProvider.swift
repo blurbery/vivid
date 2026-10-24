@@ -302,6 +302,6 @@ final class ContentProvider: TVTopShelfContentProvider {
               let episode = item.episodeNumber else {
             return item.title
         }
-        return String(localized: "\(seriesTitle) · S\(season)E\(episode)", bundle: strings, comment: "Top Shelf episode tile: series name, then season and episode numbers")
+        return String(localized: "\(seriesTitle) · S\(String(season))E\(String(episode))", bundle: strings, comment: "Top Shelf episode tile: series name, then season and episode numbers")
     }
 }

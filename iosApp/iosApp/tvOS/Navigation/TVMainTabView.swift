@@ -33,8 +33,8 @@ private enum TVPersonalRootDestination: Hashable, CaseIterable {
     var emptyTitle: String {
         switch self {
         case .watchlist: return String(localized: "Your watchlist is empty")
-        case .favorites: return String(localized: "Your favourites is empty")
-        case .collections: return String(localized: "Your collections is empty")
+        case .favorites: return String(localized: "Your favourites are empty")
+        case .collections: return String(localized: "Your collections are empty")
         }
     }
 }

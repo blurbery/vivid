@@ -134,7 +134,7 @@ struct DownloadActionButton: View {
         contentId = episode.contentId
         isEpisode = true
         seriesId = context.seriesId
-        displayTitle = episode.title ?? String(localized: "Episode \(episode.episodeNumber)")
+        displayTitle = episode.title ?? String(localized: "Episode \(String(episode.episodeNumber))")
         displaySubtitle = Self.episodeSubtitle(
             seasonNumber: episode.seasonNumber,
             episodeNumber: episode.episodeNumber,
