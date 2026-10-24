@@ -21,6 +21,8 @@ Quick Connect was checked on the iPad simulator against the public Jellyfin 12.2
 
 ## API mapping
 
+Rows and messages Vivid writes itself, such as Continue Watching, Next Up, Latest and error text, follow Vivid's language; titles and other metadata come from Jellyfin in the server's metadata language. See [Localisation](../localisation.md).
+
 The core follows the [official Jellyfin API specification](https://api.jellyfin.org/openapi/jellyfin-openapi-stable.json).
 
 | Vivid operation | Jellyfin endpoint |

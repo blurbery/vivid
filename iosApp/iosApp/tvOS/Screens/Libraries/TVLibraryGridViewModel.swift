@@ -152,7 +152,7 @@ final class TVLibraryGridViewModel {
             facetsLoadFailed = true
             if MediaServerProvider.active == .emby {
                 switch error {
-                case EmbyError.filterRequestFailed(let step, let status): facetsFailureReason = "\(step): HTTP \(status)"
+                case EmbyError.filterRequestFailed(let step, let status): facetsFailureReason = filterRequestFailureText(step: step, status: status)
                 case HTTPError.http(let status, _): facetsFailureReason = "HTTP \(status)"
                 case HTTPError.decodingFailed: facetsFailureReason = String(localized: "Unreadable response")
                 case HTTPError.requestIdentityChanged: facetsFailureReason = String(localized: "Account changed")

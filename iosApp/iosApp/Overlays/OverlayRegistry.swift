@@ -461,7 +461,7 @@ private extension OverlayRegistry {
         case "cancelled", "canceled":
             return String(localized: "Cancelled", comment: "Series status poster badge")
         case "upcoming", "planned":
-            return String(localized: "Upcoming", comment: "Series status poster badge")
+            return String(localized: "seriesStatus.upcoming", defaultValue: "Upcoming", comment: "Series status poster badge")
         default:
             return value
         }

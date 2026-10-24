@@ -1,9 +1,23 @@
 import SwiftUI
 
+/// A collection's type for display. The type tokens Vivid knows ("manual",
+/// "smart", and "collection" from the Emby and Jellyfin adapters) are
+/// translated; any other server value is shown capitalised, as before.
+func collectionTypeLabel(_ type: String?) -> String? {
+    guard let type else { return nil }
+    switch type.lowercased() {
+    case "manual": return String(localized: "Manual", comment: "Collection type: titles added by hand")
+    case "smart": return String(localized: "Smart")
+    case "collection": return String(localized: "Collection")
+    case "movies": return String(localized: "Movies")
+    default: return type.capitalized
+    }
+}
+
 func libraryCollectionAccessibilityLabel(_ collection: LibraryCollection) -> String {
     let type = collection.kind == .userCollections
         ? String(localized: "User collection")
-        : collection.collectionType?.capitalized ?? String(localized: "Collection")
+        : collectionTypeLabel(collection.collectionType) ?? String(localized: "Collection")
     let count = if let itemCount = collection.itemCount {
         String(localized: "\(itemCount) items")
     } else {
@@ -187,9 +201,9 @@ struct CollectionsView: View {
     }
 
     private func rowSubtitle(for collection: UserCollection) -> String {
-        // The server's collection type is shown as sent; only Vivid's
-        // fallback is translated.
-        let kind = collection.collectionType?.capitalized ?? String(localized: "Custom")
+        // Known type tokens and Vivid's fallback are translated; other
+        // server values are shown capitalised.
+        let kind = collectionTypeLabel(collection.collectionType) ?? String(localized: "Custom")
         if let count = collection.itemCount, count > 0 {
             return String(localized: "\(kind) · \(count) items")
         }
@@ -654,7 +668,7 @@ private struct LibraryCollectionCard: View {
         if collection.kind == .userCollections {
             return String(localized: "User collection")
         }
-        return collection.collectionType?.capitalized ?? String(localized: "Collection")
+        return collectionTypeLabel(collection.collectionType) ?? String(localized: "Collection")
     }
 }
 

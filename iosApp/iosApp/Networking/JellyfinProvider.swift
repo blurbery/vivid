@@ -7,7 +7,7 @@ enum JellyfinError: LocalizedError {
     case filterRequestFailed(step: String, status: Int)
     var errorDescription: String? {
         switch self {
-        case .filterRequestFailed(let step, let status): "\(step): HTTP \(status)"
+        case .filterRequestFailed(let step, let status): filterRequestFailureText(step: step, status: status)
         case .invalidResponse: String(localized: "Jellyfin returned an unexpected response.")
         case .invalidURL: String(localized: "The Jellyfin server returned an invalid address.")
         case .unsupportedFeature: String(localized: "This feature is not available with Jellyfin yet.")

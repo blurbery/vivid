@@ -84,7 +84,7 @@ struct PlaybackStatsPanel: View {
     private var rightSections: [StatsSection] {
         [
             .init(id: Self.bufferSectionID, title: String(localized: "Buffer", comment: "Playback stats section"), rows: stats.bufferRows),
-            .init(id: Self.networkSectionID, title: String(localized: "Network", comment: "Playback stats section"), rows: stats.networkRows),
+            .init(id: Self.networkSectionID, title: String(localized: "stats.network", defaultValue: "Network", comment: "Playback stats section about the network connection"), rows: stats.networkRows),
             .init(id: Self.engineSectionID, title: String(localized: "Engine", comment: "Playback stats section"), rows: stats.engineRows)
         ]
     }

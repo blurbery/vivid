@@ -7,7 +7,7 @@ enum EmbyError: LocalizedError {
     case filterRequestFailed(step: String, status: Int)
     var errorDescription: String? {
         switch self {
-        case .filterRequestFailed(let step, let status): "\(step): HTTP \(status)"
+        case .filterRequestFailed(let step, let status): filterRequestFailureText(step: step, status: status)
         case .invalidResponse: String(localized: "Emby returned an unexpected response.")
         case .invalidURL: String(localized: "The Emby server returned an invalid address.")
         case .unsupportedFeature: String(localized: "This feature is not available with Emby yet.")
@@ -18,6 +18,19 @@ enum EmbyError: LocalizedError {
         case .connectServerNotLinked: String(localized: "This Emby Connect account isn’t linked to a user on this server.")
         }
     }
+}
+
+/// "Genres: HTTP 500" in the app language. `step` stays the English value
+/// the error carries ("Library lookup", "Genres", "Ratings"); only its
+/// displayed name is translated.
+func filterRequestFailureText(step: String, status: Int) -> String {
+    let stepTitle = switch step {
+    case "Library lookup": String(localized: "Library lookup", comment: "Filter loading step that failed: finding the library")
+    case "Genres": String(localized: "Genres", comment: "Filter loading step that failed: the genre list")
+    case "Ratings": String(localized: "Ratings", comment: "Filter loading step that failed: the age rating list")
+    default: step
+    }
+    return String(localized: "\(stepTitle): HTTP \(status)", comment: "Filter loading failure: the step that failed, then the HTTP status code")
 }
 
 final class EmbyRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

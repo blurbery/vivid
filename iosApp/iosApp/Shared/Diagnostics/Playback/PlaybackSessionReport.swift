@@ -200,15 +200,18 @@ extension PlaybackSessionReport {
         let missing = String(localized: "Not measured")
         let none = String(localized: "None", comment: "Playback report value: nothing of this kind happened")
         func count(_ value: Int?) -> String { value.map { "\($0)" } ?? missing }
-        /// Seconds as the record holds them, e.g. "1.25".
-        func seconds(_ value: Double) -> String { "\(value)" }
+        /// Seconds as the record holds them, e.g. "1.25", with the locale's
+        /// decimal separator.
+        func seconds(_ value: Double) -> String {
+            "\(value)".replacingOccurrences(of: ".", with: Locale.current.decimalSeparator ?? ".")
+        }
         var rows: [(String, String)] = []
         var output = setup.audioOutput.map { $0 == "hdmi" ? "HDMI" : $0 == "airplay" ? "AirPlay" : $0.capitalized } ?? missing
         if let channels = setup.routeOutputChannels ?? setup.outputChannelsAvailable {
             output += " · " + String(localized: "\(channels) channels")
         }
         if let latency = setup.outputLatencyMs {
-            let latencySeconds = String(format: "%.2g", Double(latency) / 1000)
+            let latencySeconds = String(format: "%.2g", locale: .current, Double(latency) / 1000)
             output += " · " + String(localized: "\(latencySeconds) s latency")
         }
         rows.append((String(localized: "Audio output"), output))
@@ -216,10 +219,10 @@ extension PlaybackSessionReport {
         if setup.externalScreen == true { rows.append((String(localized: "External screen"), String(localized: "Yes"))) }
         let hdr = setup.displayHDR.map { $0.isEmpty ? String(localized: "SDR only") : $0.map(Self.dynamicRangeLabel).joined(separator: ", ") } ?? missing
         rows.append((String(localized: "Display HDR"), hdr))
-        if let refresh = setup.displayRefreshHz { rows.append((String(localized: "Display refresh"), String(format: "%.5g Hz", refresh))) }
+        if let refresh = setup.displayRefreshHz { rows.append((String(localized: "Display refresh"), String(format: "%.5g Hz", locale: .current, refresh))) }
         if let matched = frameRateMatched, let fps = media.contentFps, let refresh = setup.displayRefreshHz {
-            let fpsText = String(format: "%.5g", fps)
-            let refreshText = String(format: "%.5g", refresh)
+            let fpsText = String(format: "%.5g", locale: .current, fps)
+            let refreshText = String(format: "%.5g", locale: .current, refresh)
             let value = matched
                 ? String(localized: "Yes (\(fpsText) fps on \(refreshText) Hz)")
                 : String(localized: "No (\(fpsText) fps on \(refreshText) Hz)")
@@ -230,7 +233,7 @@ extension PlaybackSessionReport {
         }
         var video = [media.videoCodec?.uppercased(), media.height.map { "\($0)p" },
                      media.sourceDynamicRange.map(Self.dynamicRangeLabel),
-                     media.contentFps.map { String(format: "%.5g fps", $0) }].compactMap { $0 }.joined(separator: " · ")
+                     media.contentFps.map { String(format: "%.5g fps", locale: .current, $0) }].compactMap { $0 }.joined(separator: " · ")
         if let out = media.outputDynamicRange, out != media.sourceDynamicRange {
             let shown = Self.dynamicRangeLabel(out)
             video += " " + String(localized: "→ shown as \(shown)")

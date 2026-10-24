@@ -25,10 +25,12 @@ struct ServerListView: View {
                 .disabled(removeTarget != nil)
 
             if let entry = removeTarget {
+                // String(localized:) because these literals weren't extracted
+                // through the overlay's LocalizedStringResource init here.
                 TVSettingsConfirmationOverlay(
-                    title: "Remove this server?",
-                    message: "The saved server \(entry.displayName) and all its profiles will be removed from your Vivid devices through iCloud. Accounts and media on the server are not deleted.",
-                    confirmTitle: "Remove",
+                    title: String(localized: "Remove this server?"),
+                    message: String(localized: "The saved server \(entry.displayName) and all its profiles will be removed from your Vivid devices through iCloud. Accounts and media on the server are not deleted."),
+                    confirmTitle: String(localized: "Remove"),
                     cancel: { dismissRemoveConfirmation(for: entry) },
                     confirm: { remove(entry) }
                 )

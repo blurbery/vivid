@@ -8,33 +8,54 @@
 
 ---
 
-Vivid is written in English and follows the device's language. English is the source language and the fallback: any language Vivid has no translation for shows English. There is no language picker inside the app.
+Vivid is available in English, French, German, Spanish, Japanese and Simplified Chinese. It follows the device's language, and Settings > General > Language overrides that on iPhone, iPad and Apple TV. English is the source language and the fallback: anything without a translation shows English.
 
-Vivid only ships English today. The String Catalog holds the English base so translations can be added without more setup.
+> [!NOTE]
+> The French, German, Spanish, Japanese and Simplified Chinese translations were made with AI assistance and haven't been reviewed by native speakers yet. Corrections are welcome.
 
 ## How the language is chosen
 
 <table width="100%">
   <thead>
-    <tr><th align="left">Device</th><th align="left" width="10000">Behaviour</th></tr>
+    <tr><th align="left">Setting</th><th align="left" width="10000">Behaviour</th></tr>
   </thead>
   <tbody>
-    <tr><td>iPhone and iPad</td><td>Vivid uses the first language in Settings > General > Language & Region that it has a translation for. Once Vivid ships a second language, iOS adds Settings > Vivid > Language so people can choose a different language for Vivid alone. That option only appears when the device lists more than one preferred language.</td></tr>
-    <tr><td>Apple TV</td><td>tvOS has no per-app language setting. Vivid uses the first supported language in Settings > General > Language.</td></tr>
+    <tr><td>Device language</td><td>By default Vivid uses the first language in the device's list that it has, or English.</td></tr>
+    <tr><td>Settings > General > Language</td><td>System, or one of the six languages, each named in its own language. The choice is saved as Vivid's own <code>AppleLanguages</code>, the same value iOS's per-app Language setting uses, and takes effect after Vivid is closed in the app switcher and opened again.</td></tr>
+    <tr><td>iPhone and iPad</td><td>Settings > Vivid > Language changes the same value. iOS shows it when the device lists more than one language.</td></tr>
+    <tr><td>Apple TV</td><td>tvOS has no per-app language setting, so Vivid's own setting is the way to choose.</td></tr>
+    <tr><td>Top Shelf</td><td>Follows Vivid's choice from the extension's next launch. Vivid saves the choice under <code>vivid.appLanguage.v1</code> in the App Group, and the extension copies it into its own <code>AppleLanguages</code>.</td></tr>
+    <tr><td>Downloads Live Activity</td><td>Its labels follow the device's language. The titles Vivid sends it use Vivid's language.</td></tr>
   </tbody>
 </table>
 
-Library metadata (titles, overviews, taglines, genres and episode names) comes from Silo, Emby or Jellyfin in the server's metadata language, and Vivid's language doesn't change it. Silo sets this per profile (`catalog.metadata_language`, "Library default" when unset), and Emby and Jellyfin set it per library on the server. These settings are shared by every device using that profile or library, so Vivid doesn't change them to match a device's language. The exception is what Vivid looks up on TMDb itself, listed under [Not localised yet](#not-localised-yet).
+Dates, numbers, durations and language names follow Vivid's language with the device's region.
 
-The English text mixes Australian and US spelling today, for example "Customise Tab Bar" and "Add to Favorites". Every English locale sees the same text unless a separate English variant is added.
+## Metadata
 
-## The String Catalog
+Library metadata (titles, overviews, taglines, genres and episode names) comes from Silo, Emby or Jellyfin in the server's metadata language, and Vivid's language doesn't change it. Silo sets this per profile (`catalog.metadata_language`, "Library default" when unset), and Emby and Jellyfin set it per library on the server. These settings are shared by every device using that profile or library, so Vivid doesn't change them to match a device's language.
 
-`iosApp/Resources/Localizable.xcstrings` is shared by the iOS app (`Vivid`) and the tvOS app (`VividTV`). It holds every string the Swift compiler can look up for either app: literals passed to `Text`, `Button`, `Toggle`, `Label`, `Picker`, `navigationTitle` and other APIs that take a `LocalizedStringKey`, plus `String(localized:)` and `LocalizedStringResource` literals. Interpolated strings become format keys, such as `%lld` for an integer.
+What Vivid looks up on TMDb itself follows Vivid's language: collection names and the Calendar's Trending titles and overviews. `VividAppLanguage.tmdbLanguage` gives TMDb's code (`fr-FR`, `de-DE`, `es-ES`, `ja-JP`, `zh-CN`, or none for English), the TMDb caches are keyed by it, and an overview TMDb hasn't translated falls back to English. Studios & Networks stays in English because it matches TMDb titles against the library. [The TMDb relay](tmdb-relay.md) accepts `language` only on the routes that use it; deploy the relay before an app build that sends it.
 
-Every entry is marked manual, and [the sync script](../scripts/l10n/sync-string-catalog.sh) maintains the catalog rather than Xcode. The two apps are generated from separate XcodeGen specs, and Xcode syncs a catalog with only the platform it just built. Left to itself, an iOS build would delete every untranslated string that only Apple TV uses, and a tvOS build would do the reverse. Xcode never changes manual entries, and compiler extraction (`SWIFT_EMIT_LOC_STRINGS`) is off in `iosApp/project-common.yml`, so everyday builds leave the catalog alone.
+## The String Catalogs
 
-### Updating it
+<table width="100%">
+  <thead>
+    <tr><th align="left">Catalog</th><th align="left" width="10000">Holds</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>iosApp/Resources/Localizable.xcstrings</code></td><td>Everything the iOS app (<code>Vivid</code>) and the tvOS app (<code>VividTV</code>) show</td></tr>
+    <tr><td><code>iosApp/TopShelf/Localizable.xcstrings</code></td><td>Top Shelf's rows, including the shared code it compiles</td></tr>
+    <tr><td><code>iosApp/DownloadsActivity/Localizable.xcstrings</code></td><td>The downloads Live Activity</td></tr>
+    <tr><td><code>iosApp/Resources/InfoPlist.xcstrings</code></td><td>Only <code>NSLocalNetworkUsageDescription</code>, the local network prompt. <code>CFBundleDisplayName</code> stays out because a localised name would replace the tvOS <code>$(VIVID_TV_DISPLAY_NAME)</code> build setting.</td></tr>
+  </tbody>
+</table>
+
+The Localizable catalogs hold every string the Swift compiler can look up: literals passed to `Text`, `Button`, `Toggle`, `Label`, `Picker`, `navigationTitle` and other APIs that take a `LocalizedStringKey`, plus `String(localized:)` and `LocalizedStringResource` literals. Interpolated strings become format keys, such as `%lld` for an integer, and counts use the catalog's plural variations.
+
+Every entry is marked manual, and [the sync script](../scripts/l10n/sync-string-catalog.sh) maintains the catalogs rather than Xcode. The two apps are generated from separate XcodeGen specs, and Xcode syncs a catalog with only the platform it just built. Left to itself, an iOS build would delete every untranslated string that only Apple TV uses, and a tvOS build would do the reverse. Xcode never changes manual entries, and compiler extraction (`SWIFT_EMIT_LOC_STRINGS`) is off in `iosApp/project-common.yml`, so everyday builds leave the catalogs alone.
+
+### Updating them
 
 Run the script after adding or changing interface text, and always before sending strings for translation:
 
@@ -42,35 +63,34 @@ Run the script after adding or changing interface text, and always before sendin
 scripts/l10n/sync-string-catalog.sh
 ```
 
-It builds both apps for the simulator with compiler extraction on, syncs both sets of strings in one pass and marks every entry manual again. New strings are added. Strings the code no longer uses are removed, or marked stale if they have translations. It restores `Package.resolved` when it finishes and leaves `Vivid.xcodeproj` as the tvOS project.
+It builds both apps for the simulator with compiler extraction on, syncs each catalog from its own targets in one pass and marks every entry manual again. New strings are added. Strings the code no longer uses are removed, or marked stale if they have translations. Plural variations and translations are kept. It restores `Package.resolved` when it finishes and leaves `Vivid.xcodeproj` as the tvOS project.
 
 The first run builds both apps from scratch. Later runs reuse the derived data in `$TMPDIR/vivid-string-catalog` and build incrementally. Pass a fresh derived data path to drop strings from Swift files that were deleted, or `--no-build` to sync again from the last builds.
 
-A key added to the catalog by hand is removed on the next sync unless it has a translation, so write every interface string as a literal in Swift.
+A key added to a catalog by hand is removed on the next sync unless it has a translation, so write every interface string in Swift.
+
+## Writing translatable code
+
+- **SwiftUI literals** passed to `Text`, `Button`, `Label` and similar are translatable already.
+- **Text held in a `String`** needs `String(localized:)` where it's written. Keep identifiers, saved values, comparisons and anything sent to a server on a stable English or raw value, and add a display property for what people see, as `AppTab.title`, `AppHealthReport.displaySummary`, `SubtitleDisplayOrder.displayLanguageName(_:)` and `activeRouteDisplayLabel` do.
+- **Shared components** that take visible text mirror `Text`: an initialiser taking `LocalizedStringKey` (or `LocalizedStringResource`) for literals, and a generic `StringProtocol` initialiser marked `@_disfavoredOverload` that shows a variable as it is. Without `@_disfavoredOverload`, or with a concrete `String` overload, literals pick the verbatim initialiser and stop being translated.
+- **Server text** is never passed to `LocalizedStringKey(...)`, where a `%` in a title would be read as a format specifier.
+- **Counts** are one interpolated string, `"\(count) items"`, with `one` and `other` variations in the catalog. Don't add an English `s` by hand.
+- **Sentences** are written whole, `"\(count) of \(total)"`, never joined from pieces, and any word inserted into one is translated too.
+- **Optional parameters:** a ternary of literals passed to an Optional `LocalizedStringResource?` only has its first branch extracted. Give each branch its own `Text` or `String(localized:)`.
+- **One English word with two meanings** gets its own key, such as `String(localized: "series.typeLabel", defaultValue: "Series", comment: "Media type label for a single series")` beside the Series tab.
+- **Playback failure messages** stay English where they're made, because their wording drives route fallback, diagnostics and reports to the server. `PlaybackFailureText` translates them where they're shown.
+- **Not translated:** logs, diagnostics reports sent to Vivid, identifiers, product names, and legal text (the copyright line, the TMDB attribution, licences and the privacy policy).
 
 ## Adding a language
 
-1. Open the catalog in Xcode and add the language. Translate in the catalog editor, or export with `xcodebuild -exportLocalizations` and import the translated `.xcloc`.
-2. Run the sync script so the catalog matches both apps.
-3. Finish the items under [Not localised yet](#not-localised-yet) that the language needs.
+1. Add a case to `VividAppLanguage` with its native name and TMDb code.
+2. Translate the four catalogs in Xcode's catalog editor, or export with `xcodebuild -exportLocalizations` and import the translated `.xcloc`. Plural keys need the language's plural forms.
+3. Run the sync script so the catalogs match both apps.
 4. Check iPhone, iPad and Apple TV in that language, including long strings in buttons, tab bars and Apple TV menus.
 
 Right-to-left languages such as Arabic and Hebrew mirror the layout. Treat adding one as a design change and get blurbery's approval first.
 
-## Not localised yet
+## Tests
 
-These parts show English even after a translation is added.
-
-<table width="100%">
-  <thead>
-    <tr><th align="left">Area</th><th align="left" width="10000">What needs to change</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>Text built from variables</td><td><code>Text(someString)</code> and similar calls show a <code>String</code> as it is, and many settings options get their labels from <code>title: String</code> properties, such as <code>VividAppTheme.title</code>. Text written by Vivid needs to become a <code>LocalizedStringResource</code> or come from <code>String(localized:)</code>. Server data such as titles stays a plain <code>String</code>.</td></tr>
-    <tr><td>Language names</td><td><code>PlayerTrack.languageDisplayName</code>, <code>OverlayRegistry.formatLanguageName</code> and <code>SubtitleDisplayOrder.languageDisplayName</code> use English names on purpose: detail rows and subtitle grouping share one English name table, and overlay badges match the web app. Change them together, keeping the grouping keys separate from the displayed names.</td></tr>
-    <tr><td>Dates</td><td>Formatters that read server dates use <code>en_US_POSIX</code> and must stay that way. Any formatter that shows a date with a fixed format should use <code>.formatted()</code> or a template instead.</td></tr>
-    <tr><td>Local network prompt</td><td><code>NSLocalNetworkUsageDescription</code> needs an <code>InfoPlist.xcstrings</code> holding only that key. Leave <code>CFBundleDisplayName</code> out, because a localised name would replace the tvOS <code>$(VIVID_TV_DISPLAY_NAME)</code> build setting.</td></tr>
-    <tr><td>TMDb lookups</td><td>Studios &amp; Networks rows, collections, trailers and ratings come from TMDb through Vivid's relay, and the requests in <code>TVTMDbStore.swift</code> don't send a <code>language</code>, so TMDb answers in English. Send the app's language (for example <code>fr-FR</code>) and fall back to English where TMDb has no translation, because TMDb returns an empty overview for a missing one.</td></tr>
-    <tr><td>Extensions</td><td>Top Shelf (<code>iosApp/TopShelf</code>) and the downloads Live Activity (<code>iosApp/DownloadsActivity</code>) look strings up in their own bundles, so each needs its own catalog.</td></tr>
-  </tbody>
-</table>
+Unit tests that check visible text expect English, which is what the simulators used by CI run in.

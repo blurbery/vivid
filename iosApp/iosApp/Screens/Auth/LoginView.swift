@@ -152,7 +152,7 @@ struct LoginView: View {
 
         if let failure = codeSignIn.failure {
             AuroraErrorLabel(failure)
-            Button("Get a new \(codeSignIn.service.codeName)") { startCodeSignIn(codeSignIn.service) }
+            Button(codeSignIn.service.getNewLabel) { startCodeSignIn(codeSignIn.service) }
                 .buttonStyle(AuroraPrimaryButtonStyle())
         }
 

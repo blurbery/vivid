@@ -27,15 +27,30 @@ final class CodeSignIn {
             }
         }
 
-        /// What the screen calls the code: Emby Connect calls it a PIN.
-        var codeName: String {
+        // Whole phrases rather than "code"/"PIN" inserted into one sentence:
+        // articles and adjectives agree with the noun in other languages.
+        var getNewLabel: String {
             switch self {
-            case .jellyfinQuickConnect: String(localized: "code", comment: "A sign-in code, lowercase in the middle of a sentence")
-            case .embyConnect: String(localized: "PIN", comment: "An Emby Connect sign-in PIN")
+            case .jellyfinQuickConnect: String(localized: "Get a new code")
+            case .embyConnect: String(localized: "Get a new PIN")
             }
         }
 
-        /// `codeName` at the start of a title: "Code" or "PIN".
+        var getNewTitle: String {
+            switch self {
+            case .jellyfinQuickConnect: String(localized: "Get a New Code")
+            case .embyConnect: String(localized: "Get a New PIN")
+            }
+        }
+
+        var replaceBelowText: String {
+            switch self {
+            case .jellyfinQuickConnect: String(localized: "Replace the code below with a new one.")
+            case .embyConnect: String(localized: "Replace the PIN below with a new one.")
+            }
+        }
+
+        /// What the screen calls the code, as a title or label: "Code" or "PIN".
         var codeTitle: String {
             switch self {
             case .jellyfinQuickConnect: String(localized: "Code", comment: "A sign-in code, as a title or label")

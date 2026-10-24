@@ -239,7 +239,7 @@ struct TVLoginView: View {
             Button {
                 startCodeSignIn(codeSignIn.service)
             } label: {
-                Text("Get a new \(codeSignIn.service.codeName)")
+                Text(codeSignIn.service.getNewLabel)
             }
             .buttonStyle(AuroraPrimaryButtonStyle())
             .focused($focusedField, equals: .newCode)
