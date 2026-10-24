@@ -23,12 +23,11 @@ struct TVGeneralSettingsPane: View {
     @State private var language = VividAppLanguage.saved
     @State private var reopenLanguage: VividAppLanguage?
 
-    private func reopenMessage(for language: VividAppLanguage) -> Text {
+    private func reopenMessage(for language: VividAppLanguage) -> LocalizedStringResource {
         if let name = language.nativeName {
-            Text("Vivid will use \(name) the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again.")
-        } else {
-            Text("Vivid will use this Apple TV’s language the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again.")
+            return "Vivid will use \(name) the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again."
         }
+        return "Vivid will use this Apple TV’s language the next time it opens. Press the TV button twice, swipe up on Vivid, then open it again."
     }
 
     /// Languages are named in their own language; only System is translated.
@@ -181,11 +180,12 @@ struct TVGeneralSettingsPane: View {
             studiosNetworks.refresh()
         }
         .onChange(of: registry.activeServerId) { _, _ in homeSections.refresh() }
-        .alert("Reopen Vivid", isPresented: Binding(get: { reopenLanguage != nil }, set: { if !$0 { reopenLanguage = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            if let reopenLanguage { reopenMessage(for: reopenLanguage) }
-        }
+        .tvSystemAlert(
+            "Reopen Vivid",
+            isPresented: Binding(get: { reopenLanguage != nil }, set: { if !$0 { reopenLanguage = nil } }),
+            message: reopenLanguage.map(reopenMessage(for:)),
+            buttons: [.cancel("OK")]
+        )
         .task {
             await preferences.refresh()
         }

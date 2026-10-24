@@ -12,14 +12,15 @@ struct TVSubtitleSettingsPane: View {
             profileSection
             appearanceSection
         }
-        .alert("Reset Custom Appearance?", isPresented: $showResetConfirmation) {
-            Button("Reset", role: .destructive) {
-                Task { await viewModel.resetSubtitleAppearance() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This restores all custom subtitle appearance options to their defaults.")
-        }
+        .tvSystemAlert(
+            "Reset Custom Appearance?",
+            isPresented: $showResetConfirmation,
+            message: "This restores all custom subtitle appearance options to their defaults.",
+            buttons: [
+                .destructive("Reset") { Task { await viewModel.resetSubtitleAppearance() } },
+                .cancel("Cancel"),
+            ]
+        )
     }
 
     // MARK: - Sections
