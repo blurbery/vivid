@@ -121,7 +121,8 @@ final class PlaybackSessionAccumulatorTests: XCTestCase {
             setup: .init(), media: .init(), totals: .init(), timeline: [], notMeasured: [])
         XCTAssertNil(report.memorySummary)
         report.timeline = [.init(minute: 0, memoryMB: 640), .init(minute: 9, memoryMB: 1690), .init(minute: 10, memoryMB: 1500)]
-        XCTAssertEqual(report.memorySummary, "640 MB in minute 0, highest 1690 MB in minute 9")
+        // Counts use the locale's number format, for example 1,690 in English.
+        XCTAssertEqual(report.memorySummary, "640 MB in minute 0, highest \(1690.formatted()) MB in minute 9")
         XCTAssertTrue(report.summaryRows.contains { $0.label == "Memory" && $0.value == report.memorySummary })
 
         // A minute saved before readings existed still loads, without one.

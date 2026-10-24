@@ -285,7 +285,7 @@ extension PlaybackSessionReport {
     }
 
     /// The first and highest memory readings, for example "640 MB in minute 0,
-    /// highest 1690 MB in minute 9". Nil for records without readings.
+    /// highest 1,690 MB in minute 9". Nil for records without readings.
     var memorySummary: String? {
         let readings = timeline.compactMap { minute in minute.memoryMB.map { (minute: minute.minute, mb: $0) } }
         guard let first = readings.first, let highest = readings.max(by: { $0.mb < $1.mb }) else { return nil }
