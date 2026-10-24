@@ -92,12 +92,14 @@ struct SearchView: View {
         #if os(iOS)
         // On the Duo's landscape inner screen the media tabs sit at the
         // bottom, as For You's do.
-        .safeAreaInset(edge: .bottom) {
-            if shouldShowFilters, usesDuoSideTabBar {
-                mediaTypeFilter
-                    .frame(height: PhoneDuo.pageTabsRowHeight)
-                    .padding(.horizontal, VividTheme.padding)
-                    .padding(.bottom, PhoneDuo.pageTabsBottomPadding)
+        .onDuo {
+            $0.safeAreaInset(edge: .bottom) {
+                if shouldShowFilters, usesDuoSideTabBar {
+                    mediaTypeFilter
+                        .frame(height: PhoneDuo.pageTabsRowHeight)
+                        .padding(.horizontal, VividTheme.padding)
+                        .padding(.bottom, PhoneDuo.pageTabsBottomPadding)
+                }
             }
         }
         #endif

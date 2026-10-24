@@ -138,6 +138,9 @@ struct PhoneLabeledActionRow<Content: View>: View {
 /// Play above the named actions. On the iPhone Duo's inner screen, which is
 /// too wide for a full-width Play, they share one row instead.
 struct PhoneDetailPrimaryActions<Play: View, Actions: View>: View {
+    /// The gap between Play and the actions when they're stacked, as each
+    /// detail page had it.
+    var stackedSpacing: CGFloat = 14
     @ViewBuilder let play: () -> Play
     @ViewBuilder let actions: () -> Actions
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -149,7 +152,7 @@ struct PhoneDetailPrimaryActions<Play: View, Actions: View>: View {
         // the playback selectors under it.
         let layout = sharesRow
             ? AnyLayout(HStackLayout(alignment: .top, spacing: PhoneLabeledActionMetrics.rowSpacing))
-            : AnyLayout(VStackLayout(spacing: 14))
+            : AnyLayout(VStackLayout(spacing: stackedSpacing))
         VStack(spacing: 12) {
             layout {
                 play()

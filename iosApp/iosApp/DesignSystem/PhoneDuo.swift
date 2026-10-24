@@ -112,6 +112,7 @@ enum PhoneDuo {
     }
 
     @MainActor static func controlCorner(_ geometry: GeometryProxy) -> ControlCorner? {
+        guard isDuo else { return nil }
         if let strip = sideStrip(geometry) {
             return ControlCorner(edge: strip.edge, usualTop: strip.usualControlsTop)
         }
@@ -127,6 +128,20 @@ enum PhoneDuo {
         if insets.trailing >= 60 { return .trailing }
         if insets.leading >= 60 { return .leading }
         return nil
+    }
+}
+
+extension View {
+    /// Applies `transform` only on the iPhone Duo, so other devices keep the
+    /// exact view they had. `isDuo` never changes while the app runs, so this
+    /// never swaps a view's identity.
+    @ViewBuilder
+    func onDuo(@ViewBuilder _ transform: (Self) -> some View) -> some View {
+        if PhoneDuo.isDuo {
+            transform(self)
+        } else {
+            self
+        }
     }
 }
 

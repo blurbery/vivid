@@ -51,9 +51,13 @@ private struct DuoStripBackButtonModifier: ViewModifier {
     @Environment(\.dismiss) private var dismiss
 
     func body(content: Content) -> some View {
+        content.onDuo { duoBody($0) }
+    }
+
+    private func duoBody(_ content: some View) -> some View {
         let active = corner != nil && isPresented && !backHidden
         // Modifiers rather than branches, so a fold keeps the page's state.
-        content
+        return content
             .navigationBarBackButtonHidden(active || backHidden)
             .background {
                 if active { DuoSwipeBackEnabler().frame(width: 0, height: 0) }

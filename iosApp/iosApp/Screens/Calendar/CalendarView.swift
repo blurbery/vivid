@@ -50,9 +50,11 @@ struct CalendarView: View {
                 .padding(.bottom, 32)
             }
             .reportsPageChromeScroll()
-            .safeAreaInset(edge: .bottom) {
-                if usesDuoSideTabBar {
-                    header.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, PhoneDuo.pageTabsBottomPadding)
+            .onDuo {
+                $0.safeAreaInset(edge: .bottom) {
+                    if usesDuoSideTabBar {
+                        header.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, PhoneDuo.pageTabsBottomPadding)
+                    }
                 }
             }
             .sheet(isPresented: $showsMonth, onDismiss: {
@@ -121,8 +123,10 @@ struct CalendarView: View {
             .accessibilityLabel("Month")
             .accessibilityHint(page == .upcoming ? "Shows the months ahead, to jump to a day" : "Shows the months ahead, to see what's coming out on a day")
         }
-        .frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize))
-        .frame(maxWidth: .infinity)
+        .onDuo {
+            $0.frame(maxWidth: PhoneDuo.pageTabsMaxWidth(hSize))
+                .frame(maxWidth: .infinity)
+        }
     }
 
     /// Upcoming's month marks days with new episodes; Trending's marks

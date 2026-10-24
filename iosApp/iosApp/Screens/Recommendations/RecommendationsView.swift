@@ -70,8 +70,10 @@ struct RecommendationsView: View {
         // With the Duo's tab bar in its side strip, the page tabs take the
         // free space at the bottom instead of scrolling with the list.
         .environment(\.forYouScrollHeader, usesDuoSideTabBar ? nil : AnyView(mobileSectionTabs))
-        .safeAreaInset(edge: .bottom) {
-            if usesDuoSideTabBar { mobileSectionTabs.padding(.bottom, PhoneDuo.pageTabsBottomPadding) }
+        .onDuo {
+            $0.safeAreaInset(edge: .bottom) {
+                if usesDuoSideTabBar { mobileSectionTabs.padding(.bottom, PhoneDuo.pageTabsBottomPadding) }
+            }
         }
         .environment(chromeScrollState)
         .background(VividAppBackdrop())

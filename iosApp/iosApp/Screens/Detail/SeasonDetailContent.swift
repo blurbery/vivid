@@ -103,7 +103,7 @@ struct SeasonDetailContent<BelowOverview: View>: View {
     @ViewBuilder
     private var actionStack: some View {
         VStack(spacing: 12) {
-            PhoneDetailPrimaryActions {
+            PhoneDetailPrimaryActions(stackedSpacing: 12) {
                 PhonePrimaryPillButton(
                     icon: "play.fill",
                     title: nextUpEpisode.map(playButtonLabel) ?? "Play",
