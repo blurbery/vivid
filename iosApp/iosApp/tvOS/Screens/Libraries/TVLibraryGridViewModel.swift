@@ -41,6 +41,7 @@ final class TVLibraryGridViewModel {
     /// scoped by `library_id`.
     private let sendsType: Bool
     private let pageSize: Int = 70
+    private let requestCatalog: ([String: String]) async throws -> CatalogResponse
 
     private var snapshot: String? = nil
     private var nextOffset: Int = 0
@@ -66,8 +67,16 @@ final class TVLibraryGridViewModel {
     )
     private var generation: Int = 0
 
-    init(libraryId: Int, libraryType: String, initialFilter: CatalogFilterState = .none) {
+    init(
+        libraryId: Int,
+        libraryType: String,
+        initialFilter: CatalogFilterState = .none,
+        requestCatalog: @escaping ([String: String]) async throws -> CatalogResponse = {
+            try await VividAPI.shared.get("/api/v1/catalog", query: $0)
+        }
+    ) {
         self.libraryId = libraryId
+        self.requestCatalog = requestCatalog
         self.mediaType = BrowseMediaType.from(libraryType: libraryType)
         self.sendsType = VividMediaType.isSeries(libraryType) || VividMediaType.isMovieLibrary(libraryType)
         // A non-default initial filter (a deep-linked landing tap) wins;
@@ -290,9 +299,7 @@ final class TVLibraryGridViewModel {
         )
 
         do {
-            let response: CatalogResponse = try await VividAPI.shared.get(
-                "/api/v1/catalog", query: query
-            )
+            let response = try await requestCatalog(query)
 
             // Discard if another reload superseded us while we awaited.
             guard myGeneration == generation else { return }
